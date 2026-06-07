@@ -58,3 +58,16 @@ async def test_validate_ws_token_logic(monkeypatch):
     assert auth.is_ws_token_valid("tok") is True
     assert auth.is_ws_token_valid("nope") is False
     assert auth.is_ws_token_valid(None) is False
+
+
+@pytest.mark.asyncio
+async def test_ws_token_valid_when_auth_disabled(monkeypatch):
+    monkeypatch.setenv("ARSLAN_API_TOKEN", "")
+    import server.config as config
+
+    importlib.reload(config)
+    import server.auth as auth
+
+    importlib.reload(auth)
+    assert auth.is_ws_token_valid(None) is True
+    assert auth.is_ws_token_valid("anything") is True

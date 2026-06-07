@@ -1,6 +1,8 @@
 """Token authentication for REST (Bearer header) and WebSocket (query param)."""
 from __future__ import annotations
 
+import secrets
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -20,8 +22,12 @@ async def require_auth(
     token = config.settings.api_token
     if not token:
         return
-    if credentials is None or credentials.credentials != token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    if credentials is None or not secrets.compare_digest(credentials.credentials, token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def is_ws_token_valid(token: str | None) -> bool:
@@ -29,4 +35,6 @@ def is_ws_token_valid(token: str | None) -> bool:
     expected = config.settings.api_token
     if not expected:
         return True
-    return token == expected
+    if token is None:
+        return False
+    return secrets.compare_digest(token, expected)
