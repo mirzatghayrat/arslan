@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, WebSocket
 
 from server.api import health, settings as settings_api
 from server.auth import require_auth
@@ -46,6 +46,12 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
+
+    from server.ws.build import build_endpoint
+
+    @app.websocket("/ws/build/{session_id}")
+    async def _ws_build(websocket: WebSocket, session_id: str):  # noqa: ANN202
+        await build_endpoint(websocket, session_id)
 
     return app
 
