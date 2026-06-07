@@ -13,9 +13,23 @@ from server.db.session import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create tables on startup (idempotent; complements Alembic in prod)."""
+    """Create tables and prune stale build sessions on startup."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import delete
+
+    from server.db.models import BuildSession
+    from server.db.session import AsyncSessionLocal
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            delete(BuildSession).where(BuildSession.updated_at < cutoff)
+        )
+        await db.commit()
     yield
 
 
@@ -58,6 +72,30 @@ def create_app() -> FastAPI:
     @app.websocket("/ws/chat/{spawn_id}")
     async def _ws_chat(websocket: WebSocket, spawn_id: int):  # noqa: ANN202
         await chat_endpoint(websocket, spawn_id)
+
+    import os
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    from server.config import settings as _settings
+
+    static_dir = Path(_settings.static_dir)
+    if static_dir.is_dir():
+        assets = static_dir / "assets"
+        if assets.is_dir():
+            app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+        index_file = static_dir / "index.html"
+
+        @app.get("/{full_path:path}")
+        async def _spa_fallback(full_path: str):  # noqa: ANN202
+            # API and WS routes are matched earlier; anything else serves the SPA.
+            candidate = static_dir / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(str(candidate))
+            return FileResponse(str(index_file))
 
     return app
 
