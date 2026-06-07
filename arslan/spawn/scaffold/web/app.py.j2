@@ -1,0 +1,40 @@
+"""{{ spawn_name }} — FastAPI web interface."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+def create_app(agent) -> FastAPI:
+    app = FastAPI(title="{{ spawn_name }}")
+
+    @app.get("/", response_class=HTMLResponse)
+    async def index() -> HTMLResponse:
+        html = (TEMPLATES_DIR / "chat.html").read_text(encoding="utf-8")
+        return HTMLResponse(content=html)
+
+    @app.post("/chat", response_model=ChatResponse)
+    async def chat(request: ChatRequest) -> ChatResponse:
+        reply = agent.chat(request.message)
+        return ChatResponse(reply=reply)
+
+    return app
+
+
+def start_web(agent, port: int = {{ web_port }}) -> None:
+    app = create_app(agent)
+    uvicorn.run(app, host="0.0.0.0", port=port)

@@ -1,0 +1,14 @@
+"""{{ spawn_name }} — entry point."""
+import uvicorn
+
+from agent import SpawnAgent
+from web.app import start_web
+
+
+def main() -> None:
+    agent = SpawnAgent()
+    start_web(agent, port={{ web_port }})
+
+
+if __name__ == "__main__":
+    main()

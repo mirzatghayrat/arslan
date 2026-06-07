@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  {{ spawn_name }}:
+    build: .
+    ports:
+      - "{{ web_port }}:{{ web_port }}"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped

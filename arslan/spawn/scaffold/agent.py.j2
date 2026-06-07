@@ -1,0 +1,38 @@
+"""{{ spawn_name }} — spawn agent."""
+from __future__ import annotations
+
+import httpx
+
+
+SYSTEM_PROMPT = """{{ system_prompt | replace('"', '\\"') }}"""
+
+
+class SpawnAgent:
+    """Domain agent for {{ domain }}."""
+
+    def __init__(self) -> None:
+        self.system_prompt = SYSTEM_PROMPT
+        self.history: list[dict] = []
+
+    def chat(self, user_message: str) -> str:
+        """Send a message and return the agent's response (placeholder)."""
+        # TODO: wire up LLM provider
+        self.history.append({"role": "user", "content": user_message})
+        reply = f"[{{ spawn_name }}] received: {user_message}"
+        self.history.append({"role": "assistant", "content": reply})
+        return reply
+
+    def interactive(self) -> None:
+        """Start an interactive CLI session."""
+        print(f"{{ spawn_name }} interactive mode. Type 'quit' to exit.")
+        while True:
+            try:
+                user_input = input("You: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if user_input.lower() in ("quit", "exit", "q"):
+                break
+            if not user_input:
+                continue
+            response = self.chat(user_input)
+            print(f"Agent: {response}")

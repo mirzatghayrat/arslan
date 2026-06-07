@@ -1,0 +1,22 @@
+spawn_name: "{{ spawn_name }}"
+domain: "{{ domain }}"
+
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.7
+  max_tokens: 2048
+
+persona:
+  role: "{{ persona_role }}"
+  tone: "{{ persona_tone }}"
+
+web:
+  port: {{ web_port }}
+  host: "0.0.0.0"
+
+tools:
+{% for tool in tools %}
+  - name: "{{ tool.name }}"
+    description: "{{ tool.description }}"
+{% endfor %}
