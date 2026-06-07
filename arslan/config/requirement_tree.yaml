@@ -1,0 +1,119 @@
+# Arslan Requirement Tree
+# Defines the dialogue flow for gathering spawn requirements.
+# Each node maps to a question phase; type indicates input strategy.
+
+nodes:
+  domain:
+    type: single-choice
+    prompt: "What domain should this agent operate in?"
+    categories:
+      - value: content-creator
+        label: "Content Creator"
+        subcategories:
+          - xiaohongshu
+          - weibo
+          - douyin
+          - instagram
+          - youtube
+          - blog
+      - value: customer-service
+        label: "Customer Service"
+        subcategories:
+          - e-commerce
+          - saas
+          - hospitality
+          - healthcare
+      - value: data-analysis
+        label: "Data Analysis"
+        subcategories:
+          - business-intelligence
+          - research
+          - finance
+          - marketing
+      - value: personal-assistant
+        label: "Personal Assistant"
+        subcategories:
+          - scheduling
+          - research
+          - writing
+          - productivity
+      - value: other
+        label: "Other"
+        subcategories: []
+
+  capabilities:
+    type: multi-choice
+    prompt: "What should this agent be able to do? (select all that apply)"
+    options:
+      - value: info-gathering
+        label: "Gather information from the web or databases"
+      - value: content-generation
+        label: "Generate written content (posts, reports, summaries)"
+      - value: qa-interaction
+        label: "Answer questions and hold conversations"
+      - value: scheduled-tasks
+        label: "Run tasks on a schedule (daily digest, reminders)"
+      - value: data-processing
+        label: "Process and analyse structured data"
+
+  persona:
+    type: composite
+    prompt: "Describe the agent's personality and role."
+    fields:
+      role:
+        type: text
+        prompt: "What is the agent's role? (e.g. '资深美妆博主', 'friendly support rep')"
+      tone:
+        type: single-choice
+        prompt: "Choose a tone:"
+        options:
+          - value: 数据实测型
+            label: "Data-driven / factual"
+          - value: 亲切友好型
+            label: "Warm and friendly"
+          - value: 专业严谨型
+            label: "Professional and rigorous"
+          - value: 幽默风趣型
+            label: "Humorous and playful"
+          - value: custom
+            label: "Custom (describe below)"
+
+  runtime:
+    type: composite
+    prompt: "How and where will this agent run?"
+    fields:
+      platform:
+        type: single-choice
+        prompt: "Deployment platform:"
+        options:
+          - value: web
+            label: "Web (browser interface)"
+          - value: cli
+            label: "CLI (command line)"
+          - value: api
+            label: "API (programmatic access)"
+          - value: mobile
+            label: "Mobile app"
+      trigger:
+        type: single-choice
+        prompt: "When does the agent activate?"
+        options:
+          - value: user
+            label: "On user message"
+          - value: schedule
+            label: "On a schedule (cron)"
+          - value: event
+            label: "On an external event / webhook"
+
+  spawn_name:
+    type: text
+    prompt: "Give your agent a name:"
+    placeholder: "e.g. 美妆助手, ContentBot, DataPilot"
+
+# Dialogue order — nodes are visited in this sequence
+order:
+  - domain
+  - capabilities
+  - persona
+  - runtime
+  - spawn_name
