@@ -81,3 +81,54 @@ def test_build_rejects_bad_token(monkeypatch):
     # monkeypatch reverts ARSLAN_API_TOKEN; reload config/auth so later tests see it unset.
     importlib.reload(config)
     importlib.reload(auth)
+
+
+def _drain_to_non_progress(ws):
+    msg = ws.receive_json()
+    while msg["type"] == "progress":
+        msg = ws.receive_json()
+    return msg
+
+
+def test_build_resume_after_reconnect(app_client):
+    # First connection: answer the domain node, then drop the socket.
+    with app_client.websocket_connect("/ws/build/sess-resume") as ws:
+        first = ws.receive_json()
+        assert first["node_id"] == "domain"
+        ws.send_json({"type": "user_message", "content": "xiaohongshu beauty creator"})
+        nxt = _drain_to_non_progress(ws)
+        assert nxt["type"] == "question"
+        resumed_node = nxt["node_id"]  # the node we should resume at
+
+    # Reconnect to the SAME session id: the server resends the current question.
+    with app_client.websocket_connect("/ws/build/sess-resume") as ws2:
+        resumed = ws2.receive_json()
+        assert resumed["type"] == "question"
+        assert resumed["node_id"] == resumed_node
+
+
+def test_build_duplicate_name_is_deduplicated(app_client):
+    answers_for = lambda name: [
+        "xiaohongshu beauty creator",
+        "content generation and q&a",
+        "a friendly senior beauty blogger",
+        "web",
+        name,
+    ]
+
+    def run(session_id, name):
+        with app_client.websocket_connect(f"/ws/build/{session_id}") as ws:
+            ws.receive_json()  # initial domain question
+            last = None
+            for ans in answers_for(name):
+                ws.send_json({"type": "user_message", "content": ans})
+                last = _drain_to_non_progress(ws)
+            return last
+
+    first = run("dup-a", "dup")
+    assert first["type"] == "build_complete"
+    assert first["spawn_name"] == "dup"
+
+    second = run("dup-b", "dup")
+    assert second["type"] == "build_complete"
+    assert second["spawn_name"] == "dup-2"  # auto-deduplicated

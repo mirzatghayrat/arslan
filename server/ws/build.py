@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from fastapi import WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 
 from arslan.core.dialogue import NODE_ORDER, DialogueEngine
 from arslan.models import SpawnBlueprint
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
-from server.db.models import BuildSession
+from server.db.models import BuildSession, Spawn
 from server.services import build_session_service as bss
 from server.services import spawn_service
 from server.ws import protocol
@@ -75,9 +76,17 @@ async def _finalize(session_id: str, engine: DialogueEngine) -> tuple[int, str]:
         generation_level=1,
     )
     async with db_session.AsyncSessionLocal() as db:
+        base_name = req.spawn_name or "unnamed-spawn"
+        name = base_name
+        suffix = 2
+        while (
+            await db.execute(select(Spawn.id).where(Spawn.name == name))
+        ).first() is not None:
+            name = f"{base_name}-{suffix}"
+            suffix += 1
         spawn = await spawn_service.create_spawn(
             db,
-            name=req.spawn_name or "unnamed-spawn",
+            name=name,
             domain_category=req.domain.category if req.domain else "other",
             domain_subcategory=req.domain.subcategory if req.domain else None,
             capabilities=req.capabilities,
@@ -153,4 +162,16 @@ async def build_endpoint(ws: WebSocket, session_id: str) -> None:
             await _send_current_question(ws, engine)
     except WebSocketDisconnect:
         # State is already persisted after each answer; nothing to do.
+        return
+    except Exception as exc:  # noqa: BLE001
+        # Any non-disconnect failure: surface an error frame + clean close,
+        # never a silent socket death. State is persisted per-answer, so the
+        # client can reconnect and resume.
+        try:
+            await ws.send_json(
+                protocol.error("INTERNAL_ERROR", str(exc), recoverable=True)
+            )
+            await ws.close(code=1011)
+        except Exception:  # noqa: BLE001
+            pass
         return
