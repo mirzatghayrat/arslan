@@ -1,0 +1,9 @@
+name: deepseek-v3
+provider: openai
+reasoning: 4
+tool_use: 3
+chinese: 5
+creative: 4
+instruction: 4
+max_context: 64000
+cost_per_1k_tokens: 0.001

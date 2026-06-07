@@ -1,0 +1,9 @@
+name: gpt-4o
+provider: openai
+reasoning: 5
+tool_use: 5
+chinese: 4
+creative: 4
+instruction: 5
+max_context: 128000
+cost_per_1k_tokens: 0.005

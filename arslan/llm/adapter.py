@@ -1,0 +1,101 @@
+"""Unified LLMAdapter — thin facade over any provider with profile loading."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from arslan.llm.providers.base import BaseLLMProvider
+from arslan.llm.providers.openai_provider import OpenAIProvider
+from arslan.models import CapabilityProfile, LLMResponse
+
+# Directory that holds the bundled YAML capability profiles
+_PROFILES_DIR = Path(__file__).parent / "profiles"
+
+# Default profile values used when no YAML is found for the requested model
+_DEFAULT_PROFILE_VALUES: dict[str, Any] = {
+    "reasoning": 3,
+    "tool_use": 3,
+    "chinese": 3,
+    "creative": 3,
+    "instruction": 3,
+    "max_context": 8000,
+    "cost_per_1k_tokens": 0.0,
+}
+
+# Registry mapping provider_name -> provider class
+_PROVIDER_REGISTRY: dict[str, type[BaseLLMProvider]] = {
+    "openai": OpenAIProvider,
+    # Future providers (anthropic, ollama, …) will be added here
+}
+
+
+class LLMAdapter:
+    """Single entry-point for all LLM interactions.
+
+    Usage::
+
+        adapter = LLMAdapter("openai", "gpt-4o", api_key="sk-...")
+        response = await adapter.chat("You are helpful.", "Hello!")
+        profile = adapter.load_profile("gpt-4o")
+    """
+
+    def __init__(
+        self,
+        provider_name: str,
+        model: str,
+        api_key: str = "",
+        base_url: str = "",
+    ) -> None:
+        self.provider_name = provider_name
+        self.model = model
+        self._provider = self._create_provider(provider_name, model, api_key, base_url)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def load_profile(self, model: str) -> CapabilityProfile:
+        """Return the CapabilityProfile for *model*, falling back to defaults."""
+        yaml_path = _PROFILES_DIR / f"{model}.yaml"
+        if yaml_path.exists():
+            with yaml_path.open("r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+            return CapabilityProfile(**data)
+
+        # Fallback: unknown model → conservative defaults
+        return CapabilityProfile(
+            name=model,
+            provider=self.provider_name,
+            **_DEFAULT_PROFILE_VALUES,
+        )
+
+    async def chat(
+        self,
+        system: str,
+        user: str,
+        history: list[dict[str, Any]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+    ) -> LLMResponse:
+        """Build messages and delegate to the underlying provider."""
+        messages = self._provider.build_messages(system, user, history)
+        return await self._provider.chat(messages, tools=tools, temperature=temperature)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _create_provider(
+        provider_name: str,
+        model: str,
+        api_key: str,
+        base_url: str,
+    ) -> BaseLLMProvider:
+        provider_cls = _PROVIDER_REGISTRY.get(provider_name)
+        if provider_cls is None:
+            # Graceful fallback: use OpenAI-compatible interface with supplied base_url
+            return OpenAIProvider(model=model, api_key=api_key, base_url=base_url)
+        return provider_cls(model=model, api_key=api_key, base_url=base_url)
