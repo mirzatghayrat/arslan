@@ -65,7 +65,12 @@ class OpenAIProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
-        """Stream content deltas from an OpenAI-compatible SSE endpoint."""
+        """Stream content deltas from an OpenAI-compatible SSE endpoint.
+
+        Yields text content deltas only. Tool-call deltas (delta.tool_calls)
+        are NOT surfaced on this path; callers needing tool calls should use
+        the non-streaming chat() instead.
+        """
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -88,7 +93,8 @@ class OpenAIProvider(BaseLLMProvider):
                 timeout=60.0,
             ) as response:
                 response.raise_for_status()
-                async for line in response.aiter_lines():
+                async for raw_line in response.aiter_lines():
+                    line = raw_line.lstrip()
                     if not line or not line.startswith("data:"):
                         continue
                     data = line[len("data:") :].strip()

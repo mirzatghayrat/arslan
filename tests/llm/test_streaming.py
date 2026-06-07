@@ -32,9 +32,15 @@ async def test_openai_chat_stream_parses_sse(monkeypatch):
     import arslan.llm.providers.openai_provider as op
 
     sse_lines = [
+        "",  # blank keep-alive line
+        ": ping",  # SSE comment line
+        'data: {"choices":[{"delta":{"role":"assistant"}}]}',  # role-only, no content
         'data: {"choices":[{"delta":{"content":"Hello"}}]}',
-        'data: {"choices":[{"delta":{"content":" there"}}]}',
+        "data: not-json",  # malformed -> skipped
+        'data: {"choices":[]}',  # empty choices -> skipped
+        '  data: {"choices":[{"delta":{"content":" there"}}]}',  # leading whitespace
         "data: [DONE]",
+        'data: {"choices":[{"delta":{"content":"AFTER-DONE"}}]}',  # must NOT appear (after [DONE])
     ]
 
     class _FakeStreamResponse:
