@@ -14,7 +14,7 @@ from server.db.session import engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and prune stale build sessions on startup."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from sqlalchemy import delete
 
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
     async with AsyncSessionLocal() as db:
         await db.execute(
             delete(BuildSession).where(BuildSession.updated_at < cutoff)
@@ -88,13 +88,17 @@ def create_app() -> FastAPI:
             app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
 
         index_file = static_dir / "index.html"
+        static_root = static_dir.resolve()
 
         @app.get("/{full_path:path}")
         async def _spa_fallback(full_path: str):  # noqa: ANN202
             # API and WS routes are matched earlier; anything else serves the SPA.
-            candidate = static_dir / full_path
-            if full_path and candidate.is_file():
-                return FileResponse(str(candidate))
+            # Resolve and confirm containment to prevent path traversal
+            # (e.g. percent-encoded "../" escaping the static directory).
+            if full_path:
+                candidate = (static_dir / full_path).resolve()
+                if candidate.is_file() and candidate.is_relative_to(static_root):
+                    return FileResponse(str(candidate))
             return FileResponse(str(index_file))
 
     return app

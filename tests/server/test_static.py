@@ -62,3 +62,19 @@ async def test_api_404_still_json(client):
     resp = await client.get("/api/v1/spawns/12345")
     assert resp.status_code == 404
     assert resp.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.asyncio
+async def test_path_traversal_is_blocked(client):
+    # Percent-encoded ../ must NOT escape the static dir; it falls back to index.
+    resp = await client.get("/%2e%2e/%2e%2e/%2e%2e/etc/hosts")
+    assert resp.status_code == 200
+    assert "Arslan" in resp.text  # served index.html, NOT /etc/hosts
+    assert "localhost" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_serves_real_static_asset(client):
+    resp = await client.get("/assets/app.js")
+    assert resp.status_code == 200
+    assert "console.log" in resp.text
