@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from typing import Any
 
 from arslan.models import LLMResponse
@@ -49,3 +50,17 @@ class BaseLLMProvider(ABC):
             messages.extend(history)
         messages.append({"role": "user", "content": user})
         return messages
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """Default streaming: call chat() once and yield the full content.
+
+        Providers that support real token streaming override this.
+        """
+        response = await self.chat(messages, tools=tools, temperature=temperature)
+        if response.content:
+            yield response.content

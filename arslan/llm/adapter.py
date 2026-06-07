@@ -1,6 +1,7 @@
 """Unified LLMAdapter — thin facade over any provider with profile loading."""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,21 @@ class LLMAdapter:
         """Build messages and delegate to the underlying provider."""
         messages = self._provider.build_messages(system, user, history)
         return await self._provider.chat(messages, tools=tools, temperature=temperature)
+
+    async def chat_stream(
+        self,
+        system: str,
+        user: str,
+        history: list[dict[str, Any]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """Build messages and stream content deltas from the provider."""
+        messages = self._provider.build_messages(system, user, history)
+        async for piece in self._provider.chat_stream(
+            messages, tools=tools, temperature=temperature
+        ):
+            yield piece
 
     # ------------------------------------------------------------------
     # Private helpers
