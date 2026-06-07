@@ -1,0 +1,79 @@
+"""Pydantic DTOs for request bodies and responses."""
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+
+class SettingsIn(BaseModel):
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    language: str | None = None
+
+
+class SettingsOut(BaseModel):
+    llm_provider: str = ""
+    llm_model: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = ""  # masked
+    language: str = "en"
+
+
+class SpawnOut(BaseModel):
+    id: int
+    name: str
+    domain: str
+    capabilities: list[str]
+    template_used: str | None = None
+    generation_level: int = 1
+    created_at: str
+    updated_at: str
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    timestamp: str
+
+
+class SpawnDetailOut(SpawnOut):
+    persona_role: str | None = None
+    persona_tone: str | None = None
+    system_prompt: str = ""
+    messages: list[ChatMessageOut] = []
+
+
+class ConfigUpdateIn(BaseModel):
+    system_prompt: str | None = None
+    persona_tone: str | None = None
+    persona_role: str | None = None
+    config: dict[str, Any] | None = None
+
+
+class TemplateOut(BaseModel):
+    name: str
+    domain: str
+    description: str = ""
+    tags: list[str] = []
+
+
+class FeedbackIn(BaseModel):
+    message_id: int | None = None
+    user_action: str  # "thumbs_up" | "thumbs_down" | "edit"
+    edits: dict[str, Any] = {}
+
+
+class EvolutionRuleOut(BaseModel):
+    rule_type: str
+    rule: str
+    confidence: float
+    sample_size: int
+
+
+class EvolutionOut(BaseModel):
+    feedback_count: int
+    active_rules: list[EvolutionRuleOut]
