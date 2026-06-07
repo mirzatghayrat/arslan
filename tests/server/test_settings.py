@@ -65,3 +65,29 @@ async def test_set_and_get_settings_masks_key(session, monkeypatch):
     # The raw, decrypted key is retrievable internally for LLM calls:
     raw = await settings_service.get_decrypted_api_key(session)
     assert raw == "sk-secret-9999"
+
+
+@pytest.mark.asyncio
+async def test_get_settings_survives_key_rotation(session, monkeypatch):
+    # Encrypt under one secret key...
+    monkeypatch.setenv("ARSLAN_SECRET_KEY", "old-secret")
+    import server.config as config
+
+    importlib.reload(config)
+    import server.crypto as crypto
+
+    importlib.reload(crypto)
+    from server.services import settings_service
+
+    importlib.reload(settings_service)
+    await settings_service.update_settings(session, {"llm_api_key": "sk-rotate-1234"})
+
+    # ...then rotate the secret key. The old ciphertext can no longer be decrypted.
+    monkeypatch.setenv("ARSLAN_SECRET_KEY", "new-secret")
+    importlib.reload(config)
+    importlib.reload(crypto)
+    importlib.reload(settings_service)
+
+    out = await settings_service.get_settings(session)  # must NOT raise
+    assert out["llm_api_key"] == ""  # degraded to unset
+    assert await settings_service.get_decrypted_api_key(session) == ""
