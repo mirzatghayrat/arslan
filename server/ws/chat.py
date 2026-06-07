@@ -120,3 +120,14 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
             await ws.send_json(protocol.stream_end(msg_id))
     except WebSocketDisconnect:
         return
+    except Exception as exc:  # noqa: BLE001
+        # Any non-disconnect failure: surface an error frame + clean close,
+        # never a silent socket death (mirrors the build WS endpoint).
+        try:
+            await ws.send_json(
+                protocol.error("INTERNAL_ERROR", str(exc), recoverable=True)
+            )
+            await ws.close(code=1011)
+        except Exception:  # noqa: BLE001
+            pass
+        return

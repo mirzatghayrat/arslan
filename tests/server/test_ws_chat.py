@@ -3,6 +3,7 @@ import anyio
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from starlette.websockets import WebSocketDisconnect
 
 import server.db.session as db_session
 import server.ws.chat as chat_module
@@ -95,6 +96,26 @@ def test_chat_resume_replays_missed(app_client):
 
 
 def test_chat_missing_spawn_closes_4004(app_client):
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect) as exc_info:
         with app_client.websocket_connect("/ws/chat/999") as ws:
             ws.receive_json()
+    assert exc_info.value.code == 4004
+
+
+def test_chat_llm_error_emits_recoverable_error_frame(app_client, monkeypatch):
+    # Override the stubbed stream so the LLM "fails" mid-turn.
+    async def _boom(self, system, user, history=None, tools=None, temperature=0.7):
+        raise RuntimeError("llm down")
+        yield ""  # unreachable; makes this an async generator
+
+    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _boom)
+
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()  # history frame
+        ws.send_json({"type": "user_message", "content": "hi"})
+        start = ws.receive_json()
+        assert start["type"] == "stream_start"
+        err = ws.receive_json()
+        assert err["type"] == "error"
+        assert err["code"] == "LLM_ERROR"
+        assert err["recoverable"] is True
