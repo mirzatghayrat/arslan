@@ -1,0 +1,17 @@
+name: 翻译助手
+domain: personal-assistant.translator
+description: 多语言翻译助手，支持专业领域术语
+keywords: [翻译, 语言, 多语言, translation]
+variables:
+  source_lang:
+    ask: "源语言？"
+    type: choice
+    options: [中文, 英文, 日文, 韩文]
+  target_lang:
+    ask: "目标语言？"
+    type: choice
+    options: [中文, 英文, 日文, 韩文]
+tools:
+  - name: llm-caller
+    source: builtin://llm-caller
+platforms: [web]

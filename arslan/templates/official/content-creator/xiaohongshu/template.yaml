@@ -1,0 +1,19 @@
+name: 小红书内容创作
+domain: content-creator.xiaohongshu
+description: 追踪小红书热点话题，自动生成平台风格的种草/测评/科普内容
+keywords: [小红书, 内容创作, 美妆, 穿搭, 美食, 种草, 社交媒体]
+variables:
+  category:
+    ask: "你主要做什么品类？"
+    type: choice
+    options: [美妆, 穿搭, 美食, 家居, 数码, 母婴]
+  style:
+    ask: "内容风格？"
+    type: choice
+    options: [数据实测, 情感种草, 专业科普, 日常分享]
+tools:
+  - name: web-search
+    source: builtin://web-search
+  - name: llm-caller
+    source: builtin://llm-caller
+platforms: [web]
