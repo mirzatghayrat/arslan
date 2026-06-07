@@ -38,6 +38,16 @@ async def test_feedback_on_missing_spawn_404(client):
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_feedback_rejects_invalid_action(client):
+    spawn_id = await _seed(client, name="evo-validate")
+    resp = await client.post(
+        f"/api/v1/spawns/{spawn_id}/feedback",
+        json={"user_action": "lgtm", "edits": {}},
+    )
+    assert resp.status_code == 422
+
+
 def test_action_mapping():
     from server.services.evolution_service import map_user_action
 

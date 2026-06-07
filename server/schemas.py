@@ -1,7 +1,7 @@
 """Pydantic DTOs for request bodies and responses."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -63,7 +63,7 @@ class TemplateOut(BaseModel):
 
 class FeedbackIn(BaseModel):
     message_id: int | None = None
-    user_action: str  # "thumbs_up" | "thumbs_down" | "edit"
+    user_action: Literal["thumbs_up", "thumbs_down", "edit", "regenerate"]
     edits: dict[str, Any] = {}
 
 
