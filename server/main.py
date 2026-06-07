@@ -25,11 +25,46 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
 
+    from server.api import spawns as spawns_api
+
+    app.include_router(spawns_api.router, prefix="/api/v1")
+
+    # Test-only helper to seed a spawn without going through the build socket.
+    import os
+
+    if os.environ.get("ARSLAN_TEST_ROUTES") == "1":
+        _register_test_routes(app)
+
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
 
     return app
+
+
+def _register_test_routes(app: FastAPI) -> None:
+    from fastapi import Depends as _Depends
+    from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
+
+    from server.db.session import get_session as _get_session
+    from server.services import spawn_service as _spawn_service
+
+    @app.post("/api/v1/_test/seed_spawn")
+    async def _seed_spawn(  # noqa: ANN202
+        body: dict, session: _AsyncSession = _Depends(_get_session)
+    ):
+        spawn = await _spawn_service.create_spawn(
+            session,
+            name=body.get("name", "test-spawn"),
+            domain_category="content-creator",
+            domain_subcategory="xiaohongshu",
+            capabilities=["content-generation"],
+            persona_role="beauty blogger",
+            persona_tone="friendly",
+            system_prompt="You are a beauty expert.",
+            generation_level=1,
+        )
+        return {"id": spawn.id}
 
 
 app = create_app()

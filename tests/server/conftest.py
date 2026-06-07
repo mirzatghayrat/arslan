@@ -12,6 +12,10 @@ from server.db.session import get_session
 @pytest_asyncio.fixture
 async def client(tmp_path):
     """Async HTTP client with an isolated temp-file SQLite DB."""
+    import os
+
+    os.environ["ARSLAN_TEST_ROUTES"] = "1"
+
     from server.main import create_app
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}")
