@@ -53,6 +53,12 @@ def create_app() -> FastAPI:
     async def _ws_build(websocket: WebSocket, session_id: str):  # noqa: ANN202
         await build_endpoint(websocket, session_id)
 
+    from server.ws.chat import chat_endpoint
+
+    @app.websocket("/ws/chat/{spawn_id}")
+    async def _ws_chat(websocket: WebSocket, spawn_id: int):  # noqa: ANN202
+        await chat_endpoint(websocket, spawn_id)
+
     return app
 
 
