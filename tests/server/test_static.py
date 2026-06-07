@@ -18,6 +18,8 @@ async def client(tmp_path, monkeypatch):
     (static_dir / "index.html").write_text("<!doctype html><title>Arslan</title>")
     (static_dir / "assets").mkdir()
     (static_dir / "assets" / "app.js").write_text("console.log('hi')")
+    # Sentinel file one level ABOVE static_dir, used by the traversal test.
+    (tmp_path / "secret.txt").write_text("TOPSECRET-DO-NOT-LEAK")
 
     monkeypatch.setenv("ARSLAN_STATIC_DIR", str(static_dir))
     import importlib
@@ -66,11 +68,13 @@ async def test_api_404_still_json(client):
 
 @pytest.mark.asyncio
 async def test_path_traversal_is_blocked(client):
-    # Percent-encoded ../ must NOT escape the static dir; it falls back to index.
-    resp = await client.get("/%2e%2e/%2e%2e/%2e%2e/etc/hosts")
+    # %2e%2e decodes to ".." AFTER httpx, so the server receives literal "../".
+    # A single level up from static_dir reaches the planted sentinel file.
+    # The containment check must reject it and fall back to index.html.
+    resp = await client.get("/%2e%2e/secret.txt")
     assert resp.status_code == 200
-    assert "Arslan" in resp.text  # served index.html, NOT /etc/hosts
-    assert "localhost" not in resp.text
+    assert "TOPSECRET" not in resp.text  # did NOT escape to the sentinel
+    assert "Arslan" in resp.text          # served index.html instead
 
 
 @pytest.mark.asyncio
