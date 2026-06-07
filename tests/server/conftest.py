@@ -15,6 +15,11 @@ async def client(tmp_path):
     import os
 
     os.environ["ARSLAN_TEST_ROUTES"] = "1"
+    os.environ["ARSLAN_SPAWNS_DIR"] = str(tmp_path / "spawns")
+    import server.config as _config
+    import importlib as _il
+
+    _il.reload(_config)
 
     from server.main import create_app
 

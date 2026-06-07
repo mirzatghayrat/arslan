@@ -1,0 +1,69 @@
+"""Evolution + feedback wrapper over the core EvolutionEngine (per-spawn dirs)."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from arslan.core.evolution import EvolutionEngine
+from arslan.models import FeedbackEntry
+from server import config
+
+# REST vocabulary -> core EvolutionEngine vocabulary.
+_ACTION_MAP = {
+    "thumbs_up": "accepted",
+    "thumbs_down": "rejected",
+    "edit": "edited",
+    "regenerate": "regenerated",
+}
+
+
+def map_user_action(action: str) -> str:
+    """Translate a REST feedback action to the core engine's vocabulary."""
+    return _ACTION_MAP.get(action, action)
+
+
+def _engine_for(spawn_name: str) -> EvolutionEngine:
+    evolution_dir = config.settings.spawns_dir / spawn_name / ".evolution"
+    return EvolutionEngine(evolution_dir)
+
+
+def record_feedback(
+    spawn_name: str,
+    *,
+    session_id: str,
+    user_input: str,
+    agent_output: str,
+    user_action: str,
+    edits: dict,
+) -> None:
+    """Persist a feedback entry and re-derive rules."""
+    engine = _engine_for(spawn_name)
+    entry = FeedbackEntry(
+        session_id=session_id,
+        user_input=user_input,
+        agent_output=agent_output,
+        user_action=map_user_action(user_action),
+        edits=edits or {},
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    engine.record_feedback(entry)
+    rules = engine.analyze_patterns()
+    if rules:
+        engine.save_rules(rules)
+
+
+def get_stats(spawn_name: str) -> dict:
+    """Return feedback count + active rules for a spawn."""
+    engine = _engine_for(spawn_name)
+    active = engine.get_active_rules()
+    return {
+        "feedback_count": engine.feedback_store.count(),
+        "active_rules": [
+            {
+                "rule_type": r.rule_type,
+                "rule": r.rule,
+                "confidence": r.confidence,
+                "sample_size": r.sample_size,
+            }
+            for r in active
+        ],
+    }

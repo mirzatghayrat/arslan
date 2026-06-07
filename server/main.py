@@ -35,6 +35,14 @@ def create_app() -> FastAPI:
     if os.environ.get("ARSLAN_TEST_ROUTES") == "1":
         _register_test_routes(app)
 
+    from server.api import templates as templates_api
+
+    app.include_router(templates_api.router, prefix="/api/v1")
+
+    from server.api import evolution as evolution_api
+
+    app.include_router(evolution_api.router, prefix="/api/v1")
+
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
