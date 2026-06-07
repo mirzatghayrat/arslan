@@ -7,6 +7,10 @@ from arslan.core.dialogue import DialogueEngine
 from arslan.models import SpawnRequirements
 
 
+# NOTE: serialize/restore intentionally read & write DialogueState._filled, a
+# private attribute of the core dataclass. This is the only way to capture build
+# progress without modifying arslan/ core. If DialogueState's internals change,
+# update both functions here (the round-trip test guards this coupling).
 def serialize_state(state: Any) -> dict[str, Any]:
     """Convert a DialogueState into a JSON-safe dict."""
     return {
@@ -23,4 +27,4 @@ def restore_state(engine: DialogueEngine, data: dict[str, Any]) -> None:
     state.current_node = data["current_node"]
     state.current_index = data["current_index"]
     state.requirements = SpawnRequirements(**data["requirements"])
-    state._filled = set(data.get("filled", []))
+    state._filled = set(data["filled"])
