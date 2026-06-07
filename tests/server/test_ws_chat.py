@@ -95,6 +95,24 @@ def test_chat_resume_replays_missed(app_client):
         assert any(m["role"] == "assistant" for m in replayed)
 
 
+def test_history_frame_uses_message_id_key(app_client):
+    # Produce one stored exchange.
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()  # initial (empty) history
+        ws.send_json({"type": "user_message", "content": "hello"})
+        while ws.receive_json()["type"] != "stream_end":
+            pass
+    # Reconnect: the history frame should now list stored messages with message_id.
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        hist = ws.receive_json()
+        assert hist["type"] == "history"
+        assert len(hist["messages"]) >= 1
+        for m in hist["messages"]:
+            assert "message_id" in m
+            assert "id" not in m
+            assert "role" in m and "content" in m
+
+
 def test_chat_missing_spawn_closes_4004(app_client):
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with app_client.websocket_connect("/ws/chat/999") as ws:

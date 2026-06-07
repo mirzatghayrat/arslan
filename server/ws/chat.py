@@ -67,7 +67,8 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
         {
             "type": "history",
             "messages": [
-                {"id": m.id, "role": m.role, "content": m.content} for m in existing
+                {"message_id": m.id, "role": m.role, "content": m.content}
+                for m in existing
             ],
         }
     )
