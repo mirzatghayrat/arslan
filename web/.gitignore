@@ -1,0 +1,7 @@
+node_modules/
+dist/
+# Source directory, not a build artifact (overrides root build/ rule)
+!src/components/build/
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
