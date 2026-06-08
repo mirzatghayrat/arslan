@@ -59,11 +59,18 @@
     "theme_light": "Claro",
     "save": "Guardar",
     "saved": "Ajustes guardados",
-    "token_label": "Token de API (servidor)"
+    "token_label": "Token de API (servidor)",
+    "server_section": "Conexión al servidor",
+    "api_token": "Token de API",
+    "api_token_hint": "Solo es necesario si tu servidor lo requiere. Se guarda en este navegador."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
     "save_failed": "No se pudo guardar.",
-    "llm_error": "Error del LLM: {{message}}"
+    "llm_error": "Error del LLM: {{message}}",
+    "server_error": "Error del servidor",
+    "auth_failed": "Error de autenticación: revisa tu token de API en Ajustes.",
+    "page_not_found": "Página no encontrada",
+    "dismiss": "Descartar"
   }
 }

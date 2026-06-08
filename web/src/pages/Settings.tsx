@@ -2,14 +2,18 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import ThemeToggle from "../components/layout/ThemeToggle";
+import { useAuthStore } from "../stores/authStore";
 import type { AppSettings } from "../types";
 
 const PROVIDERS = ["openai", "anthropic", "deepseek", "ollama"];
 
 export default function Settings() {
   const { t } = useTranslation();
+  const token = useAuthStore((s) => s.token);
+  const setToken = useAuthStore((s) => s.setToken);
   const [form, setForm] = useState<AppSettings | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -31,6 +35,10 @@ export default function Settings() {
     const updated = await api.updateSettings(body);
     setForm(updated);
     setApiKey("");
+    if (tokenInput) {
+      setToken(tokenInput);
+      setTokenInput("");
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -85,6 +93,21 @@ export default function Settings() {
             className="mt-1 w-full rounded-lg bg-white/10 px-3 py-2"
           />
           <span className="text-xs text-white/40">{t("settings.api_key_hint")}</span>
+        </label>
+      </section>
+
+      <section className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-5">
+        <h2 className="font-medium text-amber">{t("settings.server_section")}</h2>
+        <label className="block text-sm">
+          {t("settings.api_token")}
+          <input
+            type="password"
+            value={tokenInput}
+            placeholder={token ? "••••••••" : t("settings.api_token")}
+            onChange={(e) => setTokenInput(e.target.value)}
+            className="mt-1 w-full rounded-lg bg-white/10 px-3 py-2"
+          />
+          <span className="text-xs text-white/40">{t("settings.api_token_hint")}</span>
         </label>
       </section>
 

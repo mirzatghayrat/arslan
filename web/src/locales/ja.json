@@ -59,11 +59,18 @@
     "theme_light": "ライト",
     "save": "保存",
     "saved": "設定を保存しました",
-    "token_label": "API トークン（サーバー）"
+    "token_label": "API トークン（サーバー）",
+    "server_section": "サーバー接続",
+    "api_token": "API トークン",
+    "api_token_hint": "サーバーが必要とする場合のみ入力してください。このブラウザに保存されます。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
     "save_failed": "保存に失敗しました。",
-    "llm_error": "LLM エラー：{{message}}"
+    "llm_error": "LLM エラー：{{message}}",
+    "server_error": "サーバーエラー",
+    "auth_failed": "認証に失敗しました — 設定で API トークンを確認してください。",
+    "page_not_found": "ページが見つかりません",
+    "dismiss": "閉じる"
   }
 }

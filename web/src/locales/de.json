@@ -59,11 +59,18 @@
     "theme_light": "Hell",
     "save": "Speichern",
     "saved": "Einstellungen gespeichert",
-    "token_label": "API-Token (Server)"
+    "token_label": "API-Token (Server)",
+    "server_section": "Serververbindung",
+    "api_token": "API-Token",
+    "api_token_hint": "Nur erforderlich, wenn dein Server eines verlangt. In diesem Browser gespeichert."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
     "save_failed": "Speichern fehlgeschlagen.",
-    "llm_error": "LLM-Fehler: {{message}}"
+    "llm_error": "LLM-Fehler: {{message}}",
+    "server_error": "Serverfehler",
+    "auth_failed": "Authentifizierung fehlgeschlagen – überprüfe dein API-Token in den Einstellungen.",
+    "page_not_found": "Seite nicht gefunden",
+    "dismiss": "Schließen"
   }
 }

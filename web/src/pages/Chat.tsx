@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -23,6 +23,7 @@ export default function Chat() {
     appendChunk,
     finalizeStreaming,
   } = useChatStore();
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const onMessage = useCallback(
     (raw: unknown) => {
@@ -53,14 +54,21 @@ export default function Chat() {
             content: msg.content,
           });
           break;
+        case "error":
+          setErrorMsg(`${t("errors.server_error")}: ${msg.message}`);
+          break;
         default:
           break;
       }
     },
-    [setHistory, startStreaming, appendChunk, finalizeStreaming, addMessage],
+    [setHistory, startStreaming, appendChunk, finalizeStreaming, addMessage, t],
   );
 
-  const { send, reconnecting } = useWebSocket(`/ws/chat/${id}`, onMessage);
+  const handleAuthFail = useCallback(() => setErrorMsg(t("errors.auth_failed")), [t]);
+
+  const { send, reconnecting } = useWebSocket(`/ws/chat/${id}`, onMessage, {
+    onAuthFail: handleAuthFail,
+  });
 
   useEffect(() => {
     // Reset store when switching spawns.
@@ -85,6 +93,14 @@ export default function Chat() {
   return (
     <div className="flex h-[70vh] flex-col">
       <h1 className="mb-2 text-xl font-semibold">{t("chat.title", { name: id })}</h1>
+      {errorMsg && (
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+          <span>{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="text-red-300/70 hover:text-red-200">
+            {t("errors.dismiss")}
+          </button>
+        </div>
+      )}
       {reconnecting && <p className="mb-2 text-sm text-amber">{t("chat.reconnecting")}</p>}
 
       <div className="flex-1 space-y-3 overflow-y-auto pb-4">

@@ -59,11 +59,18 @@
     "theme_light": "Clair",
     "save": "Enregistrer",
     "saved": "Paramètres enregistrés",
-    "token_label": "Jeton API (serveur)"
+    "token_label": "Jeton API (serveur)",
+    "server_section": "Connexion au serveur",
+    "api_token": "Jeton API",
+    "api_token_hint": "Nécessaire uniquement si votre serveur en exige un. Enregistré dans ce navigateur."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
     "save_failed": "Échec de l'enregistrement.",
-    "llm_error": "Erreur du LLM : {{message}}"
+    "llm_error": "Erreur du LLM : {{message}}",
+    "server_error": "Erreur du serveur",
+    "auth_failed": "Échec de l'authentification — vérifiez votre jeton API dans les Paramètres.",
+    "page_not_found": "Page introuvable",
+    "dismiss": "Fermer"
   }
 }

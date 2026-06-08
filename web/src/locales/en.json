@@ -59,11 +59,18 @@
     "theme_light": "Light",
     "save": "Save",
     "saved": "Settings saved",
-    "token_label": "API Token (server)"
+    "token_label": "API Token (server)",
+    "server_section": "Server Connection",
+    "api_token": "API Token",
+    "api_token_hint": "Only needed if your server requires one. Saved in this browser."
   },
   "errors": {
     "load_failed": "Failed to load data.",
     "save_failed": "Failed to save.",
-    "llm_error": "LLM error: {{message}}"
+    "llm_error": "LLM error: {{message}}",
+    "server_error": "Server error",
+    "auth_failed": "Authentication failed — check your API token in Settings.",
+    "page_not_found": "Page not found",
+    "dismiss": "Dismiss"
   }
 }

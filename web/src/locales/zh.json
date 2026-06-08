@@ -59,11 +59,18 @@
     "theme_light": "浅色",
     "save": "保存",
     "saved": "设置已保存",
-    "token_label": "API 令牌（服务器）"
+    "token_label": "API 令牌（服务器）",
+    "server_section": "服务器连接",
+    "api_token": "API 令牌",
+    "api_token_hint": "仅当你的服务器需要时才填写。保存在此浏览器中。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
     "save_failed": "保存失败。",
-    "llm_error": "LLM 错误：{{message}}"
+    "llm_error": "LLM 错误：{{message}}",
+    "server_error": "服务器错误",
+    "auth_failed": "身份验证失败——请在设置中检查你的 API 令牌。",
+    "page_not_found": "页面未找到",
+    "dismiss": "关闭"
   }
 }
