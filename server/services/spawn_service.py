@@ -1,0 +1,109 @@
+"""Spawn persistence and DTO mapping over the database."""
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from server.db.models import ChatMessage, Spawn
+from server.schemas import ChatMessageOut, SpawnDetailOut, SpawnOut
+
+
+def _domain(spawn: Spawn) -> str:
+    if spawn.domain_subcategory:
+        return f"{spawn.domain_category}.{spawn.domain_subcategory}"
+    return spawn.domain_category
+
+
+def to_summary(spawn: Spawn) -> SpawnOut:
+    return SpawnOut(
+        id=spawn.id,
+        name=spawn.name,
+        domain=_domain(spawn),
+        capabilities=spawn.capabilities or [],
+        template_used=spawn.template_used,
+        generation_level=spawn.generation_level or 1,
+        created_at=spawn.created_at.isoformat() if spawn.created_at else "",
+        updated_at=spawn.updated_at.isoformat() if spawn.updated_at else "",
+    )
+
+
+def to_detail(spawn: Spawn, messages: list[ChatMessage]) -> SpawnDetailOut:
+    return SpawnDetailOut(
+        **to_summary(spawn).model_dump(),
+        persona_role=spawn.persona_role,
+        persona_tone=spawn.persona_tone,
+        system_prompt=spawn.system_prompt or "",
+        messages=[
+            ChatMessageOut(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                timestamp=m.timestamp.isoformat() if m.timestamp else "",
+            )
+            for m in messages
+        ],
+    )
+
+
+async def list_spawns(session: AsyncSession) -> list[SpawnOut]:
+    result = await session.execute(select(Spawn).order_by(Spawn.created_at))
+    return [to_summary(s) for s in result.scalars().all()]
+
+
+async def get_spawn(session: AsyncSession, spawn_id: int) -> Spawn | None:
+    return await session.get(Spawn, spawn_id)
+
+
+async def get_detail(session: AsyncSession, spawn_id: int) -> SpawnDetailOut | None:
+    spawn = await session.get(Spawn, spawn_id)
+    if spawn is None:
+        return None
+    msgs = await session.execute(
+        select(ChatMessage)
+        .where(ChatMessage.spawn_id == spawn_id)
+        .order_by(ChatMessage.id)
+    )
+    return to_detail(spawn, list(msgs.scalars().all()))
+
+
+async def update_config(
+    session: AsyncSession,
+    spawn_id: int,
+    *,
+    system_prompt: str | None = None,
+    persona_tone: str | None = None,
+    persona_role: str | None = None,
+    config: dict | None = None,
+) -> Spawn | None:
+    spawn = await session.get(Spawn, spawn_id)
+    if spawn is None:
+        return None
+    if system_prompt is not None:
+        spawn.system_prompt = system_prompt
+    if persona_tone is not None:
+        spawn.persona_tone = persona_tone
+    if persona_role is not None:
+        spawn.persona_role = persona_role
+    if config is not None:
+        spawn.config = config
+    await session.commit()
+    await session.refresh(spawn)
+    return spawn
+
+
+async def delete_spawn(session: AsyncSession, spawn_id: int) -> bool:
+    spawn = await session.get(Spawn, spawn_id)
+    if spawn is None:
+        return False
+    await session.delete(spawn)
+    await session.commit()
+    return True
+
+
+async def create_spawn(session: AsyncSession, **fields) -> Spawn:
+    """Insert a spawn row. Used by the build WebSocket and test seeding."""
+    spawn = Spawn(**fields)
+    session.add(spawn)
+    await session.commit()
+    await session.refresh(spawn)
+    return spawn

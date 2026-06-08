@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -57,6 +58,59 @@ class OpenAIProvider(BaseLLMProvider):
             data = response.json()
 
         return self._parse_response(data)
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        """Stream content deltas from an OpenAI-compatible SSE endpoint.
+
+        Yields text content deltas only. Tool-call deltas (delta.tool_calls)
+        are NOT surfaced on this path; callers needing tool calls should use
+        the non-streaming chat() instead.
+        """
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=60.0,
+            ) as response:
+                response.raise_for_status()
+                async for raw_line in response.aiter_lines():
+                    line = raw_line.lstrip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = obj.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    content = delta.get("content")
+                    if content:
+                        yield content
 
     # ------------------------------------------------------------------
     # Private helpers
