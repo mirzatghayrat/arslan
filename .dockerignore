@@ -1,0 +1,12 @@
+**/__pycache__
+**/*.pyc
+.venv
+node_modules
+web/dist
+web/node_modules
+data
+.git
+*.db
+*.db-wal
+*.db-shm
+.superpowers

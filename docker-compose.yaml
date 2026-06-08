@@ -1,0 +1,17 @@
+# Compose Specification — no top-level `version:` key (obsolete since Compose v2)
+services:
+  arslan:
+    build: .
+    ports:
+      - "8741:8741"
+    volumes:
+      - arslan-data:/app/data
+    environment:
+      - ARSLAN_API_TOKEN=${ARSLAN_API_TOKEN:-}
+      - ARSLAN_SECRET_KEY=${ARSLAN_SECRET_KEY:-}
+      - ARSLAN_DB_PATH=/app/data/arslan.db
+      - ARSLAN_SPAWNS_DIR=/app/data/spawns
+    restart: unless-stopped
+
+volumes:
+  arslan-data:
