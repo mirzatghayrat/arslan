@@ -44,6 +44,12 @@ export class ReconnectingSocket {
 
   connect(): void {
     this.intentionalClose = false;
+    // Detach any previous socket's handlers so its late onclose can't trigger a ghost reconnect.
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onclose = null;
+    }
     const ws = new WebSocket(this.url());
     this.ws = ws;
 
@@ -82,14 +88,18 @@ export class ReconnectingSocket {
   }
 
   private scheduleReconnect(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     const delay = backoffDelay(this.attempt);
     this.attempt += 1;
     if (this.attempt >= 2) this.handlers.onReconnecting?.(this.attempt);
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
   }
 
   send(obj: unknown): void {
-    if (this.ws && this.ws.readyState === 1) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(obj));
     }
   }

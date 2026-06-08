@@ -4,6 +4,7 @@ import { ReconnectingSocket, backoffDelay } from "../api/ws";
 // Minimal fake WebSocket capturing instances for assertions.
 class FakeWS {
   static instances: FakeWS[] = [];
+  static OPEN = 1;
   url: string;
   readyState = 0;
   onopen: (() => void) | null = null;
@@ -98,5 +99,49 @@ describe("ReconnectingSocket", () => {
     s.close();
     vi.advanceTimersByTime(5000);
     expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it("sends a resume frame with last_message_id on reconnect", () => {
+    const s = new ReconnectingSocket("/ws/chat/1", { onMessage: () => {} });
+    s.lastMessageId = 5;
+    s.connect();
+    FakeWS.instances[0].open();
+    FakeWS.instances[0].fail(4408);
+    vi.advanceTimersByTime(2000);
+    // The new socket must announce where to resume from.
+    FakeWS.instances[1].open();
+    expect(FakeWS.instances[1].sent).toContain(
+      JSON.stringify({ type: "resume", last_message_id: 5 }),
+    );
+  });
+
+  it("does NOT reconnect on clean close 1000 or not-found 4004", () => {
+    const s1 = new ReconnectingSocket("/ws/chat/1", { onMessage: () => {} });
+    s1.connect();
+    FakeWS.instances[0].open();
+    FakeWS.instances[0].fail(1000);
+    vi.advanceTimersByTime(5000);
+    expect(FakeWS.instances.length).toBe(1);
+
+    FakeWS.instances = [];
+    const s2 = new ReconnectingSocket("/ws/chat/2", { onMessage: () => {} });
+    s2.connect();
+    FakeWS.instances[0].open();
+    FakeWS.instances[0].fail(4004);
+    vi.advanceTimersByTime(5000);
+    expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it("fires onReconnecting only from the second attempt", () => {
+    const onReconnecting = vi.fn();
+    const s = new ReconnectingSocket("/ws/chat/1", { onMessage: () => {}, onReconnecting });
+    s.connect();
+    FakeWS.instances[0].open();
+    FakeWS.instances[0].fail(4408);          // attempt 1 -> no banner
+    vi.advanceTimersByTime(2000);
+    expect(onReconnecting).not.toHaveBeenCalled();
+    FakeWS.instances[1].fail(4408);          // attempt 2 -> banner
+    vi.advanceTimersByTime(5000);
+    expect(onReconnecting).toHaveBeenCalled();
   });
 });
