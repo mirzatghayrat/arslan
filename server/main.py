@@ -80,6 +80,12 @@ def create_app() -> FastAPI:
     async def _ws_chat(websocket: WebSocket, spawn_id: int):  # noqa: ANN202
         await chat_endpoint(websocket, spawn_id)
 
+    from server.ws.arslan import arslan_endpoint
+
+    @app.websocket("/ws/arslan/{conversation_id}")
+    async def _ws_arslan(websocket: WebSocket, conversation_id: str):  # noqa: ANN202
+        await arslan_endpoint(websocket, conversation_id)
+
     import os
     from pathlib import Path
 
