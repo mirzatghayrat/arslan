@@ -20,3 +20,9 @@ htmlcov/
 .env
 spawns/*/
 !spawns/.gitkeep
+
+# Local runtime data (SQLite DB + generated spawns)
+data/
+*.db
+*.db-wal
+*.db-shm

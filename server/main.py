@@ -15,11 +15,18 @@ from server.db.session import engine
 async def lifespan(app: FastAPI):
     """Create tables and prune stale build sessions on startup."""
     from datetime import datetime, timedelta
+    from pathlib import Path
 
     from sqlalchemy import delete
 
+    from server.config import settings
     from server.db.models import BuildSession
     from server.db.session import AsyncSessionLocal
+
+    # Ensure data + spawns dirs exist before the DB file is created on first
+    # connect (SQLite will not create missing parent directories).
+    Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
+    settings.spawns_dir.mkdir(parents=True, exist_ok=True)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
