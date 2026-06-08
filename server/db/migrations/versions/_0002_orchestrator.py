@@ -114,16 +114,27 @@ def _upgrade(bind) -> None:  # noqa: ANN001
 
 
 def _downgrade(bind) -> None:  # noqa: ANN001
+    """Idempotent inverse of ``_upgrade``.
+
+    Mirrors the guarded upgrade: tables drop with ``checkfirst`` and column
+    drops are gated on inspector existence checks so a second/partial run is a
+    no-op. ``ALTER TABLE ... DROP COLUMN`` requires SQLite >= 3.35.
+    """
     metadata = sa.MetaData()
     tables = _table_defs(metadata)
     for name in ("router_decisions", "user_facts", "arslan_summaries", "arslan_messages"):
         tables[name].drop(bind, checkfirst=True)
-    for table, column in (
-        ("spawns", "level"),
-        ("spawns", "memory_facts"),
-        ("feedback", "quality_signal"),
-    ):
-        bind.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+
+    insp = sa.inspect(bind)
+    existing = set(insp.get_table_names())
+    spawn_cols = {c["name"] for c in insp.get_columns("spawns")} if "spawns" in existing else set()
+    if "level" in spawn_cols:
+        bind.execute(sa.text("ALTER TABLE spawns DROP COLUMN level"))
+    if "memory_facts" in spawn_cols:
+        bind.execute(sa.text("ALTER TABLE spawns DROP COLUMN memory_facts"))
+    fb_cols = {c["name"] for c in insp.get_columns("feedback")} if "feedback" in existing else set()
+    if "quality_signal" in fb_cols:
+        bind.execute(sa.text("ALTER TABLE feedback DROP COLUMN quality_signal"))
 
 
 def upgrade() -> None:
