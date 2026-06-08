@@ -1,0 +1,69 @@
+{
+  "app": { "name": "Arslan", "tagline": "Build your own AI spawns" },
+  "nav": { "dashboard": "Dashboard", "settings": "Settings" },
+  "dashboard": {
+    "title": "Your Spawns",
+    "create": "Create New Spawn",
+    "empty_title": "No spawns yet",
+    "empty_body": "Create your first AI spawn to get started.",
+    "stat_spawns": "Spawns",
+    "stat_conversations": "Conversations",
+    "stat_rules": "Active rules",
+    "status_active": "Active",
+    "status_idle": "Idle",
+    "open": "Open chat",
+    "delete": "Delete",
+    "confirm_delete": "Delete this spawn? This cannot be undone."
+  },
+  "build": {
+    "title": "Create New Spawn",
+    "step": "Step {{current}} of {{total}}",
+    "node_domain": "Domain",
+    "node_capabilities": "Capabilities",
+    "node_persona": "Persona",
+    "node_runtime": "Runtime",
+    "node_spawn_name": "Name",
+    "next": "Next",
+    "back": "Back",
+    "finish": "Create Spawn",
+    "placeholder": "Type your answer...",
+    "multi_hint": "Select one or more, then continue.",
+    "creating": "Creating your spawn...",
+    "reconnecting": "Reconnecting..."
+  },
+  "chat": {
+    "title": "Chat with {{name}}",
+    "placeholder": "Type a message...",
+    "send": "Send",
+    "thumbs_up": "Good response",
+    "thumbs_down": "Bad response",
+    "edit": "Edit",
+    "save_edit": "Save",
+    "cancel_edit": "Cancel",
+    "info": "Spawn info",
+    "stats": "Stats",
+    "reconnecting": "Reconnecting...",
+    "thinking": "Thinking..."
+  },
+  "settings": {
+    "title": "Settings",
+    "llm_section": "LLM Configuration",
+    "provider": "Provider",
+    "model": "Model",
+    "base_url": "Base URL (optional)",
+    "api_key": "API Key",
+    "api_key_hint": "Stored encrypted. Leave blank to keep the current key.",
+    "language": "Language",
+    "theme": "Theme",
+    "theme_dark": "Dark",
+    "theme_light": "Light",
+    "save": "Save",
+    "saved": "Settings saved",
+    "token_label": "API Token (server)"
+  },
+  "errors": {
+    "load_failed": "Failed to load data.",
+    "save_failed": "Failed to save.",
+    "llm_error": "LLM error: {{message}}"
+  }
+}
