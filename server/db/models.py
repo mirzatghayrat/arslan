@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -25,6 +25,8 @@ class Spawn(Base):
     template_used = Column(String(100), nullable=True)
     generation_level = Column(Integer, default=1)
     config = Column(JSON, default=dict)
+    level = Column(Integer, default=1)            # 1-10; reserved for future leveling (stays 1 in v2)
+    memory_facts = Column(JSON, default=list)     # per-spawn learned preferences (reserved)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -57,6 +59,7 @@ class Feedback(Base):
     message_id = Column(Integer, nullable=True)
     user_action = Column(String(20), nullable=False)
     edits = Column(JSON, default=dict)
+    quality_signal = Column(Integer, nullable=True)  # -1 | 0 | +1 (reserved leveling signal)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     spawn = relationship("Spawn", back_populates="feedback_entries")
@@ -78,3 +81,57 @@ class BuildSession(Base):
     state_json = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ArslanMessage(Base):
+    """The orchestrator conversation (Layer 1). display != memory at the row level."""
+
+    __tablename__ = "arslan_messages"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # "user" | "arslan" | "spawn_summary"
+    content = Column(Text, nullable=False)          # CONTEXT copy fed to Arslan's LLM
+    display_content = Column(Text, nullable=True)   # DISPLAY copy rendered in the UI (full spawn output)
+    spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class ArslanSummary(Base):
+    """Rolling compaction summary of older working memory."""
+
+    __tablename__ = "arslan_summaries"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    summary = Column(Text, nullable=False)
+    up_to_message_id = Column(Integer, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserFact(Base):
+    """Long-term memory (scope 3): durable user preferences / key facts."""
+
+    __tablename__ = "user_facts"
+
+    id = Column(Integer, primary_key=True)
+    content = Column(Text, nullable=False)
+    source = Column(String(20), default="auto")  # "auto" | "manual"
+    sensitive = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RouterDecision(Base):
+    """Audit log of every router decision (logged + testable)."""
+
+    __tablename__ = "router_decisions"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    user_message = Column(Text, nullable=False)
+    action = Column(String(20), nullable=False)  # answer | route | suggest_create | fallback
+    spawn_id = Column(Integer, nullable=True)
+    task_brief = Column(Text, nullable=True)
+    reason = Column(Text, nullable=True)
+    raw = Column(JSON, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
