@@ -1,0 +1,85 @@
+"""The orchestration loop for one user turn (transport-agnostic; emits event dicts)."""
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Callable
+
+from server.orchestrator import dispatcher, memory, router
+from server.services.llm_factory import build_adapter
+
+EventSink = Callable[[dict], None]
+
+_ARSLAN_SYSTEM = (
+    "You are Arslan, a warm, concise meta-agent who helps the user and coordinates a team "
+    "of specialist spawns. Answer directly and helpfully."
+)
+
+
+async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[str]:  # noqa: ANN001
+    """Stream a direct Arslan reply. Separate fn so tests can stub it."""
+    adapter = await build_adapter()
+    async for piece in adapter.chat_stream(system, user, history=history):
+        yield piece
+
+
+async def handle_user_message(conversation_id: str, user_message: str, emit: EventSink) -> None:
+    """Process one user turn end-to-end, emitting event dicts for the transport layer."""
+    # 1. persist the user turn
+    await memory.add_message(conversation_id, "user", user_message)
+
+    # 2. route (one decision call; also returns new_facts)
+    result = await router.route(conversation_id, user_message)
+
+    # 3. persist + announce extracted facts (transparency note)
+    if result.new_facts:
+        created = await memory.save_facts(result.new_facts)
+        for fact in created:
+            emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
+
+    # 4. handle the action
+    if result.action == "route" and result.spawn_id is not None:
+        await _handle_route(conversation_id, result, emit)
+    elif result.action == "suggest_create":
+        emit({"type": "suggest_create", "draft": result.suggested_spawn or {}})
+    else:  # answer (incl. fallback)
+        await _handle_answer(conversation_id, user_message, emit)
+
+    # 5. compact the working thread if it grew too long
+    await memory.maybe_compact(conversation_id)
+
+
+async def _handle_answer(conversation_id: str, user_message: str, emit: EventSink) -> None:
+    ctx = await memory.assemble_working_context(conversation_id)
+    facts = await memory.facts_text()
+    system = _ARSLAN_SYSTEM + (f"\n\n{facts}" if facts else "")
+    if ctx["summary"]:
+        system += f"\n\nConversation summary so far:\n{ctx['summary']}"
+
+    emit({"type": "stream_start", "source": "arslan"})
+    full = ""
+    try:
+        async for piece in _answer_stream(system, user_message, history=ctx["history"][:-1]):
+            full += piece
+            emit({"type": "stream_chunk", "content": piece})
+    except Exception as exc:  # noqa: BLE001
+        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+        return
+    msg_id = await memory.add_message(conversation_id, "arslan", full)
+    emit({"type": "stream_end", "message_id": msg_id})
+
+
+async def _handle_route(conversation_id, result, emit: EventSink) -> None:  # noqa: ANN001
+    # Resolve the spawn name first so the routing caption is complete before streaming.
+    spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+    emit({"type": "routing", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
+    emit({"type": "stream_start", "source": "spawn", "spawn_id": result.spawn_id})
+    try:
+        out = await dispatcher.dispatch(
+            conversation_id,
+            spawn_id=result.spawn_id,
+            task_brief=result.task_brief or "",
+            on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
+        )
+    except Exception as exc:  # noqa: BLE001
+        emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
+        return
+    emit({"type": "stream_end", "message_id": out["summary_message_id"]})
