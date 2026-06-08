@@ -84,3 +84,19 @@ def test_confirm_create_makes_spawn(app_client):
             return rows
 
     assert len(anyio.run(_check)) == 1
+
+
+def test_confirm_create_dedups_duplicate_name(app_client):
+    # "beauty-guru" already exists (seeded). A second create must auto-suffix.
+    draft = {
+        "name": "beauty-guru",
+        "domain": "content-creator.xiaohongshu",
+        "capabilities": [],
+        "persona_role": "blogger",
+    }
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "confirm_create", "draft": draft})
+        created = ws.receive_json()
+        assert created["type"] == "spawn_created"
+        assert created["spawn_name"] == "beauty-guru-2"

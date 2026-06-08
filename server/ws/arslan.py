@@ -34,7 +34,7 @@ async def _history(conversation_id: str) -> list[dict]:
         msgs = rows.scalars().all()
     return [
         {
-            "id": m.id,
+            "message_id": m.id,
             "role": m.role,
             "content": m.display_content or m.content,  # DISPLAY copy
             "spawn_id": m.spawn_id,
@@ -47,7 +47,7 @@ async def _create_from_draft(draft: dict):
     domain = draft.get("domain") or "other"
     category, _, subcategory = domain.partition(".")
     async with db_session.AsyncSessionLocal() as db:
-        spawn = await spawn_service.create_spawn(
+        spawn = await spawn_service.create_spawn_unique(
             db,
             name=draft.get("name") or "new-spawn",
             domain_category=category or "other",
@@ -86,8 +86,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             if msg_type == "resume":
                 last_id = int(data.get("last_message_id", 0))
                 for m in await _history(conversation_id):
-                    if m["id"] > last_id:
-                        await ws.send_json(protocol.message(m["id"], m["content"], m["role"]))
+                    if m["message_id"] > last_id:
+                        await ws.send_json(protocol.message(m["message_id"], m["content"], m["role"]))
                 continue
 
             if msg_type == "confirm_create":

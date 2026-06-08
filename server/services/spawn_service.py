@@ -107,3 +107,17 @@ async def create_spawn(session: AsyncSession, **fields) -> Spawn:
     await session.commit()
     await session.refresh(spawn)
     return spawn
+
+
+async def create_spawn_unique(session: AsyncSession, *, name: str, **fields) -> Spawn:
+    """Create a spawn, auto-suffixing the name (name-2, name-3, ...) to satisfy the
+    UNIQUE constraint instead of raising IntegrityError on a collision."""
+    base = name or "new-spawn"
+    candidate = base
+    suffix = 2
+    while (
+        await session.execute(select(Spawn.id).where(Spawn.name == candidate))
+    ).first() is not None:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return await create_spawn(session, name=candidate, **fields)
