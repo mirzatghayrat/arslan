@@ -62,6 +62,13 @@ async def _spawn_registry() -> str:
     return "\n".join(lines)
 
 
+def _loads_or_none(s: str) -> Any:
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return None
+
+
 def _parse(content: str) -> dict[str, Any] | None:
     text = (content or "").strip()
     if text.startswith("```"):
@@ -70,15 +77,25 @@ def _parse(content: str) -> dict[str, Any] | None:
         if text.lstrip().lower().startswith("json"):
             text = text.lstrip()[4:]
     text = text.strip()
-    try:
-        obj = json.loads(text)
-        return obj if isinstance(obj, dict) else None
-    except json.JSONDecodeError:
-        return None
+    obj = _loads_or_none(text)
+    if obj is None and "{" in text and "}" in text:
+        # Weak models often wrap the JSON in commentary; rescue the object.
+        obj = _loads_or_none(text[text.find("{") : text.rfind("}") + 1])
+    return obj if isinstance(obj, dict) else None
+
+
+def _audit_payload(parsed: dict | None, raw_text: str | None) -> dict:
+    """What to store in RouterDecision.raw: the parsed dict, or the raw text on failure."""
+    return parsed if parsed is not None else {"_raw": raw_text or ""}
 
 
 async def route(conversation_id: str, user_message: str) -> RouterResult:
-    """Run stage 1. Always returns a RouterResult; persists a RouterDecision row."""
+    """Run stage 1. Always returns a RouterResult and persists a RouterDecision row.
+
+    Contract: when the returned action == "route", spawn_id is guaranteed to be an int
+    (a missing/invalid spawn_id is downgraded to "answer"). The orchestration loop must
+    still re-check that the spawn id actually exists at dispatch time.
+    """
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
     registry = await _spawn_registry()
@@ -101,7 +118,12 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
 
     if parsed is None or action not in _VALID_ACTIONS:
         result = RouterResult(action="answer", reason="router fallback")
-        await _persist(conversation_id, user_message, "fallback", result, parsed)
+        await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
+        return result
+
+    if action == "route" and not isinstance(parsed.get("spawn_id"), int):
+        result = RouterResult(action="answer", reason="route missing valid spawn_id")
+        await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
         return result
 
     result = RouterResult(
@@ -109,10 +131,13 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
         spawn_id=parsed.get("spawn_id"),
         task_brief=parsed.get("task_brief"),
         suggested_spawn=parsed.get("suggested_spawn"),
-        new_facts=parsed.get("new_facts") or [],
+        new_facts=[
+            f for f in (parsed.get("new_facts") or [])
+            if isinstance(f, dict) and (f.get("content") or "").strip()
+        ],
         reason=parsed.get("reason", ""),
     )
-    await _persist(conversation_id, user_message, action, result, parsed)
+    await _persist(conversation_id, user_message, action, result, _audit_payload(parsed, raw))
     return result
 
 

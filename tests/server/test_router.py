@@ -95,3 +95,54 @@ async def test_router_rejects_unknown_action(maker, monkeypatch):
     monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter('{"action":"nuke"}'))
     result = await router.route("main", "hello")
     assert result.action == "answer"
+
+
+@pytest.mark.asyncio
+async def test_router_recovers_json_in_prose(maker, monkeypatch):
+    from server.orchestrator import router
+
+    monkeypatch.setattr(
+        router, "_get_adapter",
+        lambda: _stub_adapter('Sure! Here you go: {"action":"answer","reason":"ok"} hope that helps'),
+    )
+    result = await router.route("main", "hi")
+    assert result.action == "answer"
+
+
+@pytest.mark.asyncio
+async def test_router_route_without_spawn_id_downgrades(maker, monkeypatch):
+    from server.orchestrator import router
+    from sqlalchemy import select
+    from server.db.models import RouterDecision
+
+    monkeypatch.setattr(
+        router, "_get_adapter", lambda: _stub_adapter('{"action":"route","task_brief":"x"}')
+    )
+    result = await router.route("main", "do something")
+    assert result.action == "answer"  # downgraded (no spawn_id)
+    async with db_session.AsyncSessionLocal() as s:
+        dec = (await s.execute(select(RouterDecision))).scalar_one()
+    assert dec.action == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_router_fallback_stores_raw(maker, monkeypatch):
+    from server.orchestrator import router
+    from sqlalchemy import select
+    from server.db.models import RouterDecision
+
+    monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter("totally not json"))
+    await router.route("main", "hi")
+    async with db_session.AsyncSessionLocal() as s:
+        dec = (await s.execute(select(RouterDecision))).scalar_one()
+    assert dec.raw == {"_raw": "totally not json"}
+
+
+@pytest.mark.asyncio
+async def test_router_filters_junk_new_facts(maker, monkeypatch):
+    from server.orchestrator import router
+
+    raw = '{"action":"answer","new_facts":["bad string", {"content":"good fact"}, {"content":"  "}]}'
+    monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter(raw))
+    result = await router.route("main", "hi")
+    assert result.new_facts == [{"content": "good fact"}]
