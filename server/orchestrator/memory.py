@@ -1,6 +1,7 @@
 """Scope 1 (working memory + compaction) and scope 3 (long-term facts)."""
 from __future__ import annotations
 
+import logging
 import os
 
 from sqlalchemy import select
@@ -9,16 +10,36 @@ from server.db import session as db_session
 from server.db.models import ArslanMessage, ArslanSummary, UserFact
 from server.services.llm_factory import build_adapter
 
-_DEFAULT_CHAR_BUDGET = 12000  # ~3k tokens at 4 chars/token
+logger = logging.getLogger(__name__)
+
+_DEFAULT_TOKEN_BUDGET = 3000  # ~working context tokens for Arslan; env-tunable
 
 
 def estimate_tokens(text: str) -> int:
-    """Cheap heuristic: ~4 characters per token (no tokenizer dependency)."""
-    return len(text) // 4
+    """Estimate tokens. CJK chars are ~1 token each; other text ~4 chars/token.
+
+    The product targets Chinese users, where a naive 4-chars/token estimate
+    undercounts tokens by ~2x and lets the thread run far past the intended budget.
+    """
+    cjk = sum(
+        1
+        for ch in text
+        if "一" <= ch <= "鿿"   # CJK Unified Ideographs
+        or "぀" <= ch <= "ヿ"   # Hiragana + Katakana
+        or "가" <= ch <= "힯"   # Hangul syllables
+    )
+    other = len(text) - cjk
+    return cjk + other // 4
 
 
-def _char_budget() -> int:
-    return int(os.environ.get("ARSLAN_WORKING_CHAR_BUDGET", str(_DEFAULT_CHAR_BUDGET)))
+def _token_budget() -> int:
+    return int(os.environ.get("ARSLAN_WORKING_TOKEN_BUDGET", str(_DEFAULT_TOKEN_BUDGET)))
+
+
+def _summary_token_cap() -> int:
+    """The rolling summary itself must stay bounded, else context grows unbounded
+    (it is injected into every prompt). Cap it at the working budget."""
+    return _token_budget()
 
 
 async def add_message(
@@ -80,6 +101,7 @@ async def maybe_compact(conversation_id: str) -> None:
     """If the post-cutoff working text exceeds the char budget, fold older messages
     into a rolling summary. On any failure, leave the thread un-compacted (never drop)."""
     try:
+        # NOTE: read-then-write is not serialized; safe for v1's single sequential user.
         async with db_session.AsyncSessionLocal() as db:
             summ = await _latest_summary(db, conversation_id)
             cutoff = summ.up_to_message_id if summ else 0
@@ -91,8 +113,8 @@ async def maybe_compact(conversation_id: str) -> None:
             )
             msgs = rows.scalars().all()
 
-        total_chars = sum(len(m.content) for m in msgs)
-        if total_chars <= _char_budget() or len(msgs) < 2:
+        total_tokens = sum(estimate_tokens(m.content) for m in msgs)
+        if total_tokens <= _token_budget() or len(msgs) < 2:
             return
 
         # Fold all but the most recent message into the summary.
@@ -102,6 +124,14 @@ async def maybe_compact(conversation_id: str) -> None:
         body = "\n".join(f"{m.role}: {m.content}" for m in to_fold)
         adapter = _get_adapter()
         new_summary = await _summarize(adapter, f"{prior}\n{body}".strip())
+
+        # Bound the rolling summary itself (C1): if it exceeds the cap, compress it
+        # once more, then hard-truncate as a guaranteed floor so context can't grow.
+        if estimate_tokens(new_summary) > _summary_token_cap():
+            new_summary = await _summarize(adapter, new_summary)
+            cap_chars = _summary_token_cap() * 4
+            if len(new_summary) > cap_chars:
+                new_summary = new_summary[:cap_chars]
 
         async with db_session.AsyncSessionLocal() as db:
             db.add(
@@ -113,6 +143,7 @@ async def maybe_compact(conversation_id: str) -> None:
             )
             await db.commit()
     except Exception:  # noqa: BLE001 - degrade gracefully, keep full thread
+        logger.warning("compaction failed for %s; keeping full thread", conversation_id, exc_info=True)
         return
 
 

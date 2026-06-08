@@ -56,7 +56,7 @@ async def test_compaction_folds_old_messages(maker, monkeypatch):
     from server.orchestrator import memory
 
     # Tiny budget so two messages trigger compaction.
-    monkeypatch.setenv("ARSLAN_WORKING_CHAR_BUDGET", "20")
+    monkeypatch.setenv("ARSLAN_WORKING_TOKEN_BUDGET", "5")
 
     # Stub the LLM compaction call to a deterministic summary.
     async def _fake_summarize(_adapter, _text):
@@ -80,3 +80,38 @@ async def test_compaction_folds_old_messages(maker, monkeypatch):
     # After compaction, assembled context carries the summary.
     ctx = await memory.assemble_working_context("main")
     assert ctx["summary"] == "SUMMARY"
+
+
+def test_estimate_tokens_cjk():
+    from server.orchestrator.memory import estimate_tokens
+
+    # 100 Chinese chars ~ 100 tokens (not 25 as a naive /4 would give)
+    assert estimate_tokens("中" * 100) == 100
+    # mixed: 10 CJK + 40 ascii -> 10 + 10
+    assert estimate_tokens("中" * 10 + "a" * 40) == 20
+
+
+@pytest.mark.asyncio
+async def test_compaction_caps_summary(maker, monkeypatch):
+    from server.orchestrator import memory
+
+    monkeypatch.setenv("ARSLAN_WORKING_TOKEN_BUDGET", "5")
+
+    calls = []
+
+    async def _fake_summarize(_adapter, _text):
+        calls.append(_text)
+        # first pass returns an over-cap summary; the compress pass returns a short one
+        return "X" * 200 if len(calls) == 1 else "short"
+
+    monkeypatch.setattr(memory, "_summarize", _fake_summarize)
+    monkeypatch.setattr(memory, "_get_adapter", lambda: object())
+
+    await memory.add_message("main", "user", "aaaa aaaa aaaa aaaa")
+    await memory.add_message("main", "user", "bbbb bbbb bbbb bbbb")
+    await memory.maybe_compact("main")
+
+    # the first summary exceeded the cap, so it was compressed a second time
+    assert len(calls) == 2
+    ctx = await memory.assemble_working_context("main")
+    assert ctx["summary"] == "short"
