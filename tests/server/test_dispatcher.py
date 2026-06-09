@@ -80,3 +80,44 @@ async def test_dispatch_isolation_and_persistence(maker, monkeypatch):
     assert ams[0].role == "spawn_summary"
     assert ams[0].display_content == "Post 1. Post 2."
     assert "beauty-guru" in ams[0].content and "Post 1. Post 2." not in ams[0].content
+
+
+@pytest.mark.asyncio
+async def test_dispatch_returns_assistant_message_id(maker, monkeypatch):
+    from server.orchestrator import dispatcher
+
+    class _A:
+        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
+            yield "done"
+
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+
+    out = await dispatcher.dispatch("main", spawn_id=7, task_brief="do X")
+    assert "assistant_message_id" in out and isinstance(out["assistant_message_id"], int)
+    assert "summary_message_id" in out
+    # the assistant id must point at the chat_messages assistant row, not the arslan summary row
+    assert out["assistant_message_id"] != out["summary_message_id"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_refinement_includes_prior_output(maker, monkeypatch):
+    from server.orchestrator import dispatcher
+
+    captured = {}
+
+    class _A:
+        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
+            captured["user"] = user
+            yield "revised"
+
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+
+    await dispatcher.dispatch(
+        "main",
+        spawn_id=7,
+        task_brief="write 5 tips",
+        prior_output="1. a\n2. b",
+        instruction="make point 2 livelier",
+    )
+    assert "make point 2 livelier" in captured["user"]
+    assert "1. a" in captured["user"]

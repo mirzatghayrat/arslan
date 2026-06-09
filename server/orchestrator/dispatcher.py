@@ -47,9 +47,12 @@ async def dispatch(
     spawn_id: int,
     task_brief: str,
     on_chunk: Callable[[str], None] | None = None,
+    prior_output: str | None = None,
+    instruction: str | None = None,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
-    {full_output, spawn_name, summary_message_id}. Raises on a missing spawn."""
+    {full_output, spawn_name, summary_message_id, assistant_message_id}.
+    When prior_output+instruction are given, runs a refinement of a previous result."""
     spawn = await _load_spawn(spawn_id)
     if spawn is None:
         raise ValueError(f"spawn {spawn_id} not found")
@@ -60,20 +63,31 @@ async def dispatch(
         system = f"{system}\n\n{facts}"
     history = await _spawn_history(spawn_id)
 
+    if instruction:
+        user_content = (
+            f"{task_brief}\n\nYour previous result:\n{prior_output or ''}\n\n"
+            f"Apply this refinement and return the full revised result:\n{instruction}"
+        )
+    else:
+        user_content = task_brief
+
     adapter = _get_adapter()
     a = await adapter if hasattr(adapter, "__await__") else adapter
 
     full = ""
-    async for piece in a.chat_stream(system, task_brief, history=history):
+    async for piece in a.chat_stream(system, user_content, history=history):
         full += piece
         if on_chunk is not None:
             on_chunk(piece)
 
-    # Scope 2: spawn's own memory — task_brief (user) + output (assistant)
+    # Scope 2: spawn's own memory — capture the assistant row id for feedback wiring.
     async with db_session.AsyncSessionLocal() as db:
-        db.add(ChatMessage(spawn_id=spawn_id, role="user", content=task_brief))
-        db.add(ChatMessage(spawn_id=spawn_id, role="assistant", content=full))
+        db.add(ChatMessage(spawn_id=spawn_id, role="user", content=user_content))
+        assistant_row = ChatMessage(spawn_id=spawn_id, role="assistant", content=full)
+        db.add(assistant_row)
         await db.commit()
+        await db.refresh(assistant_row)
+        assistant_message_id = assistant_row.id
 
     # Scope 1: Arslan memory — DISPLAY (full) vs MEMORY (1-line, deterministic — no extra LLM call)
     summary = f"[{spawn.name}] {task_brief} -> delivered"
@@ -84,4 +98,9 @@ async def dispatch(
         display_content=full,
         spawn_id=spawn_id,
     )
-    return {"full_output": full, "spawn_name": spawn.name, "summary_message_id": summary_id}
+    return {
+        "full_output": full,
+        "spawn_name": spawn.name,
+        "summary_message_id": summary_id,
+        "assistant_message_id": assistant_message_id,
+    }
