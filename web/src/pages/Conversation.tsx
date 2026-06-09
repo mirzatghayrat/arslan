@@ -86,7 +86,13 @@ export default function Conversation() {
           />
         )}
         {suggestion && (
-          <CreateSpawnCard draft={suggestion} onCreate={confirmCreate} onDismiss={dismissSuggestion} />
+          <CreateSpawnCard
+            draft={suggestion}
+            onCreate={confirmCreate}
+            onDismiss={dismissSuggestion}
+            onRefine={() => {}}
+            onRouteToExisting={() => {}}
+          />
         )}
       </div>
 

@@ -61,7 +61,13 @@
     "capabilities": "Capabilities",
     "create": "Create",
     "tweak": "Tweak",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "advanced": "Advanced",
+    "overlap_warning": "This may overlap with an existing spawn.",
+    "route_to": "Route to {{name}}",
+    "create_new": "Create new anyway",
+    "refine_placeholder": "Refine this draft…",
+    "differ_placeholder": "How should this differ from {{name}} on {{axis}}?"
   },
   "facts": {
     "section": "Memory",

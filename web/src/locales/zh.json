@@ -61,7 +61,13 @@
     "capabilities": "能力",
     "create": "创建",
     "tweak": "调整",
-    "dismiss": "忽略"
+    "dismiss": "忽略",
+    "advanced": "高级",
+    "overlap_warning": "这可能与已有分身重叠。",
+    "route_to": "转给 {{name}}",
+    "create_new": "仍然新建",
+    "refine_placeholder": "优化此草稿……",
+    "differ_placeholder": "在 {{axis}} 上与 {{name}} 有何不同？"
   },
   "facts": {
     "section": "记忆",

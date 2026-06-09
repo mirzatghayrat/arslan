@@ -61,7 +61,13 @@
     "capabilities": "Fähigkeiten",
     "create": "Erstellen",
     "tweak": "Anpassen",
-    "dismiss": "Verwerfen"
+    "dismiss": "Verwerfen",
+    "advanced": "Erweitert",
+    "overlap_warning": "Dies könnte sich mit einem vorhandenen Spawn überschneiden.",
+    "route_to": "An {{name}} weiterleiten",
+    "create_new": "Trotzdem neu erstellen",
+    "refine_placeholder": "Diesen Entwurf verfeinern…",
+    "differ_placeholder": "Wie soll sich dies von {{name}} bei {{axis}} unterscheiden?"
   },
   "facts": {
     "section": "Gedächtnis",

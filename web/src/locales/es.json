@@ -61,7 +61,13 @@
     "capabilities": "Capacidades",
     "create": "Crear",
     "tweak": "Ajustar",
-    "dismiss": "Descartar"
+    "dismiss": "Descartar",
+    "advanced": "Avanzado",
+    "overlap_warning": "Esto puede solaparse con un spawn existente.",
+    "route_to": "Enviar a {{name}}",
+    "create_new": "Crear nuevo de todos modos",
+    "refine_placeholder": "Refinar este borrador…",
+    "differ_placeholder": "¿En qué debería diferir de {{name}} en {{axis}}?"
   },
   "facts": {
     "section": "Memoria",

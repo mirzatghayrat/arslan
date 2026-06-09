@@ -61,7 +61,13 @@
     "capabilities": "Capacités",
     "create": "Créer",
     "tweak": "Ajuster",
-    "dismiss": "Ignorer"
+    "dismiss": "Ignorer",
+    "advanced": "Avancé",
+    "overlap_warning": "Cela pourrait chevaucher un spawn existant.",
+    "route_to": "Rediriger vers {{name}}",
+    "create_new": "Créer un nouveau quand même",
+    "refine_placeholder": "Affiner ce brouillon…",
+    "differ_placeholder": "En quoi cela doit-il différer de {{name}} sur {{axis}} ?"
   },
   "facts": {
     "section": "Mémoire",
