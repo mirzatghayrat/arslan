@@ -13,6 +13,7 @@ interface ArslanState {
   spawnNames: Record<number, string>;
   error: string | null;
   lastMessageId: number;
+  lastCreatedSpawn: string | null;
 
   setSpawnNames: (map: Record<number, string>) => void;
   addUserMessage: (content: string) => void;
@@ -42,6 +43,7 @@ function initialData() {
     spawnNames: {} as Record<number, string>,
     error: null as string | null,
     lastMessageId: 0,
+    lastCreatedSpawn: null as string | null,
   };
 }
 
@@ -63,28 +65,51 @@ function makeActions(set: SetState, get: GetState) {
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
+      // Maps a server row (history row or `message` frame — same field names,
+      // `spawn_id` optional) to a renderable thread item, resolving spawn names.
+      const rowToItem = (row: {
+        message_id: number;
+        role: string;
+        content: string;
+        spawn_id?: number | null;
+      }): ArslanThreadItem => {
+        if (row.role === "spawn_summary") {
+          // History rows carry an explicit spawn_id; the resume `message` frame
+          // does not (server contract), so when it's absent fall back to the
+          // sole known spawn if the roster is unambiguous.
+          let spawnId = row.spawn_id ?? null;
+          if (spawnId == null) {
+            const ids = Object.keys(state.spawnNames);
+            if (ids.length === 1) spawnId = Number(ids[0]);
+          }
+          return {
+            id: row.message_id,
+            kind: "message",
+            role: "spawn",
+            content: row.content,
+            spawnId,
+            spawnName: spawnId != null ? state.spawnNames[spawnId] ?? null : null,
+          };
+        }
+        return {
+          id: row.message_id,
+          kind: "message",
+          role: row.role === "arslan" ? "arslan" : "user",
+          content: row.content,
+        };
+      };
       switch (frame.type) {
         case "history": {
-          const items: ArslanThreadItem[] = frame.messages.map((m) => {
-            if (m.role === "spawn_summary") {
-              return {
-                id: m.message_id,
-                kind: "message",
-                role: "spawn",
-                content: m.content,
-                spawnId: m.spawn_id,
-                spawnName: m.spawn_id != null ? state.spawnNames[m.spawn_id] ?? null : null,
-              };
-            }
-            return {
-              id: m.message_id,
-              kind: "message",
-              role: m.role === "arslan" ? "arslan" : "user",
-              content: m.content,
-            };
-          });
+          const items: ArslanThreadItem[] = frame.messages.map(rowToItem);
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);
           set({ items, lastMessageId: lastId });
+          break;
+        }
+        case "message": {
+          set({
+            items: [...state.items, rowToItem(frame)],
+            lastMessageId: Math.max(state.lastMessageId, frame.message_id),
+          });
           break;
         }
         case "routing":
@@ -154,6 +179,7 @@ function makeActions(set: SetState, get: GetState) {
           set({
             suggestion: null,
             spawnNames: { ...state.spawnNames, [frame.spawn_id]: frame.spawn_name },
+            lastCreatedSpawn: frame.spawn_name,
           });
           break;
         case "error":

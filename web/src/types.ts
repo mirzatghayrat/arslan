@@ -107,5 +107,6 @@ export type ArslanServerMessage =
   | { type: "stream_end"; message_id: number }
   | { type: "suggest_create"; draft: SuggestDraft }
   | { type: "fact_saved"; content: string; sensitive: boolean }
+  | { type: "message"; message_id: number; content: string; role: string }
   | { type: "spawn_created"; spawn_id: number; spawn_name: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean };

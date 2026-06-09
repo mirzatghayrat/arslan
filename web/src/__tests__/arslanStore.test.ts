@@ -79,6 +79,23 @@ describe("arslanStore", () => {
     expect(useArslanStore.getState().spawnNames[9]).toBe("Beauty Guru");
   });
 
+  it("records the created spawn name for confirmation", () => {
+    useArslanStore.getState().handleFrame({ type: "spawn_created", spawn_id: 9, spawn_name: "Beauty Guru" });
+    expect(useArslanStore.getState().lastCreatedSpawn).toBe("Beauty Guru");
+  });
+
+  it("appends a replayed message frame (resume path)", () => {
+    useArslanStore.getState().setSpawnNames({ 7: "Beauty Guru" });
+    const s = useArslanStore.getState();
+    s.handleFrame({ type: "message", message_id: 20, content: "welcome back", role: "arslan" });
+    s.handleFrame({ type: "message", message_id: 21, content: "post draft", role: "spawn_summary" });
+    const items = useArslanStore.getState().items;
+    expect(items[items.length - 2]).toMatchObject({ id: 20, role: "arslan", content: "welcome back" });
+    const last = items[items.length - 1];
+    expect(last).toMatchObject({ id: 21, role: "spawn", content: "post draft", spawnName: "Beauty Guru" });
+    expect(useArslanStore.getState().lastMessageId).toBe(21);
+  });
+
   it("records a recoverable error and ends streaming", () => {
     const s = useArslanStore.getState();
     s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 7 });

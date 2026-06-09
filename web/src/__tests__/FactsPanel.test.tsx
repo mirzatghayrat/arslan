@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../i18n";
@@ -35,5 +35,17 @@ describe("FactsPanel", () => {
     await screen.findByDisplayValue("prefers metric");
     await userEvent.click(screen.getByRole("button", { name: /delete/i }));
     await waitFor(() => expect(deleteFact).toHaveBeenCalledWith(1));
+  });
+
+  it("saves an edited fact on blur", async () => {
+    const updateFact = vi
+      .spyOn(api, "updateFact")
+      .mockResolvedValue({ id: 1, content: "prefers imperial", source: "auto", sensitive: false });
+    render(<FactsPanel />);
+    const input = await screen.findByDisplayValue("prefers metric");
+    await userEvent.clear(input);
+    await userEvent.type(input, "prefers imperial");
+    fireEvent.blur(input);
+    await waitFor(() => expect(updateFact).toHaveBeenCalledWith(1, { content: "prefers imperial" }));
   });
 });
