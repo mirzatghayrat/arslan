@@ -1,4 +1,6 @@
 """Router: JSON parsing, validation, fallback, audit log."""
+import json
+
 import anyio
 import pytest
 from sqlalchemy import select
@@ -136,6 +138,27 @@ async def test_router_fallback_stores_raw(maker, monkeypatch):
     async with db_session.AsyncSessionLocal() as s:
         dec = (await s.execute(select(RouterDecision))).scalar_one()
     assert dec.raw == {"_raw": "totally not json"}
+
+
+@pytest.mark.asyncio
+async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch):
+    from server.orchestrator import router
+
+    payload = {
+        "action": "suggest_create",
+        "suggested_spawn": {
+            "name": "equity-researcher", "domain": "finance.equity-research",
+            "capabilities": ["research"], "persona_role": "equity analyst", "persona_tone": "rigorous",
+        },
+        "task_brief": "Analyze TSLA Q3 fundamentals",
+        "overlaps": {"spawn_id": 3, "name": "股小助", "axes": ["fundamental vs technical"]},
+        "new_facts": [], "reason": "recurring finance research",
+    }
+    monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter(json.dumps(payload)))
+    result = await router.route("main", "look at TSLA fundamentals for me")
+    assert result.action == "suggest_create"
+    assert result.task_brief == "Analyze TSLA Q3 fundamentals"
+    assert result.overlaps == {"spawn_id": 3, "name": "股小助", "axes": ["fundamental vs technical"]}
 
 
 @pytest.mark.asyncio

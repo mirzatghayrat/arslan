@@ -21,6 +21,7 @@ class RouterResult:
     spawn_id: int | None = None
     task_brief: str | None = None
     suggested_spawn: dict[str, Any] | None = None
+    overlaps: dict[str, Any] | None = None
     new_facts: list[dict[str, Any]] = field(default_factory=list)
     reason: str = ""
 
@@ -29,14 +30,18 @@ _SYSTEM = (
     "You are Arslan, a meta-agent orchestrator. Decide how to handle the user's latest "
     "message. Reply with ONE JSON object and nothing else:\n"
     '{"action": "answer" | "route" | "suggest_create", "spawn_id": <int, only for route>, '
-    '"task_brief": "<self-contained task for the spawn, only for route>", '
+    '"task_brief": "<self-contained task for the spawn; REQUIRED for route AND suggest_create>", '
     '"suggested_spawn": {"name","domain","capabilities","persona_role","persona_tone"}, '
+    '"overlaps": {"spawn_id": <int>, "name": "<existing spawn>", "axes": ["<how a new one could differ>"]}, '
     '"new_facts": [{"content": "<durable user fact>", "sensitive": <bool>}], '
     '"reason": "<short>"}\n'
     "- answer: you can respond directly.\n"
-    "- route: an existing spawn fits; put a clean, self-contained task in task_brief "
-    "(do NOT include unrelated conversation).\n"
-    "- suggest_create: a recurring need has no spawn; draft suggested_spawn.\n"
+    "- route: an existing spawn fits; put a clean, self-contained task in task_brief.\n"
+    "- suggest_create: a recurring need has no spawn; draft suggested_spawn AND put the "
+    "user's current request in task_brief (the new spawn will run it immediately). "
+    "domain is a free-form 'category.subcategory' string you infer (e.g. 'finance.equity-research').\n"
+    "- overlaps: ONLY when suggest_create would duplicate an EXISTING spawn's domain — name it "
+    "and suggest differentiation axes; otherwise omit.\n"
     "new_facts: extract any durable user preferences/facts worth remembering (or []).\n"
 )
 
@@ -131,6 +136,7 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
         spawn_id=parsed.get("spawn_id"),
         task_brief=parsed.get("task_brief"),
         suggested_spawn=parsed.get("suggested_spawn"),
+        overlaps=parsed.get("overlaps") if isinstance(parsed.get("overlaps"), dict) else None,
         new_facts=[
             f for f in (parsed.get("new_facts") or [])
             if isinstance(f, dict) and (f.get("content") or "").strip()
