@@ -90,7 +90,7 @@ export default function Conversation() {
         )}
       </div>
 
-      <ChatInput onSend={sendMessage} />
+      <ChatInput onSend={sendMessage} placeholder={t("conversation.placeholder")} />
     </div>
   );
 }

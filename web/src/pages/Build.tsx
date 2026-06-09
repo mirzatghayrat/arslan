@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import StepIndicator from "../components/build/StepIndicator";
 import QuestionView from "../components/build/QuestionView";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -13,6 +13,8 @@ function newSessionId(): string {
 export default function Build() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const draft = (location.state as { draft?: import("../types").SuggestDraft } | null)?.draft;
   const sessionId = useMemo(newSessionId, []);
   const [question, setQuestion] = useState<Extract<ServerMessage, { type: "question" }> | null>(
     null,
@@ -46,6 +48,11 @@ export default function Build() {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="mb-2 text-2xl font-semibold">{t("build.title")}</h1>
+      {draft && (
+        <p className="mb-3 rounded-lg border border-amber/30 bg-amber/5 px-4 py-2 text-sm text-amber">
+          {draft.name} · {draft.domain}
+        </p>
+      )}
       {errorMsg && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">
           <span>{errorMsg}</span>

@@ -12,6 +12,9 @@ export default function Header() {
         <span>{t("app.name")}</span>
       </Link>
       <div className="ml-auto flex items-center gap-2">
+        <Link to="/spawns" className="rounded-lg px-3 py-2 text-sm hover:bg-white/10">
+          {t("nav.spawns")}
+        </Link>
         <Link to="/settings" className="rounded-lg px-3 py-2 text-sm hover:bg-white/10">
           {t("nav.settings")}
         </Link>

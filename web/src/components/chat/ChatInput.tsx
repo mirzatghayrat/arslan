@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-export default function ChatInput({ onSend }: { onSend: (text: string) => void }) {
+export default function ChatInput({
+  onSend,
+  placeholder,
+}: {
+  onSend: (text: string) => void;
+  placeholder?: string;
+}) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const submit = () => {
@@ -16,7 +22,7 @@ export default function ChatInput({ onSend }: { onSend: (text: string) => void }
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder={t("chat.placeholder")}
+        placeholder={placeholder ?? t("chat.placeholder")}
         className="flex-1 rounded-lg border border-white/15 bg-white/5 px-4 py-2.5"
       />
       <button onClick={submit} className="rounded-lg bg-amber px-5 font-medium text-black">
