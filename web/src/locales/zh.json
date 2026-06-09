@@ -52,7 +52,16 @@
     "reconnecting": "正在重新连接…",
     "remember_note": "我会记住你…",
     "spawn_created": "已创建分身 {{name}}",
-    "empty": "向 Arslan 打个招呼开始吧。"
+    "empty": "向 Arslan 打个招呼开始吧。",
+    "thinking_arslan": "Arslan 正在思考…",
+    "thinking_spawn": "{{name}} 正在处理…"
+  },
+  "feedback": { "redo": "重做", "tweak": "微调" },
+  "manual_create": {
+    "title": "创建一个专家",
+    "describe_placeholder": "描述你想要的专家…",
+    "draft": "生成草稿",
+    "drafting": "生成中…"
   },
   "create_card": {
     "heading": "要为此创建一个 {{name}} 分身吗？",

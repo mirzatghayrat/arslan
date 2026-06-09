@@ -16,6 +16,8 @@ describe("Manual create (NL)", () => {
     vi.spyOn(api, "draftSpawn").mockResolvedValue({ name: "eq", domain: "finance.equity-research", capabilities: ["research"] });
     vi.spyOn(api, "createSpawn").mockResolvedValue({ id: 5, name: "eq", domain: "finance.equity-research", capabilities: ["research"], template_used: null, generation_level: 1, created_at: "", updated_at: "", persona_role: null, persona_tone: null, system_prompt: "", messages: [] } as never);
     render(<MemoryRouter><Build /></MemoryRouter>);
+    // Guard: i18n resolved the keys (no raw manual_create.* key paths rendered).
+    expect(screen.queryByText(/manual_create\./)).toBeNull();
     await userEvent.type(screen.getByPlaceholderText(/describe/i), "help me analyze stock fundamentals");
     await userEvent.click(screen.getByRole("button", { name: /draft/i }));
     await waitFor(() => expect(screen.getByText(/finance\.equity-research/)).toBeInTheDocument());

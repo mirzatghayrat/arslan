@@ -52,7 +52,16 @@
     "reconnecting": "Reconnexion…",
     "remember_note": "Je retiendrai que vous…",
     "spawn_created": "Spawn {{name}} créé",
-    "empty": "Dites bonjour à Arslan pour commencer."
+    "empty": "Dites bonjour à Arslan pour commencer.",
+    "thinking_arslan": "Arslan réfléchit…",
+    "thinking_spawn": "{{name}} travaille…"
+  },
+  "feedback": { "redo": "Refaire", "tweak": "Ajuster" },
+  "manual_create": {
+    "title": "Créer un spécialiste",
+    "describe_placeholder": "Décrivez le spécialiste que vous voulez…",
+    "draft": "Brouillon",
+    "drafting": "Génération…"
   },
   "create_card": {
     "heading": "Voulez-vous un spawn {{name}} pour cela ?",

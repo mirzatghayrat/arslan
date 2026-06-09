@@ -63,7 +63,7 @@ export default function Conversation() {
     dismissSuggestion();
   };
   const sendFeedback = (spawnId: number, messageId: number | null | undefined, action: string) =>
-    void api.sendFeedback(spawnId, { message_id: messageId ?? undefined, user_action: action as never, edits: {} });
+    void api.sendFeedback(spawnId, { message_id: messageId ?? undefined, user_action: action, edits: {} });
   const redo = (it: ArslanThreadItem) =>
     it.spawnId && send({ type: "redo", spawn_id: it.spawnId, message_id: it.spawnMessageId, task_brief: it.taskBrief ?? "" });
   const tweak = (it: ArslanThreadItem, instruction: string) =>

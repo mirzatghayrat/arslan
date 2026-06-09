@@ -52,7 +52,16 @@
     "reconnecting": "Verbindung wird wiederhergestellt …",
     "remember_note": "Ich merke mir, dass du …",
     "spawn_created": "Spawn {{name}} erstellt",
-    "empty": "Begrüße Arslan, um loszulegen."
+    "empty": "Begrüße Arslan, um loszulegen.",
+    "thinking_arslan": "Arslan denkt nach …",
+    "thinking_spawn": "{{name}} arbeitet …"
+  },
+  "feedback": { "redo": "Wiederholen", "tweak": "Anpassen" },
+  "manual_create": {
+    "title": "Einen Spezialisten erstellen",
+    "describe_placeholder": "Beschreibe den gewünschten Spezialisten …",
+    "draft": "Entwurf",
+    "drafting": "Wird erstellt …"
   },
   "create_card": {
     "heading": "Möchtest du dafür einen {{name}}-Spawn?",

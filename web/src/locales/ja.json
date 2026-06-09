@@ -52,7 +52,16 @@
     "reconnecting": "再接続しています…",
     "remember_note": "あなたについて覚えておきます…",
     "spawn_created": "スポーン {{name}} を作成しました",
-    "empty": "Arslan に挨拶して始めましょう。"
+    "empty": "Arslan に挨拶して始めましょう。",
+    "thinking_arslan": "Arslan が考えています…",
+    "thinking_spawn": "{{name}} が作業しています…"
+  },
+  "feedback": { "redo": "やり直す", "tweak": "微調整" },
+  "manual_create": {
+    "title": "スペシャリストを作成",
+    "describe_placeholder": "作りたいスペシャリストを説明してください…",
+    "draft": "下書き",
+    "drafting": "作成中…"
   },
   "create_card": {
     "heading": "これ用に {{name}} スポーンを作成しますか？",

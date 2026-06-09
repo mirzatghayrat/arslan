@@ -52,7 +52,16 @@
     "reconnecting": "Reconnecting…",
     "remember_note": "I'll remember that you…",
     "spawn_created": "Created spawn {{name}}",
-    "empty": "Say hello to Arslan to get started."
+    "empty": "Say hello to Arslan to get started.",
+    "thinking_arslan": "Arslan is thinking…",
+    "thinking_spawn": "{{name}} is working…"
+  },
+  "feedback": { "redo": "Redo", "tweak": "Tweak" },
+  "manual_create": {
+    "title": "Create a specialist",
+    "describe_placeholder": "Describe the specialist you want…",
+    "draft": "Draft",
+    "drafting": "Drafting…"
   },
   "create_card": {
     "heading": "Want a {{name}} spawn for this?",

@@ -25,11 +25,15 @@ export default function Build() {
   };
 
   const doCreate = async (d: SuggestDraft) => {
-    const created = await api.createSpawn({
-      name: d.name, domain: d.domain, capabilities: d.capabilities,
-      persona_role: d.persona_role, persona_tone: d.persona_tone,
-    });
-    navigate(`/chat/${created.id}`);
+    try {
+      const created = await api.createSpawn({
+        name: d.name, domain: d.domain, capabilities: d.capabilities,
+        persona_role: d.persona_role, persona_tone: d.persona_tone,
+      });
+      navigate(`/chat/${created.id}`);
+    } catch {
+      setError(t("errors.server_error"));
+    }
   };
 
   return (

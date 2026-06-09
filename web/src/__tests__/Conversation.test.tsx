@@ -55,7 +55,7 @@ describe("Conversation", () => {
   it("shows a thinking indicator while pending", () => {
     useArslanStore.setState({ pending: true });
     renderPage();
-    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+    expect(screen.getByText(/Arslan is thinking/i)).toBeInTheDocument();
   });
 
   it("shows spawn feedback controls on spawn bubbles", () => {
