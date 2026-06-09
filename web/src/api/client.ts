@@ -5,6 +5,7 @@ import type {
   SpawnDetail,
   SpawnSummary,
   TemplateInfo,
+  UserFact,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -69,4 +70,10 @@ export const api = {
   getSettings: () => request<AppSettings>("/settings"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
+  listFacts: () => request<UserFact[]>("/facts"),
+  addFact: (body: { content: string; sensitive?: boolean }) =>
+    request<UserFact>("/facts", { method: "POST", body: JSON.stringify(body) }),
+  updateFact: (id: number, body: { content?: string; sensitive?: boolean }) =>
+    request<UserFact>(`/facts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteFact: (id: number) => request<void>(`/facts/${id}`, { method: "DELETE" }),
 };

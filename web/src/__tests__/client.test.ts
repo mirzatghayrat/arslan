@@ -40,3 +40,33 @@ describe("api client", () => {
     await expect(api.getSpawn(99)).rejects.toThrow("nope");
   });
 });
+
+describe("api.facts", () => {
+  it("lists facts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch([{ id: 1, content: "metric", source: "auto", sensitive: false }]),
+    );
+    const facts = await api.listFacts();
+    expect(facts).toHaveLength(1);
+    expect(facts[0].content).toBe("metric");
+  });
+
+  it("adds a fact via POST", async () => {
+    const f = mockFetch({ id: 2, content: "x", source: "manual", sensitive: false }, 201);
+    vi.stubGlobal("fetch", f);
+    await api.addFact({ content: "x", sensitive: false });
+    const init = f.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ content: "x", sensitive: false });
+  });
+
+  it("deletes a fact via DELETE", async () => {
+    const f = mockFetch(undefined, 204);
+    vi.stubGlobal("fetch", f);
+    await api.deleteFact(2);
+    const [url, init] = f.mock.calls[0];
+    expect(url).toContain("/facts/2");
+    expect((init as RequestInit).method).toBe("DELETE");
+  });
+});

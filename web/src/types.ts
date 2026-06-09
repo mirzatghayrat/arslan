@@ -62,3 +62,10 @@ export type ServerMessage =
   | { type: "message"; message_id: number; content: string; role: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean }
   | { type: "ping"; ts: number };
+
+export interface UserFact {
+  id: number;
+  content: string;
+  source: "auto" | "manual";
+  sensitive: boolean;
+}
