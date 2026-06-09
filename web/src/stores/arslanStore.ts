@@ -13,7 +13,9 @@ interface ArslanState {
   spawnNames: Record<number, string>;
   error: string | null;
   lastMessageId: number;
-  lastCreatedSpawn: string | null;
+  pending: boolean;
+  suggestionTaskBrief: string | null;
+  suggestionOverlaps: import("../types").OverlapInfo | null;
 
   setSpawnNames: (map: Record<number, string>) => void;
   addUserMessage: (content: string) => void;
@@ -43,7 +45,9 @@ function initialData() {
     spawnNames: {} as Record<number, string>,
     error: null as string | null,
     lastMessageId: 0,
-    lastCreatedSpawn: null as string | null,
+    pending: false,
+    suggestionTaskBrief: null as string | null,
+    suggestionOverlaps: null as import("../types").OverlapInfo | null,
   };
 }
 
@@ -58,6 +62,7 @@ function makeActions(set: SetState, get: GetState) {
     addUserMessage: (content: string) =>
       set({
         items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content }],
+        pending: true,
       }),
 
     dismissSuggestion: () => set({ suggestion: null }),
@@ -120,6 +125,7 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "stream_start":
           set({
+            pending: false,
             streaming: true,
             streamingText: "",
             streamSource: frame.source,
@@ -157,7 +163,21 @@ function makeActions(set: SetState, get: GetState) {
           break;
         }
         case "suggest_create":
-          set({ suggestion: frame.draft });
+          set({
+            pending: false,
+            suggestion: frame.draft,
+            suggestionTaskBrief: frame.task_brief ?? null,
+            suggestionOverlaps: frame.overlaps ?? null,
+          });
+          break;
+        case "spawn_meta":
+          set({
+            items: state.items.map((it) =>
+              it.id === frame.arslan_message_id
+                ? { ...it, spawnMessageId: frame.assistant_message_id, taskBrief: frame.task_brief }
+                : it,
+            ),
+          });
           break;
         case "fact_saved":
           set({
@@ -176,13 +196,24 @@ function makeActions(set: SetState, get: GetState) {
         case "spawn_created":
           set({
             suggestion: null,
+            suggestionTaskBrief: null,
+            suggestionOverlaps: null,
             spawnNames: { ...state.spawnNames, [frame.spawn_id]: frame.spawn_name },
-            lastCreatedSpawn: frame.spawn_name,
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "system",
+                role: "arslan",
+                content: `__SPAWN_CREATED__:${frame.spawn_name}`,
+              },
+            ],
           });
           break;
         case "error":
           set({
             error: frame.message,
+            pending: false,
             streaming: false,
             streamingText: "",
             streamSource: null,

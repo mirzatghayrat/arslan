@@ -19,7 +19,6 @@ export default function Conversation() {
     streamSource,
     streamSpawnName,
     suggestion,
-    lastCreatedSpawn,
     error,
     setSpawnNames,
     addUserMessage,
@@ -88,13 +87,6 @@ export default function Conversation() {
         )}
         {suggestion && (
           <CreateSpawnCard draft={suggestion} onCreate={confirmCreate} onDismiss={dismissSuggestion} />
-        )}
-        {lastCreatedSpawn && (
-          <div className="flex justify-center">
-            <span className="rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-xs text-amber/90">
-              {t("conversation.spawn_created", { name: lastCreatedSpawn })}
-            </span>
-          </div>
         )}
       </div>
 

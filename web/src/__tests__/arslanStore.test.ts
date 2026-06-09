@@ -79,9 +79,46 @@ describe("arslanStore", () => {
     expect(useArslanStore.getState().spawnNames[9]).toBe("Beauty Guru");
   });
 
-  it("records the created spawn name for confirmation", () => {
-    useArslanStore.getState().handleFrame({ type: "spawn_created", spawn_id: 9, spawn_name: "Beauty Guru" });
-    expect(useArslanStore.getState().lastCreatedSpawn).toBe("Beauty Guru");
+  it("sets pending on addUserMessage and clears on first stream_start", () => {
+    const s = useArslanStore.getState();
+    s.addUserMessage("hi");
+    expect(useArslanStore.getState().pending).toBe(true);
+    s.handleFrame({ type: "stream_start", source: "arslan" });
+    expect(useArslanStore.getState().pending).toBe(false);
+  });
+
+  it("renders spawn_created as an in-order system item (not a bottom chip)", () => {
+    const s = useArslanStore.getState();
+    s.addUserMessage("make me a spawn");
+    s.handleFrame({ type: "spawn_created", spawn_id: 9, spawn_name: "Beauty Guru" });
+    const items = useArslanStore.getState().items;
+    const last = items[items.length - 1];
+    expect(last.kind).toBe("system");
+    expect(last.content).toContain("Beauty Guru");
+    expect(useArslanStore.getState().suggestion).toBeNull();
+  });
+
+  it("stores task_brief + overlaps with the suggestion", () => {
+    useArslanStore.getState().handleFrame({
+      type: "suggest_create",
+      draft: { name: "eq", domain: "finance.x", capabilities: [] },
+      task_brief: "analyze TSLA",
+      overlaps: { spawn_id: 3, name: "GuGu", axes: ["a"] },
+    });
+    const st = useArslanStore.getState();
+    expect(st.suggestion).toMatchObject({ name: "eq" });
+    expect(st.suggestionTaskBrief).toBe("analyze TSLA");
+    expect(st.suggestionOverlaps).toMatchObject({ spawn_id: 3, name: "GuGu" });
+  });
+
+  it("attaches spawnMessageId + taskBrief from spawn_meta to the matching item", () => {
+    const s = useArslanStore.getState();
+    s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 7 });
+    s.handleFrame({ type: "stream_chunk", content: "out" });
+    s.handleFrame({ type: "stream_end", message_id: 11 });
+    s.handleFrame({ type: "spawn_meta", arslan_message_id: 11, spawn_id: 7, assistant_message_id: 42, task_brief: "do X" });
+    const item = useArslanStore.getState().items.find((i) => i.id === 11);
+    expect(item).toMatchObject({ spawnMessageId: 42, taskBrief: "do X" });
   });
 
   it("appends a replayed message frame (resume path)", () => {
