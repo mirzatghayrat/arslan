@@ -74,14 +74,12 @@ function makeActions(set: SetState, get: GetState) {
         spawn_id?: number | null;
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
-          // History rows carry an explicit spawn_id; the resume `message` frame
-          // does not (server contract), so when it's absent fall back to the
-          // sole known spawn if the roster is unambiguous.
-          let spawnId = row.spawn_id ?? null;
-          if (spawnId == null) {
-            const ids = Object.keys(state.spawnNames);
-            if (ids.length === 1) spawnId = Number(ids[0]);
-          }
+          // Resolve the spawn name ONLY from an explicit spawn_id. History rows
+          // always carry one; the resume `message` frame does not (server
+          // contract), in which case spawnId/spawnName degrade to null and the
+          // bubble falls back to the conversation title. Never guess from the
+          // roster.
+          const spawnId = row.spawn_id ?? null;
           return {
             id: row.message_id,
             kind: "message",

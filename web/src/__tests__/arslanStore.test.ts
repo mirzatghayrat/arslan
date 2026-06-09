@@ -92,7 +92,8 @@ describe("arslanStore", () => {
     const items = useArslanStore.getState().items;
     expect(items[items.length - 2]).toMatchObject({ id: 20, role: "arslan", content: "welcome back" });
     const last = items[items.length - 1];
-    expect(last).toMatchObject({ id: 21, role: "spawn", content: "post draft", spawnName: "Beauty Guru" });
+    // A replayed message frame carries no spawn_id, so the name cannot be resolved — degrades to null.
+    expect(last).toMatchObject({ id: 21, role: "spawn", content: "post draft", spawnId: null, spawnName: null });
     expect(useArslanStore.getState().lastMessageId).toBe(21);
   });
 
