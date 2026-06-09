@@ -47,6 +47,18 @@ class SpawnDetailOut(SpawnOut):
     messages: list[ChatMessageOut] = []
 
 
+class DraftIn(BaseModel):
+    description: str
+
+
+class SpawnCreateIn(BaseModel):
+    name: str
+    domain: str  # free-form "category.subcategory"
+    capabilities: list[str] = []
+    persona_role: str | None = None
+    persona_tone: str | None = None
+
+
 class ConfigUpdateIn(BaseModel):
     system_prompt: str | None = None
     persona_tone: str | None = None
