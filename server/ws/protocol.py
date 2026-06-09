@@ -61,8 +61,24 @@ def stream_start_src(source: str, spawn_id: int | None = None) -> dict[str, Any]
     return {"type": "stream_start", "source": source, "spawn_id": spawn_id}
 
 
-def suggest_create(draft: dict[str, Any]) -> dict[str, Any]:
-    return {"type": "suggest_create", "draft": draft}
+def suggest_create(
+    draft: dict[str, Any],
+    task_brief: str | None = None,
+    overlaps: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {"type": "suggest_create", "draft": draft, "task_brief": task_brief, "overlaps": overlaps}
+
+
+def spawn_meta(
+    *, arslan_message_id: int, spawn_id: int, assistant_message_id: int, task_brief: str
+) -> dict[str, Any]:
+    return {
+        "type": "spawn_meta",
+        "arslan_message_id": arslan_message_id,
+        "spawn_id": spawn_id,
+        "assistant_message_id": assistant_message_id,
+        "task_brief": task_brief,
+    }
 
 
 def fact_saved(content: str, sensitive: bool) -> dict[str, Any]:
