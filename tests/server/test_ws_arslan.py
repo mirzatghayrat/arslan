@@ -16,13 +16,17 @@ class _FakeAdapter:
 
     def __init__(self, text: str = "OK"):
         self._text = text
+        self.captured_user: str | None = None
 
     async def chat_stream(self, system, user, history=None):  # noqa: ANN001
+        self.captured_user = user
         yield self._text
 
 
-def _stub_spawn_adapter(monkeypatch, text: str = "OK"):
-    monkeypatch.setattr(dispatcher_mod, "_get_adapter", lambda: _FakeAdapter(text))
+def _stub_spawn_adapter(monkeypatch, text: str = "OK") -> _FakeAdapter:
+    adapter = _FakeAdapter(text)
+    monkeypatch.setattr(dispatcher_mod, "_get_adapter", lambda: adapter)
+    return adapter
 
 
 @pytest.fixture
@@ -179,7 +183,18 @@ def test_redo_redispatches(app_client, monkeypatch):
 
 
 def test_refine_passes_instruction(app_client, monkeypatch):
-    _stub_spawn_adapter(monkeypatch)
+    from server.db.models import ChatMessage
+
+    adapter = _stub_spawn_adapter(monkeypatch)
+
+    # Seed a prior assistant output so _last_spawn_output returns non-None.
+    async def _seed_prior():
+        async with db_session.AsyncSessionLocal() as s:
+            s.add(ChatMessage(spawn_id=7, role="assistant", content="DULL PRIOR RESULT"))
+            await s.commit()
+
+    anyio.run(_seed_prior)
+
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
         ws.send_json({
@@ -191,6 +206,26 @@ def test_refine_passes_instruction(app_client, monkeypatch):
         })
         frames = _drain(ws)
         assert any(f["type"] == "spawn_meta" for f in frames)
+
+    # The adapter must have received both the instruction and the seeded prior output.
+    assert adapter.captured_user is not None
+    assert "make it livelier" in adapter.captured_user
+    assert "DULL PRIOR RESULT" in adapter.captured_user
+
+
+def test_redo_with_bad_spawn_id_is_recoverable(app_client, monkeypatch):
+    _stub_spawn_adapter(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        # Malformed: spawn_id is None. Must NOT crash/close the socket.
+        ws.send_json({"type": "redo", "spawn_id": None, "task_brief": "x"})
+        err = ws.receive_json()
+        assert err["type"] == "error"
+        assert err["code"] == "INVALID_INPUT"
+        # Socket still usable: a subsequent valid route_to to seeded spawn 7 routes.
+        ws.send_json({"type": "route_to", "spawn_id": 7, "task_brief": "ping"})
+        frames = _drain(ws)
+        assert any(f["type"] == "routing" and f["spawn_id"] == 7 for f in frames)
 
 
 def test_to_frame_carries_task_brief_and_overlaps():

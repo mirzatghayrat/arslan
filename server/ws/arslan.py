@@ -100,6 +100,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             await ws.send_json(_to_frame(ev))
         outbox.clear()
 
+    async def run_spawn(spawn_id: int, task_brief: str, **kw) -> None:
+        outbox.clear()
+        await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
+        await flush()
+
     try:
         while True:
             data = await ws.receive_json()
@@ -122,42 +127,42 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 spawn_id, spawn_name = await _create_from_draft(draft, differentiation)
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name))
                 if task_brief.strip():
-                    outbox.clear()
-                    await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit)
-                    await flush()
+                    await run_spawn(spawn_id, task_brief)
                 continue
 
             if msg_type == "route_to":
-                spawn_id = int(data.get("spawn_id"))
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
                 task_brief = data.get("task_brief") or ""
-                outbox.clear()
-                await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit)
-                await flush()
+                await run_spawn(spawn_id, task_brief)
                 continue
 
             if msg_type == "redo":
-                spawn_id = int(data.get("spawn_id"))
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
                 task_brief = data.get("task_brief") or ""
-                outbox.clear()
-                await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit)
-                await flush()
+                await run_spawn(spawn_id, task_brief)
                 continue
 
             if msg_type == "refine":
-                spawn_id = int(data.get("spawn_id"))
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
                 task_brief = data.get("task_brief") or ""
                 instruction = data.get("instruction") or ""
                 prior = await _last_spawn_output(spawn_id)
-                outbox.clear()
-                await arslan.dispatch_spawn(
-                    conversation_id,
-                    spawn_id,
-                    task_brief,
-                    emit,
-                    prior_output=prior,
-                    instruction=instruction,
-                )
-                await flush()
+                await run_spawn(spawn_id, task_brief, prior_output=prior, instruction=instruction)
                 continue
 
             if msg_type == "refine_draft":
