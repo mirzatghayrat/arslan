@@ -50,6 +50,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
+  draftSpawn: (description: string) =>
+    request<import("../types").SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
+  createSpawn: (body: { name: string; domain: string; capabilities: string[]; persona_role?: string | null; persona_tone?: string | null }) =>
+    request<SpawnDetail>("/spawns", { method: "POST", body: JSON.stringify(body) }),
   getSpawn: (id: number) => request<SpawnDetail>(`/spawns/${id}`),
   deleteSpawn: (id: number) => request<void>(`/spawns/${id}`, { method: "DELETE" }),
   updateConfig: (id: number, body: Partial<SpawnDetail>) =>

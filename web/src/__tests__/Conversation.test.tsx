@@ -51,4 +51,27 @@ describe("Conversation", () => {
     await waitFor(() => expect(screen.getByText(/beauty-guru/)).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /create/i })).toBeInTheDocument();
   });
+
+  it("shows a thinking indicator while pending", () => {
+    useArslanStore.setState({ pending: true });
+    renderPage();
+    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+  });
+
+  it("shows spawn feedback controls on spawn bubbles", () => {
+    useArslanStore.setState({
+      items: [{ id: 11, kind: "message", role: "spawn", content: "out", spawnId: 7, spawnName: "Guru", spawnMessageId: 42, taskBrief: "do X" }],
+    });
+    renderPage();
+    expect(screen.getByRole("button", { name: /redo/i })).toBeInTheDocument();
+  });
+
+  it("renders the create card with overlap props", () => {
+    useArslanStore.setState({
+      suggestion: { name: "eq", domain: "finance.x", capabilities: [] },
+      suggestionOverlaps: { spawn_id: 3, name: "GuGu", axes: ["a"] },
+    });
+    renderPage();
+    expect(screen.getAllByText(/GuGu/).length).toBeGreaterThanOrEqual(1);
+  });
 });

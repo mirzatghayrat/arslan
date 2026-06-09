@@ -4,9 +4,11 @@ import { api } from "../api/client";
 import ChatInput from "../components/chat/ChatInput";
 import ConversationBubble from "../components/arslan/ConversationBubble";
 import CreateSpawnCard from "../components/arslan/CreateSpawnCard";
+import SpawnFeedbackBar from "../components/arslan/SpawnFeedbackBar";
+import ThinkingIndicator from "../components/arslan/ThinkingIndicator";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useArslanStore } from "../stores/arslanStore";
-import type { ArslanServerMessage, SuggestDraft } from "../types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft } from "../types";
 
 const CONVERSATION_ID = "main";
 
@@ -20,6 +22,10 @@ export default function Conversation() {
     streamSpawnName,
     suggestion,
     error,
+    pending,
+    pendingRoute,
+    suggestionTaskBrief,
+    suggestionOverlaps,
     setSpawnNames,
     addUserMessage,
     handleFrame,
@@ -46,10 +52,22 @@ export default function Conversation() {
     send({ type: "user_message", content: text });
   };
 
-  const confirmCreate = (draft: SuggestDraft) => {
-    send({ type: "confirm_create", draft });
+  const confirmCreate = (d: SuggestDraft, differentiation?: string) => {
+    send({ type: "confirm_create", draft: d, task_brief: suggestionTaskBrief ?? "", differentiation });
     dismissSuggestion();
   };
+  const refineDraft = (instruction: string) =>
+    send({ type: "refine_draft", description: instruction, previous_draft: suggestion });
+  const routeToExisting = (spawnId: number) => {
+    send({ type: "route_to", spawn_id: spawnId, task_brief: suggestionTaskBrief ?? "" });
+    dismissSuggestion();
+  };
+  const sendFeedback = (spawnId: number, messageId: number | null | undefined, action: string) =>
+    void api.sendFeedback(spawnId, { message_id: messageId ?? undefined, user_action: action as never, edits: {} });
+  const redo = (it: ArslanThreadItem) =>
+    it.spawnId && send({ type: "redo", spawn_id: it.spawnId, message_id: it.spawnMessageId, task_brief: it.taskBrief ?? "" });
+  const tweak = (it: ArslanThreadItem, instruction: string) =>
+    it.spawnId && send({ type: "refine", spawn_id: it.spawnId, message_id: it.spawnMessageId, task_brief: it.taskBrief ?? "", instruction });
 
   return (
     <div className="flex h-[75vh] flex-col">
@@ -72,8 +90,20 @@ export default function Conversation() {
           <p className="text-center text-white/40">{t("conversation.empty")}</p>
         )}
         {items.map((it) => (
-          <ConversationBubble key={it.id} item={it} />
+          <ConversationBubble key={it.id} item={it}>
+            {it.role === "spawn" && it.kind === "message" && (
+              <SpawnFeedbackBar
+                onThumbUp={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_up"); }}
+                onThumbDown={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_down"); }}
+                onRedo={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "redo"); redo(it); }}
+                onTweak={() => { const v = window.prompt(t("create_card.refine_placeholder")); if (v) { sendFeedback(it.spawnId!, it.spawnMessageId, "refine"); tweak(it, v); } }}
+              />
+            )}
+          </ConversationBubble>
         ))}
+        {pending && !streaming && (
+          <ThinkingIndicator spawnName={pendingRoute?.spawnName ?? null} />
+        )}
         {streaming && (
           <ConversationBubble
             item={{
@@ -88,10 +118,11 @@ export default function Conversation() {
         {suggestion && (
           <CreateSpawnCard
             draft={suggestion}
+            overlaps={suggestionOverlaps}
             onCreate={confirmCreate}
             onDismiss={dismissSuggestion}
-            onRefine={() => {}}
-            onRouteToExisting={() => {}}
+            onRefine={refineDraft}
+            onRouteToExisting={routeToExisting}
           />
         )}
       </div>
