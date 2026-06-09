@@ -36,8 +36,9 @@ describe("ConversationBubble", () => {
     expect(screen.getByText(/posts on xiaohongshu/)).toBeInTheDocument();
   });
 
-  it("renders a system spawn_created item via i18n", () => {
+  it("renders a system spawn_created item via i18n (sentinel stripped)", () => {
     render(<ConversationBubble item={{ id: -1, kind: "system", role: "arslan", content: "__SPAWN_CREATED__:Beauty Guru" }} />);
     expect(screen.getByText(/Beauty Guru/)).toBeInTheDocument();
+    expect(screen.queryByText(/__SPAWN_CREATED__/)).toBeNull();
   });
 });
