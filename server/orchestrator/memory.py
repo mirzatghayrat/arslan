@@ -194,6 +194,42 @@ async def list_facts() -> list[UserFact]:
         return list(rows.scalars().all())
 
 
+async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
+    """Add a user-authored fact (source='manual')."""
+    async with db_session.AsyncSessionLocal() as db:
+        row = UserFact(content=content.strip(), source="manual", sensitive=bool(sensitive))
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return row
+
+
+async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None) -> UserFact | None:
+    """Edit a fact's content/sensitivity. Returns None if not found."""
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(UserFact, fact_id)
+        if row is None:
+            return None
+        if content is not None:
+            row.content = content.strip()
+        if sensitive is not None:
+            row.sensitive = bool(sensitive)
+        await db.commit()
+        await db.refresh(row)
+        return row
+
+
+async def delete_fact(fact_id: int) -> bool:
+    """Delete a fact. Returns True if a row was removed."""
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(UserFact, fact_id)
+        if row is None:
+            return False
+        await db.delete(row)
+        await db.commit()
+        return True
+
+
 async def facts_text() -> str:
     """Render facts as a bullet block for injection into prompts ('' if none)."""
     facts = await list_facts()

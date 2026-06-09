@@ -77,3 +77,20 @@ class EvolutionRuleOut(BaseModel):
 class EvolutionOut(BaseModel):
     feedback_count: int
     active_rules: list[EvolutionRuleOut]
+
+
+class FactIn(BaseModel):
+    content: str
+    sensitive: bool = False
+
+
+class FactUpdate(BaseModel):
+    content: str | None = None
+    sensitive: bool | None = None
+
+
+class FactOut(BaseModel):
+    id: int
+    content: str
+    source: str
+    sensitive: bool

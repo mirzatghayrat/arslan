@@ -1,0 +1,39 @@
+"""REST endpoints for long-term user_facts (Settings -> Memory)."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+
+from server.auth import require_auth
+from server.orchestrator import memory
+from server.schemas import FactIn, FactOut, FactUpdate
+
+router = APIRouter(dependencies=[Depends(require_auth)])
+
+
+def _to_out(row) -> FactOut:  # noqa: ANN001
+    return FactOut(id=row.id, content=row.content, source=row.source, sensitive=row.sensitive)
+
+
+@router.get("/facts", response_model=list[FactOut])
+async def list_facts() -> list[FactOut]:
+    return [_to_out(r) for r in await memory.list_facts()]
+
+
+@router.post("/facts", response_model=FactOut, status_code=201)
+async def create_fact(body: FactIn) -> FactOut:
+    return _to_out(await memory.add_manual_fact(body.content, body.sensitive))
+
+
+@router.put("/facts/{fact_id}", response_model=FactOut)
+async def edit_fact(fact_id: int, body: FactUpdate) -> FactOut:
+    row = await memory.update_fact(fact_id, body.content, body.sensitive)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Fact not found")
+    return _to_out(row)
+
+
+@router.delete("/facts/{fact_id}", status_code=204)
+async def remove_fact(fact_id: int) -> Response:
+    if not await memory.delete_fact(fact_id):
+        raise HTTPException(status_code=404, detail="Fact not found")
+    return Response(status_code=204)
