@@ -1,6 +1,6 @@
 {
   "app": { "name": "Arslan", "tagline": "あなただけの AI スポーンを作ろう" },
-  "nav": { "dashboard": "ダッシュボード", "settings": "設定" },
+  "nav": { "dashboard": "ダッシュボード", "spawns": "スポーン", "settings": "設定" },
   "dashboard": {
     "title": "あなたのスポーン",
     "create": "新しいスポーンを作成",
@@ -44,6 +44,34 @@
     "stats": "統計",
     "reconnecting": "再接続しています…",
     "thinking": "考えています…"
+  },
+  "conversation": {
+    "title": "Arslan",
+    "placeholder": "Arslan にメッセージ…",
+    "routed_to": "{{name}} に転送しました",
+    "reconnecting": "再接続しています…",
+    "remember_note": "あなたについて覚えておきます…",
+    "spawn_created": "スポーン {{name}} を作成しました",
+    "empty": "Arslan に挨拶して始めましょう。"
+  },
+  "create_card": {
+    "heading": "これ用に {{name}} スポーンを作成しますか？",
+    "reason": "理由",
+    "domain": "分野",
+    "capabilities": "機能",
+    "create": "作成",
+    "tweak": "調整",
+    "dismiss": "閉じる"
+  },
+  "facts": {
+    "section": "メモリ",
+    "subtitle": "Arslan があなたについて覚えていること。編集できます。",
+    "empty": "まだ何も覚えていません。",
+    "add_placeholder": "Arslan に覚えておいてほしいことを追加…",
+    "add": "追加",
+    "save": "保存",
+    "delete": "削除",
+    "sensitive": "機密"
   },
   "settings": {
     "title": "設定",

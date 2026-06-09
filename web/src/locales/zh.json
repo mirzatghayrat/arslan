@@ -1,6 +1,6 @@
 {
   "app": { "name": "Arslan", "tagline": "打造你专属的 AI 分身" },
-  "nav": { "dashboard": "仪表盘", "settings": "设置" },
+  "nav": { "dashboard": "仪表盘", "spawns": "分身", "settings": "设置" },
   "dashboard": {
     "title": "你的分身",
     "create": "创建新分身",
@@ -44,6 +44,34 @@
     "stats": "统计",
     "reconnecting": "正在重新连接……",
     "thinking": "思考中……"
+  },
+  "conversation": {
+    "title": "Arslan",
+    "placeholder": "给 Arslan 发消息…",
+    "routed_to": "已转给 {{name}}",
+    "reconnecting": "正在重新连接…",
+    "remember_note": "我会记住你…",
+    "spawn_created": "已创建分身 {{name}}",
+    "empty": "向 Arslan 打个招呼开始吧。"
+  },
+  "create_card": {
+    "heading": "要为此创建一个 {{name}} 分身吗？",
+    "reason": "原因",
+    "domain": "领域",
+    "capabilities": "能力",
+    "create": "创建",
+    "tweak": "调整",
+    "dismiss": "忽略"
+  },
+  "facts": {
+    "section": "记忆",
+    "subtitle": "Arslan 记住的关于你的信息，可编辑。",
+    "empty": "暂无记忆。",
+    "add_placeholder": "添加 Arslan 应记住的内容…",
+    "add": "添加",
+    "save": "保存",
+    "delete": "删除",
+    "sensitive": "敏感"
   },
   "settings": {
     "title": "设置",

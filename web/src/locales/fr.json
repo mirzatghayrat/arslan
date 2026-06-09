@@ -1,6 +1,6 @@
 {
   "app": { "name": "Arslan", "tagline": "Créez vos propres spawns d'IA" },
-  "nav": { "dashboard": "Tableau de bord", "settings": "Paramètres" },
+  "nav": { "dashboard": "Tableau de bord", "spawns": "Spawns", "settings": "Paramètres" },
   "dashboard": {
     "title": "Vos spawns",
     "create": "Créer un nouveau spawn",
@@ -44,6 +44,34 @@
     "stats": "Statistiques",
     "reconnecting": "Reconnexion...",
     "thinking": "Réflexion..."
+  },
+  "conversation": {
+    "title": "Arslan",
+    "placeholder": "Message à Arslan…",
+    "routed_to": "transmis à {{name}}",
+    "reconnecting": "Reconnexion…",
+    "remember_note": "Je retiendrai que vous…",
+    "spawn_created": "Spawn {{name}} créé",
+    "empty": "Dites bonjour à Arslan pour commencer."
+  },
+  "create_card": {
+    "heading": "Voulez-vous un spawn {{name}} pour cela ?",
+    "reason": "Pourquoi",
+    "domain": "Domaine",
+    "capabilities": "Capacités",
+    "create": "Créer",
+    "tweak": "Ajuster",
+    "dismiss": "Ignorer"
+  },
+  "facts": {
+    "section": "Mémoire",
+    "subtitle": "Ce qu'Arslan retient à votre sujet. Modifiable.",
+    "empty": "Rien en mémoire pour l'instant.",
+    "add_placeholder": "Ajoutez quelque chose qu'Arslan devrait retenir…",
+    "add": "Ajouter",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "sensitive": "Sensible"
   },
   "settings": {
     "title": "Paramètres",

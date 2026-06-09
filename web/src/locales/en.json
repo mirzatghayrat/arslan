@@ -1,6 +1,6 @@
 {
   "app": { "name": "Arslan", "tagline": "Build your own AI spawns" },
-  "nav": { "dashboard": "Dashboard", "settings": "Settings" },
+  "nav": { "dashboard": "Dashboard", "spawns": "Spawns", "settings": "Settings" },
   "dashboard": {
     "title": "Your Spawns",
     "create": "Create New Spawn",
@@ -44,6 +44,34 @@
     "stats": "Stats",
     "reconnecting": "Reconnecting...",
     "thinking": "Thinking..."
+  },
+  "conversation": {
+    "title": "Arslan",
+    "placeholder": "Message Arslan…",
+    "routed_to": "routed to {{name}}",
+    "reconnecting": "Reconnecting…",
+    "remember_note": "I'll remember that you…",
+    "spawn_created": "Created spawn {{name}}",
+    "empty": "Say hello to Arslan to get started."
+  },
+  "create_card": {
+    "heading": "Want a {{name}} spawn for this?",
+    "reason": "Why",
+    "domain": "Domain",
+    "capabilities": "Capabilities",
+    "create": "Create",
+    "tweak": "Tweak",
+    "dismiss": "Dismiss"
+  },
+  "facts": {
+    "section": "Memory",
+    "subtitle": "What Arslan remembers about you. Editable.",
+    "empty": "Nothing remembered yet.",
+    "add_placeholder": "Add something Arslan should remember…",
+    "add": "Add",
+    "save": "Save",
+    "delete": "Delete",
+    "sensitive": "Sensitive"
   },
   "settings": {
     "title": "Settings",

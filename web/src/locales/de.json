@@ -1,6 +1,6 @@
 {
   "app": { "name": "Arslan", "tagline": "Erstelle deine eigenen KI-Spawns" },
-  "nav": { "dashboard": "Dashboard", "settings": "Einstellungen" },
+  "nav": { "dashboard": "Dashboard", "spawns": "Spawns", "settings": "Einstellungen" },
   "dashboard": {
     "title": "Deine Spawns",
     "create": "Neuen Spawn erstellen",
@@ -44,6 +44,34 @@
     "stats": "Statistiken",
     "reconnecting": "Verbindung wird wiederhergestellt …",
     "thinking": "Denkt nach …"
+  },
+  "conversation": {
+    "title": "Arslan",
+    "placeholder": "Nachricht an Arslan …",
+    "routed_to": "weitergeleitet an {{name}}",
+    "reconnecting": "Verbindung wird wiederhergestellt …",
+    "remember_note": "Ich merke mir, dass du …",
+    "spawn_created": "Spawn {{name}} erstellt",
+    "empty": "Begrüße Arslan, um loszulegen."
+  },
+  "create_card": {
+    "heading": "Möchtest du dafür einen {{name}}-Spawn?",
+    "reason": "Warum",
+    "domain": "Bereich",
+    "capabilities": "Fähigkeiten",
+    "create": "Erstellen",
+    "tweak": "Anpassen",
+    "dismiss": "Verwerfen"
+  },
+  "facts": {
+    "section": "Gedächtnis",
+    "subtitle": "Was sich Arslan über dich merkt. Bearbeitbar.",
+    "empty": "Noch nichts gemerkt.",
+    "add_placeholder": "Etwas hinzufügen, das sich Arslan merken soll …",
+    "add": "Hinzufügen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "sensitive": "Sensibel"
   },
   "settings": {
     "title": "Einstellungen",

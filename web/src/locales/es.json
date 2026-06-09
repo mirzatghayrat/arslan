@@ -1,6 +1,6 @@
 {
   "app": { "name": "Arslan", "tagline": "Crea tus propios spawns de IA" },
-  "nav": { "dashboard": "Panel", "settings": "Ajustes" },
+  "nav": { "dashboard": "Panel", "spawns": "Spawns", "settings": "Ajustes" },
   "dashboard": {
     "title": "Tus spawns",
     "create": "Crear nuevo spawn",
@@ -44,6 +44,34 @@
     "stats": "Estadísticas",
     "reconnecting": "Reconectando...",
     "thinking": "Pensando..."
+  },
+  "conversation": {
+    "title": "Arslan",
+    "placeholder": "Mensaje para Arslan…",
+    "routed_to": "enviado a {{name}}",
+    "reconnecting": "Reconectando…",
+    "remember_note": "Recordaré que tú…",
+    "spawn_created": "Spawn {{name}} creado",
+    "empty": "Saluda a Arslan para empezar."
+  },
+  "create_card": {
+    "heading": "¿Quieres un spawn de {{name}} para esto?",
+    "reason": "Por qué",
+    "domain": "Dominio",
+    "capabilities": "Capacidades",
+    "create": "Crear",
+    "tweak": "Ajustar",
+    "dismiss": "Descartar"
+  },
+  "facts": {
+    "section": "Memoria",
+    "subtitle": "Lo que Arslan recuerda sobre ti. Editable.",
+    "empty": "Aún no hay nada recordado.",
+    "add_placeholder": "Añade algo que Arslan deba recordar…",
+    "add": "Añadir",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "sensitive": "Sensible"
   },
   "settings": {
     "title": "Ajustes",
