@@ -68,6 +68,8 @@ async def test_create_endpoint_creates_spawn(create_env):
     out = r.json()
     assert out["name"] == "eq"
     assert out["domain"] == "finance.equity-research"  # category.subcategory recomposed
+    assert out["system_prompt"]  # non-empty persona prompt, not GENERIC
+    assert "analyst" in out["system_prompt"]
 
 
 async def test_create_requires_auth(create_env):

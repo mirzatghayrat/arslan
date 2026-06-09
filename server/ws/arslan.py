@@ -12,18 +12,6 @@ from server.services import spawn_service
 from server.ws import protocol
 
 
-def _build_system_prompt(draft: dict) -> str:
-    role = draft.get("persona_role") or "a helpful assistant"
-    tone = draft.get("persona_tone") or ""
-    domain = draft.get("domain") or ""
-    parts = [f"You are {role}."]
-    if tone:
-        parts.append(f"Tone: {tone}.")
-    if domain:
-        parts.append(f"Domain focus: {domain}.")
-    return " ".join(parts)
-
-
 async def _history(conversation_id: str) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
@@ -46,7 +34,7 @@ async def _history(conversation_id: str) -> list[dict]:
 async def _create_from_draft(draft: dict, differentiation: str | None = None):
     domain = draft.get("domain") or "other"
     category, _, subcategory = domain.partition(".")
-    system_prompt = _build_system_prompt(draft)
+    system_prompt = spawn_service.build_system_prompt(draft)
     if differentiation:
         system_prompt += (
             f"\n\nSpecialization (how you differ from similar specialists): {differentiation}"

@@ -8,6 +8,18 @@ from server.db.models import ChatMessage, Spawn
 from server.schemas import ChatMessageOut, SpawnDetailOut, SpawnOut
 
 
+def build_system_prompt(draft: dict) -> str:
+    role = draft.get("persona_role") or "a helpful assistant"
+    tone = draft.get("persona_tone") or ""
+    domain = draft.get("domain") or ""
+    parts = [f"You are {role}."]
+    if tone:
+        parts.append(f"Tone: {tone}.")
+    if domain:
+        parts.append(f"Domain focus: {domain}.")
+    return " ".join(parts)
+
+
 def _domain(spawn: Spawn) -> str:
     if spawn.domain_subcategory:
         return f"{spawn.domain_category}.{spawn.domain_subcategory}"

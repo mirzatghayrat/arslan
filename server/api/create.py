@@ -24,6 +24,9 @@ async def create_spawn(
     body: SpawnCreateIn, session: AsyncSession = Depends(get_session)
 ) -> SpawnDetailOut:
     category, _, subcategory = body.domain.partition(".")
+    system_prompt = spawn_service.build_system_prompt(
+        {"persona_role": body.persona_role, "persona_tone": body.persona_tone, "domain": body.domain}
+    )
     spawn = await spawn_service.create_spawn_unique(
         session,
         name=body.name,
@@ -32,7 +35,7 @@ async def create_spawn(
         capabilities=body.capabilities,
         persona_role=body.persona_role,
         persona_tone=body.persona_tone,
-        system_prompt="",
+        system_prompt=system_prompt,
         generation_level=1,
     )
     return spawn_service.to_detail(spawn, [])
