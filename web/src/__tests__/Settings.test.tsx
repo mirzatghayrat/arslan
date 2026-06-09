@@ -20,6 +20,7 @@ beforeEach(() => {
     llm_api_key: "sk-...9999",
     language: "en",
   });
+  vi.spyOn(api, "listFacts").mockResolvedValue([]);
 });
 
 describe("Settings", () => {

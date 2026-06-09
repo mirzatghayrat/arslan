@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
+import FactsPanel from "../components/settings/FactsPanel";
 import ThemeToggle from "../components/layout/ThemeToggle";
 import { useAuthStore } from "../stores/authStore";
 import type { AppSettings } from "../types";
@@ -115,6 +116,8 @@ export default function Settings() {
         <span className="text-sm">{t("settings.theme")}</span>
         <ThemeToggle />
       </section>
+
+      <FactsPanel />
 
       <button onClick={() => void save()} className="mt-6 rounded-lg bg-amber px-5 py-2.5 font-medium text-black">
         {t("settings.save")}
