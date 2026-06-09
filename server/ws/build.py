@@ -1,6 +1,11 @@
 """WebSocket endpoint driving the spawn-build dialogue with resume support."""
 from __future__ import annotations
 
+# DEPRECATED (2026-06-10): The step-by-step build wizard is superseded by natural-language
+# spawn creation (server/services/spawn_drafter.py + POST /api/v1/spawns). This module and
+# arslan/core/dialogue.py are retained for now (deprecate-not-delete) and slated for removal
+# in a dedicated dead-code audit. No new callers should use it.
+
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
