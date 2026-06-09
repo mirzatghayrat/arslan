@@ -87,4 +87,33 @@ describe("arslanStore", () => {
     expect(st.error).toContain("couldn't complete");
     expect(st.streaming).toBe(false);
   });
+
+  it("ignores a stream_end with no active stream (no empty bubble)", () => {
+    const s = useArslanStore.getState();
+    s.handleFrame({ type: "stream_end", message_id: 99 });
+    expect(useArslanStore.getState().items).toHaveLength(0);
+  });
+
+  it("ignores stream chunks arriving after stream_end", () => {
+    const s = useArslanStore.getState();
+    s.handleFrame({ type: "stream_start", source: "arslan" });
+    s.handleFrame({ type: "stream_chunk", content: "hi" });
+    s.handleFrame({ type: "stream_end", message_id: 5 });
+    s.handleFrame({ type: "stream_chunk", content: "orphan" });
+    expect(useArslanStore.getState().streamingText).toBe("");
+    s.handleFrame({ type: "stream_end", message_id: 6 });
+    // the orphan chunk must NOT have produced a second message
+    expect(useArslanStore.getState().items).toHaveLength(1);
+  });
+
+  it("clears spawn attribution when an error interrupts a routed stream", () => {
+    const s = useArslanStore.getState();
+    s.handleFrame({ type: "routing", spawn_id: 7, spawn_name: "Beauty Guru" });
+    s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 7 });
+    s.handleFrame({ type: "error", code: "SPAWN_ERROR", message: "boom" });
+    const st = useArslanStore.getState();
+    expect(st.streamSource).toBeNull();
+    expect(st.streamSpawnId).toBeNull();
+    expect(st.pendingRoute).toBeNull();
+  });
 });

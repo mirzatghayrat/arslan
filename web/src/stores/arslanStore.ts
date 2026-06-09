@@ -108,9 +108,11 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "stream_chunk":
+          if (!state.streaming) break;
           set({ streamingText: state.streamingText + frame.content });
           break;
         case "stream_end": {
+          if (!state.streaming) break;
           const item: ArslanThreadItem = {
             id: frame.message_id,
             kind: "message",
@@ -155,7 +157,15 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "error":
-          set({ error: frame.message, streaming: false, streamingText: "" });
+          set({
+            error: frame.message,
+            streaming: false,
+            streamingText: "",
+            streamSource: null,
+            streamSpawnId: null,
+            streamSpawnName: null,
+            pendingRoute: null,
+          });
           break;
         default:
           break;
