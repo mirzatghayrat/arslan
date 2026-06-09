@@ -13,12 +13,29 @@ _ACTION_MAP = {
     "thumbs_down": "rejected",
     "edit": "edited",
     "regenerate": "regenerated",
+    "redo": "regenerated",
+    "refine": "edited",
+}
+
+# REST feedback action -> leveling evidence signal (-1 | 0 | +1).
+_QUALITY_SIGNAL = {
+    "thumbs_up": 1,
+    "thumbs_down": -1,
+    "redo": -1,
+    "regenerate": -1,
+    "refine": 0,
+    "edit": 0,
 }
 
 
 def map_user_action(action: str) -> str:
     """Translate a REST feedback action to the core engine's vocabulary."""
     return _ACTION_MAP.get(action, action)
+
+
+def quality_signal_for(action: str) -> int | None:
+    """Map a REST feedback action to a leveling evidence signal (-1|0|+1) or None."""
+    return _QUALITY_SIGNAL.get(action)
 
 
 def _engine_for(spawn_name: str) -> EvolutionEngine:

@@ -63,7 +63,7 @@ class TemplateOut(BaseModel):
 
 class FeedbackIn(BaseModel):
     message_id: int | None = None
-    user_action: Literal["thumbs_up", "thumbs_down", "edit", "regenerate"]
+    user_action: Literal["thumbs_up", "thumbs_down", "edit", "regenerate", "redo", "refine"]
     edits: dict[str, Any] = {}
 
 
