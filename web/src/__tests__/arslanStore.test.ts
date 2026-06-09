@@ -111,7 +111,17 @@ describe("arslanStore", () => {
     expect(st.suggestionOverlaps).toMatchObject({ spawn_id: 3, name: "GuGu" });
   });
 
-  it("attaches spawnMessageId + taskBrief from spawn_meta to the matching item", () => {
+  it("attaches spawn_meta sent before stream_end (production order)", () => {
+    const s = useArslanStore.getState();
+    s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 7 });
+    s.handleFrame({ type: "stream_chunk", content: "out" });
+    s.handleFrame({ type: "spawn_meta", arslan_message_id: 11, spawn_id: 7, assistant_message_id: 42, task_brief: "do X" });
+    s.handleFrame({ type: "stream_end", message_id: 11 });
+    const item = useArslanStore.getState().items.find((i) => i.id === 11);
+    expect(item).toMatchObject({ spawnMessageId: 42, taskBrief: "do X" });
+  });
+
+  it("also attaches spawn_meta sent after stream_end (defensive)", () => {
     const s = useArslanStore.getState();
     s.handleFrame({ type: "stream_start", source: "spawn", spawn_id: 7 });
     s.handleFrame({ type: "stream_chunk", content: "out" });

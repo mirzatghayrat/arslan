@@ -16,6 +16,10 @@ interface ArslanState {
   pending: boolean;
   suggestionTaskBrief: string | null;
   suggestionOverlaps: import("../types").OverlapInfo | null;
+  // spawn_meta frames can arrive BEFORE the stream_end that creates the item
+  // (production order). Stash them here keyed by arslan_message_id and apply on
+  // stream_end. Cleared per-key once applied.
+  pendingSpawnMeta: Record<number, { assistant_message_id: number; task_brief: string }>;
 
   setSpawnNames: (map: Record<number, string>) => void;
   addUserMessage: (content: string) => void;
@@ -48,6 +52,7 @@ function initialData() {
     pending: false,
     suggestionTaskBrief: null as string | null,
     suggestionOverlaps: null as import("../types").OverlapInfo | null,
+    pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
   };
 }
 
@@ -142,6 +147,9 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "stream_end": {
           if (!state.streaming) break;
+          // A spawn_meta for this message may have arrived earlier (production
+          // order). Apply it now and drop the stashed entry.
+          const meta = state.pendingSpawnMeta[frame.message_id];
           const item: ArslanThreadItem = {
             id: frame.message_id,
             kind: "message",
@@ -149,7 +157,11 @@ function makeActions(set: SetState, get: GetState) {
             content: state.streamingText,
             spawnId: state.streamSpawnId,
             spawnName: state.streamSpawnName,
+            spawnMessageId: meta?.assistant_message_id ?? null,
+            taskBrief: meta?.task_brief ?? null,
           };
+          const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
+          delete nextPendingSpawnMeta[frame.message_id];
           set({
             items: [...state.items, item],
             streaming: false,
@@ -158,6 +170,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSpawnId: null,
             streamSpawnName: null,
             pendingRoute: null,
+            pendingSpawnMeta: nextPendingSpawnMeta,
             lastMessageId: Math.max(state.lastMessageId, frame.message_id),
           });
           break;
@@ -170,15 +183,32 @@ function makeActions(set: SetState, get: GetState) {
             suggestionOverlaps: frame.overlaps ?? null,
           });
           break;
-        case "spawn_meta":
-          set({
-            items: state.items.map((it) =>
-              it.id === frame.arslan_message_id
-                ? { ...it, spawnMessageId: frame.assistant_message_id, taskBrief: frame.task_brief }
-                : it,
-            ),
-          });
+        case "spawn_meta": {
+          // Production order is spawn_meta BEFORE stream_end, so the target item
+          // usually doesn't exist yet — stash it for stream_end to apply. If the
+          // item already exists (defensive / reverse order), attach directly.
+          const exists = state.items.some((it) => it.id === frame.arslan_message_id);
+          if (exists) {
+            set({
+              items: state.items.map((it) =>
+                it.id === frame.arslan_message_id
+                  ? { ...it, spawnMessageId: frame.assistant_message_id, taskBrief: frame.task_brief }
+                  : it,
+              ),
+            });
+          } else {
+            set({
+              pendingSpawnMeta: {
+                ...state.pendingSpawnMeta,
+                [frame.arslan_message_id]: {
+                  assistant_message_id: frame.assistant_message_id,
+                  task_brief: frame.task_brief,
+                },
+              },
+            });
+          }
           break;
+        }
         case "fact_saved":
           set({
             items: [
