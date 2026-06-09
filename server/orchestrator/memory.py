@@ -196,8 +196,11 @@ async def list_facts() -> list[UserFact]:
 
 async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
     """Add a user-authored fact (source='manual')."""
+    text = content.strip()
+    if not text:
+        raise ValueError("Fact content cannot be empty")
     async with db_session.AsyncSessionLocal() as db:
-        row = UserFact(content=content.strip(), source="manual", sensitive=bool(sensitive))
+        row = UserFact(content=text, source="manual", sensitive=bool(sensitive))
         db.add(row)
         await db.commit()
         await db.refresh(row)

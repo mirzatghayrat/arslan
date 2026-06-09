@@ -21,7 +21,11 @@ async def list_facts() -> list[FactOut]:
 
 @router.post("/facts", response_model=FactOut, status_code=201)
 async def create_fact(body: FactIn) -> FactOut:
-    return _to_out(await memory.add_manual_fact(body.content, body.sensitive))
+    try:
+        row = await memory.add_manual_fact(body.content, body.sensitive)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _to_out(row)
 
 
 @router.put("/facts/{fact_id}", response_model=FactOut)

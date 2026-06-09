@@ -75,3 +75,13 @@ async def test_facts_requires_auth(client):
 async def test_update_missing_fact_404(client):
     r = await client.put("/api/v1/facts/999", headers=AUTH, json={"content": "x"})
     assert r.status_code == 404
+
+
+async def test_delete_missing_fact_404(client):
+    r = await client.delete("/api/v1/facts/999", headers=AUTH)
+    assert r.status_code == 404
+
+
+async def test_create_blank_fact_rejected(client):
+    r = await client.post("/api/v1/facts", headers=AUTH, json={"content": "   "})
+    assert r.status_code == 422
