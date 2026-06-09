@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import ArslanMark from "../brand/ArslanMark";
 import LanguageSwitcher from "./LanguageSwitcher";
 import ThemeToggle from "./ThemeToggle";
 
@@ -8,7 +9,7 @@ export default function Header() {
   return (
     <header className="flex items-center gap-3 border-b border-white/10 px-6 py-4">
       <Link to="/" className="flex items-center gap-2 text-lg font-semibold text-white">
-        <span aria-hidden>🐆</span>
+        <ArslanMark className="h-7 w-7 text-brand" />
         <span>{t("app.name")}</span>
       </Link>
       <div className="ml-auto flex items-center gap-2">

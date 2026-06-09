@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import ChatInput from "../components/chat/ChatInput";
 import ConversationBubble from "../components/arslan/ConversationBubble";
+import ArslanMark from "../components/brand/ArslanMark";
 import CreateSpawnCard from "../components/arslan/CreateSpawnCard";
 import SpawnFeedbackBar from "../components/arslan/SpawnFeedbackBar";
 import ThinkingIndicator from "../components/arslan/ThinkingIndicator";
@@ -72,7 +73,7 @@ export default function Conversation() {
   return (
     <div className="flex h-[75vh] flex-col">
       <h1 className="mb-2 flex items-center gap-2 text-xl font-semibold">
-        <span aria-hidden>🐆</span> {t("conversation.title")}
+        <ArslanMark className="h-6 w-6 text-brand" /> {t("conversation.title")}
       </h1>
 
       {error && (
