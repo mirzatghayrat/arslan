@@ -79,15 +79,23 @@ export interface SuggestDraft {
   reason?: string | null;
 }
 
+export interface OverlapInfo {
+  spawn_id: number;
+  name: string;
+  axes: string[];
+}
+
 /** A renderable item in the unified Arslan thread. */
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact";
+  kind: "message" | "fact" | "system";
   role: "user" | "arslan" | "spawn";
   content: string;
   spawnId?: number | null;
   spawnName?: string | null;
-  sensitive?: boolean; // for kind === "fact"
+  sensitive?: boolean; // kind === "fact"
+  spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
+  taskBrief?: string | null; // the task this spawn turn ran, for redo/refine
 }
 
 /** A row from the server `history` frame. */
@@ -105,7 +113,8 @@ export type ArslanServerMessage =
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
-  | { type: "suggest_create"; draft: SuggestDraft }
+  | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
+  | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "message"; message_id: number; content: string; role: string }
   | { type: "spawn_created"; spawn_id: number; spawn_name: string }
