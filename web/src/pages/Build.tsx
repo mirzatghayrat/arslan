@@ -1,82 +1,65 @@
-import { useCallback, useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import StepIndicator from "../components/build/StepIndicator";
-import QuestionView from "../components/build/QuestionView";
-import { useWebSocket } from "../hooks/useWebSocket";
-import type { ServerMessage } from "../types";
-
-function newSessionId(): string {
-  return `build-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-}
+import { api } from "../api/client";
+import CreateSpawnCard from "../components/arslan/CreateSpawnCard";
+import type { SuggestDraft } from "../types";
 
 export default function Build() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const draft = (location.state as { draft?: import("../types").SuggestDraft } | null)?.draft;
-  const sessionId = useMemo(newSessionId, []);
-  const [question, setQuestion] = useState<Extract<ServerMessage, { type: "question" }> | null>(
-    null,
-  );
-  const [creating, setCreating] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const seeded = (location.state as { draft?: SuggestDraft } | null)?.draft ?? null;
+  const [description, setDescription] = useState("");
+  const [draft, setDraft] = useState<SuggestDraft | null>(seeded);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const onMessage = useCallback(
-    (raw: unknown) => {
-      const msg = raw as ServerMessage;
-      if (msg.type === "question") {
-        setQuestion(msg);
-      } else if (msg.type === "progress") {
-        // Step indicator updates from the next question's node_id.
-      } else if (msg.type === "build_complete") {
-        setCreating(true);
-        navigate(`/chat/${msg.spawn_id}`);
-      } else if (msg.type === "error") {
-        setErrorMsg(`${t("errors.server_error")}: ${msg.message}`);
-      }
-    },
-    [navigate, t],
-  );
+  const doDraft = async () => {
+    const d = description.trim();
+    if (!d) return;
+    setBusy(true); setError(null);
+    try { setDraft(await api.draftSpawn(d)); }
+    catch { setError(t("errors.server_error")); }
+    finally { setBusy(false); }
+  };
 
-  const handleAuthFail = useCallback(() => setErrorMsg(t("errors.auth_failed")), [t]);
-
-  const { send, reconnecting } = useWebSocket(`/ws/build/${sessionId}`, onMessage, {
-    onAuthFail: handleAuthFail,
-  });
+  const doCreate = async (d: SuggestDraft) => {
+    const created = await api.createSpawn({
+      name: d.name, domain: d.domain, capabilities: d.capabilities,
+      persona_role: d.persona_role, persona_tone: d.persona_tone,
+    });
+    navigate(`/chat/${created.id}`);
+  };
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="mb-2 text-2xl font-semibold">{t("build.title")}</h1>
-      {draft && (
-        <p className="mb-3 rounded-lg border border-amber/30 bg-amber/5 px-4 py-2 text-sm text-amber">
-          {draft.name} · {draft.domain}
-        </p>
-      )}
-      {errorMsg && (
-        <div className="mb-3 flex items-center justify-between rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">
-          <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-red-300/70 hover:text-red-200">
-            {t("errors.dismiss")}
-          </button>
-        </div>
-      )}
-      {reconnecting && <p className="mb-2 text-sm text-amber">{t("build.reconnecting")}</p>}
-      {question && <StepIndicator activeNode={question.node_id} />}
+    <div className="mx-auto max-w-xl">
+      <h1 className="mb-4 text-2xl font-semibold">{t("manual_create.title")}</h1>
+      {error && <p className="mb-3 text-sm text-red-300">{error}</p>}
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder={t("manual_create.describe_placeholder")}
+        className="h-28 w-full rounded-lg border border-white/15 bg-white/5 px-4 py-3"
+      />
+      <button onClick={() => void doDraft()} disabled={busy}
+        className="mt-3 rounded-lg bg-amber px-5 py-2.5 font-medium text-black disabled:opacity-50">
+        {busy ? t("manual_create.drafting") : t("manual_create.draft")}
+      </button>
 
-      {creating ? (
-        <p className="text-white/60">{t("build.creating")}</p>
-      ) : question ? (
-        <QuestionView
-          key={question.node_id}
-          text={question.text}
-          options={question.options}
-          multiSelect={question.multi_select}
-          hint={question.hint}
-          onSubmit={(answer) => send({ type: "user_message", content: answer })}
-        />
-      ) : (
-        <p className="text-white/50">…</p>
+      {draft && (
+        <div className="mt-6">
+          <CreateSpawnCard
+            draft={draft}
+            onCreate={(d) => void doCreate(d)}
+            onDismiss={() => setDraft(null)}
+            onRefine={(instruction) => void (async () => {
+              try { setDraft(await api.draftSpawn(`${description}\n\nRefine: ${instruction}`)); }
+              catch { setError(t("errors.server_error")); }
+            })()}
+            onRouteToExisting={() => { /* manual create has no overlap routing */ }}
+          />
+        </div>
       )}
     </div>
   );

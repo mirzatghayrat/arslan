@@ -24,6 +24,11 @@ export default function Chat() {
     finalizeStreaming,
   } = useChatStore();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [spawnName, setSpawnName] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.getSpawn(id).then((s) => setSpawnName(s.name)).catch(() => setSpawnName(null));
+  }, [id]);
 
   const onMessage = useCallback(
     (raw: unknown) => {
@@ -92,7 +97,7 @@ export default function Chat() {
 
   return (
     <div className="flex h-[70vh] flex-col">
-      <h1 className="mb-2 text-xl font-semibold">{t("chat.title", { name: id })}</h1>
+      <h1 className="mb-2 text-xl font-semibold">{t("chat.title", { name: spawnName ?? id })}</h1>
       {errorMsg && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">
           <span>{errorMsg}</span>
