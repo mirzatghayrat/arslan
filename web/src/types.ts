@@ -69,3 +69,43 @@ export interface UserFact {
   source: "auto" | "manual";
   sensitive: boolean;
 }
+
+export interface SuggestDraft {
+  name: string;
+  domain: string;
+  capabilities: string[];
+  persona_role?: string | null;
+  persona_tone?: string | null;
+  reason?: string | null;
+}
+
+/** A renderable item in the unified Arslan thread. */
+export interface ArslanThreadItem {
+  id: number;
+  kind: "message" | "fact";
+  role: "user" | "arslan" | "spawn";
+  content: string;
+  spawnId?: number | null;
+  spawnName?: string | null;
+  sensitive?: boolean; // for kind === "fact"
+}
+
+/** A row from the server `history` frame. */
+export interface ArslanHistoryRow {
+  message_id: number;
+  role: "user" | "arslan" | "spawn_summary";
+  content: string;
+  spawn_id: number | null;
+}
+
+// Server -> client frames on /ws/arslan
+export type ArslanServerMessage =
+  | { type: "history"; messages: ArslanHistoryRow[] }
+  | { type: "routing"; spawn_id: number; spawn_name: string | null }
+  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
+  | { type: "stream_chunk"; content: string }
+  | { type: "stream_end"; message_id: number }
+  | { type: "suggest_create"; draft: SuggestDraft }
+  | { type: "fact_saved"; content: string; sensitive: boolean }
+  | { type: "spawn_created"; spawn_id: number; spawn_name: string }
+  | { type: "error"; code: string; message: string; recoverable?: boolean };
