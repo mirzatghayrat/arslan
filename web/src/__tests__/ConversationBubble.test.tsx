@@ -9,14 +9,24 @@ describe("ConversationBubble", () => {
     expect(screen.getByText("hi there")).toBeInTheDocument();
   });
 
-  it("renders a spawn message with a routed-to caption", () => {
+  it("renders a spawn message named, with a routed-to caption", () => {
     render(
       <ConversationBubble
         item={{ id: 2, kind: "message", role: "spawn", content: "3 posts", spawnId: 7, spawnName: "Beauty Guru" }}
       />,
     );
     expect(screen.getByText("3 posts")).toBeInTheDocument();
-    expect(screen.getByText(/Beauty Guru/)).toBeInTheDocument();
+    // Name appears in both the faint caption and the bold in-bubble header.
+    expect(screen.getAllByText(/Beauty Guru/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("uses purple tone for spawn bubbles", () => {
+    const { container } = render(
+      <ConversationBubble
+        item={{ id: 3, kind: "message", role: "spawn", content: "x", spawnId: 7, spawnName: "Guru" }}
+      />,
+    );
+    expect(container.querySelector(".bg-purple-500\\/15")).not.toBeNull();
   });
 
   it("renders a fact item as a remember chip", () => {

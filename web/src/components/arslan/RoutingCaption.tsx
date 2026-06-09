@@ -5,7 +5,7 @@ export default function RoutingCaption({ spawnName }: { spawnName: string | null
   return (
     <p className="mb-1 text-xs text-white/40">
       <span aria-hidden>🐆 </span>
-      {t("conversation.routed_to", { name: spawnName ?? "spawn" })}
+      {t("conversation.routed_to", { name: spawnName ?? t("conversation.title") })}
     </p>
   );
 }

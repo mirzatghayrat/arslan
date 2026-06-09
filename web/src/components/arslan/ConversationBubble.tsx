@@ -35,6 +35,12 @@ export default function ConversationBubble({
       <div className="max-w-[75%]">
         {isSpawn && <RoutingCaption spawnName={item.spawnName} />}
         <div className={`rounded-2xl px-4 py-2.5 ${tone}`}>
+          {isSpawn && (
+            <p className="mb-1 text-xs font-semibold text-purple-200">
+              <span aria-hidden>💬 </span>
+              {item.spawnName ?? t("conversation.title")}
+            </p>
+          )}
           <p className="whitespace-pre-wrap">{item.content}</p>
           {children}
         </div>
