@@ -11,6 +11,19 @@ export default function ConversationBubble({
 }) {
   const { t } = useTranslation();
 
+  if (item.kind === "system") {
+    const name = item.content.startsWith("__SPAWN_CREATED__:")
+      ? item.content.slice("__SPAWN_CREATED__:".length)
+      : item.content;
+    return (
+      <div className="flex justify-center">
+        <span className="rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-xs text-amber/90">
+          {t("conversation.spawn_created", { name })}
+        </span>
+      </div>
+    );
+  }
+
   if (item.kind === "fact") {
     return (
       <div className="flex justify-center">
