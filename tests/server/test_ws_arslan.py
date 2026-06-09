@@ -7,7 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 import server.orchestrator.arslan as arslan_mod
+import server.orchestrator.dispatcher as dispatcher_mod
 from server.db.models import Base, Spawn
+
+
+class _FakeAdapter:
+    """Deterministic streaming adapter so spawn dispatch runs against the test DB."""
+
+    def __init__(self, text: str = "OK"):
+        self._text = text
+
+    async def chat_stream(self, system, user, history=None):  # noqa: ANN001
+        yield self._text
+
+
+def _stub_spawn_adapter(monkeypatch, text: str = "OK"):
+    monkeypatch.setattr(dispatcher_mod, "_get_adapter", lambda: _FakeAdapter(text))
 
 
 @pytest.fixture
@@ -100,3 +115,92 @@ def test_confirm_create_dedups_duplicate_name(app_client):
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
         assert created["spawn_name"] == "beauty-guru-2"
+
+
+def _drain(ws, max_frames: int = 30) -> list[dict]:
+    """Collect frames until a stream_end is seen (or budget exhausted)."""
+    frames: list[dict] = []
+    for _ in range(max_frames):
+        f = ws.receive_json()
+        frames.append(f)
+        if f.get("type") == "stream_end":
+            break
+    return frames
+
+
+def test_confirm_create_then_executes(app_client, monkeypatch):
+    _stub_spawn_adapter(monkeypatch)
+    draft = {"name": "eq", "domain": "finance.x", "capabilities": []}
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "confirm_create", "draft": draft, "task_brief": "analyze TSLA"})
+        created = ws.receive_json()
+        assert created["type"] == "spawn_created"
+        frames = _drain(ws)
+        types = [f["type"] for f in frames]
+        # create THEN execute: a routed spawn turn follows.
+        assert "routing" in types
+        assert "spawn_meta" in types
+        assert "stream_end" in types
+
+
+def test_confirm_create_without_task_brief_does_not_dispatch(app_client, monkeypatch):
+    _stub_spawn_adapter(monkeypatch)
+    draft = {"name": "eq", "domain": "finance.x", "capabilities": []}
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "confirm_create", "draft": draft, "task_brief": ""})
+        created = ws.receive_json()
+        assert created["type"] == "spawn_created"
+        # No dispatch: send a follow-up and prove the very next frame is NOT a routing frame.
+        ws.send_json({"type": "route_to", "spawn_id": 7, "task_brief": "ping"})
+        nxt = ws.receive_json()
+        assert nxt["type"] == "routing"
+        assert nxt["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
+
+
+def test_route_to_existing_dispatches(app_client, monkeypatch):
+    _stub_spawn_adapter(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "route_to", "spawn_id": 7, "task_brief": "analyze TSLA"})
+        frames = _drain(ws)
+        assert any(f["type"] == "routing" and f["spawn_id"] == 7 for f in frames)
+        assert any(f["type"] == "spawn_meta" for f in frames)
+
+
+def test_redo_redispatches(app_client, monkeypatch):
+    _stub_spawn_adapter(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "redo", "spawn_id": 7, "message_id": 1, "task_brief": "do X"})
+        frames = _drain(ws)
+        assert any(f["type"] == "spawn_meta" for f in frames)
+
+
+def test_refine_passes_instruction(app_client, monkeypatch):
+    _stub_spawn_adapter(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({
+            "type": "refine",
+            "spawn_id": 7,
+            "message_id": 1,
+            "task_brief": "do X",
+            "instruction": "make it livelier",
+        })
+        frames = _drain(ws)
+        assert any(f["type"] == "spawn_meta" for f in frames)
+
+
+def test_to_frame_carries_task_brief_and_overlaps():
+    from server.ws.arslan import _to_frame
+
+    frame = _to_frame({
+        "type": "suggest_create",
+        "draft": {"name": "x"},
+        "task_brief": "do X",
+        "overlaps": {"spawn_id": 3, "name": "y", "axes": ["a"]},
+    })
+    assert frame["task_brief"] == "do X"
+    assert frame["overlaps"] == {"spawn_id": 3, "name": "y", "axes": ["a"]}

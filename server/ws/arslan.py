@@ -43,9 +43,14 @@ async def _history(conversation_id: str) -> list[dict]:
     ]
 
 
-async def _create_from_draft(draft: dict):
+async def _create_from_draft(draft: dict, differentiation: str | None = None):
     domain = draft.get("domain") or "other"
     category, _, subcategory = domain.partition(".")
+    system_prompt = _build_system_prompt(draft)
+    if differentiation:
+        system_prompt += (
+            f"\n\nSpecialization (how you differ from similar specialists): {differentiation}"
+        )
     async with db_session.AsyncSessionLocal() as db:
         spawn = await spawn_service.create_spawn_unique(
             db,
@@ -55,10 +60,25 @@ async def _create_from_draft(draft: dict):
             capabilities=draft.get("capabilities") or [],
             persona_role=draft.get("persona_role"),
             persona_tone=draft.get("persona_tone"),
-            system_prompt=_build_system_prompt(draft),
+            system_prompt=system_prompt,
             generation_level=1,
         )
         return spawn.id, spawn.name
+
+
+async def _last_spawn_output(spawn_id: int) -> str | None:
+    """Reconstruct prior_output for a refinement: the spawn's latest assistant message."""
+    from server.db.models import ChatMessage
+
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.execute(
+            select(ChatMessage.content)
+            .where(ChatMessage.spawn_id == spawn_id, ChatMessage.role == "assistant")
+            .order_by(ChatMessage.id.desc())
+            .limit(1)
+        )
+        val = row.scalar_one_or_none()
+    return val
 
 
 async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
@@ -74,6 +94,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     def emit(ev: dict) -> None:
         outbox.append(ev)
+
+    async def flush() -> None:
+        for ev in outbox:
+            await ws.send_json(_to_frame(ev))
+        outbox.clear()
 
     try:
         while True:
@@ -91,8 +116,63 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 continue
 
             if msg_type == "confirm_create":
-                spawn_id, spawn_name = await _create_from_draft(data.get("draft") or {})
+                draft = data.get("draft") or {}
+                task_brief = data.get("task_brief") or ""
+                differentiation = data.get("differentiation") or None
+                spawn_id, spawn_name = await _create_from_draft(draft, differentiation)
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name))
+                if task_brief.strip():
+                    outbox.clear()
+                    await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit)
+                    await flush()
+                continue
+
+            if msg_type == "route_to":
+                spawn_id = int(data.get("spawn_id"))
+                task_brief = data.get("task_brief") or ""
+                outbox.clear()
+                await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit)
+                await flush()
+                continue
+
+            if msg_type == "redo":
+                spawn_id = int(data.get("spawn_id"))
+                task_brief = data.get("task_brief") or ""
+                outbox.clear()
+                await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit)
+                await flush()
+                continue
+
+            if msg_type == "refine":
+                spawn_id = int(data.get("spawn_id"))
+                task_brief = data.get("task_brief") or ""
+                instruction = data.get("instruction") or ""
+                prior = await _last_spawn_output(spawn_id)
+                outbox.clear()
+                await arslan.dispatch_spawn(
+                    conversation_id,
+                    spawn_id,
+                    task_brief,
+                    emit,
+                    prior_output=prior,
+                    instruction=instruction,
+                )
+                await flush()
+                continue
+
+            if msg_type == "refine_draft":
+                description = data.get("description") or ""
+                previous = data.get("previous_draft") or {}
+                from server.services import spawn_drafter
+
+                draft = await spawn_drafter.draft_from_text(description, previous=previous)
+                await ws.send_json(
+                    protocol.suggest_create(
+                        draft,
+                        task_brief=draft.get("task_brief"),
+                        overlaps=draft.get("overlaps"),
+                    )
+                )
                 continue
 
             if msg_type != "user_message":
@@ -122,7 +202,9 @@ def _to_frame(ev: dict) -> dict:
     if t == "stream_start":
         return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"))
     if t == "suggest_create":
-        return protocol.suggest_create(ev.get("draft") or {})
+        return protocol.suggest_create(
+            ev.get("draft") or {}, task_brief=ev.get("task_brief"), overlaps=ev.get("overlaps")
+        )
     if t == "fact_saved":
         return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")))
     return ev  # stream_chunk / stream_end / error already match the wire shape
