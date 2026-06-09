@@ -1,0 +1,28 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import "../i18n";
+import ConversationBubble from "../components/arslan/ConversationBubble";
+
+describe("ConversationBubble", () => {
+  it("renders a user message right-aligned", () => {
+    render(<ConversationBubble item={{ id: 1, kind: "message", role: "user", content: "hi there" }} />);
+    expect(screen.getByText("hi there")).toBeInTheDocument();
+  });
+
+  it("renders a spawn message with a routed-to caption", () => {
+    render(
+      <ConversationBubble
+        item={{ id: 2, kind: "message", role: "spawn", content: "3 posts", spawnId: 7, spawnName: "Beauty Guru" }}
+      />,
+    );
+    expect(screen.getByText("3 posts")).toBeInTheDocument();
+    expect(screen.getByText(/Beauty Guru/)).toBeInTheDocument();
+  });
+
+  it("renders a fact item as a remember chip", () => {
+    render(
+      <ConversationBubble item={{ id: -1, kind: "fact", role: "arslan", content: "posts on xiaohongshu" }} />,
+    );
+    expect(screen.getByText(/posts on xiaohongshu/)).toBeInTheDocument();
+  });
+});
