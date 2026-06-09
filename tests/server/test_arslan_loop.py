@@ -76,11 +76,16 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
-    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None):
+    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None, prior_output=None, instruction=None):
         for piece in ["P1", "P2"]:
             if on_chunk:
                 on_chunk(piece)
-        return {"full_output": "P1P2", "spawn_name": "beauty-guru", "summary_message_id": 9}
+        return {
+            "full_output": "P1P2",
+            "spawn_name": "beauty-guru",
+            "summary_message_id": 9,
+            "assistant_message_id": 8,
+        }
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
 
@@ -107,3 +112,59 @@ async def test_suggest_create_emits_card(maker, monkeypatch):
     events = []
     await arslan.handle_user_message("main", "translate things often", _events(events))
     assert any(e["type"] == "suggest_create" and e["draft"] == draft for e in events)
+
+
+@pytest.mark.asyncio
+async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch):
+    from server.orchestrator import arslan, router
+
+    draft = {"name": "stock-helper", "domain": "finance.equities"}
+    overlaps = {"spawn_id": 3, "name": "股小助", "axes": ["a"]}
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(
+            action="suggest_create",
+            suggested_spawn=draft,
+            task_brief="analyze TSLA",
+            overlaps=overlaps,
+        )
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    events = []
+    await arslan.handle_user_message("main", "look at TSLA", _events(events))
+    sc = next(e for e in events if e["type"] == "suggest_create")
+    assert sc["draft"] == draft
+    assert sc["task_brief"] == "analyze TSLA"
+    assert sc["overlaps"] == overlaps
+
+
+@pytest.mark.asyncio
+async def test_route_path_emits_spawn_meta(maker, monkeypatch):
+    from server.orchestrator import arslan, router
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="route", spawn_id=7, task_brief="do X")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None, prior_output=None, instruction=None):
+        if on_chunk:
+            on_chunk("P1")
+        return {
+            "full_output": "P1",
+            "spawn_name": "beauty-guru",
+            "summary_message_id": 9,
+            "assistant_message_id": 8,
+        }
+
+    monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
+
+    events = []
+    await arslan.handle_user_message("main", "make posts", _events(events))
+    meta = next(e for e in events if e["type"] == "spawn_meta")
+    assert meta["spawn_id"] == 7
+    assert meta["task_brief"] == "do X"
+    assert isinstance(meta["assistant_message_id"], int)
+    end = next(e for e in events if e["type"] == "stream_end")
+    assert meta["arslan_message_id"] == end["message_id"]

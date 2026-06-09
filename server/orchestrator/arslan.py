@@ -39,7 +39,12 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
     if result.action == "route" and result.spawn_id is not None:
         await _handle_route(conversation_id, result, emit)
     elif result.action == "suggest_create":
-        emit({"type": "suggest_create", "draft": result.suggested_spawn or {}})
+        emit({
+            "type": "suggest_create",
+            "draft": result.suggested_spawn or {},
+            "task_brief": result.task_brief,
+            "overlaps": result.overlaps,
+        })
     else:  # answer (incl. fallback)
         await _handle_answer(conversation_id, user_message, emit)
 
@@ -68,18 +73,47 @@ async def _handle_answer(conversation_id: str, user_message: str, emit: EventSin
 
 
 async def _handle_route(conversation_id, result, emit: EventSink) -> None:  # noqa: ANN001
+    await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit)
+
+
+async def _dispatch_spawn(  # noqa: ANN001
+    conversation_id,
+    spawn_id,
+    task_brief,
+    emit: EventSink,
+    *,
+    prior_output: str | None = None,
+    instruction: str | None = None,
+) -> None:
+    """Run one spawn turn: routing -> stream_start -> chunks -> spawn_meta -> stream_end.
+
+    Reusable for both initial routing and refinements (via prior_output/instruction).
+    """
     # Resolve the spawn name first so the routing caption is complete before streaming.
-    spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-    emit({"type": "routing", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
-    emit({"type": "stream_start", "source": "spawn", "spawn_id": result.spawn_id})
+    spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    emit({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
+    emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
     try:
         out = await dispatcher.dispatch(
             conversation_id,
-            spawn_id=result.spawn_id,
-            task_brief=result.task_brief or "",
+            spawn_id=spawn_id,
+            task_brief=task_brief,
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
+            prior_output=prior_output,
+            instruction=instruction,
         )
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
         return
+    emit({
+        "type": "spawn_meta",
+        "arslan_message_id": out["summary_message_id"],
+        "spawn_id": spawn_id,
+        "assistant_message_id": out["assistant_message_id"],
+        "task_brief": task_brief,
+    })
     emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+
+
+# Public alias for reuse from other orchestration entry points (e.g. refinements).
+dispatch_spawn = _dispatch_spawn
