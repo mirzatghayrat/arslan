@@ -63,7 +63,7 @@
     "tweak": "Anpassen",
     "dismiss": "Verwerfen",
     "advanced": "Erweitert",
-    "overlap_warning": "Dies könnte sich mit einem vorhandenen Spawn überschneiden.",
+    "overlap_warning": "Du hast bereits {{name}}.",
     "route_to": "An {{name}} weiterleiten",
     "create_new": "Trotzdem neu erstellen",
     "refine_placeholder": "Diesen Entwurf verfeinern…",

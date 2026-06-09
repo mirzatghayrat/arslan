@@ -63,7 +63,7 @@
     "tweak": "Ajuster",
     "dismiss": "Ignorer",
     "advanced": "Avancé",
-    "overlap_warning": "Cela pourrait chevaucher un spawn existant.",
+    "overlap_warning": "Vous avez déjà {{name}}.",
     "route_to": "Rediriger vers {{name}}",
     "create_new": "Créer un nouveau quand même",
     "refine_placeholder": "Affiner ce brouillon…",

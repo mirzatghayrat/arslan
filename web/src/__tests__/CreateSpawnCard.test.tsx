@@ -58,7 +58,7 @@ describe("CreateSpawnCard", () => {
           onCreate={vi.fn()} onDismiss={vi.fn()} onRefine={vi.fn()} onRouteToExisting={onRoute} />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/GuGu/)).toBeInTheDocument();
+    expect(screen.getAllByText(/GuGu/).length).toBeGreaterThanOrEqual(1);
     await userEvent.click(screen.getByRole("button", { name: /route to/i }));
     expect(onRoute).toHaveBeenCalledWith(3);
   });

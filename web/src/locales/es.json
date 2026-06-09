@@ -63,7 +63,7 @@
     "tweak": "Ajustar",
     "dismiss": "Descartar",
     "advanced": "Avanzado",
-    "overlap_warning": "Esto puede solaparse con un spawn existente.",
+    "overlap_warning": "Ya tienes {{name}}.",
     "route_to": "Enviar a {{name}}",
     "create_new": "Crear nuevo de todos modos",
     "refine_placeholder": "Refinar este borrador…",

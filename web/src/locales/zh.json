@@ -63,7 +63,7 @@
     "tweak": "调整",
     "dismiss": "忽略",
     "advanced": "高级",
-    "overlap_warning": "这可能与已有分身重叠。",
+    "overlap_warning": "你已经有 {{name}} 了。",
     "route_to": "转给 {{name}}",
     "create_new": "仍然新建",
     "refine_placeholder": "优化此草稿……",
