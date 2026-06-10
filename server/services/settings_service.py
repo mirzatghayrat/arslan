@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import select
@@ -16,6 +17,25 @@ logger = logging.getLogger(__name__)
 _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key")
+
+# Matches the two mask shapes produced by mask_secret():
+#   "***"                    – short-key mask (len < 8)
+#   "<2-3 char prefix>...<4 char suffix>"  – long-key mask
+_MASK_RE = re.compile(r"^.{2,3}\.\.\..{4}$")
+
+
+def _looks_masked(value: str) -> bool:
+    """Return True when *value* looks like output of mask_secret().
+
+    This guards the GET→PUT round-trip: a client that GETs settings and PUTs
+    the body back unchanged would send the masked echo rather than the real
+    secret.  We detect the two mask shapes and skip storage so the stored
+    plaintext is never silently overwritten with its own mask.
+
+    The check is anchored to the full string so a real key that happens to
+    contain "..." somewhere in the middle still passes through.
+    """
+    return value == "***" or bool(_MASK_RE.fullmatch(value))
 
 
 def mask_secret(value: str) -> str:
@@ -62,8 +82,11 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
         if key in data and data[key] is not None:
             await _set_raw(session, key, str(data[key]))
     for secret_key in _SECRET_KEYS:
-        if data.get(secret_key):
-            await _set_raw(session, secret_key, crypto.encrypt(str(data[secret_key])))
+        val = data.get(secret_key)
+        # Skip masked echoes: a GET→PUT round-trip sends back the masked value
+        # (e.g. "sk-...9999" or "***") which must never replace the real key.
+        if val and not _looks_masked(str(val)):
+            await _set_raw(session, secret_key, crypto.encrypt(str(val)))
     await session.commit()
 
 
