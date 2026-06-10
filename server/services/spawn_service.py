@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ChatMessage, Spawn
@@ -159,7 +159,20 @@ async def delete_spawn(session: AsyncSession, spawn_id: int) -> bool:
     spawn = await session.get(Spawn, spawn_id)
     if spawn is None:
         return False
-    await session.delete(spawn)
+    # Deterministic cleanup, independent of SQLite FK pragma state:
+    # the orchestrator thread keeps its rows (display history) but unlinks them;
+    # spawn-scoped rows go with the spawn.
+    from server.db.models import ArslanMessage, SpawnCapability
+
+    await session.execute(
+        sa_update(ArslanMessage)
+        .where(ArslanMessage.spawn_id == spawn_id)
+        .values(spawn_id=None)
+    )
+    await session.execute(
+        sa_delete(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
+    )
+    await session.delete(spawn)  # ORM cascades chat_messages + feedback
     await session.commit()
     return True
 
