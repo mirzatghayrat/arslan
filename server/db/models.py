@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -135,3 +135,64 @@ class RouterDecision(Base):
     reason = Column(Text, nullable=True)
     raw = Column(JSON, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class Toolset(Base):
+    """Registry: a named executable tool group (a spawn's 'interface')."""
+
+    __tablename__ = "toolsets"
+
+    key = Column(String(50), primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=False)
+    tier = Column(String(20), nullable=False)    # "safe" | "orchestrator"
+    status = Column(String(20), nullable=False, default="registered")
+    # "wired" | "registered" | "absorbed" | "infeasible"
+    backend_note = Column(Text, nullable=True)
+
+
+class Tool(Base):
+    """Registry: one tool inside a toolset; READ/WRITE splits live at this level."""
+
+    __tablename__ = "tools"
+
+    key = Column(String(50), primary_key=True)
+    toolset_key = Column(
+        String(50), ForeignKey("toolsets.key", ondelete="CASCADE"), nullable=False, index=True
+    )
+    description = Column(Text, nullable=False)
+    tier = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, default="registered")
+    input_schema = Column(JSON, default=dict)
+
+
+class SkillPack(Base):
+    """Registry: SKILL.md-style capability pack (technique, not execution)."""
+
+    __tablename__ = "skill_packs"
+
+    key = Column(String(60), primary_key=True)
+    name = Column(String(100), nullable=False)
+    category = Column(String(40), nullable=False)
+    description = Column(Text, nullable=False)
+    tier = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, default="registered")
+    body = Column(Text, nullable=True)
+
+
+class SpawnCapability(Base):
+    """Per-spawn equipment row (toolset or skill grant)."""
+
+    __tablename__ = "spawn_capabilities"
+    __table_args__ = (UniqueConstraint("spawn_id", "kind", "ref_key"),)
+
+    id = Column(Integer, primary_key=True)
+    spawn_id = Column(
+        Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind = Column(String(10), nullable=False)   # "toolset" | "skill"
+    ref_key = Column(String(60), nullable=False)
+    grant = Column(String(10), nullable=False, default="permanent")  # "permanent" | "temporary"
+    granted_by = Column(String(20), nullable=False, default="create")  # "create" | "escalation" | "user"
+    expires_turn = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
