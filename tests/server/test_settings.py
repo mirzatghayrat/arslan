@@ -3,10 +3,20 @@ import importlib
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db.models import Base
+
+
+@pytest.mark.asyncio
+async def test_search_settings_roundtrip(client):
+    resp = await client.put("/api/v1/settings", json={
+        "search_provider": "tavily", "search_api_key": "tvly-secret-12345678",
+    })
+    assert resp.status_code == 200
+    body = (await client.get("/api/v1/settings")).json()
+    assert body["search_provider"] == "tavily"
+    assert body["search_api_key"].endswith("5678") and "secret" not in body["search_api_key"]
 
 
 @pytest_asyncio.fixture

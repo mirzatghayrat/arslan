@@ -13,9 +13,9 @@ from server.db.models import Setting
 logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
-_PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language")
-# Secret key stored encrypted, returned masked.
-_SECRET_KEY_NAME = "llm_api_key"
+_PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider")
+# Secret keys stored encrypted, returned masked.
+_SECRET_KEYS = ("llm_api_key", "search_api_key")
 
 
 def mask_secret(value: str) -> str:
@@ -57,28 +57,35 @@ async def _set_raw(session: AsyncSession, key: str, value: str) -> None:
 
 
 async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
-    """Persist provided settings. The API key is encrypted before storage."""
+    """Persist provided settings. Secret keys are encrypted before storage."""
     for key in _PLAIN_KEYS:
         if key in data and data[key] is not None:
             await _set_raw(session, key, str(data[key]))
-    if data.get(_SECRET_KEY_NAME):
-        await _set_raw(session, _SECRET_KEY_NAME, crypto.encrypt(str(data[_SECRET_KEY_NAME])))
+    for secret_key in _SECRET_KEYS:
+        if data.get(secret_key):
+            await _set_raw(session, secret_key, crypto.encrypt(str(data[secret_key])))
     await session.commit()
 
 
 async def get_settings(session: AsyncSession) -> dict[str, str]:
-    """Return settings for display; the API key is masked."""
+    """Return settings for display; secret keys are masked."""
     out: dict[str, str] = {}
     for key in _PLAIN_KEYS:
         val = await _get_raw(session, key)
         if val is not None:
             out[key] = val
-    enc = await _get_raw(session, _SECRET_KEY_NAME)
-    out[_SECRET_KEY_NAME] = mask_secret(_safe_decrypt(enc)) if enc else ""
+    for secret_key in _SECRET_KEYS:
+        enc = await _get_raw(session, secret_key)
+        out[secret_key] = mask_secret(_safe_decrypt(enc)) if enc else ""
     return out
 
 
-async def get_decrypted_api_key(session: AsyncSession) -> str:
-    """Return the plaintext API key for making LLM calls (never exposed via API)."""
-    enc = await _get_raw(session, _SECRET_KEY_NAME)
+async def get_decrypted(session: AsyncSession, key: str) -> str:
+    """Plaintext secret for internal use (never exposed via API)."""
+    enc = await _get_raw(session, key)
     return _safe_decrypt(enc) if enc else ""
+
+
+async def get_decrypted_api_key(session: AsyncSession) -> str:
+    """Return the plaintext LLM API key for making LLM calls (never exposed via API)."""
+    return await get_decrypted(session, "llm_api_key")

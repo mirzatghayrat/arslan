@@ -12,6 +12,8 @@ class SettingsIn(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     language: str | None = None
+    search_provider: str | None = None
+    search_api_key: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -20,6 +22,8 @@ class SettingsOut(BaseModel):
     llm_base_url: str = ""
     llm_api_key: str = ""  # masked
     language: str = "en"
+    search_provider: str = "tavily"
+    search_api_key: str = ""  # masked
 
 
 class EquipmentItemOut(BaseModel):
