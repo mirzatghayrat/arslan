@@ -139,3 +139,60 @@ async def test_capability_need_temp_grants_safe_toolset(maker, monkeypatch):
     eq = await registry_service.equipment_for_spawn(7)
     granted = {t["key"] for t in eq["toolsets"] if t["grant"] == "temporary"}
     assert granted == {"image_generation"}
+
+
+@pytest.mark.asyncio
+async def test_already_held_toolset_falls_through_to_fetch(maker, monkeypatch):
+    """Already-held toolset guard: spawn equipped with web_search_scraping escalates
+    'I need to search more web sources' → NOT resolved as granted (would no-op);
+    instead falls through to the fetch path → orchestrator_action emitted,
+    escalation_resolved how=data_provided (stubbed fetch returns ok)."""
+    from server.orchestrator import arslan, dispatcher, escalation
+
+    dispatch_calls = []
+
+    async def _fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
+                             on_event=None, prior_output=None, instruction=None,
+                             allow_escalation=True):
+        dispatch_calls.append({"task_brief": task_brief, "allow_escalation": allow_escalation})
+        if len(dispatch_calls) == 1:
+            return {"full_output": "", "spawn_name": "小美",
+                    "summary_message_id": 1, "assistant_message_id": 1,
+                    "escalation": {"kind": "capability",
+                                   "need": "I need web scraping to get more sources",
+                                   "context": "need broader coverage"}}
+        return {"full_output": "done with data", "spawn_name": "小美",
+                "summary_message_id": 2, "assistant_message_id": 2, "escalation": None}
+
+    async def _fake_classify(esc):
+        return {"allowed": True, "why": "outcome need"}
+
+    class _OkExec:
+        async def execute(self, args):
+            return {"ok": True, "results": [{"title": "Result", "url": "u", "snippet": "data"}]}
+
+    monkeypatch.setattr(dispatcher, "dispatch", _fake_dispatch)
+    monkeypatch.setattr(escalation, "classify", _fake_classify)
+    monkeypatch.setattr(arslan, "_arslan_fetch_executor", lambda: _OkExec())
+
+    events = []
+    # spawn 7 is seeded with web_search_scraping (permanent) — should NOT be granted again.
+    await arslan._dispatch_spawn("main", 7, "find web data", events.append)
+
+    types = [e["type"] for e in events]
+
+    # Must NOT emit escalation_resolved{how:granted} for web_search_scraping.
+    granted_events = [e for e in events
+                      if e["type"] == "escalation_resolved" and e.get("how") == "granted"]
+    assert not granted_events, f"unexpected grant events: {granted_events}"
+
+    # Must emit orchestrator_action (fetch path taken).
+    assert "orchestrator_action" in types
+
+    # Must resolve via data_provided.
+    resolved = [e for e in events if e["type"] == "escalation_resolved"]
+    assert resolved and resolved[0]["how"] == "data_provided"
+
+    # Re-dispatch must have been called with allow_escalation=False (depth-1 guard).
+    assert len(dispatch_calls) == 2
+    assert dispatch_calls[1]["allow_escalation"] is False

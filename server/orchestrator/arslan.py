@@ -1,6 +1,7 @@
 """The orchestration loop for one user turn (transport-agnostic; emits event dicts)."""
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Callable
 
 from server.orchestrator import dispatcher, memory, router
@@ -135,11 +136,16 @@ async def _handle_escalation(  # noqa: ANN001
     if esc.get("kind") == "capability":
         match = await _match_safe_toolset(esc.get("need", ""))
         if match is not None:
-            current_turn = await memory.user_turn_count(conversation_id)
-            await registry_service.grant_temporary(spawn_id, match, current_turn=current_turn)
-            emit({"type": "escalation_resolved", "spawn_id": spawn_id,
-                  "how": "granted", "detail": match})
-            granted = True
+            # Skip the grant if the spawn already holds this toolset — the real need
+            # is unsatisfied and would silently die under depth-1. Fall through to fetch.
+            eq = await registry_service.equipment_for_spawn(spawn_id)
+            already_held = {t["key"] for t in eq["toolsets"]}
+            if match not in already_held:
+                current_turn = await memory.user_turn_count(conversation_id)
+                await registry_service.grant_temporary(spawn_id, match, current_turn=current_turn)
+                emit({"type": "escalation_resolved", "spawn_id": spawn_id,
+                      "how": "granted", "detail": match})
+                granted = True
 
     data_block = ""
     if not granted:
@@ -150,11 +156,10 @@ async def _handle_escalation(  # noqa: ANN001
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": str(exc)}
         if result.get("ok"):
-            import json as _json
-
+            # NOTE: data_block carries untrusted web content into the spawn brief (prompt-injection surface, accepted v1).
             data_block = (
                 "\n\nArslan provides this data for your need "
-                f"({esc.get('need', '')}):\n{_json.dumps(result.get('results', []), ensure_ascii=False)[:6000]}"
+                f"({esc.get('need', '')}):\n{json.dumps(result.get('results', []), ensure_ascii=False)[:6000]}"
             )
             emit({"type": "escalation_resolved", "spawn_id": spawn_id,
                   "how": "data_provided", "detail": esc.get("need", "")})

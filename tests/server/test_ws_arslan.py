@@ -343,3 +343,54 @@ def test_confirm_create_dedups_at_create_time(app_client):
         })
         frame = ws.receive_json()
         assert frame["type"] == "spawn_created"
+
+
+# ---------------------------------------------------------------------------
+# _to_frame unit tests — verify protocol builders are the wire-shape authority
+# ---------------------------------------------------------------------------
+
+def test_to_frame_escalation_resolved():
+    """_to_frame routes escalation_resolved through the protocol builder."""
+    from server.ws.arslan import _to_frame
+    from server.ws import protocol
+
+    ev = {"type": "escalation_resolved", "spawn_id": 7, "how": "granted", "detail": "image_generation"}
+    frame = _to_frame(ev)
+    assert frame == protocol.escalation_resolved(7, "granted", "image_generation")
+    assert frame["type"] == "escalation_resolved"
+    assert frame["how"] == "granted"
+    assert frame["detail"] == "image_generation"
+
+
+def test_to_frame_orchestrator_action():
+    """_to_frame routes orchestrator_action through the protocol builder."""
+    from server.ws.arslan import _to_frame
+    from server.ws import protocol
+
+    ev = {"type": "orchestrator_action", "tool": "web_search", "reason": "fetching for spawn"}
+    frame = _to_frame(ev)
+    assert frame == protocol.orchestrator_action("web_search", "fetching for spawn")
+    assert frame["type"] == "orchestrator_action"
+
+
+def test_to_frame_tool_call_and_tool_result():
+    from server.ws.arslan import _to_frame
+    from server.ws import protocol
+
+    tc = _to_frame({"type": "tool_call", "tool": "web_extract", "args_summary": '{"url":"x"}'})
+    assert tc == protocol.tool_call("web_extract", '{"url":"x"}')
+
+    tr = _to_frame({"type": "tool_result", "tool": "web_extract", "ok": True, "summary": "5 chars extracted"})
+    assert tr == protocol.tool_result("web_extract", True, "5 chars extracted")
+
+
+def test_to_frame_escalation_and_refused():
+    from server.ws.arslan import _to_frame
+    from server.ws import protocol
+
+    esc = _to_frame({"type": "escalation", "spawn_id": 3, "spawn_name": "测试",
+                     "kind": "capability", "need": "image gen"})
+    assert esc == protocol.escalation(3, "测试", "capability", "image gen")
+
+    ref = _to_frame({"type": "escalation_refused", "spawn_id": 3, "why": "action not allowed"})
+    assert ref == protocol.escalation_refused(3, "action not allowed")

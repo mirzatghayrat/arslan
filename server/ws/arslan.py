@@ -198,4 +198,20 @@ def _to_frame(ev: dict) -> dict:
         )
     if t == "fact_saved":
         return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")))
-    return ev  # stream_chunk / stream_end / error already match the wire shape
+    if t == "tool_call":
+        return protocol.tool_call(ev.get("tool", ""), ev.get("args_summary", ""))
+    if t == "tool_result":
+        return protocol.tool_result(ev.get("tool", ""), bool(ev.get("ok")), ev.get("summary", ""))
+    if t == "escalation":
+        return protocol.escalation(
+            ev.get("spawn_id"), ev.get("spawn_name"), ev.get("kind", "data"), ev.get("need", "")
+        )
+    if t == "escalation_refused":
+        return protocol.escalation_refused(ev.get("spawn_id"), ev.get("why", ""))
+    if t == "escalation_resolved":
+        return protocol.escalation_resolved(
+            ev.get("spawn_id"), ev.get("how", ""), ev.get("detail", "")
+        )
+    if t == "orchestrator_action":
+        return protocol.orchestrator_action(ev.get("tool", ""), ev.get("reason", ""))
+    return ev  # stream_chunk / stream_end / error / spawn_meta already match the wire shape
