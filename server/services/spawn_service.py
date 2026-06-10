@@ -35,23 +35,38 @@ def normalize_draft(draft: Any) -> dict:
     return normalized
 
 
-def _normalize_name(name: str) -> str:
-    """Lowercase, trim, and strip a trailing '-<digits>' uniqueness suffix."""
-    return re.sub(r"-\d+$", "", (name or "").strip().lower())
+_SUFFIX_RE = re.compile(r"^(?P<base>.+)-\d+$")
+
+
+def _names_overlap(a: str, b: str) -> bool:
+    """True iff equal, or one is the other plus a '-<digits>' uniqueness suffix.
+
+    Stripping suffixes from BOTH sides over-matched (top-10 vs top-1); the
+    pairwise rule only treats '-N' as a suffix relative to an existing base.
+    (plan: Task 6, step 3)
+    """
+    a = (a or "").strip().lower()
+    b = (b or "").strip().lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    ma, mb = _SUFFIX_RE.match(a), _SUFFIX_RE.match(b)
+    return bool(ma and ma.group("base") == b) or bool(mb and mb.group("base") == a)
 
 
 def find_overlap(draft: dict, spawns: list) -> dict | None:
     """Return {spawn_id, name, axes} for an existing spawn that overlaps the draft, else None.
 
-    Overlap fires on (1) normalized NAME equality, or (2) full 'category.subcategory' domain
-    equality. Coarse domain_category alone NEVER matches (finance.equity-research and
-    finance.crypto are distinct). `axes` is left [] here; callers may merge the LLM's axes.
+    Overlap fires on (1) pairwise NAME overlap (_names_overlap), or (2) full
+    'category.subcategory' domain equality. Coarse domain_category alone NEVER matches
+    (finance.equity-research and finance.crypto are distinct). `axes` is left [] here;
+    callers may merge the LLM's axes.
     """
-    dname = _normalize_name(draft.get("name") or "")
     ddomain = (draft.get("domain") or "").strip().lower()
     _dcat, _, dsub = ddomain.partition(".")
     for s in spawns:
-        if dname and _normalize_name(s.name) == dname:
+        if _names_overlap(draft.get("name") or "", s.name):
             return {"spawn_id": s.id, "name": s.name, "axes": []}
         if dsub and s.domain_subcategory:
             s_full = f"{s.domain_category}.{s.domain_subcategory}".strip().lower()

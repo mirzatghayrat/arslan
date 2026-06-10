@@ -37,3 +37,33 @@ def test_category_only_no_subcategory_does_not_match_on_domain():
 def test_empty_registry_and_blank_name():
     assert spawn_service.find_overlap({"name": "x", "domain": "y.z"}, []) is None
     assert spawn_service.find_overlap({"name": "", "domain": ""}, [_spawn(1, "x", "y", "z")]) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 6: pairwise overlap rule (plan §Task 6, Step 1)
+# ---------------------------------------------------------------------------
+
+class _S:
+    def __init__(self, id, name, cat="d", sub=None):
+        self.id = id
+        self.name = name
+        self.domain_category = cat
+        self.domain_subcategory = sub
+
+
+def test_suffix_overmatch_fixed():
+    """top-10 must NOT overlap top-1 (old behavior stripped both to 'top')."""
+    assert spawn_service.find_overlap({"name": "top-10"}, [_S(1, "top-1")]) is None
+
+
+def test_suffix_dedup_still_matches():
+    """data-2 still overlaps data — the auto-suffix case the rule exists for."""
+    hit = spawn_service.find_overlap({"name": "data-2"}, [_S(1, "data")])
+    assert hit and hit["spawn_id"] == 1
+    hit = spawn_service.find_overlap({"name": "data"}, [_S(1, "data-2")])
+    assert hit and hit["spawn_id"] == 1
+
+
+def test_exact_numeric_name_matches_itself():
+    hit = spawn_service.find_overlap({"name": "gpt-4"}, [_S(1, "GPT-4")])
+    assert hit and hit["spawn_id"] == 1

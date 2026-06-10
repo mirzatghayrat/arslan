@@ -112,6 +112,17 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 draft = data.get("draft") or {}
                 task_brief = data.get("task_brief") or ""
                 differentiation = data.get("differentiation") or None
+                # Create-time dedup: a stale/edited draft may collide with an
+                # existing spawn even if the suggest_create card showed none.
+                if not differentiation:
+                    from server.orchestrator.arslan import _load_spawns
+
+                    overlap = spawn_service.find_overlap(draft, await _load_spawns())
+                    if overlap is not None:
+                        await ws.send_json(
+                            protocol.suggest_create(draft, task_brief=task_brief, overlaps=overlap)
+                        )
+                        continue
                 spawn_id, spawn_name = await _create_from_draft(draft, differentiation)
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name))
                 if task_brief.strip():

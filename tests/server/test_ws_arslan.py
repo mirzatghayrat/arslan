@@ -106,7 +106,11 @@ def test_confirm_create_makes_spawn(app_client):
 
 
 def test_confirm_create_dedups_duplicate_name(app_client):
-    # "beauty-guru" already exists (seeded). A second create must auto-suffix.
+    # "beauty-guru" already exists (seeded).
+    # OLD behavior (plan Task 6): silently auto-suffixed to beauty-guru-2.
+    # NEW behavior (plan Task 6, pairwise dedup rule): collision detected at create time;
+    # server re-emits suggest_create with overlaps so the user sees the overlap card.
+    # With differentiation the user can override and get beauty-guru-2.
     draft = {
         "name": "beauty-guru",
         "domain": "content-creator.xiaohongshu",
@@ -116,6 +120,19 @@ def test_confirm_create_dedups_duplicate_name(app_client):
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
         ws.send_json({"type": "confirm_create", "draft": draft})
+        frame = ws.receive_json()
+        # No differentiation → overlap card re-emitted, NOT created.
+        assert frame["type"] == "suggest_create"
+        assert frame["overlaps"] is not None and frame["overlaps"]["spawn_id"] == 7
+
+    # With differentiation → auto-suffix still applies (create_spawn_unique).
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({
+            "type": "confirm_create",
+            "draft": draft,
+            "differentiation": "regional market focus",
+        })
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
         assert created["spawn_name"] == "beauty-guru-2"
@@ -239,3 +256,35 @@ def test_to_frame_carries_task_brief_and_overlaps():
     })
     assert frame["task_brief"] == "do X"
     assert frame["overlaps"] == {"spawn_id": 3, "name": "y", "axes": ["a"]}
+
+
+def test_confirm_create_dedups_at_create_time(app_client):
+    """A draft whose name collides with an existing spawn (seeded: beauty-guru, id=7)
+    must be re-emitted as suggest_create with overlaps rather than created.
+    With differentiation= the explicit override, the spawn IS created.
+    (plan: Task 6, step 6)
+    """
+    # 1) Collision draft: server re-emits suggest_create with overlaps, creates nothing.
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({
+            "type": "confirm_create",
+            "draft": {"name": "beauty-guru", "domain": "content-creator.xiaohongshu"},
+            "task_brief": "",
+        })
+        frame = ws.receive_json()
+        assert frame["type"] == "suggest_create"
+        assert frame["overlaps"] is not None
+        assert frame["overlaps"]["spawn_id"] == 7
+
+    # 2) Explicit differentiation overrides the dedup: spawn is created.
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({
+            "type": "confirm_create",
+            "draft": {"name": "beauty-guru", "domain": "content-creator.xiaohongshu"},
+            "task_brief": "",
+            "differentiation": "focus on skincare for Gen Z",
+        })
+        frame = ws.receive_json()
+        assert frame["type"] == "spawn_created"
