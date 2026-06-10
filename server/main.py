@@ -31,6 +31,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    from server.registry.seeder import seed_registry
+
+    await seed_registry()
+
     cutoff = datetime.utcnow() - timedelta(hours=24)
     async with AsyncSessionLocal() as db:
         await db.execute(
