@@ -14,6 +14,29 @@ const draft = {
   reason: "Recurring xiaohongshu content work",
 };
 
+it("renders without crashing when the LLM returns capabilities as a string (not an array)", () => {
+  // Repro of the white-screen crash: DeepSeek returned capabilities as a comma-joined
+  // string, and `capabilities.join(...)` threw a render-time TypeError.
+  const malformed = {
+    name: "数据洞察者",
+    domain: "data-analysis.internet",
+    capabilities: "互联网数据采集,数据分析与可视化,撰写数据分析报告" as unknown as string[],
+  };
+  render(
+    <MemoryRouter>
+      <CreateSpawnCard
+        draft={malformed}
+        onCreate={vi.fn()}
+        onDismiss={vi.fn()}
+        onRefine={vi.fn()}
+        onRouteToExisting={vi.fn()}
+      />
+    </MemoryRouter>,
+  );
+  // the comma-joined string is split and shown as a normal capabilities list
+  expect(screen.getByText(/互联网数据采集, 数据分析与可视化/)).toBeInTheDocument();
+});
+
 function renderCard(props: Partial<React.ComponentProps<typeof CreateSpawnCard>> = {}) {
   return render(
     <MemoryRouter>

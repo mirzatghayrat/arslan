@@ -3,6 +3,19 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import type { OverlapInfo, SuggestDraft } from "../../types";
 
+/** Coerce a possibly-malformed LLM `capabilities` value into a string list.
+ *  Models sometimes return a comma-joined string instead of an array. */
+function toList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+  if (typeof value === "string") {
+    return value
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 export default function CreateSpawnCard({
   draft,
   overlaps,
@@ -42,7 +55,7 @@ export default function CreateSpawnCard({
       <p className="mb-2 font-medium text-amber">{t("create_card.heading", { name: draft.name })}</p>
       <dl className="space-y-1 text-sm text-white/80">
         <div><span className="text-white/40">{t("create_card.domain")}: </span>{draft.domain}</div>
-        <div><span className="text-white/40">{t("create_card.capabilities")}: </span>{draft.capabilities.join(", ")}</div>
+        <div><span className="text-white/40">{t("create_card.capabilities")}: </span>{toList(draft.capabilities).join(", ")}</div>
         {draft.reason && <div><span className="text-white/40">{t("create_card.reason")}: </span>{draft.reason}</div>}
       </dl>
 

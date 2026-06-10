@@ -10,6 +10,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import RouterDecision, Spawn
 from server.orchestrator import memory
+from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
 _VALID_ACTIONS = {"answer", "route", "suggest_create"}
@@ -131,11 +132,12 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
         await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
         return result
 
+    raw_draft = parsed.get("suggested_spawn")
     result = RouterResult(
         action=action,
         spawn_id=parsed.get("spawn_id"),
         task_brief=parsed.get("task_brief"),
-        suggested_spawn=parsed.get("suggested_spawn"),
+        suggested_spawn=spawn_service.normalize_draft(raw_draft) if isinstance(raw_draft, dict) else None,
         overlaps=parsed.get("overlaps") if isinstance(parsed.get("overlaps"), dict) else None,
         new_facts=[
             f for f in (parsed.get("new_facts") or [])

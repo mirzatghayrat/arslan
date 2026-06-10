@@ -1,11 +1,38 @@
 """Spawn persistence and DTO mapping over the database."""
 from __future__ import annotations
 
+import re
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ChatMessage, Spawn
 from server.schemas import ChatMessageOut, SpawnDetailOut, SpawnOut
+
+
+def normalize_capabilities(value: Any) -> list[str]:
+    """Coerce an LLM-produced `capabilities` value into a clean string list.
+
+    Models are inconsistent: a draft's capabilities may come back as a JSON array,
+    a comma-joined string (incl. the full-width comma '，'), or be missing entirely.
+    Downstream consumers (the create-spawn card, the DB column) expect a list, so we
+    normalize at the source.
+    """
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in re.split(r"[,，]", value) if part.strip()]
+    return []
+
+
+def normalize_draft(draft: Any) -> dict:
+    """Return a copy of a suggested-spawn draft with `capabilities` coerced to a list."""
+    if not isinstance(draft, dict):
+        return {}
+    normalized = dict(draft)
+    normalized["capabilities"] = normalize_capabilities(draft.get("capabilities"))
+    return normalized
 
 
 def build_system_prompt(draft: dict) -> str:

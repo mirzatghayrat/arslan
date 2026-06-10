@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from server.orchestrator import memory, router
+from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
 _SYSTEM = (
@@ -47,5 +48,6 @@ async def draft_from_text(description: str, *, previous: dict[str, Any] | None =
     draft = _parse(resp.content)
     draft.setdefault("name", "new-spawn")
     draft.setdefault("domain", "other")
-    draft.setdefault("capabilities", [])
+    # Coerce capabilities to a clean list (the model may return a comma-joined string).
+    draft["capabilities"] = spawn_service.normalize_capabilities(draft.get("capabilities"))
     return draft
