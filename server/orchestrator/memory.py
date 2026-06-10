@@ -239,3 +239,19 @@ async def facts_text() -> str:
     if not facts:
         return ""
     return "Known facts about the user:\n" + "\n".join(f"- {f.content}" for f in facts)
+
+
+async def user_turn_count(conversation_id: str) -> int:
+    """Number of user turns so far — the 'turn clock' for temporary grants."""
+    from sqlalchemy import func, select
+
+    from server.db.models import ArslanMessage
+
+    async with db_session.AsyncSessionLocal() as db:
+        n = (await db.execute(
+            select(func.count()).select_from(ArslanMessage).where(
+                ArslanMessage.conversation_id == conversation_id,
+                ArslanMessage.role == "user",
+            )
+        )).scalar_one()
+    return int(n)

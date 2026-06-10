@@ -66,6 +66,29 @@ async def dispatch(
     )
     if facts:
         system = f"{system}\n\n{facts}"
+
+    from server.registry import service as registry_service
+
+    equipment = await registry_service.equipment_for_spawn(spawn_id)
+    wired = await registry_service.wired_tools_for_spawn(
+        spawn_id, current_turn=await memory.user_turn_count(conversation_id)
+    )
+    if equipment["toolsets"] or equipment["skills"]:
+        lines = ["\n\nYour equipment:"]
+        for t in wired:
+            lines.append(f"- TOOL {t['key']} (live): {t['description']}")
+        for ts in equipment["toolsets"]:
+            if ts["status"] != "wired":
+                lines.append(f"- {ts['name']} (not yet live)")
+        for sk in equipment["skills"]:
+            lines.append(f"- TECHNIQUE {sk['name']}: {sk['description']}")
+        lines.append(
+            "You have NO other tools. If you lack a capability or data, escalate a need "
+            "(see protocol); never ask the user to run things and never pretend to have "
+            "other tools."
+        )
+        system += "\n".join(lines)
+
     history = await _spawn_history(spawn_id)
 
     if instruction:
