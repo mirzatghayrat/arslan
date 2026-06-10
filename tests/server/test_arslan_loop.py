@@ -112,7 +112,7 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
-    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None, prior_output=None, instruction=None):
+    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None, on_event=None, prior_output=None, instruction=None):
         for piece in ["P1", "P2"]:
             if on_chunk:
                 on_chunk(piece)
@@ -121,6 +121,7 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
             "spawn_name": "beauty-guru",
             "summary_message_id": 9,
             "assistant_message_id": 8,
+            "escalation": None,
         }
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
@@ -243,7 +244,7 @@ async def test_route_path_emits_spawn_meta(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
-    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None, prior_output=None, instruction=None):
+    async def _fake_dispatch(conv, *, spawn_id, task_brief, on_chunk=None, on_event=None, prior_output=None, instruction=None):
         if on_chunk:
             on_chunk("P1")
         return {
@@ -251,6 +252,7 @@ async def test_route_path_emits_spawn_meta(maker, monkeypatch):
             "spawn_name": "beauty-guru",
             "summary_message_id": 9,
             "assistant_message_id": 8,
+            "escalation": None,
         }
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)

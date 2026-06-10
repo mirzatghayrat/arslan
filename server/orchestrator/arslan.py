@@ -117,6 +117,7 @@ async def _dispatch_spawn(  # noqa: ANN001
             spawn_id=spawn_id,
             task_brief=task_brief,
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
+            on_event=emit,
             prior_output=prior_output,
             instruction=instruction,
         )
