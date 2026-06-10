@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import ArslanMessage, ArslanSummary, Base, UserFact
+from server.db.models import ArslanMessage, ArslanSummary, Base
 
 
 @pytest.fixture
@@ -80,6 +80,23 @@ async def test_compaction_folds_old_messages(maker, monkeypatch):
     # After compaction, assembled context carries the summary.
     ctx = await memory.assemble_working_context("main")
     assert ctx["summary"] == "SUMMARY"
+
+
+@pytest.mark.asyncio
+async def test_user_turn_count(maker):
+    from server.orchestrator import memory
+
+    # Seed 3 user + 2 arslan rows in "clock-conv"
+    async with maker() as s:
+        for content in ("hello", "second", "third"):
+            s.add(ArslanMessage(conversation_id="clock-conv", role="user", content=content))
+        for content in ("reply one", "reply two"):
+            s.add(ArslanMessage(conversation_id="clock-conv", role="arslan", content=content))
+        await s.commit()
+
+    assert await memory.user_turn_count("clock-conv") == 3
+    # Unknown conversation returns 0
+    assert await memory.user_turn_count("no-such-conv") == 0
 
 
 def test_estimate_tokens_cjk():
