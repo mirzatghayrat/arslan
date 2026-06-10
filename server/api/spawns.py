@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
-from server.schemas import ConfigUpdateIn, EquipmentItemOut, EquipmentOut, SpawnDetailOut, SpawnOut
+from server.schemas import ConfigUpdateIn, EquipmentOut, SpawnDetailOut, SpawnOut
 from server.services import spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -25,20 +25,7 @@ async def _attach_equipment(
     from server.registry import service as registry_service
 
     eq = await registry_service.equipment_for_spawn(spawn_id, session=session)
-    out.equipment = EquipmentOut(
-        toolsets=[
-            EquipmentItemOut(
-                key=t["key"], name=t["name"], status=t["status"], grant=t.get("grant", "permanent")
-            )
-            for t in eq["toolsets"]
-        ],
-        skills=[
-            EquipmentItemOut(
-                key=s["key"], name=s["name"], status=s["status"], grant=s.get("grant", "permanent")
-            )
-            for s in eq["skills"]
-        ],
-    )
+    out.equipment = EquipmentOut.from_dict(eq)
 
 
 @router.get("/spawns", response_model=list[SpawnOut])

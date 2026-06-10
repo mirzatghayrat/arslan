@@ -282,6 +282,7 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
     intro = await equipment_service.build_intro(
         name=spawn_name, persona_role=persona_role, equipment=equipment
     )
+    # Intentionally a second txn: losing the intro on a crash is non-critical; the spawn+equipment txn above must not widen.
     async with db_session.AsyncSessionLocal() as db:
         db.add(ChatMessage(spawn_id=spawn_id, role="assistant", content=intro))
         await db.commit()

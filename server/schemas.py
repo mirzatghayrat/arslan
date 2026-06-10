@@ -33,6 +33,18 @@ class EquipmentOut(BaseModel):
     toolsets: list[EquipmentItemOut] = []
     skills: list[EquipmentItemOut] = []
 
+    @classmethod
+    def from_dict(cls, eq: dict) -> "EquipmentOut":
+        def items(rows):
+            return [
+                EquipmentItemOut(
+                    key=r["key"], name=r["name"], status=r["status"],
+                    grant=r.get("grant", "permanent"),
+                )
+                for r in rows
+            ]
+        return cls(toolsets=items(eq.get("toolsets", [])), skills=items(eq.get("skills", [])))
+
 
 class SpawnOut(BaseModel):
     id: int

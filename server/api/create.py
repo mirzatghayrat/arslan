@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
-from server.schemas import DraftIn, EquipmentItemOut, EquipmentOut, SpawnCreateIn, SpawnDetailOut
+from server.schemas import DraftIn, EquipmentOut, SpawnCreateIn, SpawnDetailOut
 from server.services import spawn_drafter, spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -41,19 +41,6 @@ async def create_spawn(
     assert detail is not None
 
     # Attach equipment directly from create_from_draft's result (already resolved).
-    detail.equipment = EquipmentOut(
-        toolsets=[
-            EquipmentItemOut(
-                key=t["key"], name=t["name"], status=t["status"], grant=t.get("grant", "permanent")
-            )
-            for t in equipment["toolsets"]
-        ],
-        skills=[
-            EquipmentItemOut(
-                key=s["key"], name=s["name"], status=s["status"], grant=s.get("grant", "permanent")
-            )
-            for s in equipment["skills"]
-        ],
-    )
+    detail.equipment = EquipmentOut.from_dict(equipment)
     return detail
 

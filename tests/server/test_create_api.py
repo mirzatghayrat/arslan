@@ -55,7 +55,25 @@ async def test_draft_endpoint_returns_draft(create_env, monkeypatch):
     assert r.json()["domain"] == "finance.equity-research"
 
 
-async def test_create_endpoint_creates_spawn(create_env):
+async def test_create_endpoint_creates_spawn(create_env, monkeypatch):
+    from server.registry import service as registry_service
+    from server.services import equipment_service
+
+    async def _fake_curate(desc):
+        return {"toolsets": ["web_search_scraping"], "skills": []}
+
+    _resolved_equipment = {
+        "toolsets": [{"key": "web_search_scraping", "name": "Web Search & Scraping",
+                      "status": "stable", "grant": "permanent"}],
+        "skills": [],
+    }
+
+    async def _fake_equipment_for_spawn(spawn_id, *, session=None):
+        return _resolved_equipment
+
+    monkeypatch.setattr(equipment_service, "curate", _fake_curate)
+    monkeypatch.setattr(registry_service, "equipment_for_spawn", _fake_equipment_for_spawn)
+
     body = {
         "name": "eq",
         "domain": "finance.equity-research",
@@ -70,6 +88,7 @@ async def test_create_endpoint_creates_spawn(create_env):
     assert out["domain"] == "finance.equity-research"  # category.subcategory recomposed
     assert out["system_prompt"]  # non-empty persona prompt, not GENERIC
     assert "analyst" in out["system_prompt"]
+    assert out["equipment"]["toolsets"][0]["key"] == "web_search_scraping"
 
 
 async def test_create_requires_auth(create_env):
