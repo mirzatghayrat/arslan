@@ -6,10 +6,13 @@ residue; unparseable output fails CLOSED (refused).
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
+
+logger = logging.getLogger(__name__)
 
 _CODE_FENCE = re.compile(r"```")
 _EXEC_PATTERN = re.compile(
@@ -37,9 +40,19 @@ def _get_adapter():
 
 
 async def classify(escalation: dict) -> dict:
-    """Return {"allowed": bool, "why": str}."""
+    """Classify a spawn-loop escalation payload and return ``{"allowed": bool, "why": str}``.
+
+    Input is the escalate payload ``{kind, need, context}`` produced by the spawn loop.
+    ``kind`` is intentionally NOT used in classification — the combined need/context text
+    decides whether the escalation describes an outcome (allowed) or an operation (refused).
+    Output is consumed by the Task-14 resolution path.
+    """
     text = f"{escalation.get('need') or ''}\n{escalation.get('context') or ''}"
     if _CODE_FENCE.search(text) or _EXEC_PATTERN.search(text):
+        logger.warning(
+            "escalation guard: pre-filter refused (payload contains code/exec): %r",
+            text[:200],
+        )
         return {"allowed": False,
                 "why": "contains an executable payload or an operation to run "
                        "(describe the outcome you need instead)"}
@@ -47,12 +60,17 @@ async def classify(escalation: dict) -> dict:
     adapter = _get_adapter()
     a = await adapter if hasattr(adapter, "__await__") else adapter
     try:
-        resp = await a.chat(system=_SYSTEM, user=text)
+        resp = await a.chat(system=_SYSTEM, user=text, temperature=0)
         parsed = parse_json_object(resp.content or "") or {}
     except Exception:  # noqa: BLE001
         parsed = {}
     cls = parsed.get("classification")
     if cls == "need":
         return {"allowed": True, "why": str(parsed.get("why") or "")}
+    logger.warning(
+        "escalation guard: refused (classification=%r): %r",
+        cls,
+        text[:200],
+    )
     return {"allowed": False,
             "why": str(parsed.get("why") or "could not verify this is a need (refused)")}

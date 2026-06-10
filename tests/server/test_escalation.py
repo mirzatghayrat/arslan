@@ -57,3 +57,24 @@ async def test_llm_failure_fails_closed(monkeypatch):
     monkeypatch.setattr(escalation, "_get_adapter", lambda: _A())
     verdict = await escalation.classify({"kind": "data", "need": "ambiguous thing", "context": ""})
     assert verdict["allowed"] is False  # unparseable -> refuse (fail closed)
+
+
+@pytest.mark.asyncio
+async def test_prefilter_false_positive_boundary_start_process(monkeypatch):
+    """Pin the accepted false-positive: 'start the nightly export process' is refused
+    by the pre-filter because 'start' + 'process' matches _EXEC_PATTERN.
+
+    This IS the accepted tradeoff: needs must be outcome-phrased
+    ('I need the nightly export to run / the export data to be available').
+    Future regex tweaks that change this boundary must do so consciously.
+    """
+    from server.orchestrator import escalation
+
+    def _boom():
+        raise AssertionError("LLM must not be called for pre-filter refusals")
+
+    monkeypatch.setattr(escalation, "_get_adapter", _boom)
+    verdict = await escalation.classify(
+        {"kind": "capability", "need": "I need someone to start the nightly export process", "context": ""}
+    )
+    assert verdict["allowed"] is False  # ACCEPTED false-positive — outcome-phrase required
