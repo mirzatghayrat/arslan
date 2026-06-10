@@ -100,6 +100,20 @@ async def test_temporary_grant_expiry(seeded, maker):
 
 
 @pytest.mark.asyncio
+async def test_temporary_none_expiry_fails_closed(seeded, maker):
+    """Regression: temporary grant with expires_turn=None must not be treated as active."""
+    from server.registry import service
+
+    async with maker() as s:
+        s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
+        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="web_search_scraping",
+                              grant="temporary", granted_by="escalation", expires_turn=None))
+        await s.commit()
+
+    assert await service.wired_tools_for_spawn(1, current_turn=0) == []
+
+
+@pytest.mark.asyncio
 async def test_grant_temporary_is_safe_only(seeded, maker):
     """Spec test #3: temp grants can ONLY be safe-subset; execution tier raises."""
     from server.registry import service

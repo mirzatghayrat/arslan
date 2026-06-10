@@ -51,11 +51,12 @@ async def assert_assignable(kind: str, ref_key: str) -> None:
     No bypass parameter exists by design (spec §2): the only holder of
     orchestrator-tier capabilities is Arslan itself, implicitly.
     """
+    if kind not in ("toolset", "skill"):
+        raise NotAssignableError(f"unknown capability kind: {kind}")
     async with db_session.AsyncSessionLocal() as db:
         row = (
             await db.get(Toolset, ref_key) if kind == "toolset"
-            else await db.get(SkillPack, ref_key) if kind == "skill"
-            else None
+            else await db.get(SkillPack, ref_key)
         )
     if row is None:
         raise NotAssignableError(f"unknown {kind}: {ref_key}")
@@ -73,6 +74,7 @@ async def equipment_for_spawn(spawn_id: int) -> dict:
             .order_by(SpawnCapability.id)
         )).scalars().all()
         toolsets, skills = [], []
+        # NOTE: N+1 per-capability lookups; fine at v1 cap counts (<10 rows per spawn).
         for c in caps:
             if c.kind == "toolset":
                 row = await db.get(Toolset, c.ref_key)
@@ -101,8 +103,7 @@ async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dic
         active_keys = [
             c.ref_key for c in caps
             if c.grant == "permanent"
-            or c.expires_turn is None
-            or c.expires_turn >= current_turn
+            or (c.expires_turn is not None and c.expires_turn >= current_turn)
         ]
         if not active_keys:
             return []
