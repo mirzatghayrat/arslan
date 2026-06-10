@@ -165,6 +165,61 @@ def test_confirm_create_then_executes(app_client, monkeypatch):
         assert "stream_end" in types
 
 
+def test_confirm_create_domain_collision_no_differentiation(app_client):
+    """Unique name but identical full domain (category.subcategory) as an existing spawn
+    → confirm_create without differentiation re-emits suggest_create with overlaps,
+    creates nothing.
+
+    The seeded spawn has domain_category='content-creator' and no subcategory, so a
+    draft with domain='content-creator.xiaohongshu' does NOT trigger the domain check
+    (subcategories differ). We seed a second spawn with a subcategory to exercise the
+    exact-domain-equality branch in find_overlap.
+    """
+    # Seed a spawn with full domain content-creator.makeup.
+    async def _seed_domain_spawn():
+        async with db_session.AsyncSessionLocal() as s:
+            s.add(
+                Spawn(
+                    id=99,
+                    name="makeup-artist-pro",
+                    domain_category="content-creator",
+                    domain_subcategory="makeup",
+                    capabilities=[],
+                    system_prompt="You are a makeup specialist.",
+                )
+            )
+            await s.commit()
+
+    anyio.run(_seed_domain_spawn)
+
+    # Draft with a unique name but identical full domain content-creator.makeup.
+    draft = {
+        "name": "totally-new-makeup-agent",
+        "domain": "content-creator.makeup",
+        "capabilities": ["tutorial-writing"],
+        "persona_role": "makeup influencer",
+    }
+
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "confirm_create", "draft": draft})
+        frame = ws.receive_json()
+        # Domain collision without differentiation → overlap card re-emitted, NOT created.
+        assert frame["type"] == "suggest_create"
+        assert frame["overlaps"] is not None
+        assert frame["overlaps"]["spawn_id"] == 99
+
+    # Verify nothing was inserted with the new name.
+    async def _check():
+        async with db_session.AsyncSessionLocal() as s:
+            rows = (
+                await s.execute(select(Spawn).where(Spawn.name == "totally-new-makeup-agent"))
+            ).scalars().all()
+            return rows
+
+    assert len(anyio.run(_check)) == 0
+
+
 def test_confirm_create_without_task_brief_does_not_dispatch(app_client, monkeypatch):
     _stub_spawn_adapter(monkeypatch)
     draft = {"name": "eq", "domain": "finance.x", "capabilities": []}

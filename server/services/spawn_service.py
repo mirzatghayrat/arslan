@@ -192,6 +192,21 @@ async def delete_spawn(session: AsyncSession, spawn_id: int) -> bool:
     return True
 
 
+async def load_all_spawns() -> list[Spawn]:
+    """Load every Spawn row ordered by id, managing its own session.
+
+    Unlike the other functions in this module (which accept a session as a
+    parameter), this helper opens and closes its own AsyncSessionLocal session.
+    Use it in call-sites that don't already hold an open session — for example,
+    the orchestrator's dedup check before create.
+    """
+    from server.db import session as db_session
+
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.execute(select(Spawn).order_by(Spawn.id))
+        return list(rows.scalars().all())
+
+
 async def create_spawn(session: AsyncSession, **fields) -> Spawn:
     """Insert a spawn row. Used by the build WebSocket and test seeding."""
     spawn = Spawn(**fields)

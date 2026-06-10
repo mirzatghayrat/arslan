@@ -29,17 +29,6 @@ async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[
         yield piece
 
 
-async def _load_spawns():
-    from sqlalchemy import select
-
-    from server.db import session as db_session
-    from server.db.models import Spawn
-
-    async with db_session.AsyncSessionLocal() as db:
-        rows = await db.execute(select(Spawn).order_by(Spawn.id))
-        return list(rows.scalars().all())
-
-
 async def handle_user_message(conversation_id: str, user_message: str, emit: EventSink) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
     # 1. persist the user turn
@@ -59,7 +48,7 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
         await _handle_route(conversation_id, result, emit)
     elif result.action == "suggest_create":
         draft = result.suggested_spawn or {}
-        overlap = spawn_service.find_overlap(draft, await _load_spawns())
+        overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
         if overlap is not None:
             # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
             llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
