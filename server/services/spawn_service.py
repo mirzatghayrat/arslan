@@ -35,6 +35,31 @@ def normalize_draft(draft: Any) -> dict:
     return normalized
 
 
+def _normalize_name(name: str) -> str:
+    """Lowercase, trim, and strip a trailing '-<digits>' uniqueness suffix."""
+    return re.sub(r"-\d+$", "", (name or "").strip().lower())
+
+
+def find_overlap(draft: dict, spawns: list) -> dict | None:
+    """Return {spawn_id, name, axes} for an existing spawn that overlaps the draft, else None.
+
+    Overlap fires on (1) normalized NAME equality, or (2) full 'category.subcategory' domain
+    equality. Coarse domain_category alone NEVER matches (finance.equity-research and
+    finance.crypto are distinct). `axes` is left [] here; callers may merge the LLM's axes.
+    """
+    dname = _normalize_name(draft.get("name") or "")
+    ddomain = (draft.get("domain") or "").strip().lower()
+    dcat, _, dsub = ddomain.partition(".")
+    for s in spawns:
+        if dname and _normalize_name(s.name) == dname:
+            return {"spawn_id": s.id, "name": s.name, "axes": []}
+        if dsub and s.domain_subcategory:
+            s_full = f"{s.domain_category}.{s.domain_subcategory}".strip().lower()
+            if s_full == ddomain:
+                return {"spawn_id": s.id, "name": s.name, "axes": []}
+    return None
+
+
 def build_system_prompt(draft: dict) -> str:
     role = draft.get("persona_role") or "a helpful assistant"
     tone = draft.get("persona_tone") or ""
