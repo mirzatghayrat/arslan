@@ -69,4 +69,31 @@ def test_migration_0003_idempotent(tmp_path):
         m3.upgrade_sync(conn)
         m3.upgrade_sync(conn)  # idempotent
         names = set(inspect(conn).get_table_names())
+        uqs = inspect(conn).get_unique_constraints("spawn_capabilities")
     assert {"toolsets", "tools", "skill_packs", "spawn_capabilities"} <= names
+    assert any(
+        set(uq["column_names"]) == {"spawn_id", "kind", "ref_key"} for uq in uqs
+    )
+
+
+def test_migration_0003_downgrade_roundtrip(tmp_path):
+    """Downgrade of _0003 removes the four capability-registry tables; a second
+    downgrade is idempotent and must not raise."""
+    from sqlalchemy import create_engine, inspect
+
+    from server.db.migrations.versions import _0001_initial, _0002_orchestrator
+    from server.db.migrations.versions import _0003_capability_registry as m3
+
+    REGISTRY_TABLES = {"toolsets", "tools", "skill_packs", "spawn_capabilities"}
+
+    engine = create_engine(f"sqlite:///{tmp_path/'mig.db'}")
+    with engine.begin() as conn:
+        _0001_initial.upgrade_sync(conn)
+        _0002_orchestrator.upgrade_sync(conn)
+        m3.upgrade_sync(conn)
+        m3.downgrade_sync(conn)
+        # idempotent: a second downgrade must not raise
+        m3.downgrade_sync(conn)
+        names = set(inspect(conn).get_table_names())
+
+    assert not (REGISTRY_TABLES & names)  # all four tables gone
