@@ -113,6 +113,7 @@
     "server_error": "服务器错误",
     "auth_failed": "身份验证失败——请在设置中检查你的 API 令牌。",
     "page_not_found": "页面未找到",
-    "dismiss": "关闭"
+    "dismiss": "关闭",
+    "render_failed": "无法显示此内容。"
   }
 }

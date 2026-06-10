@@ -113,6 +113,7 @@
     "server_error": "Erreur du serveur",
     "auth_failed": "Échec de l'authentification — vérifiez votre jeton API dans les Paramètres.",
     "page_not_found": "Page introuvable",
-    "dismiss": "Fermer"
+    "dismiss": "Fermer",
+    "render_failed": "Impossible d'afficher ceci."
   }
 }

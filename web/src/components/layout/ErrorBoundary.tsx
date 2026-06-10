@@ -2,6 +2,10 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
+  /** When provided, a caught error renders this inline fallback instead of the
+   *  full-page "Something went wrong" UI — so a single bad subtree (e.g. one
+   *  conversation turn) degrades locally without white-screening the whole app. */
+  fallback?: ReactNode;
 }
 interface State {
   hasError: boolean;
@@ -20,6 +24,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.hasError) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <div className="p-10 text-center text-white/70">
           <p className="text-lg font-medium">Something went wrong.</p>

@@ -113,6 +113,7 @@
     "server_error": "Serverfehler",
     "auth_failed": "Authentifizierung fehlgeschlagen – überprüfe dein API-Token in den Einstellungen.",
     "page_not_found": "Seite nicht gefunden",
-    "dismiss": "Schließen"
+    "dismiss": "Schließen",
+    "render_failed": "Konnte dies nicht anzeigen."
   }
 }

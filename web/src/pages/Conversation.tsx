@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import ChatInput from "../components/chat/ChatInput";
 import ConversationBubble from "../components/arslan/ConversationBubble";
 import ArslanMark from "../components/brand/ArslanMark";
+import ErrorBoundary from "../components/layout/ErrorBoundary";
 import CreateSpawnCard from "../components/arslan/CreateSpawnCard";
 import SpawnFeedbackBar from "../components/arslan/SpawnFeedbackBar";
 import ThinkingIndicator from "../components/arslan/ThinkingIndicator";
@@ -70,6 +71,14 @@ export default function Conversation() {
   const tweak = (it: ArslanThreadItem, instruction: string) =>
     it.spawnId && send({ type: "refine", spawn_id: it.spawnId, message_id: it.spawnMessageId, task_brief: it.taskBrief ?? "", instruction });
 
+  const renderError = (
+    <div className="flex justify-center">
+      <span className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs text-red-300">
+        {t("errors.render_failed")}
+      </span>
+    </div>
+  );
+
   return (
     <div className="flex h-[75vh] flex-col">
       <h1 className="mb-2 flex items-center gap-2 text-xl font-semibold">
@@ -91,16 +100,20 @@ export default function Conversation() {
           <p className="text-center text-white/40">{t("conversation.empty")}</p>
         )}
         {items.map((it) => (
-          <ConversationBubble key={it.id} item={it}>
-            {it.role === "spawn" && it.kind === "message" && (
-              <SpawnFeedbackBar
-                onThumbUp={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_up"); }}
-                onThumbDown={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_down"); }}
-                onRedo={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "redo"); redo(it); }}
-                onTweak={() => { const v = window.prompt(t("create_card.refine_placeholder")); if (v) { sendFeedback(it.spawnId!, it.spawnMessageId, "refine"); tweak(it, v); } }}
-              />
-            )}
-          </ConversationBubble>
+          // Per-item boundary: a single malformed turn degrades to an inline
+          // notice instead of white-screening the whole app.
+          <ErrorBoundary key={it.id} fallback={renderError}>
+            <ConversationBubble item={it}>
+              {it.role === "spawn" && it.kind === "message" && (
+                <SpawnFeedbackBar
+                  onThumbUp={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_up"); }}
+                  onThumbDown={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_down"); }}
+                  onRedo={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "redo"); redo(it); }}
+                  onTweak={() => { const v = window.prompt(t("create_card.refine_placeholder")); if (v) { sendFeedback(it.spawnId!, it.spawnMessageId, "refine"); tweak(it, v); } }}
+                />
+              )}
+            </ConversationBubble>
+          </ErrorBoundary>
         ))}
         {pending && !streaming && (
           <ThinkingIndicator spawnName={pendingRoute?.spawnName ?? null} />
@@ -117,14 +130,16 @@ export default function Conversation() {
           />
         )}
         {suggestion && (
-          <CreateSpawnCard
-            draft={suggestion}
-            overlaps={suggestionOverlaps}
-            onCreate={confirmCreate}
-            onDismiss={dismissSuggestion}
-            onRefine={refineDraft}
-            onRouteToExisting={routeToExisting}
-          />
+          <ErrorBoundary fallback={renderError}>
+            <CreateSpawnCard
+              draft={suggestion}
+              overlaps={suggestionOverlaps}
+              onCreate={confirmCreate}
+              onDismiss={dismissSuggestion}
+              onRefine={refineDraft}
+              onRouteToExisting={routeToExisting}
+            />
+          </ErrorBoundary>
         )}
       </div>
 

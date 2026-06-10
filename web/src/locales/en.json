@@ -113,6 +113,7 @@
     "server_error": "Server error",
     "auth_failed": "Authentication failed — check your API token in Settings.",
     "page_not_found": "Page not found",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "render_failed": "Couldn't display this."
   }
 }

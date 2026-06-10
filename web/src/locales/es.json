@@ -113,6 +113,7 @@
     "server_error": "Error del servidor",
     "auth_failed": "Error de autenticación: revisa tu token de API en Ajustes.",
     "page_not_found": "Página no encontrada",
-    "dismiss": "Descartar"
+    "dismiss": "Descartar",
+    "render_failed": "No se pudo mostrar esto."
   }
 }

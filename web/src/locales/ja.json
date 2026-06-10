@@ -113,6 +113,7 @@
     "server_error": "サーバーエラー",
     "auth_failed": "認証に失敗しました — 設定で API トークンを確認してください。",
     "page_not_found": "ページが見つかりません",
-    "dismiss": "閉じる"
+    "dismiss": "閉じる",
+    "render_failed": "これを表示できませんでした。"
   }
 }
