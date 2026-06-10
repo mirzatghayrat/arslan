@@ -56,6 +56,7 @@
     "thinking_arslan": "Arslan denkt nach …",
     "thinking_spawn": "{{name}} arbeitet …"
   },
+  "artifact": { "report": "Bericht", "expand": "Ausklappen", "collapse": "Einklappen", "download": ".md herunterladen" },
   "feedback": { "redo": "Wiederholen", "tweak": "Anpassen" },
   "manual_create": {
     "title": "Einen Spezialisten erstellen",

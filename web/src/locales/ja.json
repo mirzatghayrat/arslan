@@ -56,6 +56,7 @@
     "thinking_arslan": "Arslan が考えています…",
     "thinking_spawn": "{{name}} が作業しています…"
   },
+  "artifact": { "report": "レポート", "expand": "展開", "collapse": "折りたたむ", "download": ".md をダウンロード" },
   "feedback": { "redo": "やり直す", "tweak": "微調整" },
   "manual_create": {
     "title": "スペシャリストを作成",

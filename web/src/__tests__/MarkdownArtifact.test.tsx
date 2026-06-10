@@ -13,10 +13,11 @@ describe("MarkdownArtifact", () => {
 
   it("collapses by default and expands on click", async () => {
     render(<MarkdownArtifact title="数据研究" content={long} downloadName="数据研究-11.md" />);
-    expect(screen.getByRole("button", { name: /download/i })).toBeInTheDocument();
-    const expand = screen.getByRole("button", { name: /expand|show more/i });
+    expect(screen.getByRole("button", { name: /download \.md/i })).toBeInTheDocument();
+    expect(screen.queryByText(/artifact\./)).toBeNull();
+    const expand = screen.getByRole("button", { name: /^expand$/i });
     await userEvent.click(expand);
-    expect(screen.getByRole("button", { name: /collapse|show less/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^collapse$/i })).toBeInTheDocument();
   });
 
   it("downloads a .md blob with the markdown type", async () => {

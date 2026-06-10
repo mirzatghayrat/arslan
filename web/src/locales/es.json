@@ -56,6 +56,7 @@
     "thinking_arslan": "Arslan está pensando…",
     "thinking_spawn": "{{name}} está trabajando…"
   },
+  "artifact": { "report": "informe", "expand": "Expandir", "collapse": "Contraer", "download": "Descargar .md" },
   "feedback": { "redo": "Rehacer", "tweak": "Ajustar" },
   "manual_create": {
     "title": "Crear un especialista",

@@ -56,6 +56,7 @@
     "thinking_arslan": "Arslan is thinking…",
     "thinking_spawn": "{{name}} is working…"
   },
+  "artifact": { "report": "report", "expand": "Expand", "collapse": "Collapse", "download": "Download .md" },
   "feedback": { "redo": "Redo", "tweak": "Tweak" },
   "manual_create": {
     "title": "Create a specialist",
