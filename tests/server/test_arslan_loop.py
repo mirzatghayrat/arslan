@@ -176,6 +176,65 @@ async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_suggest_create_injects_overlap_for_existing_same_name_spawn(maker, monkeypatch):
+    from server.orchestrator import arslan, router
+
+    # seed a spawn whose name matches the draft; router will miss the overlap
+    async with db_session.AsyncSessionLocal() as s:
+        sp = Spawn(
+            name="数据研究",
+            domain_category="data-analysis",
+            domain_subcategory="internet",
+            capabilities=["research"],
+            system_prompt="You research data.",
+        )
+        s.add(sp)
+        await s.commit()
+        seeded_id = sp.id
+
+    draft = {"name": "数据研究", "domain": "data-analysis.report", "capabilities": []}
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(
+            action="suggest_create",
+            suggested_spawn=draft,
+            task_brief="analyze internet data",
+            overlaps=None,  # LLM missed it; deterministic check must inject it
+        )
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    events = []
+    await arslan.handle_user_message("main", "research internet data", _events(events))
+    sc = next(e for e in events if e["type"] == "suggest_create")
+    assert sc["overlaps"] is not None
+    assert sc["overlaps"]["spawn_id"] == seeded_id
+
+
+@pytest.mark.asyncio
+async def test_suggest_create_leaves_overlaps_when_no_existing_match(maker, monkeypatch):
+    from server.orchestrator import arslan, router
+
+    # seeded spawn (id=7, beauty-guru) does not match this draft by name or full domain
+    draft = {"name": "translator", "domain": "personal-assistant.translator", "capabilities": []}
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(
+            action="suggest_create",
+            suggested_spawn=draft,
+            task_brief="translate",
+            overlaps=None,
+        )
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    events = []
+    await arslan.handle_user_message("main", "translate things", _events(events))
+    sc = next(e for e in events if e["type"] == "suggest_create")
+    assert sc["overlaps"] is None
+
+
+@pytest.mark.asyncio
 async def test_route_path_emits_spawn_meta(maker, monkeypatch):
     from server.orchestrator import arslan, router
 

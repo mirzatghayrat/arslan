@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 
 from server.orchestrator import dispatcher, memory, router
+from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
 EventSink = Callable[[dict], None]
@@ -28,6 +29,17 @@ async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[
         yield piece
 
 
+async def _load_spawns():
+    from sqlalchemy import select
+
+    from server.db import session as db_session
+    from server.db.models import Spawn
+
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.execute(select(Spawn).order_by(Spawn.id))
+        return list(rows.scalars().all())
+
+
 async def handle_user_message(conversation_id: str, user_message: str, emit: EventSink) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
     # 1. persist the user turn
@@ -46,11 +58,17 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
     if result.action == "route" and result.spawn_id is not None:
         await _handle_route(conversation_id, result, emit)
     elif result.action == "suggest_create":
+        draft = result.suggested_spawn or {}
+        overlap = spawn_service.find_overlap(draft, await _load_spawns())
+        if overlap is not None:
+            # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
+            llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
+            overlap = {**overlap, "axes": llm_axes or overlap.get("axes") or []}
         emit({
             "type": "suggest_create",
-            "draft": result.suggested_spawn or {},
+            "draft": draft,
             "task_brief": result.task_brief,
-            "overlaps": result.overlaps,
+            "overlaps": overlap if overlap is not None else result.overlaps,
         })
     elif result.action == "clarify":
         await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM)
