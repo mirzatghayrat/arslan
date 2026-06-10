@@ -106,3 +106,35 @@ class FactOut(BaseModel):
     content: str
     source: str
     sensitive: bool
+
+
+class ToolOut(BaseModel):
+    key: str
+    description: str
+    tier: str
+    status: str
+
+
+class ToolsetOut(BaseModel):
+    key: str
+    name: str
+    description: str
+    tier: str
+    status: str
+    assignable: bool
+    tools: list[ToolOut] = []
+
+
+class SkillPackOut(BaseModel):
+    key: str
+    name: str
+    category: str
+    description: str
+    tier: str
+    status: str
+    assignable: bool
+
+
+class RegistryOut(BaseModel):
+    toolsets: list[ToolsetOut]
+    skills: list[SkillPackOut]

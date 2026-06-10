@@ -72,6 +72,10 @@ def create_app() -> FastAPI:
 
     app.include_router(facts_api.router, prefix="/api/v1")
 
+    from server.api import registry as registry_api
+
+    app.include_router(registry_api.router, prefix="/api/v1")
+
     from server.api import create as create_api
 
     app.include_router(create_api.router, prefix="/api/v1")
