@@ -100,6 +100,25 @@ async def test_dispatch_returns_assistant_message_id(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_system_forbids_fabrication(maker, monkeypatch):
+    from server.orchestrator import dispatcher
+
+    captured = {}
+
+    class _A:
+        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
+            captured["system"] = system
+            yield "ok"
+
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+
+    await dispatcher.dispatch("main", spawn_id=7, task_brief="do X")
+
+    s = captured["system"].lower()
+    assert "do not invent" in s or "fabricat" in s
+
+
+@pytest.mark.asyncio
 async def test_dispatch_refinement_includes_prior_output(maker, monkeypatch):
     from server.orchestrator import dispatcher
 

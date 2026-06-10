@@ -59,6 +59,11 @@ async def dispatch(
 
     facts = await memory.facts_text()
     system = (spawn.system_prompt or "You are a helpful assistant.")
+    system += (
+        "\n\nUse only real or user-provided information. Do not invent, simulate, or fabricate "
+        "data, statistics, or sources. If you lack the data needed, say so and ask the user to "
+        "provide it, or clearly label any example as hypothetical."
+    )
     if facts:
         system = f"{system}\n\n{facts}"
     history = await _spawn_history(spawn_id)
