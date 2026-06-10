@@ -130,6 +130,8 @@ class RouterDecision(Base):
     conversation_id = Column(String(50), nullable=False, index=True)
     user_message = Column(Text, nullable=False)
     action = Column(String(20), nullable=False)  # answer | route | suggest_create | fallback
+    # Intentionally NOT a ForeignKey: audit log — rows must survive spawn deletion
+    # with the historical id intact (dangling ids are expected; see delete_spawn).
     spawn_id = Column(Integer, nullable=True)
     task_brief = Column(Text, nullable=True)
     reason = Column(Text, nullable=True)
