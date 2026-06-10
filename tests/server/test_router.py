@@ -162,6 +162,16 @@ async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_clarify_action_is_valid_not_downgraded(maker, monkeypatch):
+    from server.orchestrator import router
+
+    payload = {"action": "clarify", "reason": "no topic/format given", "new_facts": []}
+    monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter(json.dumps(payload)))
+    result = await router.route("main", "分析互联网数据 写report")
+    assert result.action == "clarify"  # not downgraded to "answer"
+
+
+@pytest.mark.asyncio
 async def test_router_filters_junk_new_facts(maker, monkeypatch):
     from server.orchestrator import router
 

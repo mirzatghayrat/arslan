@@ -13,7 +13,7 @@ from server.orchestrator import memory
 from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
-_VALID_ACTIONS = {"answer", "route", "suggest_create"}
+_VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify"}
 
 
 @dataclass
@@ -30,7 +30,7 @@ class RouterResult:
 _SYSTEM = (
     "You are Arslan, a meta-agent orchestrator. Decide how to handle the user's latest "
     "message. Reply with ONE JSON object and nothing else:\n"
-    '{"action": "answer" | "route" | "suggest_create", "spawn_id": <int, only for route>, '
+    '{"action": "answer" | "route" | "suggest_create" | "clarify", "spawn_id": <int, only for route>, '
     '"task_brief": "<self-contained task for the spawn; REQUIRED for route AND suggest_create>", '
     '"suggested_spawn": {"name","domain","capabilities","persona_role","persona_tone"}, '
     '"overlaps": {"spawn_id": <int>, "name": "<existing spawn>", "axes": ["<how a new one could differ>"]}, '
@@ -43,6 +43,13 @@ _SYSTEM = (
     "domain is a free-form 'category.subcategory' string you infer (e.g. 'finance.equity-research').\n"
     "- overlaps: ONLY when suggest_create would duplicate an EXISTING spawn's domain — name it "
     "and suggest differentiation axes; otherwise omit.\n"
+    "- clarify: the request is too under-specified to act well (no identifiable topic/subject "
+    "AND/OR no inferable deliverable shape — format/angle/output/data source). Do NOT route or "
+    "create; the handler will ask clarifying questions. If a topic IS present and a reasonable "
+    "deliverable can be inferred, do NOT clarify — act.\n"
+    "  CLARIFY examples: '分析互联网数据 写report'; 'help me with marketing'; 'write something about finance'; '做个分析'.\n"
+    "  DO-NOT-CLARIFY (act) examples: 'draft 3 xiaohongshu posts about retinol'; 'pull the latest "
+    "A-share ETF flows'; 'summarize this article: ...'; 'write a product description for our oat milk'.\n"
     "new_facts: extract any durable user preferences/facts worth remembering (or []).\n"
 )
 
