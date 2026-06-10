@@ -7,8 +7,8 @@ hermes-agent, hermes-agent-skill-authoring.
 """
 from __future__ import annotations
 
-# (key, name, description, tier, status, backend_note, tools)
-# tools: list of (key, description, tier, status)
+# Each toolset dict: key, name, description, tier, status, optional backend_note,
+# and tools: list of (key, description, tier, status) tuples.
 TOOLSETS: list[dict] = [
     {
         "key": "web_search_scraping",
