@@ -49,7 +49,7 @@ def find_overlap(draft: dict, spawns: list) -> dict | None:
     """
     dname = _normalize_name(draft.get("name") or "")
     ddomain = (draft.get("domain") or "").strip().lower()
-    dcat, _, dsub = ddomain.partition(".")
+    _dcat, _, dsub = ddomain.partition(".")
     for s in spawns:
         if dname and _normalize_name(s.name) == dname:
             return {"spawn_id": s.id, "name": s.name, "axes": []}

@@ -18,7 +18,7 @@ _VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify"}
 
 @dataclass
 class RouterResult:
-    action: str  # answer | route | suggest_create
+    action: str  # answer | route | suggest_create | clarify
     spawn_id: int | None = None
     task_brief: str | None = None
     suggested_spawn: dict[str, Any] | None = None
