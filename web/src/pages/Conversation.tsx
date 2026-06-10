@@ -120,6 +120,7 @@ export default function Conversation() {
         )}
         {streaming && (
           <ConversationBubble
+            live
             item={{
               id: -999999,
               kind: "message",

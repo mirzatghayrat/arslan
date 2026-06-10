@@ -1,13 +1,16 @@
 import { useTranslation } from "react-i18next";
 import type { ArslanThreadItem } from "../../types";
 import RoutingCaption from "./RoutingCaption";
+import MarkdownArtifact, { LONG_OUTPUT_THRESHOLD } from "./MarkdownArtifact";
 
 export default function ConversationBubble({
   item,
   children,
+  live = false,
 }: {
   item: ArslanThreadItem;
   children?: React.ReactNode;
+  live?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -54,7 +57,15 @@ export default function ConversationBubble({
               {item.spawnName ?? t("conversation.title")}
             </p>
           )}
-          <p className="whitespace-pre-wrap">{item.content}</p>
+          {!live && item.content.length > LONG_OUTPUT_THRESHOLD ? (
+            <MarkdownArtifact
+              title={isSpawn ? item.spawnName ?? t("conversation.title") : t("conversation.title")}
+              content={item.content}
+              downloadName={`${(isSpawn ? item.spawnName : "arslan") ?? "arslan"}-${item.id}.md`}
+            />
+          ) : (
+            <p className="whitespace-pre-wrap">{item.content}</p>
+          )}
           {children}
         </div>
       </div>

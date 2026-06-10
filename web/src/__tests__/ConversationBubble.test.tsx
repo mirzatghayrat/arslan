@@ -41,4 +41,22 @@ describe("ConversationBubble", () => {
     expect(screen.getByText(/Beauty Guru/)).toBeInTheDocument();
     expect(screen.queryByText(/__SPAWN_CREATED__/)).toBeNull();
   });
+
+  const longContent = "# Report\n" + "data ".repeat(300); // > 800 chars
+
+  it("renders a long finalized message as a downloadable artifact", () => {
+    render(<ConversationBubble item={{ id: 11, kind: "message", role: "spawn", content: longContent, spawnName: "数据研究" }} />);
+    expect(screen.getByRole("button", { name: /download/i })).toBeInTheDocument();
+  });
+
+  it("renders a short message inline (no artifact)", () => {
+    render(<ConversationBubble item={{ id: 12, kind: "message", role: "arslan", content: "hi there" }} />);
+    expect(screen.getByText("hi there")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+  });
+
+  it("never collapses the live streaming bubble even if long", () => {
+    render(<ConversationBubble live item={{ id: -999999, kind: "message", role: "spawn", content: longContent, spawnName: "数据研究" }} />);
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+  });
 });
