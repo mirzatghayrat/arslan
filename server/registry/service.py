@@ -11,7 +11,12 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import SkillPack, SpawnCapability, Tool, Toolset
 
-_ASSIGNABLE_STATUSES = ("wired", "registered")
+ASSIGNABLE_STATUSES = ("wired", "registered")
+
+
+def is_assignable(tier: str, status: str) -> bool:
+    """The one assignability predicate: safe tier + wired/registered status."""
+    return tier == "safe" and status in ASSIGNABLE_STATUSES
 
 
 class NotAssignableError(Exception):
@@ -33,12 +38,12 @@ async def safe_menu() -> dict:
     async with db_session.AsyncSessionLocal() as db:
         ts = (await db.execute(
             select(Toolset).where(Toolset.tier == "safe",
-                                  Toolset.status.in_(_ASSIGNABLE_STATUSES))
+                                  Toolset.status.in_(ASSIGNABLE_STATUSES))
             .order_by(Toolset.key)
         )).scalars().all()
         sk = (await db.execute(
             select(SkillPack).where(SkillPack.tier == "safe",
-                                    SkillPack.status.in_(_ASSIGNABLE_STATUSES))
+                                    SkillPack.status.in_(ASSIGNABLE_STATUSES))
             .order_by(SkillPack.key)
         )).scalars().all()
     return {"toolsets": [_toolset_dict(t) for t in ts],
@@ -60,7 +65,7 @@ async def assert_assignable(kind: str, ref_key: str) -> None:
         )
     if row is None:
         raise NotAssignableError(f"unknown {kind}: {ref_key}")
-    if row.tier != "safe" or row.status not in _ASSIGNABLE_STATUSES:
+    if not is_assignable(row.tier, row.status):
         raise NotAssignableError(
             f"{kind} {ref_key} is not spawn-assignable (tier={row.tier}, status={row.status})"
         )
