@@ -98,3 +98,28 @@ def spawn_created(
         "equipment": equipment or {"toolsets": [], "skills": []},
         "intro": intro,
     }
+
+
+def tool_call(tool: str, args_summary: str) -> dict[str, Any]:
+    return {"type": "tool_call", "tool": tool, "args_summary": args_summary}
+
+
+def tool_result(tool: str, ok: bool, summary: str) -> dict[str, Any]:
+    return {"type": "tool_result", "tool": tool, "ok": ok, "summary": summary}
+
+
+def escalation(spawn_id: int, spawn_name: str | None, kind: str, need: str) -> dict[str, Any]:
+    return {"type": "escalation", "spawn_id": spawn_id, "spawn_name": spawn_name,
+            "kind": kind, "need": need}
+
+
+def escalation_refused(spawn_id: int, why: str) -> dict[str, Any]:
+    return {"type": "escalation_refused", "spawn_id": spawn_id, "why": why}
+
+
+def escalation_resolved(spawn_id: int, how: str, detail: str = "") -> dict[str, Any]:
+    return {"type": "escalation_resolved", "spawn_id": spawn_id, "how": how, "detail": detail}
+
+
+def orchestrator_action(tool: str, reason: str) -> dict[str, Any]:
+    return {"type": "orchestrator_action", "tool": tool, "reason": reason}

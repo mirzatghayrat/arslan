@@ -151,3 +151,23 @@ async def test_escalate_ends_turn(maker, monkeypatch):
     )
     assert out["final"] is None
     assert out["escalation"]["need"] == "latest trend data"
+
+
+@pytest.mark.asyncio
+async def test_escalate_disabled_feeds_back_and_continues(maker, monkeypatch):
+    """When allow_escalation=False, escalate reply becomes feedback line and loop continues."""
+    from server.orchestrator import spawn_loop
+
+    adapter = _scripted_adapter([
+        '{"escalate": {"kind": "data", "need": "more info", "context": ""}}',
+        "final answer without escalation",
+    ])
+    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: adapter)
+
+    out = await spawn_loop.run(
+        spawn_id=7, system="sp", user_content="x", history=[],
+        current_turn=1, emit=lambda e: None, on_chunk=lambda c: None,
+        allow_escalation=False,
+    )
+    assert out["escalation"] is None
+    assert out["final"] == "final answer without escalation"

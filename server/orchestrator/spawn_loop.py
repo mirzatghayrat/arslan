@@ -53,6 +53,7 @@ async def run(
     current_turn: int,
     emit: Callable[[dict], None],
     on_chunk: Callable[[str], None],
+    allow_escalation: bool = True,
 ) -> dict:
     """Run the loop. Returns {"final": str|None, "escalation": dict|None,
     "tool_trace": list}. Exactly one of final/escalation is non-None."""
@@ -76,6 +77,12 @@ async def run(
         parsed = parse_json_object(content)
 
         if not forced and isinstance(parsed, dict) and isinstance(parsed.get("escalate"), dict):
+            if not allow_escalation:
+                convo.append({"role": "assistant", "content": content})
+                convo.append({"role": "user",
+                              "content": "Escalation is not available right now; answer "
+                                         "with what you have."})
+                continue
             esc = parsed["escalate"]
             return {"final": None, "tool_trace": tool_trace,
                     "escalation": {"kind": str(esc.get("kind") or "data"),

@@ -38,3 +38,14 @@ def test_ping_pong_and_build_complete():
         "spawn_id": 5,
         "spawn_name": "beauty",
     }
+
+
+def test_capability_event_builders():
+    from server.ws import protocol as p
+
+    assert p.tool_call("web_search", "{}")["type"] == "tool_call"
+    assert p.tool_result("web_search", True, "3 results")["ok"] is True
+    assert p.escalation(7, "小美", "data", "need X")["need"] == "need X"
+    assert p.escalation_refused(7, "why")["type"] == "escalation_refused"
+    assert p.escalation_resolved(7, "granted")["how"] == "granted"
+    assert p.orchestrator_action("web_search", "fetching for 小美")["type"] == "orchestrator_action"

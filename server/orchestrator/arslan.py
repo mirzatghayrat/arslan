@@ -94,6 +94,92 @@ async def _handle_route(conversation_id, result, emit: EventSink) -> None:  # no
     await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit)
 
 
+def _arslan_fetch_executor():
+    """Indirection so tests can stub Arslan's own fetch tool."""
+    from server.registry.executors import EXECUTORS
+
+    return EXECUTORS["web_search"]
+
+
+async def _match_safe_toolset(need: str) -> str | None:
+    """Keyword-match a capability need against the safe menu (deterministic v1)."""
+    from server.registry import service as registry_service
+
+    menu = await registry_service.safe_menu()
+    need_l = need.lower()
+    for t in menu["toolsets"]:
+        words = [w for w in (t["name"].lower().split() + t["key"].split("_")) if len(w) > 3]
+        if any(w in need_l for w in words):
+            return t["key"]
+    return None
+
+
+async def _handle_escalation(  # noqa: ANN001
+    conversation_id, spawn_id, spawn_name, task_brief, esc, emit: EventSink
+) -> None:
+    """Spec §3.2: refused actions stop here; allowed needs get satisfied and
+    the spawn is re-dispatched ONCE with escalation disabled (depth-1)."""
+    from server.orchestrator import escalation as esc_guard
+    from server.registry import service as registry_service
+
+    emit({"type": "escalation", "spawn_id": spawn_id, "spawn_name": spawn_name,
+          "kind": esc.get("kind", "data"), "need": esc.get("need", "")})
+
+    verdict = await esc_guard.classify(esc)
+    if not verdict["allowed"]:
+        emit({"type": "escalation_refused", "spawn_id": spawn_id, "why": verdict["why"]})
+        emit({"type": "stream_end", "message_id": None})
+        return
+
+    granted = False
+    if esc.get("kind") == "capability":
+        match = await _match_safe_toolset(esc.get("need", ""))
+        if match is not None:
+            current_turn = await memory.user_turn_count(conversation_id)
+            await registry_service.grant_temporary(spawn_id, match, current_turn=current_turn)
+            emit({"type": "escalation_resolved", "spawn_id": spawn_id,
+                  "how": "granted", "detail": match})
+            granted = True
+
+    data_block = ""
+    if not granted:
+        emit({"type": "orchestrator_action", "tool": "web_search",
+              "reason": f"fetching what {spawn_name} needs: {esc.get('need', '')}"})
+        try:
+            result = await _arslan_fetch_executor().execute({"query": esc.get("need", "")})
+        except Exception as exc:  # noqa: BLE001
+            result = {"ok": False, "error": str(exc)}
+        if result.get("ok"):
+            import json as _json
+
+            data_block = (
+                "\n\nArslan provides this data for your need "
+                f"({esc.get('need', '')}):\n{_json.dumps(result.get('results', []), ensure_ascii=False)[:6000]}"
+            )
+            emit({"type": "escalation_resolved", "spawn_id": spawn_id,
+                  "how": "data_provided", "detail": esc.get("need", "")})
+        else:
+            emit({"type": "escalation_resolved", "spawn_id": spawn_id,
+                  "how": "unresolved", "detail": str(result.get("error", ""))})
+
+    out = await dispatcher.dispatch(
+        conversation_id,
+        spawn_id=spawn_id,
+        task_brief=task_brief + data_block,
+        on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
+        on_event=emit,
+        allow_escalation=False,
+    )
+    emit({
+        "type": "spawn_meta",
+        "arslan_message_id": out["summary_message_id"],
+        "spawn_id": spawn_id,
+        "assistant_message_id": out["assistant_message_id"],
+        "task_brief": task_brief,
+    })
+    emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+
+
 async def _dispatch_spawn(  # noqa: ANN001
     conversation_id,
     spawn_id,
@@ -124,6 +210,13 @@ async def _dispatch_spawn(  # noqa: ANN001
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
         return
+
+    if out.get("escalation"):
+        await _handle_escalation(
+            conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], emit
+        )
+        return
+
     emit({
         "type": "spawn_meta",
         "arslan_message_id": out["summary_message_id"],

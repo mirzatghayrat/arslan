@@ -75,6 +75,7 @@ async def dispatch(
     on_event: Callable[[dict], None] | None = None,
     prior_output: str | None = None,
     instruction: str | None = None,
+    allow_escalation: bool = True,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
     {full_output, spawn_name, summary_message_id, assistant_message_id, escalation}.
@@ -137,6 +138,7 @@ async def dispatch(
             current_turn=current_turn,
             emit=(on_event or (lambda e: None)),
             on_chunk=(on_chunk or (lambda c: None)),
+            allow_escalation=allow_escalation,
         )
         full = out_loop["final"] or ""
         escalation = out_loop["escalation"]
