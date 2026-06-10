@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from server.orchestrator import router
+from server.orchestrator.json_protocol import parse_json_object
 from server.registry import service as registry_service
 from server.services.llm_factory import build_adapter
 
@@ -55,7 +55,7 @@ async def curate(need_description: str) -> dict:
             system=_SYSTEM,
             user=f"Need:\n{need_description}\n\nMENU:\n{_menu_text(menu)}",
         )
-        parsed = router._parse(resp.content or "") or {}
+        parsed = parse_json_object(resp.content or "") or {}
     except Exception as exc:  # noqa: BLE001
         logger.warning("equipment curate: LLM call failed, using fallback: %s", exc)
         parsed = {}

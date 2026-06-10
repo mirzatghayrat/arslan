@@ -1,7 +1,6 @@
 """Two-stage router, stage 1: a single structured-JSON decision call."""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,6 +9,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import RouterDecision, Spawn
 from server.orchestrator import memory
+from server.orchestrator.json_protocol import parse_json_object
 from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
@@ -75,26 +75,8 @@ async def _spawn_registry() -> str:
     return "\n".join(lines)
 
 
-def _loads_or_none(s: str) -> Any:
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        return None
-
-
 def _parse(content: str) -> dict[str, Any] | None:
-    text = (content or "").strip()
-    if text.startswith("```"):
-        # strip ```json ... ``` fences
-        text = text.split("```", 2)[1] if text.count("```") >= 2 else text.strip("`")
-        if text.lstrip().lower().startswith("json"):
-            text = text.lstrip()[4:]
-    text = text.strip()
-    obj = _loads_or_none(text)
-    if obj is None and "{" in text and "}" in text:
-        # Weak models often wrap the JSON in commentary; rescue the object.
-        obj = _loads_or_none(text[text.find("{") : text.rfind("}") + 1])
-    return obj if isinstance(obj, dict) else None
+    return parse_json_object(content)
 
 
 def _audit_payload(parsed: dict | None, raw_text: str | None) -> dict:

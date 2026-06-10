@@ -11,7 +11,7 @@ import asyncio
 import json
 from collections.abc import Callable
 
-from server.orchestrator import router
+from server.orchestrator.json_protocol import parse_json_object
 from server.registry.executors import EXECUTORS
 from server.registry.service import wired_tools_for_spawn
 from server.services.llm_factory import build_adapter
@@ -73,7 +73,7 @@ async def run(
         )
         resp = await a.chat(sys_now, convo[-1]["content"], history=convo[:-1])
         content = (resp.content or "").strip()
-        parsed = router._parse(content)
+        parsed = parse_json_object(content)
 
         if not forced and isinstance(parsed, dict) and isinstance(parsed.get("escalate"), dict):
             esc = parsed["escalate"]
@@ -109,10 +109,12 @@ async def run(
             convo.append({"role": "assistant", "content": content})
             convo.append({"role": "user",
                           "content": "TOOL RESULT for "
-                                     f"{tool_key}:\n{json.dumps(result, ensure_ascii=False)[:8000]}"})
+                                     f"{tool_key}:\n{json.dumps(result, ensure_ascii=False)[:8000]}"
+                                     "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
 
         # plain text (or unparseable JSON) = final answer
+        # v1 tradeoff (per plan §Task 12): the loop uses non-streaming chat calls, so the final answer arrives as ONE chunk. Streaming the final step is a known UX follow-up.
         on_chunk(content)
         return {"final": content, "escalation": None, "tool_trace": tool_trace}
 

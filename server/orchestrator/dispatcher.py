@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ChatMessage, Spawn
-from server.orchestrator import memory
+from server.orchestrator import memory, spawn_loop
 from server.registry import service as registry_service
 from server.services.llm_factory import build_adapter
 
@@ -129,8 +129,6 @@ async def dispatch(
 
     if wired:
         # Equipped path: bounded tool loop (JSON protocol, gate-per-call).
-        from server.orchestrator import spawn_loop
-
         out_loop = await spawn_loop.run(
             spawn_id=spawn_id,
             system=system,

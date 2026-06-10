@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from server.orchestrator import memory, router
+from server.orchestrator import memory
+from server.orchestrator import router as _router  # used only for _spawn_registry
+from server.orchestrator.json_protocol import parse_json_object
 from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
@@ -25,14 +27,13 @@ def _get_adapter():
 
 
 def _parse(content: str) -> dict[str, Any]:
-    obj = router._parse(content or "")
-    return obj or {}
+    return parse_json_object(content or "") or {}
 
 
 async def draft_from_text(description: str, *, previous: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return a draft dict {name, domain, capabilities, persona_role, persona_tone, reason}.
     When `previous` is given, this is a refinement: revise that draft per the description."""
-    registry = await router._spawn_registry()
+    registry = await _router._spawn_registry()
     facts = await memory.facts_text()
     parts = [f"Existing spawns:\n{registry}"]
     if facts:
