@@ -6,9 +6,13 @@ Layer-2: every returned key still passes assert_assignable before use.
 """
 from __future__ import annotations
 
+import logging
+
 from server.orchestrator import router
 from server.registry import service as registry_service
 from server.services.llm_factory import build_adapter
+
+logger = logging.getLogger(__name__)
 
 _FALLBACK_TOOLSETS = ["web_search_scraping"]  # core "work smart" capability
 _MAX_TOOLSETS = 4
@@ -37,7 +41,7 @@ def _menu_text(menu: dict) -> str:
         lines.append(f"- {t['key']} ({live}): {t['name']} — {t['description']}")
     lines.append("SKILLS:")
     for s in menu["skills"]:
-        lines.append(f"- {s['key']} [{s['category']}]: {s['description']}")
+        lines.append(f"- {s['key']} [{s.get('category', '')}]: {s['description']}")
     return "\n".join(lines)
 
 
@@ -52,22 +56,29 @@ async def curate(need_description: str) -> dict:
             user=f"Need:\n{need_description}\n\nMENU:\n{_menu_text(menu)}",
         )
         parsed = router._parse(resp.content or "") or {}
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("equipment curate: LLM call failed, using fallback: %s", exc)
         parsed = {}
 
     toolsets: list[str] = []
-    for key in (parsed.get("toolsets") or [])[:_MAX_TOOLSETS]:
+    for key in (parsed.get("toolsets") or []):
         try:
             await registry_service.assert_assignable("toolset", str(key))
             toolsets.append(str(key))
+            if len(toolsets) >= _MAX_TOOLSETS:
+                break
         except registry_service.NotAssignableError:
+            logger.warning("equipment curate: dropped non-assignable toolset %r", key)
             continue
     skills: list[str] = []
-    for key in (parsed.get("skills") or [])[:_MAX_SKILLS]:
+    for key in (parsed.get("skills") or []):
         try:
             await registry_service.assert_assignable("skill", str(key))
             skills.append(str(key))
+            if len(skills) >= _MAX_SKILLS:
+                break
         except registry_service.NotAssignableError:
+            logger.warning("equipment curate: dropped non-assignable skill %r", key)
             continue
 
     if not toolsets:

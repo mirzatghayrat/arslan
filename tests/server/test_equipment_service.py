@@ -78,6 +78,44 @@ async def test_curate_llm_failure_falls_back_to_core(seeded, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_curate_happy_path_valid_toolsets_and_skill(seeded, monkeypatch):
+    from server.services import equipment_service
+
+    class _A:
+        async def chat(self, system, user, **kw):
+            return _Resp(
+                '{"toolsets": ["web_search_scraping", "image_generation"],'
+                ' "skills": ["baoyu-infographic"], "why": "x"}'
+            )
+
+    monkeypatch.setattr(equipment_service, "_get_adapter", lambda: _A())
+
+    eq = await equipment_service.curate("研究助手，查资料写报告")
+    # Both valid toolsets survive in order; skill survives
+    assert eq["toolsets"] == ["web_search_scraping", "image_generation"]
+    assert eq["skills"] == ["baoyu-infographic"]
+
+
+@pytest.mark.asyncio
+async def test_curate_cap_counts_validated_keys(seeded, monkeypatch):
+    """Cap is applied AFTER validation — invalid keys don't consume slots."""
+    from server.services import equipment_service
+
+    class _A:
+        async def chat(self, system, user, **kw):
+            # 4 invalid keys before 1 valid one — cap=4 must not cut before valid key
+            return _Resp(
+                '{"toolsets": ["nope1", "nope2", "nope3", "nope4", "web_search_scraping"],'
+                ' "skills": [], "why": "x"}'
+            )
+
+    monkeypatch.setattr(equipment_service, "_get_adapter", lambda: _A())
+
+    eq = await equipment_service.curate("anything")
+    assert eq["toolsets"] == ["web_search_scraping"]
+
+
+@pytest.mark.asyncio
 async def test_build_intro_grounded_in_equipment(seeded, maker):
     from server.services import equipment_service
 
