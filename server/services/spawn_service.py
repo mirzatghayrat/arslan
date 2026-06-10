@@ -216,6 +216,78 @@ async def create_spawn(session: AsyncSession, **fields) -> Spawn:
     return spawn
 
 
+async def create_from_draft(draft: dict, differentiation: str | None = None):
+    """Create the spawn + equipment rows + persisted intro.
+
+    Returns (spawn_id, spawn_name, equipment, intro). Equipment comes from the
+    draft's explicit `equipment` (validated) or LLM curation over the safe menu.
+
+    Placement rationale: lives in spawn_service (not ws/arslan.py) so that both
+    the WS confirm_create path and the REST create path (api/create.py) share
+    the same code path without circular imports. ws/arslan.py re-exports
+    _create_from_draft as a thin alias so existing tests that import from there
+    continue to work without change.
+    """
+    from server.db import session as db_session
+    from server.db.models import ChatMessage, SpawnCapability
+    from server.registry import service as registry_service
+    from server.services import equipment_service
+
+    domain = draft.get("domain") or "other"
+    category, _, subcategory = domain.partition(".")
+    system_prompt = build_system_prompt(draft)
+    if differentiation:
+        system_prompt += (
+            f"\n\nSpecialization (how you differ from similar specialists): {differentiation}"
+        )
+
+    explicit = draft.get("equipment") or None
+    if explicit:
+        keys = {
+            "toolsets": [str(k) for k in explicit.get("toolsets") or []],
+            "skills": [str(k) for k in explicit.get("skills") or []],
+        }
+        for k in keys["toolsets"]:
+            await registry_service.assert_assignable("toolset", k)
+        for k in keys["skills"]:
+            await registry_service.assert_assignable("skill", k)
+    else:
+        need = " ".join(
+            filter(None, [draft.get("name"), domain, draft.get("persona_role"),
+                          ", ".join(draft.get("capabilities") or [])])
+        )
+        keys = await equipment_service.curate(need)
+
+    async with db_session.AsyncSessionLocal() as db:
+        spawn = await create_spawn_unique(
+            db,
+            name=draft.get("name") or "new-spawn",
+            domain_category=category or "other",
+            domain_subcategory=subcategory or None,
+            capabilities=normalize_capabilities(draft.get("capabilities")),
+            persona_role=draft.get("persona_role"),
+            persona_tone=draft.get("persona_tone"),
+            system_prompt=system_prompt,
+            generation_level=1,
+        )
+        for k in keys["toolsets"]:
+            db.add(SpawnCapability(spawn_id=spawn.id, kind="toolset", ref_key=k))
+        for k in keys["skills"]:
+            db.add(SpawnCapability(spawn_id=spawn.id, kind="skill", ref_key=k))
+        await db.commit()
+        spawn_id, spawn_name = spawn.id, spawn.name
+        persona_role = spawn.persona_role
+
+    equipment = await registry_service.equipment_for_spawn(spawn_id)
+    intro = await equipment_service.build_intro(
+        name=spawn_name, persona_role=persona_role, equipment=equipment
+    )
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(ChatMessage(spawn_id=spawn_id, role="assistant", content=intro))
+        await db.commit()
+    return spawn_id, spawn_name, equipment, intro
+
+
 async def create_spawn_unique(session: AsyncSession, *, name: str, **fields) -> Spawn:
     """Create a spawn, auto-suffixing the name (name-2, name-3, ...) to satisfy the
     UNIQUE constraint instead of raising IntegrityError on a collision."""

@@ -32,26 +32,13 @@ async def _history(conversation_id: str) -> list[dict]:
 
 
 async def _create_from_draft(draft: dict, differentiation: str | None = None):
-    domain = draft.get("domain") or "other"
-    category, _, subcategory = domain.partition(".")
-    system_prompt = spawn_service.build_system_prompt(draft)
-    if differentiation:
-        system_prompt += (
-            f"\n\nSpecialization (how you differ from similar specialists): {differentiation}"
-        )
-    async with db_session.AsyncSessionLocal() as db:
-        spawn = await spawn_service.create_spawn_unique(
-            db,
-            name=draft.get("name") or "new-spawn",
-            domain_category=category or "other",
-            domain_subcategory=subcategory or None,
-            capabilities=spawn_service.normalize_capabilities(draft.get("capabilities")),
-            persona_role=draft.get("persona_role"),
-            persona_tone=draft.get("persona_tone"),
-            system_prompt=system_prompt,
-            generation_level=1,
-        )
-        return spawn.id, spawn.name
+    """Thin alias kept for backward-compat test imports.
+
+    The real implementation lives in spawn_service.create_from_draft so that
+    the REST create path (api/create.py) shares the same code without cyclic
+    imports between ws/ and api/.
+    """
+    return await spawn_service.create_from_draft(draft, differentiation)
 
 
 async def _last_spawn_output(spawn_id: int) -> str | None:
@@ -122,8 +109,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             protocol.suggest_create(draft, task_brief=task_brief, overlaps=overlap)
                         )
                         continue
-                spawn_id, spawn_name = await _create_from_draft(draft, differentiation)
-                await ws.send_json(protocol.spawn_created(spawn_id, spawn_name))
+                spawn_id, spawn_name, equipment, intro = await _create_from_draft(draft, differentiation)
+                await ws.send_json(protocol.spawn_created(spawn_id, spawn_name,
+                                                          equipment=equipment, intro=intro))
                 if task_brief.strip():
                     await run_spawn(spawn_id, task_brief)
                 continue

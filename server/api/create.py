@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
-from server.schemas import DraftIn, SpawnCreateIn, SpawnDetailOut
+from server.schemas import DraftIn, EquipmentItemOut, EquipmentOut, SpawnCreateIn, SpawnDetailOut
 from server.services import spawn_drafter, spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -23,19 +23,37 @@ async def draft_spawn(body: DraftIn) -> dict[str, Any]:
 async def create_spawn(
     body: SpawnCreateIn, session: AsyncSession = Depends(get_session)
 ) -> SpawnDetailOut:
-    category, _, subcategory = body.domain.partition(".")
-    system_prompt = spawn_service.build_system_prompt(
-        {"persona_role": body.persona_role, "persona_tone": body.persona_tone, "domain": body.domain}
+    # Build a draft dict from the body, including optional explicit equipment.
+    draft = {
+        "name": body.name,
+        "domain": body.domain,
+        "capabilities": body.capabilities,
+        "persona_role": body.persona_role,
+        "persona_tone": body.persona_tone,
+    }
+    if body.equipment is not None:
+        draft["equipment"] = body.equipment
+
+    spawn_id, spawn_name, equipment, intro = await spawn_service.create_from_draft(draft)
+
+    # Fetch full detail (including the persisted intro message) using the request session.
+    detail = await spawn_service.get_detail(session, spawn_id)
+    assert detail is not None
+
+    # Attach equipment directly from create_from_draft's result (already resolved).
+    detail.equipment = EquipmentOut(
+        toolsets=[
+            EquipmentItemOut(
+                key=t["key"], name=t["name"], status=t["status"], grant=t.get("grant", "permanent")
+            )
+            for t in equipment["toolsets"]
+        ],
+        skills=[
+            EquipmentItemOut(
+                key=s["key"], name=s["name"], status=s["status"], grant=s.get("grant", "permanent")
+            )
+            for s in equipment["skills"]
+        ],
     )
-    spawn = await spawn_service.create_spawn_unique(
-        session,
-        name=body.name,
-        domain_category=category,
-        domain_subcategory=subcategory or None,
-        capabilities=body.capabilities,
-        persona_role=body.persona_role,
-        persona_tone=body.persona_tone,
-        system_prompt=system_prompt,
-        generation_level=1,
-    )
-    return spawn_service.to_detail(spawn, [])
+    return detail
+

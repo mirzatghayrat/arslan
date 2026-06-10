@@ -22,6 +22,18 @@ class SettingsOut(BaseModel):
     language: str = "en"
 
 
+class EquipmentItemOut(BaseModel):
+    key: str
+    name: str
+    status: str
+    grant: str = "permanent"
+
+
+class EquipmentOut(BaseModel):
+    toolsets: list[EquipmentItemOut] = []
+    skills: list[EquipmentItemOut] = []
+
+
 class SpawnOut(BaseModel):
     id: int
     name: str
@@ -31,6 +43,7 @@ class SpawnOut(BaseModel):
     generation_level: int = 1
     created_at: str
     updated_at: str
+    equipment: EquipmentOut = EquipmentOut()
 
 
 class ChatMessageOut(BaseModel):
@@ -57,6 +70,7 @@ class SpawnCreateIn(BaseModel):
     capabilities: list[str] = []
     persona_role: str | None = None
     persona_tone: str | None = None
+    equipment: dict | None = None
 
 
 class ConfigUpdateIn(BaseModel):

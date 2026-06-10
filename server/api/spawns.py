@@ -6,15 +6,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
-from server.schemas import ConfigUpdateIn, SpawnDetailOut, SpawnOut
+from server.schemas import ConfigUpdateIn, EquipmentItemOut, EquipmentOut, SpawnDetailOut, SpawnOut
 from server.services import spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 
+async def _attach_equipment(
+    out: SpawnOut | SpawnDetailOut, spawn_id: int, session: AsyncSession
+) -> None:
+    """Populate equipment on a SpawnOut/SpawnDetailOut DTO.
+
+    One registry_service call per spawn: fine at current scale, noted for
+    future batching if the list endpoint becomes a performance concern.
+    The session is passed through so the query uses the DI-overridden DB
+    in tests rather than bypassing it via AsyncSessionLocal.
+    """
+    from server.registry import service as registry_service
+
+    eq = await registry_service.equipment_for_spawn(spawn_id, session=session)
+    out.equipment = EquipmentOut(
+        toolsets=[
+            EquipmentItemOut(
+                key=t["key"], name=t["name"], status=t["status"], grant=t.get("grant", "permanent")
+            )
+            for t in eq["toolsets"]
+        ],
+        skills=[
+            EquipmentItemOut(
+                key=s["key"], name=s["name"], status=s["status"], grant=s.get("grant", "permanent")
+            )
+            for s in eq["skills"]
+        ],
+    )
+
+
 @router.get("/spawns", response_model=list[SpawnOut])
 async def list_spawns(session: AsyncSession = Depends(get_session)) -> list[SpawnOut]:
-    return await spawn_service.list_spawns(session)
+    rows = await spawn_service.list_spawns(session)
+    for out in rows:
+        await _attach_equipment(out, out.id, session)
+    return rows
 
 
 @router.get("/spawns/{spawn_id}", response_model=SpawnDetailOut)
@@ -24,6 +56,7 @@ async def get_spawn(
     detail = await spawn_service.get_detail(session, spawn_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Spawn not found")
+    await _attach_equipment(detail, spawn_id, session)
     return detail
 
 
@@ -40,6 +73,7 @@ async def update_config(
         raise HTTPException(status_code=404, detail="Spawn not found")
     detail = await spawn_service.get_detail(session, spawn_id)
     assert detail is not None
+    await _attach_equipment(detail, spawn_id, session)
     return detail
 
 

@@ -18,7 +18,13 @@ def test_suggest_fact_created():
     assert protocol.fact_saved("likes x", True) == {
         "type": "fact_saved", "content": "likes x", "sensitive": True,
     }
-    assert protocol.spawn_created(3, "x") == {"type": "spawn_created", "spawn_id": 3, "spawn_name": "x"}
+    # spawn_created now carries optional equipment/intro (Task 8: additive fields).
+    f = protocol.spawn_created(3, "x")
+    assert f["type"] == "spawn_created"
+    assert f["spawn_id"] == 3
+    assert f["spawn_name"] == "x"
+    assert f["equipment"] == {"toolsets": [], "skills": []}
+    assert f["intro"] is None
 
 
 def test_suggest_create_includes_task_brief_and_overlaps():

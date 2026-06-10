@@ -85,5 +85,16 @@ def fact_saved(content: str, sensitive: bool) -> dict[str, Any]:
     return {"type": "fact_saved", "content": content, "sensitive": sensitive}
 
 
-def spawn_created(spawn_id: int, spawn_name: str) -> dict[str, Any]:
-    return {"type": "spawn_created", "spawn_id": spawn_id, "spawn_name": spawn_name}
+def spawn_created(
+    spawn_id: int,
+    spawn_name: str,
+    equipment: dict[str, Any] | None = None,
+    intro: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "type": "spawn_created",
+        "spawn_id": spawn_id,
+        "spawn_name": spawn_name,
+        "equipment": equipment or {"toolsets": [], "skills": []},
+        "intro": intro,
+    }

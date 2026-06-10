@@ -71,25 +71,37 @@ async def assert_assignable(kind: str, ref_key: str) -> None:
         )
 
 
-async def equipment_for_spawn(spawn_id: int) -> dict:
-    """All equipment rows resolved against the registry (for tags/DTOs)."""
-    async with db_session.AsyncSessionLocal() as db:
-        caps = (await db.execute(
-            select(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
-            .order_by(SpawnCapability.id)
-        )).scalars().all()
-        toolsets, skills = [], []
-        # NOTE: N+1 per-capability lookups; fine at v1 cap counts (<10 rows per spawn).
-        for c in caps:
-            if c.kind == "toolset":
-                row = await db.get(Toolset, c.ref_key)
-                if row is not None:
-                    toolsets.append({**_toolset_dict(row), "grant": c.grant})
-            else:
-                row = await db.get(SkillPack, c.ref_key)
-                if row is not None:
-                    skills.append({**_skill_dict(row), "grant": c.grant})
+async def _equipment_for_spawn_in(db, spawn_id: int) -> dict:
+    """Inner implementation reusable by both session-owning and session-borrowing callers."""
+    caps = (await db.execute(
+        select(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
+        .order_by(SpawnCapability.id)
+    )).scalars().all()
+    toolsets, skills = [], []
+    # NOTE: N+1 per-capability lookups; fine at v1 cap counts (<10 rows per spawn).
+    for c in caps:
+        if c.kind == "toolset":
+            row = await db.get(Toolset, c.ref_key)
+            if row is not None:
+                toolsets.append({**_toolset_dict(row), "grant": c.grant})
+        else:
+            row = await db.get(SkillPack, c.ref_key)
+            if row is not None:
+                skills.append({**_skill_dict(row), "grant": c.grant})
     return {"toolsets": toolsets, "skills": skills}
+
+
+async def equipment_for_spawn(spawn_id: int, *, session=None) -> dict:
+    """All equipment rows resolved against the registry (for tags/DTOs).
+
+    Pass session= to reuse a caller-owned AsyncSession (avoids bypassing the
+    dependency-injection DB override in tests and API endpoints that already
+    hold a session).  When session is None, opens its own via AsyncSessionLocal.
+    """
+    if session is not None:
+        return await _equipment_for_spawn_in(session, spawn_id)
+    async with db_session.AsyncSessionLocal() as db:
+        return await _equipment_for_spawn_in(db, spawn_id)
 
 
 async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dict]:
