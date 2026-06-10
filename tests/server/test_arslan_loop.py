@@ -46,7 +46,10 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
+    captured = {}
+
     async def _fake_answer_stream(system, user, history=None):
+        captured["system"] = system
         for piece in ["Hi ", "there"]:
             yield piece
 
@@ -58,6 +61,8 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
     types = [e["type"] for e in events]
     assert "stream_start" in types and "stream_end" in types
     assert any(e["type"] == "fact_saved" and "brevity" in e["content"] for e in events)
+    # plain answer must NOT carry the clarify addendum (distinguishes it from clarify)
+    assert "clarifying questions" not in captured["system"]
 
     async with db_session.AsyncSessionLocal() as s:
         ams = (await s.execute(select(ArslanMessage).order_by(ArslanMessage.id))).scalars().all()
@@ -76,7 +81,10 @@ async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(mak
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
+    captured = {}
+
     async def _fake_answer_stream(system, user, history=None):
+        captured["system"] = system
         for piece in ["What ", "topic?"]:
             yield piece
 
@@ -89,6 +97,10 @@ async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(mak
     # speaks as Arslan (never source "spawn"); creates/dispatches nothing
     assert all(e.get("source") != "spawn" for e in events if e["type"] == "stream_start")
     assert "routing" not in types and "spawn_created" not in types and "spawn_meta" not in types
+    # genuinely guards the clarify branch: the addendum must reach the system prompt.
+    # If the clarify branch were removed (falling into the plain answer path), this fails.
+    assert "clarifying questions" in captured["system"]
+    assert "under-specified" in captured["system"]
 
 
 @pytest.mark.asyncio
