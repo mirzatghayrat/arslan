@@ -13,6 +13,13 @@ _ARSLAN_SYSTEM = (
     "of specialist spawns. Answer directly and helpfully."
 )
 
+_CLARIFY_ADDENDUM = (
+    "\n\nThe user's request is under-specified. Ask 2-4 short, specific clarifying questions "
+    "(topic, angle, format/output, and the data source if relevant), then propose a concrete "
+    "direction and ask them to confirm (e.g. \"I'll research X with angle Y as a Z — sound right?\"). "
+    "Do not produce the deliverable yet."
+)
+
 
 async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[str]:  # noqa: ANN001
     """Stream a direct Arslan reply. Separate fn so tests can stub it."""
@@ -45,6 +52,8 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
             "task_brief": result.task_brief,
             "overlaps": result.overlaps,
         })
+    elif result.action == "clarify":
+        await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM)
     else:  # answer (incl. fallback)
         await _handle_answer(conversation_id, user_message, emit)
 
@@ -52,10 +61,12 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
     await memory.maybe_compact(conversation_id)
 
 
-async def _handle_answer(conversation_id: str, user_message: str, emit: EventSink) -> None:
+async def _handle_answer(
+    conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = ""
+) -> None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
-    system = _ARSLAN_SYSTEM + (f"\n\n{facts}" if facts else "")
+    system = _ARSLAN_SYSTEM + extra_system + (f"\n\n{facts}" if facts else "")
     if ctx["summary"]:
         system += f"\n\nConversation summary so far:\n{ctx['summary']}"
 

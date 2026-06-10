@@ -68,6 +68,30 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(maker, monkeypatch):
+    from server.orchestrator import arslan, router
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="clarify")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    async def _fake_answer_stream(system, user, history=None):
+        for piece in ["What ", "topic?"]:
+            yield piece
+
+    monkeypatch.setattr(arslan, "_answer_stream", _fake_answer_stream)
+
+    events = []
+    await arslan.handle_user_message("main", "research stuff", _events(events))
+    types = [e["type"] for e in events]
+    assert "stream_start" in types and "stream_end" in types
+    # speaks as Arslan (never source "spawn"); creates/dispatches nothing
+    assert all(e.get("source") != "spawn" for e in events if e["type"] == "stream_start")
+    assert "routing" not in types and "spawn_created" not in types and "spawn_meta" not in types
+
+
+@pytest.mark.asyncio
 async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
     from server.orchestrator import arslan, router
 
