@@ -13,7 +13,10 @@ class SearchProvider(ABC):
 
     @abstractmethod
     async def search(self, query: str, num_results: int = 5) -> list[dict]:
-        """Return [{title, url, snippet}, ...]."""
+        """Return [{title, url, snippet}, ...].
+
+        Transport/HTTP errors propagate as raw httpx exceptions; executors are the designated catcher.
+        """
 
 
 class TavilyProvider(SearchProvider):
