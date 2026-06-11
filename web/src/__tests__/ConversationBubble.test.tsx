@@ -42,6 +42,35 @@ describe("ConversationBubble", () => {
     expect(screen.queryByText(/__SPAWN_CREATED__/)).toBeNull();
   });
 
+  it("renders intro text and equipment chip when system item has intro + equipment", () => {
+    render(
+      <ConversationBubble
+        item={{
+          id: -1,
+          kind: "system",
+          role: "arslan",
+          content: "__SPAWN_CREATED__:Scout",
+          intro: "Hi, I'm Scout.",
+          equipment: {
+            toolsets: [{ key: "ws", name: "Web search", status: "wired", grant: "permanent" }],
+            skills: [],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Hi, I'm Scout.")).toBeInTheDocument();
+    expect(screen.getByText("Web search")).toBeInTheDocument();
+  });
+
+  it("renders no intro card when system item has no intro", () => {
+    render(
+      <ConversationBubble
+        item={{ id: -1, kind: "system", role: "arslan", content: "__SPAWN_CREATED__:Scout" }}
+      />,
+    );
+    expect(screen.queryByText("Hi, I'm Scout.")).toBeNull();
+  });
+
   const longContent = "# Report\n" + "data ".repeat(300); // > 800 chars
 
   it("renders a long finalized message as a downloadable artifact", () => {

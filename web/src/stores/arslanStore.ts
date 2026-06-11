@@ -236,6 +236,8 @@ function makeActions(set: SetState, get: GetState) {
                 kind: "system",
                 role: "arslan",
                 content: `__SPAWN_CREATED__:${frame.spawn_name}`,
+                equipment: frame.equipment ?? null,
+                intro: frame.intro ?? null,
               },
             ],
           });

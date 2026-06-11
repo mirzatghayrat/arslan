@@ -171,6 +171,20 @@ describe("arslanStore", () => {
     expect(useArslanStore.getState().items).toHaveLength(1);
   });
 
+  it("spawn_created stores equipment and intro on the system item", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    useArslanStore.getState().handleFrame({
+      type: "spawn_created", spawn_id: 7, spawn_name: "Scout",
+      equipment: { toolsets: [{ key: "ws", name: "Web search", status: "wired", grant: "permanent" }], skills: [] },
+      intro: "Hi, I'm Scout.",
+    } as never);
+    const items = useArslanStore.getState().items;
+    const item = items[items.length - 1];
+    expect(item.kind).toBe("system");
+    expect(item.intro).toBe("Hi, I'm Scout.");
+    expect(item.equipment?.toolsets[0].key).toBe("ws");
+  });
+
   it("clears spawn attribution when an error interrupts a routed stream", () => {
     const s = useArslanStore.getState();
     s.handleFrame({ type: "routing", spawn_id: 7, spawn_name: "Beauty Guru" });

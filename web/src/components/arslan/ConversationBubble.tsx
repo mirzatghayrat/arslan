@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { ArslanThreadItem } from "../../types";
 import RoutingCaption from "./RoutingCaption";
 import MarkdownArtifact, { LONG_OUTPUT_THRESHOLD } from "./MarkdownArtifact";
+import EquipmentChips from "./EquipmentChips";
 
 export default function ConversationBubble({
   item,
@@ -19,10 +20,20 @@ export default function ConversationBubble({
       ? item.content.slice("__SPAWN_CREATED__:".length)
       : item.content;
     return (
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <span className="rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-xs text-amber/90">
           {t("conversation.spawn_created", { name })}
         </span>
+        {item.intro && (
+          <div className="max-w-[75%] rounded-2xl border border-amber/20 bg-amber/5 px-4 py-3 text-sm text-white/80">
+            <p className="whitespace-pre-wrap">{item.intro}</p>
+            {item.equipment && (
+              <div className="mt-2">
+                <EquipmentChips equipment={item.equipment} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
