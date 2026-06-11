@@ -185,6 +185,36 @@ describe("arslanStore", () => {
     expect(item.equipment?.toolsets[0].key).toBe("ws");
   });
 
+  it("pairs tool_call/tool_result and folds steps into the reply on stream_end", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "web_search", args_summary: '{"q":"a"}' } as never);
+    h({ type: "tool_call", tool: "web_search", args_summary: '{"q":"b"}' } as never);
+    h({ type: "tool_result", tool: "web_search", ok: true, summary: "5 hits" } as never);
+    const steps = useArslanStore.getState().activitySteps;
+    // most recent unresolved same-tool step resolves first
+    expect(steps[1]).toMatchObject({ status: "ok", resultSummary: "5 hits" });
+    expect(steps[0].status).toBe("running");
+    h({ type: "tool_result", tool: "web_search", ok: false, summary: "timeout" } as never);
+    expect(useArslanStore.getState().activitySteps[0].status).toBe("error");
+
+    h({ type: "stream_start", source: "spawn", spawn_id: 7 } as never);
+    h({ type: "stream_chunk", content: "answer" } as never);
+    h({ type: "stream_end", message_id: 42 } as never);
+    const its = useArslanStore.getState().items;
+    const item = its[its.length - 1];
+    expect(item.toolSteps).toHaveLength(2);
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+  });
+
+  it("clears activity on error frame", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "web_extract", args_summary: "" } as never);
+    h({ type: "error", code: "X", message: "boom" } as never);
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+  });
+
   it("clears spawn attribution when an error interrupts a routed stream", () => {
     const s = useArslanStore.getState();
     s.handleFrame({ type: "routing", spawn_id: 7, spawn_name: "Beauty Guru" });

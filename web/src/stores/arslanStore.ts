@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft } from "../types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep } from "../types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -20,6 +20,9 @@ interface ArslanState {
   // (production order). Stash them here keyed by arslan_message_id and apply on
   // stream_end. Cleared per-key once applied.
   pendingSpawnMeta: Record<number, { assistant_message_id: number; task_brief: string }>;
+  // Live tool-loop steps for the in-flight spawn turn, paired from
+  // tool_call/tool_result frames; folded into the reply item on stream_end.
+  activitySteps: ToolStep[];
 
   setSpawnNames: (map: Record<number, string>) => void;
   addUserMessage: (content: string) => void;
@@ -53,6 +56,7 @@ function initialData() {
     suggestionTaskBrief: null as string | null,
     suggestionOverlaps: null as import("../types").OverlapInfo | null,
     pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
+    activitySteps: [] as ToolStep[],
   };
 }
 
@@ -110,7 +114,7 @@ function makeActions(set: SetState, get: GetState) {
         case "history": {
           const items: ArslanThreadItem[] = frame.messages.map(rowToItem);
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);
-          set({ items, lastMessageId: lastId });
+          set({ items, lastMessageId: lastId, activitySteps: [] });
           break;
         }
         case "message": {
@@ -159,6 +163,7 @@ function makeActions(set: SetState, get: GetState) {
             spawnName: state.streamSpawnName,
             spawnMessageId: meta?.assistant_message_id ?? null,
             taskBrief: meta?.task_brief ?? null,
+            toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
           };
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
           delete nextPendingSpawnMeta[frame.message_id];
@@ -172,7 +177,33 @@ function makeActions(set: SetState, get: GetState) {
             pendingRoute: null,
             pendingSpawnMeta: nextPendingSpawnMeta,
             lastMessageId: Math.max(state.lastMessageId, frame.message_id),
+            activitySteps: [],
           });
+          break;
+        }
+        case "tool_call":
+          set({
+            activitySteps: [
+              ...state.activitySteps,
+              { tool: frame.tool, argsSummary: frame.args_summary, status: "running" },
+            ],
+          });
+          break;
+        case "tool_result": {
+          // The loop is sequential per tool: resolve the most recent unresolved
+          // step with the same tool name.
+          const steps = [...state.activitySteps];
+          for (let i = steps.length - 1; i >= 0; i--) {
+            if (steps[i].tool === frame.tool && steps[i].status === "running") {
+              steps[i] = {
+                ...steps[i],
+                status: frame.ok ? "ok" : "error",
+                resultSummary: frame.summary,
+              };
+              break;
+            }
+          }
+          set({ activitySteps: steps });
           break;
         }
         case "suggest_create":
@@ -252,6 +283,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSpawnId: null,
             streamSpawnName: null,
             pendingRoute: null,
+            activitySteps: [],
           });
           break;
         default:

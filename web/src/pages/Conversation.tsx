@@ -8,6 +8,7 @@ import ErrorBoundary from "../components/layout/ErrorBoundary";
 import CreateSpawnCard from "../components/arslan/CreateSpawnCard";
 import SpawnFeedbackBar from "../components/arslan/SpawnFeedbackBar";
 import ThinkingIndicator from "../components/arslan/ThinkingIndicator";
+import ToolActivityFrame from "../components/arslan/ToolActivityFrame";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useArslanStore } from "../stores/arslanStore";
 import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft } from "../types";
@@ -28,6 +29,7 @@ export default function Conversation() {
     pendingRoute,
     suggestionTaskBrief,
     suggestionOverlaps,
+    activitySteps,
     setSpawnNames,
     addUserMessage,
     handleFrame,
@@ -103,18 +105,22 @@ export default function Conversation() {
           // Per-item boundary: a single malformed turn degrades to an inline
           // notice instead of white-screening the whole app.
           <ErrorBoundary key={it.id} fallback={renderError}>
-            <ConversationBubble item={it}>
-              {it.role === "spawn" && it.kind === "message" && (
-                <SpawnFeedbackBar
-                  onThumbUp={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_up"); }}
-                  onThumbDown={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_down"); }}
-                  onRedo={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "redo"); redo(it); }}
-                  onTweak={() => { const v = window.prompt(t("create_card.refine_placeholder")); if (v) { sendFeedback(it.spawnId!, it.spawnMessageId, "refine"); tweak(it, v); } }}
-                />
-              )}
-            </ConversationBubble>
+            <div>
+              {it.toolSteps && <ToolActivityFrame steps={it.toolSteps} />}
+              <ConversationBubble item={it}>
+                {it.role === "spawn" && it.kind === "message" && (
+                  <SpawnFeedbackBar
+                    onThumbUp={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_up"); }}
+                    onThumbDown={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "thumbs_down"); }}
+                    onRedo={() => { sendFeedback(it.spawnId!, it.spawnMessageId, "redo"); redo(it); }}
+                    onTweak={() => { const v = window.prompt(t("create_card.refine_placeholder")); if (v) { sendFeedback(it.spawnId!, it.spawnMessageId, "refine"); tweak(it, v); } }}
+                  />
+                )}
+              </ConversationBubble>
+            </div>
           </ErrorBoundary>
         ))}
+        {activitySteps.length > 0 && <ToolActivityFrame steps={activitySteps} live />}
         {pending && !streaming && (
           <ThinkingIndicator spawnName={pendingRoute?.spawnName ?? null} />
         )}
