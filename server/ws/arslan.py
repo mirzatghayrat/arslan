@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -78,9 +80,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             ev = await queue.get()
             if ev is None:
                 return
-            await ws.send_json(_to_frame(ev))
+            try:
+                await ws.send_json(_to_frame(ev))
+            except Exception:  # noqa: BLE001 — client gone; receive loop will see the disconnect
+                return
 
-    async def run_with_live_frames(coro) -> None:
+    async def run_with_live_frames(coro: Coroutine[Any, Any, object]) -> None:
         sender = asyncio.create_task(_drain())
         try:
             await coro
