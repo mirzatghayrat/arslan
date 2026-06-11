@@ -79,6 +79,39 @@
     "refine_placeholder": "Refinar este borrador…",
     "differ_placeholder": "¿En qué debería diferir de {{name}} en {{axis}}?"
   },
+  "equipment": {
+    "title": "Equipamiento",
+    "edit": "Editar equipamiento",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "toolsets": "Toolsets",
+    "skills": "Habilidades",
+    "locked": "Solo Arslan — no se puede asignar a spawns",
+    "temporary": "Permisos temporales (gestionados por Arslan)",
+    "temp_badge": "temp",
+    "more": "+{{count}} más",
+    "granted_create": "Equipado al crear",
+    "granted_escalation": "Concedido por Arslan",
+    "granted_user": "Definido por ti",
+    "empty": "Sin equipamiento"
+  },
+  "activity": {
+    "summary": "Usó {{summary}}",
+    "args": "Entrada",
+    "result": "Resultado",
+    "error": "falló"
+  },
+  "escalation": {
+    "needs": "{{name}} necesita algo:",
+    "kind_data": "datos",
+    "kind_capability": "capacidad",
+    "resolving": "Arslan lo está resolviendo…",
+    "granted": "Arslan concedió una capacidad",
+    "answered": "Arslan respondió con datos",
+    "unresolved": "No se pudo resolver",
+    "refused": "Rechazado: {{why}}",
+    "detail": "Detalles"
+  },
   "facts": {
     "section": "Memoria",
     "subtitle": "Lo que Arslan recuerda sobre ti. Editable.",

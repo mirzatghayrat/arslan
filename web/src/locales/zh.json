@@ -79,6 +79,39 @@
     "refine_placeholder": "优化此草稿……",
     "differ_placeholder": "在 {{axis}} 上与 {{name}} 有何不同？"
   },
+  "equipment": {
+    "title": "装备",
+    "edit": "编辑装备",
+    "save": "保存",
+    "cancel": "取消",
+    "toolsets": "工具集",
+    "skills": "技能",
+    "locked": "仅限 Arslan — 无法分配给分身",
+    "temporary": "临时授权（由 Arslan 管理）",
+    "temp_badge": "临时",
+    "more": "还有 {{count}} 个",
+    "granted_create": "创建时装备",
+    "granted_escalation": "由 Arslan 授予",
+    "granted_user": "由你设置",
+    "empty": "暂无装备"
+  },
+  "activity": {
+    "summary": "使用了 {{summary}}",
+    "args": "输入",
+    "result": "结果",
+    "error": "失败"
+  },
+  "escalation": {
+    "needs": "{{name}} 需要一些东西：",
+    "kind_data": "数据",
+    "kind_capability": "能力",
+    "resolving": "Arslan 正在处理…",
+    "granted": "Arslan 授予了一项能力",
+    "answered": "Arslan 用数据回答了",
+    "unresolved": "无法解决",
+    "refused": "已拒绝：{{why}}",
+    "detail": "详情"
+  },
   "facts": {
     "section": "记忆",
     "subtitle": "Arslan 记住的关于你的信息，可编辑。",

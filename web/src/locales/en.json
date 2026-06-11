@@ -79,6 +79,39 @@
     "refine_placeholder": "Refine this draft…",
     "differ_placeholder": "How should this differ from {{name}} on {{axis}}?"
   },
+  "equipment": {
+    "title": "Equipment",
+    "edit": "Edit equipment",
+    "save": "Save",
+    "cancel": "Cancel",
+    "toolsets": "Toolsets",
+    "skills": "Skills",
+    "locked": "Arslan-only — cannot be assigned to spawns",
+    "temporary": "Temporary grants (managed by Arslan)",
+    "temp_badge": "temp",
+    "more": "+{{count}} more",
+    "granted_create": "Equipped at creation",
+    "granted_escalation": "Granted by Arslan",
+    "granted_user": "Set by you",
+    "empty": "No equipment"
+  },
+  "activity": {
+    "summary": "Used {{summary}}",
+    "args": "Input",
+    "result": "Result",
+    "error": "failed"
+  },
+  "escalation": {
+    "needs": "{{name}} needs something:",
+    "kind_data": "data",
+    "kind_capability": "capability",
+    "resolving": "Arslan is resolving…",
+    "granted": "Arslan granted a capability",
+    "answered": "Arslan answered with data",
+    "unresolved": "Couldn't resolve",
+    "refused": "Refused: {{why}}",
+    "detail": "Details"
+  },
   "facts": {
     "section": "Memory",
     "subtitle": "What Arslan remembers about you. Editable.",

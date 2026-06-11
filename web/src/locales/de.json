@@ -79,6 +79,39 @@
     "refine_placeholder": "Diesen Entwurf verfeinern…",
     "differ_placeholder": "Wie soll sich dies von {{name}} bei {{axis}} unterscheiden?"
   },
+  "equipment": {
+    "title": "Ausrüstung",
+    "edit": "Ausrüstung bearbeiten",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "toolsets": "Toolsets",
+    "skills": "Skills",
+    "locked": "Nur Arslan — kann Spawns nicht zugewiesen werden",
+    "temporary": "Temporäre Freigaben (von Arslan verwaltet)",
+    "temp_badge": "temp",
+    "more": "+{{count}} weitere",
+    "granted_create": "Bei Erstellung ausgerüstet",
+    "granted_escalation": "Von Arslan gewährt",
+    "granted_user": "Von dir festgelegt",
+    "empty": "Keine Ausrüstung"
+  },
+  "activity": {
+    "summary": "{{summary}} verwendet",
+    "args": "Eingabe",
+    "result": "Ergebnis",
+    "error": "fehlgeschlagen"
+  },
+  "escalation": {
+    "needs": "{{name}} benötigt etwas:",
+    "kind_data": "Daten",
+    "kind_capability": "Fähigkeit",
+    "resolving": "Arslan klärt das…",
+    "granted": "Arslan hat eine Fähigkeit gewährt",
+    "answered": "Arslan hat mit Daten geantwortet",
+    "unresolved": "Konnte nicht gelöst werden",
+    "refused": "Abgelehnt: {{why}}",
+    "detail": "Details"
+  },
   "facts": {
     "section": "Gedächtnis",
     "subtitle": "Was sich Arslan über dich merkt. Bearbeitbar.",
