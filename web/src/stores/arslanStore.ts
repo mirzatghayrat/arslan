@@ -151,11 +151,29 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "stream_end": {
           if (!state.streaming) break;
+          // A refused escalation ends the stream without persisting a message:
+          // the server sends message_id: null and no reply text. With nothing
+          // to show, just reset the streaming state — appending an item would
+          // create a ghost entry with a null id (duplicate React keys).
+          const hasContent = state.streamingText.length > 0;
+          const hasSteps = state.activitySteps.length > 0;
+          if (frame.message_id == null && !hasContent && !hasSteps) {
+            set({
+              streaming: false,
+              streamingText: "",
+              streamSource: null,
+              streamSpawnId: null,
+              streamSpawnName: null,
+              pendingRoute: null,
+              activitySteps: [],
+            });
+            break;
+          }
           // A spawn_meta for this message may have arrived earlier (production
           // order). Apply it now and drop the stashed entry.
-          const meta = state.pendingSpawnMeta[frame.message_id];
+          const meta = frame.message_id != null ? state.pendingSpawnMeta[frame.message_id] : undefined;
           const item: ArslanThreadItem = {
-            id: frame.message_id,
+            id: frame.message_id ?? nextClientId(),
             kind: "message",
             role: state.streamSource === "spawn" ? "spawn" : "arslan",
             content: state.streamingText,
@@ -166,7 +184,7 @@ function makeActions(set: SetState, get: GetState) {
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
           };
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
-          delete nextPendingSpawnMeta[frame.message_id];
+          if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];
           set({
             items: [...state.items, item],
             streaming: false,
@@ -176,7 +194,8 @@ function makeActions(set: SetState, get: GetState) {
             streamSpawnName: null,
             pendingRoute: null,
             pendingSpawnMeta: nextPendingSpawnMeta,
-            lastMessageId: Math.max(state.lastMessageId, frame.message_id),
+            lastMessageId:
+              frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
             activitySteps: [],
           });
           break;

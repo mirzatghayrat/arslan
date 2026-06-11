@@ -131,6 +131,29 @@ describe("arslanStore", () => {
     expect(item).toMatchObject({ spawnMessageId: 42, taskBrief: "do X" });
   });
 
+  it("stream_end with null message_id (refused escalation) creates no empty ghost item", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "stream_start", source: "spawn", spawn_id: 7 } as never);
+    h({ type: "stream_end", message_id: null } as never);
+    expect(useArslanStore.getState().items).toHaveLength(0);
+    expect(useArslanStore.getState().streaming).toBe(false);
+  });
+
+  it("stream_end with null message_id still folds pending tool steps under a client id", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "web_search", args_summary: "" } as never);
+    h({ type: "tool_result", tool: "web_search", ok: true, summary: "hits" } as never);
+    h({ type: "stream_start", source: "spawn", spawn_id: 7 } as never);
+    h({ type: "stream_end", message_id: null } as never);
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBeLessThan(0); // client id, not null
+    expect(items[0].toolSteps).toHaveLength(1);
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+  });
+
   it("appends a replayed message frame (resume path)", () => {
     useArslanStore.getState().setSpawnNames({ 7: "Beauty Guru" });
     const s = useArslanStore.getState();

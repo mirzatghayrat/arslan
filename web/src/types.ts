@@ -161,7 +161,7 @@ export type ArslanServerMessage =
   | { type: "routing"; spawn_id: number; spawn_name: string | null }
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
   | { type: "stream_chunk"; content: string }
-  | { type: "stream_end"; message_id: number }
+  | { type: "stream_end"; message_id: number | null }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string }
   | { type: "fact_saved"; content: string; sensitive: boolean }
