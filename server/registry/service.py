@@ -7,6 +7,7 @@ Layer 3: wired_tools_for_spawn() — the only tool resolution the loop may call.
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db import session as db_session
 from server.db.models import SkillPack, SpawnCapability, Tool, Toolset
@@ -114,25 +115,35 @@ async def equipment_for_spawn(spawn_id: int, *, session=None) -> dict:
         return await _equipment_for_spawn_in(db, spawn_id)
 
 
-async def replace_user_equipment(session, spawn_id: int,
+async def replace_user_equipment(session: AsyncSession, spawn_id: int,
                                  toolsets: list[str], skills: list[str]) -> None:
     """User equipment editor write path: declarative replace of user-managed
     permanent grants (granted_by in create/user -> new rows granted_by=user).
-    Temporary escalation grants are untouched. All-or-nothing: every key is
-    validated via assert_assignable before any row is written."""
+    All-or-nothing: every key is validated via assert_assignable before any
+    row is written.
+
+    Promotion policy: if an incoming key is currently held as a temporary
+    grant, that temporary row is removed and the key becomes a permanent
+    granted_by="user" row. Temporary grants for keys NOT in the incoming
+    selection are left untouched."""
+    toolsets = list(dict.fromkeys(toolsets))
+    skills = list(dict.fromkeys(skills))
     for key in toolsets:
         await assert_assignable("toolset", key, session=session)
     for key in skills:
         await assert_assignable("skill", key, session=session)
+    selected = {("toolset", k) for k in toolsets} | {("skill", k) for k in skills}
     rows = (await session.execute(
-        select(SpawnCapability).where(
-            SpawnCapability.spawn_id == spawn_id,
-            SpawnCapability.grant == "permanent",
-            SpawnCapability.granted_by.in_(("create", "user")),
-        )
+        select(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
     )).scalars().all()
     for r in rows:
-        await session.delete(r)
+        is_user_managed = (r.grant == "permanent"
+                           and r.granted_by in ("create", "user"))
+        is_promoted_temp = (r.grant == "temporary"
+                            and (r.kind, r.ref_key) in selected)
+        if is_user_managed or is_promoted_temp:
+            await session.delete(r)
+    await session.flush()
     for key in toolsets:
         session.add(SpawnCapability(spawn_id=spawn_id, kind="toolset", ref_key=key,
                                     grant="permanent", granted_by="user"))

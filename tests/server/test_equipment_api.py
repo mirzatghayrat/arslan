@@ -76,3 +76,42 @@ async def test_put_equipment_preserves_temporary_grants(client):
     assert by_key[ts[1]]["grant"] == "temporary"
     assert by_key[ts[1]]["granted_by"] == "escalation"
     assert by_key[ts[1]]["expires_turn"] == 99
+
+
+@pytest.mark.asyncio
+async def test_put_equipment_idempotent(client):
+    sid = await _seed(client)
+    ts, sk, _ = await _keys(client)
+    body = {"toolsets": [ts[0]], "skills": [sk[0]]}
+    first = await client.put(f"/api/v1/spawns/{sid}/equipment", json=body)
+    assert first.status_code == 200
+    second = await client.put(f"/api/v1/spawns/{sid}/equipment", json=body)
+    assert second.status_code == 200
+    assert second.json()["equipment"] == first.json()["equipment"]
+
+
+@pytest.mark.asyncio
+async def test_put_equipment_dedupes_request_keys(client):
+    sid = await _seed(client)
+    ts, _, _ = await _keys(client)
+    resp = await client.put(f"/api/v1/spawns/{sid}/equipment",
+                            json={"toolsets": [ts[0], ts[0]], "skills": []})
+    assert resp.status_code == 200
+    assert [t["key"] for t in resp.json()["equipment"]["toolsets"]] == [ts[0]]
+
+
+@pytest.mark.asyncio
+async def test_put_equipment_promotes_temporary_grant(client):
+    sid = await _seed(client)
+    ts, _, _ = await _keys(client)
+    async with client.db_maker() as s:
+        s.add(SpawnCapability(spawn_id=sid, kind="toolset", ref_key=ts[0],
+                              grant="temporary", granted_by="escalation", expires_turn=99))
+        await s.commit()
+    resp = await client.put(f"/api/v1/spawns/{sid}/equipment",
+                            json={"toolsets": [ts[0]], "skills": []})
+    assert resp.status_code == 200
+    rows = [t for t in resp.json()["equipment"]["toolsets"] if t["key"] == ts[0]]
+    assert len(rows) == 1
+    assert rows[0]["grant"] == "permanent"
+    assert rows[0]["granted_by"] == "user"
