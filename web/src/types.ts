@@ -1,3 +1,47 @@
+export interface EquipmentItem {
+  key: string;
+  name: string;
+  status: string;
+  grant: "permanent" | "temporary";
+  granted_by?: "create" | "user" | "escalation";
+  expires_turn?: number | null;
+}
+
+export interface Equipment {
+  toolsets: EquipmentItem[];
+  skills: EquipmentItem[];
+}
+
+export interface RegistryTool { key: string; description: string; tier: string; status: string; }
+export interface RegistryToolset {
+  key: string; name: string; description: string; tier: string; status: string;
+  assignable: boolean; tools: RegistryTool[];
+}
+export interface RegistrySkill {
+  key: string; name: string; category: string; description: string;
+  tier: string; status: string; assignable: boolean;
+}
+export interface RegistryCatalog { toolsets: RegistryToolset[]; skills: RegistrySkill[]; }
+
+/** One step of a spawn's tool loop, paired from tool_call/tool_result frames. */
+export interface ToolStep {
+  tool: string;
+  argsSummary: string;
+  status: "running" | "ok" | "error";
+  resultSummary?: string;
+}
+
+export interface EscalationInfo {
+  spawnId: number;
+  spawnName: string | null;
+  kind: string; // "data" | "capability"
+  need: string;
+  status: "resolving" | "resolved" | "refused";
+  how?: string;
+  detail?: string;
+  why?: string;
+}
+
 export interface SpawnSummary {
   id: number;
   name: string;
@@ -7,6 +51,7 @@ export interface SpawnSummary {
   generation_level: number;
   created_at: string;
   updated_at: string;
+  equipment?: Equipment;
 }
 
 export interface ChatMessage {
@@ -88,7 +133,7 @@ export interface OverlapInfo {
 /** A renderable item in the unified Arslan thread. */
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system";
+  kind: "message" | "fact" | "system" | "escalation";
   role: "user" | "arslan" | "spawn";
   content: string;
   spawnId?: number | null;
@@ -96,6 +141,10 @@ export interface ArslanThreadItem {
   sensitive?: boolean; // kind === "fact"
   spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
   taskBrief?: string | null; // the task this spawn turn ran, for redo/refine
+  equipment?: Equipment | null; // kind === "system" (spawn_created)
+  intro?: string | null; // kind === "system" (spawn_created)
+  toolSteps?: ToolStep[]; // spawn replies: folded tool activity
+  escalation?: EscalationInfo; // kind === "escalation"
 }
 
 /** A row from the server `history` frame. */
@@ -117,5 +166,10 @@ export type ArslanServerMessage =
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "spawn_created"; spawn_id: number; spawn_name: string }
+  | { type: "spawn_created"; spawn_id: number; spawn_name: string; equipment?: Equipment; intro?: string | null }
+  | { type: "tool_call"; tool: string; args_summary: string }
+  | { type: "tool_result"; tool: string; ok: boolean; summary: string }
+  | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
+  | { type: "escalation_refused"; spawn_id: number; why: string }
+  | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean };

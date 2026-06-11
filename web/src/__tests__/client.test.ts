@@ -39,6 +39,23 @@ describe("api client", () => {
     vi.stubGlobal("fetch", f);
     await expect(api.getSpawn(99)).rejects.toThrow("nope");
   });
+
+  it("getRegistry GETs /api/v1/registry", async () => {
+    const f = mockFetch({ toolsets: [], skills: [] });
+    vi.stubGlobal("fetch", f);
+    await api.getRegistry();
+    expect(f).toHaveBeenCalledWith("/api/v1/registry", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("updateEquipment PUTs to /api/v1/spawns/3/equipment with JSON body", async () => {
+    const f = mockFetch({ id: 3, name: "x" });
+    vi.stubGlobal("fetch", f);
+    await api.updateEquipment(3, { toolsets: ["web_search_scraping"], skills: [] });
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe("/api/v1/spawns/3/equipment");
+    expect((init as RequestInit).method).toBe("PUT");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ toolsets: ["web_search_scraping"], skills: [] });
+  });
 });
 
 describe("api.facts", () => {
