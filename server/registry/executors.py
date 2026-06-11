@@ -62,7 +62,7 @@ async def _search_provider():
 
 
 async def _fetch_text(url: str) -> str:
-    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:  # NOTE: redirects can still bounce to private hosts; acceptable residual risk for local-first v1, revisit if hosted
+    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:  # NOTE: redirects can still bounce to private hosts; must-fix-before-public-release
         resp = await client.get(url)
         resp.raise_for_status()
         html = resp.text

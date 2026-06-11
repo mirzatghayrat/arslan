@@ -47,8 +47,10 @@ def _scripted_adapter(replies):
 @pytest.mark.asyncio
 async def test_tool_call_then_final(maker, monkeypatch):
     from server.orchestrator import spawn_loop
+    from server.orchestrator.untrusted import DELIM_CLOSE, DELIM_OPEN
 
     calls = {}
+    captured_convo = []
 
     class _Exec:
         key = "web_search"
@@ -58,11 +60,18 @@ async def test_tool_call_then_final(maker, monkeypatch):
             return {"ok": True, "results": [{"title": "T", "url": "u", "snippet": "s"}]}
 
     monkeypatch.setattr(spawn_loop, "EXECUTORS", {"web_search": _Exec()})
-    adapter = _scripted_adapter([
-        '{"tool": "web_search", "args": {"query": "防晒 趋势"}}',
-        "最终答案：成分党内容上升。",
-    ])
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: adapter)
+
+    class _CapturingAdapter:
+        _replies = iter([
+            '{"tool": "web_search", "args": {"query": "防晒 趋势"}}',
+            "最终答案：成分党内容上升。",
+        ])
+
+        async def chat(self, system, user, history=None, **kw):
+            captured_convo.append({"system": system, "user": user, "history": list(history or [])})
+            return _Resp(next(self._replies))
+
+    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: _CapturingAdapter())
 
     events, chunks = [], []
     out = await spawn_loop.run(
@@ -77,6 +86,16 @@ async def test_tool_call_then_final(maker, monkeypatch):
     assert events[0]["tool"] == "web_search"
     assert events[1]["ok"] is True
     assert "".join(chunks) == out["final"]
+
+    # --- structural isolation assertions ---
+    # The system prompt must carry the guard note.
+    assert "untrusted external data" in captured_convo[0]["system"]
+
+    # The second call receives the TOOL RESULT as the `user` argument (convo[-1]).
+    tr_user = captured_convo[1]["user"]
+    assert "TOOL RESULT" in tr_user, "second chat call must include TOOL RESULT"
+    assert DELIM_OPEN in tr_user, "TOOL RESULT must contain open delimiter"
+    assert DELIM_CLOSE in tr_user, "TOOL RESULT must contain close delimiter"
 
 
 @pytest.mark.asyncio

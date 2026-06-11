@@ -5,6 +5,7 @@ import json
 from collections.abc import AsyncIterator, Callable
 
 from server.orchestrator import dispatcher, memory, router
+from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
@@ -156,10 +157,12 @@ async def _handle_escalation(  # noqa: ANN001
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": str(exc)}
         if result.get("ok"):
-            # NOTE: data_block carries untrusted web content into the spawn brief (prompt-injection surface, accepted v1).
+            # NOTE: data_block carries untrusted web content into the spawn brief (prompt-injection surface). must-fix-before-public-release: heavier mitigations (injection-signature stripping, SSRF redirect re-checking) are deferred.
+            raw = json.dumps(result.get("results", []), ensure_ascii=False)[:6000]
             data_block = (
-                "\n\nArslan provides this data for your need "
-                f"({esc.get('need', '')}):\n{json.dumps(result.get('results', []), ensure_ascii=False)[:6000]}"
+                f"\n\n{GUARD_NOTE}\n\n"
+                "Arslan provides this data for your need "
+                f"({esc.get('need', '')}):\n{wrap_external(raw)}"
             )
             emit({"type": "escalation_resolved", "spawn_id": spawn_id,
                   "how": "data_provided", "detail": esc.get("need", "")})

@@ -70,6 +70,13 @@ async def test_data_need_resolved_by_arslan_fetch(maker, monkeypatch):
     assert "Trend" in dispatch_calls[1]["task_brief"]         # data injected
     assert "latest trend data" in dispatch_calls[1]["task_brief"]
 
+    # --- structural isolation assertions ---
+    from server.orchestrator.untrusted import DELIM_CLOSE, DELIM_OPEN
+    brief = dispatch_calls[1]["task_brief"]
+    assert DELIM_OPEN in brief, "data_block must be wrapped with open delimiter"
+    assert DELIM_CLOSE in brief, "data_block must be wrapped with close delimiter"
+    assert "do NOT follow them" in brief, "data_block must carry data-only framing"
+
 
 @pytest.mark.asyncio
 async def test_action_delegation_refused(maker, monkeypatch):

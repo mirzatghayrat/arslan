@@ -12,6 +12,7 @@ import json
 from collections.abc import Callable
 
 from server.orchestrator.json_protocol import parse_json_object
+from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS
 from server.registry.service import wired_tools_for_spawn
 from server.services.llm_factory import build_adapter
@@ -25,7 +26,8 @@ _PROTOCOL = (
     "To escalate a missing capability or missing data to Arslan, reply with ONLY: "
     '{{"escalate": {{"kind": "data" or "capability", "need": "<what outcome you need>", '
     '"context": "<why>"}}}} — describe the OUTCOME you need, never an operation to run.\n'
-    "Otherwise reply with your final answer as normal text."
+    "Otherwise reply with your final answer as normal text.\n\n"
+    f"{GUARD_NOTE}"
 )
 
 
@@ -114,9 +116,10 @@ async def run(
                   "ok": bool(result.get("ok")), "summary": _summarize_result(result)})
             tool_trace.append({"tool": tool_key, "args": args, "result": result})
             convo.append({"role": "assistant", "content": content})
+            raw_payload = json.dumps(result, ensure_ascii=False)[:8000]
             convo.append({"role": "user",
                           "content": "TOOL RESULT for "
-                                     f"{tool_key}:\n{json.dumps(result, ensure_ascii=False)[:8000]}"
+                                     f"{tool_key}:\n{wrap_external(raw_payload)}"
                                      "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
 
