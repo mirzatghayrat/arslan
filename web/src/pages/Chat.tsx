@@ -5,9 +5,10 @@ import { api } from "../api/client";
 import ChatInput from "../components/chat/ChatInput";
 import FeedbackBar from "../components/chat/FeedbackBar";
 import MessageBubble from "../components/chat/MessageBubble";
+import EquipmentPanel from "../components/spawn/EquipmentPanel";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useChatStore } from "../stores/chatStore";
-import type { ChatMessage, ServerMessage } from "../types";
+import type { ChatMessage, ServerMessage, SpawnDetail } from "../types";
 
 export default function Chat() {
   const { t } = useTranslation();
@@ -24,10 +25,10 @@ export default function Chat() {
     finalizeStreaming,
   } = useChatStore();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [spawnName, setSpawnName] = useState<string | null>(null);
+  const [spawn, setSpawn] = useState<SpawnDetail | null>(null);
 
   useEffect(() => {
-    void api.getSpawn(id).then((s) => setSpawnName(s.name)).catch(() => setSpawnName(null));
+    void api.getSpawn(id).then(setSpawn).catch(() => setSpawn(null));
   }, [id]);
 
   const onMessage = useCallback(
@@ -97,7 +98,8 @@ export default function Chat() {
 
   return (
     <div className="flex h-[70vh] flex-col">
-      <h1 className="mb-2 text-xl font-semibold">{t("chat.title", { name: spawnName ?? id })}</h1>
+      <h1 className="mb-2 text-xl font-semibold">{t("chat.title", { name: spawn?.name ?? id })}</h1>
+      {spawn && <EquipmentPanel spawn={spawn} onUpdated={setSpawn} />}
       {errorMsg && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">
           <span>{errorMsg}</span>
