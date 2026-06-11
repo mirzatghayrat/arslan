@@ -50,19 +50,27 @@ async def safe_menu() -> dict:
             "skills": [_skill_dict(s) for s in sk]}
 
 
-async def assert_assignable(kind: str, ref_key: str) -> None:
+async def assert_assignable(kind: str, ref_key: str, *, session=None) -> None:
     """Hard server-side gate: raises unless (kind, ref_key) is safe + assignable.
 
     No bypass parameter exists by design (spec §2): the only holder of
     orchestrator-tier capabilities is Arslan itself, implicitly.
+
+    Pass session= to reuse a caller-owned AsyncSession (same pattern as
+    equipment_for_spawn); when None, opens its own via AsyncSessionLocal.
     """
     if kind not in ("toolset", "skill"):
         raise NotAssignableError(f"unknown capability kind: {kind}")
-    async with db_session.AsyncSessionLocal() as db:
-        row = (
-            await db.get(Toolset, ref_key) if kind == "toolset"
-            else await db.get(SkillPack, ref_key)
-        )
+
+    async def _lookup(db):
+        return (await db.get(Toolset, ref_key) if kind == "toolset"
+                else await db.get(SkillPack, ref_key))
+
+    if session is not None:
+        row = await _lookup(session)
+    else:
+        async with db_session.AsyncSessionLocal() as db:
+            row = await _lookup(db)
     if row is None:
         raise NotAssignableError(f"unknown {kind}: {ref_key}")
     if not is_assignable(row.tier, row.status):
@@ -83,11 +91,13 @@ async def _equipment_for_spawn_in(db, spawn_id: int) -> dict:
         if c.kind == "toolset":
             row = await db.get(Toolset, c.ref_key)
             if row is not None:
-                toolsets.append({**_toolset_dict(row), "grant": c.grant})
+                toolsets.append({**_toolset_dict(row), "grant": c.grant,
+                                 "granted_by": c.granted_by, "expires_turn": c.expires_turn})
         else:
             row = await db.get(SkillPack, c.ref_key)
             if row is not None:
-                skills.append({**_skill_dict(row), "grant": c.grant})
+                skills.append({**_skill_dict(row), "grant": c.grant,
+                               "granted_by": c.granted_by, "expires_turn": c.expires_turn})
     return {"toolsets": toolsets, "skills": skills}
 
 
@@ -102,6 +112,34 @@ async def equipment_for_spawn(spawn_id: int, *, session=None) -> dict:
         return await _equipment_for_spawn_in(session, spawn_id)
     async with db_session.AsyncSessionLocal() as db:
         return await _equipment_for_spawn_in(db, spawn_id)
+
+
+async def replace_user_equipment(session, spawn_id: int,
+                                 toolsets: list[str], skills: list[str]) -> None:
+    """User equipment editor write path: declarative replace of user-managed
+    permanent grants (granted_by in create/user -> new rows granted_by=user).
+    Temporary escalation grants are untouched. All-or-nothing: every key is
+    validated via assert_assignable before any row is written."""
+    for key in toolsets:
+        await assert_assignable("toolset", key, session=session)
+    for key in skills:
+        await assert_assignable("skill", key, session=session)
+    rows = (await session.execute(
+        select(SpawnCapability).where(
+            SpawnCapability.spawn_id == spawn_id,
+            SpawnCapability.grant == "permanent",
+            SpawnCapability.granted_by.in_(("create", "user")),
+        )
+    )).scalars().all()
+    for r in rows:
+        await session.delete(r)
+    for key in toolsets:
+        session.add(SpawnCapability(spawn_id=spawn_id, kind="toolset", ref_key=key,
+                                    grant="permanent", granted_by="user"))
+    for key in skills:
+        session.add(SpawnCapability(spawn_id=spawn_id, kind="skill", ref_key=key,
+                                    grant="permanent", granted_by="user"))
+    await session.commit()
 
 
 async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dict]:

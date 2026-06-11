@@ -40,5 +40,6 @@ async def client(tmp_path):
     app.dependency_overrides[get_session] = _override_get_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        ac.db_maker = maker  # type: ignore[attr-defined]  # direct DB access for fixtures
         yield ac
     await engine.dispose()
