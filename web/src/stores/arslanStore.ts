@@ -273,6 +273,48 @@ function makeActions(set: SetState, get: GetState) {
             ],
           });
           break;
+        case "escalation":
+          set({
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "escalation",
+                role: "spawn",
+                content: "",
+                spawnId: frame.spawn_id,
+                spawnName: frame.spawn_name,
+                escalation: {
+                  spawnId: frame.spawn_id,
+                  spawnName: frame.spawn_name,
+                  kind: frame.kind,
+                  need: frame.need,
+                  status: "resolving",
+                },
+              },
+            ],
+          });
+          break;
+        case "escalation_resolved":
+        case "escalation_refused": {
+          // Update the most recent still-resolving escalation for this spawn.
+          const items = [...state.items];
+          for (let i = items.length - 1; i >= 0; i--) {
+            const esc = items[i].escalation;
+            if (esc && esc.spawnId === frame.spawn_id && esc.status === "resolving") {
+              items[i] = {
+                ...items[i],
+                escalation:
+                  frame.type === "escalation_resolved"
+                    ? { ...esc, status: "resolved", how: frame.how, detail: frame.detail }
+                    : { ...esc, status: "refused", why: frame.why },
+              };
+              break;
+            }
+          }
+          set({ items });
+          break;
+        }
         case "error":
           set({
             error: frame.message,

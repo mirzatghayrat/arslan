@@ -225,4 +225,25 @@ describe("arslanStore", () => {
     expect(st.streamSpawnId).toBeNull();
     expect(st.pendingRoute).toBeNull();
   });
+
+  it("escalation frames drive a resolving→resolved item state machine", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "escalation", spawn_id: 7, spawn_name: "Scout", kind: "capability", need: "discord access" } as never);
+    let item = useArslanStore.getState().items[useArslanStore.getState().items.length - 1];
+    expect(item.kind).toBe("escalation");
+    expect(item.escalation).toMatchObject({ status: "resolving", need: "discord access" });
+    h({ type: "escalation_resolved", spawn_id: 7, how: "granted", detail: "discord toolset, 3 turns" } as never);
+    item = useArslanStore.getState().items[useArslanStore.getState().items.length - 1];
+    expect(item.escalation).toMatchObject({ status: "resolved", how: "granted" });
+  });
+
+  it("escalation_refused marks the item refused with why", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "escalation", spawn_id: 7, spawn_name: "Scout", kind: "data", need: "run code" } as never);
+    h({ type: "escalation_refused", spawn_id: 7, why: "action, not a need" } as never);
+    const item = useArslanStore.getState().items[useArslanStore.getState().items.length - 1];
+    expect(item.escalation).toMatchObject({ status: "refused", why: "action, not a need" });
+  });
 });
