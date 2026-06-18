@@ -8,6 +8,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from arslan.models import SpawnBlueprint
+from arslan.spawn.synthesizer import synthesize_cli
 
 
 def _slug(name: str) -> str:
@@ -93,12 +94,16 @@ class SpawnManager:
 
         return spawn_path
 
-    def generate_skillpack(self, blueprint: SpawnBlueprint) -> Path:
+    def generate_skillpack(
+        self, blueprint: SpawnBlueprint, extra_scripts: dict[str, str] | None = None
+    ) -> Path:
         """Render a lightweight *skill-pack* for a blueprint (P1, default path).
 
         Produces ``SKILL.md`` (frontmatter assembled programmatically for
         guaranteed-valid YAML, body rendered from a Jinja template) plus a
-        cross-platform CLI under ``scripts/``. The result is designed to pass
+        cross-platform CLI under ``scripts/``. ``extra_scripts`` (filename ->
+        source) are written alongside the template CLI — used for LLM-synthesized
+        tool CLIs. The result is designed to pass
         :func:`arslan.spawn.skillpack.validate_skillpack`. The heavy-runtime
         path lives in :meth:`generate` (P1.4, opt-in).
         """
@@ -131,6 +136,9 @@ class SpawnManager:
         cli = self._env.get_template("skillpack/cli.py.j2").render(name=name, slug=slug)
         (pack_path / "scripts" / f"{slug}_cli.py").write_text(cli, encoding="utf-8")
 
+        for filename, source in (extra_scripts or {}).items():
+            (pack_path / "scripts" / filename).write_text(source, encoding="utf-8")
+
         meta = {
             "name": name,
             "domain": req.domain.full_domain if req.domain else "",
@@ -144,6 +152,24 @@ class SpawnManager:
         )
 
         return pack_path
+
+    async def generate_skillpack_with_synthesis(
+        self, blueprint: SpawnBlueprint, adapter
+    ) -> Path:
+        """Generate a skill-pack, synthesizing a CLI for any tool that needs one.
+
+        A tool opts into synthesis via ``config["synthesize"]`` truthy; the LLM
+        ``adapter`` writes its CLI (validated + retried by ``synthesize_cli``).
+        Tools without the flag use the deterministic template path only.
+        """
+        extra: dict[str, str] = {}
+        for tool in blueprint.tools:
+            if (tool.config or {}).get("synthesize"):
+                slug = _slug(tool.name)
+                need = (tool.config or {}).get("need") or tool.description
+                script = await synthesize_cli(adapter, name=tool.name, slug=slug, need=need)
+                extra[f"{slug}_cli.py"] = script
+        return self.generate_skillpack(blueprint, extra_scripts=extra)
 
     def list_spawns(self) -> list[dict]:
         """Return metadata for all spawns in spawns_dir."""
