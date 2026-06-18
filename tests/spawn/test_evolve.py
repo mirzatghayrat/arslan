@@ -79,3 +79,23 @@ def test_no_section_below_min_samples(tmp_path):
     changed = apply_tier1_evolution(pack)
     assert changed is False
     assert "arslan:evolution:start" not in (pack / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_apply_tier1_tolerates_missing_skill_md(tmp_path):
+    # A bare evolution dir with enough feedback but no SKILL.md must not crash.
+    pack = tmp_path / "bare"
+    engine = EvolutionEngine(pack / ".evolution")
+    for i in range(22):
+        engine.record_feedback(
+            FeedbackEntry(
+                session_id=f"s{i}",
+                user_input="x",
+                agent_output="y",
+                user_action="edited",
+                edits={"title": "改"},
+                timestamp="2026-06-18T00:00:00+00:00",
+            )
+        )
+    changed = apply_tier1_evolution(pack)
+    assert changed is False
+    assert (pack / ".evolution" / "rules.yaml").exists()

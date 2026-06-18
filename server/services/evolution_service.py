@@ -63,9 +63,10 @@ def record_feedback(
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
     engine.record_feedback(entry)
-    rules = engine.analyze_patterns()
-    if rules:
-        engine.save_rules(rules)
+    # Tier-1: re-derive rules and inject them into the on-disk SKILL.md.
+    from arslan.spawn.evolve import apply_tier1_evolution
+
+    apply_tier1_evolution(config.settings.spawns_dir / spawn_name)
 
 
 def get_stats(spawn_name: str) -> dict:

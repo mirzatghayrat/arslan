@@ -58,6 +58,9 @@ def apply_tier1_evolution(pack_path: Path | str) -> bool:
         engine.save_rules(rules)
     active = engine.get_active_rules()
 
+    if not skill_md.exists():
+        return False  # rules persisted to .evolution; nothing to inject into
+
     original = skill_md.read_text(encoding="utf-8")
     base = _strip_section(original)
     if active:
