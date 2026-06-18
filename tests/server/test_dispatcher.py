@@ -140,3 +140,40 @@ async def test_dispatch_refinement_includes_prior_output(maker, monkeypatch):
     )
     assert "make point 2 livelier" in captured["user"]
     assert "1. a" in captured["user"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_includes_evolution_rules(maker, monkeypatch, tmp_path):
+    import dataclasses
+    from datetime import datetime, timezone
+
+    from arslan.core.evolution import EvolutionEngine
+    from arslan.models import EvolutionRule
+    from server import config
+    from server.orchestrator import dispatcher
+
+    monkeypatch.setattr(
+        config, "settings", dataclasses.replace(config.settings, spawns_dir=tmp_path)
+    )
+    engine = EvolutionEngine(tmp_path / "beauty-guru" / ".evolution")
+    engine.save_rules([
+        EvolutionRule(
+            rule_type="vocabulary",
+            rule="避免使用网络流行语",
+            confidence=0.9,
+            sample_size=25,
+            learned_at=datetime.now(timezone.utc).isoformat(),
+        )
+    ])
+
+    captured = {}
+
+    class _A:
+        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
+            captured["system"] = system
+            yield "ok"
+
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+
+    await dispatcher.dispatch("main", spawn_id=7, task_brief="do X")
+    assert "避免使用网络流行语" in captured["system"]

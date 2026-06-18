@@ -63,9 +63,19 @@ def record_feedback(
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
     engine.record_feedback(entry)
-    rules = engine.analyze_patterns()
-    if rules:
-        engine.save_rules(rules)
+    # Tier-1: re-derive rules and inject them into the on-disk SKILL.md.
+    from arslan.spawn.evolve import apply_tier1_evolution
+
+    apply_tier1_evolution(config.settings.spawns_dir / spawn_name)
+
+
+def prompt_suffix(spawn_name: str) -> str:
+    """Active evolution rules rendered as a system-prompt suffix (empty if none).
+
+    This is how Tier-1 evolution reaches the *running* spawn: the dispatcher
+    appends it to the system prompt so learned rules actually change behavior.
+    """
+    return _engine_for(spawn_name).generate_prompt_suffix()
 
 
 def get_stats(spawn_name: str) -> dict:

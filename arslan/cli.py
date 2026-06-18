@@ -13,6 +13,7 @@ from arslan import __version__
 from arslan.core.dialogue import DialogueEngine
 from arslan.core.evolution import EvolutionEngine
 from arslan.models import SpawnBlueprint, SpawnRequirements
+from arslan.spawn.evolve import apply_tier1_evolution, consolidate_evolution, reset_evolution
 from arslan.spawn.manager import SpawnManager
 
 console = Console()
@@ -69,9 +70,23 @@ def list_spawns(spawns_dir: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _run_generator(manager: SpawnManager, blueprint: SpawnBlueprint, runtime: str) -> Path:
+    """Select the generation path: lightweight skill-pack (default) or heavy spawn."""
+    if runtime == "heavy":
+        return manager.generate(blueprint)
+    return manager.generate_skillpack(blueprint)
+
+
 @main.command()
 @click.option("--spawns-dir", type=click.Path(), default="spawns", show_default=True)
-def new(spawns_dir: str) -> None:
+@click.option(
+    "--runtime",
+    type=click.Choice(["skillpack", "heavy"]),
+    default="skillpack",
+    show_default=True,
+    help="生成形态：skillpack（轻量，默认）或 heavy（自带运行时/Docker）。",
+)
+def new(spawns_dir: str, runtime: str) -> None:
     """对话式创建新分身。"""
     console.print("\n[bold cyan]🐆 欢迎使用 Arslan 分身建造师！[/bold cyan]")
     console.print("我会通过几个问题帮你创建专属 AI 分身。\n")
@@ -140,7 +155,7 @@ def new(spawns_dir: str) -> None:
     # Generate spawn
     manager = SpawnManager(Path(spawns_dir))
     try:
-        spawn_path = manager.generate(blueprint)
+        spawn_path = _run_generator(manager, blueprint, runtime)
         console.print(f"[bold green]✅ 分身已成功创建！[/bold green]")
         console.print(f"[dim]路径: {spawn_path}[/dim]")
         console.print()
@@ -213,14 +228,28 @@ def run(name: str, spawns_dir: str, port: int) -> None:
 @main.command()
 @click.argument("name")
 @click.option("--spawns-dir", type=click.Path(), default="spawns", show_default=True)
-def evolve(name: str, spawns_dir: str) -> None:
-    """查看分身的进化记录。"""
+@click.option("--reset", is_flag=True, help="清空该分身已学到的进化规则并移除 SKILL.md 注入。")
+@click.option("--consolidate", is_flag=True, help="剪除失效（衰减）规则并刷新 SKILL.md。")
+def evolve(name: str, spawns_dir: str, reset: bool, consolidate: bool) -> None:
+    """运行 Tier-1 指令进化并查看进化记录（--reset 清空 / --consolidate 整理）。"""
     manager = SpawnManager(Path(spawns_dir))
     spawn_path = manager.get_spawn_path(name)
 
     if spawn_path is None:
         console.print(f"[red]找不到分身 '[bold]{name}[/bold]'。[/red]")
         sys.exit(1)
+
+    if reset:
+        reset_evolution(spawn_path)
+        console.print(f"[green]已重置分身 '{name}' 的进化规则。[/green]")
+        return
+
+    if consolidate:
+        removed = consolidate_evolution(spawn_path)
+        console.print(f"[green]已整理 '{name}'：剪除 {removed} 条失效规则。[/green]")
+        return
+
+    apply_tier1_evolution(spawn_path)
 
     evolution_dir = spawn_path / ".evolution"
     engine = EvolutionEngine(evolution_dir)

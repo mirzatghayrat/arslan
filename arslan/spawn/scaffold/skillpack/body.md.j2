@@ -1,0 +1,12 @@
+## Trigger
+
+{{ trigger }}
+
+## 决策规则
+
+{% for rule in decision_rules %}- {{ rule }}
+{% endfor %}{% if research_summary %}
+## 调研结论
+
+{{ research_summary }}
+{% endif %}

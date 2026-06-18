@@ -10,6 +10,25 @@ import yaml
 from arslan.models import EvolutionRule, FeedbackEntry
 
 MIN_SAMPLES = 20
+DECAY_PER_PERIOD = 0.10
+DECAY_PERIOD_DAYS = 30
+
+
+def _effective_confidence(rule: EvolutionRule, now: datetime) -> float:
+    """Confidence after time decay: -DECAY_PER_PERIOD per DECAY_PERIOD_DAYS of age.
+
+    Age is measured from ``learned_at``; a rule re-derived from fresh feedback
+    gets a current ``learned_at`` and so resets its decay.
+    """
+    try:
+        learned = datetime.fromisoformat(rule.learned_at)
+    except ValueError:
+        return rule.confidence
+    if learned.tzinfo is None:
+        learned = learned.replace(tzinfo=timezone.utc)
+    age_days = max((now - learned).days, 0)
+    periods = age_days // DECAY_PERIOD_DAYS
+    return round(rule.confidence - DECAY_PER_PERIOD * periods, 6)
 
 
 # ---------------------------------------------------------------------------
@@ -161,8 +180,14 @@ class EvolutionEngine:
         with self.rules_path.open("w", encoding="utf-8") as fh:
             yaml.dump(data, fh, allow_unicode=True, sort_keys=False)
 
-    def get_active_rules(self) -> list[EvolutionRule]:
-        """Load rules.yaml and return only active rules."""
+    def get_active_rules(self, now: datetime | None = None) -> list[EvolutionRule]:
+        """Load rules.yaml and return active rules after time decay.
+
+        A rule is active when its time-decayed confidence is >= 0.5 and its
+        sample size >= MIN_SAMPLES.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
         if not self.rules_path.exists():
             return []
         with self.rules_path.open("r", encoding="utf-8") as fh:
@@ -170,7 +195,36 @@ class EvolutionEngine:
         if not raw:
             return []
         rules = [EvolutionRule(**item) for item in raw]
-        return [r for r in rules if r.is_active]
+        return [
+            r
+            for r in rules
+            if _effective_confidence(r, now) >= 0.5 and r.sample_size >= MIN_SAMPLES
+        ]
+
+    def prune_rules(self, now: datetime | None = None) -> int:
+        """Persistently drop rules whose decayed confidence < 0.5 from rules.yaml.
+
+        Returns the number of rules removed. A no-op (returns 0) when the file is
+        absent or nothing is stale.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+        if not self.rules_path.exists():
+            return 0
+        with self.rules_path.open("r", encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh)
+        if not raw:
+            return 0
+        rules = [EvolutionRule(**item) for item in raw]
+        kept = [
+            r
+            for r in rules
+            if _effective_confidence(r, now) >= 0.5 and r.sample_size >= MIN_SAMPLES
+        ]
+        removed = len(rules) - len(kept)
+        if removed:
+            self.save_rules(kept)
+        return removed
 
     # ------------------------------------------------------------------
     # Prompt generation

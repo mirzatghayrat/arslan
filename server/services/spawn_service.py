@@ -216,6 +216,51 @@ async def create_spawn(session: AsyncSession, **fields) -> Spawn:
     return spawn
 
 
+def emit_skillpack(spawns_dir, spawn_name: str, draft: dict, system_prompt: str):
+    """Write the spawn's skill-pack files to disk (storage model A: working copy).
+
+    Server create persists DB rows AND emits the on-disk skill-pack, so the spawn
+    is a portable artifact with a SKILL.md that Tier-1 evolution can rewrite.
+    """
+    from pathlib import Path
+
+    from arslan.models import DomainInfo, PersonaSpec, SpawnBlueprint, SpawnRequirements
+    from arslan.spawn.manager import SpawnManager
+
+    domain = draft.get("domain") or "other"
+    category, _, subcategory = domain.partition(".")
+    requirements = SpawnRequirements(
+        spawn_name=spawn_name,
+        domain=DomainInfo(category=category or "other", subcategory=subcategory or None),
+        capabilities=normalize_capabilities(draft.get("capabilities")),
+        persona=PersonaSpec(
+            role=draft.get("persona_role") or spawn_name,
+            tone=draft.get("persona_tone") or "",
+        ),
+    )
+    blueprint = SpawnBlueprint(
+        requirements=requirements,
+        tools=[],
+        system_prompt=system_prompt,
+        workflow_steps=[],
+    )
+    return SpawnManager(spawns_dir=Path(spawns_dir)).generate_skillpack(blueprint)
+
+
+def reflect_equipment(spawns_dir, spawn_name: str, equipment: dict) -> bool:
+    """Reflect a spawn's equipment into its SKILL.md (Tier-2 derived view, no drift).
+
+    The DB equipment set stays authoritative; this writes a regenerated section so
+    the portable skill-pack lists its granted capabilities.
+    """
+    from pathlib import Path
+
+    from arslan.spawn.evolve import apply_tier2_capabilities
+
+    caps = list(equipment.get("toolsets") or []) + list(equipment.get("skills") or [])
+    return apply_tier2_capabilities(Path(spawns_dir) / spawn_name, caps)
+
+
 async def create_from_draft(draft: dict, differentiation: str | None = None):
     """Create the spawn + equipment rows + persisted intro.
 
@@ -278,7 +323,12 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
         spawn_id, spawn_name = spawn.id, spawn.name
         persona_role = spawn.persona_role
 
+    from server import config
+
+    emit_skillpack(config.settings.spawns_dir, spawn_name, draft, system_prompt)
+
     equipment = await registry_service.equipment_for_spawn(spawn_id)
+    reflect_equipment(config.settings.spawns_dir, spawn_name, equipment)
     intro = await equipment_service.build_intro(
         name=spawn_name, persona_role=persona_role, equipment=equipment
     )
