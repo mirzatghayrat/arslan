@@ -22,7 +22,11 @@ _SYSTEM = (
     "You equip a new AI specialist 'spawn' with capabilities. From the MENU below, "
     "pick the few items that best serve the described need. Reply with ONE JSON object "
     'and nothing else: {"toolsets": ["<keys>"], "skills": ["<keys>"], "why": "<one line>"}\n'
-    f"- At most {_MAX_TOOLSETS} toolsets and {_MAX_SKILLS} skills; fewer is better.\n"
+    f"- At most {_MAX_TOOLSETS} toolsets and {_MAX_SKILLS} skills. These are CEILINGS, not "
+    "targets — pick the MINIMUM the need truly requires.\n"
+    "- Relevance only: include an item ONLY if it is DIRECTLY useful for THIS specific need. "
+    "If a skill is not clearly relevant, OMIT it. An empty skills list is correct and far "
+    "better than padding with an unrelated skill. Never pick an item just to fill a slot.\n"
     "- Only keys that appear in the menu. Items marked (coming soon) may be picked when "
     "clearly core to the role; prefer live items.\n"
     "- Web research (web_search_scraping) fits most research/content roles."
