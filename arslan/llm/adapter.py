@@ -9,6 +9,7 @@ import yaml
 
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.base import BaseLLMProvider
+from arslan.llm.providers.gemini_provider import GeminiProvider
 from arslan.llm.providers.openai_provider import OpenAIProvider
 from arslan.models import CapabilityProfile, LLMResponse
 
@@ -30,6 +31,7 @@ _DEFAULT_PROFILE_VALUES: dict[str, Any] = {
 _PROVIDER_REGISTRY: dict[str, type[BaseLLMProvider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "gemini": GeminiProvider,
     # OpenAI-compatible endpoints (DeepSeek, Qwen, Ollama, …) use "openai" + base_url;
     # see arslan/llm/presets.py.
 }
