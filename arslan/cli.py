@@ -69,9 +69,23 @@ def list_spawns(spawns_dir: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _run_generator(manager: SpawnManager, blueprint: SpawnBlueprint, runtime: str) -> Path:
+    """Select the generation path: lightweight skill-pack (default) or heavy spawn."""
+    if runtime == "heavy":
+        return manager.generate(blueprint)
+    return manager.generate_skillpack(blueprint)
+
+
 @main.command()
 @click.option("--spawns-dir", type=click.Path(), default="spawns", show_default=True)
-def new(spawns_dir: str) -> None:
+@click.option(
+    "--runtime",
+    type=click.Choice(["skillpack", "heavy"]),
+    default="skillpack",
+    show_default=True,
+    help="生成形态：skillpack（轻量，默认）或 heavy（自带运行时/Docker）。",
+)
+def new(spawns_dir: str, runtime: str) -> None:
     """对话式创建新分身。"""
     console.print("\n[bold cyan]🐆 欢迎使用 Arslan 分身建造师！[/bold cyan]")
     console.print("我会通过几个问题帮你创建专属 AI 分身。\n")
@@ -140,7 +154,7 @@ def new(spawns_dir: str) -> None:
     # Generate spawn
     manager = SpawnManager(Path(spawns_dir))
     try:
-        spawn_path = manager.generate(blueprint)
+        spawn_path = _run_generator(manager, blueprint, runtime)
         console.print(f"[bold green]✅ 分身已成功创建！[/bold green]")
         console.print(f"[dim]路径: {spawn_path}[/dim]")
         console.print()
