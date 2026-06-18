@@ -11,19 +11,27 @@ from server.db.models import ChatMessage, Spawn
 from server.schemas import ChatMessageOut, SpawnDetailOut, SpawnOut
 
 
+_MAX_CAPABILITIES = 6
+_MAX_CAP_LEN = 40
+
+
 def normalize_capabilities(value: Any) -> list[str]:
     """Coerce an LLM-produced `capabilities` value into a clean string list.
 
     Models are inconsistent: a draft's capabilities may come back as a JSON array,
     a comma-joined string (incl. the full-width comma '，'), or be missing entirely.
     Downstream consumers (the create-spawn card, the DB column) expect a list, so we
-    normalize at the source.
+    normalize at the source. We also drop sentence-length junk and cap the count so a
+    chatty model can't stuff a whole paragraph into the Trigger line.
     """
     if isinstance(value, list):
-        return [str(v).strip() for v in value if str(v).strip()]
-    if isinstance(value, str):
-        return [part.strip() for part in re.split(r"[,，]", value) if part.strip()]
-    return []
+        items = [str(v).strip() for v in value if str(v).strip()]
+    elif isinstance(value, str):
+        items = [part.strip() for part in re.split(r"[,，]", value) if part.strip()]
+    else:
+        return []
+    items = [c for c in items if len(c) <= _MAX_CAP_LEN]
+    return items[:_MAX_CAPABILITIES]
 
 
 def normalize_draft(draft: Any) -> dict:

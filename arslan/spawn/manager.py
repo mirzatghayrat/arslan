@@ -244,7 +244,9 @@ class SpawnManager:
         return {
             "description": description,
             "trigger": trigger,
-            "decision_rules": constraints,
+            # Explicit persona constraints win; otherwise surface capabilities as rules
+            # so the 决策规则 section is never empty (server drafts carry no constraints).
+            "decision_rules": constraints or caps,
             "research_summary": research_summary,
             "credentials": credentials,
         }

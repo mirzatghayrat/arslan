@@ -17,7 +17,9 @@ _SYSTEM = (
     'e.g. finance.equity-research>", "capabilities": ["..."], "persona_role": "...", '
     '"persona_tone": "...", "reason": "<one line>"}\n'
     "Infer a specific, fine-grained domain string from the description — do NOT force it into "
-    "a small fixed set of categories."
+    "a small fixed set of categories.\n"
+    "capabilities: 3-6 SHORT phrases (2-6 words each), e.g. [\"内容生成\", \"热点调研\", "
+    "\"数据实测\"]. NOT full sentences, NOT a restatement of the whole request."
 )
 
 
