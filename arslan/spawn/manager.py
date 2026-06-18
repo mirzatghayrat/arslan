@@ -1,12 +1,18 @@
 """SpawnManager — generates scaffold code for a SpawnBlueprint."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from arslan.models import SpawnBlueprint
+
+
+def _slug(name: str) -> str:
+    """Filesystem/identifier-safe slug for a spawn name."""
+    return re.sub(r"[^0-9a-zA-Z]+", "_", name).strip("_").lower() or "spawn"
 
 
 # Map of (output_filename, template_filename) pairs.
@@ -87,6 +93,58 @@ class SpawnManager:
 
         return spawn_path
 
+    def generate_skillpack(self, blueprint: SpawnBlueprint) -> Path:
+        """Render a lightweight *skill-pack* for a blueprint (P1, default path).
+
+        Produces ``SKILL.md`` (frontmatter assembled programmatically for
+        guaranteed-valid YAML, body rendered from a Jinja template) plus a
+        cross-platform CLI under ``scripts/``. The result is designed to pass
+        :func:`arslan.spawn.skillpack.validate_skillpack`. The heavy-runtime
+        path lives in :meth:`generate` (P1.4, opt-in).
+        """
+        req = blueprint.requirements
+        name = req.spawn_name or "unnamed-spawn"
+        slug = _slug(name)
+        pack_path = self.spawns_dir / name
+        (pack_path / "scripts").mkdir(parents=True, exist_ok=True)
+
+        ctx = self._build_skillpack_context(blueprint)
+
+        frontmatter: dict = {
+            "name": name,
+            "description": ctx["description"],
+            "version": "0.1.0",
+            "authors": ["Arslan"],
+        }
+        if ctx["credentials"]:
+            frontmatter["credentials"] = ctx["credentials"]
+
+        body = self._env.get_template("skillpack/body.md.j2").render(**ctx)
+        skill_md = (
+            "---\n"
+            + yaml.dump(frontmatter, allow_unicode=True, sort_keys=False)
+            + "---\n\n"
+            + body
+        )
+        (pack_path / "SKILL.md").write_text(skill_md, encoding="utf-8")
+
+        cli = self._env.get_template("skillpack/cli.py.j2").render(name=name, slug=slug)
+        (pack_path / "scripts" / f"{slug}_cli.py").write_text(cli, encoding="utf-8")
+
+        meta = {
+            "name": name,
+            "domain": req.domain.full_domain if req.domain else "",
+            "template_used": blueprint.template_used or "",
+            "generation_level": blueprint.generation_level,
+            "runtime": "skillpack",
+        }
+        (pack_path / ".arslan-meta.yaml").write_text(
+            yaml.dump(meta, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+        return pack_path
+
     def list_spawns(self) -> list[dict]:
         """Return metadata for all spawns in spawns_dir."""
         results = []
@@ -130,4 +188,37 @@ class SpawnManager:
             "persona_tone": persona_tone,
             "web_port": 8080,
             "tools": tools,
+        }
+
+    def _build_skillpack_context(self, blueprint: SpawnBlueprint) -> dict:
+        req = blueprint.requirements
+        domain = req.domain.full_domain if req.domain else ""
+        role = req.persona.role if req.persona else ""
+        constraints = list(req.persona.constraints) if req.persona else []
+        caps = list(req.capabilities)
+
+        first_line = (blueprint.system_prompt or "").splitlines()
+        description = role or (first_line[0] if first_line else (req.spawn_name or ""))
+
+        anchor = domain or role or "该领域"
+        trigger = f"当用户需求涉及「{anchor}」时激活"
+        if caps:
+            trigger += f"，核心能力：{'、'.join(caps)}。"
+        else:
+            trigger += "。"
+
+        research_summary = (req.research_results or {}).get("summary", "")
+
+        credentials: list[dict] = []
+        for tool in blueprint.tools:
+            cred = (tool.config or {}).get("credential")
+            if cred:
+                credentials.append({"name": cred, "required": False})
+
+        return {
+            "description": description,
+            "trigger": trigger,
+            "decision_rules": constraints,
+            "research_summary": research_summary,
+            "credentials": credentials,
         }
