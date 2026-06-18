@@ -247,6 +247,20 @@ def emit_skillpack(spawns_dir, spawn_name: str, draft: dict, system_prompt: str)
     return SpawnManager(spawns_dir=Path(spawns_dir)).generate_skillpack(blueprint)
 
 
+def reflect_equipment(spawns_dir, spawn_name: str, equipment: dict) -> bool:
+    """Reflect a spawn's equipment into its SKILL.md (Tier-2 derived view, no drift).
+
+    The DB equipment set stays authoritative; this writes a regenerated section so
+    the portable skill-pack lists its granted capabilities.
+    """
+    from pathlib import Path
+
+    from arslan.spawn.evolve import apply_tier2_capabilities
+
+    caps = list(equipment.get("toolsets") or []) + list(equipment.get("skills") or [])
+    return apply_tier2_capabilities(Path(spawns_dir) / spawn_name, caps)
+
+
 async def create_from_draft(draft: dict, differentiation: str | None = None):
     """Create the spawn + equipment rows + persisted intro.
 
@@ -314,6 +328,7 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
     emit_skillpack(config.settings.spawns_dir, spawn_name, draft, system_prompt)
 
     equipment = await registry_service.equipment_for_spawn(spawn_id)
+    reflect_equipment(config.settings.spawns_dir, spawn_name, equipment)
     intro = await equipment_service.build_intro(
         name=spawn_name, persona_role=persona_role, equipment=equipment
     )
