@@ -13,6 +13,7 @@ from arslan import __version__
 from arslan.core.dialogue import DialogueEngine
 from arslan.core.evolution import EvolutionEngine
 from arslan.models import SpawnBlueprint, SpawnRequirements
+from arslan.spawn.evolve import apply_tier1_evolution, reset_evolution
 from arslan.spawn.manager import SpawnManager
 
 console = Console()
@@ -227,14 +228,22 @@ def run(name: str, spawns_dir: str, port: int) -> None:
 @main.command()
 @click.argument("name")
 @click.option("--spawns-dir", type=click.Path(), default="spawns", show_default=True)
-def evolve(name: str, spawns_dir: str) -> None:
-    """查看分身的进化记录。"""
+@click.option("--reset", is_flag=True, help="清空该分身已学到的进化规则并移除 SKILL.md 注入。")
+def evolve(name: str, spawns_dir: str, reset: bool) -> None:
+    """运行 Tier-1 指令进化并查看进化记录（--reset 清空重来）。"""
     manager = SpawnManager(Path(spawns_dir))
     spawn_path = manager.get_spawn_path(name)
 
     if spawn_path is None:
         console.print(f"[red]找不到分身 '[bold]{name}[/bold]'。[/red]")
         sys.exit(1)
+
+    if reset:
+        reset_evolution(spawn_path)
+        console.print(f"[green]已重置分身 '{name}' 的进化规则。[/green]")
+        return
+
+    apply_tier1_evolution(spawn_path)
 
     evolution_dir = spawn_path / ".evolution"
     engine = EvolutionEngine(evolution_dir)

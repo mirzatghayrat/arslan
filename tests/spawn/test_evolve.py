@@ -25,7 +25,7 @@ def _pack_with_feedback(tmp_path, n=20):
         workflow_steps=[],
     )
     pack = SpawnManager(spawns_dir=tmp_path).generate_skillpack(bp)
-    engine = EvolutionEngine(pack / "evolution")
+    engine = EvolutionEngine(pack / ".evolution")
     for i in range(n):
         engine.record_feedback(
             FeedbackEntry(

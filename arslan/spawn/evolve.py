@@ -52,7 +52,7 @@ def apply_tier1_evolution(pack_path: Path | str) -> bool:
     pack_path = Path(pack_path)
     skill_md = pack_path / "SKILL.md"
 
-    engine = EvolutionEngine(pack_path / "evolution")
+    engine = EvolutionEngine(pack_path / ".evolution")
     rules = engine.analyze_patterns()
     if rules:
         engine.save_rules(rules)
@@ -69,3 +69,23 @@ def apply_tier1_evolution(pack_path: Path | str) -> bool:
         skill_md.write_text(new_text, encoding="utf-8")
         return True
     return False
+
+
+def reset_evolution(pack_path: Path | str) -> None:
+    """Forget everything Tier-1 learned: clear feedback + rules + injected section.
+
+    Touches only ``evolution/`` and SKILL.md — never scripts/ or credentials.
+    """
+    pack_path = Path(pack_path)
+    evo = pack_path / ".evolution"
+    for fname in ("rules.yaml", "feedback_log.jsonl"):
+        target = evo / fname
+        if target.exists():
+            target.unlink()
+
+    skill_md = pack_path / "SKILL.md"
+    if skill_md.exists():
+        text = skill_md.read_text(encoding="utf-8")
+        stripped = _strip_section(text)
+        if stripped != text:
+            skill_md.write_text(stripped, encoding="utf-8")
