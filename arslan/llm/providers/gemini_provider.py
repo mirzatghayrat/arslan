@@ -1,0 +1,131 @@
+"""Native Google Gemini provider — generateContent API (not OpenAI-compatible).
+
+Differences handled: messages are ``contents`` with ``parts`` (role "model" for
+the assistant), the system prompt is ``systemInstruction`` (top-level), auth is
+the ``x-goog-api-key`` header, ``temperature`` lives under ``generationConfig``,
+and streaming uses ``:streamGenerateContent?alt=sse``. Tools are driven by
+Arslan's own prompt/JSON protocol, so native tool mapping is omitted.
+"""
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+from typing import Any
+
+import httpx
+
+from arslan.llm.providers.base import BaseLLMProvider
+from arslan.models import LLMResponse
+
+
+class GeminiProvider(BaseLLMProvider):
+    DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str = "",
+        base_url: str = "",
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        super().__init__(model=model, api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL)
+        self._transport = transport
+
+    @property
+    def provider_name(self) -> str:
+        return "gemini"
+
+    def _client(self) -> httpx.AsyncClient:
+        if self._transport is not None:
+            return httpx.AsyncClient(transport=self._transport)
+        return httpx.AsyncClient()
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"content-type": "application/json"}
+        if self.api_key:
+            headers["x-goog-api-key"] = self.api_key
+        return headers
+
+    @staticmethod
+    def _to_contents(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+        """Split system text out and map the rest to Gemini ``contents``."""
+        system = "\n\n".join(
+            str(m.get("content", "")) for m in messages if m.get("role") == "system"
+        )
+        contents = []
+        for m in messages:
+            if m.get("role") == "system":
+                continue
+            role = "model" if m["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": str(m["content"])}]})
+        return system, contents
+
+    def _payload(self, messages: list[dict[str, Any]], temperature: float) -> dict[str, Any]:
+        system, contents = self._to_contents(messages)
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {"temperature": temperature},
+        }
+        if system:
+            payload["systemInstruction"] = {"parts": [{"text": system}]}
+        return payload
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+    ) -> LLMResponse:
+        url = f"{self.base_url}/models/{self.model}:generateContent"
+        async with self._client() as client:
+            response = await client.post(
+                url, json=self._payload(messages, temperature),
+                headers=self._headers(), timeout=60.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+        return self._parse_response(data)
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
+        url = f"{self.base_url}/models/{self.model}:streamGenerateContent?alt=sse"
+        async with self._client() as client:
+            async with client.stream(
+                "POST", url, json=self._payload(messages, temperature),
+                headers=self._headers(), timeout=60.0,
+            ) as response:
+                response.raise_for_status()
+                async for raw_line in response.aiter_lines():
+                    line = raw_line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        obj = json.loads(line[len("data:") :].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    text = _first_text(obj)
+                    if text:
+                        yield text
+
+    @staticmethod
+    def _parse_response(data: dict[str, Any]) -> LLMResponse:
+        text = _first_text(data)
+        return LLMResponse(
+            role="assistant",
+            content=text or None,
+            tool_calls=[],
+            usage=data.get("usageMetadata", {}) or {},
+        )
+
+
+def _first_text(obj: dict[str, Any]) -> str:
+    """Join the text parts of the first candidate in a Gemini response chunk."""
+    candidates = obj.get("candidates") or []
+    if not candidates:
+        return ""
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    return "".join(p.get("text", "") for p in parts)
