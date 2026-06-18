@@ -157,7 +157,10 @@ async def _handle_escalation(  # noqa: ANN001
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": str(exc)}
         if result.get("ok"):
-            # NOTE: data_block carries untrusted web content into the spawn brief (prompt-injection surface). must-fix-before-public-release: heavier mitigations (injection-signature stripping, SSRF redirect re-checking) are deferred.
+            # data_block carries untrusted web content into the spawn brief (prompt-injection
+            # surface). Mitigations now in place: wrap_external() frames it data-only AND strips
+            # forged delimiters; SSRF redirect re-checking guards the fetch (executors.py). The
+            # permission tier remains the strongest backstop.
             raw = json.dumps(result.get("results", []), ensure_ascii=False)[:6000]
             data_block = (
                 f"\n\n{GUARD_NOTE}\n\n"

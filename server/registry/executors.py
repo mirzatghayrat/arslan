@@ -10,7 +10,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import trafilatura
@@ -61,11 +61,36 @@ async def _search_provider():
     return get_provider(name, api_key=key)
 
 
+_MAX_REDIRECTS = 5
+
+
+def _build_client() -> httpx.AsyncClient:
+    # follow_redirects=False on purpose: we follow manually so every hop's host
+    # is re-checked by the SSRF guard (addresses the release-gate SSRF item).
+    return httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=False)
+
+
 async def _fetch_text(url: str) -> str:
-    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:  # NOTE: redirects can still bounce to private hosts; must-fix-before-public-release
-        resp = await client.get(url)
-        resp.raise_for_status()
-        html = resp.text
+    async with _build_client() as client:
+        current = url
+        html = ""
+        for _ in range(_MAX_REDIRECTS):
+            resp = await client.get(current)
+            if resp.is_redirect:
+                location = resp.headers.get("location", "")
+                if not location:
+                    raise httpx.HTTPError("redirect without a Location header")
+                current = urljoin(current, location)
+                if _is_private_host(current):
+                    raise httpx.HTTPError(
+                        "redirect to a private or internal address blocked"
+                    )
+                continue
+            resp.raise_for_status()
+            html = resp.text
+            break
+        else:
+            raise httpx.HTTPError("too many redirects")
     extracted = trafilatura.extract(html)
     return extracted or ""
 
