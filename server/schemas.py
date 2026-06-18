@@ -31,6 +31,8 @@ class EquipmentItemOut(BaseModel):
     name: str
     status: str
     grant: str = "permanent"
+    granted_by: str = "create"
+    expires_turn: int | None = None
 
 
 class EquipmentOut(BaseModel):
@@ -44,6 +46,8 @@ class EquipmentOut(BaseModel):
                 EquipmentItemOut(
                     key=r["key"], name=r["name"], status=r["status"],
                     grant=r.get("grant", "permanent"),
+                    granted_by=r.get("granted_by", "create"),
+                    expires_turn=r.get("expires_turn"),
                 )
                 for r in rows
             ]
@@ -87,6 +91,11 @@ class SpawnCreateIn(BaseModel):
     persona_role: str | None = None
     persona_tone: str | None = None
     equipment: dict | None = None
+
+
+class EquipmentUpdateIn(BaseModel):
+    toolsets: list[str] = []
+    skills: list[str] = []
 
 
 class ConfigUpdateIn(BaseModel):

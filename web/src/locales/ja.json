@@ -79,6 +79,39 @@
     "refine_placeholder": "この下書きを調整…",
     "differ_placeholder": "{{axis}} において {{name}} とどう異なりますか？"
   },
+  "equipment": {
+    "title": "装備",
+    "edit": "装備を編集",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "toolsets": "ツールセット",
+    "skills": "スキル",
+    "locked": "Arslan専用 — スポーンには割り当てられません",
+    "temporary": "一時的な付与（Arslanが管理）",
+    "temp_badge": "一時",
+    "more": "他{{count}}件",
+    "granted_create": "作成時に装備",
+    "granted_escalation": "Arslanが付与",
+    "granted_user": "あなたが設定",
+    "empty": "装備なし"
+  },
+  "activity": {
+    "summary": "{{summary}}を使用",
+    "args": "入力",
+    "result": "結果",
+    "error": "失敗"
+  },
+  "escalation": {
+    "needs": "{{name}}が何かを必要としています：",
+    "kind_data": "データ",
+    "kind_capability": "能力",
+    "resolving": "Arslanが対応中…",
+    "granted": "Arslanが能力を付与しました",
+    "answered": "Arslanがデータで回答しました",
+    "unresolved": "解決できませんでした",
+    "refused": "拒否：{{why}}",
+    "detail": "詳細"
+  },
   "facts": {
     "section": "メモリ",
     "subtitle": "Arslan があなたについて覚えていること。編集できます。",

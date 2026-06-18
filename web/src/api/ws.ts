@@ -1,4 +1,5 @@
 import { useAuthStore } from "../stores/authStore";
+import { API_BASE } from "./client";
 
 const NO_RECONNECT_CODES = new Set([1000, 4001, 4004]);
 
@@ -37,8 +38,13 @@ export class ReconnectingSocket {
 
   private url(): string {
     const token = useAuthStore.getState().token;
-    const proto = location.protocol === "https:" ? "wss" : "ws";
     const q = token ? `?token=${encodeURIComponent(token)}` : "";
+    if (API_BASE) {
+      const u = new URL(API_BASE);
+      const proto = u.protocol === "https:" ? "wss" : "ws";
+      return `${proto}://${u.host}${this.path}${q}`;
+    }
+    const proto = location.protocol === "https:" ? "wss" : "ws";
     return `${proto}://${location.host}${this.path}${q}`;
   }
 

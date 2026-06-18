@@ -2,13 +2,16 @@ import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
   EvolutionStats,
+  RegistryCatalog,
   SpawnDetail,
   SpawnSummary,
   TemplateInfo,
   UserFact,
 } from "../types";
 
-const BASE = "/api/v1";
+// Configurable for desktop (Tauri) builds; empty = same-origin relative URLs.
+export const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/+$/, "");
+const BASE = `${API_BASE}/api/v1`;
 
 export class ApiError extends Error {
   status: number;
@@ -74,6 +77,9 @@ export const api = {
   getSettings: () => request<AppSettings>("/settings"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
+  getRegistry: () => request<RegistryCatalog>("/registry"),
+  updateEquipment: (id: number, body: { toolsets: string[]; skills: string[] }) =>
+    request<SpawnDetail>(`/spawns/${id}/equipment`, { method: "PUT", body: JSON.stringify(body) }),
   listFacts: () => request<UserFact[]>("/facts"),
   addFact: (body: { content: string; sensitive?: boolean }) =>
     request<UserFact>("/facts", { method: "POST", body: JSON.stringify(body) }),

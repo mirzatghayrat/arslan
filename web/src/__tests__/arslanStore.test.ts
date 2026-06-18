@@ -131,6 +131,29 @@ describe("arslanStore", () => {
     expect(item).toMatchObject({ spawnMessageId: 42, taskBrief: "do X" });
   });
 
+  it("stream_end with null message_id (refused escalation) creates no empty ghost item", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "stream_start", source: "spawn", spawn_id: 7 } as never);
+    h({ type: "stream_end", message_id: null } as never);
+    expect(useArslanStore.getState().items).toHaveLength(0);
+    expect(useArslanStore.getState().streaming).toBe(false);
+  });
+
+  it("stream_end with null message_id still folds pending tool steps under a client id", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "web_search", args_summary: "" } as never);
+    h({ type: "tool_result", tool: "web_search", ok: true, summary: "hits" } as never);
+    h({ type: "stream_start", source: "spawn", spawn_id: 7 } as never);
+    h({ type: "stream_end", message_id: null } as never);
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBeLessThan(0); // client id, not null
+    expect(items[0].toolSteps).toHaveLength(1);
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+  });
+
   it("appends a replayed message frame (resume path)", () => {
     useArslanStore.getState().setSpawnNames({ 7: "Beauty Guru" });
     const s = useArslanStore.getState();
@@ -171,6 +194,50 @@ describe("arslanStore", () => {
     expect(useArslanStore.getState().items).toHaveLength(1);
   });
 
+  it("spawn_created stores equipment and intro on the system item", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    useArslanStore.getState().handleFrame({
+      type: "spawn_created", spawn_id: 7, spawn_name: "Scout",
+      equipment: { toolsets: [{ key: "ws", name: "Web search", status: "wired", grant: "permanent" }], skills: [] },
+      intro: "Hi, I'm Scout.",
+    } as never);
+    const items = useArslanStore.getState().items;
+    const item = items[items.length - 1];
+    expect(item.kind).toBe("system");
+    expect(item.intro).toBe("Hi, I'm Scout.");
+    expect(item.equipment?.toolsets[0].key).toBe("ws");
+  });
+
+  it("pairs tool_call/tool_result and folds steps into the reply on stream_end", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "web_search", args_summary: '{"q":"a"}' } as never);
+    h({ type: "tool_call", tool: "web_search", args_summary: '{"q":"b"}' } as never);
+    h({ type: "tool_result", tool: "web_search", ok: true, summary: "5 hits" } as never);
+    const steps = useArslanStore.getState().activitySteps;
+    // most recent unresolved same-tool step resolves first
+    expect(steps[1]).toMatchObject({ status: "ok", resultSummary: "5 hits" });
+    expect(steps[0].status).toBe("running");
+    h({ type: "tool_result", tool: "web_search", ok: false, summary: "timeout" } as never);
+    expect(useArslanStore.getState().activitySteps[0].status).toBe("error");
+
+    h({ type: "stream_start", source: "spawn", spawn_id: 7 } as never);
+    h({ type: "stream_chunk", content: "answer" } as never);
+    h({ type: "stream_end", message_id: 42 } as never);
+    const its = useArslanStore.getState().items;
+    const item = its[its.length - 1];
+    expect(item.toolSteps).toHaveLength(2);
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+  });
+
+  it("clears activity on error frame", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "web_extract", args_summary: "" } as never);
+    h({ type: "error", code: "X", message: "boom" } as never);
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+  });
+
   it("clears spawn attribution when an error interrupts a routed stream", () => {
     const s = useArslanStore.getState();
     s.handleFrame({ type: "routing", spawn_id: 7, spawn_name: "Beauty Guru" });
@@ -180,5 +247,26 @@ describe("arslanStore", () => {
     expect(st.streamSource).toBeNull();
     expect(st.streamSpawnId).toBeNull();
     expect(st.pendingRoute).toBeNull();
+  });
+
+  it("escalation frames drive a resolving→resolved item state machine", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "escalation", spawn_id: 7, spawn_name: "Scout", kind: "capability", need: "discord access" } as never);
+    let item = useArslanStore.getState().items[useArslanStore.getState().items.length - 1];
+    expect(item.kind).toBe("escalation");
+    expect(item.escalation).toMatchObject({ status: "resolving", need: "discord access" });
+    h({ type: "escalation_resolved", spawn_id: 7, how: "granted", detail: "discord toolset, 3 turns" } as never);
+    item = useArslanStore.getState().items[useArslanStore.getState().items.length - 1];
+    expect(item.escalation).toMatchObject({ status: "resolved", how: "granted" });
+  });
+
+  it("escalation_refused marks the item refused with why", () => {
+    useArslanStore.setState(initialArslanState(), true);
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "escalation", spawn_id: 7, spawn_name: "Scout", kind: "data", need: "run code" } as never);
+    h({ type: "escalation_refused", spawn_id: 7, why: "action, not a need" } as never);
+    const item = useArslanStore.getState().items[useArslanStore.getState().items.length - 1];
+    expect(item.escalation).toMatchObject({ status: "refused", why: "action, not a need" });
   });
 });

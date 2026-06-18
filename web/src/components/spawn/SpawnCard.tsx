@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type { SpawnSummary } from "../../types";
+import EquipmentChips from "../arslan/EquipmentChips";
 
 interface Props {
   spawn: SpawnSummary;
@@ -16,6 +17,7 @@ export default function SpawnCard({ spawn, onDelete }: Props) {
         <span className="text-xs text-white/50">{t("dashboard.status_idle")}</span>
       </div>
       <span className="text-xs text-white/50">{spawn.domain}</span>
+      {spawn.equipment && <EquipmentChips equipment={spawn.equipment} compact />}
       <div className="mt-2 flex gap-2">
         <Link
           to={`/chat/${spawn.id}`}

@@ -79,6 +79,39 @@
     "refine_placeholder": "Affiner ce brouillon…",
     "differ_placeholder": "En quoi cela doit-il différer de {{name}} sur {{axis}} ?"
   },
+  "equipment": {
+    "title": "Équipement",
+    "edit": "Modifier l'équipement",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "toolsets": "Toolsets",
+    "skills": "Compétences",
+    "locked": "Réservé à Arslan — non assignable aux spawns",
+    "temporary": "Accès temporaires (gérés par Arslan)",
+    "temp_badge": "temp",
+    "more": "+{{count}} de plus",
+    "granted_create": "Équipé à la création",
+    "granted_escalation": "Accordé par Arslan",
+    "granted_user": "Défini par vous",
+    "empty": "Aucun équipement"
+  },
+  "activity": {
+    "summary": "A utilisé {{summary}}",
+    "args": "Entrée",
+    "result": "Résultat",
+    "error": "échec"
+  },
+  "escalation": {
+    "needs": "{{name}} a besoin de quelque chose :",
+    "kind_data": "données",
+    "kind_capability": "capacité",
+    "resolving": "Arslan s'en occupe…",
+    "granted": "Arslan a accordé une capacité",
+    "answered": "Arslan a répondu avec des données",
+    "unresolved": "Impossible à résoudre",
+    "refused": "Refusé : {{why}}",
+    "detail": "Détails"
+  },
   "facts": {
     "section": "Mémoire",
     "subtitle": "Ce qu'Arslan retient à votre sujet. Modifiable.",

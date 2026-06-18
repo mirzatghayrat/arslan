@@ -1,6 +1,10 @@
 """WebSocket endpoint for the unified Arslan orchestrator conversation."""
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
+from typing import Any
+
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
@@ -64,21 +68,35 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     await ws.accept()
     await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
 
-    # Emit-sink buffers events from the (sync-callback) orchestration loop, flushed to the socket.
-    outbox: list[dict] = []
+    # Emit-sink: a queue drained concurrently with the orchestration coroutine so
+    # frames (tool_call/tool_result/stream_*) reach the client live, in order.
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
     def emit(ev: dict) -> None:
-        outbox.append(ev)
+        queue.put_nowait(ev)
 
-    async def flush() -> None:
-        for ev in outbox:
-            await ws.send_json(_to_frame(ev))
-        outbox.clear()
+    async def _drain() -> None:
+        while True:
+            ev = await queue.get()
+            if ev is None:
+                return
+            try:
+                await ws.send_json(_to_frame(ev))
+            except Exception:  # noqa: BLE001 — client gone; receive loop will see the disconnect
+                return
+
+    async def run_with_live_frames(coro: Coroutine[Any, Any, object]) -> None:
+        sender = asyncio.create_task(_drain())
+        try:
+            await coro
+        finally:
+            queue.put_nowait(None)  # sentinel: flush remainder, stop sender
+            await sender
 
     async def run_spawn(spawn_id: int, task_brief: str, **kw) -> None:
-        outbox.clear()
-        await arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
-        await flush()
+        await run_with_live_frames(
+            arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
+        )
 
     try:
         while True:
@@ -170,10 +188,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await ws.send_json(protocol.error("INVALID_INPUT", "Unknown message type"))
                 continue
 
-            outbox.clear()
-            await arslan.handle_user_message(conversation_id, data.get("content", ""), emit)
-            for ev in outbox:
-                await ws.send_json(_to_frame(ev))
+            await run_with_live_frames(
+                arslan.handle_user_message(conversation_id, data.get("content", ""), emit)
+            )
     except WebSocketDisconnect:
         return
     except Exception as exc:  # noqa: BLE001
