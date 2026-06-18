@@ -201,6 +201,31 @@ class EvolutionEngine:
             if _effective_confidence(r, now) >= 0.5 and r.sample_size >= MIN_SAMPLES
         ]
 
+    def prune_rules(self, now: datetime | None = None) -> int:
+        """Persistently drop rules whose decayed confidence < 0.5 from rules.yaml.
+
+        Returns the number of rules removed. A no-op (returns 0) when the file is
+        absent or nothing is stale.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+        if not self.rules_path.exists():
+            return 0
+        with self.rules_path.open("r", encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh)
+        if not raw:
+            return 0
+        rules = [EvolutionRule(**item) for item in raw]
+        kept = [
+            r
+            for r in rules
+            if _effective_confidence(r, now) >= 0.5 and r.sample_size >= MIN_SAMPLES
+        ]
+        removed = len(rules) - len(kept)
+        if removed:
+            self.save_rules(kept)
+        return removed
+
     # ------------------------------------------------------------------
     # Prompt generation
     # ------------------------------------------------------------------

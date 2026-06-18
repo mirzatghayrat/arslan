@@ -65,3 +65,30 @@ def test_evolve_reset_removes_section_and_rules(tmp_path):
 def test_evolve_missing_spawn_errors(tmp_path):
     result = CliRunner().invoke(main, ["evolve", "nope", "--spawns-dir", str(tmp_path)])
     assert result.exit_code != 0
+
+
+def test_evolve_consolidate_prunes_decayed(tmp_path):
+    import yaml
+
+    from arslan.models import EvolutionRule
+
+    _make_pack(tmp_path)
+    eng = EvolutionEngine(tmp_path / "writer" / ".evolution")
+    eng.save_rules([
+        EvolutionRule(
+            rule_type="edit_pattern",
+            rule="ancient",
+            confidence=0.6,
+            sample_size=25,
+            learned_at="2020-01-01T00:00:00+00:00",
+        )
+    ])
+
+    result = CliRunner().invoke(
+        main, ["evolve", "writer", "--spawns-dir", str(tmp_path), "--consolidate"]
+    )
+    assert result.exit_code == 0, result.output
+
+    rules_file = tmp_path / "writer" / ".evolution" / "rules.yaml"
+    data = yaml.safe_load(rules_file.read_text(encoding="utf-8")) or []
+    assert all(r["rule"] != "ancient" for r in data)

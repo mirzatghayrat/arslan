@@ -13,7 +13,7 @@ from arslan import __version__
 from arslan.core.dialogue import DialogueEngine
 from arslan.core.evolution import EvolutionEngine
 from arslan.models import SpawnBlueprint, SpawnRequirements
-from arslan.spawn.evolve import apply_tier1_evolution, reset_evolution
+from arslan.spawn.evolve import apply_tier1_evolution, consolidate_evolution, reset_evolution
 from arslan.spawn.manager import SpawnManager
 
 console = Console()
@@ -229,8 +229,9 @@ def run(name: str, spawns_dir: str, port: int) -> None:
 @click.argument("name")
 @click.option("--spawns-dir", type=click.Path(), default="spawns", show_default=True)
 @click.option("--reset", is_flag=True, help="清空该分身已学到的进化规则并移除 SKILL.md 注入。")
-def evolve(name: str, spawns_dir: str, reset: bool) -> None:
-    """运行 Tier-1 指令进化并查看进化记录（--reset 清空重来）。"""
+@click.option("--consolidate", is_flag=True, help="剪除失效（衰减）规则并刷新 SKILL.md。")
+def evolve(name: str, spawns_dir: str, reset: bool, consolidate: bool) -> None:
+    """运行 Tier-1 指令进化并查看进化记录（--reset 清空 / --consolidate 整理）。"""
     manager = SpawnManager(Path(spawns_dir))
     spawn_path = manager.get_spawn_path(name)
 
@@ -241,6 +242,11 @@ def evolve(name: str, spawns_dir: str, reset: bool) -> None:
     if reset:
         reset_evolution(spawn_path)
         console.print(f"[green]已重置分身 '{name}' 的进化规则。[/green]")
+        return
+
+    if consolidate:
+        removed = consolidate_evolution(spawn_path)
+        console.print(f"[green]已整理 '{name}'：剪除 {removed} 条失效规则。[/green]")
         return
 
     apply_tier1_evolution(spawn_path)

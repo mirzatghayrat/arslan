@@ -52,28 +52,41 @@ def apply_tier1_evolution(pack_path: Path | str) -> bool:
     Only SKILL.md and ``evolution/`` are written.
     """
     pack_path = Path(pack_path)
-    skill_md = pack_path / "SKILL.md"
-
     engine = EvolutionEngine(pack_path / ".evolution")
     rules = engine.analyze_patterns()
     if rules:
         engine.save_rules(rules)
-    active = engine.get_active_rules()
+    return _inject_evolution_section(pack_path / "SKILL.md", engine.get_active_rules())
 
+
+def _inject_evolution_section(skill_md: Path, active: list[EvolutionRule]) -> bool:
+    """Rewrite the managed evolution block in SKILL.md from ``active`` rules."""
     if not skill_md.exists():
         return False  # rules persisted to .evolution; nothing to inject into
-
     original = skill_md.read_text(encoding="utf-8")
     base = _strip_block(original, _START, _END)
     if active:
         new_text = base.rstrip("\n") + "\n\n" + _render_section(active) + "\n"
     else:
         new_text = base
-
     if new_text != original:
         skill_md.write_text(new_text, encoding="utf-8")
         return True
     return False
+
+
+def consolidate_evolution(pack_path: Path | str, now=None) -> int:
+    """Prune decayed rules from rules.yaml and refresh the SKILL.md section.
+
+    Unlike :func:`apply_tier1_evolution` this does NOT re-derive from feedback —
+    it cleans the persisted set and re-injects the survivors. Returns the count
+    of rules pruned.
+    """
+    pack_path = Path(pack_path)
+    engine = EvolutionEngine(pack_path / ".evolution")
+    removed = engine.prune_rules(now=now)
+    _inject_evolution_section(pack_path / "SKILL.md", engine.get_active_rules(now=now))
+    return removed
 
 
 def reset_evolution(pack_path: Path | str) -> None:
