@@ -69,6 +69,15 @@ def record_feedback(
     apply_tier1_evolution(config.settings.spawns_dir / spawn_name)
 
 
+def prompt_suffix(spawn_name: str) -> str:
+    """Active evolution rules rendered as a system-prompt suffix (empty if none).
+
+    This is how Tier-1 evolution reaches the *running* spawn: the dispatcher
+    appends it to the system prompt so learned rules actually change behavior.
+    """
+    return _engine_for(spawn_name).generate_prompt_suffix()
+
+
 def get_stats(spawn_name: str) -> dict:
     """Return feedback count + active rules for a spawn."""
     engine = _engine_for(spawn_name)

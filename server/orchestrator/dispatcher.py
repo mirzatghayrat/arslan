@@ -103,6 +103,13 @@ async def dispatch(
     if facts:
         system = f"{system}\n\n{facts}"
 
+    # Tier-1 evolution reaches the running spawn here: learned rules as a suffix.
+    from server.services import evolution_service
+
+    suffix = evolution_service.prompt_suffix(spawn.name)
+    if suffix:
+        system = f"{system}\n\n{suffix}"
+
     # Compute equipment once. For unequipped spawns (legacy path) skip wired query entirely.
     equipment = await registry_service.equipment_for_spawn(spawn_id)
     has_equipment = bool(equipment["toolsets"] or equipment["skills"])
