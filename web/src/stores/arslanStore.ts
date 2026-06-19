@@ -29,6 +29,7 @@ interface ArslanState {
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
   clearError: () => void;
+  resetForNewConversation: () => void;
 }
 
 // Negative, decrementing ids for client-only items (user echoes, fact chips)
@@ -76,6 +77,10 @@ function makeActions(set: SetState, get: GetState) {
 
     dismissSuggestion: () => set({ suggestion: null }),
     clearError: () => set({ error: null }),
+
+    // Clear all conversation state so the incoming `history` frame for the new
+    // conversation_id repopulates from scratch with no stale carry-over.
+    resetForNewConversation: () => set({ ...initialData() }),
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
