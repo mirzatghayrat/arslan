@@ -971,7 +971,8 @@ export default function App() {
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         <div className="space-y-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-xs select-text">{spawn.avatarEmoji} {spawn.name}</span>
+                            <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-[#FF8E24]" />
+                            <span className="font-bold text-white text-xs select-text">{spawn.name}</span>
                             <span className="text-[8px] font-mono bg-black/40 text-gray-400 border border-gray-800 rounded-md px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">L.{spawnLevel}</span>
                             <span className="text-[8px] font-mono bg-[#FF8E24]/10 text-[#FF8E24] border border-[#FF8E24]/15 rounded px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">{spawn.domain}</span>
                           </div>
