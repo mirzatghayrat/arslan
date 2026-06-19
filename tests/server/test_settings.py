@@ -23,6 +23,15 @@ async def test_list_providers_endpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_list_search_providers_endpoint(client):
+    resp = await client.get("/api/v1/settings/search-providers")
+    assert resp.status_code == 200
+    providers = resp.json()
+    assert providers[0] == "tavily"  # default listed first
+    assert "tavily" in providers
+
+
+@pytest.mark.asyncio
 async def test_search_settings_roundtrip(client):
     resp = await client.put("/api/v1/settings", json={
         "search_provider": "tavily", "search_api_key": "tvly-secret-12345678",

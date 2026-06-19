@@ -77,6 +77,7 @@ export const api = {
   listTemplates: () => request<TemplateInfo[]>("/templates"),
   getSettings: () => request<AppSettings>("/settings"),
   listProviders: () => request<ProviderOption[]>("/settings/providers"),
+  listSearchProviders: () => request<string[]>("/settings/search-providers"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   getRegistry: () => request<RegistryCatalog>("/registry"),

@@ -19,7 +19,9 @@ export default function Settings() {
   const setToken = useAuthStore((s) => s.setToken);
   const [form, setForm] = useState<AppSettings | null>(null);
   const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
+  const [searchProviders, setSearchProviders] = useState<string[]>(["tavily"]);
   const [apiKey, setApiKey] = useState("");
+  const [searchKey, setSearchKey] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [saved, setSaved] = useState(false);
 
@@ -27,6 +29,9 @@ export default function Settings() {
     void api.getSettings().then(setForm);
     void api.listProviders().then(setProviders).catch(() => {
       /* keep FALLBACK_PROVIDERS */
+    });
+    void api.listSearchProviders().then(setSearchProviders).catch(() => {
+      /* keep ["tavily"] */
     });
   }, []);
 
@@ -57,11 +62,14 @@ export default function Settings() {
       llm_model: form.llm_model,
       llm_base_url: form.llm_base_url,
       language: form.language,
+      search_provider: form.search_provider,
     };
     if (apiKey) body.llm_api_key = apiKey;
+    if (searchKey) body.search_api_key = searchKey;
     const updated = await api.updateSettings(body);
     setForm(updated);
     setApiKey("");
+    setSearchKey("");
     if (tokenInput) {
       setToken(tokenInput);
       setTokenInput("");
@@ -120,6 +128,37 @@ export default function Settings() {
             className="mt-1 w-full rounded-lg bg-white/10 px-3 py-2"
           />
           <span className="text-xs text-white/40">{t("settings.api_key_hint")}</span>
+        </label>
+      </section>
+
+      <section className="mt-4 space-y-4 rounded-xl border border-white/10 bg-white/5 p-5">
+        <h2 className="font-medium text-amber">{t("settings.search_section")}</h2>
+
+        <label className="block text-sm">
+          {t("settings.search_provider")}
+          <select
+            value={form.search_provider}
+            onChange={(e) => update({ search_provider: e.target.value })}
+            className="mt-1 w-full rounded-lg bg-white/10 px-3 py-2"
+          >
+            {searchProviders.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block text-sm">
+          {t("settings.search_api_key")}
+          <input
+            type="password"
+            value={searchKey}
+            placeholder={form.search_api_key || "tvly-..."}
+            onChange={(e) => setSearchKey(e.target.value)}
+            className="mt-1 w-full rounded-lg bg-white/10 px-3 py-2"
+          />
+          <span className="text-xs text-white/40">{t("settings.search_api_key_hint")}</span>
         </label>
       </section>
 
