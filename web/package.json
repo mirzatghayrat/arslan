@@ -4,9 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "bash scripts/clean-vite.sh",
+    "build": "bash scripts/clean-vite.sh build",
+    "preview": "bash scripts/clean-vite.sh preview",
+    "dev:raw": "vite",
+    "build:raw": "vite build",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
