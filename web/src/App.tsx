@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { INITIAL_CHAT_HISTORY, DEFAULT_SETTINGS } from './data';
+import React, { useState, useEffect, useCallback } from 'react';
+import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
+import { useArslanStore } from './stores/arslanStore';
 import { api } from './api/client';
-import { toUiSpawn, toUiSettings } from './api/adapters';
-import type { ProviderOption } from './api/client.types';
+import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
+import type { ArslanServerMessage, ProviderOption } from './api/client.types';
+import { useWebSocket } from './hooks/useWebSocket';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import SpawnDirectChat from './components/SpawnDirectChat';
@@ -49,19 +51,52 @@ export default function App() {
   // Control Center Right Drawer Toggle state for redesigned grand layout frame
   const [showControlPanel, setShowControlPanel] = useState<boolean>(true);
 
-  // Active Multi-Thread Chat histories for Primary Orchestrator (Arslan)
+  // ── Stage B: Orchestrator chat live WS ─────────────────────────────────────
+  // The store holds all thread items; we derive UI messages from it.
+  const arslanItems = useArslanStore((s) => s.items);
+  const arslanStreaming = useArslanStore((s) => s.streaming);
+  const arslanStreamingText = useArslanStore((s) => s.streamingText);
+
+  // Handler for incoming WS frames — routes to the proven store logic
+  const handleArslanFrame = useCallback((raw: unknown) => {
+    useArslanStore.getState().handleFrame(raw as ArslanServerMessage);
+  }, []);
+
+  // Connect to the live orchestrator WebSocket. conversation_id "main" matches
+  // what the server tests use (see tests/server/test_ws_arslan.py).
+  const { send: wsSend } = useWebSocket('/ws/arslan/main', handleArslanFrame);
+
+  // Derived UI messages from the live store
+  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
+
+  // Append an optimistic streaming bubble while a reply is streaming
+  const orchestratorChatHistory: Message[] = arslanStreaming && arslanStreamingText
+    ? [
+        ...liveOrchestratorHistory,
+        {
+          id: '__streaming__',
+          sender: 'arslan' as const,
+          senderName: 'Arslan',
+          senderAvatar: '🦁',
+          text: arslanStreamingText,
+          timestamp: '',
+        },
+      ]
+    : liveOrchestratorHistory;
+
+  // Send a user message to the live backend
+  const sendOrchestratorMessage = useCallback((text: string) => {
+    useArslanStore.getState().addUserMessage(text);
+    wsSend({ type: 'user_message', content: text });
+  }, [wsSend]);
+
+  // Active Multi-Thread Chat histories for mock threads (non-wired threads keep local state)
   const [threads, setThreads] = useState<ArslanThread[]>([
     {
       id: 'thread-default',
       title: 'New Session',
       memberSpawnIds: [],
       history: []
-    },
-    {
-      id: 'thread-nv',
-      title: 'Nvidia Market Synthesis',
-      history: INITIAL_CHAT_HISTORY,
-      memberSpawnIds: ['spawn-aletheia', 'spawn-huan']
     },
     {
       id: 'thread-marketing',
@@ -382,7 +417,12 @@ export default function App() {
   };
 
   const currentCaps = getContextCapabilities();
-  const isThreadEmpty = activeSection === 'arslan' && activeThread?.history.length === 0;
+  // For the live WS thread (thread-default), check the store-derived history length.
+  // For mock threads, check their local history.
+  const activeHistoryForEmpty = activeThreadId === 'thread-default'
+    ? orchestratorChatHistory
+    : activeThread?.history ?? [];
+  const isThreadEmpty = activeSection === 'arslan' && activeHistoryForEmpty.length === 0;
 
   return (
     <div className={`flex w-screen h-screen bg-[#07090d] text-gray-100 overflow-hidden font-sans antialiased select-none ${settings.theme === 'light' ? 'light-theme' : ''}`}>
@@ -455,8 +495,9 @@ export default function App() {
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {activeSection === 'arslan' && (
               <OrchestratorChat
-                chatHistory={activeThread.history}
+                chatHistory={activeThreadId === 'thread-default' ? orchestratorChatHistory : activeThread.history}
                 setChatHistory={setChatHistoryForActiveThread}
+                onSendMessage={activeThreadId === 'thread-default' ? sendOrchestratorMessage : undefined}
                 spawns={spawns}
                 currentStyle={currentChatStyle}
                 setCurrentStyle={setCurrentChatStyle}

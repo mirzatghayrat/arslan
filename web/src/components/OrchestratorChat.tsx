@@ -13,6 +13,8 @@ import SFSymbol from './SFSymbol';
 interface OrchestratorChatProps {
   chatHistory: Message[];
   setChatHistory: React.Dispatch<React.SetStateAction<Message[]>>;
+  /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation. */
+  onSendMessage?: (text: string) => void;
   spawns: Spawn[];
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
@@ -22,6 +24,7 @@ interface OrchestratorChatProps {
 export default function OrchestratorChat({
   chatHistory,
   setChatHistory,
+  onSendMessage,
   spawns,
   currentStyle,
   setCurrentStyle,
@@ -498,17 +501,26 @@ export default function OrchestratorChat({
     e.preventDefault();
     if (!inputValue.trim()) return;
 
+    const text = inputValue.trim();
+    setInputValue('');
+
+    // Live WS path: delegate to parent's onSendMessage (store + WS send)
+    if (onSendMessage) {
+      onSendMessage(text);
+      return;
+    }
+
+    // Mock simulation path (non-wired threads)
     const userMsg: Message = {
       id: `msg-user-${Date.now()}`,
       sender: 'user',
       senderName: 'Mirzat',
       senderAvatar: '🦁',
-      text: inputValue,
+      text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
     setChatHistory(prev => [...prev, userMsg]);
-    setInputValue('');
 
     // Trigger a default auto-orchestration response simulation after a short delay
     setTimeout(() => {

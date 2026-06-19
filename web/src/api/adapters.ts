@@ -1,5 +1,5 @@
-import type { AppSettings, Spawn } from "../types";
-import type { AppSettings as BackendAppSettings, SpawnSummary } from "./client.types";
+import type { AppSettings, Message, Spawn } from "../types";
+import type { AppSettings as BackendAppSettings, ArslanThreadItem, SpawnSummary } from "./client.types";
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
@@ -88,4 +88,157 @@ export function toUiSpawn(s: SpawnSummary & {
     skills: s.skills ?? [],
     totalTasks: s.total_tasks ?? 0,
   };
+}
+
+// ── Arslan thread adapters ────────────────────────────────────────────────────
+
+/**
+ * Maps an ArslanThreadItem[] (from arslanStore) → Message[] (AI Studio UI type).
+ *
+ * Field mapping per kind:
+ *
+ * kind === "message", role === "user"
+ *   sender: "user", senderName: "You", senderAvatar: "🦁"
+ *   text: content
+ *
+ * kind === "message", role === "arslan"
+ *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
+ *   text: content
+ *   routedTo: undefined (routing is a separate item kind, not folded here)
+ *
+ * kind === "message", role === "spawn"
+ *   sender: "spawn", senderName: spawnName ?? "Spawn", senderAvatar: "🤖"
+ *   text: content
+ *   toolActivity: first ToolStep mapped if present (folded into the reply)
+ *
+ * kind === "escalation"
+ *   sender: "spawn", senderName: spawnName ?? "Spawn", senderAvatar: "🤖"
+ *   text: "" (the escalation card is the content)
+ *   escalation: mapped from item.escalation (EscalationInfo → UI Escalation)
+ *
+ * kind === "system" (spawn_created)
+ *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
+ *   text: content (the "__SPAWN_CREATED__:Name" sentinel or intro)
+ *   spawnIntro: populated from equipment + intro if available
+ *
+ * kind === "fact"
+ *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
+ *   text: content
+ *
+ * Fields with no counterpart (routedTo for routing items, timestamp) get
+ * sensible defaults: timestamp = "" (component shows it conditionally).
+ */
+export function toUiMessages(items: ArslanThreadItem[]): Message[] {
+  return items.map((item): Message => {
+    const id = String(item.id);
+    const timestamp = "";
+
+    if (item.kind === "escalation" && item.escalation) {
+      const esc = item.escalation;
+      // Map EscalationInfo.status → UI Escalation.status
+      const uiStatus =
+        esc.status === "resolving" ? ("arslan_resolving" as const)
+        : esc.status === "resolved" ? ("resolved" as const)
+        : esc.status === "refused"  ? ("refused" as const)
+        : ("need_raised" as const);
+      return {
+        id,
+        sender: "spawn",
+        senderName: esc.spawnName ?? "Spawn",
+        senderAvatar: "🤖",
+        text: "",
+        timestamp,
+        escalation: {
+          id,
+          spawnName: esc.spawnName ?? "Spawn",
+          issue: esc.need,
+          status: uiStatus,
+          resolutionMessage: esc.how ?? esc.why,
+        },
+      };
+    }
+
+    if (item.kind === "system") {
+      // spawn_created: content is "__SPAWN_CREATED__:Name" or intro text
+      const spawnNameFromContent = item.content.startsWith("__SPAWN_CREATED__:")
+        ? item.content.slice("__SPAWN_CREATED__:".length)
+        : null;
+      const spawnIntro = spawnNameFromContent
+        ? {
+            name: spawnNameFromContent,
+            domain: "",
+            avatarEmoji: "🤖",
+            tools: item.equipment?.toolsets.map((t) => t.key) ?? [],
+            skills: item.equipment?.skills.map((s) => s.key) ?? [],
+          }
+        : undefined;
+      return {
+        id,
+        sender: "arslan",
+        senderName: "Arslan",
+        senderAvatar: "🦁",
+        text: item.intro ?? item.content,
+        timestamp,
+        spawnIntro,
+      };
+    }
+
+    if (item.kind === "fact") {
+      return {
+        id,
+        sender: "arslan",
+        senderName: "Arslan",
+        senderAvatar: "🦁",
+        text: item.content,
+        timestamp,
+      };
+    }
+
+    // kind === "message"
+    if (item.role === "user") {
+      return {
+        id,
+        sender: "user",
+        senderName: "You",
+        senderAvatar: "🦁",
+        text: item.content,
+        timestamp,
+      };
+    }
+
+    if (item.role === "spawn") {
+      // Map the first ToolStep to a ToolActivity if present
+      const firstStep = item.toolSteps?.[0];
+      const toolActivity: Message["toolActivity"] = firstStep
+        ? {
+            id: `${id}-tool-0`,
+            toolName: firstStep.tool,
+            emoji: "🔧",
+            status: firstStep.status === "running" ? "running" : "completed",
+            action: firstStep.argsSummary,
+            outputSummary: firstStep.resultSummary ?? "",
+            collapsed: false,
+          }
+        : undefined;
+      return {
+        id,
+        sender: "spawn",
+        senderName: item.spawnName ?? "Spawn",
+        senderAvatar: "🤖",
+        text: item.content,
+        timestamp,
+        toolActivity,
+      };
+    }
+
+    // role === "arslan" (default)
+    return {
+      id,
+      sender: "arslan",
+      senderName: "Arslan",
+      senderAvatar: "🦁",
+      text: item.content,
+      timestamp,
+    };
+  });
 }
