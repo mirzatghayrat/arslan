@@ -93,53 +93,18 @@ export default function App() {
   // Active Multi-Thread Chat histories for mock threads (non-wired threads keep local state)
   const [threads, setThreads] = useState<ArslanThread[]>([
     {
-      id: 'thread-default',
-      title: 'New Session',
+      id: "thread-default",
+      title: "New Session",
       memberSpawnIds: [],
       history: []
-    },
-    {
-      id: 'thread-marketing',
-      title: 'XiaoHongShu Launch Strategy',
-      memberSpawnIds: ['spawn-huan'],
-      history: [
-        {
-          id: 'init-m-red-1',
-          sender: 'arslan',
-          senderName: 'Arslan',
-          senderAvatar: '🦁',
-          text: '🦁 **Social campaign engine activated.**\nReady to draft explosive XiaoHongShu captions, brainstorm visual cards with our creative specialists, and compile market trends. Let’s map out our marketing goals!',
-          timestamp: '15:40'
-        }
-      ]
     }
   ]);
-  const [activeThreadId, setActiveThreadId] = useState<string>('thread-default');
+  const [activeThreadId, setActiveThreadId] = useState<string>("thread-default");
 
-  // Active direct private chats with individual Spawns
-  const [spawnChats, setSpawnChats] = useState<Record<string, Message[]>>({
-    'spawn-aletheia': [
-      {
-        id: 'sc-1',
-        sender: 'spawn',
-        senderName: 'Aletheia',
-        senderAvatar: '🦊',
-        text: '🤖 **Direct specialist socket established.**\nReady for analytical prompts regarding market trends, stock metrics, or forecasting equations. You can query me directly!',
-        timestamp: '15:38'
-      }
-    ],
-    'spawn-huan': [
-      {
-        id: 'sc-2',
-        sender: 'spawn',
-        senderName: 'Huan',
-        senderAvatar: '🐱',
-        text: '🤖 **Direct specialist socket established.**\nCopywriting sandbox is clear. Send over descriptive requirements for viral posts or graphical layout grids!',
-        timestamp: '15:39'
-      }
-    ]
-  });
-  const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('spawn-aletheia');
+  // Active direct private chats with individual Spawns — keyed by real backend spawn ID
+  // Initialized empty; populated when user opens a direct channel or creates a spawn.
+  const [spawnChats, setSpawnChats] = useState<Record<string, Message[]>>({});
+  const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('');
 
   // Shared application state databases
   // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
@@ -613,44 +578,40 @@ export default function App() {
                   <span className="font-bold text-[#FF8E24] block truncate">≫ {currentCaps.title}</span>
                 </div>
 
-                {/* 1. MCP (Model Context Protocol) Registry */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">📡 Registered Sandbox MCP Servers</span>
-                  <div className="flex flex-col gap-1">
-                    <div className="bg-gradient-to-r from-orange-500/5 to-transparent border border-[#1e2330]/50 px-2 py-1.5 rounded-lg text-[10px] font-mono flex items-center justify-between hover:border-orange-500/30 transition-colors">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <strong>Brave Search Core</strong>
-                      </span>
-                      <span className="text-[8.5px] text-gray-500 uppercase bg-black/40 px-1.5 py-0.2 rounded border border-white/5">CRAWLER</span>
-                    </div>
-                    <div className="bg-gradient-to-r from-orange-500/5 to-transparent border border-[#1e2330]/50 px-2 py-1.5 rounded-lg text-[10px] font-mono flex items-center justify-between hover:border-orange-500/30 transition-colors">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <strong>Local SQLite Analyzer</strong>
-                      </span>
-                      <span className="text-[8.5px] text-gray-500 uppercase bg-black/40 px-1.5 py-0.2 rounded border border-white/5">SQL DATABASE</span>
-                    </div>
+                {/* 1. MCP (Model Context Protocol) Registry — no MCP backend yet */}
+                <div className="space-y-1.5 opacity-50">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold">📡 Registered Sandbox MCP Servers</span>
+                    <span className="text-[8px] font-mono bg-gray-800/80 text-gray-500 border border-gray-700/50 px-1.5 py-0.2 rounded uppercase tracking-wider">即将推出</span>
+                  </div>
+                  <div className="bg-[#0b0d14]/60 border border-dashed border-[#1e2330]/60 rounded-lg px-3 py-2.5 text-[10px] font-mono text-gray-600 italic">
+                    MCP server integration is not yet available. This section will list connected MCP servers once the backend supports them.
                   </div>
                 </div>
 
-                {/* 2. Equipped Agent Tools */}
+                {/* 2. Equipped Agent Tools — only web-search is wired in backend; others coming soon */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">⚙️ Active Dialogue Tools</span>
+                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">⚙️ Dialogue Tools</span>
                   {currentCaps.tools.length === 0 ? (
-                    <p className="text-[9px] font-mono text-gray-600 italic">No static tools linked inside dialogue scope.</p>
+                    <p className="text-[9px] font-mono text-gray-600 italic">No tools linked inside dialogue scope.</p>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {currentCaps.tools.map((tId) => {
                         const details = toolDetails[tId] || { name: tId, emoji: '🔧' };
+                        const isWired = tId === 'web-search';
                         return (
-                          <div 
-                            key={tId} 
-                            className="bg-[#11141e] text-[#91b4ff] border border-[#232d4b] hover:border-[#385392] px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 transition-colors select-none"
-                            title={`Tool ID: ${tId}`}
+                          <div
+                            key={tId}
+                            className={`px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none ${
+                              isWired
+                                ? 'bg-[#11141e] text-[#91b4ff] border border-[#232d4b]'
+                                : 'bg-[#0e1018]/60 text-gray-600 border border-[#1e2330]/40 opacity-50'
+                            }`}
+                            title={isWired ? `Tool: ${tId}` : `${tId} — 即将推出 / Coming soon`}
                           >
                             <span>{details.emoji}</span>
                             <span className="text-[10px] font-medium">{details.name}</span>
+                            {!isWired && <span className="text-[7px] text-gray-600 font-mono ml-0.5">soon</span>}
                           </div>
                         );
                       })}
@@ -658,23 +619,24 @@ export default function App() {
                   )}
                 </div>
 
-                {/* 3. Activated Skills */}
+                {/* 3. Activated Skills — per-conversation skill tracking not yet available */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">🧠 Active Dialogue Skills</span>
+                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">🧠 Dialogue Skills</span>
                   {currentCaps.skills.length === 0 ? (
-                    <p className="text-[9px] font-mono text-gray-600 italic">No specialized skills active inside target scope.</p>
+                    <p className="text-[9px] font-mono text-gray-600 italic">No skills linked inside dialogue scope.</p>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {currentCaps.skills.map((sId) => {
                         const details = skillDetails[sId] || { name: sId, emoji: '🎓' };
                         return (
-                          <div 
-                            key={sId} 
-                            className="bg-[#11141e] text-emerald-400 border border-[#142f26] hover:border-[#1d5240] px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 transition-colors select-none"
-                            title={`Skill ID: ${sId}`}
+                          <div
+                            key={sId}
+                            className="bg-[#0e1018]/60 text-gray-600 border border-[#1e2330]/40 opacity-50 px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
+                            title={`${sId} — 即将推出 / Coming soon (per-conversation skill tracking not yet available)`}
                           >
                             <span>{details.emoji}</span>
                             <span className="text-[10px] font-medium">{details.name}</span>
+                            <span className="text-[7px] text-gray-600 font-mono ml-0.5">soon</span>
                           </div>
                         );
                       })}
@@ -958,13 +920,19 @@ export default function App() {
               />
             </div>
 
+            {/* Invite/kick backend is not yet implemented — actions disabled with coming-soon badge */}
+            <div className="px-6 py-2 bg-amber-950/10 border-b border-amber-900/20 flex items-center gap-2 text-[10px] font-mono text-amber-600/80 shrink-0">
+              <span>⚠</span>
+              <span>Invite / kick not yet wired to backend — 即将推出 / Coming soon. Spawn list is real.</span>
+            </div>
+
             {/* Scrollable list content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-3.5">
               {(() => {
                 const query = ledgerSearch.toLowerCase();
-                const filtered = spawns.filter(s => 
-                  s.name.toLowerCase().includes(query) || 
-                  s.domain.toLowerCase().includes(query) || 
+                const filtered = spawns.filter(s =>
+                  s.name.toLowerCase().includes(query) ||
+                  s.domain.toLowerCase().includes(query) ||
                   s.description.toLowerCase().includes(query)
                 );
 
@@ -982,13 +950,9 @@ export default function App() {
                   const spawnLevel = Math.max(1, Math.floor(spawn.totalTasks / 10) + 1);
 
                   return (
-                    <div 
+                    <div
                       key={spawn.id}
-                      className={`p-4 border rounded-xl transition-all flex items-center justify-between gap-4 select-none ${
-                        isMember 
-                          ? 'bg-[#FF8E24]/5 border-[#FF8E24]/30' 
-                          : 'bg-[#0e111a]/90 border-[#1e2330]/60 hover:border-[#FF8E24]/20'
-                      }`}
+                      className="p-4 border rounded-xl border-[#1e2330]/60 bg-[#0e111a]/90 flex items-center justify-between gap-4 select-none"
                     >
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         <div className="space-y-1 min-w-0">
@@ -1011,24 +975,19 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Add / Remove button trigger */}
-                      <button
-                        onClick={() => handleToggleSpawnMembership(spawn.id)}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider transition-all border shadow-sm shrink-0 flex items-center gap-1 ${
-                          isMember
-                            ? 'bg-red-500/10 border-red-500/25 text-red-455 hover:bg-red-500/20'
-                            : 'bg-[#FF8E24] border-[#FF8E24]/30 text-black hover:bg-[#ff9c3a] shadow-[#FF8E24]/10'
-                        }`}
+                      {/* Invite/kick disabled — backend not yet available */}
+                      <div
+                        className="px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider border border-[#1e2330]/60 bg-[#0b0d14]/60 text-gray-600 cursor-not-allowed opacity-50 shrink-0 flex items-center gap-1"
+                        title="即将推出 / Coming soon — invite/kick backend not yet available"
                       >
                         {isMember ? (
                           <>
-                            <span>✓ Connected</span>
-                            <span className="text-[8px] opacity-70">(Exit)</span>
+                            <span>✓ Listed</span>
                           </>
                         ) : (
                           <span>+ Pull Into Chat</span>
                         )}
-                      </button>
+                      </div>
                     </div>
                   );
                 });

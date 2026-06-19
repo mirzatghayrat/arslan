@@ -46,40 +46,15 @@ export default function OrchestratorChat({
   const [subDrafts, setSubDrafts] = useState<Record<string, string>>({});
   const [subTyping, setSubTyping] = useState<boolean>(false);
 
-  // Global Integration Discovery & Repository Engine States
-  const [showSandboxSearch, setShowSandboxSearch] = useState(true); // Keep open initially for discoverability
+  // Global Integration Discovery & Repository Engine — no MCP backend yet; tool-hub disabled
+  const [showSandboxSearch, setShowSandboxSearch] = useState(true);
   const [integrationQuery, setIntegrationQuery] = useState('');
-  const [isEvaluating, setIsEvaluating] = useState(false);
-  const [mcpRegistry, setMcpRegistry] = useState<{name: string, url: string, description: string, tags: string[]}[]>([
-    {
-      name: 'Brave Search Core',
-      url: 'https://github.com/brave/brave-mcp-server',
-      description: 'Secure, local proxy-bypassing web crawler and semantic text extractor API node.',
-      tags: ['MCP', 'Web Crawler']
-    },
-    {
-      name: 'Local SQLite Analyzer',
-      url: 'https://github.com/mcp-community/sqlite-mcp-server',
-      description: 'Executes high-performance sqlite sandbox trace queries and schemas lookup.',
-      tags: ['MCP', 'Database']
-    }
-  ]);
-  const [skillRegistry, setSkillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([
-    {
-      name: 'Penetration Auditing',
-      repo: 'https://github.com/test-security/network-auditor',
-      capabilities: ['Intrusion Trace Audit', 'Port Handshake Map', 'Local Network Sniffing']
-    }
-  ]);
-  const [evaluationResult, setEvaluationResult] = useState<{
-    url: string;
-    name: string;
-    summary: string;
-    capabilities: string[];
-    moat: string;
-    bestUse: string;
-    type: 'MCP' | 'Skill';
-  } | null>(null);
+  const isEvaluating = false; // evaluation backend not yet available
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [mcpRegistry] = useState<{name: string, url: string, description: string, tags: string[]}[]>([]); // no real MCP servers yet
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [skillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([]);
+  const evaluationResult = null;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const subBottomRef = useRef<HTMLDivElement>(null);
@@ -94,215 +69,12 @@ export default function OrchestratorChat({
     }
   }, [subChats, splitSpawnId, subTyping]);
 
-  const handleEvaluateRepository = (urlOrQuery: string) => {
-    if (!urlOrQuery.trim()) return;
-    setIsEvaluating(true);
-    setEvaluationResult(null);
-
-    // Normalize input
-    const query = urlOrQuery.toLowerCase().trim();
-
-    setTimeout(() => {
-      let resultName = 'Custom Agent Workspace Spec';
-      let resultUrl = urlOrQuery;
-      let summary = 'Custom third-party integration analyzed via Sandboxed Engine. Perfect configuration matching found.';
-      let capabilities = [
-        'Automatic entry point injection',
-        'Payload compliance checking',
-        'Secured prompt routing schema'
-      ];
-      let moat = 'Dynamic authentication virtualization prevents API token leakages post-compilation.';
-      let bestUse = 'Ideal for equipping general Spawns with custom task runner protocols.';
-      let evaluatedType: 'MCP' | 'Skill' = 'MCP';
-
-      if (query.includes('gdrive') || query.includes('google drive') || query.includes('google-drive') || query.includes('workspace')) {
-        resultName = 'Google Drive Workspace Core';
-        resultUrl = 'https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive';
-        summary = 'Allows direct OAuth workspace document reads, deep hierarchical folder searches, and live-stream ingestion in Google Workspace formats.';
-        capabilities = [
-          'Workspace doc metadata sync & search indexing',
-          'Incremental chunk-by-chunk Sheet reader',
-          'Granular OAuth security access scopes validator'
-        ];
-        moat = 'Granular read-only token restriction layer, blocking server-side prompt injection attacks from overriding active live documents.';
-        bestUse = 'Enables Arslan Core to extract spreadsheet records and draft immediate automated briefs dynamically.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('git') || query.includes('github')) {
-        resultName = 'Git Workspace Controller';
-        resultUrl = 'https://github.com/mcp-community/git-mcp';
-        summary = 'Provides repository commit tree trace, atomic diff visualization, and auto-refactoring branches checkout tools directly within sandboxed workspace paths.';
-        capabilities = [
-          'Diff tree tracer with structural markdown preview',
-          'Branch auto-protection rules lock',
-          'Safe staged files cataloger with rollback memory'
-        ];
-        moat = 'Isolated file-system sandbox tracing, fully shielding the parent active operating system context from malicious checkout scripts.';
-        bestUse = 'Enables Huan/Hatchery sub-agents to draft layout revisions and write commits post-evaluation.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('brave') || query.includes('search') || query.includes('crawler') || query.includes('browser')) {
-        resultName = 'Brave Search Intelligence Node';
-        resultUrl = 'https://github.com/brave/brave-mcp-server';
-        summary = 'A specialized web query engine optimized for agents, providing secure high-performance web crawls and selector-based text extraction.';
-        capabilities = [
-          'Auto-bypassing bot-detection web index fetcher',
-          'Semantic HTML main text stripper layer',
-          'Localized news variance trend aggregator'
-        ];
-        moat = 'Advanced rate-limit handling and residential proxy rotating built-built to secure uninterrupted indexing.';
-        bestUse = 'Equips Aletheia with live financial news indexes across global web indices instantly.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('milvus') || query.includes('vector') || query.includes('rag')) {
-        resultName = 'Milvus Vector-Cache Connector';
-        resultUrl = 'https://github.com/milvus-io/milvus-mcp-server';
-        summary = 'A high-dimensional collection indexing node for storing long-term memory semantic layers securely and tracing cosine similarity vectors.';
-        capabilities = [
-          'Dynamic schema creator & metadata collection mapper',
-          'Cosine similarity metric trace lookups',
-          'RAG context payload optimizer'
-        ];
-        moat = 'Native cluster connection cache pools, reducing round-trip vector lookup hop latencies to less than 15ms.';
-        bestUse = 'Enables Arslan Memory registers to store deep historic logs in fully searchable vector slots.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('postgres') || query.includes('sql') || query.includes('mysql') || query.includes('database')) {
-        resultName = 'Relational DB Smart Analyzer';
-        resultUrl = urlOrQuery.startsWith('http') ? urlOrQuery : 'https://github.com/mcp-community/postgres-server';
-        summary = 'Exposes database structure introspection, automated schema indexing, and analytical SQL tracer tools with secure execution limits.';
-        capabilities = [
-          'Automatic foreign-key trace mapper',
-          'Bounded analytical DML analyzer & schema checker',
-          'Transaction safety dry-run layer'
-        ];
-        moat = 'Active query limit capping and injection regex filtering, enabling safe read-only SQL generation for autonomous agents.';
-        bestUse = 'Enables background spawns to perform automated statistics aggregation on dynamic database clusters.';
-        evaluatedType = 'MCP';
-      } else {
-        // Dynamic fallback generating based on input path
-        let extractedName = 'Custom Repository Integration';
-        const parts = query.replace('https://', '').replace('github.com/', '').split('/');
-        if (parts.length > 1) {
-          extractedName = parts[parts.length - 1].split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        } else if (urlOrQuery) {
-          extractedName = urlOrQuery.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        }
-        
-        resultName = `${extractedName} Core`;
-        summary = `A verified ${extractedName} capability module analyzed on-chain. Fully compatible with Arslan dual-plane orchestration constraints.`;
-        capabilities = [
-          `Introspective ${extractedName} API communication connector`,
-          `Dynamic payload wrapper with schema-level validation`,
-          `High-throughput error handling diagnostic protocol`
-        ];
-        moat = `Strict sandbox encapsulation blocks execution of arbitrary runtime buffers to shield the workspace.`;
-        bestUse = `Enables Arslan Core to register ${extractedName} as an active specialty node on-demand.`;
-        evaluatedType = query.includes('mcp') || query.includes('server') ? 'MCP' : 'Skill';
-      }
-
-      setEvaluationResult({
-        url: resultUrl,
-        name: resultName,
-        summary,
-        capabilities,
-        moat,
-        bestUse,
-        type: evaluatedType
-      });
-      setIsEvaluating(false);
-    }, 900);
-  };
-
-  const handleAddToMCP = () => {
-    if (!evaluationResult) return;
-    
-    // Check if already exists in list
-    if (mcpRegistry.some(m => m.name === evaluationResult.name)) {
-      return;
-    }
-
-    setMcpRegistry(prev => [
-      ...prev,
-      {
-        name: evaluationResult.name,
-        url: evaluationResult.url,
-        description: evaluationResult.summary,
-        tags: ['MCP', 'User Added']
-      }
-    ]);
-
-    // Send brief confirmation chat notification from Arslan
-    const mcpMsg: Message = {
-      id: `mcp-add-${Date.now()}`,
-      sender: 'arslan',
-      senderName: 'Arslan Core',
-      senderAvatar: '🦁',
-      text: `📥 **MCP Registry Updated:** Successfully registered **[${evaluationResult.name}]** into the active sandbox tool container pool. It is now standard authorized (🔓) for all sub-spawns.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setChatHistory(prev => [...prev, mcpMsg]);
-  };
-
-  const handleAddToSkill = () => {
-    if (!evaluationResult) return;
-
-    if (skillRegistry.some(s => s.name === evaluationResult.name)) {
-      return;
-    }
-
-    setSkillRegistry(prev => [
-      ...prev,
-      {
-        name: evaluationResult.name,
-        repo: evaluationResult.url,
-        capabilities: evaluationResult.capabilities
-      }
-    ]);
-
-    const skillMsg: Message = {
-      id: `skill-add-${Date.now()}`,
-      sender: 'arslan',
-      senderName: 'Arslan Core',
-      senderAvatar: '🦁',
-      text: `🛡️ **Capabilities Ledger Expanded:** Added Skillset **[${evaluationResult.name}]** to special specialized skill registers. Spawns can now inherit its specific trace permissions.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setChatHistory(prev => [...prev, skillMsg]);
-  };
-
-  const handleSynthesizeSpawn = () => {
-    if (!evaluationResult) return;
-
-    // Simulate synthesis notification inside chat history
-    const synthUserMsg: Message = {
-      id: `synth-user-${Date.now()}`,
-      sender: 'user',
-      senderName: 'Mirzat',
-      senderAvatar: '🦁',
-      text: `🔄 **Initiate Autonomous Spawn Synthesis:** Constructing new sub-specialist agent equipped with capability: **[${evaluationResult.name}]**.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    const synthMsg: Message = {
-      id: `synth-act-${Date.now()}`,
-      sender: 'arslan',
-      senderName: 'Arslan Core',
-      senderAvatar: '🦁',
-      text: `✨ **Arslan Multi-Agent Gateway Integrated:** Custom specialist branch successfully synthesized!\n\n**Specialist Agent Name:** ${evaluationResult.name === 'Custom Repository Integration Core' ? 'Arbitrage' : evaluationResult.name.split(' ')[0]} Bot\n**Status:** Fully Calibrated (Ready)\n**Equipped Skill:** ${evaluationResult.name}\n**Active Hooks:** Connected to tool endpoint *${evaluationResult.url}*.\n\nReady to aggregate high-fidelity telemetry post-execution.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      spawnIntro: {
-        name: `${evaluationResult.name === 'Custom Repository Integration Core' ? 'Arbitrage' : evaluationResult.name.split(' ')[0]} Specialist`,
-        avatarEmoji: '⚡',
-        domain: `Integration Node: ${evaluationResult.name}`,
-        tools: ['web-evaluator'],
-        skills: ['autonomous_synthesis']
-      }
-    };
-
-    setChatHistory(prev => [...prev, synthUserMsg]);
-    
-    // Stagger Arslan response
-    setTimeout(() => {
-      setChatHistory(prev => [...prev, synthMsg]);
-    }, 600);
-  };
+  // Tool-Hub evaluation is disabled — no MCP/discovery backend exists yet.
+  // Tool-Hub evaluation handlers are disabled — no MCP/discovery backend exists yet.
+  const handleEvaluateRepository = (_urlOrQuery: string) => { /* coming soon */ };
+  const handleAddToMCP = () => { /* coming soon */ };
+  const handleAddToSkill = () => { /* coming soon */ };
+  const handleSynthesizeSpawn = () => { /* coming soon */ };
 
   const handleLaunchSpawnTask = (spawnId: string, customTask?: string) => {
     const spawn = spawns.find(s => s.id === spawnId);
@@ -876,8 +648,8 @@ export default function OrchestratorChat({
             const currentThreadMembers = activeThread?.memberSpawnIds || [];
             const memberSpawns = spawns.filter(s => currentThreadMembers.includes(s.id));
             
-            // Fallback: if no members assigned yet, show active sandbox targets Aletheia & Huan
-            const activeDisplayList = memberSpawns.length > 0 ? memberSpawns : spawns.slice(0, 2);
+            // Show only thread members; no fallback to mock names
+            const activeDisplayList = memberSpawns;
 
             return activeDisplayList.map(spawn => {
               const status = spawnStatuses[spawn.id] || 'idle';
@@ -1530,7 +1302,7 @@ export default function OrchestratorChat({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               disabled={isSimulating}
-              placeholder={isSimulating ? "Simulation workflow running..." : "Ask Arslan to orchestrate... (e.g., '@Aletheia write an executive summary')"}
+              placeholder={isSimulating ? "Simulation workflow running..." : "Ask Arslan to orchestrate a task for your spawns..."}
               className="w-full bg-[#121520] border border-[#23293e] hover:border-[#353e5e] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/30 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-500 focus:outline-none pr-12 transition-all font-sans"
             />
             <button

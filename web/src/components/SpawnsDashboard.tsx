@@ -40,285 +40,22 @@ export default function SpawnsDashboard({
 }: SpawnsDashboardProps) {
 
   // Global Integration Discovery & Repository Engine States
+  // NOTE: This Tool-Hub (MCP/discovery backend) does not exist yet — kept as visual shell, actions disabled.
   const [showSandboxSearch, setShowSandboxSearch] = useState(true);
   const [integrationQuery, setIntegrationQuery] = useState('');
-  const [isEvaluating, setIsEvaluating] = useState(false);
-  const [mcpRegistry, setMcpRegistry] = useState<{name: string, url: string, description: string, tags: string[]}[]>([
-    {
-      name: 'Brave Search Core',
-      url: 'https://github.com/brave/brave-mcp-server',
-      description: 'Secure, local proxy-bypassing web crawler and semantic text extractor API node.',
-      tags: ['MCP', 'Web Crawler']
-    },
-    {
-      name: 'Local SQLite Analyzer',
-      url: 'https://github.com/mcp-community/sqlite-mcp-server',
-      description: 'Executes high-performance sqlite sandbox trace queries and schemas lookup.',
-      tags: ['MCP', 'Database']
-    }
-  ]);
-  const [skillRegistry, setSkillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([
-    {
-      name: 'Penetration Auditing',
-      repo: 'https://github.com/test-security/network-auditor',
-      capabilities: ['Intrusion Trace Audit', 'Port Handshake Map', 'Local Network Sniffing']
-    }
-  ]);
-  const [evaluationResult, setEvaluationResult] = useState<{
-    url: string;
-    name: string;
-    summary: string;
-    capabilities: string[];
-    moat: string;
-    bestUse: string;
-    type: 'MCP' | 'Skill';
-  } | null>(null);
+  const isEvaluating = false; // evaluation backend not yet available — do not enable
+  const [mcpRegistry] = useState<{name: string, url: string, description: string, tags: string[]}[]>([]); // no real MCP servers yet
+  const [skillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([]); // no real skill registry yet
+  const evaluationResult = null; // evaluation results disabled
 
-  const handleEvaluateRepository = (urlOrQuery: string) => {
-    if (!urlOrQuery.trim()) return;
-    setIsEvaluating(true);
-    setEvaluationResult(null);
-
-    const query = urlOrQuery.toLowerCase().trim();
-
-    setTimeout(() => {
-      let resultName = 'Custom Agent Workspace Spec';
-      let resultUrl = urlOrQuery;
-      let summary = 'Custom third-party integration analyzed via Sandboxed Engine. Perfect configuration matching found.';
-      let capabilities = [
-        'Automatic entry point injection',
-        'Payload compliance checking',
-        'Secured prompt routing schema'
-      ];
-      let moat = 'Dynamic authentication virtualization prevents API token leakage post-compilation.';
-      let bestUse = 'Ideal for equipping general Spawns with custom task runner protocols.';
-      let evaluatedType: 'MCP' | 'Skill' = 'MCP';
-
-      if (query.includes('gdrive') || query.includes('google drive') || query.includes('google-drive') || query.includes('workspace')) {
-        resultName = 'Google Drive Workspace Core';
-        resultUrl = 'https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive';
-        summary = 'Allows direct OAuth workspace document reads, deep hierarchical folder searches, and live-stream ingestion in Google Workspace formats.';
-        capabilities = [
-          'Workspace doc metadata sync & search indexing',
-          'Incremental chunk-by-chunk Sheet reader',
-          'Granular OAuth security access scopes validator'
-        ];
-        moat = 'Granular read-only token restriction layer, blocking server-side prompt injection attacks from overriding active live documents.';
-        bestUse = 'Enables Arslan Core to extract spreadsheet records and draft immediate automated briefs dynamically.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('git') || query.includes('github')) {
-        resultName = 'Git Workspace Controller';
-        resultUrl = 'https://github.com/mcp-community/git-mcp';
-        summary = 'Provides repository commit tree trace, atomic diff visualization, and auto-refactoring branches checkout tools directly within sandboxed workspace paths.';
-        capabilities = [
-          'Diff tree tracer with structural markdown preview',
-          'Branch auto-protection rules lock',
-          'Safe staged files cataloger with rollback memory'
-        ];
-        moat = 'Isolated file-system sandbox tracing, fully shielding the parent active operating system context from malicious checkout scripts.';
-        bestUse = 'Enables Huan/Hatchery sub-agents to draft layout revisions and write commits post-evaluation.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('brave') || query.includes('search') || query.includes('crawler') || query.includes('browser')) {
-        resultName = 'Brave Search Intelligence Node';
-        resultUrl = 'https://github.com/brave/brave-mcp-server';
-        summary = 'A specialized web query engine optimized for agents, providing secure high-performance web crawls and selector-based text extraction.';
-        capabilities = [
-          'Auto-bypassing bot-detection web index fetcher',
-          'Semantic HTML main text stripper layer',
-          'Localized news variance trend aggregator'
-        ];
-        moat = 'Advanced rate-limit handling and residential proxy rotating built to secure uninterrupted indexing.';
-        bestUse = 'Equips Aletheia with live financial news indexes across global web indices instantly.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('milvus') || query.includes('vector') || query.includes('rag')) {
-        resultName = 'Milvus Vector-Cache Connector';
-        resultUrl = 'https://github.com/milvus-io/milvus-mcp-server';
-        summary = 'A high-dimensional collection indexing node for storing long-term memory semantic layers securely and tracing cosine similarity vectors.';
-        capabilities = [
-          'Dynamic schema creator & metadata collection mapper',
-          'Cosine similarity metric trace lookups',
-          'RAG context payload optimizer'
-        ];
-        moat = 'Native cluster connection cache pools, reducing round-trip vector lookup hop latencies to less than 15ms.';
-        bestUse = 'Enables Arslan Memory registers to store deep historic logs in fully searchable vector slots.';
-        evaluatedType = 'MCP';
-      } else if (query.includes('postgres') || query.includes('sql') || query.includes('mysql') || query.includes('database')) {
-        resultName = 'Relational DB Smart Analyzer';
-        resultUrl = urlOrQuery.startsWith('http') ? urlOrQuery : 'https://github.com/mcp-community/postgres-server';
-        summary = 'Exposes database structure introspection, automated schema indexing, and analytical SQL tracer tools with secure execution limits.';
-        capabilities = [
-          'Automatic foreign-key trace mapper',
-          'Bounded analytical DML analyzer & schema checker',
-          'Transaction safety dry-run layer'
-        ];
-        moat = 'Active query limit capping and injection regex filtering, enabling safe read-only SQL generation for autonomous agents.';
-        bestUse = 'Enables background spawns to perform automated statistics aggregation on dynamic database clusters.';
-        evaluatedType = 'MCP';
-      } else {
-        let extractedName = 'Custom Repository Integration';
-        const parts = query.replace('https://', '').replace('github.com/', '').split('/');
-        if (parts.length > 1) {
-          extractedName = parts[parts.length - 1].split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        } else if (urlOrQuery) {
-          extractedName = urlOrQuery.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        }
-        
-        resultName = `${extractedName} Core`;
-        summary = `A verified ${extractedName} capability module analyzed on-chain. Fully compatible with Arslan dual-plane orchestration constraints.`;
-        capabilities = [
-          `Introspective ${extractedName} API communication connector`,
-          `Dynamic payload wrapper with schema-level validation`,
-          `High-throughput error handling diagnostic protocol`
-        ];
-        moat = `Strict sandbox encapsulation blocks execution of arbitrary runtime buffers to shield the workspace.`;
-        bestUse = `Enables Arslan Core to register ${extractedName} as an active specialty node on-demand.`;
-        evaluatedType = query.includes('mcp') || query.includes('server') ? 'MCP' : 'Skill';
-      }
-
-      setEvaluationResult({
-        url: resultUrl,
-        name: resultName,
-        summary,
-        capabilities,
-        moat,
-        bestUse,
-        type: evaluatedType
-      });
-      setIsEvaluating(false);
-    }, 900);
+  // Tool-Hub evaluation handlers are disabled — no MCP/discovery backend exists yet.
+  // Keeping stubs to avoid removing prop references from the render tree.
+  const handleEvaluateRepository = (_urlOrQuery: string) => {
+    // No-op: evaluation backend not yet available (即将推出)
   };
-
-  const handleAddToMCP = () => {
-    if (!evaluationResult) return;
-    if (mcpRegistry.some(m => m.name === evaluationResult.name)) return;
-
-    setMcpRegistry(prev => [
-      ...prev,
-      {
-        name: evaluationResult.name,
-        url: evaluationResult.url,
-        description: evaluationResult.summary,
-        tags: ['MCP', 'User Added']
-      }
-    ]);
-
-    if (setThreads && activeThreadId) {
-      const mcpMsg = {
-        id: `mcp-add-${Date.now()}`,
-        sender: 'arslan',
-        senderName: 'Arslan Core',
-        senderAvatar: '🦁',
-        text: `📥 **MCP Registry Updated:** Successfully registered **[${evaluationResult.name}]** into the active sandbox tool container pool. It is now standard authorized (🔓).`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setThreads(prevThreads => prevThreads.map(t => {
-        if (t.id === activeThreadId) {
-          return { ...t, history: [...t.history, mcpMsg] };
-        }
-        return t;
-      }));
-    }
-  };
-
-  const handleAddToSkill = () => {
-    if (!evaluationResult) return;
-    if (skillRegistry.some(s => s.name === evaluationResult.name)) return;
-
-    setSkillRegistry(prev => [
-      ...prev,
-      {
-        name: evaluationResult.name,
-        repo: evaluationResult.url,
-        capabilities: evaluationResult.capabilities
-      }
-    ]);
-
-    if (setThreads && activeThreadId) {
-      const skillMsg = {
-        id: `skill-add-${Date.now()}`,
-        sender: 'arslan',
-        senderName: 'Arslan Core',
-        senderAvatar: '🦁',
-        text: `🛡️ **Capabilities Ledger Expanded:** Added Skillset **[${evaluationResult.name}]** to specialized skill registers.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setThreads(prevThreads => prevThreads.map(t => {
-        if (t.id === activeThreadId) {
-          return { ...t, history: [...t.history, skillMsg] };
-        }
-        return t;
-      }));
-    }
-  };
-
-  const handleSynthesizeSpawn = () => {
-    if (!evaluationResult) return;
-    
-    const newId = `spawn-new-${Date.now()}`;
-    const nameStr = evaluationResult.name === 'Custom Repository Integration Core' 
-      ? 'Arbitrage' 
-      : evaluationResult.name.split(' ')[0] + ' Bot';
-
-    const newSpawn: Spawn = {
-      id: newId,
-      name: nameStr,
-      domain: `Integration Node: ${evaluationResult.name}`,
-      description: evaluationResult.summary,
-      status: 'idle',
-      avatarEmoji: '⚡',
-      tools: ['web-search'],
-      skills: ['infographic-design'],
-      totalTasks: 0
-    };
-
-    if (setSpawns) {
-      setSpawns(prev => [...prev, newSpawn]);
-    }
-
-    if (setSpawnChats) {
-      setSpawnChats(prev => ({
-        ...prev,
-        [newId]: [
-          {
-            id: `sc-init-${Date.now()}`,
-            sender: 'spawn',
-            senderName: nameStr,
-            senderAvatar: '⚡',
-            text: `🤖 **Direct specialist socket established via dynamically evaluated repository.**\nI am **${nameStr}**, synchronized with dynamic skill capabilities: [${evaluationResult.name}]. Send tasks to aggregate data!`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]
-      }));
-    }
-
-    if (setThreads && activeThreadId) {
-      const synthMsg = {
-        id: `synth-act-${Date.now()}`,
-        sender: 'arslan',
-        senderName: 'Arslan Core',
-        senderAvatar: '🦁',
-        text: `✨ **Gateway Synthesizer Handshake:** Dynamic specialist spawn successfully compiled and registered!\n\n**Specialist Name:** ${nameStr}\n**Active Skill:** ${evaluationResult.name}\n**Endpoint Hook:** *${evaluationResult.url}*.\n\nNow available in Spawns registry.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        spawnIntro: {
-          name: nameStr,
-          avatarEmoji: '⚡',
-          domain: `Integration: ${evaluationResult.name}`,
-          tools: ['web-search'],
-          skills: ['infographic-design']
-        }
-      };
-
-      setThreads(prevThreads => prevThreads.map(t => {
-        if (t.id === activeThreadId) {
-          return {
-            ...t,
-            history: [...t.history, synthMsg]
-          };
-        }
-        return t;
-      }));
-    }
-  };
+  const handleAddToMCP = () => { /* coming soon */ };
+  const handleAddToSkill = () => { /* coming soon */ };
+  const handleSynthesizeSpawn = () => { /* coming soon */ };
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#0d0f15] p-8 select-none relative">
@@ -393,191 +130,66 @@ export default function SpawnsDashboard({
       </div>
 
       {/* Global Integration Discovery & Repository Engine (Tool-Hub) */}
-      <div className="bg-[#121622]/40 border border-[#23293a] rounded-2xl p-6 mb-8 transition-all z-10 select-text">
+      {/* NOTE: MCP/discovery backend does not exist yet — kept as visual shell, actions disabled */}
+      <div className="bg-[#121622]/40 border border-[#23293a] rounded-2xl p-6 mb-8 transition-all z-10 select-text opacity-70">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#FF8E24]/10 border border-[#FF8E24]/30 flex items-center justify-center text-sm transition-colors shadow-inner shadow-black/40">
-              <Globe className="w-5 h-5 text-[#FF8E24] animate-spin" style={{ animationDuration: '8s' }} />
+              <Globe className="w-5 h-5 text-[#FF8E24]" />
             </div>
             <div>
-              <h3 className="font-sans font-bold text-sm text-white tracking-wide">
-                Global Integration Discovery & Repository Engine <span className="text-gray-500 font-normal text-xs ml-1">(Tool-Hub / 全局工具集成发现与评估引擎)</span>
-              </h3>
-              <p className="text-[11.5px] text-gray-400 font-sans mt-0.5">
-                Input public repository paths to dynamically analyze engineering defensive moats, check integration payload compliance, and instantiate customized spawns instantly.
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-sans font-bold text-sm text-white tracking-wide">
+                  Global Integration Discovery & Repository Engine <span className="text-gray-500 font-normal text-xs ml-1">(Tool-Hub / 全局工具集成发现与评估引擎)</span>
+                </h3>
+                <span className="text-[8px] font-mono bg-gray-800/80 text-gray-400 border border-gray-700/50 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">即将推出 / Coming Soon</span>
+              </div>
+              <p className="text-[11.5px] text-gray-500 font-sans mt-0.5">
+                MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.
               </p>
             </div>
           </div>
-          
+
           <button
             onClick={() => setShowSandboxSearch(!showSandboxSearch)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121622]/90 hover:bg-[#1e2330] text-gray-300 hover:text-white rounded-lg border border-[#23293a] transition-all cursor-pointer text-xs font-medium font-sans"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121622]/90 hover:bg-[#1e2330] text-gray-400 rounded-lg border border-[#23293a] transition-all cursor-pointer text-xs font-medium font-sans"
           >
-            <span>{showSandboxSearch ? 'Collapse Tool Hub' : 'Expand Tool Hub'}</span>
+            <span>{showSandboxSearch ? 'Collapse' : 'Expand'}</span>
             {showSandboxSearch ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
 
         {showSandboxSearch && (
-          <div className="mt-5 space-y-4 animate-fade-in border-t border-[#1e2330]/40 pt-4">
+          <div className="mt-5 space-y-4 border-t border-[#1e2330]/40 pt-4">
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-500" />
+                <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-600" />
                 <input
                   type="text"
-                  placeholder="Insert GitHub address or capability keyword (e.g., https://github.com/brave/brave-mcp-server)..."
+                  placeholder="MCP/tool discovery — 即将推出 / coming soon..."
                   value={integrationQuery}
                   onChange={(e) => setIntegrationQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleEvaluateRepository(integrationQuery);
-                  }}
-                  className="w-full bg-[#07090d] border border-[#23293a] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-[#FF8E24]/50 transition-all font-sans"
+                  disabled
+                  className="w-full bg-[#07090d] border border-[#1e2330]/60 rounded-xl pl-10 pr-4 py-2.5 text-xs text-gray-600 placeholder-gray-700 cursor-not-allowed transition-all font-sans"
                 />
               </div>
               <button
-                onClick={() => handleEvaluateRepository(integrationQuery)}
-                disabled={isEvaluating}
-                className="px-5 py-2.5 bg-[#FF8E24]/10 hover:bg-[#FF8E24] hover:text-black border border-[#FF8E24]/30 text-[#FF8E24] text-xs font-bold font-mono uppercase rounded-xl transition-all flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                disabled
+                title="即将推出 / Coming soon — evaluation backend not yet available"
+                className="px-5 py-2.5 bg-[#0e1018]/60 border border-[#1e2330]/40 text-gray-600 text-xs font-bold font-mono uppercase rounded-xl flex items-center gap-1 shrink-0 cursor-not-allowed opacity-50"
               >
-                {isEvaluating ? (
-                  <>
-                    <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Analyzing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span>Evaluate Spec</span>
-                  </>
-                )}
+                <Cpu className="w-3.5 h-3.5" />
+                <span>Evaluate Spec</span>
               </button>
             </div>
 
-            {/* Quick Presets */}
-            <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-gray-500 select-none">
-              <span className="text-gray-600">Quick Sandbox Presets:</span>
-              <button 
-                onClick={() => {
-                  setIntegrationQuery('https://github.com/brave/brave-mcp-server');
-                  handleEvaluateRepository('https://github.com/brave/brave-mcp-server');
-                }}
-                className="px-2 py-0.5 rounded bg-white/[0.02] border border-[#1e2330] hover:border-[#FF8E24]/50 hover:text-white transition-colors"
-              >
-                Brave-MCP
-              </button>
-              <button 
-                onClick={() => {
-                  setIntegrationQuery('https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive');
-                  handleEvaluateRepository('https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive');
-                }}
-                className="px-2 py-0.5 rounded bg-white/[0.02] border border-[#1e2330] hover:border-[#FF8E24]/50 hover:text-white transition-colors"
-              >
-                GDrive-Workspace
-              </button>
-              <button 
-                onClick={() => {
-                  setIntegrationQuery('https://github.com/postgres-server');
-                  handleEvaluateRepository('https://github.com/postgres-server');
-                }}
-                className="px-2 py-0.5 rounded bg-white/[0.02] border border-[#1e2330] hover:border-[#FF8E24]/50 hover:text-white transition-colors"
-              >
-                PostgreSQL-Analyzer
-              </button>
-              <button 
-                onClick={() => {
-                  setIntegrationQuery('https://github.com/milvus-io/milvus-mcp-server');
-                  handleEvaluateRepository('https://github.com/milvus-io/milvus-mcp-server');
-                }}
-                className="px-2 py-0.5 rounded bg-white/[0.02] border border-[#1e2330] hover:border-[#FF8E24]/50 hover:text-white transition-colors"
-              >
-                Milvus-RAG
-              </button>
+            {/* Quick Presets — disabled */}
+            <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-gray-600 select-none opacity-50">
+              <span>Quick Presets (coming soon):</span>
+              {['Brave-MCP', 'GDrive-Workspace', 'PostgreSQL-Analyzer', 'Milvus-RAG'].map(label => (
+                <span key={label} className="px-2 py-0.5 rounded bg-white/[0.01] border border-[#1e2330]/40 text-gray-700 cursor-not-allowed">{label}</span>
+              ))}
             </div>
-
-            {/* Scanning / Term State */}
-            {isEvaluating && (
-              <div className="bg-black/50 border border-orange-500/10 rounded-xl p-4 font-mono text-[10px] space-y-2 text-orange-500/70 animate-pulse">
-                <p>≫ [SANDBOX CLONER ACTIVATED] Parsing source code layout structures...</p>
-                <p>≫ Running abstract syntax trees audits for potential prompt vulnerability paths...</p>
-                <p>≫ Matching core API endpoints configurations against active MCP specs...</p>
-              </div>
-            )}
-
-            {/* Assessment result detail card */}
-            {evaluationResult && (
-              <div className="bg-[#0b0c13] border border-[#FF8E24]/15 rounded-xl p-5 space-y-4 animate-fade-in shadow-lg relative overflow-hidden">
-                <div className="absolute top-0 right-0 px-2.5 py-1 bg-gradient-to-l from-[#FF8E24]/15 to-transparent border-bl border-[#FF8E24]/20 rounded-bl text-[9.5px] font-mono text-[#FF8E24] uppercase tracking-wider font-semibold">
-                  Specification Assessment PASSED
-                </div>
-
-                <div className="flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-lg bg-orange-500/5 border border-[#FF8E24]/20 flex items-center justify-center text-[#FF8E24] shrink-0">
-                    {evaluationResult.type === 'MCP' ? <Database className="w-5 h-5 animate-pulse" /> : <BookOpen className="w-5 h-5 animate-pulse" />}
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-white font-sans">{evaluationResult.name}</h4>
-                      <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold uppercase tracking-wider bg-orange-950/40 border border-[#FF8E24]/30 text-[#FF8E24]">
-                        {evaluationResult.type} Node
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-gray-500 font-mono truncate">{evaluationResult.url}</p>
-                  </div>
-                </div>
-
-                {/* Grid analytics info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-sans pb-3 border-b border-[#1e2330]/50 pt-1">
-                  <div>
-                    <span className="text-gray-500 block text-[10px] uppercase font-mono tracking-wider">Functional Summary</span>
-                    <p className="text-gray-300 mt-1 leading-relaxed text-[11px]">{evaluationResult.summary}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block text-[10px] uppercase font-mono tracking-wider">🛠️ Core Capabilities</span>
-                    <ul className="text-gray-300 mt-1 space-y-1 text-[11px] list-disc list-inside">
-                      {evaluationResult.capabilities.map((cap, i) => (
-                        <li key={i}>{cap}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block text-[10px] uppercase font-mono tracking-wider">🛡️ Defensive Moats / 技术护城河</span>
-                    <p className="text-gray-400 mt-1 leading-relaxed text-[11px] italic">{evaluationResult.moat}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block text-[10px] uppercase font-mono tracking-wider">🎯 Ideal Synergy Scenario / 协同场景</span>
-                    <p className="text-gray-300 mt-1 leading-relaxed text-[11px]">{evaluationResult.bestUse}</p>
-                  </div>
-                </div>
-
-                {/* Operations buttons bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs select-none">
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      onClick={handleAddToMCP}
-                      className="px-3.5 py-2 bg-white/[0.02] border border-[#23293a] hover:border-emerald-500/30 hover:text-emerald-400 rounded-lg text-[11px] font-mono text-gray-300 transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>{mcpRegistry.some(m => m.name === evaluationResult.name) ? '📥 Registered in Tool-Hub' : '📥 Add to MCP Registry / 注册到MCP库'}</span>
-                    </button>
-                    <button
-                      onClick={handleAddToSkill}
-                      className="px-3.5 py-2 bg-white/[0.02] border border-[#23293a] hover:border-blue-500/30 hover:text-blue-400 rounded-lg text-[11px] font-mono text-gray-300 transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
-                    >
-                      <Shield className="w-3.5 h-3.5 text-blue-500" />
-                      <span>{skillRegistry.some(s => s.name === evaluationResult.name) ? '🛡️ Skill Saved' : '🛡️ Add to Active Skills / 绑定到Skill库'}</span>
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={handleSynthesizeSpawn}
-                    className="px-4 py-2 bg-[#FF8E24] hover:bg-[#ff9c3a] text-black text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1.5 shadow-lg shadow-orange-500/10 cursor-pointer animate-pulse"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>One-click Spawn Synthesis / 一键复刻分身合成</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
