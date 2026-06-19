@@ -7,6 +7,10 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
+      // Keep symlinked paths (src/node_modules are symlinks in the clean-vite
+      // staging dir); otherwise Vite dev resolves them back into the repo tree
+      // and fails to load the entry module / breaks Tailwind's clean scan.
+      preserveSymlinks: true,
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
