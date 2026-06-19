@@ -68,9 +68,9 @@ export interface Spawn {
 }
 
 export interface AppSettings {
-  llmProvider: 'gemini' | 'openai' | 'anthropic';
+  llmProvider: string;
   llmModel: string;
-  searchProvider: 'google-serp' | 'tavily' | 'bing';
+  searchProvider: string;
   apiKeyLLM: string;
   apiKeySearch: string;
   language: string;

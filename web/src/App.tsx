@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { INITIAL_CHAT_HISTORY, DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
-import { toUiSpawn } from './api/adapters';
+import { api } from './api/client';
+import { toUiSpawn, toUiSettings } from './api/adapters';
+import type { ProviderOption } from './api/client.types';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import SpawnDirectChat from './components/SpawnDirectChat';
@@ -109,13 +111,32 @@ export default function App() {
   const [spawns, setSpawns] = useState<Spawn[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
-  // Stage B: wire Spawns Ledger to live backend on mount
+  // Stage B: provider/search-provider catalogs for Settings dropdowns (live from backend)
+  const [llmProviders, setLlmProviders] = useState<ProviderOption[]>([]);
+  const [searchProviders, setSearchProviders] = useState<string[]>([]);
+
+  // Stage B: wire Spawns Ledger and Settings to live backend on mount
   useEffect(() => {
+    // Load spawns
     const store = useSpawnStore.getState();
     store.load().then(() => {
       const liveSpawns = useSpawnStore.getState().spawns.map(toUiSpawn);
       setSpawns(liveSpawns);
     });
+
+    // Load settings from backend; merge into UI state, preserving UI-only fields
+    api.getSettings().then((backendSettings) => {
+      const mapped = toUiSettings(backendSettings);
+      setSettings((prev) => ({ ...prev, ...mapped }));
+    }).catch(() => {
+      // backend unavailable — keep DEFAULT_SETTINGS
+    });
+
+    // Load LLM provider catalog
+    api.listProviders().then(setLlmProviders).catch(() => {});
+
+    // Load search provider catalog
+    api.listSearchProviders().then(setSearchProviders).catch(() => {});
   }, []);
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
@@ -490,6 +511,8 @@ export default function App() {
               <SettingsScreen
                 settings={settings}
                 setSettings={setSettings}
+                llmProviders={llmProviders}
+                searchProviders={searchProviders}
               />
             )}
           </div>

@@ -1,28 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
-import { 
-  Key, Sliders, Globe, Cpu, Check, Eye, EyeOff, Save,
-  Database, Info, AlertCircle, Sparkles
+import type { ProviderOption } from '../api/client.types';
+import { api } from '../api/client';
+import { toBackendSettings } from '../api/adapters';
+import {
+  Key, Sliders, Globe, Check, Eye, EyeOff, Save,
+  Info, AlertCircle
 } from 'lucide-react';
 
 interface SettingsScreenProps {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
+  llmProviders: ProviderOption[];
+  searchProviders: string[];
 }
 
-export default function SettingsScreen({ settings, setSettings }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders }: SettingsScreenProps) {
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showLLMKey, setShowLLMKey] = useState(false);
   const [showSearchKey, setShowSearchKey] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  // Sync local form when parent settings update (e.g. after initial backend fetch)
+  useEffect(() => {
+    setLocalSettings((prev) => ({ ...prev, ...settings }));
+  }, [settings]);
+
+  // When provider changes, auto-populate the default model for that provider
+  const handleProviderChange = (providerKey: string) => {
+    const found = llmProviders.find((p) => p.key === providerKey);
+    setLocalSettings((prev) => ({
+      ...prev,
+      llmProvider: providerKey,
+      llmModel: found?.default_model ?? prev.llmModel,
+    }));
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSettings(localSettings);
-    setIsSaved(true);
-    setTimeout(() => {
-      setIsSaved(false);
-    }, 2000);
+    setSaveError(null);
+    try {
+      const backendBody = toBackendSettings(localSettings);
+      await api.updateSettings(backendBody);
+      setSettings(localSettings);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
+    }
   };
 
   return (
@@ -122,12 +148,17 @@ export default function SettingsScreen({ settings, setSettings }: SettingsScreen
               <select
                 id="settings-llm-provider"
                 value={localSettings.llmProvider}
-                onChange={(e: any) => setLocalSettings(prev => ({ ...prev, llmProvider: e.target.value }))}
+                onChange={(e) => handleProviderChange(e.target.value)}
                 className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
               >
-                <option value="gemini">Google Gemini AI Studio (Native Engine)</option>
-                <option value="openai">OpenAI (GPT-4o / Realtime Socket)</option>
-                <option value="anthropic">Claude Anthropic (3.5 Sonnet Router)</option>
+                {llmProviders.length === 0 && (
+                  <option value={localSettings.llmProvider}>{localSettings.llmProvider || 'Loading...'}</option>
+                )}
+                {llmProviders.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label}{p.native ? ' (Native)' : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -157,12 +188,15 @@ export default function SettingsScreen({ settings, setSettings }: SettingsScreen
               <select
                 id="settings-search-provider"
                 value={localSettings.searchProvider}
-                onChange={(e: any) => setLocalSettings(prev => ({ ...prev, searchProvider: e.target.value }))}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, searchProvider: e.target.value }))}
                 className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
               >
-                <option value="tavily">Tavily Search API (Developer Index)</option>
-                <option value="google-serp">Google Search Grounding socket</option>
-                <option value="bing">Bing Cognitive Services</option>
+                {searchProviders.length === 0 && (
+                  <option value={localSettings.searchProvider}>{localSettings.searchProvider || 'Loading...'}</option>
+                )}
+                {searchProviders.map((key) => (
+                  <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
+                ))}
               </select>
             </div>
 
@@ -259,8 +293,17 @@ export default function SettingsScreen({ settings, setSettings }: SettingsScreen
         {/* Footer actions bar */}
         <div className="flex select-none items-center justify-between pt-4 border-t border-[#1e2330]/60 text-[10.5px] font-mono text-gray-500">
           <div className="flex items-center gap-1.5 matches">
-            <Info className="w-4 h-4 text-gray-600" />
-            <span>Diagnostics confirm hardware configurations match system boundaries.</span>
+            {saveError ? (
+              <>
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                <span className="text-red-400">{saveError}</span>
+              </>
+            ) : (
+              <>
+                <Info className="w-4 h-4 text-gray-600" />
+                <span>Diagnostics confirm hardware configurations match system boundaries.</span>
+              </>
+            )}
           </div>
 
           <button
