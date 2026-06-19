@@ -4,8 +4,9 @@ import {
   AlertTriangle, CheckCircle2, XOctagon, Clock,
   Layers, CornerDownRight,
   Cpu, X, Send, ChevronDown,
-  Plus
+  Plus, RefreshCcw
 } from 'lucide-react';
+import { getIcon } from './iconMap';
 import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
@@ -299,7 +300,8 @@ export default function OrchestratorChat({
                 <div className="flex items-center gap-2">
                   {/* Model Choice indicator */}
                   <div className="flex items-center gap-1 bg-black/40 hover:bg-black/60 px-2.5 py-1 rounded-full border border-gray-800 text-[10px] font-mono text-gray-400 hover:text-gray-200 cursor-pointer transition-colors max-w-[130px] sm:max-w-none truncate">
-                    <span>🦁 Arslan v4.8 High</span>
+                    <Cpu className="w-3 h-3 text-[#FF8E24]" />
+                    <span className="ml-0.5">Arslan v4.8 High</span>
                     <ChevronDown className="w-3 h-3 text-gray-500" />
                   </div>
 
@@ -458,28 +460,28 @@ export default function OrchestratorChat({
                         <div className="space-y-2">
                           <div className="text-[10px] text-gray-500 font-mono font-medium tracking-wide uppercase">Equipped Capabilities:</div>
                           <div className="flex flex-wrap gap-1.5">
-                            {/* Render Tool tags with 🔧 */}
+                            {/* Render Tool tags with lucide icon */}
                             {msg.spawnIntro.tools.map(toolId => {
                               const toolMeta = TOOLS.find(t => t.id === toolId);
                               return (
-                                <span 
+                                <span
                                   key={toolId}
                                   className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-[#161a29] text-gray-300 px-2 py-0.8 rounded-lg border border-[#232a3e] hover:border-[#FF8E24]/30 transition-all hover:text-white"
                                 >
-                                  <span>🔧</span>
+                                  {getIcon(toolId, 'w-3 h-3')}
                                   <span className="font-semibold">{toolMeta?.name || toolId}</span>
                                 </span>
                               );
                             })}
-                            {/* Render Skill tags with 📘 */}
+                            {/* Render Skill tags with lucide icon */}
                             {msg.spawnIntro.skills.map(skillId => {
                               const skillMeta = SKILLS.find(s => s.id === skillId);
                               return (
-                                <span 
+                                <span
                                   key={skillId}
                                   className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-amber-950/10 text-amber-500 px-2 py-0.8 rounded-lg border border-amber-950/40 hover:border-amber-500/30 transition-all"
                                 >
-                                  <span>📘</span>
+                                  {getIcon(skillId, 'w-3 h-3')}
                                   <span className="font-semibold">{skillMeta?.name || skillId}</span>
                                 </span>
                               );
@@ -495,10 +497,11 @@ export default function OrchestratorChat({
                         {/* Header bar */}
                         <div className="bg-[#0b0d14] px-4 py-2.5 flex items-center justify-between border-b border-[#1e2436] select-none">
                           <div className="flex items-center gap-2">
-                            <span className="animate-spin text-[#FF8E24]">🌀</span>
+                            <RefreshCcw className="animate-spin w-3.5 h-3.5 text-[#FF8E24]" />
                             <span className="font-mono text-gray-400">Tool Socket actively engaged:</span>
                             <span className="flex items-center gap-1 bg-[#FF8E24]/15 text-[#FF8E24] px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold tracking-wider border border-[#FF8E24]/10">
-                              {msg.toolActivity.emoji} {msg.toolActivity.toolName}
+                              {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
+                              {msg.toolActivity.toolName}
                             </span>
                           </div>
                           <button 
@@ -650,7 +653,10 @@ export default function OrchestratorChat({
                   {msg.toolActivity && (
                     <div className="mt-4 border-2 border-amber-500 bg-[#07090e] p-3 text-[11px] font-mono">
                       <div className="text-amber-500 font-bold uppercase pb-1 border-b border-amber-500/20 flex justify-between items-center">
-                        <span>🔧 EXECUTING SOCKET ACTIVITY: {msg.toolActivity.toolName.toUpperCase()}</span>
+                        <span className="flex items-center gap-1.5">
+                          <Wrench className="w-3 h-3" />
+                          EXECUTING SOCKET ACTIVITY: {msg.toolActivity.toolName.toUpperCase()}
+                        </span>
                         <span className="text-[9px] bg-amber-500 text-black px-1">RUNNING</span>
                       </div>
                       
@@ -835,7 +841,7 @@ export default function OrchestratorChat({
           {/* Sandbox Top Header */}
           <div className="h-[52px] border-b border-[#1e2330] px-4.5 bg-[#0a0c10]/80 backdrop-blur flex items-center justify-between select-none shrink-0">
             <div className="flex items-center gap-2.5">
-              <span className="text-lg">{spawn.avatarEmoji}</span>
+              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-5 h-5 text-[#FF8E24]" />
               <div>
                 <div className="flex items-center gap-1.5 leading-none">
                   <span className="text-xs font-bold text-white font-sans">{spawn.name}</span>
@@ -858,8 +864,8 @@ export default function OrchestratorChat({
 
           {/* Sandbox Content: Coming Soon — dispatch + draft backend not yet wired */}
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 select-none">
-            <div className="w-12 h-12 rounded-xl bg-amber-950/20 border border-amber-500/20 flex items-center justify-center text-2xl">
-              {spawn.avatarEmoji}
+            <div className="w-12 h-12 rounded-xl bg-amber-950/20 border border-amber-500/20 flex items-center justify-center">
+              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-6 h-6 text-amber-500" />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-center gap-2">

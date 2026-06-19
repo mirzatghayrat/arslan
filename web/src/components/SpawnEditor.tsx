@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
-import { 
-  ArrowLeft, Sliders, Wrench, BookOpen, Lock, 
+import {
+  ArrowLeft, Sliders, Wrench, BookOpen, Lock,
   Check, Save, RefreshCw, Sparkles, Volume2, ShieldAlert
 } from 'lucide-react';
 import SFSymbol from './SFSymbol';
+import { getIcon } from './iconMap';
 
 interface SpawnEditorProps {
   spawnId: string;
@@ -174,7 +175,9 @@ export default function SpawnEditor({
                   }`}
                 >
                   <div className="flex items-start gap-3 flex-1 pr-4">
-                    <span className="text-2xl pt-0.5 select-none">{tool.emoji}</span>
+                    <span className="pt-0.5 select-none flex items-center">
+                      {getIcon(tool.id, 'w-5 h-5 text-gray-300')}
+                    </span>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold text-white font-sans">{tool.name}</h4>
@@ -245,7 +248,9 @@ export default function SpawnEditor({
                   }`}
                 >
                   <div className="flex items-start gap-3 flex-1 pr-4">
-                    <span className="text-2xl pt-0.5 select-none">{skill.emoji}</span>
+                    <span className="pt-0.5 select-none flex items-center">
+                      {getIcon(skill.id, 'w-5 h-5 text-amber-400')}
+                    </span>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold text-white font-sans">{skill.name}</h4>

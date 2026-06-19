@@ -1,8 +1,9 @@
 import React from 'react';
-import { 
-  TrendingUp, Sparkles, Cpu, CircleUser, Bot, Wrench, 
-  Settings, HelpCircle, Terminal, FileText, Paintbrush, 
-  Lock, Briefcase, Network, Layers, ShieldCheck, HardDrive, AlertTriangle, Play, RefreshCcw, Box
+import {
+  TrendingUp, Sparkles, Cpu, CircleUser, Bot, Wrench,
+  Settings, HelpCircle, Terminal, FileText, Paintbrush,
+  Lock, Briefcase, Network, Layers, ShieldCheck, HardDrive, AlertTriangle, Play, RefreshCcw, Box,
+  Search, Palette, Mail, Database, PenLine, BarChart3, BookOpen, LineChart, Shield, Brain
 } from 'lucide-react';
 
 interface SFSymbolProps {
@@ -20,7 +21,7 @@ export default function SFSymbol({ nameOrEmoji, className = "w-4 h-4" }: SFSymbo
     case 'aletheia':
     case 'spawn-aletheia':
       return <TrendingUp className={`${className} text-[#FF8E24]`} />;
-      
+
     case '🐱':
     case 'huan':
     case 'spawn-huan':
@@ -65,7 +66,7 @@ export default function SFSymbol({ nameOrEmoji, className = "w-4 h-4" }: SFSymbo
     case 'design':
     case 'paint':
     case '🎨':
-      return <Paintbrush className={className} />;
+      return <Palette className={className} />;
 
     case 'lock':
     case 'secure':
@@ -108,6 +109,54 @@ export default function SFSymbol({ nameOrEmoji, className = "w-4 h-4" }: SFSymbo
 
     case 'refresh':
     case '🔄':
+      return <RefreshCcw className={className} />;
+
+    // Tool-id emoji coverage
+    case '🔍':
+    case 'web-search':
+      return <Search className={className} />;
+
+    case '📈':
+    case 'stock-data':
+      return <TrendingUp className={className} />;
+
+    case '🐍':
+    case 'py-exec':
+      return <Terminal className={className} />;
+
+    case '📧':
+    case 'gmail-broker':
+      return <Mail className={className} />;
+
+    case '🧱':
+    case 'spanner-db':
+      return <Database className={className} />;
+
+    // Skill-id emoji coverage
+    case '✍️':
+    case 'seo-opt':
+      return <PenLine className={className} />;
+
+    case '📊':
+    case 'financial-res':
+      return <BarChart3 className={className} />;
+
+    case '📘':
+    case 'infographic-design':
+      return <BookOpen className={className} />;
+
+    case '📉':
+    case 'stat-analysis':
+      return <LineChart className={className} />;
+
+    case '🧠':
+      return <Brain className={className} />;
+
+    case 'vuln-test':
+      return <Shield className={className} />;
+
+    // Animated spinner — render as static refresh icon (spinning is applied by CSS when needed)
+    case '🌀':
       return <RefreshCcw className={className} />;
 
     default:

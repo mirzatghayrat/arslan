@@ -5,6 +5,7 @@ import {
   Sliders, Wrench, BookOpen, Clock, Activity, ArrowUpRight, Shield, Cpu,
   ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X, WifiOff
 } from 'lucide-react';
+import { getIcon } from './iconMap';
 import { motion, AnimatePresence } from 'motion/react';
 import SFSymbol from './SFSymbol';
 import type { BackendStatus } from '../hooks/useBackendStatus';
@@ -290,7 +291,7 @@ export default function SpawnsDashboard({
                         const meta = TOOLS.find(t => t.id === id);
                         return (
                           <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-[#161a29] text-gray-300 px-2 py-0.5 rounded-md border border-[#232a3e]">
-                            <span>🔧</span> {meta?.name || id}
+                            {getIcon(id, 'w-3 h-3')} {meta?.name || id}
                           </span>
                         );
                       })}
@@ -298,7 +299,7 @@ export default function SpawnsDashboard({
                         const meta = SKILLS.find(s => s.id === id);
                         return (
                           <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-amber-950/10 text-amber-500 px-2 py-0.5 rounded-md border border-amber-950/30">
-                            <span>📘</span> {meta?.name || id}
+                            {getIcon(id, 'w-3 h-3')} {meta?.name || id}
                           </span>
                         );
                       })}
@@ -376,8 +377,8 @@ export default function SpawnsDashboard({
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
                       {spawn.tools.map(id => (
-                        <div key={id} className="text-[10px] border border-gray-800 bg-black/40 p-1 text-gray-300">
-                          ⚙️ {id.toUpperCase()}
+                        <div key={id} className="text-[10px] border border-gray-800 bg-black/40 p-1 text-gray-300 flex items-center gap-1">
+                          {getIcon(id, 'w-3 h-3')} {id.toUpperCase()}
                         </div>
                       ))}
                     </div>
@@ -436,9 +437,9 @@ export default function SpawnsDashboard({
                     {/* Equipment tags and action button */}
                     <div className="flex items-center gap-3.5 w-full sm:w-auto shrink-0 justify-end">
                       <div className="hidden md:flex flex-wrap items-center gap-2 text-[10px] text-gray-500 font-mono">
-                        <span>🔧 {spawn.tools.length} tools</span>
+                        <span className="flex items-center gap-1"><Wrench className="w-3 h-3" /> {spawn.tools.length} tools</span>
                         <span>•</span>
-                        <span>📘 {spawn.skills.length} skills</span>
+                        <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" /> {spawn.skills.length} skills</span>
                         <span>•</span>
                         <span className="text-emerald-400 font-bold uppercase tracking-wider select-none">● active</span>
                       </div>
@@ -509,10 +510,12 @@ export default function SpawnsDashboard({
                                   </div>
                                 ) : (
                                   spawn.tools.map(tId => {
-                                    const tool = TOOLS.find(t => t.id === tId) || { name: tId, emoji: '🔧', description: 'Raw custom tool instruction.' };
+                                    const tool = TOOLS.find(t => t.id === tId) || { name: tId, description: 'Raw custom tool instruction.' };
                                     return (
                                       <div key={tId} className="flex items-start gap-2.5 p-2 bg-black/20 border border-white/[0.02] rounded-lg">
-                                        <span className="text-xs p-1 bg-white/[0.03] border border-white/[0.04] rounded-md">{tool.emoji}</span>
+                                        <span className="p-1 bg-white/[0.03] border border-white/[0.04] rounded-md flex items-center justify-center">
+                                          {getIcon(tId, 'w-3.5 h-3.5 text-gray-300')}
+                                        </span>
                                         <div>
                                           <h4 className="text-[10.5px] font-bold text-white">{tool.name}</h4>
                                           <p className="text-[9.5px] text-gray-400 font-sans mt-0.5 leading-relaxed">{tool.description}</p>
@@ -535,10 +538,12 @@ export default function SpawnsDashboard({
                                     </div>
                                   ) : (
                                     spawn.skills.map(sId => {
-                                      const skill = SKILLS.find(s => s.id === sId) || { name: sId, emoji: '📘', description: 'Raw custom skill instruction context.' };
+                                      const skill = SKILLS.find(s => s.id === sId) || { name: sId, description: 'Raw custom skill instruction context.' };
                                       return (
                                         <div key={sId} className="flex items-start gap-2.5 p-2 bg-black/20 border border-white/[0.02] rounded-lg">
-                                          <span className="text-xs p-1 bg-amber-500/5 border border-amber-500/10 text-amber-500 rounded-md">{skill.emoji}</span>
+                                          <span className="p-1 bg-amber-500/5 border border-amber-500/10 text-amber-500 rounded-md flex items-center justify-center">
+                                            {getIcon(sId, 'w-3.5 h-3.5 text-amber-500')}
+                                          </span>
                                           <div>
                                             <h4 className="text-[10.5px] font-bold text-amber-500">{skill.name}</h4>
                                             <p className="text-[9.5px] text-gray-400 font-sans mt-0.5 leading-relaxed">{skill.description}</p>

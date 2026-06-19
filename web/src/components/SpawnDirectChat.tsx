@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Send, Sparkles, Terminal, Wrench, BookOpen, 
+import {
+  Send, Sparkles, Terminal, Wrench, BookOpen,
   Cpu, CheckCircle2, Clock, Play, User, RefreshCcw, Info
 } from 'lucide-react';
 import { Message, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
+import { getIcon } from './iconMap';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -145,19 +146,19 @@ export default function SpawnDirectChat({
           {/* Capabilities Badges */}
           <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto pt-1">
             {spawn.tools.map(tId => {
-              const tool = TOOLS.find(t => t.id === tId) || { name: tId, emoji: '🔧' };
+              const tool = TOOLS.find(t => t.id === tId) || { name: tId };
               return (
                 <span key={tId} className="px-2 py-0.8 bg-[#181a28] border border-[#23293e] text-[10px] font-mono text-gray-300 rounded-lg flex items-center gap-1">
-                  <span>{tool.emoji}</span>
+                  {getIcon(tId, 'w-3 h-3')}
                   <span>{tool.name}</span>
                 </span>
               );
             })}
             {spawn.skills.map(sId => {
-              const skill = SKILLS.find(s => s.id === sId) || { name: sId, emoji: '📘' };
+              const skill = SKILLS.find(s => s.id === sId) || { name: sId };
               return (
                 <span key={sId} className="px-2 py-0.8 bg-[#1f1a14] border border-[#3e2e1e] text-[10px] font-mono text-amber-500 rounded-lg flex items-center gap-1">
-                  <span>{skill.emoji}</span>
+                  {getIcon(sId, 'w-3 h-3 text-amber-500')}
                   <span>{skill.name}</span>
                 </span>
               );
@@ -190,8 +191,11 @@ export default function SpawnDirectChat({
                     {msg.toolActivity && (
                       <div className="mt-3 bg-[#0a0c11] border border-[#1e2330] rounded-xl p-4 font-mono text-[10.5px]">
                         <div className="flex items-center gap-2 text-gray-400 mb-2">
-                          <span className="animate-spin text-orange-500">🌀</span>
-                          <span>{msg.toolActivity.emoji} {msg.toolActivity.toolName} completed:</span>
+                          <RefreshCcw className="animate-spin w-3.5 h-3.5 text-orange-500" />
+                          <span className="flex items-center gap-1">
+                            {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
+                            {msg.toolActivity.toolName} completed:
+                          </span>
                         </div>
                         <p className="text-gray-300 text-[10.5px] whitespace-pre-line border-l-2 border-[#FF8E24] pl-3 py-1 bg-white/[0.01]">
                           {msg.toolActivity.outputSummary}
@@ -228,8 +232,9 @@ export default function SpawnDirectChat({
                     {/* Tool Activities */}
                     {msg.toolActivity && (
                       <div className="mt-3 bg-black/40 border border-white/5 rounded-xl overflow-hidden font-mono text-[10.5px]">
-                        <div className="px-3 py-1.5 bg-black/60 border-b border-white/5 text-gray-400">
-                          {msg.toolActivity.emoji} {msg.toolActivity.toolName}
+                        <div className="px-3 py-1.5 bg-black/60 border-b border-white/5 text-gray-400 flex items-center gap-1.5">
+                          {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
+                          {msg.toolActivity.toolName}
                         </div>
                         <div className="p-3 text-gray-300 whitespace-pre-line leading-relaxed">
                           {msg.toolActivity.outputSummary}

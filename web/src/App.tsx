@@ -14,7 +14,9 @@ import SpawnDirectChat from './components/SpawnDirectChat';
 import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnEditor from './components/SpawnEditor';
 import SettingsScreen from './components/SettingsScreen';
-import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush } from 'lucide-react';
+import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush, Satellite, Wrench, Brain } from 'lucide-react';
+import { getIcon } from './components/iconMap';
+import SFSymbol from './components/SFSymbol';
 
 interface ArslanThread {
   id: string;
@@ -593,7 +595,7 @@ export default function App() {
                 {/* 1. MCP (Model Context Protocol) Registry — no MCP backend yet */}
                 <div className="space-y-1.5 opacity-50">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold">📡 Registered Sandbox MCP Servers</span>
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold flex items-center gap-1"><Satellite className="w-3 h-3" /> Registered Sandbox MCP Servers</span>
                     <span className="text-[8px] font-mono bg-gray-800/80 text-gray-500 border border-gray-700/50 px-1.5 py-0.2 rounded uppercase tracking-wider">即将推出</span>
                   </div>
                   <div className="bg-[#0b0d14]/60 border border-dashed border-[#1e2330]/60 rounded-lg px-3 py-2.5 text-[10px] font-mono text-gray-600 italic">
@@ -603,7 +605,7 @@ export default function App() {
 
                 {/* 2. Equipped Agent Tools — only web-search is wired in backend; others coming soon */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">⚙️ Dialogue Tools</span>
+                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block flex items-center gap-1"><Wrench className="w-3 h-3" /> Dialogue Tools</span>
                   {currentCaps.tools.length === 0 ? (
                     <p className="text-[9px] font-mono text-gray-600 italic">No tools linked inside dialogue scope.</p>
                   ) : (
@@ -621,7 +623,7 @@ export default function App() {
                             }`}
                             title={isWired ? `Tool: ${tId}` : `${tId} — 即将推出 / Coming soon`}
                           >
-                            <span>{details.emoji}</span>
+                            {getIcon(tId, 'w-3 h-3')}
                             <span className="text-[10px] font-medium">{details.name}</span>
                             {!isWired && <span className="text-[7px] text-gray-600 font-mono ml-0.5">soon</span>}
                           </div>
@@ -633,7 +635,7 @@ export default function App() {
 
                 {/* 3. Activated Skills — per-conversation skill tracking not yet available */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block">🧠 Dialogue Skills</span>
+                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block flex items-center gap-1"><Brain className="w-3 h-3" /> Dialogue Skills</span>
                   {currentCaps.skills.length === 0 ? (
                     <p className="text-[9px] font-mono text-gray-600 italic">No skills linked inside dialogue scope.</p>
                   ) : (
@@ -646,7 +648,7 @@ export default function App() {
                             className="bg-[#0e1018]/60 text-gray-600 border border-[#1e2330]/40 opacity-50 px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
                             title={`${sId} — 即将推出 / Coming soon (per-conversation skill tracking not yet available)`}
                           >
-                            <span>{details.emoji}</span>
+                            {getIcon(sId, 'w-3 h-3')}
                             <span className="text-[10px] font-medium">{details.name}</span>
                             <span className="text-[7px] text-gray-600 font-mono ml-0.5">soon</span>
                           </div>
@@ -712,7 +714,7 @@ export default function App() {
                           <div className="flex items-center gap-2">
                             <div>
                               <div className="text-[11px] font-medium text-white group-hover:text-[#FF8E24] transition-colors flex items-center gap-1.5">
-                                <span>{spawn.avatarEmoji}</span>
+                                <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-[#FF8E24]" />
                                 <span>{spawn.name}</span>
                                 <span className="text-[8px] font-mono bg-[#FF8E24]/10 text-[#FF8E24] border border-[#FF8E24]/20 rounded px-1 font-bold">L.{spawnLevel}</span>
                               </div>
