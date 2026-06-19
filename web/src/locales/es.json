@@ -142,7 +142,20 @@
     "token_label": "Token de API (servidor)",
     "server_section": "Conexión al servidor",
     "api_token": "Token de API",
-    "api_token_hint": "Solo es necesario si tu servidor lo requiere. Se guarda en este navegador."
+    "api_token_hint": "Solo es necesario si tu servidor lo requiere. Se guarda en este navegador.",
+    "sectionModelSearch": "LLM & Search",
+    "labelProvider": "Provider",
+    "labelModel": "Model",
+    "labelApiKey": "API Key",
+    "labelSearchProvider": "Search provider",
+    "sectionInterface": "Interface",
+    "labelLanguage": "Language",
+    "labelTheme": "Theme",
+    "labelTelemetry": "Diagnostic telemetry",
+    "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
+    "labelSpawnMode": "Spawn synthesis mode",
+    "btnSave": "Save settings",
+    "btnSaving": "Saving..."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

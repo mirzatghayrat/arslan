@@ -122,7 +122,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   apiKeySearch: '••••••••••••••••••••••••',
   language: 'English (US)',
   theme: 'dark',
-  telemetry: true,
+  telemetry: false,
   spawnMode: 'interactive'
 };
 

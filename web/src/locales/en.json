@@ -142,7 +142,20 @@
     "token_label": "API Token (server)",
     "server_section": "Server Connection",
     "api_token": "API Token",
-    "api_token_hint": "Only needed if your server requires one. Saved in this browser."
+    "api_token_hint": "Only needed if your server requires one. Saved in this browser.",
+    "sectionModelSearch": "LLM & Search",
+    "labelProvider": "Provider",
+    "labelModel": "Model",
+    "labelApiKey": "API Key",
+    "labelSearchProvider": "Search provider",
+    "sectionInterface": "Interface",
+    "labelLanguage": "Language",
+    "labelTheme": "Theme",
+    "labelTelemetry": "Diagnostic telemetry",
+    "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
+    "labelSpawnMode": "Spawn synthesis mode",
+    "btnSave": "Save settings",
+    "btnSaving": "Saving..."
   },
   "errors": {
     "load_failed": "Failed to load data.",

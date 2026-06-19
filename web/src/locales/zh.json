@@ -142,7 +142,20 @@
     "token_label": "API 令牌（服务器）",
     "server_section": "服务器连接",
     "api_token": "API 令牌",
-    "api_token_hint": "仅当你的服务器需要时才填写。保存在此浏览器中。"
+    "api_token_hint": "仅当你的服务器需要时才填写。保存在此浏览器中。",
+    "sectionModelSearch": "模型与搜索",
+    "labelProvider": "模型服务商",
+    "labelModel": "模型",
+    "labelApiKey": "API Key",
+    "labelSearchProvider": "搜索服务",
+    "sectionInterface": "界面设置",
+    "labelLanguage": "界面语言",
+    "labelTheme": "主题",
+    "labelTelemetry": "诊断遥测",
+    "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
+    "labelSpawnMode": "生成合成模式",
+    "btnSave": "保存设置",
+    "btnSaving": "保存中..."
   },
   "errors": {
     "load_failed": "加载数据失败。",

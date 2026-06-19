@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
 import type { ProviderOption } from '../api/client.types';
 import { api } from '../api/client';
@@ -16,6 +17,7 @@ interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders }: SettingsScreenProps) {
+  const { t } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* LLM Key Input */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                Primary LLM Provider Secret Key (Host Router)
+                {t('settings.labelApiKey')}
               </label>
               <div className="relative">
                 <input
@@ -136,14 +138,14 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
             <Sliders className="w-4.5 h-4.5 text-[#FF8E24]" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">Intelligence Engine Calibration</h3>
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">{t('settings.sectionModelSearch')}</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* LLM Provider selections */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                Routing LLM orchestrator provider
+                {t('settings.labelProvider')}
               </label>
               <select
                 id="settings-llm-provider"
@@ -162,28 +164,28 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               </select>
             </div>
 
-            {/* Router model Selection */}
+            {/* Router model — free-text input */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                Active Neural Model Routing Target
+                {t('settings.labelModel')}
               </label>
-              <select
+              <input
                 id="settings-llm-model"
+                type="text"
                 value={localSettings.llmModel}
                 onChange={(e) => setLocalSettings(prev => ({ ...prev, llmModel: e.target.value }))}
+                placeholder={
+                  llmProviders.find((p) => p.key === localSettings.llmProvider)?.default_model ??
+                  'e.g. deepseek-v4-flash'
+                }
                 className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-mono"
-              >
-                <option value="gemini-3.5-flash">gemini-3.5-flash (Highest efficiency, low latency)</option>
-                <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Advanced reasoning tier)</option>
-                <option value="gemini-2.5-flash-image">gemini-2.5-flash-image (Design renderer active)</option>
-                <option value="gpt-4o">gpt-4o-2024-05-13 (Standard external model)</option>
-              </select>
+              />
             </div>
 
             {/* Cognitive Search selections */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                Cognitive Search Index Broker
+                {t('settings.labelSearchProvider')}
               </label>
               <select
                 id="settings-search-provider"
@@ -203,7 +205,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* Language Localizations */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                System Language localization
+                {t('settings.labelLanguage')}
               </label>
               <select
                 id="settings-language"
@@ -221,7 +223,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* Theme / Visual Style Select */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                System Interface Visual Mode
+                {t('settings.labelTheme')}
               </label>
               <select
                 id="settings-theme"
@@ -244,16 +246,16 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
             <Globe className="w-4.5 h-4.5 text-[#FF8E24]" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">Diagnostic Parameters</h3>
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">{t('settings.sectionInterface')}</h3>
           </div>
 
           <div className="space-y-4">
             {/* Toggle telemetry */}
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-xs font-bold text-white font-sans">Active diagnostic analytics telemetry</h4>
+                <h4 className="text-xs font-bold text-white font-sans">{t('settings.labelTelemetry')}</h4>
                 <p className="text-[11px] text-gray-400 font-sans mt-0.5 max-w-xl">
-                  Allow self-hosted daemon to transmit runtime performance benchmarks to Arslan central servers. Sensitive credentials or message logs are completely filtered out.
+                  {t('settings.telemetryDesc')}
                 </p>
               </div>
               <input
@@ -271,7 +273,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* Spawns synthesis modes */}
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-xs font-bold text-white font-sans">Spawns Synthesis orchestration protocol</h4>
+                <h4 className="text-xs font-bold text-white font-sans">{t('settings.labelSpawnMode')}</h4>
                 <p className="text-[11px] text-gray-400 font-sans mt-0.5 max-w-xl">
                   Choose how sub-agents are created. Auto: instant delegation without checks. Interactive: asks user approval on the fly before spinning up new spawns.
                 </p>
@@ -316,7 +318,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             }`}
           >
             {isSaved ? <Check className="w-4 h-4 text-white" /> : <Save className="w-4 h-4" />}
-            {isSaved ? "Saved Successfully" : "Commit all changes"}
+            {isSaved ? t('settings.btnSaving') : t('settings.btnSave')}
           </button>
         </div>
 

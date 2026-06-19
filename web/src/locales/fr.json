@@ -142,7 +142,20 @@
     "token_label": "Jeton API (serveur)",
     "server_section": "Connexion au serveur",
     "api_token": "Jeton API",
-    "api_token_hint": "Nécessaire uniquement si votre serveur en exige un. Enregistré dans ce navigateur."
+    "api_token_hint": "Nécessaire uniquement si votre serveur en exige un. Enregistré dans ce navigateur.",
+    "sectionModelSearch": "LLM & Search",
+    "labelProvider": "Provider",
+    "labelModel": "Model",
+    "labelApiKey": "API Key",
+    "labelSearchProvider": "Search provider",
+    "sectionInterface": "Interface",
+    "labelLanguage": "Language",
+    "labelTheme": "Theme",
+    "labelTelemetry": "Diagnostic telemetry",
+    "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
+    "labelSpawnMode": "Spawn synthesis mode",
+    "btnSave": "Save settings",
+    "btnSaving": "Saving..."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

@@ -142,7 +142,20 @@
     "token_label": "API トークン（サーバー）",
     "server_section": "サーバー接続",
     "api_token": "API トークン",
-    "api_token_hint": "サーバーが必要とする場合のみ入力してください。このブラウザに保存されます。"
+    "api_token_hint": "サーバーが必要とする場合のみ入力してください。このブラウザに保存されます。",
+    "sectionModelSearch": "LLM & Search",
+    "labelProvider": "Provider",
+    "labelModel": "Model",
+    "labelApiKey": "API Key",
+    "labelSearchProvider": "Search provider",
+    "sectionInterface": "Interface",
+    "labelLanguage": "Language",
+    "labelTheme": "Theme",
+    "labelTelemetry": "Diagnostic telemetry",
+    "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
+    "labelSpawnMode": "Spawn synthesis mode",
+    "btnSave": "Save settings",
+    "btnSaving": "Saving..."
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
