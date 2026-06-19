@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  ArrowRight, Sparkles, Terminal, Wrench, BookOpen, 
-  AlertTriangle, CheckCircle2, XOctagon, Clock, Play, 
-  Layers, Lock, PlayCircle, Eye, EyeOff, User, CornerDownRight,
-  RefreshCcw, Info, Cpu, X, Send, ChevronRight, Activity, Plus,
-  Search, Globe, ChevronDown, ChevronUp, Database
+import {
+  ArrowRight, Terminal, Wrench,
+  AlertTriangle, CheckCircle2, XOctagon, Clock,
+  Layers, CornerDownRight,
+  Cpu, X, Send, ChevronDown,
+  Plus
 } from 'lucide-react';
 import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
@@ -31,8 +31,6 @@ export default function OrchestratorChat({
   activeThread
 }: OrchestratorChatProps) {
   const [inputValue, setInputValue] = useState('');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simulationStep, setSimulationStep] = useState(0);
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
   // Custom states for Spawns Pipeline Dock & Split-Screen Co-pilot Sandbox
@@ -41,10 +39,7 @@ export default function OrchestratorChat({
   const [assignTaskText, setAssignTaskText] = useState('');
 
   const [splitSpawnId, setSplitSpawnId] = useState<string | null>(null);
-  const [subInputValue, setSubInputValue] = useState('');
-  const [subChats, setSubChats] = useState<Record<string, Message[]>>({});
-  const [subDrafts, setSubDrafts] = useState<Record<string, string>>({});
-  const [subTyping, setSubTyping] = useState<boolean>(false);
+  // subInputValue, subChats, subDrafts, subTyping removed — sandbox not yet wired to backend
 
   // Global Integration Discovery & Repository Engine — no MCP backend yet; tool-hub disabled
   const [showSandboxSearch, setShowSandboxSearch] = useState(true);
@@ -57,17 +52,10 @@ export default function OrchestratorChat({
   const evaluationResult = null;
 
   const bottomRef = useRef<HTMLDivElement>(null);
-  const subBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
-
-  useEffect(() => {
-    if (splitSpawnId) {
-      subBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [subChats, splitSpawnId, subTyping]);
 
   // Tool-Hub evaluation is disabled — no MCP/discovery backend exists yet.
   // Tool-Hub evaluation handlers are disabled — no MCP/discovery backend exists yet.
@@ -76,184 +64,23 @@ export default function OrchestratorChat({
   const handleAddToSkill = () => { /* coming soon */ };
   const handleSynthesizeSpawn = () => { /* coming soon */ };
 
-  const handleLaunchSpawnTask = (spawnId: string, customTask?: string) => {
-    const spawn = spawns.find(s => s.id === spawnId);
-    if (!spawn) return;
-
+  // Sandbox per-spawn orchestration is not yet wired to a real backend frame.
+  // Opening the sandbox panel just shows the coming-soon placeholder.
+  const handleLaunchSpawnTask = (_spawnId: string, _customTask?: string) => {
     setSelectedAssignSpawnId(null);
-    const taskText = customTask?.trim() || `Conduct automatic Q1 domain studies and compile structural briefs.`;
     setAssignTaskText('');
-
-    // Pre-set status to working
-    setSpawnStatuses(prev => ({ ...prev, [spawnId]: 'working' }));
-
-    // Append trigger notification to primary feed
-    const triggerMsg: Message = {
-      id: `trigger-msg-${Date.now()}`,
-      sender: 'user',
-      senderName: 'Mirzat',
-      senderAvatar: '🦁',
-      text: `⚡ **Operator delegated sub-task to [${spawn.name}]:**\n"${taskText}"`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setChatHistory(prev => [...prev, triggerMsg]);
-
-    // Stage 1: Active processing note (1.2s later)
-    setTimeout(() => {
-      const liveMsg: Message = {
-        id: `live-proc-${Date.now()}`,
-        sender: 'arslan',
-        senderName: 'Arslan Core',
-        senderAvatar: '🦁',
-        text: `⚙️ **Local Sandboxed Container Spawned:** Spawning active virtualization socket for **${spawn.name}**. Mounting credentials & local tools...`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setChatHistory(prev => [...prev, liveMsg]);
-    }, 1200);
-
-    // Stage 2: Spawn initiates Tools Activity (2.6s later)
-    setTimeout(() => {
-      const toolMsg: Message = {
-        id: `tool-act-${Date.now()}`,
-        sender: 'spawn',
-        senderName: spawn.name,
-        senderAvatar: spawn.avatarEmoji,
-        text: `Initializing automatic index compilation relative to input parameters...`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        toolActivity: {
-          id: `sand-tool-${Date.now()}`,
-          toolName: spawn.id === 'spawn-aletheia' ? 'Financial Index Parser' : 'XiaoHongShu Caption Engine',
-          emoji: spawn.id === 'spawn-aletheia' ? '📈' : '✍️',
-          status: 'completed',
-          action: `Scraping context coordinates for target request: "${taskText}"`,
-          outputSummary: spawn.id === 'spawn-aletheia' 
-            ? 'Parsed 14 consensus forecasts. Adjusted Blackwell pipeline weight coefficients.' 
-            : 'Generated 3 copywriting slogan hooks with localized high-click engagement markers.',
-          collapsed: false
-        }
-      };
-      setChatHistory(prev => [...prev, toolMsg]);
-    }, 2600);
-
-    // Stage 3: Completion & Review Trigger (5.0s later)
-    setTimeout(() => {
-      setSpawnStatuses(prev => ({ ...prev, [spawnId]: 'review_pending' }));
-
-      // Setup initial Sandbox Chat & Draft and stores it
-      const defaultDraftText = spawn.id === 'spawn-aletheia' 
-        ? `### 📊 NVIDIA Q1 FINANCIAL SYNTHESIS REPORT\n\n- **Consensus Outlook:** High bullish conviction. Blackwell demand remains robust with mass production scheduled for Q4 in leading hyperscaler clusters.\n- **Variance analysis:** Revenue hit **$26.04 Billion** (+262% Year-on-year increase).\n- **Guidance Rating:** Adjusted forward trading index to outperform, establishing target price: **$1,400/share**.\n\n*Draft produced securely on Arslan isolated memory storage.*`
-        : spawn.id === 'spawn-huan'
-        ? `### 🚀 炸裂！英伟达Q1狂揽260亿！？ Blackwell显卡到底有多狂暴！？\n\n小红书的宝子们！今天来聊聊震撼科技圈的超级大新闻：Nvidia一季度财务业绩直接击碎华尔街天花板！\n\n- 💥 **收入狂飙 262%：** 这已经不是起飞，这是直接肉身破音速！\n- 📈 **Blackwell年底量产：** 准备好接下这波滔天算力了吗？\n\n#显卡 #英伟达 #计算美学 #硬核科技分享 #搞钱女孩必看`
-        : `### ⚙️ SPECIALIST ISOLATED PIPELINE ARTIFACT\n\n- **Specialist Name:** ${spawn.name}\n- **Assigned Domain:** ${spawn.domain}\n- **Task Handled:** "${taskText}"\n\n- **Standard Findings:** Analysis verified that all model indicators match expectations. Memory slots synchronized cleanly on local loop.`;
-
-      // Define subChat history
-      const initialSubChats: Message[] = [
-        {
-          id: `subchat-init-${Date.now()}`,
-          sender: 'spawn',
-          senderName: spawn.name,
-          senderAvatar: spawn.avatarEmoji,
-          text: `👋 Greetings operator! I have executed the background calculation for *"${taskText}"* and deposited the results below. \n\nFeel free to provide feedback in the sub-chatter input box to refine this draft, or click **"✓ Confirm & Merge Outcome"** to push the final artifact directly into the main thread!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ];
-
-      setSubChats(prev => ({ ...prev, [spawnId]: initialSubChats }));
-      setSubDrafts(prev => ({ ...prev, [spawnId]: defaultDraftText }));
-
-      // Append finish notice to primary conversation
-      const completeMsg: Message = {
-        id: `done-proc-${Date.now()}`,
-        sender: 'arslan',
-        senderName: 'Arslan Core',
-        senderAvatar: '🦁',
-        text: `✨ **Subprocess Finalized:** Specialist **${spawn.name}** has completed generating a draft deliverables card!\n\n🔔 **Action Required:** The visual button for **"${spawn.name}"** in your **Spawns Pipeline Dock** is now glowing! Click **"👁️ Open Sandbox"** to review, adjust, and merge their work.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setChatHistory(prev => [...prev, completeMsg]);
-
-    }, 5000);
+    // Do not fabricate messages or tool runs — sandbox dispatch coming soon.
   };
 
+  // Sandbox sub-chat and draft refinement are not yet wired to a real backend frame.
+  // These handlers are stubs — no fake messages are injected.
   const handleSendSubMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subInputValue.trim() || !splitSpawnId) return;
-
-    const spawn = spawns.find(s => s.id === splitSpawnId);
-    if (!spawn) return;
-
-    const userText = subInputValue;
-    setSubInputValue('');
-
-    const newSubMsg: Message = {
-      id: `sub-msg-user-${Date.now()}`,
-      sender: 'user',
-      senderName: 'Mirzat',
-      senderAvatar: '🦁',
-      text: userText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setSubChats(prev => ({
-      ...prev,
-      [splitSpawnId]: [...(prev[splitSpawnId] || []), newSubMsg]
-    }));
-
-    setSubTyping(true);
-    setTimeout(() => {
-      setSubTyping(false);
-
-      const originalDraft = subDrafts[splitSpawnId] || '';
-      let refinedDraft = originalDraft;
-
-      if (userText.toLowerCase().includes('short') || userText.includes('简短') || userText.includes('缩短')) {
-        refinedDraft = refinedDraft.split('\n\n').slice(0, 2).join('\n\n') + `\n\n*(Draft shortened based on operator instructions!)*`;
-      } else if (userText.toLowerCase().includes('hash') || userText.includes('标签') || userText.includes('tag')) {
-        refinedDraft += `\n\n#AGIAgent #SpecialistsPipeline #ArslanOrchestrator #AIStudio`;
-      } else if (userText.toLowerCase().includes('title') || userText.includes('标题')) {
-        refinedDraft = `👑 **REFINED AESTHETIC EXECUTIVE PREVIEW** 👑\n\n` + refinedDraft;
-      } else if (userText.toLowerCase().includes('emoji') || userText.includes('表情')) {
-        refinedDraft = refinedDraft.replace(/-/g, '✨ -');
-      } else {
-        refinedDraft += `\n\n*Update (calibrated based on instruction: "${userText}"): Draft refined with extra precision details.*`;
-      }
-
-      setSubDrafts(prev => ({ ...prev, [splitSpawnId]: refinedDraft }));
-
-      const spawnFeedbackMsg: Message = {
-        id: `sub-msg-refine-${Date.now()}`,
-        sender: 'spawn',
-        senderName: spawn.name,
-        senderAvatar: spawn.avatarEmoji,
-        text: `Understood! I've calibrated the working buffer memory accordingly based on your guidance: *"${userText}"*. Let's check out the updated draft in the editor view! ✨`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setSubChats(prev => ({
-        ...prev,
-        [splitSpawnId]: [...(prev[splitSpawnId] || []), spawnFeedbackMsg]
-      }));
-
-    }, 800);
+    // coming soon — no fabricated spawn replies
   };
 
-  const handleConfirmMergeDraft = (spawnId: string) => {
-    const spawn = spawns.find(s => s.id === spawnId);
-    if (!spawn) return;
-
-    const mergedDraft = subDrafts[spawnId] || '';
-
-    const mergeMsg: Message = {
-      id: `merge-msg-${Date.now()}`,
-      sender: 'spawn',
-      senderName: spawn.name,
-      senderAvatar: spawn.avatarEmoji,
-      text: `✅ **Isolated Sandbox Deliverables Confirmed & Merged to Core Thread:**\n\n${mergedDraft}\n\n*Output approved and finalized by operator.*`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setChatHistory(prev => [...prev, mergeMsg]);
-    setSpawnStatuses(prev => ({ ...prev, [spawnId]: 'idle' }));
+  const handleConfirmMergeDraft = (_spawnId: string) => {
+    // coming soon — no fabricated merge output
     setSplitSpawnId(null);
   };
 
@@ -276,13 +103,13 @@ export default function OrchestratorChat({
     const text = inputValue.trim();
     setInputValue('');
 
-    // Live WS path: delegate to parent's onSendMessage (store + WS send)
     if (onSendMessage) {
+      // Live WS path: delegate to parent's onSendMessage (store + WS send)
       onSendMessage(text);
       return;
     }
 
-    // Mock simulation path (non-wired threads)
+    // Non-wired thread: append the user message only; no fabricated assistant reply.
     const userMsg: Message = {
       id: `msg-user-${Date.now()}`,
       sender: 'user',
@@ -291,338 +118,11 @@ export default function OrchestratorChat({
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-
     setChatHistory(prev => [...prev, userMsg]);
-
-    // Trigger a default auto-orchestration response simulation after a short delay
-    setTimeout(() => {
-      const arslanThinkingMsg: Message = {
-        id: `msg-arslan-${Date.now()}`,
-        sender: 'arslan',
-        senderName: 'Arslan',
-        senderAvatar: '🦁',
-        text: `Determined processing sequence for: "${userMsg.text}". Let's spin up **Aletheia** to inspect research databases and summarize this query. Spawning agent...`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        routedTo: {
-          spawnId: 'spawn-aletheia',
-          spawnName: 'Aletheia'
-        }
-      };
-      setChatHistory(prev => [...prev, arslanThinkingMsg]);
-
-      setTimeout(() => {
-        const spawnIntroMsg: Message = {
-          id: `msg-aletheia-intro-${Date.now()}`,
-          sender: 'spawn',
-          senderName: 'Aletheia',
-          senderAvatar: '🦊',
-          text: `Aletheia initializing. Equipped with quantitative intelligence suite. Scanning records and compiling web data now.`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          spawnIntro: {
-            name: 'Aletheia',
-            domain: 'Financial Market Intelligence',
-            avatarEmoji: '🦊',
-            tools: ['web-search', 'stock-data'],
-            skills: ['financial-res']
-          }
-        };
-        setChatHistory(prev => [...prev, spawnIntroMsg]);
-
-        setTimeout(() => {
-          const toolActMsg: Message = {
-            id: `msg-tool-active-${Date.now()}`,
-            sender: 'spawn',
-            senderName: 'Aletheia',
-            senderAvatar: '🦊',
-            text: `Gathering indicators via web integration.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            toolActivity: {
-              id: `tool-${Date.now()}`,
-              toolName: 'Web Search',
-              emoji: '🔍',
-              status: 'completed',
-              action: `Searching Google & arxiv indexes for "${userMsg.text}"`,
-              outputSummary: 'Extracted 4 high-integrity references. Formulating intelligence synthesis briefing.',
-              collapsed: false
-            }
-          };
-          setChatHistory(prev => [...prev, toolActMsg]);
-
-          setTimeout(() => {
-            const finalSpawnMsg: Message = {
-              id: `msg-final-${Date.now()}`,
-              sender: 'spawn',
-              senderName: 'Aletheia',
-              senderAvatar: '🦊',
-              text: `Here is my synthesized findings summary based on Tavily index search. It appears that the recent parameters are consistent with general market indicators. Let me know if you would like me to conduct a mathematical plot model!`,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            };
-            setChatHistory(prev => [...prev, finalSpawnMsg]);
-          }, 1200);
-        }, 1200);
-      }, 1200);
-    }, 1000);
   };
 
-  const triggerPresetScenario = (type: 'nv' | 'sec') => {
-    setIsSimulating(true);
-    setChatHistory([]);
-
-    if (type === 'nv') {
-      // Nvidia stock simulation
-      const steps: (() => void)[] = [
-        () => setChatHistory([
-          {
-            id: 'n-1',
-            sender: 'user',
-            senderName: 'Mirzat',
-            senderAvatar: '🦁',
-            text: 'Compile Q1 Nvidia financial results and generate a viral graphic slide highlighting top takeaways.',
-            timestamp: '12:00'
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-2',
-            sender: 'arslan',
-            senderName: 'Arslan',
-            senderAvatar: '🦁',
-            text: 'Task interpreted. Parsing model instructions. Spawner activated: delegate analytical modeling to **Aletheia** and creative assets to **Huan**. Starting sequence...',
-            timestamp: '12:00',
-            routedTo: { spawnId: 'spawn-aletheia', spawnName: 'Aletheia' }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-3',
-            sender: 'spawn',
-            senderName: 'Aletheia',
-            senderAvatar: '🦊',
-            text: 'Let’s pull raw data-point inputs. Reviewing tools.',
-            timestamp: '12:01',
-            spawnIntro: {
-              name: 'Aletheia',
-              domain: 'Financial Market Intelligence',
-              avatarEmoji: '🦊',
-              tools: ['stock-data', 'py-exec'],
-              skills: ['financial-res', 'stat-analysis']
-            }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-4',
-            sender: 'spawn',
-            senderName: 'Aletheia',
-            senderAvatar: '🦊',
-            text: 'Polling standard ticker stocks for valuation matrices.',
-            timestamp: '12:01',
-            toolActivity: {
-              id: 'nt-1',
-              toolName: 'Stock Sandbox',
-              emoji: '📈',
-              status: 'completed',
-              action: 'Initializing tick parser for trading data: $NVDA',
-              outputSummary: 'Revenue: $26.04B (+262% YoY). EPS: $6.12 beat Wall Street consensus by 9.3%.',
-              collapsed: false
-            }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-5',
-            sender: 'spawn',
-            senderName: 'Aletheia',
-            senderAvatar: '🦊',
-            text: 'Quantitative study completed. NVDA figures outpaced general market limits. Forward guidance exceeds previous ceilings. Forwarding indices to Huan for visual slide creation.',
-            timestamp: '12:02'
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-6',
-            sender: 'arslan',
-            senderName: 'Arslan',
-            senderAvatar: '🦁',
-            text: 'Aletheia analytics accepted. Routing structured text models to **Huan** (RED Agent) for aesthetic visual transformation.',
-            timestamp: '12:02',
-            routedTo: { spawnId: 'spawn-huan', spawnName: 'Huan' }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-7',
-            sender: 'spawn',
-            senderName: 'Huan',
-            senderAvatar: '🐱',
-            text: 'Huan booted. Ready to translate complex math sheet into viral creative slides.',
-            timestamp: '12:02',
-            spawnIntro: {
-              name: 'Huan',
-              domain: 'RED / XiaoHongShu Copywriting',
-              avatarEmoji: '🐱',
-              tools: ['canvas-render', 'web-search'],
-              skills: ['seo-opt', 'infographic-design']
-            }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-8',
-            sender: 'spawn',
-            senderName: 'Huan',
-            senderAvatar: '🐱',
-            text: 'Rendering layout card with orange styling...',
-            timestamp: '12:03',
-            toolActivity: {
-              id: 'nt-2',
-              toolName: 'SVGRenderer',
-              emoji: '🎨',
-              status: 'completed',
-              action: 'Generating rich dark card: 1080x1350px viewport with glowing orange border highlights',
-              outputSummary: 'Compiled custom SVG image detailing post-market parameters.',
-              collapsed: false
-            }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'n-9',
-            sender: 'spawn',
-            senderName: 'Huan',
-            senderAvatar: '🐱',
-            text: 'Here is the draft slide and copy! Let’s publish! \n\n🚀 **NVIDIA BEATS: $26B Blackwell Surge!** \n- Revenue +262% YoY!\n- Blackwell mass production scheduled Q4',
-            timestamp: '12:03'
-          }
-        ])
-      ];
-
-      execSteps(steps);
-    } else {
-      // Escalation Scenario
-      const steps: (() => void)[] = [
-        () => setChatHistory([
-          {
-            id: 's-1',
-            sender: 'user',
-            senderName: 'Mirzat',
-            senderAvatar: '🦁',
-            text: 'Aletheia, please test our internal local network address (10.0.0.15) for open ports to ensure security.',
-            timestamp: '14:20'
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 's-2',
-            sender: 'arslan',
-            senderName: 'Arslan',
-            senderAvatar: '🦁',
-            text: 'Routing task to **Aletheia**. Standard security clearance audit in progress.',
-            timestamp: '14:20',
-            routedTo: { spawnId: 'spawn-aletheia', spawnName: 'Aletheia' }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 's-3',
-            sender: 'spawn',
-            senderName: 'Aletheia',
-            senderAvatar: '🦊',
-            text: 'Understood. Validating my assigned toolset capabilities.',
-            timestamp: '14:21',
-            spawnIntro: {
-              name: 'Aletheia',
-              domain: 'Financial Market Intelligence',
-              avatarEmoji: '🦊',
-              tools: ['web-search', 'stock-data'],
-              skills: ['financial-res']
-            }
-          }
-        ]),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 's-4',
-            sender: 'spawn',
-            senderName: 'Aletheia',
-            senderAvatar: '🦊',
-            text: 'I detect that the execution of an intrusive local network port scan requires "Network Penetration Auditing" skill which is standard locked (🔒) on this spawn instance. Initiating Escalation Request to Arslan...',
-            timestamp: '14:21',
-            escalation: {
-              id: 'esc-1',
-              spawnName: 'Aletheia',
-              issue: 'Requested port-scan action requires elevated Network Penetration Auditing equipment',
-              status: 'need_raised'
-            }
-          }
-        ]),
-        () => setChatHistory(prev => {
-          return prev.map(m => {
-            if (m.id === 's-4' && m.escalation) {
-              return {
-                ...m,
-                escalation: { ...m.escalation, status: 'arslan_resolving' }
-              };
-            }
-            return m;
-          });
-        }),
-        () => setChatHistory(prev => {
-          return prev.map(m => {
-            if (m.id === 's-4' && m.escalation) {
-              return {
-                ...m,
-                escalation: { 
-                  ...m.escalation, 
-                  status: 'refused',
-                  resolutionMessage: 'Escalation Denied: Network Penetration Auditing is a Tier-3 restrictive weapon tool. Self-hosted instances are prohibited from mounting host sockets without developer credential flags. Execution halted.' 
-                }
-              };
-            }
-            return m;
-          });
-        }),
-        () => setChatHistory(prev => [
-          ...prev,
-          {
-            id: 's-7',
-            sender: 'arslan',
-            senderName: 'Arslan',
-            senderAvatar: '🦁',
-            text: 'Escalation safety audit concluded. The request was **Refused**. Spawns are sandboxed from external active probing to enforce strict security boundaries. Let me know if you would like to run standard analytic charts instead!',
-            timestamp: '14:22'
-          }
-        ])
-      ];
-
-      execSteps(steps);
-    }
-  };
-
-  const execSteps = (steps: (() => void)[]) => {
-    let index = 0;
-    const executeNext = () => {
-      if (index < steps.length) {
-        steps[index]();
-        setSimulationStep(index + 1);
-        index++;
-        setTimeout(executeNext, 1100);
-      } else {
-        setIsSimulating(false);
-      }
-    };
-    executeNext();
-  };
+  // triggerPresetScenario and execSteps removed — preset buttons now pre-fill
+  // the input box instead of auto-playing fabricated orchestration sequences.
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0d0f15] relative overflow-hidden">
@@ -781,7 +281,6 @@ export default function OrchestratorChat({
                     }
                   }
                 }}
-                disabled={isSimulating}
                 placeholder="Paste a document, an email, or a task description to orchestrate..."
                 className="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
@@ -821,7 +320,7 @@ export default function OrchestratorChat({
 
                   <button
                     type="button"
-                    disabled={isSimulating || !inputValue.trim()}
+                    disabled={!inputValue.trim()}
                     onClick={(e) => {
                       if (inputValue.trim()) {
                         handleSendMessage(e);
@@ -1301,14 +800,13 @@ export default function OrchestratorChat({
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              disabled={isSimulating}
-              placeholder={isSimulating ? "Simulation workflow running..." : "Ask Arslan to orchestrate a task for your spawns..."}
+              placeholder="Ask Arslan to orchestrate a task for your spawns..."
               className="w-full bg-[#121520] border border-[#23293e] hover:border-[#353e5e] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/30 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-500 focus:outline-none pr-12 transition-all font-sans"
             />
             <button
               id="chat-send-submit"
               type="submit"
-              disabled={isSimulating || !inputValue.trim()}
+              disabled={!inputValue.trim()}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-[#FF8E24] hover:bg-[#ff9c3a] disabled:bg-gray-800 disabled:text-gray-500 disabled:opacity-50 text-black font-bold uppercase rounded-lg transition-all"
             >
               <ArrowRight className="w-4 h-4" />
@@ -1331,8 +829,6 @@ export default function OrchestratorChat({
       const spawn = spawns.find(s => s.id === splitSpawnId);
       if (!spawn) return null;
 
-      const activeSubChats = subChats[splitSpawnId] || [];
-      const activeDraft = subDrafts[splitSpawnId] || '';
 
       return (
         <div className="w-[45%] border-l border-[#1e2330] bg-[#090b0f] flex flex-col h-full animate-slide-in-right relative overflow-hidden shrink-0 z-20">
@@ -1360,96 +856,25 @@ export default function OrchestratorChat({
             </button>
           </div>
 
-          {/* Sandbox Content Split */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            
-            {/* Upper Half: Live Output Draft Previewer Block */}
-            <div className="p-4 border-b border-[#141822] bg-[#0c0e14] shrink-0">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider font-bold block">
-                  Active Buffer Draft Deliverable:
-                </span>
-                <span className="text-[9.5px] font-mono bg-amber-950/20 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded">
-                  Live Preview
-                </span>
-              </div>
-              <div className="bg-[#050609] border border-gray-800/80 rounded-xl p-3.5 max-h-[190px] overflow-y-auto font-mono text-[10.5px] text-gray-200 shadow-inner select-text">
-                <div className="whitespace-pre-wrap leading-relaxed">{activeDraft}</div>
-              </div>
+          {/* Sandbox Content: Coming Soon — dispatch + draft backend not yet wired */}
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 select-none">
+            <div className="w-12 h-12 rounded-xl bg-amber-950/20 border border-amber-500/20 flex items-center justify-center text-2xl">
+              {spawn.avatarEmoji}
             </div>
-
-            {/* Lower Half: Feed of Sub Instructions Chatter log */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {activeSubChats.map((msg, idx) => {
-                const isUserMsg = msg.sender === 'user';
-                return (
-                  <div key={idx} className={`flex gap-2.5 ${isUserMsg ? 'justify-end' : ''}`}>
-                    {!isUserMsg && (
-                      <div className="w-7 h-7 rounded-lg bg-orange-950/20 border border-[#FF8E24]/30 flex items-center justify-center text-sm shadow-inner shrink-0">
-                        {msg.senderAvatar}
-                      </div>
-                    )}
-                    <div className={`max-w-[82%] rounded-xl p-2.5 text-[11px] leading-relaxed shadow-sm ${
-                      isUserMsg 
-                        ? 'bg-gradient-to-br from-[#FF8E24] to-amber-600 text-white rounded-tr-none' 
-                        : 'bg-[#151924]/90 border border-[#1e2332] text-gray-100 rounded-tl-none'
-                    }`}>
-                      <p className="whitespace-pre-line leading-normal">{msg.text}</p>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {subTyping && (
-                <div className="flex gap-2.5 items-center pl-2">
-                  <div className="w-5 h-5 rounded-full bg-orange-950/20 flex items-center justify-center text-[10px] shrink-0">
-                    {spawn.avatarEmoji}
-                  </div>
-                  <div className="text-[9px] font-mono text-amber-500 animate-pulse uppercase font-semibold">
-                    {spawn.name} calibrating draft variables...
-                  </div>
-                </div>
-              )}
-              <div ref={subBottomRef} />
+            <div className="space-y-2">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-xs font-bold text-white font-sans">{spawn.name} Sandbox</span>
+                <span className="text-[9px] font-mono bg-amber-950/20 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider">即将推出</span>
+              </div>
+              <p className="text-[11px] text-gray-500 font-sans leading-relaxed max-w-xs">
+                Per-spawn sandbox dispatch and draft review are not yet wired to a backend frame. This panel will show real spawn output once the dispatch protocol is implemented.
+              </p>
             </div>
-          </div>
-
-          {/* Sub Instruct Input form */}
-          <div className="p-3 bg-black/40 border-t border-[#1e2330]/60 shrink-0">
-            <form onSubmit={handleSendSubMessage} className="flex gap-1.5 relative">
-              <input 
-                type="text"
-                value={subInputValue}
-                onChange={(e) => setSubInputValue(e.target.value)}
-                placeholder={`Instruct ${spawn.name} to refine draft (e.g. "make it short")...`}
-                className="w-full bg-[#111420] border border-[#202638] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/30 rounded-xl px-3 py-2 text-[10.5px] text-white focus:outline-none placeholder-gray-600 transition-all font-sans"
-              />
-              <button 
-                type="submit"
-                disabled={!subInputValue.trim() || subTyping}
-                className="p-2 bg-[#FF8E24] text-black rounded-lg hover:bg-[#ffa74a] transition-all disabled:opacity-40 shrink-0"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
-          </div>
-
-          {/* Primary Action bar - Merge & Confirm / Cancel */}
-          <div className="p-4 bg-[#0a0c10] border-t border-[#1e2330]/80 grid grid-cols-2 gap-2.5 shrink-0 select-none">
             <button
-              onClick={() => handleConfirmMergeDraft(spawn.id)}
-              className="py-2.5 bg-[#FF8E24] hover:bg-[#ff9d3a] text-black font-extrabold text-[10px] rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-orange-950/20 active:scale-95 transition-all uppercase tracking-wider font-mono mr-1"
+              onClick={() => setSplitSpawnId(null)}
+              className="mt-2 px-4 py-1.5 bg-transparent hover:bg-white/[0.04] text-gray-400 hover:text-white text-[10px] rounded-xl border border-gray-800/80 font-mono uppercase tracking-wider transition-all"
             >
-              <CheckCircle2 className="w-4 h-4 text-black" />
-              <span>Confirm & Merge</span>
-            </button>
-            
-            <button
-              onClick={() => handleDiscardSubSession(spawn.id)}
-              className="py-2.5 bg-transparent hover:bg-white/[0.04] text-gray-400 hover:text-white font-semibold text-[10px] rounded-xl border border-gray-800/80 hover:border-gray-700 font-mono transition-all uppercase active:scale-95 flex items-center justify-center gap-1.5"
-            >
-              <XOctagon className="w-4 h-4 text-rose-500/80" />
-              <span>Discard Draft</span>
+              Close Panel
             </button>
           </div>
         </div>
