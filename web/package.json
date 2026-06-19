@@ -16,11 +16,15 @@
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "i18next": "^26.3.1",
+    "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-i18next": "^17.0.8",
     "vite": "^6.2.3",
-    "motion": "^12.23.24"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
