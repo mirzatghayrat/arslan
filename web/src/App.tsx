@@ -7,6 +7,7 @@ import { api } from './api/client';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption } from './api/client.types';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useBackendStatus } from './hooks/useBackendStatus';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import SpawnDirectChat from './components/SpawnDirectChat';
@@ -40,6 +41,9 @@ const skillDetails: Record<string, { name: string; emoji: string }> = {
 };
 
 export default function App() {
+  // Backend reachability — polled every 10s, drives honest offline states
+  const backendStatus = useBackendStatus();
+
 // Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'settings'
   const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'settings'>('arslan');
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
@@ -394,7 +398,7 @@ export default function App() {
     <div className={`flex w-screen h-screen bg-[#07090d] text-gray-100 overflow-hidden font-sans antialiased select-none ${settings.theme === 'light' ? 'light-theme' : ''}`}>
       
       {/* Sidebar with macOS window decorations & CPU load monitors */}
-      <Sidebar 
+      <Sidebar
         threads={threads}
         activeThreadId={activeThreadId}
         onSelectThread={(id) => {
@@ -419,6 +423,7 @@ export default function App() {
           setActiveSection(section);
           setPanelView('default');
         }}
+        backendStatus={backendStatus}
       />
 
       {/* Main Workspace Frame container with glass window feel */}
@@ -502,6 +507,7 @@ export default function App() {
                 setThreads={setThreads}
                 activeThreadId={activeThreadId}
                 setSpawnChats={setSpawnChats}
+                backendStatus={backendStatus}
               />
             )}
 
@@ -524,6 +530,7 @@ export default function App() {
                 setSettings={setSettings}
                 llmProviders={llmProviders}
                 searchProviders={searchProviders}
+                backendStatus={backendStatus}
               />
             )}
           </div>

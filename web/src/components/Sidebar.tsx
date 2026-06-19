@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { 
-  MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive, 
+import {
+  MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
   Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
   ChevronDown, ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Spawn } from '../types';
 import SFSymbol from './SFSymbol';
+import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface ArslanThread {
   id: string;
@@ -21,22 +22,26 @@ interface SidebarProps {
   spawns: Spawn[];
   activeSpawnChatId: string;
   onSelectSpawnChat: (id: string) => void;
-  
+
   // Outer global view states
   activeSection: 'arslan' | 'spawn' | 'ledger' | 'settings';
   onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'settings') => void;
+
+  /** Real backend reachability signal from useBackendStatus */
+  backendStatus: BackendStatus;
 }
 
-export default function Sidebar({ 
-  threads, 
-  activeThreadId, 
-  onSelectThread, 
-  onAddThread, 
-  spawns, 
-  activeSpawnChatId, 
+export default function Sidebar({
+  threads,
+  activeThreadId,
+  onSelectThread,
+  onAddThread,
+  spawns,
+  activeSpawnChatId,
   onSelectSpawnChat,
   activeSection,
-  onChangeSection
+  onChangeSection,
+  backendStatus,
 }: SidebarProps) {
   const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
   
@@ -234,64 +239,31 @@ export default function Sidebar({
           <span className="truncate font-sans font-medium">System Settings</span>
         </button>
 
-        <div className="space-y-3 border-t border-[#1e2330]/40 pt-3">
-          <div 
-            onClick={() => setIsMetricsExpanded(!isMetricsExpanded)}
-            className="flex items-center justify-between text-[10px] font-mono text-gray-500 uppercase tracking-widest cursor-pointer hover:text-gray-300 transition-colors group/foot"
-          >
+        <div className="border-t border-[#1e2330]/40 pt-3">
+          {/* DAEMON CORE — wired to real backend health signal */}
+          <div className="flex items-center justify-between text-[10px] font-mono text-gray-500 uppercase tracking-widest select-none">
             <span className="flex items-center gap-1.5">
               <span>Daemon Core</span>
-              {isMetricsExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5 text-gray-600 group-hover/foot:text-[#FF8E24] transition-colors" />
-              ) : (
-                <ChevronUp className="w-3.5 h-3.5 text-gray-600 group-hover/foot:text-[#FF8E24] transition-colors" />
-              )}
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Online
-            </span>
-          </div>
-
-          <AnimatePresence initial={false}>
-            {isMetricsExpanded && (
-              <motion.div 
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden space-y-1.5 font-mono text-[9px] text-gray-400"
-              >
-                {/* CPU Metric */}
-                <div className="space-y-0.5 pt-1">
-                  <div className="flex justify-between text-gray-500 select-none">
-                    <span className="flex items-center gap-1">
-                      <Cpu className="w-3 h-3 text-gray-600" />
-                      CPU Usage
-                    </span>
-                    <span>14.5%</span>
-                  </div>
-                  <div className="w-full bg-[#181d28] h-1 rounded-full overflow-hidden">
-                    <div className="bg-gradient-to-r from-[#FF8E24] to-amber-500 h-full w-[14.5%]"></div>
-                  </div>
-                </div>
-
-                {/* RAM Metric */}
-                <div className="space-y-0.5">
-                  <div className="flex justify-between text-gray-500 select-none">
-                    <span className="flex items-center gap-1">
-                      <Layers className="w-3 h-3 text-gray-600" />
-                      Shared RAM
-                    </span>
-                    <span>4.8 GB / 16 GB</span>
-                  </div>
-                  <div className="w-full bg-[#181d28] h-1 rounded-full overflow-hidden">
-                    <div className="bg-[#FF8E24]/60 h-full w-[30%]"></div>
-                  </div>
-                </div>
-              </motion.div>
+            {backendStatus === 'checking' && (
+              <span className="flex items-center gap-1 text-gray-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse"></span>
+                Connecting
+              </span>
             )}
-          </AnimatePresence>
+            {backendStatus === 'online' && (
+              <span className="flex items-center gap-1 text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Online
+              </span>
+            )}
+            {backendStatus === 'offline' && (
+              <span className="flex items-center gap-1 text-red-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                Offline
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </aside>

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
-import { 
-  Sliders, Wrench, BookOpen, Clock, Activity, ArrowUpRight, Shield, Cpu, 
-  ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X 
+import {
+  Sliders, Wrench, BookOpen, Clock, Activity, ArrowUpRight, Shield, Cpu,
+  ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X, WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import SFSymbol from './SFSymbol';
+import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface SpawnsDashboardProps {
   spawns: Spawn[];
@@ -22,6 +23,7 @@ interface SpawnsDashboardProps {
   setThreads?: React.Dispatch<React.SetStateAction<any[]>>;
   activeThreadId?: string;
   setSpawnChats?: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
+  backendStatus?: BackendStatus;
 }
 
 export default function SpawnsDashboard({
@@ -36,7 +38,8 @@ export default function SpawnsDashboard({
   setSpawns,
   setThreads,
   activeThreadId,
-  setSpawnChats
+  setSpawnChats,
+  backendStatus,
 }: SpawnsDashboardProps) {
 
   // Global Integration Discovery & Repository Engine States
@@ -196,13 +199,23 @@ export default function SpawnsDashboard({
 
       {/* Spawns Grid Render */}
       {spawns.length === 0 ? (
-        <div className="h-64 border border-dashed border-gray-800 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-black/10">
-          <Cpu className="w-8 h-8 text-gray-600 mb-2 animate-bounce" />
-          <h3 className="text-sm font-sans font-medium text-white">No active spawns active</h3>
-          <p className="text-xs text-gray-500 max-w-sm mt-1">
-            Create or instantiate micro-specialists to start delegating complex quantitative algorithms.
-          </p>
-        </div>
+        backendStatus === 'offline' ? (
+          <div className="h-64 border border-dashed border-red-900/40 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-red-950/10">
+            <WifiOff className="w-8 h-8 text-red-500/60 mb-2" />
+            <h3 className="text-sm font-sans font-medium text-red-300">后端未连接 / Backend not connected</h3>
+            <p className="text-xs text-red-400/70 max-w-sm mt-1">
+              Spawn list could not be loaded — the backend is unreachable. Start the backend and the list will reload automatically.
+            </p>
+          </div>
+        ) : (
+          <div className="h-64 border border-dashed border-gray-800 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-black/10">
+            <Cpu className="w-8 h-8 text-gray-600 mb-2 animate-bounce" />
+            <h3 className="text-sm font-sans font-medium text-white">No active spawns active</h3>
+            <p className="text-xs text-gray-500 max-w-sm mt-1">
+              Create or instantiate micro-specialists to start delegating complex quantitative algorithms.
+            </p>
+          </div>
+        )
       ) : (
         <div className={`grid gap-6 ${cardStyle === 'compact' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
           {spawns.map(spawn => {

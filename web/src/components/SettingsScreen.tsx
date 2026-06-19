@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
 import type { ProviderOption } from '../api/client.types';
+import type { BackendStatus } from '../hooks/useBackendStatus';
 import { api } from '../api/client';
 import { toBackendSettings } from '../api/adapters';
 import {
   Key, Sliders, Globe, Check, Eye, EyeOff, Save,
-  Info, AlertCircle
+  Info, AlertCircle, WifiOff
 } from 'lucide-react';
 
 interface SettingsScreenProps {
@@ -14,9 +15,10 @@ interface SettingsScreenProps {
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   llmProviders: ProviderOption[];
   searchProviders: string[];
+  backendStatus: BackendStatus;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus }: SettingsScreenProps) {
   const { t } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
@@ -65,6 +67,21 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           Calibrate the neural orchestrator core, assign LLM credential keys, and configure telemetry parameters.
         </p>
       </div>
+
+      {/* Backend-down honest banner — shown when health check fails */}
+      {backendStatus === 'offline' && (
+        <div className="max-w-4xl mb-6 flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4">
+          <WifiOff className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-bold text-red-300 font-mono uppercase tracking-wide">
+              后端未连接 / Backend not connected
+            </p>
+            <p className="text-[11px] text-red-400/80 font-sans mt-1 leading-relaxed">
+              Settings could not be loaded from the server. Displaying defaults — do not treat these values as real configuration. Save is disabled until the backend is reachable.
+            </p>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="max-w-4xl space-y-8">
         
@@ -311,10 +328,13 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           <button
             id="settings-save-button"
             type="submit"
+            disabled={backendStatus === 'offline'}
             className={`px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1.5 ${
-              isSaved
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#FF8E24] hover:bg-[#ff9c3a] text-black shadow-lg shadow-[#FF8E24]/10'
+              backendStatus === 'offline'
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-50'
+                : isSaved
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#FF8E24] hover:bg-[#ff9c3a] text-black shadow-lg shadow-[#FF8E24]/10'
             }`}
           >
             {isSaved ? <Check className="w-4 h-4 text-white" /> : <Save className="w-4 h-4" />}
