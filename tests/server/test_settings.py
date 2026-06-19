@@ -9,6 +9,20 @@ from server.db.models import Base
 
 
 @pytest.mark.asyncio
+async def test_list_providers_endpoint(client):
+    resp = await client.get("/api/v1/settings/providers")
+    assert resp.status_code == 200
+    options = resp.json()
+    keys = {o["key"] for o in options}
+    # Tier-0 presets + native providers all surfaced for the dropdown
+    assert {"openai", "deepseek", "qwen", "ollama"} <= keys
+    assert {"anthropic", "gemini"} <= keys
+    by_key = {o["key"]: o for o in options}
+    assert by_key["deepseek"]["base_url"].startswith("https://api.deepseek.com")
+    assert by_key["anthropic"]["native"] is True
+
+
+@pytest.mark.asyncio
 async def test_search_settings_roundtrip(client):
     resp = await client.put("/api/v1/settings", json={
         "search_provider": "tavily", "search_api_key": "tvly-secret-12345678",

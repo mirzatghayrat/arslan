@@ -21,6 +21,11 @@ beforeEach(() => {
     language: "en",
   });
   vi.spyOn(api, "listFacts").mockResolvedValue([]);
+  vi.spyOn(api, "listProviders").mockResolvedValue([
+    { key: "openai", label: "OpenAI", base_url: "https://api.openai.com/v1", default_model: "gpt-4o", native: false },
+    { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-chat", native: false },
+    { key: "anthropic", label: "Anthropic Claude", base_url: "", default_model: "claude-sonnet-4-6", native: true },
+  ]);
 });
 
 describe("Settings", () => {
@@ -35,6 +40,18 @@ describe("Settings", () => {
     await screen.findByDisplayValue("gpt-4o");
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(api.updateSettings).toHaveBeenCalled());
+  });
+
+  it("lists fetched providers and prefills model/base_url on selection", async () => {
+    render(<Settings />);
+    await screen.findByDisplayValue("gpt-4o");
+    // dropdown is populated from the backend catalog (labels, not bare keys)
+    expect(await screen.findByRole("option", { name: "DeepSeek" })).toBeInTheDocument();
+    const select = screen.getByRole("combobox");
+    await userEvent.selectOptions(select, "deepseek");
+    // picking DeepSeek prefills its default model + base_url
+    expect(screen.getByDisplayValue("deepseek-chat")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://api.deepseek.com")).toBeInTheDocument();
   });
 
   it("persists a typed API token to the auth store on save", async () => {

@@ -1,7 +1,13 @@
 """Tests for OpenAI-compatible provider presets (Tier 0)."""
 import pytest
 
-from arslan.llm.presets import PRESETS, list_presets, resolve_preset
+from arslan.llm.presets import (
+    PRESETS,
+    expand_preset,
+    list_presets,
+    provider_options,
+    resolve_preset,
+)
 
 
 def test_known_preset_resolves_with_base_url():
@@ -36,3 +42,71 @@ def test_every_preset_is_well_formed(name):
     assert p["base_url"].startswith(("http://", "https://"))
     assert isinstance(p["default_model"], str) and p["default_model"]
     assert p.get("label")
+
+
+# ---- provider_options: the unified dropdown list (presets + native) -------
+
+
+def test_provider_options_includes_presets_and_native():
+    keys = {o["key"] for o in provider_options()}
+    # every Tier-0 preset is offered
+    assert set(list_presets()) <= keys
+    # native (non-OpenAI-compatible) providers are offered too
+    assert {"anthropic", "gemini"} <= keys
+
+
+def test_provider_options_have_required_display_fields():
+    for o in provider_options():
+        assert o["key"]
+        assert o["label"]
+        # every option carries a model default the UI can prefill
+        assert isinstance(o["default_model"], str) and o["default_model"]
+        assert "base_url" in o  # native entries may be "" (SDK default)
+        assert isinstance(o["native"], bool)
+
+
+def test_native_options_have_no_base_url():
+    by_key = {o["key"]: o for o in provider_options()}
+    assert by_key["anthropic"]["native"] is True
+    assert by_key["anthropic"]["base_url"] == ""
+    assert by_key["gemini"]["native"] is True
+
+
+def test_provider_options_has_no_duplicate_keys():
+    keys = [o["key"] for o in provider_options()]
+    assert len(keys) == len(set(keys))
+
+
+# ---- expand_preset: turn a stored provider name into a real adapter config -
+
+
+def test_expand_preset_fills_base_url_and_model_for_preset():
+    provider, model, base_url = expand_preset("deepseek", "", "")
+    assert provider == "openai"  # routed through the OpenAI-compatible client
+    assert base_url.startswith("https://api.deepseek.com")
+    assert model == PRESETS["deepseek"]["default_model"]
+
+
+def test_expand_preset_respects_user_overrides():
+    provider, model, base_url = expand_preset(
+        "deepseek", "deepseek-reasoner", "https://proxy.example/v1"
+    )
+    assert provider == "openai"
+    assert model == "deepseek-reasoner"  # user model kept
+    assert base_url == "https://proxy.example/v1"  # user base_url kept
+
+
+def test_expand_preset_passes_native_through_unchanged():
+    assert expand_preset("anthropic", "claude-opus-4-8", "") == (
+        "anthropic",
+        "claude-opus-4-8",
+        "",
+    )
+
+
+def test_expand_preset_unknown_provider_passes_through():
+    assert expand_preset("mystery", "m1", "https://x/v1") == (
+        "mystery",
+        "m1",
+        "https://x/v1",
+    )

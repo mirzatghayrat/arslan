@@ -4,12 +4,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arslan.llm.presets import provider_options
 from server.auth import require_auth
 from server.db.session import get_session
-from server.schemas import SettingsIn, SettingsOut
+from server.schemas import ProviderOption, SettingsIn, SettingsOut
 from server.services import settings_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+
+@router.get("/settings/providers", response_model=list[ProviderOption])
+async def list_providers() -> list[ProviderOption]:
+    """Available LLM providers for the Settings dropdown (Tier-0 presets + native)."""
+    return [ProviderOption(**o) for o in provider_options()]
 
 
 @router.get("/settings", response_model=SettingsOut)

@@ -8,7 +8,7 @@ from arslan.llm.adapter import LLMAdapter
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ChatMessage, Spawn
-from server.services import settings_service
+from server.services.llm_factory import build_adapter
 from server.ws import protocol
 
 
@@ -37,13 +37,8 @@ async def _save_message(spawn_id: int, role: str, content: str) -> int:
 
 
 async def _build_adapter() -> LLMAdapter:
-    async with db_session.AsyncSessionLocal() as db:
-        cfg = await settings_service.get_settings(db)
-        api_key = await settings_service.get_decrypted_api_key(db)
-    provider = cfg.get("llm_provider") or "openai"
-    model = cfg.get("llm_model") or "gpt-4o"
-    base_url = cfg.get("llm_base_url") or ""
-    return LLMAdapter(provider, model, api_key=api_key, base_url=base_url)
+    # Single source of truth for settings → adapter (incl. Tier-0 preset expansion).
+    return await build_adapter()
 
 
 async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:

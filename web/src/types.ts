@@ -76,6 +76,14 @@ export interface AppSettings {
   language: string;
 }
 
+export interface ProviderOption {
+  key: string;
+  label: string;
+  base_url: string;
+  default_model: string;
+  native: boolean;
+}
+
 export interface TemplateInfo {
   name: string;
   domain: string;

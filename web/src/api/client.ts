@@ -2,6 +2,7 @@ import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
   EvolutionStats,
+  ProviderOption,
   RegistryCatalog,
   SpawnDetail,
   SpawnSummary,
@@ -75,6 +76,7 @@ export const api = {
     }),
   listTemplates: () => request<TemplateInfo[]>("/templates"),
   getSettings: () => request<AppSettings>("/settings"),
+  listProviders: () => request<ProviderOption[]>("/settings/providers"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   getRegistry: () => request<RegistryCatalog>("/registry"),
