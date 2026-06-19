@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { DEFAULT_SPAWNS, INITIAL_CHAT_HISTORY, DEFAULT_SETTINGS } from './data';
+import React, { useState, useEffect } from 'react';
+import { INITIAL_CHAT_HISTORY, DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, AppSettings } from './types';
+import { useSpawnStore } from './stores/spawnStore';
+import { toUiSpawn } from './api/adapters';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import SpawnDirectChat from './components/SpawnDirectChat';
@@ -103,8 +105,18 @@ export default function App() {
   const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('spawn-aletheia');
 
   // Shared application state databases
-  const [spawns, setSpawns] = useState<Spawn[]>(DEFAULT_SPAWNS);
+  // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
+  const [spawns, setSpawns] = useState<Spawn[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  // Stage B: wire Spawns Ledger to live backend on mount
+  useEffect(() => {
+    const store = useSpawnStore.getState();
+    store.load().then(() => {
+      const liveSpawns = useSpawnStore.getState().spawns.map(toUiSpawn);
+      setSpawns(liveSpawns);
+    });
+  }, []);
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
   // New Spawn Creation modal/overlay state
