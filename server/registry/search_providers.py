@@ -52,3 +52,8 @@ def get_provider(name: str, *, api_key: str) -> SearchProvider:
     if cls is None:
         raise ValueError(f"unknown search provider: {name}")
     return cls(api_key=api_key)
+
+
+def list_providers() -> list[str]:
+    """Registered search-provider keys (for the Settings dropdown). Default first."""
+    return [_DEFAULT] + sorted(k for k in _PROVIDERS if k != _DEFAULT)

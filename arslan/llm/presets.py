@@ -80,6 +80,26 @@ PRESETS: dict[str, dict[str, str]] = {
 }
 
 
+# Native providers (NOT OpenAI-compatible) — reached by dedicated provider
+# classes in arslan/llm/adapter.py, so they carry no base_url (the SDK knows it).
+# ``openai`` is intentionally NOT here: it already lives in PRESETS as the
+# canonical OpenAI-compatible entry.
+NATIVE: dict[str, dict[str, str]] = {
+    "anthropic": {
+        "label": "Anthropic Claude",
+        "provider": "anthropic",
+        "base_url": "",
+        "default_model": "claude-sonnet-4-6",
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "provider": "gemini",
+        "base_url": "",
+        "default_model": "gemini-2.5-flash",
+    },
+}
+
+
 def resolve_preset(name: str) -> dict[str, str] | None:
     """Return the preset config for ``name`` (case-insensitive), or None."""
     if not name:
@@ -90,3 +110,55 @@ def resolve_preset(name: str) -> dict[str, str] | None:
 def list_presets() -> list[str]:
     """Return preset keys, sorted."""
     return sorted(PRESETS)
+
+
+def provider_options() -> list[dict[str, object]]:
+    """Unified list for the Settings provider dropdown: presets + native.
+
+    Each option is ``{key, label, base_url, default_model, native}``. The
+    frontend renders ``label``, stores ``key`` as ``llm_provider``, and can
+    prefill ``llm_model``/``llm_base_url`` from the defaults. ``native`` marks
+    entries handled by a dedicated provider class (no user base_url needed).
+    """
+    options: list[dict[str, object]] = []
+    for key in list_presets():
+        p = PRESETS[key]
+        options.append(
+            {
+                "key": key,
+                "label": p["label"],
+                "base_url": p["base_url"],
+                "default_model": p["default_model"],
+                "native": False,
+            }
+        )
+    for key, p in NATIVE.items():
+        options.append(
+            {
+                "key": key,
+                "label": p["label"],
+                "base_url": p["base_url"],
+                "default_model": p["default_model"],
+                "native": True,
+            }
+        )
+    return options
+
+
+def expand_preset(provider: str, model: str, base_url: str) -> tuple[str, str, str]:
+    """Resolve a stored ``llm_provider`` into a concrete adapter config.
+
+    If ``provider`` names a Tier-0 preset (e.g. ``"deepseek"``), expand it to the
+    OpenAI-compatible client config, filling ``base_url`` and ``model`` from the
+    preset *only* where the user left them blank (user values always win). Native
+    or unknown providers pass through unchanged so the adapter registry handles
+    them.
+    """
+    preset = resolve_preset(provider)
+    if preset is None:
+        return provider, model, base_url
+    return (
+        preset["provider"],
+        model or preset["default_model"],
+        base_url or preset["base_url"],
+    )

@@ -26,6 +26,16 @@ class SettingsOut(BaseModel):
     search_api_key: str = ""  # masked
 
 
+class ProviderOption(BaseModel):
+    """One entry in the Settings provider dropdown (Tier-0 preset or native)."""
+
+    key: str
+    label: str
+    base_url: str = ""
+    default_model: str = ""
+    native: bool = False
+
+
 class EquipmentItemOut(BaseModel):
     key: str
     name: str

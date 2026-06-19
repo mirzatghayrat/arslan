@@ -48,6 +48,21 @@ embeddings = [
 [project.scripts]
 arslan = "arslan.cli:main"
 
+# The wheel content is pinned explicitly so the bundled non-.py package data can
+# never be silently dropped by a future default change. The ``arslan`` package
+# carries data files loaded at runtime via ``Path(__file__).parent``:
+#   - seed skill-packs        arslan/spawn/seeds/        (SKILL.md + scripts/)
+#   - scaffold templates      arslan/spawn/scaffold/     (incl. skillpack/*.j2)
+#   - LLM capability profiles arslan/llm/profiles/*.yaml
+#   - requirement tree        arslan/config/*.yaml
+#   - official templates      arslan/templates/official/
+# Hatchling already includes these by default (they are git-tracked); naming the
+# package here makes that guarantee explicit. The top-level ``server/`` package is
+# intentionally NOT wheel-packaged — the FastAPI server is Docker-deployed (see
+# Dockerfile: it copies server/ + the built SPA and runs ``uvicorn server.main:app``).
+[tool.hatch.build.targets.wheel]
+packages = ["arslan"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

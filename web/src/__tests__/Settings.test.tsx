@@ -12,6 +12,8 @@ beforeEach(() => {
     llm_base_url: "",
     llm_api_key: "sk-...1234",
     language: "en",
+    search_provider: "tavily",
+    search_api_key: "",
   });
   vi.spyOn(api, "updateSettings").mockResolvedValue({
     llm_provider: "openai",
@@ -19,8 +21,16 @@ beforeEach(() => {
     llm_base_url: "",
     llm_api_key: "sk-...9999",
     language: "en",
+    search_provider: "tavily",
+    search_api_key: "tv...9999",
   });
   vi.spyOn(api, "listFacts").mockResolvedValue([]);
+  vi.spyOn(api, "listSearchProviders").mockResolvedValue(["tavily"]);
+  vi.spyOn(api, "listProviders").mockResolvedValue([
+    { key: "openai", label: "OpenAI", base_url: "https://api.openai.com/v1", default_model: "gpt-4o", native: false },
+    { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-chat", native: false },
+    { key: "anthropic", label: "Anthropic Claude", base_url: "", default_model: "claude-sonnet-4-6", native: true },
+  ]);
 });
 
 describe("Settings", () => {
@@ -35,6 +45,31 @@ describe("Settings", () => {
     await screen.findByDisplayValue("gpt-4o");
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(api.updateSettings).toHaveBeenCalled());
+  });
+
+  it("lists fetched providers and prefills model/base_url on selection", async () => {
+    render(<Settings />);
+    await screen.findByDisplayValue("gpt-4o");
+    // dropdown is populated from the backend catalog (labels, not bare keys)
+    expect(await screen.findByRole("option", { name: "DeepSeek" })).toBeInTheDocument();
+    const llmSelect = screen.getAllByRole("combobox")[0]; // LLM provider (search provider is 2nd)
+    await userEvent.selectOptions(llmSelect, "deepseek");
+    // picking DeepSeek prefills its default model + base_url
+    expect(screen.getByDisplayValue("deepseek-chat")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://api.deepseek.com")).toBeInTheDocument();
+  });
+
+  it("saves a typed search API key (Tavily)", async () => {
+    render(<Settings />);
+    await screen.findByDisplayValue("gpt-4o");
+    const searchKeyInput = screen.getByPlaceholderText(/tvly-/i);
+    await userEvent.type(searchKeyInput, "tvly-secret-123");
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() =>
+      expect(api.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ search_provider: "tavily", search_api_key: "tvly-secret-123" }),
+      ),
+    );
   });
 
   it("persists a typed API token to the auth store on save", async () => {
