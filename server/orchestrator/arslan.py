@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 
 from server.orchestrator import dispatcher, memory, router
+from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
-from server.services import spawn_service
+from server.services import phase_service, spawn_service
 from server.services.llm_factory import build_adapter
+
+logger = logging.getLogger(__name__)
 
 EventSink = Callable[[dict], None]
 
@@ -31,10 +35,66 @@ async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[
         yield piece
 
 
+_CLASSIFY_SYSTEM = (
+    "Given a pending proposed direction and the user's reply, classify the user's intent. "
+    "Reply with ONE JSON object and nothing else: {\"kind\": \"confirm\" | \"refine\" | \"new\"}. "
+    "- confirm: the user approves or accepts the proposal (e.g. '好的', 'go', 'do it', 'sounds good', '就这样'). "
+    "- refine: the user adjusts or modifies the direction (e.g. 'make it shorter', 'change X to Y', 'add more detail'). "
+    "- new: the user has an unrelated request that does not pertain to the pending proposal."
+)
+
+
+async def _build_classify_adapter():
+    """Indirection so tests can stub adapter construction."""
+    return await build_adapter()
+
+
+async def _classify_followup(user_message: str, direction: str) -> str:
+    """Classify the user's reply to a pending proposal: 'confirm', 'refine', or 'new'.
+
+    Returns 'new' on any parse failure or unexpected value.
+    """
+    prompt = f"Pending direction: {direction}\n\nUser's reply: {user_message}"
+    adapter = await _build_classify_adapter()
+    try:
+        resp = await adapter.chat(system=_CLASSIFY_SYSTEM, user=prompt)
+        parsed = parse_json_object(resp.content or "")
+        kind = (parsed or {}).get("kind")
+        if kind in ("confirm", "refine", "new"):
+            return kind
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_classify_followup failed, defaulting to 'new': %s", exc)
+    return "new"
+
+
 async def handle_user_message(conversation_id: str, user_message: str, emit: EventSink) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
     # 1. persist the user turn
     await memory.add_message(conversation_id, "user", user_message)
+
+    # 1b. if a proposal is pending, classify the reply before routing
+    pending = await phase_service.get_pending(conversation_id)
+    if pending and pending["phase"] == "proposing":
+        kind = await _classify_followup(user_message, pending["direction"])
+        if kind == "confirm":
+            await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
+            await memory.maybe_compact(conversation_id)
+            return
+        if kind == "refine":
+            # task_brief stays the base direction; instruction carries the user's refinement.
+            await _dispatch_spawn(
+                conversation_id,
+                pending["spawn_id"],
+                pending["direction"],
+                emit,
+                mode="propose",
+                prior_output=None,
+                instruction=user_message,
+            )
+            await memory.maybe_compact(conversation_id)
+            return
+        # kind == "new" → clear the stale pending phase and fall through to normal routing
+        await phase_service.clear(conversation_id, pending["spawn_id"])
 
     # 2. route (one decision call; also returns new_facts)
     result = await router.route(conversation_id, user_message)
@@ -94,7 +154,6 @@ async def _handle_answer(
 
 async def _handle_route(conversation_id, result, emit: EventSink) -> None:  # noqa: ANN001
     if getattr(result, "needs_proposal", False):
-        from server.services import phase_service
         spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
         await phase_service.set_proposing(conversation_id, result.spawn_id, result.task_brief or "")
         emit({"type": "proposal", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
@@ -249,7 +308,6 @@ async def _dispatch_spawn(  # noqa: ANN001
 
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
     """User confirmed a pending proposal — run the spawn in execute mode on the stored direction."""
-    from server.services import phase_service
     pending = await phase_service.get_pending(conversation_id)
     direction = (pending or {}).get("direction", "")
     await phase_service.clear(conversation_id, spawn_id)
