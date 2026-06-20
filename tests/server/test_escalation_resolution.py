@@ -38,7 +38,7 @@ async def test_data_need_resolved_by_arslan_fetch(maker, monkeypatch):
 
     async def _fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                              on_event=None, prior_output=None, instruction=None,
-                             allow_escalation=True):
+                             allow_escalation=True, **kw):
         dispatch_calls.append({"task_brief": task_brief, "allow_escalation": allow_escalation})
         if len(dispatch_calls) == 1:
             return {"full_output": "", "spawn_name": "小美",
@@ -87,7 +87,7 @@ async def test_action_delegation_refused(maker, monkeypatch):
 
     async def _fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                              on_event=None, prior_output=None, instruction=None,
-                             allow_escalation=True):
+                             allow_escalation=True, **kw):
         dispatch_calls.append(task_brief)
         return {"full_output": "", "spawn_name": "小美",
                 "summary_message_id": 1, "assistant_message_id": 1,
@@ -121,7 +121,7 @@ async def test_capability_need_temp_grants_safe_toolset(maker, monkeypatch):
 
     async def _fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                              on_event=None, prior_output=None, instruction=None,
-                             allow_escalation=True):
+                             allow_escalation=True, **kw):
         calls.append(task_brief)
         if len(calls) == 1:
             return {"full_output": "", "spawn_name": "小美",
@@ -160,7 +160,7 @@ async def test_already_held_toolset_falls_through_to_fetch(maker, monkeypatch):
 
     async def _fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                              on_event=None, prior_output=None, instruction=None,
-                             allow_escalation=True):
+                             allow_escalation=True, **kw):
         dispatch_calls.append({"task_brief": task_brief, "allow_escalation": allow_escalation})
         if len(dispatch_calls) == 1:
             return {"full_output": "", "spawn_name": "小美",

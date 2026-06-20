@@ -93,7 +93,14 @@ async def _handle_answer(
 
 
 async def _handle_route(conversation_id, result, emit: EventSink) -> None:  # noqa: ANN001
-    await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit)
+    if getattr(result, "needs_proposal", False):
+        from server.services import phase_service
+        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        await phase_service.set_proposing(conversation_id, result.spawn_id, result.task_brief or "")
+        emit({"type": "proposal", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
+        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit, mode="propose")
+    else:
+        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit)
 
 
 def _arslan_fetch_executor():
@@ -199,6 +206,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     *,
     prior_output: str | None = None,
     instruction: str | None = None,
+    mode: str = "execute",
 ) -> None:
     """Run one spawn turn: routing -> stream_start -> chunks -> spawn_meta -> stream_end.
 
@@ -217,6 +225,7 @@ async def _dispatch_spawn(  # noqa: ANN001
             on_event=emit,
             prior_output=prior_output,
             instruction=instruction,
+            mode=mode,
         )
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
@@ -236,6 +245,15 @@ async def _dispatch_spawn(  # noqa: ANN001
         "task_brief": task_brief,
     })
     emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+
+
+async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
+    """User confirmed a pending proposal — run the spawn in execute mode on the stored direction."""
+    from server.services import phase_service
+    pending = await phase_service.get_pending(conversation_id)
+    direction = (pending or {}).get("direction", "")
+    await phase_service.clear(conversation_id, spawn_id)
+    await _dispatch_spawn(conversation_id, spawn_id, direction, emit, mode="execute")
 
 
 # Public alias for reuse from other orchestration entry points (e.g. refinements).
