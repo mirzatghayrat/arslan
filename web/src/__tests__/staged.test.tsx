@@ -102,6 +102,20 @@ describe("staged orchestration UI", () => {
   });
 });
 
+describe("arslanStore — verdict_recorded ack", () => {
+  beforeEach(() => {
+    useArslanStore.setState(initialArslanState(), true);
+  });
+
+  it("handles verdict_recorded frame without throwing or changing items", () => {
+    const { handleFrame } = useArslanStore.getState();
+    const itemsBefore = useArslanStore.getState().items;
+    // Should not throw; the frame is silently acknowledged
+    handleFrame({ type: "verdict_recorded", spawn_id: 5, action: "accept" } as any);
+    expect(useArslanStore.getState().items).toEqual(itemsBefore);
+  });
+});
+
 describe("arslanStore — pendingProposalSpawnId flag", () => {
   beforeEach(() => {
     useArslanStore.setState(initialArslanState(), true);

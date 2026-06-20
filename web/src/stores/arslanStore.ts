@@ -356,6 +356,10 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
+        case "verdict_recorded":
+          // Ack from the server confirming that the deliverable verdict (leveling signal)
+          // was successfully recorded. No UI change needed — this is a silent confirmation.
+          break;
         case "error":
           set({
             error: frame.message,

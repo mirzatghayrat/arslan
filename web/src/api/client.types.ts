@@ -185,4 +185,5 @@ export type ArslanServerMessage =
   | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
   | { type: "escalation_refused"; spawn_id: number; why: string }
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean };
+  | { type: "error"; code: string; message: string; recoverable?: boolean }
+  | { type: "verdict_recorded"; spawn_id: number; action: string };

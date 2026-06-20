@@ -45,6 +45,8 @@ export interface Message {
   isProposal?: boolean;
   /** Backend message id for verdict frames (spawnMessageId from the store item). */
   messageId?: number;
+  /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */
+  taskBrief?: string | null;
   routedTo?: {
     spawnId: string;
     spawnName: string;
