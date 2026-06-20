@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatMessage } from "../types";
+import type { ChatMessage } from "../api/client.types";
 
 interface ChatState {
   messages: ChatMessage[];

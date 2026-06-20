@@ -1,23 +1,33 @@
-/// <reference types="vitest" />
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import {defineConfig} from 'vite';
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": "http://localhost:8741",
-      "/ws": { target: "ws://localhost:8741", ws: true },
+export default defineConfig(() => {
+  return {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      // Keep symlinked paths (src/node_modules are symlinks in the clean-vite
+      // staging dir); otherwise Vite dev resolves them back into the repo tree
+      // and fails to load the entry module / breaks Tailwind's clean scan.
+      preserveSymlinks: true,
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
     },
-  },
-  build: {
-    outDir: "dist",
-  },
-  test: {
-    globals: true,
-    environment: "jsdom",
-    setupFiles: ["./src/__tests__/setup.ts"],
-    css: false,
-  },
+    server: {
+      port: 5173,
+      hmr: process.env.DISABLE_HMR !== 'true',
+      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      proxy: {
+        '/api': 'http://localhost:8741',
+        '/ws': { target: 'ws://localhost:8741', ws: true },
+      },
+    },
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: ['./src/test/setup.ts'],
+    },
+  };
 });

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../api/client";
-import type { SpawnSummary } from "../types";
+import type { SpawnSummary } from "../api/client.types";
 
 interface SpawnState {
   spawns: SpawnSummary[];

@@ -6,9 +6,10 @@ import type {
   RegistryCatalog,
   SpawnDetail,
   SpawnSummary,
+  SuggestDraft,
   TemplateInfo,
   UserFact,
-} from "../types";
+} from "./client.types";
 
 // Configurable for desktop (Tauri) builds; empty = same-origin relative URLs.
 export const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/+$/, "");
@@ -55,7 +56,7 @@ export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
   draftSpawn: (description: string) =>
-    request<import("../types").SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
+    request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
   createSpawn: (body: { name: string; domain: string; capabilities: string[]; persona_role?: string | null; persona_tone?: string | null }) =>
     request<SpawnDetail>("/spawns", { method: "POST", body: JSON.stringify(body) }),
   getSpawn: (id: number) => request<SpawnDetail>(`/spawns/${id}`),

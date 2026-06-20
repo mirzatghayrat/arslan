@@ -1,0 +1,244 @@
+import type { AppSettings, Message, Spawn } from "../types";
+import type { AppSettings as BackendAppSettings, ArslanThreadItem, SpawnSummary } from "./client.types";
+
+// ── Settings adapters ─────────────────────────────────────────────────────────
+
+// Backend masked value sentinel (the server returns this literal when a key is set but masked).
+const MASKED_SENTINEL_RE = /^[•*]+$/;
+
+/**
+ * Maps a backend AppSettings (snake_case) → UI AppSettings (camelCase).
+ *
+ * Field mapping:
+ *   llm_provider   → llmProvider
+ *   llm_model      → llmModel
+ *   llm_api_key    → apiKeyLLM  (may be "" or masked "••…")
+ *   search_provider → searchProvider
+ *   search_api_key  → apiKeySearch (may be "" or masked)
+ *   language       → language
+ *
+ * UI-only fields with no backend counterpart are kept at their current UI value
+ * and therefore should NOT be overwritten on fetch; callers must merge:
+ *   theme, telemetry, spawnMode
+ */
+export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode"> {
+  return {
+    llmProvider: backend.llm_provider ?? "",
+    llmModel: backend.llm_model ?? "",
+    apiKeyLLM: backend.llm_api_key ?? "",
+    searchProvider: backend.search_provider ?? "",
+    apiKeySearch: backend.search_api_key ?? "",
+    language: backend.language ?? "en",
+  };
+}
+
+/**
+ * Maps UI AppSettings (camelCase) → backend body (snake_case) for PUT /api/v1/settings.
+ *
+ * Masked-key handling: if the user did NOT type a new key (value is empty or still
+ * matches the masked sentinel pattern), we omit that field from the PUT body so the
+ * backend keeps the existing stored value.
+ */
+export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> {
+  const body: Partial<BackendAppSettings> = {
+    llm_provider: ui.llmProvider,
+    llm_model: ui.llmModel,
+    search_provider: ui.searchProvider,
+    language: ui.language,
+  };
+
+  // Only send keys if the user entered something new (non-empty, non-masked).
+  if (ui.apiKeyLLM && !MASKED_SENTINEL_RE.test(ui.apiKeyLLM)) {
+    body.llm_api_key = ui.apiKeyLLM;
+  }
+  if (ui.apiKeySearch && !MASKED_SENTINEL_RE.test(ui.apiKeySearch)) {
+    body.search_api_key = ui.apiKeySearch;
+  }
+
+  return body;
+}
+
+// ── Spawn adapters ────────────────────────────────────────────────────────────
+
+/**
+ * Maps a backend SpawnSummary DTO to the UI Spawn shape used by AI Studio components.
+ *
+ * Key mappings:
+ * - id: number  →  id: string (String(id))
+ * - total_tasks: number  →  totalTasks: number
+ * - capabilities: string[]  →  tools/skills (passthrough as tools; skills empty unless provided)
+ * - status: backend has no status field, default to "idle"
+ * - avatarEmoji: default "🤖"
+ */
+export function toUiSpawn(s: SpawnSummary & {
+  status?: string;
+  tools?: string[];
+  skills?: string[];
+  total_tasks?: number;
+  description?: string;
+}): Spawn {
+  return {
+    id: String(s.id),
+    name: s.name,
+    domain: s.domain ?? "",
+    description: s.description ?? "",
+    status: (s.status as Spawn["status"]) ?? "idle",
+    avatarEmoji: "🤖",
+    tools: s.tools ?? s.capabilities ?? [],
+    skills: s.skills ?? [],
+    totalTasks: s.total_tasks ?? 0,
+  };
+}
+
+// ── Arslan thread adapters ────────────────────────────────────────────────────
+
+/**
+ * Maps an ArslanThreadItem[] (from arslanStore) → Message[] (AI Studio UI type).
+ *
+ * Field mapping per kind:
+ *
+ * kind === "message", role === "user"
+ *   sender: "user", senderName: "You", senderAvatar: "🦁"
+ *   text: content
+ *
+ * kind === "message", role === "arslan"
+ *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
+ *   text: content
+ *   routedTo: undefined (routing is a separate item kind, not folded here)
+ *
+ * kind === "message", role === "spawn"
+ *   sender: "spawn", senderName: spawnName ?? "Spawn", senderAvatar: "🤖"
+ *   text: content
+ *   toolActivity: first ToolStep mapped if present (folded into the reply)
+ *
+ * kind === "escalation"
+ *   sender: "spawn", senderName: spawnName ?? "Spawn", senderAvatar: "🤖"
+ *   text: "" (the escalation card is the content)
+ *   escalation: mapped from item.escalation (EscalationInfo → UI Escalation)
+ *
+ * kind === "system" (spawn_created)
+ *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
+ *   text: content (the "__SPAWN_CREATED__:Name" sentinel or intro)
+ *   spawnIntro: populated from equipment + intro if available
+ *
+ * kind === "fact"
+ *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
+ *   text: content
+ *
+ * Fields with no counterpart (routedTo for routing items, timestamp) get
+ * sensible defaults: timestamp = "" (component shows it conditionally).
+ */
+export function toUiMessages(items: ArslanThreadItem[]): Message[] {
+  return items.map((item): Message => {
+    const id = String(item.id);
+    const timestamp = "";
+
+    if (item.kind === "escalation" && item.escalation) {
+      const esc = item.escalation;
+      // Map EscalationInfo.status → UI Escalation.status
+      const uiStatus =
+        esc.status === "resolving" ? ("arslan_resolving" as const)
+        : esc.status === "resolved" ? ("resolved" as const)
+        : esc.status === "refused"  ? ("refused" as const)
+        : ("need_raised" as const);
+      return {
+        id,
+        sender: "spawn",
+        senderName: esc.spawnName ?? "Spawn",
+        senderAvatar: "🤖",
+        text: "",
+        timestamp,
+        escalation: {
+          id,
+          spawnName: esc.spawnName ?? "Spawn",
+          issue: esc.need,
+          status: uiStatus,
+          resolutionMessage: esc.how ?? esc.why,
+        },
+      };
+    }
+
+    if (item.kind === "system") {
+      // spawn_created: content is "__SPAWN_CREATED__:Name" or intro text
+      const spawnNameFromContent = item.content.startsWith("__SPAWN_CREATED__:")
+        ? item.content.slice("__SPAWN_CREATED__:".length)
+        : null;
+      const spawnIntro = spawnNameFromContent
+        ? {
+            name: spawnNameFromContent,
+            domain: "",
+            avatarEmoji: "🤖",
+            tools: item.equipment?.toolsets.map((t) => t.key) ?? [],
+            skills: item.equipment?.skills.map((s) => s.key) ?? [],
+          }
+        : undefined;
+      return {
+        id,
+        sender: "arslan",
+        senderName: "Arslan",
+        senderAvatar: "🦁",
+        text: item.intro ?? item.content,
+        timestamp,
+        spawnIntro,
+      };
+    }
+
+    if (item.kind === "fact") {
+      return {
+        id,
+        sender: "arslan",
+        senderName: "Arslan",
+        senderAvatar: "🦁",
+        text: item.content,
+        timestamp,
+      };
+    }
+
+    // kind === "message"
+    if (item.role === "user") {
+      return {
+        id,
+        sender: "user",
+        senderName: "You",
+        senderAvatar: "🦁",
+        text: item.content,
+        timestamp,
+      };
+    }
+
+    if (item.role === "spawn") {
+      // Map the first ToolStep to a ToolActivity if present
+      const firstStep = item.toolSteps?.[0];
+      const toolActivity: Message["toolActivity"] = firstStep
+        ? {
+            id: `${id}-tool-0`,
+            toolName: firstStep.tool,
+            emoji: "🔧",
+            status: firstStep.status === "running" ? "running" : "completed",
+            action: firstStep.argsSummary,
+            outputSummary: firstStep.resultSummary ?? "",
+            collapsed: false,
+          }
+        : undefined;
+      return {
+        id,
+        sender: "spawn",
+        senderName: item.spawnName ?? "Spawn",
+        senderAvatar: "🤖",
+        text: item.content,
+        timestamp,
+        toolActivity,
+      };
+    }
+
+    // role === "arslan" (default)
+    return {
+      id,
+      sender: "arslan",
+      senderName: "Arslan",
+      senderAvatar: "🦁",
+      text: item.content,
+      timestamp,
+    };
+  });
+}

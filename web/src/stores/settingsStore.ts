@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppSettings } from "../types";
+import type { AppSettings } from "../api/client.types";
 
 interface SettingsState {
   settings: AppSettings | null;

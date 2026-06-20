@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep } from "../types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo } from "../api/client.types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -15,7 +15,7 @@ interface ArslanState {
   lastMessageId: number;
   pending: boolean;
   suggestionTaskBrief: string | null;
-  suggestionOverlaps: import("../types").OverlapInfo | null;
+  suggestionOverlaps: OverlapInfo | null;
   // spawn_meta frames can arrive BEFORE the stream_end that creates the item
   // (production order). Stash them here keyed by arslan_message_id and apply on
   // stream_end. Cleared per-key once applied.
@@ -29,6 +29,7 @@ interface ArslanState {
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
   clearError: () => void;
+  resetForNewConversation: () => void;
 }
 
 // Negative, decrementing ids for client-only items (user echoes, fact chips)
@@ -54,7 +55,7 @@ function initialData() {
     lastMessageId: 0,
     pending: false,
     suggestionTaskBrief: null as string | null,
-    suggestionOverlaps: null as import("../types").OverlapInfo | null,
+    suggestionOverlaps: null as OverlapInfo | null,
     pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
     activitySteps: [] as ToolStep[],
   };
@@ -76,6 +77,10 @@ function makeActions(set: SetState, get: GetState) {
 
     dismissSuggestion: () => set({ suggestion: null }),
     clearError: () => set({ error: null }),
+
+    // Clear all conversation state so the incoming `history` frame for the new
+    // conversation_id repopulates from scratch with no stale carry-over.
+    resetForNewConversation: () => set({ ...initialData() }),
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
