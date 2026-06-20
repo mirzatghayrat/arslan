@@ -4,16 +4,25 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
+from datetime import datetime
 
+from sqlalchemy import select
+
+from server.db import session as db_session
+from server.db.models import ArslanMessage
 from server.orchestrator import dispatcher, memory, router
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
-from server.services import phase_service, spawn_service
+from server.services import evolution_service, phase_service, spawn_service
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
 
 EventSink = Callable[[dict], None]
+
+# Elapsed-seconds sentinel used when the deliverable message has no timestamp.
+# Treated as "slow" by speed_weight in evolution leveling.
+_MISSING_ELAPSED_SECONDS = 999.0
 
 _ARSLAN_SYSTEM = (
     "You are Arslan, a warm, concise meta-agent who helps the user and coordinates a team "
@@ -312,6 +321,73 @@ async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSi
     direction = (pending or {}).get("direction", "")
     await phase_service.clear(conversation_id, spawn_id)
     await _dispatch_spawn(conversation_id, spawn_id, direction, emit, mode="execute")
+
+
+async def record_deliverable_verdict(
+    conversation_id: str,
+    spawn_id: int,
+    action: str,
+    message_id: int | None,
+    emit: EventSink,
+) -> None:
+    """Record an accept/discard verdict for a deliverable message as a leveling signal.
+
+    Resolves the spawn name, fetches the deliverable message, computes elapsed time,
+    finds the prior user message, then calls evolution_service.record_verdict.
+    Emits a verdict_recorded ack regardless of any leveling failure.
+    """
+    # Resolve spawn name
+    spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    if spawn_name is None:
+        logger.warning("record_deliverable_verdict: unknown spawn_id=%s", spawn_id)
+        emit({"type": "error", "code": "INVALID_INPUT", "message": "unknown spawn", "recoverable": True})
+        return
+
+    # Fetch the deliverable message and compute elapsed seconds
+    agent_output = ""
+    elapsed_seconds = _MISSING_ELAPSED_SECONDS
+    if message_id is not None:
+        async with db_session.AsyncSessionLocal() as db:
+            row = await db.execute(
+                select(ArslanMessage).where(ArslanMessage.id == message_id)
+            )
+            msg = row.scalar_one_or_none()
+        if msg is not None:
+            agent_output = msg.display_content or msg.content or ""
+            if msg.timestamp is not None:
+                raw = (datetime.utcnow() - msg.timestamp).total_seconds()
+                elapsed_seconds = max(0.0, raw)
+
+    # Find the most recent prior user message in this conversation
+    user_input = ""
+    async with db_session.AsyncSessionLocal() as db:
+        q = select(ArslanMessage).where(
+            ArslanMessage.conversation_id == conversation_id,
+            ArslanMessage.role == "user",
+        )
+        if message_id is not None:
+            q = q.where(ArslanMessage.id < message_id)
+        q = q.order_by(ArslanMessage.id.desc()).limit(1)
+        row2 = await db.execute(q)
+        prior = row2.scalar_one_or_none()
+    if prior is not None:
+        user_input = prior.content or ""
+
+    # Record the verdict (defensive — a leveling failure must not break the socket)
+    try:
+        evolution_service.record_verdict(
+            spawn_name,
+            session_id=conversation_id,
+            user_input=user_input,
+            agent_output=agent_output,
+            action=action,
+            elapsed_seconds=elapsed_seconds,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("record_verdict failed (non-fatal): %s", exc)
+
+    # Ack to the client
+    emit({"type": "verdict_recorded", "spawn_id": spawn_id, "action": action})
 
 
 # Public alias for reuse from other orchestration entry points (e.g. refinements).
