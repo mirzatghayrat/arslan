@@ -29,6 +29,35 @@ _ARSLAN_SYSTEM = (
     "of specialist spawns. Answer directly and helpfully."
 )
 
+# Grounding guard: the model must describe only spawns/tools that actually exist, and must
+# not mistake the user's interests (the facts block) for its own capabilities. Without this,
+# a greeting like "哈喽" induced fabricated teammates/tools (e.g. invented spawn names).
+_ANTI_FABRICATION = (
+    "\n\nStay grounded — do NOT fabricate:\n"
+    "- Your ACTUAL team is listed under \"Your team\" below. Those are the ONLY specialist "
+    "spawns and tools you have. Never invent or name spawns, teammates, tools, or capabilities "
+    "that are not listed there.\n"
+    "- Any \"Known facts about the user\" describe the USER's interests and needs — they are NOT "
+    "your own capabilities. Never present them as services you offer.\n"
+    "- If asked what you can do, lead with the real specialists under \"Your team\" (by their "
+    "domain). You may add that you can also help directly for general questions, but do NOT turn "
+    "the user's listed interests into a menu of named services. If the team is empty, say you can "
+    "help directly and invite the user to describe their need — do not make up a roster."
+)
+
+
+async def _team_roster() -> str:
+    """A concise, user-facing list of the real spawns, to ground Arslan's self-description."""
+    spawns = await spawn_service.load_all_spawns()
+    if not spawns:
+        return "(no spawns yet — you have no specialist team)"
+    lines = []
+    for s in spawns:
+        domain = s.domain_category + (f".{s.domain_subcategory}" if s.domain_subcategory else "")
+        role = (s.persona_role or "").strip()
+        lines.append(f"- {s.name} ({domain})" + (f" — {role}" if role else ""))
+    return "\n".join(lines)
+
 _CLARIFY_ADDENDUM = (
     "\n\nThe user's request is under-specified. Ask 2-4 short, specific clarifying questions "
     "(topic, angle, format/output, and the data source if relevant), then propose a concrete "
@@ -144,7 +173,12 @@ async def _handle_answer(
 ) -> None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
-    system = _ARSLAN_SYSTEM + extra_system + (f"\n\n{facts}" if facts else "")
+    roster = await _team_roster()
+    system = (
+        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION
+        + f"\n\nYour team:\n{roster}"
+        + (f"\n\n{facts}" if facts else "")
+    )
     if ctx["summary"]:
         system += f"\n\nConversation summary so far:\n{ctx['summary']}"
 
@@ -316,11 +350,20 @@ async def _dispatch_spawn(  # noqa: ANN001
 
 
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
-    """User confirmed a pending proposal — run the spawn in execute mode on the stored direction."""
+    """User confirmed a pending proposal — execute, carrying the spawn's proposed direction.
+
+    The stored ``direction`` is the original task brief; the spawn's own proposed direction
+    (its last propose-mode output) is fetched and carried via ``execute_confirmed`` framing so
+    the spawn delivers the final result instead of re-asking clarifying questions.
+    """
     pending = await phase_service.get_pending(conversation_id)
     direction = (pending or {}).get("direction", "")
+    proposed = await dispatcher.last_spawn_output(spawn_id)
     await phase_service.clear(conversation_id, spawn_id)
-    await _dispatch_spawn(conversation_id, spawn_id, direction, emit, mode="execute")
+    await _dispatch_spawn(
+        conversation_id, spawn_id, direction, emit,
+        mode="execute_confirmed", prior_output=proposed,
+    )
 
 
 async def record_deliverable_verdict(

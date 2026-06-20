@@ -19,9 +19,20 @@ _PROPOSE_PREFIX = (
     "confirm before you execute. Keep it brief.\n\nTask:\n"
 )
 
+_EXECUTE_CONFIRMED_PREFIX = (
+    "EXECUTE MODE: The user has CONFIRMED the direction you proposed. Deliver the complete, "
+    "final result now. Do NOT ask further questions and do NOT re-propose — produce the "
+    "deliverable.\n\nTask:\n"
+)
 
-def _frame_brief(task_brief: str, *, mode: str = "execute") -> str:
-    return f"{_PROPOSE_PREFIX}{task_brief}" if mode == "propose" else task_brief
+
+def _frame_brief(task_brief: str, *, mode: str = "execute", proposed_direction: str | None = None) -> str:
+    if mode == "propose":
+        return f"{_PROPOSE_PREFIX}{task_brief}"
+    if mode == "execute_confirmed":
+        carried = f"\n\nThe direction you proposed (now confirmed):\n{proposed_direction}" if proposed_direction else ""
+        return f"{_EXECUTE_CONFIRMED_PREFIX}{task_brief}{carried}"
+    return task_brief
 
 
 def _get_adapter():
@@ -38,6 +49,18 @@ async def get_spawn_name(spawn_id: int) -> str | None:
     """Resolve a spawn's name (used to caption the routing frame before streaming)."""
     spawn = await _load_spawn(spawn_id)
     return spawn.name if spawn else None
+
+
+async def last_spawn_output(spawn_id: int) -> str | None:
+    """The spawn's most recent assistant output (e.g. the direction it proposed)."""
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.execute(
+            select(ChatMessage.content)
+            .where(ChatMessage.spawn_id == spawn_id, ChatMessage.role == "assistant")
+            .order_by(ChatMessage.id.desc())
+            .limit(1)
+        )
+        return row.scalar_one_or_none()
 
 
 async def _spawn_history(spawn_id: int) -> list[dict]:
@@ -141,7 +164,8 @@ async def dispatch(
             f"Apply this refinement and return the full revised result:\n{instruction}"
         )
     else:
-        user_content = _frame_brief(task_brief, mode=mode)
+        # In execute_confirmed mode, prior_output carries the spawn's proposed direction.
+        user_content = _frame_brief(task_brief, mode=mode, proposed_direction=prior_output)
 
     full = ""
     escalation = None
