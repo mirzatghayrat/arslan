@@ -22,6 +22,10 @@ interface OrchestratorChatProps {
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
   activeThread: any;
+  /** Called when the user confirms a proposed direction. spawnId is the numeric backend id. */
+  onConfirmDirection?: (spawnId: number) => void;
+  /** Called when the user submits a verdict on a spawn deliverable. */
+  onDeliverableVerdict?: (action: string, spawnId: number, messageId?: number) => void;
 }
 
 export default function OrchestratorChat({
@@ -31,7 +35,9 @@ export default function OrchestratorChat({
   spawns,
   currentStyle,
   setCurrentStyle,
-  activeThread
+  activeThread,
+  onConfirmDirection,
+  onDeliverableVerdict,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
@@ -575,7 +581,7 @@ export default function OrchestratorChat({
                             </span>
                           </div>
                           <p className="text-[11px] text-gray-300 font-sans leading-relaxed">{msg.escalation.issue}</p>
-                          
+
                           {/* Inner details if context resolution message exists */}
                           {msg.escalation.resolutionMessage && (
                             <div className="mt-2.5 p-2.5 bg-black/50 rounded-lg border border-red-900/40 text-red-400 font-mono text-[10.5px] leading-relaxed">
@@ -583,6 +589,51 @@ export default function OrchestratorChat({
                             </div>
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Staged orchestration: proposal confirm button (quartz) */}
+                    {isSpawn && msg.isProposal && msg.spawnId && (
+                      <button
+                        onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 border border-[#FF8E24]/40 hover:border-[#FF8E24]/70 text-[#FF8E24] text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{t('orchestrator.confirm_direction')}</span>
+                      </button>
+                    )}
+
+                    {/* Staged orchestration: deliverable verdict bar (quartz) */}
+                    {isSpawn && !msg.isProposal && msg.spawnId && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_accept')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('refine', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-[#FF8E24]/30 text-gray-400 hover:text-[#FF8E24] text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <Layers className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_edit')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <RefreshCcw className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_redo')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <X className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_discard')}</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -699,6 +750,53 @@ export default function OrchestratorChat({
                           LOG REJECTION DETAILED STATEMENT: {msg.escalation.resolutionMessage.toUpperCase()}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Staged orchestration: proposal confirm button (brutalist) */}
+                  {isSpawn && msg.isProposal && msg.spawnId && (
+                    <div className="mt-4">
+                      <button
+                        onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
+                        className="flex items-center gap-2 px-4 py-2 border-2 border-[#FF8E24] bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 text-[#FF8E24] text-[11px] font-mono font-bold uppercase tracking-wider transition-all select-none shadow-[2px_2px_0px_#000]"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{t('orchestrator.confirm_direction')}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Staged orchestration: deliverable verdict bar (brutalist) */}
+                  {isSpawn && !msg.isProposal && msg.spawnId && (
+                    <div className="mt-4 flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-emerald-500 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_accept')}</span>
+                      </button>
+                      <button
+                        onClick={() => onDeliverableVerdict?.('refine', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-[#FF8E24] text-gray-400 hover:text-[#FF8E24] text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                      >
+                        <Layers className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_edit')}</span>
+                      </button>
+                      <button
+                        onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-amber-500 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                      >
+                        <RefreshCcw className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_redo')}</span>
+                      </button>
+                      <button
+                        onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-red-500 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_discard')}</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -819,6 +917,53 @@ export default function OrchestratorChat({
                           <p className="mt-2 text-red-400 text-[10px] font-mono whitespace-pre-wrap pl-2 bg-black/40 py-1.5 rounded">{msg.escalation.resolutionMessage}</p>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Staged orchestration: proposal confirm button */}
+                  {isSpawn && msg.isProposal && msg.spawnId && (
+                    <div className="pl-5 pt-2">
+                      <button
+                        onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 border border-[#FF8E24]/40 hover:border-[#FF8E24]/70 text-[#FF8E24] text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{t('orchestrator.confirm_direction')}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Staged orchestration: deliverable verdict bar */}
+                  {isSpawn && !msg.isProposal && msg.spawnId && (
+                    <div className="pl-5 pt-2 flex flex-wrap items-center gap-1.5">
+                      <button
+                        onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_accept')}</span>
+                      </button>
+                      <button
+                        onClick={() => onDeliverableVerdict?.('refine', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-[#FF8E24]/30 text-gray-400 hover:text-[#FF8E24] text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                      >
+                        <Layers className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_edit')}</span>
+                      </button>
+                      <button
+                        onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                      >
+                        <RefreshCcw className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_redo')}</span>
+                      </button>
+                      <button
+                        onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>{t('orchestrator.verdict_discard')}</span>
+                      </button>
                     </div>
                   )}
                 </div>

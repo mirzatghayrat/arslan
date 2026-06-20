@@ -481,6 +481,20 @@ export default function App() {
                 currentStyle={currentChatStyle}
                 setCurrentStyle={setCurrentChatStyle}
                 activeThread={activeThread}
+                onConfirmDirection={(spawnId) =>
+                  wsSend({ type: 'confirm_direction', spawn_id: spawnId })
+                }
+                onDeliverableVerdict={(action, spawnId, messageId) => {
+                  if (action === 'accept') {
+                    wsSend({ type: 'accept_deliverable', spawn_id: spawnId, message_id: messageId });
+                  } else if (action === 'discard') {
+                    wsSend({ type: 'discard', spawn_id: spawnId, message_id: messageId });
+                  } else if (action === 'refine') {
+                    wsSend({ type: 'refine', spawn_id: spawnId, message_id: messageId });
+                  } else if (action === 'redo') {
+                    wsSend({ type: 'redo', spawn_id: spawnId, message_id: messageId });
+                  }
+                }}
               />
             )}
 

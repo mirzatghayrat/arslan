@@ -228,6 +228,10 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         text: item.content,
         timestamp,
         toolActivity,
+        // Pass through staged orchestration fields
+        spawnId: item.spawnId != null ? String(item.spawnId) : undefined,
+        isProposal: item.isProposal ?? undefined,
+        messageId: item.spawnMessageId ?? undefined,
       };
     }
 

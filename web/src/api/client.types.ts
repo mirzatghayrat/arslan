@@ -155,6 +155,8 @@ export interface ArslanThreadItem {
   intro?: string | null; // kind === "system" (spawn_created)
   toolSteps?: ToolStep[]; // spawn replies: folded tool activity
   escalation?: EscalationInfo; // kind === "escalation"
+  /** True when this deliverable is a pending direction proposal (requires confirm_direction). */
+  isProposal?: boolean;
 }
 
 /** A row from the server `history` frame. */
@@ -168,6 +170,7 @@ export interface ArslanHistoryRow {
 // Server -> client frames on /ws/arslan
 export type ArslanServerMessage =
   | { type: "history"; messages: ArslanHistoryRow[] }
+  | { type: "proposal"; spawn_id: number; spawn_name: string | null }
   | { type: "routing"; spawn_id: number; spawn_name: string | null }
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
   | { type: "stream_chunk"; content: string }
