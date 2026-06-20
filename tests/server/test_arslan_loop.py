@@ -104,6 +104,37 @@ async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(mak
 
 
 @pytest.mark.asyncio
+async def test_answer_path_grounds_real_roster_and_guards_fabrication(maker, monkeypatch):
+    """Anti-fabrication: the answer system prompt must inject the REAL spawn roster
+    and instruct the model not to invent spawns/tools nor present user-facts as its
+    own services. Regression for the '哈喽 -> fake Aletheia/Huan/tools' bug."""
+    from server.orchestrator import arslan, router
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    captured = {}
+
+    async def _fake_answer_stream(system, user, history=None):
+        captured["system"] = system
+        for piece in ["hi"]:
+            yield piece
+
+    monkeypatch.setattr(arslan, "_answer_stream", _fake_answer_stream)
+
+    await arslan.handle_user_message("main", "哈喽", _events([]))
+
+    sys_prompt = captured["system"]
+    # the actual roster (seeded spawn name) must be grounded in the prompt
+    assert "beauty-guru" in sys_prompt
+    # explicit guard against inventing teammates/tools
+    low = sys_prompt.lower()
+    assert "invent" in low or "fabricat" in low or "make up" in low
+
+
+@pytest.mark.asyncio
 async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
     from server.orchestrator import arslan, router
 
