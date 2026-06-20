@@ -371,8 +371,8 @@ export default function OrchestratorChat({
             // Quartz Theme Rendering
             if (currentStyle === 'quartz') {
               return (
-                <div 
-                  key={msg.id} 
+                <div
+                  key={msg.id}
                   className={`flex gap-4 ${isUser ? 'justify-end' : ''}`}
                 >
                   {/* Avatar left (for system) */}
@@ -393,8 +393,8 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Message Bubble */}
-                  <div className={`max-w-2xl space-y-3 ${isUser ? 'order-1' : ''}`}>
-                    {/* Sender label name */}
+                  <div className={`space-y-3 ${isUser ? 'order-1 max-w-[68%]' : 'max-w-2xl'}`}>
+                    {/* Sender label name (non-user only) */}
                     {!isUser && (
                       <div className="flex items-center gap-1.5 select-none">
                         <span className="text-[11px] font-semibold text-gray-300">{msg.senderName}</span>
@@ -413,12 +413,12 @@ export default function OrchestratorChat({
                     )}
 
                     {/* Styled Bubble Body */}
-                    <div className={`px-4 py-3 rounded-2xl border text-[12.5px] leading-relaxed relative ${
+                    <div className={`px-4 py-3 text-[12.5px] leading-relaxed relative ${
                       isUser
-                        ? 'bg-gradient-to-br from-[#FF8E24] to-amber-600 border-[#ffaa45]/50 text-white shadow-md shadow-[#FF8E24]/10 rounded-tr-none'
+                        ? 'bg-[rgba(120,140,170,0.10)] border border-[rgba(255,255,255,0.08)] rounded-[12px_12px_4px_12px] text-gray-200 text-left'
                         : isArslan
-                        ? 'bg-[#151924]/80 backdrop-blur border-[#23293b] text-gray-100 rounded-tl-none shadow-sm shadow-black/40'
-                        : 'bg-[#11141d]/90 backdrop-blur border-[#ff8e24]/15 text-gray-200 rounded-tl-none'
+                        ? 'bg-[#151924]/80 backdrop-blur border border-[#23293b] text-gray-100 rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
+                        : 'bg-[#11141d]/90 backdrop-blur border border-[#ff8e24]/15 text-gray-200 rounded-2xl rounded-tl-none'
                     }`}>
                       {/* Message Content */}
                       {isUser
@@ -585,13 +585,10 @@ export default function OrchestratorChat({
                     )}
                   </div>
 
-                  {/* Avatar right (for user) */}
+                  {/* Timestamp for user bubble (right-aligned, no avatar needed — position conveys identity) */}
                   {isUser && (
-                    <div className="flex flex-col items-center select-none">
-                      <div className="w-9 h-9 rounded-xl bg-[#1e2330] border border-gray-700 flex items-center justify-center text-sm shadow-md">
-                        <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-4 h-4 text-white" />
-                      </div>
-                      <span className="text-[9px] text-gray-500 font-mono mt-1 font-semibold">{msg.timestamp}</span>
+                    <div className="flex flex-col items-end select-none mt-1">
+                      <span className="text-[9px] text-gray-500 font-mono font-semibold">{msg.timestamp}</span>
                     </div>
                   )}
                 </div>
@@ -600,9 +597,19 @@ export default function OrchestratorChat({
 
             // Brutalist Theme Rendering (High-contrast, terminal-like blocks, retro orange elements)
             if (currentStyle === 'brutalist') {
+              if (isUser) {
+                return (
+                  <div key={msg.id} className="flex justify-end">
+                    <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-gray-200 text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                      <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
+                      <div className="text-[9px] text-gray-500 mt-2 text-right">{msg.timestamp}</div>
+                    </div>
+                  </div>
+                );
+              }
               return (
-                <div 
-                  key={msg.id} 
+                <div
+                  key={msg.id}
                   className={`border-2 border-orange-500/60 p-4 font-mono text-[12px] bg-[#090b10] shadow-[4px_4px_0px_#FF8E24] relative`}
                 >
                   {/* Sender Headers */}
@@ -698,8 +705,28 @@ export default function OrchestratorChat({
 
             // Linear Minimal Theme Rendering (Sleek layout, precise margins, subtle borders, thin colors)
             if (currentStyle === 'linear') {
+              if (isUser) {
+                return (
+                  <div key={msg.id} className="flex justify-end text-[12px]">
+                    <div className="max-w-[68%]">
+                      <div
+                        className="px-4 py-2.5 text-gray-200 text-[12.5px] leading-relaxed font-sans whitespace-pre-line"
+                        style={{
+                          background: 'rgba(120,140,170,0.10)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '12px 12px 4px 12px',
+                        }}
+                      >
+                        {msg.text}
+                      </div>
+                      <div className="text-[9px] text-gray-500 font-mono mt-1 text-right select-none">{msg.timestamp}</div>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <div key={msg.id} className="border-b border-[#1e2330]/40 pb-5 text-[12px] space-y-2">
+                <div key={msg.id} className="text-[12px] space-y-2">
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
                     <span className="text-gray-500 flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
@@ -719,10 +746,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
-                  {isUser
-                    ? <p className="whitespace-pre-line text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5">{msg.text}</p>
-                    : <Markdown className="text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
-                  }
+                  <Markdown className="text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (

@@ -171,12 +171,45 @@ export default function SpawnDirectChat({
         <div className="max-w-3xl mx-auto space-y-6">
           {chatHistory.map((msg) => {
             const isUser = msg.sender === 'user';
-            
-            // Linear Layout Style 
+
+            // Shared user bubble (all themes use right-aligned cool/neutral bubble)
+            if (isUser) {
+              // Brutalist user bubble keeps mono font feel
+              if (currentStyle === 'brutalist') {
+                return (
+                  <div key={msg.id} className="flex justify-end">
+                    <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-gray-200" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                      <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
+                      <div className="text-[9px] text-gray-500 mt-2 text-right">{msg.timestamp}</div>
+                    </div>
+                  </div>
+                );
+              }
+              // Quartz + Linear: same premium subtle bubble
+              return (
+                <div key={msg.id} className="flex justify-end">
+                  <div className="max-w-[68%]">
+                    <div
+                      className="px-4 py-2.5 text-gray-200 text-[12.5px] leading-relaxed font-sans whitespace-pre-line"
+                      style={{
+                        background: 'rgba(120,140,170,0.10)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '12px 12px 4px 12px',
+                      }}
+                    >
+                      {msg.text}
+                    </div>
+                    <div className="text-[9px] text-gray-500 font-mono mt-1 text-right select-none">{msg.timestamp}</div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Linear Layout Style (non-user)
             if (currentStyle === 'linear') {
               return (
-                <div key={msg.id} className="border-b border-[#1e2330]/40 pb-5 last:border-0 flex items-start gap-4">
-                  <div className="w-7 h-7 rounded-lg bg-[#161924] border border-gray-800 flex items-center justify-center text-xs">
+                <div key={msg.id} className="flex items-start gap-4">
+                  <div className="w-7 h-7 rounded-lg bg-[#161924] border border-gray-800 flex items-center justify-center text-xs shrink-0">
                     <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" />
                   </div>
                   <div className="flex-1 space-y-1">
@@ -185,10 +218,7 @@ export default function SpawnDirectChat({
                       <span className="text-[9px] text-gray-500 font-mono">{msg.timestamp}</span>
                     </div>
                     <div className="text-xs text-gray-300 leading-relaxed font-sans">
-                      {isUser
-                        ? <span className="whitespace-pre-wrap">{msg.text}</span>
-                        : <Markdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
-                      }
+                      <Markdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
                     </div>
 
                     {/* Tool execution logs inside direct messages */}
@@ -211,28 +241,19 @@ export default function SpawnDirectChat({
               );
             }
 
-            // Quartz Theme Style
+            // Quartz Theme Style (non-user)
             if (currentStyle === 'quartz') {
               return (
-                <div key={msg.id} className={`flex items-start gap-4 ${isUser ? 'justify-end' : ''}`}>
-                  {!isUser && (
-                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-sm shadow">
-                      <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" />
-                    </div>
-                  )}
-                  <div className={`max-w-xl p-4 rounded-2xl relative ${
-                    isUser 
-                      ? 'bg-gradient-to-r from-[#FF8E24] to-amber-500 text-black shadow-lg shadow-orange-500/10' 
-                      : 'bg-[#121622]/80 border border-[#23293e]/50 text-gray-100 shadow-xl'
-                  }`}>
+                <div key={msg.id} className="flex items-start gap-4">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-sm shadow shrink-0">
+                    <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="max-w-xl p-4 rounded-2xl bg-[#121622]/80 border border-[#23293e]/50 text-gray-100 shadow-xl relative">
                     <div className="flex items-center gap-2 mb-1.5 select-none opacity-80">
                       <span className="text-[10px] font-bold font-mono tracking-widest uppercase">{msg.senderName}</span>
                       <span className="text-[9px] font-mono">{msg.timestamp}</span>
                     </div>
-                    {isUser
-                      ? <p className="text-xs whitespace-pre-wrap leading-relaxed font-medium">{msg.text}</p>
-                      : <Markdown className="text-xs text-gray-300 font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
-                    }
+                    <Markdown className="text-xs text-gray-300 font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
 
                     {/* Tool Activities */}
                     {msg.toolActivity && (
@@ -247,18 +268,13 @@ export default function SpawnDirectChat({
                       </div>
                     )}
                   </div>
-                  {isUser && (
-                    <div className="w-8 h-8 rounded-lg bg-[#222736] border border-gray-700 flex items-center justify-center text-sm shadow">
-                      <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" />
-                    </div>
-                  )}
                 </div>
               );
             }
 
-            // Brutalist Style
+            // Brutalist Style (non-user)
             return (
-              <div 
+              <div
                 key={msg.id}
                 className="border-2 border-orange-500/60 p-4 font-mono text-[12px] bg-[#090b10] shadow-[3px_3px_0px_rgba(255,142,36,0.3)]"
               >
@@ -269,10 +285,7 @@ export default function SpawnDirectChat({
                   <span className="text-gray-500 text-[10px]">{msg.timestamp}</span>
                 </div>
                 <div className="leading-relaxed">
-                  {isUser
-                    ? <span className="text-gray-200 whitespace-pre-wrap">{msg.text}</span>
-                    : <Markdown className="text-gray-200 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
-                  }
+                  <Markdown className="text-gray-200 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
                 </div>
 
                 {msg.toolActivity && (
