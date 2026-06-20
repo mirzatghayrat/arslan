@@ -804,6 +804,10 @@ export default function OrchestratorChat({
             <input
               id="chat-message-input"
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Ask Arslan to orchestrate a task for your spawns..."
