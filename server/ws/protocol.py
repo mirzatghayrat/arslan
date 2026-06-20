@@ -123,3 +123,7 @@ def escalation_resolved(spawn_id: int, how: str, detail: str = "") -> dict[str, 
 
 def orchestrator_action(tool: str, reason: str) -> dict[str, Any]:
     return {"type": "orchestrator_action", "tool": tool, "reason": reason}
+
+
+def proposal(spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
+    return {"type": "proposal", "spawn_id": spawn_id, "spawn_name": spawn_name}

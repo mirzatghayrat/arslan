@@ -145,6 +145,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await run_spawn(spawn_id, task_brief)
                 continue
 
+            if msg_type == "confirm_direction":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                await run_with_live_frames(arslan.confirm_and_execute(conversation_id, spawn_id, emit))
+                continue
+
             if msg_type == "redo":
                 raw_id = data.get("spawn_id")
                 try:
