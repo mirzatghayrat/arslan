@@ -25,6 +25,7 @@ class RouterResult:
     overlaps: dict[str, Any] | None = None
     new_facts: list[dict[str, Any]] = field(default_factory=list)
     reason: str = ""
+    needs_proposal: bool = False
 
 
 _SYSTEM = (
@@ -35,7 +36,9 @@ _SYSTEM = (
     '"suggested_spawn": {"name","domain","capabilities","persona_role","persona_tone"}, '
     '"overlaps": {"spawn_id": <int>, "name": "<existing spawn>", "axes": ["<how a new one could differ>"]}, '
     '"new_facts": [{"content": "<durable user fact>", "sensitive": <bool>}], '
+    '"needs_proposal": <bool, only for route — true if the task is open-ended and the spawn should propose a direction first>, '
     '"reason": "<short>"}\n'
+    "- needs_proposal (route only): set TRUE when the routed task is open-ended/ambiguous (the spawn should propose a direction + ask clarifying questions before producing). Set FALSE when the task is crisp and the spawn can produce the deliverable directly. Examples TRUE: 'help with my LinkedIn', 'do some marketing'. Examples FALSE: 'summarize this article: …', 'draft 3 xiaohongshu posts about retinol'.\n"
     "- answer: respond directly AS Arslan (the host). Use answer for greetings, small talk, "
     "thanks, social pleasantries, meta-questions about you/Arslan, or ANY message that contains "
     "no actionable task — reply warmly and invite the user to describe what they need. A bare "
@@ -141,6 +144,7 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
             if isinstance(f, dict) and (f.get("content") or "").strip()
         ],
         reason=parsed.get("reason", ""),
+        needs_proposal=bool(parsed.get("needs_proposal", False)),
     )
     await _persist(conversation_id, user_message, action, result, _audit_payload(parsed, raw))
     return result

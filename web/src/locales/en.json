@@ -217,7 +217,12 @@
     "equipped_capabilities": "Equipped Capabilities:",
     "capabilities_matrix": "Capabilities Matrix:",
     "hide_rail": "Hide Rail",
-    "show_rail": "Show Rail"
+    "show_rail": "Show Rail",
+    "confirm_direction": "Confirm direction · Go",
+    "verdict_accept": "Accept",
+    "verdict_edit": "Refine",
+    "verdict_redo": "Redo",
+    "verdict_discard": "Discard"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

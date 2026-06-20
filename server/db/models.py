@@ -198,3 +198,16 @@ class SpawnCapability(Base):
     granted_by = Column(String(20), nullable=False, default="create")  # "create" | "escalation" | "user"
     expires_turn = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SpawnPhase(Base):
+    """Staged-orchestration phase state per conversation (one pending proposal at a time)."""
+
+    __tablename__ = "spawn_phases"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    spawn_id = Column(Integer, nullable=False)
+    phase = Column(String(20), nullable=False)   # 'proposing'
+    direction = Column(Text, nullable=False, default="")
+    updated_at = Column(String(50), nullable=False, default="")

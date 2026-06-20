@@ -40,6 +40,13 @@ export interface Message {
   senderAvatar: string;
   text: string;
   timestamp: string;
+  spawnId?: string;
+  /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
+  isProposal?: boolean;
+  /** Backend message id for verdict frames (spawnMessageId from the store item). */
+  messageId?: number;
+  /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */
+  taskBrief?: string | null;
   routedTo?: {
     spawnId: string;
     spawnName: string;

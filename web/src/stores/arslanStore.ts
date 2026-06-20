@@ -23,6 +23,9 @@ interface ArslanState {
   // Live tool-loop steps for the in-flight spawn turn, paired from
   // tool_call/tool_result frames; folded into the reply item on stream_end.
   activitySteps: ToolStep[];
+  // Pending proposal: when a `proposal` frame arrives, the next spawn deliverable
+  // created at stream_end for that spawn_id should be flagged isProposal: true.
+  pendingProposalSpawnId: number | null;
 
   setSpawnNames: (map: Record<number, string>) => void;
   addUserMessage: (content: string) => void;
@@ -58,6 +61,7 @@ function initialData() {
     suggestionOverlaps: null as OverlapInfo | null,
     pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
     activitySteps: [] as ToolStep[],
+    pendingProposalSpawnId: null as number | null,
   };
 }
 
@@ -129,6 +133,10 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         }
+        case "proposal":
+          // Mark the spawn's next deliverable as a proposal. Cleared in stream_end.
+          set({ pendingProposalSpawnId: frame.spawn_id });
+          break;
         case "routing":
           set({
             pendingRoute: { spawnId: frame.spawn_id, spawnName: frame.spawn_name },
@@ -171,12 +179,18 @@ function makeActions(set: SetState, get: GetState) {
               streamSpawnName: null,
               pendingRoute: null,
               activitySteps: [],
+              pendingProposalSpawnId: null,
             });
             break;
           }
           // A spawn_meta for this message may have arrived earlier (production
           // order). Apply it now and drop the stashed entry.
           const meta = frame.message_id != null ? state.pendingSpawnMeta[frame.message_id] : undefined;
+          // If a proposal was pending for this spawn, mark the item as a proposal.
+          const isProposal =
+            state.streamSource === "spawn" &&
+            state.pendingProposalSpawnId != null &&
+            state.pendingProposalSpawnId === state.streamSpawnId;
           const item: ArslanThreadItem = {
             id: frame.message_id ?? nextClientId(),
             kind: "message",
@@ -187,6 +201,7 @@ function makeActions(set: SetState, get: GetState) {
             spawnMessageId: meta?.assistant_message_id ?? null,
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
+            ...(isProposal ? { isProposal: true } : {}),
           };
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
           if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];
@@ -202,6 +217,8 @@ function makeActions(set: SetState, get: GetState) {
             lastMessageId:
               frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
             activitySteps: [],
+            // Clear the proposal flag once consumed
+            pendingProposalSpawnId: isProposal ? null : state.pendingProposalSpawnId,
           });
           break;
         }
@@ -339,6 +356,10 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
+        case "verdict_recorded":
+          // Ack from the server confirming that the deliverable verdict (leveling signal)
+          // was successfully recorded. No UI change needed — this is a silent confirmation.
+          break;
         case "error":
           set({
             error: frame.message,

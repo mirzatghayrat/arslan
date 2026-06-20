@@ -145,6 +145,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await run_spawn(spawn_id, task_brief)
                 continue
 
+            if msg_type == "confirm_direction":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                await run_with_live_frames(arslan.confirm_and_execute(conversation_id, spawn_id, emit))
+                continue
+
             if msg_type == "redo":
                 raw_id = data.get("spawn_id")
                 try:
@@ -167,6 +177,40 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 instruction = data.get("instruction") or ""
                 prior = await _last_spawn_output(spawn_id)
                 await run_spawn(spawn_id, task_brief, prior_output=prior, instruction=instruction)
+                continue
+
+            if msg_type == "accept_deliverable":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                raw_mid = data.get("message_id")
+                try:
+                    message_id = int(raw_mid) if raw_mid is not None else None
+                except (TypeError, ValueError):
+                    message_id = None
+                await run_with_live_frames(
+                    arslan.record_deliverable_verdict(conversation_id, spawn_id, "accept", message_id, emit)
+                )
+                continue
+
+            if msg_type == "discard":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                raw_mid = data.get("message_id")
+                try:
+                    message_id = int(raw_mid) if raw_mid is not None else None
+                except (TypeError, ValueError):
+                    message_id = None
+                await run_with_live_frames(
+                    arslan.record_deliverable_verdict(conversation_id, spawn_id, "discard", message_id, emit)
+                )
                 continue
 
             if msg_type == "refine_draft":

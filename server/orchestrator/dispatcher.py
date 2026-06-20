@@ -13,6 +13,16 @@ from server.services.llm_factory import build_adapter
 
 _SPAWN_HISTORY_LIMIT = 10  # recent spawn turns included for continuity
 
+_PROPOSE_PREFIX = (
+    "PROPOSE MODE: Do NOT produce the final deliverable yet. First propose a concrete "
+    "direction for this task and ask 1-3 short clarifying questions, then ask the user to "
+    "confirm before you execute. Keep it brief.\n\nTask:\n"
+)
+
+
+def _frame_brief(task_brief: str, *, mode: str = "execute") -> str:
+    return f"{_PROPOSE_PREFIX}{task_brief}" if mode == "propose" else task_brief
+
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
@@ -76,6 +86,7 @@ async def dispatch(
     prior_output: str | None = None,
     instruction: str | None = None,
     allow_escalation: bool = True,
+    mode: str = "execute",
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
     {full_output, spawn_name, summary_message_id, assistant_message_id, escalation}.
@@ -130,7 +141,7 @@ async def dispatch(
             f"Apply this refinement and return the full revised result:\n{instruction}"
         )
     else:
-        user_content = task_brief
+        user_content = _frame_brief(task_brief, mode=mode)
 
     full = ""
     escalation = None
