@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
@@ -43,6 +44,7 @@ const skillDetails: Record<string, { name: string; emoji: string }> = {
 };
 
 export default function App() {
+  const { t } = useTranslation();
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
 
@@ -440,10 +442,10 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               <span className="text-[10.5px] font-mono text-gray-400 capitalize uppercase tracking-wider">
-                Active Session Workspace: <span className="text-white font-bold">
-                  {activeSection === 'arslan' ? `Orchestrator Thread: ${activeThread.title}` : 
-                   activeSection === 'spawn' ? `Specialist Stream: ${activeSpawn?.name || 'Direct Chat'}` : 
-                   activeSection === 'ledger' ? 'Spawns Ledger Dashboard' : 'System Diagnostics Config'}
+                {t('modal.workspace_label')} <span className="text-white font-bold">
+                  {activeSection === 'arslan' ? t('modal.workspace_orchestrator', { title: activeThread.title }) :
+                   activeSection === 'spawn' ? t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' }) :
+                   activeSection === 'ledger' ? t('modal.workspace_ledger') : t('modal.workspace_settings')}
                 </span>
               </span>
             </div>
@@ -463,7 +465,7 @@ export default function App() {
                   }`}
                 >
                   <Cpu className="w-3.5 h-3.5" />
-                  <span>{showControlPanel ? "Hide Rail" : "Show Rail"}</span>
+                  <span>{showControlPanel ? t('orchestrator.hide_rail') : t('orchestrator.show_rail')}</span>
                 </button>
               )}
             </div>
@@ -546,7 +548,7 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
-                  <span className="text-[10px] font-mono tracking-widest text-[#FF8E24] font-bold uppercase">Diagnostics Engine</span>
+                  <span className="text-[10px] font-mono tracking-widest text-[#FF8E24] font-bold uppercase">{t('rail.diagnostics_engine')}</span>
                 </div>
                 <button 
                   onClick={() => setShowControlPanel(false)}
@@ -559,16 +561,16 @@ export default function App() {
               {/* Ambient stats box */}
               <div className="bg-[#11141e]/50 border border-[#1e2330]/80 rounded-xl p-3.5 space-y-2 text-[11px] font-mono">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Routing Agent</span>
+                  <span className="text-gray-500">{t('rail.routing_agent')}</span>
                   <span className="text-[#FF8E24]">Arslan Primary</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Model Deployment</span>
+                  <span className="text-gray-500">{t('rail.model_deployment')}</span>
                   <span className="text-white lowercase bg-white/5 px-1 rounded">{settings.llmModel}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Active Slots</span>
-                  <span className="text-white">{spawns.length} slots loaded</span>
+                  <span className="text-gray-500">{t('rail.active_slots')}</span>
+                  <span className="text-white">{t('rail.slots_loaded', { count: spawns.length })}</span>
                 </div>
               </div>
             </div>
@@ -579,35 +581,35 @@ export default function App() {
                 <div className="flex items-center justify-between border-b border-[#1e2330]/30 pb-2">
                   <div className="flex items-center gap-1.5">
                     <Terminal className="w-3.5 h-3.5 text-[#FF8E24] animate-pulse" />
-                    <span className="text-[10px] font-mono text-white uppercase tracking-wider font-bold">Dialogue Sandboxed Capabilities</span>
+                    <span className="text-[10px] font-mono text-white uppercase tracking-wider font-bold">{t('rail.dialogue_capabilities')}</span>
                   </div>
                   <span className="text-[8px] font-mono text-gray-400 uppercase tracking-widest bg-orange-500/10 text-[#FF8E24] border border-[#FF8E24]/20 px-1.5 py-0.5 rounded">
-                    {activeSection === 'arslan' ? 'Thread-bound' : activeSection === 'spawn' ? 'Spawn-bound' : 'Global Pool'}
+                    {activeSection === 'arslan' ? t('rail.thread_bound') : activeSection === 'spawn' ? t('rail.spawn_bound') : t('rail.global_pool')}
                   </span>
                 </div>
 
                 {/* Dynamic Focus Scope Header */}
                 <div className="text-[9.5px] font-mono bg-[#11141e]/70 p-2 rounded-lg border border-[#1e2330]/50 space-y-1">
-                  <span className="text-gray-500 text-[8px] uppercase tracking-wider block">Active Dialogue Scope</span>
+                  <span className="text-gray-500 text-[8px] uppercase tracking-wider block">{t('rail.active_scope')}</span>
                   <span className="font-bold text-[#FF8E24] block truncate">≫ {currentCaps.title}</span>
                 </div>
 
                 {/* 1. MCP (Model Context Protocol) Registry — no MCP backend yet */}
                 <div className="space-y-1.5 opacity-50">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold flex items-center gap-1"><Satellite className="w-3 h-3" /> Registered Sandbox MCP Servers</span>
-                    <span className="text-[8px] font-mono bg-gray-800/80 text-gray-500 border border-gray-700/50 px-1.5 py-0.2 rounded uppercase tracking-wider">即将推出</span>
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold flex items-center gap-1"><Satellite className="w-3 h-3" /> {t('rail.mcp_servers')}</span>
+                    <span className="text-[8px] font-mono bg-gray-800/80 text-gray-500 border border-gray-700/50 px-1.5 py-0.2 rounded uppercase tracking-wider">{t('rail.mcp_coming_soon')}</span>
                   </div>
                   <div className="bg-[#0b0d14]/60 border border-dashed border-[#1e2330]/60 rounded-lg px-3 py-2.5 text-[10px] font-mono text-gray-600 italic">
-                    MCP server integration is not yet available. This section will list connected MCP servers once the backend supports them.
+                    {t('rail.mcp_unavailable')}
                   </div>
                 </div>
 
                 {/* 2. Equipped Agent Tools — only web-search is wired in backend; others coming soon */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block flex items-center gap-1"><Wrench className="w-3 h-3" /> Dialogue Tools</span>
+                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block flex items-center gap-1"><Wrench className="w-3 h-3" /> {t('rail.dialogue_tools')}</span>
                   {currentCaps.tools.length === 0 ? (
-                    <p className="text-[9px] font-mono text-gray-600 italic">No tools linked inside dialogue scope.</p>
+                    <p className="text-[9px] font-mono text-gray-600 italic">{t('rail.dialogue_tools_empty')}</p>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {currentCaps.tools.map((tId) => {
@@ -635,9 +637,9 @@ export default function App() {
 
                 {/* 3. Activated Skills — per-conversation skill tracking not yet available */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block flex items-center gap-1"><Brain className="w-3 h-3" /> Dialogue Skills</span>
+                  <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold block flex items-center gap-1"><Brain className="w-3 h-3" /> {t('rail.dialogue_skills')}</span>
                   {currentCaps.skills.length === 0 ? (
-                    <p className="text-[9px] font-mono text-gray-600 italic">No skills linked inside dialogue scope.</p>
+                    <p className="text-[9px] font-mono text-gray-600 italic">{t('rail.dialogue_skills_empty')}</p>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {currentCaps.skills.map((sId) => {
@@ -665,12 +667,12 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <Network className="w-3.5 h-3.5 text-gray-500" />
-                  <span className="text-[10px] font-mono text-white uppercase tracking-wider font-bold">Spawns Pipeline</span>
+                  <span className="text-[10px] font-mono text-white uppercase tracking-wider font-bold">{t('rail.spawns_pipeline')}</span>
                 </div>
                 <button 
                   onClick={() => setShowLedgerModal(true)}
                   className="text-gray-500 hover:text-[#FF8E24] transition-colors p-1 bg-[#1e2330]/40 rounded hover:bg-black/40"
-                  title="Invite Spawns to Thread"
+                  title={t('rail.invite_spawns')}
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -685,13 +687,13 @@ export default function App() {
                     return (
                       <div className="text-center py-6 px-4 bg-[#0e111a]/40 border border-[#1e2330]/30 rounded-xl space-y-2.5 select-none">
                         <p className="text-[10px] font-mono text-gray-500 uppercase leading-normal">
-                          No specialists invited to this thread group
+                          {t('rail.no_specialists')}
                         </p>
                         <button
                           onClick={() => setShowLedgerModal(true)}
                           className="px-2.5 py-1 text-[9.5px] font-mono font-bold bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 border border-[#FF8E24]/30 text-[#FF8E24] rounded-lg transition-all uppercase"
                         >
-                          + Invite Spawns
+                          + {t('rail.invite_spawns')}
                         </button>
                       </div>
                     );
@@ -777,7 +779,7 @@ export default function App() {
                 className="w-full py-2 bg-transparent hover:bg-white/[0.03] border border-[#1e2330] rounded-lg text-[10px] font-mono text-gray-400 hover:text-white transition-all flex items-center justify-center gap-1.5 uppercase font-bold"
               >
                 <RefreshCcw className="w-3 h-3 text-orange-500/70" />
-                <span>Verify Pipe Diagnostics</span>
+                <span>{t('rail.verify_diagnostics')}</span>
               </button>
             </div>
           </aside>
@@ -794,7 +796,7 @@ export default function App() {
             <div className="px-6 py-4 border-b border-[#1e2330]/80 flex items-center justify-between bg-[#0b0d14]">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4.5 h-4.5 text-[#FF8E24]" />
-                <h3 className="text-xs font-bold font-mono text-white uppercase tracking-widest leading-none">Synthesize New Spawn specialist</h3>
+                <h3 className="text-xs font-bold font-mono text-white uppercase tracking-widest leading-none">{t('modal.create_spawn_title')}</h3>
               </div>
               <button 
                 onClick={() => setShowCreateModal(false)}
@@ -810,7 +812,7 @@ export default function App() {
               {/* Row: Name and Emoji Choice */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">Spawn Identifier</label>
+                  <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">{t('modal.spawn_identifier')}</label>
                   <input
                     type="text"
                     required
@@ -821,7 +823,7 @@ export default function App() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">Avatar Emoji</label>
+                  <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">{t('modal.avatar_emoji')}</label>
                   <select
                     value={newSpawnEmoji}
                     onChange={(e) => setNewSpawnEmoji(e.target.value)}
@@ -840,12 +842,12 @@ export default function App() {
 
               {/* Input: Domain */}
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">Assigned Domain Field</label>
+                <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">{t('modal.assigned_domain')}</label>
                 <input
                   type="text"
                   required
                   value={newSpawnDomain}
-                  placeholder="e.g., SEO Copywriting, Financial Valuations"
+                  placeholder={t('modal.domain_placeholder')}
                   onChange={(e) => setNewSpawnDomain(e.target.value)}
                   className="w-full bg-[#0a0c10] border border-[#23293a] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
                 />
@@ -853,10 +855,10 @@ export default function App() {
 
               {/* Input: Description */}
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">Domain Scope / Mission Description</label>
+                <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">{t('modal.domain_scope')}</label>
                 <textarea
                   value={newSpawnDescription}
-                  placeholder="Provide brief directives here defining the spawn core purpose..."
+                  placeholder={t('modal.description_placeholder')}
                   rows={3}
                   onChange={(e) => setNewSpawnDescription(e.target.value)}
                   className="w-full bg-[#0a0c10] border border-[#23293a] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none transition-all resize-none font-sans"
@@ -865,7 +867,7 @@ export default function App() {
 
               {/* Footnote instruction info */}
               <div className="text-[10px] text-gray-500 font-mono leading-relaxed bg-[#0b0d14] p-3 border border-pink-950/20 rounded-xl">
-                <span>Default standard capabilities 🔧 Web Search and 📘 Infographic Design are automatically mapped on initialization. Custom settings are editable in the spawn details page.</span>
+                <span>{t('modal.default_capabilities_note')}</span>
               </div>
 
               {/* Action Buttons */}
@@ -875,13 +877,13 @@ export default function App() {
                   onClick={() => setShowCreateModal(false)}
                   className="px-3.5 py-2 bg-transparent hover:bg-white/[0.03] rounded-lg text-xs font-sans font-medium text-gray-400 hover:text-white transition-all border border-transparent"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-[#FF8E24] hover:bg-[#ff9c3a] text-black text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1 shadow-lg shadow-[#FF8E24]/10"
                 >
-                  Confirm Synthesis
+                  {t('modal.confirm_synthesis')}
                 </button>
               </div>
 
@@ -902,8 +904,8 @@ export default function App() {
                   <Network className="w-4 h-4 text-[#FF8E24]" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold font-mono text-white uppercase tracking-wider">Spawns Pipeline Ledger</h3>
-                  <p className="text-[10px] text-gray-500 font-sans mt-0.5">Recruit and plug specialists into the active group chat.</p>
+                  <h3 className="text-xs font-bold font-mono text-white uppercase tracking-wider">{t('modal.ledger_modal_title')}</h3>
+                  <p className="text-[10px] text-gray-500 font-sans mt-0.5">{t('modal.ledger_modal_subtitle')}</p>
                 </div>
               </div>
               <button 
@@ -919,7 +921,7 @@ export default function App() {
 
             {/* Sub-header context banner */}
             <div className="px-6 py-3 bg-[#11141e]/50 border-b border-[#1e2330]/40 flex items-center justify-between text-[11px] font-mono select-none">
-              <span className="text-gray-500">Active Chat:</span>
+              <span className="text-gray-500">{t('modal.ledger_active_chat')}</span>
               <span className="text-orange-400 font-bold max-w-xs truncate">≫ {activeThread.title}</span>
             </div>
 
@@ -929,7 +931,7 @@ export default function App() {
                 type="text"
                 value={ledgerSearch}
                 onChange={(e) => setLedgerSearch(e.target.value)}
-                placeholder="🔍 Search Spawns registry by domain specialty, identifier name, or capability description..."
+                placeholder={`🔍 ${t('modal.ledger_search_placeholder')}`}
                 className="w-full bg-[#0a0c10] border border-[#23293a] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
               />
             </div>
@@ -937,7 +939,7 @@ export default function App() {
             {/* Invite/kick backend is not yet implemented — actions disabled with coming-soon badge */}
             <div className="px-6 py-2 bg-amber-950/10 border-b border-amber-900/20 flex items-center gap-2 text-[10px] font-mono text-amber-600/80 shrink-0">
               <span>⚠</span>
-              <span>Invite / kick not yet wired to backend — 即将推出 / Coming soon. Spawn list is real.</span>
+              <span>{t('modal.ledger_coming_soon_warning')}</span>
             </div>
 
             {/* Scrollable list content */}
@@ -954,7 +956,7 @@ export default function App() {
                   return (
                     <div className="text-center py-12 text-gray-400 font-mono text-xs select-none space-y-2">
                       <span className="block text-lg">⚠️</span>
-                      <span className="text-gray-500">No matching specialist prototypes registered.</span>
+                      <span className="text-gray-500">{t('modal.ledger_no_results')}</span>
                     </div>
                   );
                 }
@@ -993,14 +995,14 @@ export default function App() {
                       {/* Invite/kick disabled — backend not yet available */}
                       <div
                         className="px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider border border-[#1e2330]/60 bg-[#0b0d14]/60 text-gray-600 cursor-not-allowed opacity-50 shrink-0 flex items-center gap-1"
-                        title="即将推出 / Coming soon — invite/kick backend not yet available"
+                        title={t('common.coming_soon')}
                       >
                         {isMember ? (
                           <>
-                            <span>✓ Listed</span>
+                            <span>✓ {t('modal.ledger_listed')}</span>
                           </>
                         ) : (
-                          <span>+ Pull Into Chat</span>
+                          <span>+ {t('modal.ledger_pull_into_chat')}</span>
                         )}
                       </div>
                     </div>
@@ -1019,7 +1021,7 @@ export default function App() {
                 className="text-[10px] font-mono text-gray-400 hover:text-white flex items-center gap-1.5 uppercase tracking-wider px-3 py-1.5 bg-white/[0.01] border border-gray-800/80 rounded-lg hover:bg-white/[0.03] transition-all"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#FF8E24] shrink-0" />
-                <span>Synthesize new custom specialist</span>
+                <span>{t('modal.ledger_synthesize_cta')}</span>
               </button>
               <button
                 onClick={() => {
@@ -1028,7 +1030,7 @@ export default function App() {
                 }}
                 className="px-4 py-1.5 bg-[#1a1e2c] hover:bg-[#222739] text-gray-300 text-[10px] font-bold font-mono uppercase rounded-lg border border-[#2c3349]/50 transition-all select-none"
               >
-                Close Ledger
+                {t('modal.ledger_close')}
               </button>
             </div>
 

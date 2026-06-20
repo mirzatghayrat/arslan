@@ -5,6 +5,7 @@ import {
   ArrowLeft, Sliders, Wrench, BookOpen, Lock,
   Check, Save, RefreshCw, Sparkles, Volume2, ShieldAlert
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import SFSymbol from './SFSymbol';
 import { getIcon } from './iconMap';
 
@@ -21,14 +22,15 @@ export default function SpawnEditor({
   setSpawns,
   onBack
 }: SpawnEditorProps) {
+  const { t } = useTranslation();
   const spawn = spawns.find(s => s.id === spawnId);
   if (!spawn) {
     return (
       <div className="p-6 text-white text-sans">
         <button onClick={onBack} className="text-xs text-[#FF8E24] hover:underline flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> Go back
+          <ArrowLeft className="w-4 h-4" /> {t('ledger.go_back')}
         </button>
-        <p className="mt-4">Spawn not found.</p>
+        <p className="mt-4">{t('ledger.spawn_not_found')}</p>
       </div>
     );
   }
@@ -95,7 +97,7 @@ export default function SpawnEditor({
           className="text-xs text-gray-400 hover:text-white transition-colors flex items-center gap-1.5 font-sans"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to active spawns ledger</span>
+          <span>{t('ledger.back_to_ledger')}</span>
         </button>
       </div>
 
@@ -109,7 +111,7 @@ export default function SpawnEditor({
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-white font-sans">{spawn.name}</h1>
               <span className="text-[9px] bg-[#FF8E24]/15 text-[#FF8E24] border border-[#FF8E24]/30 px-2 py-0.5 rounded font-bold font-mono uppercase tracking-wider scale-95">
-                Active Slot
+                {t('ledger.active_slot')}
               </span>
             </div>
             <p className="text-xs text-gray-400 font-mono mt-0.5">{spawn.domain}</p>
@@ -132,11 +134,11 @@ export default function SpawnEditor({
           >
             {isSaved ? (
               <>
-                <Check className="w-4 h-4 text-white" /> Saved successfully!
+                <Check className="w-4 h-4 text-white" /> {t('ledger.saved_success')}
               </>
             ) : (
               <>
-                <Save className="w-4 h-4" /> Commit settings
+                <Save className="w-4 h-4" /> {t('ledger.commit_settings')}
               </>
             )}
           </button>
@@ -150,10 +152,10 @@ export default function SpawnEditor({
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold font-mono tracking-widest text-[#FF8E24] uppercase flex items-center gap-1.5">
               <Wrench className="w-4 h-4" /> 
-              <span>Equip Tools Library</span>
+              <span>{t('ledger.equip_tools')}</span>
             </h3>
             <span className="text-[10px] font-mono text-gray-500 uppercase">
-              {spawn.tools.length} assigned
+              {t('ledger.assigned_count', { count: spawn.tools.length })}
             </span>
           </div>
 
@@ -201,7 +203,7 @@ export default function SpawnEditor({
                   {isLocked ? (
                     <div className="flex flex-col items-center gap-1 shrink-0 bg-red-950/10 border border-red-900/30 p-2 rounded-lg text-[9px] font-mono text-red-500 font-bold uppercase">
                       <Lock className="w-3.5 h-3.5 text-red-500" />
-                      Locked
+                      {t('ledger.locked')}
                     </div>
                   ) : (
                     <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
@@ -223,10 +225,10 @@ export default function SpawnEditor({
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold font-mono tracking-widest text-[#FF8E24] uppercase flex items-center gap-1.5">
               <BookOpen className="w-4 h-4" /> 
-              <span>Equip Cognitive Skills</span>
+              <span>{t('ledger.equip_skills')}</span>
             </h3>
             <span className="text-[10px] font-mono text-gray-500 uppercase">
-              {spawn.skills.length} assigned
+              {t('ledger.assigned_count', { count: spawn.skills.length })}
             </span>
           </div>
 
@@ -256,7 +258,7 @@ export default function SpawnEditor({
                         <h4 className="text-xs font-bold text-white font-sans">{skill.name}</h4>
                         {isLocked && (
                           <span className="text-[8px] bg-red-950/30 text-red-500 font-mono px-1 border border-red-900/40 uppercase">
-                            Restrictive
+                            {t('ledger.restrictive')}
                           </span>
                         )}
                       </div>
@@ -270,7 +272,7 @@ export default function SpawnEditor({
                   {isLocked ? (
                     <div className="flex flex-col items-center gap-1 shrink-0 bg-red-950/10 border border-red-900/30 p-2 rounded-lg text-[9px] font-mono text-red-500 font-bold uppercase">
                       <Lock className="w-3.5 h-3.5 text-red-500" />
-                      Locked
+                      {t('ledger.locked')}
                     </div>
                   ) : (
                     <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
@@ -290,10 +292,10 @@ export default function SpawnEditor({
           <div className="bg-red-950/10 rounded-xl p-4 border border-red-900/30 text-[11px] leading-relaxed text-red-400 space-y-1 font-sans">
             <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider">
               <ShieldAlert className="w-4 h-4 text-red-400" />
-              <span>Daemon Security Policy Restricted Scope</span>
+              <span>{t('ledger.security_policy_title')}</span>
             </div>
             <p>
-              Under self-hosted client credentials, Tier-3 advanced tools (🔒) are locked behind standard security sandboxing bounds. Host directory integrations are restricted to local virtual directories to prevent malicious root execution commands from remote nodes.
+              {t('ledger.security_policy_desc')}
             </p>
           </div>
         </div>

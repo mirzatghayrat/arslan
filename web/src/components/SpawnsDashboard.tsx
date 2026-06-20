@@ -5,6 +5,7 @@ import {
   Sliders, Wrench, BookOpen, Clock, Activity, ArrowUpRight, Shield, Cpu,
   ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X, WifiOff
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
 import { motion, AnimatePresence } from 'motion/react';
 import SFSymbol from './SFSymbol';
@@ -42,6 +43,7 @@ export default function SpawnsDashboard({
   setSpawnChats,
   backendStatus,
 }: SpawnsDashboardProps) {
+  const { t } = useTranslation();
 
   // Global Integration Discovery & Repository Engine States
   // NOTE: This Tool-Hub (MCP/discovery backend) does not exist yet — kept as visual shell, actions disabled.
@@ -72,13 +74,13 @@ export default function SpawnsDashboard({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-white tracking-tight font-sans">Active Spawns Ledger</h1>
+            <h1 className="text-xl font-bold text-white tracking-tight font-sans">{t('ledger.title')}</h1>
             <span className="text-[10px] bg-[#FF8E24]/10 text-[#FF8E24] border border-[#FF8E24]/20 font-mono font-semibold px-2 py-0.5 rounded-full uppercase">
               {spawns.length} Spawns
             </span>
           </div>
           <p className="text-xs text-gray-500 font-sans mt-1">
-            Persistent micro-agents synthesized by the Arslan host core. Review status, run metrics, and equip tools.
+            {t('ledger.subtitle')}
           </p>
         </div>
 
@@ -86,7 +88,7 @@ export default function SpawnsDashboard({
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
           {/* Card Style Switcher */}
           <div className="flex items-center border border-[#1e2330] p-0.5 rounded-lg bg-[#0e1118]">
-            <span className="text-[9px] font-mono text-gray-500 uppercase px-2">Card Layout:</span>
+            <span className="text-[9px] font-mono text-gray-500 uppercase px-2">{t('ledger.card_layout_label')}</span>
             <button
               id="card-iso-btn"
               onClick={() => setCardStyle('isometric')}
@@ -96,7 +98,7 @@ export default function SpawnsDashboard({
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              Glass Glow
+              {t('ledger.style_glass')}
             </button>
             <button
               id="card-blue-btn"
@@ -107,7 +109,7 @@ export default function SpawnsDashboard({
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              Blueprint
+              {t('ledger.style_blueprint')}
             </button>
             <button
               id="card-comp-btn"
@@ -118,7 +120,7 @@ export default function SpawnsDashboard({
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              Pill Compact
+              {t('ledger.style_compact')}
             </button>
           </div>
 
@@ -128,7 +130,7 @@ export default function SpawnsDashboard({
             onClick={onCreateSpawnClick}
             className="px-3 py-1.5 bg-[#FF8E24] hover:bg-[#ff9c3a] text-black text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1 shadow-lg shadow-[#FF8E24]/15"
           >
-            <span>+</span> Synthesize Spawn
+            <span>+</span> {t('ledger.synthesize_spawn')}
           </button>
         </div>
       </div>
@@ -144,12 +146,12 @@ export default function SpawnsDashboard({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-sans font-bold text-sm text-white tracking-wide">
-                  Global Integration Discovery & Repository Engine <span className="text-gray-500 font-normal text-xs ml-1">(Tool-Hub / 全局工具集成发现与评估引擎)</span>
+                  {t('ledger.tool_hub_title')} <span className="text-gray-500 font-normal text-xs ml-1">(Tool-Hub)</span>
                 </h3>
-                <span className="text-[8px] font-mono bg-gray-800/80 text-gray-400 border border-gray-700/50 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">即将推出 / Coming Soon</span>
+                <span className="text-[8px] font-mono bg-gray-800/80 text-gray-400 border border-gray-700/50 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">{t('ledger.tool_hub_coming_soon')}</span>
               </div>
               <p className="text-[11.5px] text-gray-500 font-sans mt-0.5">
-                MCP / tool-discovery backend is not yet available. This hub will allow connecting external MCP servers once the integration layer is built.
+                {t('ledger.tool_hub_subtitle')}
               </p>
             </div>
           </div>
@@ -158,7 +160,7 @@ export default function SpawnsDashboard({
             onClick={() => setShowSandboxSearch(!showSandboxSearch)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121622]/90 hover:bg-[#1e2330] text-gray-400 rounded-lg border border-[#23293a] transition-all cursor-pointer text-xs font-medium font-sans"
           >
-            <span>{showSandboxSearch ? 'Collapse' : 'Expand'}</span>
+            <span>{showSandboxSearch ? t('common.collapse') : t('common.expand')}</span>
             {showSandboxSearch ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
@@ -170,7 +172,7 @@ export default function SpawnsDashboard({
                 <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-600" />
                 <input
                   type="text"
-                  placeholder="MCP/tool discovery — 即将推出 / coming soon..."
+                  placeholder={t('ledger.tool_hub_search_placeholder')}
                   value={integrationQuery}
                   onChange={(e) => setIntegrationQuery(e.target.value)}
                   disabled
@@ -179,17 +181,17 @@ export default function SpawnsDashboard({
               </div>
               <button
                 disabled
-                title="即将推出 / Coming soon — evaluation backend not yet available"
+                title={t('ledger.tool_hub_coming_soon')}
                 className="px-5 py-2.5 bg-[#0e1018]/60 border border-[#1e2330]/40 text-gray-600 text-xs font-bold font-mono uppercase rounded-xl flex items-center gap-1 shrink-0 cursor-not-allowed opacity-50"
               >
                 <Cpu className="w-3.5 h-3.5" />
-                <span>Evaluate Spec</span>
+                <span>{t('ledger.tool_hub_evaluate')}</span>
               </button>
             </div>
 
             {/* Quick Presets — disabled */}
             <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-gray-600 select-none opacity-50">
-              <span>Quick Presets (coming soon):</span>
+              <span>{t('ledger.tool_hub_presets_label')}</span>
               {['Brave-MCP', 'GDrive-Workspace', 'PostgreSQL-Analyzer', 'Milvus-RAG'].map(label => (
                 <span key={label} className="px-2 py-0.5 rounded bg-white/[0.01] border border-[#1e2330]/40 text-gray-700 cursor-not-allowed">{label}</span>
               ))}
@@ -203,17 +205,17 @@ export default function SpawnsDashboard({
         backendStatus === 'offline' ? (
           <div className="h-64 border border-dashed border-red-900/40 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-red-950/10">
             <WifiOff className="w-8 h-8 text-red-500/60 mb-2" />
-            <h3 className="text-sm font-sans font-medium text-red-300">后端未连接 / Backend not connected</h3>
+            <h3 className="text-sm font-sans font-medium text-red-300">{t('ledger.empty_backend_offline')}</h3>
             <p className="text-xs text-red-400/70 max-w-sm mt-1">
-              Spawn list could not be loaded — the backend is unreachable. Start the backend and the list will reload automatically.
+              {t('ledger.empty_backend_offline_desc')}
             </p>
           </div>
         ) : (
           <div className="h-64 border border-dashed border-gray-800 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-black/10">
             <Cpu className="w-8 h-8 text-gray-600 mb-2 animate-bounce" />
-            <h3 className="text-sm font-sans font-medium text-white">No active spawns active</h3>
+            <h3 className="text-sm font-sans font-medium text-white">{t('ledger.empty_no_spawns')}</h3>
             <p className="text-xs text-gray-500 max-w-sm mt-1">
-              Create or instantiate micro-specialists to start delegating complex quantitative algorithms.
+              {t('ledger.empty_no_spawns_desc')}
             </p>
           </div>
         )
@@ -280,9 +282,9 @@ export default function SpawnsDashboard({
                   {/* Equipment Panel Indicator */}
                   <div className="space-y-3 pt-4 border-t border-[#1e2330]/50">
                     <div className="flex justify-between items-center text-[10px] font-mono text-gray-500 uppercase tracking-widest">
-                      <span>Equipped systems</span>
+                      <span>{t('ledger.equipped_systems')}</span>
                       <span className="text-gray-400 font-bold">
-                        {spawn.tools.length + spawn.skills.length} item(s)
+                        {t('ledger.items_count', { count: spawn.tools.length + spawn.skills.length })}
                       </span>
                     </div>
 
@@ -316,7 +318,7 @@ export default function SpawnsDashboard({
                     <div className="flex items-center gap-3 text-[10px] font-mono">
                       <span className="flex items-center gap-1">
                         <Activity className="w-3.5 h-3.5 text-[#FF8E24]" />
-                        {spawn.totalTasks} jobs compiled
+                        {t('ledger.jobs_compiled', { count: spawn.totalTasks })}
                       </span>
                     </div>
                     
@@ -329,7 +331,7 @@ export default function SpawnsDashboard({
                       className="text-[10px] text-[#FF8E24] hover:text-white font-mono bg-[#FF8E24]/10 hover:bg-[#FF8E24] px-2.5 py-1 rounded transition-all border border-[#FF8E24]/20 uppercase font-semibold flex items-center gap-1"
                     >
                       <Sliders className="w-3 h-3" />
-                      Configure
+                      {t('ledger.configure')}
                     </button>
                   </div>
                 </div>
@@ -566,7 +568,7 @@ export default function SpawnsDashboard({
                                   className="flex-1 py-1.5 px-3 bg-[#FF8E24] hover:bg-[#ff9c3a] text-black text-[10px] font-bold font-sans uppercase rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-[#FF8E24]/10 cursor-pointer"
                                 >
                                   <MessageSquare className="w-3.5 h-3.5" />
-                                  <span>Open Channel</span>
+                                  <span>{t('ledger.open_channel')}</span>
                                 </button>
 
                                 <button
@@ -578,7 +580,7 @@ export default function SpawnsDashboard({
                                   className="py-1.5 px-3 bg-[#121520] hover:bg-white/[0.04] border border-[#1e2330] hover:border-gray-600 text-gray-400 hover:text-white text-[10px] font-mono uppercase rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
                                 >
                                   <Sliders className="w-3.5 h-3.5" />
-                                  <span>Calibrate</span>
+                                  <span>{t('ledger.calibrate')}</span>
                                 </button>
                               </div>
                             </div>

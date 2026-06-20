@@ -6,6 +6,7 @@ import {
   Cpu, X, Send, ChevronDown,
   Plus, RefreshCcw
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
 import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
@@ -32,6 +33,7 @@ export default function OrchestratorChat({
   setCurrentStyle,
   activeThread
 }: OrchestratorChatProps) {
+  const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
@@ -142,7 +144,7 @@ export default function OrchestratorChat({
       <div className="bg-[#121622]/60 border-b border-[#1e2330]/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
         <div className="flex items-center gap-2 shrink-0">
           <Terminal className="w-4 h-4 text-amber-500" />
-          <span className="text-gray-300 font-mono font-bold uppercase tracking-wider">Interactive Spawner Sandbox:</span>
+          <span className="text-gray-300 font-mono font-bold uppercase tracking-wider">{t('orchestrator.sandbox_label')}</span>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -283,7 +285,7 @@ export default function OrchestratorChat({
                     }
                   }
                 }}
-                placeholder="Paste a document, an email, or a task description to orchestrate..."
+                placeholder={t('orchestrator.placeholder_empty')}
                 className="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
 
@@ -339,13 +341,13 @@ export default function OrchestratorChat({
 
             {/* Quick action pill suggestions inspired by Claude suggestions */}
             <div className="w-full max-w-xl text-center space-y-2">
-              <span className="text-[10px] font-mono text-gray-600 uppercase tracking-widest block">Start Orchestrating presets</span>
+              <span className="text-[10px] font-mono text-gray-600 uppercase tracking-widest block">{t('orchestrator.presets_label')}</span>
               <div className="flex flex-wrap gap-1.5 justify-center">
                 {[
-                  { label: "✏️ Code Audit", prompt: "Conduct automatic code analysis on sandbox files to discover vulnerability patterns." },
-                  { label: "🎓 Financial Brief", prompt: "Summarize Q1 market ratings and consensus predictions for Blackwell chipsets output." },
-                  { label: "💻 Slogan Synthesis", prompt: "Draft optimized copywriting hooks for key promotional tech campaigns with emojis." },
-                  { label: "🔍 Drive Fetcher", prompt: "Use Brave registry crawler tool to catalog recent AI deployment metrics." }
+                  { label: `✏️ ${t('orchestrator.preset_code_audit')}`, prompt: "Conduct automatic code analysis on sandbox files to discover vulnerability patterns." },
+                  { label: `🎓 ${t('orchestrator.preset_financial')}`, prompt: "Summarize Q1 market ratings and consensus predictions for Blackwell chipsets output." },
+                  { label: `💻 ${t('orchestrator.preset_slogan')}`, prompt: "Draft optimized copywriting hooks for key promotional tech campaigns with emojis." },
+                  { label: `🔍 ${t('orchestrator.preset_drive')}`, prompt: "Use Brave registry crawler tool to catalog recent AI deployment metrics." }
                 ].map((item, idx) => (
                   <button
                     key={idx}
@@ -400,7 +402,7 @@ export default function OrchestratorChat({
                         <span className="text-[11px] font-semibold text-gray-300">{msg.senderName}</span>
                         {isArslan ? (
                           <span className="text-[9px] bg-[#FF8E24]/10 text-[#FF8E24] border border-[#FF8E24]/30 px-1.5 py-0.2 rounded font-semibold font-mono uppercase tracking-wider scale-95">
-                            Orchestrator
+                            {t('app.name')} Orchestrator
                           </span>
                         ) : (
                           <div className="flex items-center gap-1 scale-95">
@@ -462,7 +464,7 @@ export default function OrchestratorChat({
 
                         {/* Equipped Capabilities Rendering */}
                         <div className="space-y-2">
-                          <div className="text-[10px] text-gray-500 font-mono font-medium tracking-wide uppercase">Equipped Capabilities:</div>
+                          <div className="text-[10px] text-gray-500 font-mono font-medium tracking-wide uppercase">{t('orchestrator.equipped_capabilities')}</div>
                           <div className="flex flex-wrap gap-1.5">
                             {/* Render Tool tags with lucide icon */}
                             {msg.spawnIntro.tools.map(toolId => {
@@ -512,7 +514,7 @@ export default function OrchestratorChat({
                             onClick={() => toggleToolCollapse(msg.toolActivity!.id)}
                             className="text-[10px] font-mono text-gray-500 hover:text-[#FF8E24] transition-all bg-[#1b1e2c] border border-[#2d3246] px-2 py-0.5 rounded-md"
                           >
-                            {collapsedToolActivities[msg.toolActivity.id] ? "Expand results (Full Log)" : "Collapse"}
+                            {collapsedToolActivities[msg.toolActivity.id] ? t('orchestrator.expand_results') : t('orchestrator.collapse_results')}
                           </button>
                         </div>
 
@@ -524,14 +526,14 @@ export default function OrchestratorChat({
                               <span className="text-[10.5px]">{msg.toolActivity.action}</span>
                             </div>
                             <div className="space-y-1 mt-1">
-                              <div className="text-gray-500 text-[10px] uppercase">Stdout returns:</div>
+                              <div className="text-gray-500 text-[10px] uppercase">{t('orchestrator.stdout_label')}</div>
                               <p className="text-gray-300 text-[10.5px] bg-[#1a1e2b] p-3 rounded-lg border border-[#2c3349]/50 leading-relaxed whitespace-pre-line border-l-2 border-l-[#FF8E24]">
                                 {msg.toolActivity.outputSummary}
                               </p>
                             </div>
                             <div className="flex items-center gap-1 text-[10px] text-[#FF8E24]/70">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline mr-0.5" />
-                              <span>Instruction execution validated. Sandbox socket gracefully returned 0.</span>
+                              <span>{t('orchestrator.exec_validated')}</span>
                             </div>
                           </div>
                         ) : (
@@ -563,10 +565,10 @@ export default function OrchestratorChat({
                         <div className="space-y-1 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-[11.5px] font-bold font-mono tracking-wide uppercase">
-                              {msg.escalation.status === 'need_raised' && "Escalation raised"}
-                              {msg.escalation.status === 'arslan_resolving' && "Arslan resolving escalation"}
-                              {msg.escalation.status === 'resolved' && "Escalation resolved"}
-                              {msg.escalation.status === 'refused' && "Escalation Safety Trigger: REFUSED"}
+                              {msg.escalation.status === 'need_raised' && t('orchestrator.escalation_raised')}
+                              {msg.escalation.status === 'arslan_resolving' && t('orchestrator.arslan_resolving')}
+                              {msg.escalation.status === 'resolved' && t('orchestrator.escalation_resolved')}
+                              {msg.escalation.status === 'refused' && t('orchestrator.escalation_refused')}
                             </span>
                             <span className="text-[9px] bg-black/30 font-mono px-1.5 border border-white/5 rounded">
                               From: {msg.escalation.spawnName}
@@ -768,7 +770,7 @@ export default function OrchestratorChat({
                           </div>
                           <span className="text-[9px] bg-gray-900 text-gray-400 px-1 py-0.2 rounded font-mono">active</span>
                         </div>
-                        <div className="text-[10px] text-gray-500">Capabilities Matrix:</div>
+                        <div className="text-[10px] text-gray-500">{t('orchestrator.capabilities_matrix')}</div>
                         <div className="flex flex-wrap gap-1">
                           {msg.spawnIntro.tools.map(toolId => (
                             <span key={toolId} className="text-[10px] bg-[#13151b] border border-gray-800 text-gray-300 px-1.5 py-0.2 rounded">
@@ -842,7 +844,7 @@ export default function OrchestratorChat({
               spellCheck={false}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Ask Arslan to orchestrate a task for your spawns..."
+              placeholder={t('orchestrator.placeholder_chat')}
               className="w-full bg-[#121520] border border-[#23293e] hover:border-[#353e5e] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/30 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-500 focus:outline-none pr-12 transition-all font-sans"
             />
             <button
@@ -855,11 +857,11 @@ export default function OrchestratorChat({
             </button>
           </form>
           <div className="flex items-center justify-center gap-6 mt-2 text-[10px] text-gray-600 font-mono">
-            <span>Enter to execute prompt</span>
+            <span>{t('orchestrator.footer_hint')}</span>
             <span>•</span>
             <span className="flex items-center gap-1.5 font-sans">
               <Layers className="w-3.5 h-3.5 text-gray-500" />
-              Core Host is sandboxed local client loop
+              {t('orchestrator.footer_sandboxed')}
             </span>
           </div>
         </footer>
@@ -906,17 +908,17 @@ export default function OrchestratorChat({
             <div className="space-y-2">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-xs font-bold text-white font-sans">{spawn.name} Sandbox</span>
-                <span className="text-[9px] font-mono bg-amber-950/20 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider">即将推出</span>
+                <span className="text-[9px] font-mono bg-amber-950/20 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider">{t('orchestrator.coming_soon_badge')}</span>
               </div>
               <p className="text-[11px] text-gray-500 font-sans leading-relaxed max-w-xs">
-                Per-spawn sandbox dispatch and draft review are not yet wired to a backend frame. This panel will show real spawn output once the dispatch protocol is implemented.
+                {t('orchestrator.sandbox_coming_soon_desc')}
               </p>
             </div>
             <button
               onClick={() => setSplitSpawnId(null)}
               className="mt-2 px-4 py-1.5 bg-transparent hover:bg-white/[0.04] text-gray-400 hover:text-white text-[10px] rounded-xl border border-gray-800/80 font-mono uppercase tracking-wider transition-all"
             >
-              Close Panel
+              {t('orchestrator.close_panel')}
             </button>
           </div>
         </div>

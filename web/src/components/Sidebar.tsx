@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { Spawn } from '../types';
 import SFSymbol from './SFSymbol';
 import type { BackendStatus } from '../hooks/useBackendStatus';
@@ -43,6 +44,7 @@ export default function Sidebar({
   onChangeSection,
   backendStatus,
 }: SidebarProps) {
+  const { t } = useTranslation();
   const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
   
   return (
@@ -56,7 +58,7 @@ export default function Sidebar({
           <div className="w-3 h-3 rounded-full bg-[#ffbd2e] border border-[#dea123] cursor-pointer"></div>
           <div className="w-3 h-3 rounded-full bg-[#27c93f] border border-[#1aab29] cursor-pointer"></div>
           <span className="text-[9.5px] text-gray-500 font-mono tracking-wider ml-auto uppercase opacity-60">
-            Node-Client v1.2
+            {t('sidebar.node_version')}
           </span>
         </div>
 
@@ -85,14 +87,14 @@ export default function Sidebar({
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="font-sans font-bold text-white text-sm tracking-tight">
-                Arslan Orchestrator
+                {t('app.name')} Orchestrator
               </h1>
               <span className="text-[8px] bg-[#FF8E24]/10 text-[#FF8E24] px-1 py-0.2 rounded font-mono font-medium border border-[#FF8E24]/20 uppercase">
                 Host
               </span>
             </div>
             <p className="text-[9px] text-gray-500 font-mono tracking-tight mt-0.5">
-              One Becomes Many
+              {t('sidebar.brand_subtitle')}
             </p>
           </div>
         </div>
@@ -108,7 +110,7 @@ export default function Sidebar({
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left text-gray-400 hover:text-gray-200 hover:bg-[#FF8E24]/5 border-l-2 border-transparent hover:border-l-2 hover:border-[#FF8E24]/50 group"
             >
               <Plus className="w-3.5 h-3.5 text-gray-500 shrink-0 group-hover:text-[#FF8E24] transition-transform group-hover:scale-110" />
-              <span className="truncate font-sans font-medium">New Orchestrator Session</span>
+              <span className="truncate font-sans font-medium">{t('sidebar.new_session')}</span>
             </button>
 
             {/* Quick Portal Shortcuts (Listed vertically for consistent list style) */}
@@ -125,7 +127,7 @@ export default function Sidebar({
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <LayoutGrid className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'ledger' ? 'text-[#FF8E24]' : 'text-gray-500'}`} />
-                  <span className="truncate font-sans font-medium">Spawns Ledger</span>
+                  <span className="truncate font-sans font-medium">{t('sidebar.spawns_ledger')}</span>
                 </div>
                 <span className="text-[8px] bg-[#FF8E24]/10 text-[#FF8E24] font-mono font-bold px-1.5 py-0.2 rounded border border-[#FF8E24]/15 shrink-0">
                   {spawns.length}
@@ -141,10 +143,10 @@ export default function Sidebar({
             {/* Header section with counts and spacing */}
             <div className="px-3 mb-2.5 select-none flex items-center justify-between">
               <span className="text-[9.5px] font-mono text-gray-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
-                Active Chats
+                {t('sidebar.active_chats')}
               </span>
               <span className="text-[8.5px] text-[#FF8E24] font-mono bg-[#FF8E24]/5 border border-[#FF8E24]/15 rounded px-1.5 py-0.2 select-none font-bold">
-                {threads.length} CHATS
+                {t('sidebar.chats_count', { count: threads.length })}
               </span>
             </div>
 
@@ -177,10 +179,10 @@ export default function Sidebar({
           <div className="border-t border-[#1e2330]/40 pt-4.5 flex flex-col min-h-0">
             <div className="px-3 mb-2.5 select-none flex items-center justify-between">
               <span className="text-[9.5px] font-mono text-gray-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
-                Active Spawns
+                {t('sidebar.active_spawns')}
               </span>
               <span className="text-[9.5px] text-emerald-400 font-mono bg-[#1cbb58]/5 border border-[#1cbb58]/15 rounded px-1.5 py-0.2 select-none font-bold">
-                {spawns.length} LIVE
+                {t('sidebar.live_count', { count: spawns.length })}
               </span>
             </div>
 
@@ -236,31 +238,31 @@ export default function Sidebar({
           }`}
         >
           <Settings2 className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${activeSection === 'settings' ? 'text-[#FF8E24]' : 'text-gray-500 group-hover/settings-foot:text-gray-400'}`} />
-          <span className="truncate font-sans font-medium">System Settings</span>
+          <span className="truncate font-sans font-medium">{t('sidebar.system_settings')}</span>
         </button>
 
         <div className="border-t border-[#1e2330]/40 pt-3">
           {/* DAEMON CORE — wired to real backend health signal */}
           <div className="flex items-center justify-between text-[10px] font-mono text-gray-500 uppercase tracking-widest select-none">
             <span className="flex items-center gap-1.5">
-              <span>Daemon Core</span>
+              <span>{t('sidebar.daemon_core')}</span>
             </span>
             {backendStatus === 'checking' && (
               <span className="flex items-center gap-1 text-gray-500">
                 <span className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse"></span>
-                Connecting
+                {t('common.connecting')}
               </span>
             )}
             {backendStatus === 'online' && (
               <span className="flex items-center gap-1 text-emerald-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Online
+                {t('common.online')}
               </span>
             )}
             {backendStatus === 'offline' && (
               <span className="flex items-center gap-1 text-red-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                Offline
+                {t('common.offline')}
               </span>
             )}
           </div>

@@ -3,6 +3,7 @@ import {
   Send, Sparkles, Terminal, Wrench, BookOpen,
   Cpu, CheckCircle2, Clock, Play, User, RefreshCcw, Info
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Message, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
@@ -22,6 +23,7 @@ export default function SpawnDirectChat({
   setChatHistory,
   currentStyle
 }: SpawnDirectChatProps) {
+  const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -113,10 +115,10 @@ export default function SpawnDirectChat({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xs font-bold font-mono tracking-widest text-white uppercase">{spawn.name} Direct Channel</h2>
+              <h2 className="text-xs font-bold font-mono tracking-widest text-white uppercase">{spawn.name} {t('spawn_chat.direct_channel_suffix')}</h2>
             </div>
             <p className="text-[10px] text-gray-500 mt-0.5 font-sans">
-              Specialist assigned to field: <span className="text-gray-300 font-medium">{spawn.domain}</span>
+              {t('spawn_chat.specialist_field')} <span className="text-gray-300 font-medium">{spawn.domain}</span>
             </p>
           </div>
         </div>
@@ -310,7 +312,7 @@ export default function SpawnDirectChat({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             disabled={isSimulating}
-            placeholder={isSimulating ? `Specialist ${spawn.name} is working...` : `Task directive direct socket input...`}
+            placeholder={isSimulating ? t('spawn_chat.placeholder_working', { name: spawn.name }) : t('spawn_chat.placeholder_input')}
             className="w-full bg-[#07090d] border border-[#23293a] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl pl-4 pr-12 py-3.5 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
           />
           <button
