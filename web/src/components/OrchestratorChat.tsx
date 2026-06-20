@@ -10,6 +10,7 @@ import { getIcon } from './iconMap';
 import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
+import Markdown from './Markdown';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -420,7 +421,10 @@ export default function OrchestratorChat({
                         : 'bg-[#11141d]/90 backdrop-blur border-[#ff8e24]/15 text-gray-200 rounded-tl-none'
                     }`}>
                       {/* Message Content */}
-                      <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
+                      {isUser
+                        ? <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
+                        : <Markdown className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                      }
 
                       {/* Routed Indicator - specifically asked in prompt */}
                       {msg.routedTo && (
@@ -614,7 +618,10 @@ export default function OrchestratorChat({
                     <span className="text-gray-500 text-[10px]">{msg.timestamp}</span>
                   </div>
 
-                  <p className="whitespace-pre-line text-gray-300 font-mono leading-relaxed">{msg.text}</p>
+                  {isUser
+                    ? <p className="whitespace-pre-line text-gray-300 font-mono leading-relaxed">{msg.text}</p>
+                    : <Markdown className="text-gray-300 font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  }
 
                   {/* Routed branch block */}
                   {msg.routedTo && (
@@ -712,9 +719,10 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
-                  <p className="whitespace-pre-line text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5">
-                    {msg.text}
-                  </p>
+                  {isUser
+                    ? <p className="whitespace-pre-line text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5">{msg.text}</p>
+                    : <Markdown className="text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  }
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (

@@ -6,6 +6,7 @@ import {
 import { Message, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
+import Markdown from './Markdown';
 import { getIcon } from './iconMap';
 
 interface SpawnDirectChatProps {
@@ -183,8 +184,11 @@ export default function SpawnDirectChat({
                       <span className="text-xs font-bold text-white font-sans">{msg.senderName}</span>
                       <span className="text-[9px] text-gray-500 font-mono">{msg.timestamp}</span>
                     </div>
-                    <div className="text-xs text-gray-300 leading-relaxed font-sans whitespace-pre-wrap">
-                      {msg.text}
+                    <div className="text-xs text-gray-300 leading-relaxed font-sans">
+                      {isUser
+                        ? <span className="whitespace-pre-wrap">{msg.text}</span>
+                        : <Markdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                      }
                     </div>
 
                     {/* Tool execution logs inside direct messages */}
@@ -225,9 +229,10 @@ export default function SpawnDirectChat({
                       <span className="text-[10px] font-bold font-mono tracking-widest uppercase">{msg.senderName}</span>
                       <span className="text-[9px] font-mono">{msg.timestamp}</span>
                     </div>
-                    <p className={`text-xs whitespace-pre-wrap leading-relaxed ${isUser ? 'font-medium' : 'font-sans text-gray-300'}`}>
-                      {msg.text}
-                    </p>
+                    {isUser
+                      ? <p className="text-xs whitespace-pre-wrap leading-relaxed font-medium">{msg.text}</p>
+                      : <Markdown className="text-xs text-gray-300 font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                    }
 
                     {/* Tool Activities */}
                     {msg.toolActivity && (
@@ -263,7 +268,12 @@ export default function SpawnDirectChat({
                   </span>
                   <span className="text-gray-500 text-[10px]">{msg.timestamp}</span>
                 </div>
-                <div className="text-gray-200 whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+                <div className="leading-relaxed">
+                  {isUser
+                    ? <span className="text-gray-200 whitespace-pre-wrap">{msg.text}</span>
+                    : <Markdown className="text-gray-200 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  }
+                </div>
 
                 {msg.toolActivity && (
                   <div className="mt-3 border border-orange-500/40 p-2 text-[11px] bg-[#000]">
