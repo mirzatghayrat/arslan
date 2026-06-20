@@ -33,14 +33,19 @@ async def test_crisp_task_executes_directly(monkeypatch):
     assert not any(isinstance(e, dict) and e.get("type") == "proposal" for e in events)
 
 @pytest.mark.asyncio
-async def test_confirm_and_execute_dispatches_execute(monkeypatch):
+async def test_confirm_and_execute_dispatches_execute_confirmed_with_proposed_direction(monkeypatch):
     events = []
-    async def fake_dispatch(conversation_id, *, spawn_id, task_brief, mode="execute", **kw):
-        events.append(("dispatch", mode, task_brief));
+    async def fake_dispatch(conversation_id, *, spawn_id, task_brief, mode="execute", prior_output=None, **kw):
+        events.append(("dispatch", mode, task_brief, prior_output))
         return {"full_output":"out","spawn_name":"x","summary_message_id":1,"assistant_message_id":2,"escalation":None}
     monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
     monkeypatch.setattr(dispatcher, "get_spawn_name", lambda i: _aw("x"))
+    # the spawn's prior propose output (its proposed direction) must be carried into execute
+    monkeypatch.setattr(dispatcher, "last_spawn_output", lambda i: _aw("the proposed direction text"))
     monkeypatch.setattr(phase_service, "get_pending", lambda c: _aw({"spawn_id":4,"phase":"proposing","direction":"the confirmed direction"}))
     monkeypatch.setattr(phase_service, "clear", lambda c,s=None: _aw(None))
     await arslan.confirm_and_execute("conv-z", 4, events.append)
-    assert any(t[:2]==("dispatch","execute") and "the confirmed direction" in t[2] for t in events if isinstance(t, tuple))
+    rec = next(t for t in events if isinstance(t, tuple) and t[0] == "dispatch")
+    assert rec[1] == "execute_confirmed"
+    assert "the confirmed direction" in rec[2]
+    assert rec[3] == "the proposed direction text"

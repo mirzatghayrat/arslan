@@ -350,11 +350,20 @@ async def _dispatch_spawn(  # noqa: ANN001
 
 
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
-    """User confirmed a pending proposal — run the spawn in execute mode on the stored direction."""
+    """User confirmed a pending proposal — execute, carrying the spawn's proposed direction.
+
+    The stored ``direction`` is the original task brief; the spawn's own proposed direction
+    (its last propose-mode output) is fetched and carried via ``execute_confirmed`` framing so
+    the spawn delivers the final result instead of re-asking clarifying questions.
+    """
     pending = await phase_service.get_pending(conversation_id)
     direction = (pending or {}).get("direction", "")
+    proposed = await dispatcher.last_spawn_output(spawn_id)
     await phase_service.clear(conversation_id, spawn_id)
-    await _dispatch_spawn(conversation_id, spawn_id, direction, emit, mode="execute")
+    await _dispatch_spawn(
+        conversation_id, spawn_id, direction, emit,
+        mode="execute_confirmed", prior_output=proposed,
+    )
 
 
 async def record_deliverable_verdict(
