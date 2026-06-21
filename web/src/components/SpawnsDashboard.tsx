@@ -353,7 +353,7 @@ export default function SpawnsDashboard({
 
                   {/* Header info */}
                   <div className="pb-2 border-b border-dashed border-border mb-3 flex items-start gap-3">
-                    <span className="inline-block p-1 bg-primary/25 border border-primary/20 rounded flex items-center justify-center">
+                    <span className="inline-block p-1 bg-primary/10 border border-primary/20 rounded flex items-center justify-center">
                       <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-4 h-4 text-primary" />
                     </span>
                     <div className="flex-1">
