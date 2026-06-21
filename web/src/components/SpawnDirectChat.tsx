@@ -9,6 +9,7 @@ import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import Markdown from './Markdown';
 import { getIcon } from './iconMap';
+import { SandboxBackdrop } from './SandboxBackdrop';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -99,13 +100,8 @@ export default function SpawnDirectChat({
   return (
     <div className="flex-grow flex flex-col h-full overflow-hidden bg-background select-none relative font-sans">
       
-      {/* Dynamic Background Grid overlay depending on theme */}
-      {currentStyle === 'brutalist' && (
-        <div className="absolute inset-0 bg-[radial-gradient(#ff8e24_0.75px,transparent_0.75px)] [background-size:16px_16px] opacity-[0.03] pointer-events-none z-0"></div>
-      )}
-      {currentStyle === 'linear' && (
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f2937_1px,transparent_1px),linear-gradient(to_bottom,#1f2937_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-[0.1] pointer-events-none z-0"></div>
-      )}
+      {/* Ambient prism backdrop (recorded loop when present, else live WebGL) + frosted glass */}
+      <SandboxBackdrop />
 
       {/* Spawn Header details */}
       <div className={`px-6 py-4 flex items-center justify-between border-b border-border/80 relative z-10 bg-background/80 backdrop-blur`}>
