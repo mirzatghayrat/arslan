@@ -805,7 +805,7 @@ export default function App() {
       {/* Dynamic Spawn Creator Dialog Box overlay */}
       {showCreateModal && (
         <div id="create-spawn-modal" className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="w-full max-w-lg bg-surface/95 border border-border-strong rounded-2xl shadow-2xl overflow-hidden shadow-orange-950/20 select-none">
+          <div className="w-full max-w-lg bg-surface/95 border border-border-strong rounded-2xl shadow-2xl overflow-hidden shadow-primary/20 select-none">
 
             {/* Header */}
             <div className="px-6 py-4 border-b border-border/80 flex items-center justify-between bg-background">
@@ -881,7 +881,7 @@ export default function App() {
               </div>
 
               {/* Footnote instruction info */}
-              <div className="text-[10px] text-subtle-foreground font-mono leading-relaxed bg-background p-3 border border-pink-950/20 rounded-xl">
+              <div className="text-[10px] text-subtle-foreground font-mono leading-relaxed bg-background p-3 border border-border/20 rounded-xl">
                 <span>{t('modal.default_capabilities_note')}</span>
               </div>
 
@@ -910,7 +910,7 @@ export default function App() {
       {/* Spawns Ledger Invitation Modal */}
       {showLedgerModal && (
         <div id="spawns-ledger-modal" className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="w-full max-w-4xl h-[80vh] bg-surface/95 border border-border-strong rounded-2xl shadow-2xl overflow-hidden shadow-orange-950/25 flex flex-col">
+          <div className="w-full max-w-4xl h-[80vh] bg-surface/95 border border-border-strong rounded-2xl shadow-2xl overflow-hidden shadow-primary/25 flex flex-col">
 
             {/* Header */}
             <div className="px-6 py-4.5 border-b border-border/80 flex items-center justify-between bg-background shrink-0">
