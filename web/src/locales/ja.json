@@ -222,7 +222,9 @@
     "verdict_accept": "採用",
     "verdict_edit": "改善",
     "verdict_redo": "やり直し",
-    "verdict_discard": "破棄"
+    "verdict_discard": "破棄",
+    "verdict_accepted": "採用済み",
+    "verdict_discarded": "破棄済み"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
