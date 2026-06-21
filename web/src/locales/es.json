@@ -155,7 +155,18 @@
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
-    "btnSaving": "Saving..."
+    "btnSaving": "Saving...",
+    "appearance": "Apariencia",
+    "palette": "Paleta de temas",
+    "mode": "Claro / Oscuro",
+    "modeDark": "Oscuro",
+    "modeLight": "Claro",
+    "paletteCurrent": "Current",
+    "paletteEmber": "Ember",
+    "paletteTerminal": "Terminal",
+    "paletteNebula": "Nebula",
+    "paletteSlate": "Slate",
+    "paletteGlacier": "Glacier"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

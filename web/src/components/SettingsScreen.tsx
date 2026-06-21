@@ -9,6 +9,7 @@ import {
   Key, Sliders, Globe, Check, Eye, EyeOff, Save,
   Info, AlertCircle, WifiOff
 } from 'lucide-react';
+import { AppearanceSettings } from './AppearanceSettings';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -237,24 +238,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               </select>
             </div>
 
-            {/* Theme / Visual Style Select */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                {t('settings.labelTheme')}
-              </label>
-              <select
-                id="settings-theme"
-                value={localSettings.theme}
-                onChange={(e: any) => {
-                  const targetTheme = e.target.value;
-                  setLocalSettings(prev => ({ ...prev, theme: targetTheme }));
-                  setSettings(prev => ({ ...prev, theme: targetTheme }));
-                }}
-                className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-[#FF8E24] focus:outline-none transition-all font-sans"
-              >
-                <option value="dark">Dark Mode (Sleek Slate Dark)</option>
-                <option value="light">Light Mode (High-Contrast Pearl Light)</option>
-              </select>
+            {/* Appearance — palette picker + mode toggle */}
+            <div className="md:col-span-2">
+              <AppearanceSettings />
             </div>
           </div>
         </div>
