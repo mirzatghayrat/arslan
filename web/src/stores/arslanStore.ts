@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo } from "../api/client.types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember } from "../api/client.types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -26,6 +26,8 @@ interface ArslanState {
   // Pending proposal: when a `proposal` frame arrives, the next spawn deliverable
   // created at stream_end for that spawn_id should be flagged isProposal: true.
   pendingProposalSpawnId: number | null;
+  // Active conversation roster: spawns currently joined to this conversation thread.
+  roster: RosterMember[];
 
   setSpawnNames: (map: Record<number, string>) => void;
   addUserMessage: (content: string) => void;
@@ -62,6 +64,7 @@ function initialData() {
     pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
+    roster: [] as RosterMember[],
   };
 }
 
@@ -370,6 +373,16 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
+        case "roster_update":
+          set({
+            roster: frame.members.map((m) => ({
+              spawnId: m.spawn_id,
+              spawnName: m.spawn_name,
+              joinedVia: m.joined_via,
+              status: m.status,
+            })),
+          });
+          break;
         case "error":
           set({
             error: frame.message,

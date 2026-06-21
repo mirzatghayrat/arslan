@@ -188,4 +188,12 @@ export type ArslanServerMessage =
   | { type: "escalation_refused"; spawn_id: number; why: string }
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean }
-  | { type: "verdict_recorded"; spawn_id: number; action: string };
+  | { type: "verdict_recorded"; spawn_id: number; action: string }
+  | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] };
+
+export interface RosterMember {
+  spawnId: number;
+  spawnName: string | null;
+  joinedVia: string;
+  status: string;
+}
