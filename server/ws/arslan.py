@@ -130,6 +130,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 spawn_id, spawn_name, equipment, intro = await _create_from_draft(draft, differentiation)
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name,
                                                           equipment=equipment, intro=intro))
+                from server.services import roster_service
+                await roster_service.join(conversation_id, spawn_id, via="created")
+                await ws.send_json({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
                 if task_brief.strip():
                     await run_spawn(spawn_id, task_brief)
                 continue

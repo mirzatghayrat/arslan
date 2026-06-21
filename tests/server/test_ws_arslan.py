@@ -228,11 +228,16 @@ def test_confirm_create_without_task_brief_does_not_dispatch(app_client, monkeyp
         ws.send_json({"type": "confirm_create", "draft": draft, "task_brief": ""})
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
-        # No dispatch: send a follow-up and prove the very next frame is NOT a routing frame.
+        roster = ws.receive_json()  # roster_update emitted on create
+        assert roster["type"] == "roster_update"
+        # No dispatch: send a follow-up and prove the very next frame is a routing frame from route_to.
         ws.send_json({"type": "route_to", "spawn_id": 7, "task_brief": "ping"})
+        # roster_update from the route_to dispatch comes first, then routing
         nxt = ws.receive_json()
-        assert nxt["type"] == "routing"
-        assert nxt["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
+        assert nxt["type"] == "roster_update"
+        routing = ws.receive_json()
+        assert routing["type"] == "routing"
+        assert routing["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
 
 
 def test_route_to_existing_dispatches(app_client, monkeypatch):

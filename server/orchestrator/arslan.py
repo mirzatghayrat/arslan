@@ -13,7 +13,7 @@ from server.db.models import ArslanMessage
 from server.orchestrator import dispatcher, memory, router
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
-from server.services import evolution_service, phase_service, spawn_service
+from server.services import evolution_service, phase_service, roster_service, spawn_service
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -319,6 +319,8 @@ async def _dispatch_spawn(  # noqa: ANN001
     """
     # Resolve the spawn name first so the routing caption is complete before streaming.
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    await roster_service.join(conversation_id, spawn_id, via="routed")
+    emit({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     emit({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
     emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
     try:
