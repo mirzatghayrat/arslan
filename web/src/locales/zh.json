@@ -222,7 +222,9 @@
     "verdict_accept": "采纳",
     "verdict_edit": "精炼",
     "verdict_redo": "重做",
-    "verdict_discard": "丢弃"
+    "verdict_discard": "丢弃",
+    "verdict_accepted": "已采纳",
+    "verdict_discarded": "已弃用"
   },
   "ledger": {
     "title": "活跃分身账本",

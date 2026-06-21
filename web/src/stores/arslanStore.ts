@@ -356,10 +356,20 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
-        case "verdict_recorded":
-          // Ack from the server confirming that the deliverable verdict (leveling signal)
-          // was successfully recorded. No UI change needed — this is a silent confirmation.
+        case "verdict_recorded": {
+          // Mark the most recent spawn deliverable (role==='spawn', !isProposal) for
+          // this spawn_id with the verdict action so the UI can show confirmed state.
+          const items = [...state.items];
+          for (let i = items.length - 1; i >= 0; i--) {
+            const it = items[i];
+            if (it.role === "spawn" && !it.isProposal && it.spawnId === frame.spawn_id) {
+              items[i] = { ...it, verdict: frame.action };
+              break;
+            }
+          }
+          set({ items });
           break;
+        }
         case "error":
           set({
             error: frame.message,

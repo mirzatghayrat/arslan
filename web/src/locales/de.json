@@ -222,7 +222,9 @@
     "verdict_accept": "Akzeptieren",
     "verdict_edit": "Verfeinern",
     "verdict_redo": "Wiederholen",
-    "verdict_discard": "Verwerfen"
+    "verdict_discard": "Verwerfen",
+    "verdict_accepted": "Akzeptiert",
+    "verdict_discarded": "Verworfen"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

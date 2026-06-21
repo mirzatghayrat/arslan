@@ -43,6 +43,8 @@ export interface Message {
   spawnId?: string;
   /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
   isProposal?: boolean;
+  /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
+  verdict?: string;
   /** Backend message id for verdict frames (spawnMessageId from the store item). */
   messageId?: number;
   /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */

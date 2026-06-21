@@ -157,6 +157,8 @@ export interface ArslanThreadItem {
   escalation?: EscalationInfo; // kind === "escalation"
   /** True when this deliverable is a pending direction proposal (requires confirm_direction). */
   isProposal?: boolean;
+  /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
+  verdict?: string;
 }
 
 /** A row from the server `history` frame. */

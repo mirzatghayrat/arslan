@@ -605,29 +605,36 @@ export default function OrchestratorChat({
 
                     {/* Staged orchestration: deliverable verdict bar (quartz) */}
                     {isSpawn && !msg.isProposal && msg.spawnId && (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <button
-                          onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                        >
+                      msg.verdict ? (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 select-none">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>{t('orchestrator.verdict_accept')}</span>
-                        </button>
-                        <button
-                          onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                        >
-                          <RefreshCcw className="w-3 h-3" />
-                          <span>{t('orchestrator.verdict_redo')}</span>
-                        </button>
-                        <button
-                          onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                        >
-                          <X className="w-3 h-3" />
-                          <span>{t('orchestrator.verdict_discard')}</span>
-                        </button>
-                      </div>
+                          <span>{msg.verdict === 'discard' ? t('orchestrator.verdict_discarded') : t('orchestrator.verdict_accepted')}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{t('orchestrator.verdict_accept')}</span>
+                          </button>
+                          <button
+                            onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                          >
+                            <RefreshCcw className="w-3 h-3" />
+                            <span>{t('orchestrator.verdict_redo')}</span>
+                          </button>
+                          <button
+                            onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                          >
+                            <X className="w-3 h-3" />
+                            <span>{t('orchestrator.verdict_discard')}</span>
+                          </button>
+                        </div>
+                      )
                     )}
                   </div>
 
@@ -761,29 +768,36 @@ export default function OrchestratorChat({
 
                   {/* Staged orchestration: deliverable verdict bar (brutalist) */}
                   {isSpawn && !msg.isProposal && msg.spawnId && (
-                    <div className="mt-4 flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-emerald-500 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
-                      >
+                    msg.verdict ? (
+                      <div className="mt-4 flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 select-none">
                         <CheckCircle2 className="w-3 h-3" />
-                        <span>{t('orchestrator.verdict_accept')}</span>
-                      </button>
-                      <button
-                        onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-amber-500 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
-                      >
-                        <RefreshCcw className="w-3 h-3" />
-                        <span>{t('orchestrator.verdict_redo')}</span>
-                      </button>
-                      <button
-                        onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-red-500 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
-                      >
-                        <X className="w-3 h-3" />
-                        <span>{t('orchestrator.verdict_discard')}</span>
-                      </button>
-                    </div>
+                        <span>{msg.verdict === 'discard' ? t('orchestrator.verdict_discarded') : t('orchestrator.verdict_accepted')}</span>
+                      </div>
+                    ) : (
+                      <div className="mt-4 flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-emerald-500 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                        >
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_accept')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-amber-500 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                        >
+                          <RefreshCcw className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_redo')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-red-500 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                        >
+                          <X className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_discard')}</span>
+                        </button>
+                      </div>
+                    )
                   )}
                 </div>
               );
@@ -921,29 +935,36 @@ export default function OrchestratorChat({
 
                   {/* Staged orchestration: deliverable verdict bar */}
                   {isSpawn && !msg.isProposal && msg.spawnId && (
-                    <div className="pl-5 pt-2 flex flex-wrap items-center gap-1.5">
-                      <button
-                        onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                      >
+                    msg.verdict ? (
+                      <div className="pl-5 pt-2 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 select-none">
                         <CheckCircle2 className="w-3 h-3" />
-                        <span>{t('orchestrator.verdict_accept')}</span>
-                      </button>
-                      <button
-                        onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                      >
-                        <RefreshCcw className="w-3 h-3" />
-                        <span>{t('orchestrator.verdict_redo')}</span>
-                      </button>
-                      <button
-                        onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                      >
-                        <X className="w-3 h-3" />
-                        <span>{t('orchestrator.verdict_discard')}</span>
-                      </button>
-                    </div>
+                        <span>{msg.verdict === 'discard' ? t('orchestrator.verdict_discarded') : t('orchestrator.verdict_accepted')}</span>
+                      </div>
+                    ) : (
+                      <div className="pl-5 pt-2 flex flex-wrap items-center gap-1.5">
+                        <button
+                          onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_accept')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <RefreshCcw className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_redo')}</span>
+                        </button>
+                        <button
+                          onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        >
+                          <X className="w-3 h-3" />
+                          <span>{t('orchestrator.verdict_discard')}</span>
+                        </button>
+                      </div>
+                    )
                   )}
                 </div>
               );
