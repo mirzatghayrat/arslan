@@ -209,7 +209,7 @@ export default function SpawnEditor({
                     <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
                       isAssigned
                         ? 'bg-primary border-primary text-primary-foreground'
-                        : 'border-border-strong bg-black/40 group-hover:border-muted-foreground'
+                        : 'border-border-strong bg-background group-hover:border-muted-foreground'
                     }`}>
                       {isAssigned && <Check className="w-3.5 h-3.5 font-bold text-primary-foreground" />}
                     </div>
@@ -278,7 +278,7 @@ export default function SpawnEditor({
                     <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
                       isAssigned
                         ? 'bg-warning border-warning text-white'
-                        : 'border-border-strong bg-black/40'
+                        : 'border-border-strong bg-background'
                     }`}>
                       {isAssigned && <Check className="w-3.5 h-3.5 font-bold text-white" />}
                     </div>

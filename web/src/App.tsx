@@ -463,7 +463,7 @@ export default function App() {
                   className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-[10.5px] font-mono transition-all uppercase ${
                     showControlPanel
                       ? 'border-primary/30 bg-primary/5 text-primary hover:bg-primary/10'
-                      : 'border-border text-muted-foreground hover:text-foreground hover:bg-white/[0.02]'
+                      : 'border-border text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]'
                   }`}
                 >
                   <Cpu className="w-3.5 h-3.5" />
@@ -581,7 +581,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-subtle-foreground">{t('rail.model_deployment')}</span>
-                  <span className="text-foreground lowercase bg-white/5 px-1 rounded">{settings.llmModel}</span>
+                  <span className="text-foreground lowercase bg-foreground/5 px-1 rounded">{settings.llmModel}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-subtle-foreground">{t('rail.active_slots')}</span>
@@ -753,7 +753,7 @@ export default function App() {
                             <span>Level 進度</span>
                             <span className="text-primary font-bold">{progressPercent}%</span>
                           </div>
-                          <div className="w-full bg-black/40 border border-border/30 h-[3px] rounded-full overflow-hidden">
+                          <div className="w-full bg-background border border-border/30 h-[3px] rounded-full overflow-hidden">
                             <div
                               className="bg-gradient-to-r from-warning to-primary h-full rounded-full transition-all duration-300"
                               style={{ width: `${Math.max(8, progressPercent)}%` }}
@@ -768,7 +768,7 @@ export default function App() {
             </div>
 
             {/* Quick Actions diagnostic utilities footer */}
-            <div className="p-4 bg-black/40 border-t border-border/60 space-y-2">
+            <div className="p-4 bg-background border-t border-border/60 space-y-2">
               <button
                 onClick={() => {
                   const diagnosticMsg: Message = {
@@ -791,7 +791,7 @@ export default function App() {
                     return t;
                   }));
                 }}
-                className="w-full py-2 bg-transparent hover:bg-white/[0.03] border border-border rounded-lg text-[10px] font-mono text-muted-foreground hover:text-foreground transition-all flex items-center justify-center gap-1.5 uppercase font-bold"
+                className="w-full py-2 bg-transparent hover:bg-foreground/[0.03] border border-border rounded-lg text-[10px] font-mono text-muted-foreground hover:text-foreground transition-all flex items-center justify-center gap-1.5 uppercase font-bold"
               >
                 <RefreshCcw className="w-3 h-3 text-primary/70" />
                 <span>{t('rail.verify_diagnostics')}</span>
@@ -890,7 +890,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-3.5 py-2 bg-transparent hover:bg-white/[0.03] rounded-lg text-xs font-sans font-medium text-muted-foreground hover:text-foreground transition-all border border-transparent"
+                  className="px-3.5 py-2 bg-transparent hover:bg-foreground/[0.03] rounded-lg text-xs font-sans font-medium text-muted-foreground hover:text-foreground transition-all border border-transparent"
                 >
                   {t('common.cancel')}
                 </button>
@@ -990,7 +990,7 @@ export default function App() {
                           <div className="flex items-center gap-2">
                             <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-primary" />
                             <span className="font-bold text-foreground text-xs select-text">{spawn.name}</span>
-                            <span className="text-[8px] font-mono bg-black/40 text-muted-foreground border border-border rounded-md px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">L.{spawnLevel}</span>
+                            <span className="text-[8px] font-mono bg-background text-muted-foreground border border-border rounded-md px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">L.{spawnLevel}</span>
                             <span className="text-[8px] font-mono bg-primary/10 text-primary border border-primary/15 rounded px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">{spawn.domain}</span>
                           </div>
                           <p className="text-[11px] text-muted-foreground leading-normal line-clamp-2 max-w-lg font-sans">
@@ -1033,7 +1033,7 @@ export default function App() {
                   setShowLedgerModal(false);
                   setShowCreateModal(true);
                 }}
-                className="text-[10px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1.5 uppercase tracking-wider px-3 py-1.5 bg-white/[0.01] border border-border/80 rounded-lg hover:bg-white/[0.03] transition-all"
+                className="text-[10px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1.5 uppercase tracking-wider px-3 py-1.5 bg-foreground/[0.01] border border-border/80 rounded-lg hover:bg-foreground/[0.03] transition-all"
               >
                 <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span>{t('modal.ledger_synthesize_cta')}</span>

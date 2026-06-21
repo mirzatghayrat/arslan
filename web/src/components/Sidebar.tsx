@@ -122,7 +122,7 @@ export default function Sidebar({
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
                   activeSection === 'ledger'
                     ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.02] border-l-2 border-transparent'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -164,7 +164,7 @@ export default function Sidebar({
                     className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left truncate group ${
                       isActive
                         ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary shadow-sm shadow-primary/5'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.02] border-l-2 border-transparent'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
                     }`}
                   >
                     <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-muted-foreground'}`} />
@@ -200,7 +200,7 @@ export default function Sidebar({
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all group ${
                       isActive
                         ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.02] border-l-2 border-transparent'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -226,7 +226,7 @@ export default function Sidebar({
       </div>
 
       {/* System Resource Metrics Footer */}
-      <div className="p-4 border-t border-border/60 bg-black/[0.15] select-none space-y-3">
+      <div className="p-4 border-t border-border/60 bg-background select-none space-y-3">
         {/* System Settings Button (Moved to footer) */}
         <button
           id="nav-btn-settings-footer"
@@ -234,7 +234,7 @@ export default function Sidebar({
           className={`w-full flex items-center gap-2.5 px-3 py-1.8 rounded-lg text-xs font-sans tracking-wide transition-all text-left group/settings-foot ${
             activeSection === 'settings'
               ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.02] border-l-2 border-transparent'
+              : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
           }`}
         >
           <Settings2 className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${activeSection === 'settings' ? 'text-primary' : 'text-subtle-foreground group-hover/settings-foot:text-muted-foreground'}`} />

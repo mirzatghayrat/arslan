@@ -233,7 +233,7 @@ export default function SpawnDirectChat({
                             {msg.toolActivity.toolName} completed:
                           </span>
                         </div>
-                        <p className="text-foreground text-[10.5px] whitespace-pre-line border-l-2 border-primary pl-3 py-1 bg-white/[0.01]">
+                        <p className="text-foreground text-[10.5px] whitespace-pre-line border-l-2 border-primary pl-3 py-1 bg-foreground/[0.01]">
                           {msg.toolActivity.outputSummary}
                         </p>
                       </div>
@@ -259,8 +259,8 @@ export default function SpawnDirectChat({
 
                     {/* Tool Activities */}
                     {msg.toolActivity && (
-                      <div className="mt-3 bg-black/40 border border-white/5 rounded-xl overflow-hidden font-mono text-[10.5px]">
-                        <div className="px-3 py-1.5 bg-black/60 border-b border-white/5 text-muted-foreground flex items-center gap-1.5">
+                      <div className="mt-3 bg-surface border border-border rounded-xl overflow-hidden font-mono text-[10.5px]">
+                        <div className="px-3 py-1.5 bg-background border-b border-border text-muted-foreground flex items-center gap-1.5">
                           {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
                           {msg.toolActivity.toolName}
                         </div>
@@ -321,7 +321,7 @@ export default function SpawnDirectChat({
             className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${
               inputValue.trim() && !isSimulating
                 ? 'bg-primary text-primary-foreground hover:bg-primary-hover'
-                : 'bg-white/[0.02] text-subtle-foreground'
+                : 'bg-foreground/[0.02] text-subtle-foreground'
             }`}
           >
             <Send className="w-4 h-4" />
