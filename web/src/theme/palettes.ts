@@ -3,16 +3,17 @@ import type { Palette } from "../stores/themeStore";
 export interface PaletteMeta {
   id: Palette;
   nameKey: string;
-  swatch: { bg: string; accent: string };
+  // swatch.bg = dark-mode preview tile; swatch.bgLight = light-mode preview tile.
+  swatch: { bg: string; bgLight: string; accent: string };
 }
 
 export const PALETTES: PaletteMeta[] = [
-  { id: "current",  nameKey: "settings.paletteCurrent",  swatch: { bg: "#0A0C10", accent: "#FF8E24" } },
-  { id: "ember",    nameKey: "settings.paletteEmber",    swatch: { bg: "#0C0A09", accent: "#F97316" } },
-  { id: "terminal", nameKey: "settings.paletteTerminal", swatch: { bg: "#0A0F0D", accent: "#22C55E" } },
-  { id: "nebula",   nameKey: "settings.paletteNebula",   swatch: { bg: "#0B0A12", accent: "#8B5CF6" } },
-  { id: "slate",    nameKey: "settings.paletteSlate",    swatch: { bg: "#0B0D10", accent: "#3B82F6" } },
-  { id: "glacier",  nameKey: "settings.paletteGlacier",  swatch: { bg: "#08110F", accent: "#06B6D4" } },
+  { id: "current",  nameKey: "settings.paletteCurrent",  swatch: { bg: "#0A0C10", bgLight: "#FAFBFC", accent: "#FF8E24" } },
+  { id: "ember",    nameKey: "settings.paletteEmber",    swatch: { bg: "#0C0A09", bgLight: "#FAFAF9", accent: "#F97316" } },
+  { id: "terminal", nameKey: "settings.paletteTerminal", swatch: { bg: "#0A0F0D", bgLight: "#F7FAF8", accent: "#22C55E" } },
+  { id: "nebula",   nameKey: "settings.paletteNebula",   swatch: { bg: "#0B0A12", bgLight: "#FAF9FE", accent: "#8B5CF6" } },
+  { id: "slate",    nameKey: "settings.paletteSlate",    swatch: { bg: "#0B0D10", bgLight: "#F8FAFC", accent: "#3B82F6" } },
+  { id: "glacier",  nameKey: "settings.paletteGlacier",  swatch: { bg: "#08110F", bgLight: "#F2FBFA", accent: "#06B6D4" } },
 ];
 
 export interface ResolvedTokens { background: string; surface: string; foreground: string; mutedForeground: string; primary: string; primaryForeground: string; }

@@ -23,7 +23,7 @@ export function AppearanceSettings() {
                 palette === p.id ? "border-primary ring-1 ring-ring" : "border-border hover:border-border-strong"
               }`}
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ background: p.swatch.bg }}>
+              <span className="flex h-5 w-5 items-center justify-center rounded-md border border-border" style={{ background: mode === "light" ? p.swatch.bgLight : p.swatch.bg }}>
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.swatch.accent }} />
               </span>
               <span className="text-foreground">{t(p.nameKey)}</span>

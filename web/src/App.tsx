@@ -636,7 +636,7 @@ export default function App() {
                             className={`px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none ${
                               isWired
                                 ? 'bg-surface text-info border border-info/30'
-                                : 'bg-background/60 text-subtle-foreground border border-border/40 opacity-50'
+                                : 'bg-surface text-muted-foreground border border-border'
                             }`}
                             title={isWired ? `Tool: ${tId}` : `${tId} — 即将推出 / Coming soon`}
                           >
@@ -662,12 +662,12 @@ export default function App() {
                         return (
                           <div
                             key={sId}
-                            className="bg-background/60 text-subtle-foreground border border-border/40 opacity-50 px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
+                            className="bg-warning/10 text-warning border border-warning/20 px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
                             title={`${sId} — 即将推出 / Coming soon (per-conversation skill tracking not yet available)`}
                           >
                             {getIcon(sId, 'w-3 h-3')}
                             <span className="text-[10px] font-medium">{details.name}</span>
-                            <span className="text-[7px] text-subtle-foreground font-mono ml-0.5">soon</span>
+                            <span className="text-[7px] text-warning/70 font-mono ml-0.5">soon</span>
                           </div>
                         );
                       })}
