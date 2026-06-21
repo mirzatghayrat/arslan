@@ -570,7 +570,7 @@ export default function Markdown({ children, className = '' }: MarkdownProps) {
     <div
       className={className}
       style={{
-        // Cascade color tokens so overrides like .light-theme work via CSS vars
+        // Cascade color tokens so palette/mode theming works via CSS vars
         '--md-heading': 'inherit',
         '--md-strong': 'inherit',
         '--md-em': 'inherit',
