@@ -2,31 +2,37 @@ import { useState } from "react";
 import { useThemeStore } from "../stores/themeStore";
 import Prism from "./backgrounds/Prism";
 
-// Ambient backdrop for the spawn direct-channel.
-// Motion layer = a recorded prism loop when present at /prism-{dark,light}.mp4
-// (cheap, battery-friendly), else the live WebGL prism (also the recording
-// source). A token-driven frosted-glass layer on top carries the per-palette
-// color and keeps chat content readable in both modes. Honours reduced-motion.
+// Ambient prism halo behind the spawn welcome card (empty state only).
+// Sits behind the card, bleeds slightly past it, and is radial-masked so it
+// fades to nothing at the edges — a soft "misty" glow with no hard border.
+// Motion = a recorded loop at /prism-{dark,light}.mp4 when present (cheap,
+// battery), else the live WebGL prism (also the recording source). The card on
+// top supplies the frosted glass + per-palette tint; honours reduced-motion.
 const REDUCED =
   typeof window !== "undefined" &&
   !!window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+const FEATHER = "radial-gradient(ellipse 75% 75% at 50% 50%, #000 32%, transparent 72%)";
+
 export function SandboxBackdrop() {
   const mode = useThemeStore((s) => s.mode);
   const [videoFailed, setVideoFailed] = useState(false);
 
-  const videoSrc = mode === "light" ? "/prism-light.mp4" : "/prism-dark.mp4";
-  const showVideo = !REDUCED && !videoFailed;
-  const showLive = !REDUCED && videoFailed;
+  if (REDUCED) return null;
 
-  // Light mode needs a dimmer motion layer + thicker frost so content stays crisp.
-  const motionOpacity = mode === "light" ? "opacity-40" : "opacity-70";
-  const frostBg = mode === "light" ? "bg-surface/65" : "bg-surface/45";
+  const videoSrc = mode === "light" ? "/prism-light.mp4" : "/prism-dark.mp4";
+  const showVideo = !videoFailed;
+  // Light mode stays fainter so the white card keeps its contrast.
+  const motionOpacity = mode === "light" ? "opacity-45" : "opacity-75";
 
   return (
-    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none" aria-hidden="true">
-      {showVideo && (
+    <div
+      className="absolute -inset-6 z-0 overflow-hidden pointer-events-none rounded-[2rem]"
+      aria-hidden="true"
+      style={{ WebkitMaskImage: FEATHER, maskImage: FEATHER }}
+    >
+      {showVideo ? (
         <video
           key={videoSrc}
           src={videoSrc}
@@ -37,23 +43,21 @@ export function SandboxBackdrop() {
           playsInline
           onError={() => setVideoFailed(true)}
         />
-      )}
-      {showLive && (
+      ) : (
         <div className={`absolute inset-0 ${motionOpacity}`}>
           <Prism
             animationType="rotate"
             timeScale={0.4}
-            glow={0.6}
-            bloom={0.8}
+            glow={0.7}
+            bloom={0.9}
             noise={0.3}
-            scale={4}
+            scale={3.2}
             suspendWhenOffscreen
           />
         </div>
       )}
-      {/* Frosted glass — token-driven, so it tints per palette + mode and keeps content legible. */}
-      <div className={`absolute inset-0 backdrop-blur-md ${frostBg}`} />
-      <div className="absolute inset-0 bg-primary/[0.02]" />
+      {/* faint palette wash so the halo leans toward the active accent */}
+      <div className="absolute inset-0 bg-primary/[0.05]" />
     </div>
   );
 }

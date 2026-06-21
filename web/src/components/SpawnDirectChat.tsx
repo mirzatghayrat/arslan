@@ -100,8 +100,6 @@ export default function SpawnDirectChat({
   return (
     <div className="flex-grow flex flex-col h-full overflow-hidden bg-background select-none relative font-sans">
       
-      {/* Ambient prism backdrop (recorded loop when present, else live WebGL) + frosted glass */}
-      <SandboxBackdrop />
 
       {/* Spawn Header details */}
       <div className={`px-6 py-4 flex items-center justify-between border-b border-border/80 relative z-10 bg-background/80 backdrop-blur`}>
@@ -126,8 +124,10 @@ export default function SpawnDirectChat({
       {/* Messages Thread Container */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 relative z-10">
         
-        {/* Header Hero card for direct chat */}
-        <div className="max-w-3xl mx-auto bg-surface/40 border border-border/80 rounded-2xl p-6 mb-8 text-center space-y-4">
+        {/* Header Hero card for direct chat — prism halo behind it in the empty state */}
+        <div className="relative max-w-3xl mx-auto mb-8">
+          {chatHistory.length === 0 && <SandboxBackdrop />}
+          <div className="relative z-10 bg-surface/60 backdrop-blur-md border border-border/80 rounded-2xl p-6 text-center space-y-4">
           <span className="inline-block p-4 bg-primary/5 rounded-2xl border border-primary/10">
             <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-8 h-8 text-primary" />
           </span>
@@ -162,6 +162,7 @@ export default function SpawnDirectChat({
                 </span>
               );
             })}
+          </div>
           </div>
         </div>
 
