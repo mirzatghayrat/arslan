@@ -23,8 +23,9 @@ export function SandboxBackdrop() {
 
   const videoSrc = mode === "light" ? "/prism-light.mp4" : "/prism-dark.mp4";
   const showVideo = !videoFailed;
-  // Light mode stays fainter so the white card keeps its contrast.
-  const motionOpacity = mode === "light" ? "opacity-45" : "opacity-75";
+  // No frosted layer — the prism shows directly. Light needs near-full opacity
+  // to read on a white panel; dark a touch less so it doesn't overpower.
+  const motionOpacity = mode === "light" ? "opacity-90" : "opacity-80";
 
   return (
     <div
@@ -48,8 +49,8 @@ export function SandboxBackdrop() {
           <Prism
             animationType="rotate"
             timeScale={0.4}
-            glow={0.7}
-            bloom={0.9}
+            glow={0.95}
+            bloom={1}
             noise={0.3}
             scale={3.2}
             suspendWhenOffscreen

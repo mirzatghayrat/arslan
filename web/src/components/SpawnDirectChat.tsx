@@ -127,7 +127,7 @@ export default function SpawnDirectChat({
         {/* Header Hero card for direct chat — prism halo behind it in the empty state */}
         <div className="relative max-w-3xl mx-auto mb-8">
           {chatHistory.length === 0 && <SandboxBackdrop />}
-          <div className="relative z-10 bg-surface/60 backdrop-blur-md border border-border/80 rounded-2xl p-6 text-center space-y-4">
+          <div className="relative z-10 bg-surface/30 border border-border/80 rounded-2xl p-6 text-center space-y-4">
           <span className="inline-block p-4 bg-primary/5 rounded-2xl border border-primary/10">
             <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-8 h-8 text-primary" />
           </span>
