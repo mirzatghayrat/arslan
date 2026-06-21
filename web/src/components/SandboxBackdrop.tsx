@@ -48,7 +48,7 @@ export function SandboxBackdrop() {
         <div className={`absolute inset-0 ${motionOpacity}`}>
           <Prism
             animationType="rotate"
-            timeScale={0.4}
+            timeScale={0.18}
             glow={0.95}
             bloom={1}
             noise={0.3}
