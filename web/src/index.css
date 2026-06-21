@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* Map semantic CSS vars to Tailwind utilities (bg-surface, text-foreground, ...). */
+/* Must live here (not in an @import'd file) for Tailwind v4 to pick up @theme inline. */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-sidebar: var(--sidebar);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+}
+
+@import "./theme/tokens.css";
+
 /* --- PREMIUM CORESYSTEM TRANSITIONS --- */
 * {
   transition: background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
