@@ -67,6 +67,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     await ws.accept()
     await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
+    from server.services import roster_service
+    await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
 
     # Emit-sink: a queue drained concurrently with the orchestration coroutine so
     # frames (tool_call/tool_result/stream_*) reach the client live, in order.
@@ -132,7 +134,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                                           equipment=equipment, intro=intro))
                 from server.services import roster_service
                 await roster_service.join(conversation_id, spawn_id, via="created")
-                await ws.send_json({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
+                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 if task_brief.strip():
                     await run_spawn(spawn_id, task_brief)
                 continue
@@ -214,6 +216,30 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await run_with_live_frames(
                     arslan.record_deliverable_verdict(conversation_id, spawn_id, "discard", message_id, emit)
                 )
+                continue
+
+            if msg_type == "roster_invite":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                from server.services import roster_service
+                await roster_service.join(conversation_id, spawn_id, via="invited")
+                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
+                continue
+
+            if msg_type == "roster_kick":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                from server.services import roster_service
+                await roster_service.kick(conversation_id, spawn_id)
+                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 continue
 
             if msg_type == "refine_draft":

@@ -75,6 +75,7 @@ def test_confirm_direction_calls_confirm_and_execute(staged_client, monkeypatch)
 
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_direction", "spawn_id": 4})
         # Drain until stream_end so we know the handler finished
         for _ in range(10):
@@ -98,6 +99,7 @@ def test_confirm_direction_bad_spawn_id_recoverable(staged_client, monkeypatch):
 
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_direction", "spawn_id": None})
         err = ws.receive_json()
         assert err["type"] == "error"

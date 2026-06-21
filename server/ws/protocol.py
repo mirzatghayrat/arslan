@@ -127,3 +127,7 @@ def orchestrator_action(tool: str, reason: str) -> dict[str, Any]:
 
 def proposal(spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
     return {"type": "proposal", "spawn_id": spawn_id, "spawn_name": spawn_name}
+
+
+def roster_update(members: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"type": "roster_update", "members": members}
