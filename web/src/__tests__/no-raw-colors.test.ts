@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Add each component here as it is migrated (Tasks 10–16).
-const MIGRATED: string[] = [];
+const MIGRATED: string[] = ["components/OrchestratorChat.tsx"];
 
 const RAW = /(?:bg|text|border|ring|from|to|via|fill|stroke)-\[#|#[0-9a-fA-F]{3,6}\b|(?:bg|text|border)-(?:gray|slate|zinc|amber|emerald|red|orange)-\d{2,3}/;
 

@@ -135,22 +135,22 @@ export default function OrchestratorChat({
   // the input box instead of auto-playing fabricated orchestration sequences.
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0d0f15] relative overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-background relative overflow-hidden">
       {/* Absolute Ambient Background Lights for Quartz Theme */}
       {currentStyle === 'quartz' && (
         <>
-          <div className="absolute top-1/4 left-1/3 w-[30rem] h-[30rem] bg-[#FF8E24]/5 blur-[120px] rounded-full pointer-events-none -translate-x-1/2 -translate-y-1/2"></div>
-          <div className="absolute bottom-1/4 right-0 w-[40rem] h-[40rem] bg-amber-600/[0.03] blur-[150px] rounded-full pointer-events-none translate-x-1/3 translate-y-1/3"></div>
+          <div className="absolute top-1/4 left-1/3 w-[30rem] h-[30rem] bg-primary/5 blur-[120px] rounded-full pointer-events-none -translate-x-1/2 -translate-y-1/2"></div>
+          <div className="absolute bottom-1/4 right-0 w-[40rem] h-[40rem] bg-primary/[0.03] blur-[150px] rounded-full pointer-events-none translate-x-1/3 translate-y-1/3"></div>
         </>
       )}
 
 
 
       {/* Simulator Interactive Control Strip & Spawns Docket Integrated */}
-      <div className="bg-[#121622]/60 border-b border-[#1e2330]/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
+      <div className="bg-surface/60 border-b border-border/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
         <div className="flex items-center gap-2 shrink-0">
-          <Terminal className="w-4 h-4 text-amber-500" />
-          <span className="text-gray-300 font-mono font-bold uppercase tracking-wider">{t('orchestrator.sandbox_label')}</span>
+          <Terminal className="w-4 h-4 text-primary" />
+          <span className="text-muted-foreground font-mono font-bold uppercase tracking-wider">{t('orchestrator.sandbox_label')}</span>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -173,23 +173,23 @@ export default function OrchestratorChat({
                 // Active running indicator
                 statusIndicator = (
                   <span className="relative flex h-2 w-2 mr-1">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-warning"></span>
                   </span>
                 );
               } else if (isReviewPending) {
                 // High-energy blinking alert indicator requesting action
                 statusIndicator = (
                   <span className="relative flex h-2 w-2 mr-1">
-                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80 scale-125"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500 animate-ping"></span>
+                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-danger/80 opacity-80 scale-125"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-danger animate-ping"></span>
                   </span>
                 );
               } else {
                 // Normal quiet breathing green indicator for ready/idle
                 statusIndicator = (
                   <span className="relative flex h-1.5 w-1.5 mr-1">
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500/80"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success/80"></span>
                   </span>
                 );
               }
@@ -208,13 +208,13 @@ export default function OrchestratorChat({
                     }
                   }}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold select-none cursor-pointer ${
-                    isReviewPending 
-                      ? 'border-rose-500/60 bg-rose-950/15 text-rose-300 hover:border-rose-400 shadow-md shadow-rose-500/5 animate-pulse' 
+                    isReviewPending
+                      ? 'border-danger/60 bg-danger/15 text-danger hover:border-danger shadow-md shadow-danger/5 animate-pulse'
                       : isWorking
-                      ? 'border-amber-500/30 bg-amber-500/5 text-amber-500/80 hover:border-amber-500/60'
+                      ? 'border-warning/30 bg-warning/5 text-warning/80 hover:border-warning/60'
                       : isSplitActive
-                      ? 'border-[#FF8E24] bg-[#FF8E24]/10 text-[#FF8E24]'
-                      : 'border-[#1e2330] bg-[#121622]/40 hover:border-[#3a4460] text-gray-300 hover:text-white'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-surface/40 hover:border-border-strong text-muted-foreground hover:text-foreground'
                   }`}
                   title={
                     isReviewPending 
@@ -238,7 +238,7 @@ export default function OrchestratorChat({
       {/* Main Container: Split-screen dual workframes if splitSpawnId is assigned */}
       <div className="flex-1 flex overflow-hidden relative">
         <div className={`flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 relative ${
-          splitSpawnId ? 'w-[55%] border-r border-[#1e2330]' : 'w-full'
+          splitSpawnId ? 'w-[55%] border-r border-border' : 'w-full'
         }`}>
           {/* Scrollable Chat Area */}
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -248,7 +248,7 @@ export default function OrchestratorChat({
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
                 {/* Custom sunburst flower symbol / asterisk resembling Claude's */}
-                <svg className="w-10 h-10 text-orange-400/90 animate-pulse" viewBox="0 0 100 100" fill="currentColor">
+                <svg className="w-10 h-10 text-primary/90 animate-pulse" viewBox="0 0 100 100" fill="currentColor">
                   {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
                     <rect
                       key={angle}
@@ -258,14 +258,14 @@ export default function OrchestratorChat({
                       height="72"
                       rx="4"
                       transform={`rotate(${angle} 50 50)`}
-                      className="origin-center text-[#FF8E24]"
+                      className="origin-center text-primary"
                     />
                   ))}
-                  <circle cx="50" cy="50" r="14" className="text-amber-500" />
+                  <circle cx="50" cy="50" r="14" className="text-primary" />
                 </svg>
 
                 {/* Elegant serif-style greeting */}
-                <h1 className="text-3xl sm:text-4.5xl font-serif text-[#ffd3a6] tracking-tight font-medium leading-none">
+                <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
                   {(() => {
                     const hr = new Date().getHours();
                     if (hr < 12) return 'Morning';
@@ -277,7 +277,7 @@ export default function OrchestratorChat({
             </div>
 
             {/* Luxurious prompt input box resembling Claude's container design */}
-            <div className="w-full max-w-xl bg-[#121520] border border-[#23293e] rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-[#FF8E24]/60 focus-within:ring-1 focus-within:ring-[#FF8E24]/30 shadow-2xl transition-all">
+            <div className="w-full max-w-xl bg-surface border border-border-strong rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all">
               <textarea
                 id="landing-message-input"
                 rows={3}
@@ -292,39 +292,39 @@ export default function OrchestratorChat({
                   }
                 }}
                 placeholder={t('orchestrator.placeholder_empty')}
-                className="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
+                className="w-full bg-transparent text-sm text-foreground placeholder-subtle-foreground focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
 
               {/* Action options row */}
-              <div className="flex items-center justify-between pt-2 border-t border-[#1e2330]/50 select-none">
+              <div className="flex items-center justify-between pt-2 border-t border-border/50 select-none">
                 <button 
                   type="button" 
                   onClick={() => alert("Local datasets & specialized credentials mounted securely inside workspace.")} 
-                  className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/[0.03] rounded-lg transition-all"
+                  className="p-1.5 text-subtle-foreground hover:text-muted-foreground hover:bg-foreground/[0.03] rounded-lg transition-all"
                   title="Attach workspace documents or source context"
                 >
-                  <Plus className="w-4.5 h-4.5 text-gray-500" />
+                  <Plus className="w-4.5 h-4.5 text-subtle-foreground" />
                 </button>
 
                 <div className="flex items-center gap-2">
                   {/* Model Choice indicator */}
-                  <div className="flex items-center gap-1 bg-black/40 hover:bg-black/60 px-2.5 py-1 rounded-full border border-gray-800 text-[10px] font-mono text-gray-400 hover:text-gray-200 cursor-pointer transition-colors max-w-[130px] sm:max-w-none truncate">
-                    <Cpu className="w-3 h-3 text-[#FF8E24]" />
+                  <div className="flex items-center gap-1 bg-background/40 hover:bg-background/60 px-2.5 py-1 rounded-full border border-border text-[10px] font-mono text-muted-foreground hover:text-foreground cursor-pointer transition-colors max-w-[130px] sm:max-w-none truncate">
+                    <Cpu className="w-3 h-3 text-primary" />
                     <span className="ml-0.5">Arslan v4.8 High</span>
-                    <ChevronDown className="w-3 h-3 text-gray-500" />
+                    <ChevronDown className="w-3 h-3 text-subtle-foreground" />
                   </div>
 
                   {/* Micro icon */}
-                  <button type="button" className="p-1 text-gray-500 hover:text-gray-300" title="Audio transcription input">
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <button type="button" className="p-1 text-subtle-foreground hover:text-muted-foreground" title="Audio transcription input">
+                    <svg className="w-4 h-4 text-subtle-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                       <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 19v4M8 23h8" />
                     </svg>
                   </button>
 
                   {/* Wave icon */}
-                  <button type="button" className="p-1 text-gray-500 hover:text-gray-300" title="Simulated audio feedback channel">
-                    <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <button type="button" className="p-1 text-subtle-foreground hover:text-muted-foreground" title="Simulated audio feedback channel">
+                    <svg className="w-4 h-4 text-subtle-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M3 10v4M6 6v12M9 11v2M12 4v16M15 8v8M18 11v2M21 10v4" />
                     </svg>
                   </button>
@@ -337,7 +337,7 @@ export default function OrchestratorChat({
                         handleSendMessage(e);
                       }
                     }}
-                    className="p-1.5 bg-[#FF8E24] hover:bg-[#ff9c3a] disabled:bg-gray-800/80 disabled:text-gray-600 text-black rounded-lg transition-all flex items-center justify-center ml-1"
+                    className="p-1.5 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised/80 disabled:text-subtle-foreground rounded-lg transition-all flex items-center justify-center ml-1"
                   >
                     <ArrowRight className="w-4 h-4" />
                   </button>
@@ -347,7 +347,7 @@ export default function OrchestratorChat({
 
             {/* Quick action pill suggestions inspired by Claude suggestions */}
             <div className="w-full max-w-xl text-center space-y-2">
-              <span className="text-[10px] font-mono text-gray-600 uppercase tracking-widest block">{t('orchestrator.presets_label')}</span>
+              <span className="text-[10px] font-mono text-subtle-foreground uppercase tracking-widest block">{t('orchestrator.presets_label')}</span>
               <div className="flex flex-wrap gap-1.5 justify-center">
                 {[
                   { label: `✏️ ${t('orchestrator.preset_code_audit')}`, prompt: "Conduct automatic code analysis on sandbox files to discover vulnerability patterns." },
@@ -362,7 +362,7 @@ export default function OrchestratorChat({
                       setInputValue(item.prompt);
                       document.getElementById('landing-message-input')?.focus();
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121622]/60 hover:bg-[#1f253b] border border-[#1e2330]/80 rounded-full text-[11px] text-gray-400 hover:text-white transition-all cursor-pointer select-none font-sans"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-surface/60 hover:bg-surface-raised border border-border/80 rounded-full text-[11px] text-muted-foreground hover:text-foreground transition-all cursor-pointer select-none font-sans"
                   >
                     <span>{item.label}</span>
                   </button>
@@ -388,15 +388,15 @@ export default function OrchestratorChat({
                     <div className="flex flex-col items-center select-none">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-sans relative ${
                         isArslan
-                          ? 'bg-gradient-to-tr from-[#FF8E24] to-yellow-500 text-white shadow-lg shadow-[#FF8E24]/15'
-                          : 'bg-[#1a1e2a] border border-[#ff8e24]/30 text-white'
+                          ? 'bg-gradient-to-tr from-primary to-primary-hover text-primary-foreground shadow-lg shadow-primary/15'
+                          : 'bg-surface-raised border border-primary/30 text-foreground'
                       }`}>
-                        <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-4 h-4 text-white" />
-                        <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-black ${
-                          isArslan ? 'bg-emerald-500' : 'bg-[#FF8E24]'
+                        <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-4 h-4 text-foreground" />
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background ${
+                          isArslan ? 'bg-success' : 'bg-primary'
                         }`} />
                       </div>
-                      <span className="text-[9px] text-gray-500 font-mono mt-1 font-semibold">{msg.timestamp}</span>
+                      <span className="text-[9px] text-subtle-foreground font-mono mt-1 font-semibold">{msg.timestamp}</span>
                     </div>
                   )}
 
@@ -405,14 +405,14 @@ export default function OrchestratorChat({
                     {/* Sender label name (non-user only) */}
                     {!isUser && (
                       <div className="flex items-center gap-1.5 select-none">
-                        <span className="text-[11px] font-semibold text-gray-300">{msg.senderName}</span>
+                        <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
                         {isArslan ? (
-                          <span className="text-[9px] bg-[#FF8E24]/10 text-[#FF8E24] border border-[#FF8E24]/30 px-1.5 py-0.2 rounded font-semibold font-mono uppercase tracking-wider scale-95">
+                          <span className="text-[9px] bg-primary/10 text-primary border border-primary/30 px-1.5 py-0.2 rounded font-semibold font-mono uppercase tracking-wider scale-95">
                             {t('app.name')} Orchestrator
                           </span>
                         ) : (
                           <div className="flex items-center gap-1 scale-95">
-                            <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.2 rounded font-mono uppercase tracking-wider font-semibold">
+                            <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-mono uppercase tracking-wider font-semibold">
                               Spawn Core
                             </span>
                           </div>
@@ -423,10 +423,10 @@ export default function OrchestratorChat({
                     {/* Styled Bubble Body */}
                     <div className={`px-4 py-3 text-[12.5px] leading-relaxed relative ${
                       isUser
-                        ? 'bg-[rgba(120,140,170,0.10)] border border-[rgba(255,255,255,0.08)] rounded-[12px_12px_4px_12px] text-gray-200 text-left'
+                        ? 'bg-[rgba(120,140,170,0.10)] border border-[rgba(255,255,255,0.08)] rounded-[12px_12px_4px_12px] text-foreground text-left'
                         : isArslan
-                        ? 'bg-[#151924]/80 backdrop-blur border border-[#23293b] text-gray-100 rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
-                        : 'bg-[#11141d]/90 backdrop-blur border border-[#ff8e24]/15 text-gray-200 rounded-2xl rounded-tl-none'
+                        ? 'bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
+                        : 'bg-background/90 backdrop-blur border border-primary/15 text-foreground rounded-2xl rounded-tl-none'
                     }`}>
                       {/* Message Content */}
                       {isUser
@@ -436,11 +436,11 @@ export default function OrchestratorChat({
 
                       {/* Routed Indicator - specifically asked in prompt */}
                       {msg.routedTo && (
-                        <div className="mt-3.5 pt-3 border-t border-[#1e2330]/50 flex items-center gap-2.5 text-[11px] font-mono bg-[#141824]/50 p-2 rounded-lg border border-[#232a3e]">
-                          <div className="w-2 h-2 rounded-full bg-[#FF8E24] animate-ping" />
-                          <div className="flex items-center gap-1 text-gray-400">
+                        <div className="mt-3.5 pt-3 border-t border-border/50 flex items-center gap-2.5 text-[11px] font-mono bg-surface/50 p-2 rounded-lg border border-border-strong">
+                          <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                          <div className="flex items-center gap-1 text-muted-foreground">
                             <span>Workflow context routed to</span>
-                            <span className="text-[#FF8E24] font-semibold flex items-center gap-0.5">
+                            <span className="text-primary font-semibold flex items-center gap-0.5">
                               <CornerDownRight className="w-3 h-3 inline-block" />
                               {msg.routedTo.spawnName}
                             </span>
@@ -451,26 +451,26 @@ export default function OrchestratorChat({
 
                     {/* 1. Spawn Intro Card Sub-Component (specifically asked in prompt) */}
                     {msg.spawnIntro && (
-                      <div className="bg-gradient-to-b from-[#131722]/90 to-[#0e111a]/95 border border-[#FF8E24]/30 rounded-2xl p-4 shadow-xl shadow-[#FF8E24]/5 space-y-3.5 relative overflow-hidden group">
+                      <div className="bg-gradient-to-b from-surface/90 to-background/95 border border-primary/30 rounded-2xl p-4 shadow-xl shadow-primary/5 space-y-3.5 relative overflow-hidden group">
                         {/* Decorative background glow for card */}
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-[#FF8E24]/5 blur-xl group-hover:bg-[#FF8E24]/10 transition-all rounded-full pointer-events-none"></div>
-                        
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-xl group-hover:bg-primary/10 transition-all rounded-full pointer-events-none"></div>
+
                         <div className="flex items-start gap-3.5">
-                          <div className="w-11 h-11 rounded-xl bg-orange-950/25 border border-[#FF8E24]/30 flex items-center justify-center text-xl shadow-inner shadow-[#FF8E24]/10">
+                          <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-xl shadow-inner shadow-primary/10">
                             <SFSymbol nameOrEmoji={msg.spawnIntro.avatarEmoji} className="w-6 h-6" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <h4 className="text-xs font-bold text-white font-sans">{msg.spawnIntro.name}</h4>
-                              <span className="text-[9px] bg-[#FF8E24]/15 text-[#FF8E24] font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-widest border border-[#FF8E24]/10">Introduced</span>
+                              <h4 className="text-xs font-bold text-foreground font-sans">{msg.spawnIntro.name}</h4>
+                              <span className="text-[9px] bg-primary/15 text-primary font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-widest border border-primary/10">Introduced</span>
                             </div>
-                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">{msg.spawnIntro.domain}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{msg.spawnIntro.domain}</p>
                           </div>
                         </div>
 
                         {/* Equipped Capabilities Rendering */}
                         <div className="space-y-2">
-                          <div className="text-[10px] text-gray-500 font-mono font-medium tracking-wide uppercase">{t('orchestrator.equipped_capabilities')}</div>
+                          <div className="text-[10px] text-subtle-foreground font-mono font-medium tracking-wide uppercase">{t('orchestrator.equipped_capabilities')}</div>
                           <div className="flex flex-wrap gap-1.5">
                             {/* Render Tool tags with lucide icon */}
                             {msg.spawnIntro.tools.map(toolId => {
@@ -478,7 +478,7 @@ export default function OrchestratorChat({
                               return (
                                 <span
                                   key={toolId}
-                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-[#161a29] text-gray-300 px-2 py-0.8 rounded-lg border border-[#232a3e] hover:border-[#FF8E24]/30 transition-all hover:text-white"
+                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-surface text-muted-foreground px-2 py-0.8 rounded-lg border border-border-strong hover:border-primary/30 transition-all hover:text-foreground"
                                 >
                                   {getIcon(toolId, 'w-3 h-3')}
                                   <span className="font-semibold">{toolMeta?.name || toolId}</span>
@@ -491,7 +491,7 @@ export default function OrchestratorChat({
                               return (
                                 <span
                                   key={skillId}
-                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-amber-950/10 text-amber-500 px-2 py-0.8 rounded-lg border border-amber-950/40 hover:border-amber-500/30 transition-all"
+                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-primary/10 text-primary px-2 py-0.8 rounded-lg border border-primary/20 hover:border-primary/30 transition-all"
                                 >
                                   {getIcon(skillId, 'w-3 h-3')}
                                   <span className="font-semibold">{skillMeta?.name || skillId}</span>
@@ -505,20 +505,20 @@ export default function OrchestratorChat({
 
                     {/* 2. Tool-Activity Frame Sub-Component (specifically asked in prompt) */}
                     {msg.toolActivity && (
-                      <div className="bg-[#121622] border border-[#232a3f] rounded-2xl shadow-lg shadow-black/30 overflow-hidden text-[11px] font-sans">
+                      <div className="bg-surface border border-border-strong rounded-2xl shadow-lg shadow-background/30 overflow-hidden text-[11px] font-sans">
                         {/* Header bar */}
-                        <div className="bg-[#0b0d14] px-4 py-2.5 flex items-center justify-between border-b border-[#1e2436] select-none">
+                        <div className="bg-background px-4 py-2.5 flex items-center justify-between border-b border-border select-none">
                           <div className="flex items-center gap-2">
-                            <RefreshCcw className="animate-spin w-3.5 h-3.5 text-[#FF8E24]" />
-                            <span className="font-mono text-gray-400">Tool Socket actively engaged:</span>
-                            <span className="flex items-center gap-1 bg-[#FF8E24]/15 text-[#FF8E24] px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold tracking-wider border border-[#FF8E24]/10">
+                            <RefreshCcw className="animate-spin w-3.5 h-3.5 text-primary" />
+                            <span className="font-mono text-muted-foreground">Tool Socket actively engaged:</span>
+                            <span className="flex items-center gap-1 bg-primary/15 text-primary px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold tracking-wider border border-primary/10">
                               {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
                               {msg.toolActivity.toolName}
                             </span>
                           </div>
-                          <button 
+                          <button
                             onClick={() => toggleToolCollapse(msg.toolActivity!.id)}
-                            className="text-[10px] font-mono text-gray-500 hover:text-[#FF8E24] transition-all bg-[#1b1e2c] border border-[#2d3246] px-2 py-0.5 rounded-md"
+                            className="text-[10px] font-mono text-subtle-foreground hover:text-primary transition-all bg-surface-raised border border-border px-2 py-0.5 rounded-md"
                           >
                             {collapsedToolActivities[msg.toolActivity.id] ? t('orchestrator.expand_results') : t('orchestrator.collapse_results')}
                           </button>
@@ -527,24 +527,24 @@ export default function OrchestratorChat({
                         {/* Collateral body content */}
                         {!collapsedToolActivities[msg.toolActivity.id] ? (
                           <div className="p-4 space-y-3 font-mono">
-                            <div className="flex items-start gap-2 bg-black/45 p-2 rounded-lg border border-[#1e2332]/50 text-emerald-400">
-                              <span className="text-gray-500 select-none">sh$</span>
+                            <div className="flex items-start gap-2 bg-background/45 p-2 rounded-lg border border-border/50 text-success">
+                              <span className="text-subtle-foreground select-none">sh$</span>
                               <span className="text-[10.5px]">{msg.toolActivity.action}</span>
                             </div>
                             <div className="space-y-1 mt-1">
-                              <div className="text-gray-500 text-[10px] uppercase">{t('orchestrator.stdout_label')}</div>
-                              <p className="text-gray-300 text-[10.5px] bg-[#1a1e2b] p-3 rounded-lg border border-[#2c3349]/50 leading-relaxed whitespace-pre-line border-l-2 border-l-[#FF8E24]">
+                              <div className="text-subtle-foreground text-[10px] uppercase">{t('orchestrator.stdout_label')}</div>
+                              <p className="text-muted-foreground text-[10.5px] bg-surface p-3 rounded-lg border border-border-strong/50 leading-relaxed whitespace-pre-line border-l-2 border-l-primary">
                                 {msg.toolActivity.outputSummary}
                               </p>
                             </div>
-                            <div className="flex items-center gap-1 text-[10px] text-[#FF8E24]/70">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline mr-0.5" />
+                            <div className="flex items-center gap-1 text-[10px] text-primary/70">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-success inline mr-0.5" />
                               <span>{t('orchestrator.exec_validated')}</span>
                             </div>
                           </div>
                         ) : (
-                          <div className="px-4 py-2 bg-black/20 text-gray-500 text-[10.5px] font-mono flex items-center gap-1.5 border-t border-[#1e2436]/50">
-                            <Clock className="w-3 h-3 text-gray-600 inline" />
+                          <div className="px-4 py-2 bg-background/20 text-subtle-foreground text-[10.5px] font-mono flex items-center gap-1.5 border-t border-border/50">
+                            <Clock className="w-3 h-3 text-subtle-foreground inline" />
                             <span>Run details flattened to summary statement: {msg.toolActivity.outputSummary.slice(0, 50)}...</span>
                           </div>
                         )}
@@ -555,18 +555,18 @@ export default function OrchestratorChat({
                     {msg.escalation && (
                       <div className={`p-4 rounded-2xl border flex items-start gap-3.5 shadow-md ${
                         msg.escalation.status === 'need_raised'
-                          ? 'bg-amber-950/15 border-amber-950/60 text-amber-500 shadow-amber-950/5'
+                          ? 'bg-warning/15 border-warning/60 text-warning shadow-warning/5'
                           : msg.escalation.status === 'arslan_resolving'
-                          ? 'bg-orange-950/20 border-[#FF8E24]/30 text-[#FF8E24] shadow-[#FF8E24]/5'
+                          ? 'bg-primary/20 border-primary/30 text-primary shadow-primary/5'
                           : msg.escalation.status === 'resolved'
-                          ? 'bg-emerald-950/15 border-emerald-950/60 text-emerald-500 shadow-emerald-500/5'
-                          : 'bg-red-950/15 border-red-950/60 text-red-500 shadow-red-950/5'
+                          ? 'bg-success/15 border-success/60 text-success shadow-success/5'
+                          : 'bg-danger/15 border-danger/60 text-danger shadow-danger/5'
                       }`}>
                         <div className="mt-0.5">
                           {msg.escalation.status === 'need_raised' && <AlertTriangle className="w-4.5 h-4.5 animate-bounce" />}
                           {msg.escalation.status === 'arslan_resolving' && <Cpu className="w-4.5 h-4.5 animate-spin" />}
-                          {msg.escalation.status === 'resolved' && <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" />}
-                          {msg.escalation.status === 'refused' && <XOctagon className="w-4.5 h-4.5 text-red-500" />}
+                          {msg.escalation.status === 'resolved' && <CheckCircle2 className="w-4.5 h-4.5 text-success" />}
+                          {msg.escalation.status === 'refused' && <XOctagon className="w-4.5 h-4.5 text-danger" />}
                         </div>
                         <div className="space-y-1 flex-1">
                           <div className="flex items-center gap-2">
@@ -576,15 +576,15 @@ export default function OrchestratorChat({
                               {msg.escalation.status === 'resolved' && t('orchestrator.escalation_resolved')}
                               {msg.escalation.status === 'refused' && t('orchestrator.escalation_refused')}
                             </span>
-                            <span className="text-[9px] bg-black/30 font-mono px-1.5 border border-white/5 rounded">
+                            <span className="text-[9px] bg-background/30 font-mono px-1.5 border border-border/5 rounded">
                               From: {msg.escalation.spawnName}
                             </span>
                           </div>
-                          <p className="text-[11px] text-gray-300 font-sans leading-relaxed">{msg.escalation.issue}</p>
+                          <p className="text-[11px] text-muted-foreground font-sans leading-relaxed">{msg.escalation.issue}</p>
 
                           {/* Inner details if context resolution message exists */}
                           {msg.escalation.resolutionMessage && (
-                            <div className="mt-2.5 p-2.5 bg-black/50 rounded-lg border border-red-900/40 text-red-400 font-mono text-[10.5px] leading-relaxed">
+                            <div className="mt-2.5 p-2.5 bg-background/50 rounded-lg border border-danger/40 text-danger font-mono text-[10.5px] leading-relaxed">
                               {msg.escalation.resolutionMessage}
                             </div>
                           )}
@@ -596,7 +596,7 @@ export default function OrchestratorChat({
                     {isSpawn && msg.isProposal && msg.spawnId && (
                       <button
                         onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 border border-[#FF8E24]/40 hover:border-[#FF8E24]/70 text-[#FF8E24] text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/40 hover:border-primary/70 text-primary text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{t('orchestrator.confirm_direction')}</span>
@@ -608,21 +608,21 @@ export default function OrchestratorChat({
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <button
                           onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-success/20 hover:bg-success/40 border border-success/40 hover:border-success/70 text-success text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                         >
                           <CheckCircle2 className="w-3 h-3" />
                           <span>{t('orchestrator.verdict_accept')}</span>
                         </button>
                         <button
                           onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-raised border border-border-strong/60 hover:border-warning/30 text-muted-foreground hover:text-warning text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                         >
                           <RefreshCcw className="w-3 h-3" />
                           <span>{t('orchestrator.verdict_redo')}</span>
                         </button>
                         <button
                           onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-danger/20 border border-border-strong/60 hover:border-danger/40 text-subtle-foreground hover:text-danger text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                         >
                           <X className="w-3 h-3" />
                           <span>{t('orchestrator.verdict_discard')}</span>
@@ -634,7 +634,7 @@ export default function OrchestratorChat({
                   {/* Timestamp for user bubble (right-aligned, no avatar needed — position conveys identity) */}
                   {isUser && (
                     <div className="flex flex-col items-end select-none mt-1">
-                      <span className="text-[9px] text-gray-500 font-mono font-semibold">{msg.timestamp}</span>
+                      <span className="text-[9px] text-subtle-foreground font-mono font-semibold">{msg.timestamp}</span>
                     </div>
                   )}
                 </div>
@@ -646,9 +646,9 @@ export default function OrchestratorChat({
               if (isUser) {
                 return (
                   <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-gray-200 text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                    <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
-                      <div className="text-[9px] text-gray-500 mt-2 text-right">{msg.timestamp}</div>
+                      <div className="text-[9px] text-subtle-foreground mt-2 text-right">{msg.timestamp}</div>
                     </div>
                   </div>
                 );
@@ -656,51 +656,51 @@ export default function OrchestratorChat({
               return (
                 <div
                   key={msg.id}
-                  className={`border-2 border-orange-500/60 p-4 font-mono text-[12px] bg-[#090b10] shadow-[4px_4px_0px_#FF8E24] relative`}
+                  className={`border-2 border-primary/60 p-4 font-mono text-[12px] bg-background shadow-[4px_4px_0px_var(--color-primary)] relative`}
                 >
                   {/* Sender Headers */}
-                  <div className="flex items-center justify-between pb-2 border-b border-dashed border-gray-800 select-none mb-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-dashed border-border select-none mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-amber-500 font-bold flex items-center gap-1.5">
+                      <span className="text-primary font-bold flex items-center gap-1.5">
                         [<SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5 inline-block" />] {msg.senderName.toUpperCase()}
                       </span>
-                      <span className="text-[10px] px-1 py-0.2 bg-orange-950/20 text-orange-500 border border-orange-500/25">
+                      <span className="text-[10px] px-1 py-0.2 bg-primary/20 text-primary border border-primary/25">
                         {msg.sender.toUpperCase()}
                       </span>
                     </div>
-                    <span className="text-gray-500 text-[10px]">{msg.timestamp}</span>
+                    <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                   </div>
 
                   {isUser
-                    ? <p className="whitespace-pre-line text-gray-300 font-mono leading-relaxed">{msg.text}</p>
-                    : <Markdown className="text-gray-300 font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                    ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
+                    : <Markdown className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
                   }
 
                   {/* Routed branch block */}
                   {msg.routedTo && (
-                    <div className="mt-3 p-2 bg-[#FF8E24]/5 border-2 border-[#FF8E24] text-[11px] text-[#FF8E24] uppercase font-bold flex items-center gap-1.5 shadow-[2px_2px_0px_#000]">
+                    <div className="mt-3 p-2 bg-primary/5 border-2 border-primary text-[11px] text-primary uppercase font-bold flex items-center gap-1.5 shadow-[2px_2px_0px_black]">
                       <span>≫ DELEGATING THREAD DIRECTLY TO {msg.routedTo.spawnName.toUpperCase()}</span>
                     </div>
                   )}
 
                   {/* Spawn Intro Brutalist version */}
                   {msg.spawnIntro && (
-                    <div className="mt-4 border-2 border-orange-500 bg-black p-3 space-y-2 text-[11px]">
-                      <div className="flex items-center gap-2 font-bold text-orange-500">
+                    <div className="mt-4 border-2 border-primary bg-background p-3 space-y-2 text-[11px]">
+                      <div className="flex items-center gap-2 font-bold text-primary">
                         <span>SPAWN CREATION INDEX: {msg.spawnIntro.name.toUpperCase()}</span>
                       </div>
-                      <p className="text-gray-400 text-[10px]">DOMAIN: {msg.spawnIntro.domain.toUpperCase()}</p>
-                      
-                      <div className="pt-2 border-t border-gray-900 space-y-1">
-                        <span className="text-gray-500 font-bold">EQUIPPED CAPABILITIES:</span>
+                      <p className="text-muted-foreground text-[10px]">DOMAIN: {msg.spawnIntro.domain.toUpperCase()}</p>
+
+                      <div className="pt-2 border-t border-border space-y-1">
+                        <span className="text-subtle-foreground font-bold">EQUIPPED CAPABILITIES:</span>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {msg.spawnIntro.tools.map(toolId => (
-                            <span key={toolId} className="px-1.5 py-0.5 bg-black text-gray-300 border border-gray-700">
+                            <span key={toolId} className="px-1.5 py-0.5 bg-background text-muted-foreground border border-border">
                               [TOOL] {toolId.toUpperCase()}
                             </span>
                           ))}
                           {msg.spawnIntro.skills.map(skillId => (
-                            <span key={skillId} className="px-1.5 py-0.5 bg-black text-orange-500 border border-orange-500">
+                            <span key={skillId} className="px-1.5 py-0.5 bg-background text-primary border border-primary">
                               [SKILL] {skillId.toUpperCase()}
                             </span>
                           ))}
@@ -711,20 +711,20 @@ export default function OrchestratorChat({
 
                   {/* Tool Activity Brutalist version */}
                   {msg.toolActivity && (
-                    <div className="mt-4 border-2 border-amber-500 bg-[#07090e] p-3 text-[11px] font-mono">
-                      <div className="text-amber-500 font-bold uppercase pb-1 border-b border-amber-500/20 flex justify-between items-center">
+                    <div className="mt-4 border-2 border-primary bg-background p-3 text-[11px] font-mono">
+                      <div className="text-primary font-bold uppercase pb-1 border-b border-primary/20 flex justify-between items-center">
                         <span className="flex items-center gap-1.5">
                           <Wrench className="w-3 h-3" />
                           EXECUTING SOCKET ACTIVITY: {msg.toolActivity.toolName.toUpperCase()}
                         </span>
-                        <span className="text-[9px] bg-amber-500 text-black px-1">RUNNING</span>
-                      </div>
-                      
-                      <div className="mt-2 text-gray-300 p-1 bg-black border border-gray-800">
-                        <span className="text-gray-500">$</span> {msg.toolActivity.action}
+                        <span className="text-[9px] bg-primary text-primary-foreground px-1">RUNNING</span>
                       </div>
 
-                      <div className="mt-2 text-[#FF8E24]">
+                      <div className="mt-2 text-muted-foreground p-1 bg-background border border-border">
+                        <span className="text-subtle-foreground">$</span> {msg.toolActivity.action}
+                      </div>
+
+                      <div className="mt-2 text-primary">
                         RETURN VALUE SUMMARY: {msg.toolActivity.outputSummary}
                       </div>
                     </div>
@@ -732,14 +732,14 @@ export default function OrchestratorChat({
 
                   {/* Brutalist Escalation Panel */}
                   {msg.escalation && (
-                    <div className="mt-4 border-2 border-red-500 bg-black p-3 text-[11px]">
-                      <div className="text-red-500 font-bold uppercase select-none pb-2 flex justify-between">
+                    <div className="mt-4 border-2 border-danger bg-background p-3 text-[11px]">
+                      <div className="text-danger font-bold uppercase select-none pb-2 flex justify-between">
                         <span>⚠️ EXTREME PRIORITY ESCALATION INDEX ⚠️</span>
                         <span>{msg.escalation.status.toUpperCase()}</span>
                       </div>
-                      <p className="text-gray-300 font-semibold">{msg.escalation.issue.toUpperCase()}</p>
+                      <p className="text-muted-foreground font-semibold">{msg.escalation.issue.toUpperCase()}</p>
                       {msg.escalation.resolutionMessage && (
-                        <div className="mt-2 bg-red-950/20 text-red-500 p-2 border border-red-800">
+                        <div className="mt-2 bg-danger/20 text-danger p-2 border border-danger">
                           LOG REJECTION DETAILED STATEMENT: {msg.escalation.resolutionMessage.toUpperCase()}
                         </div>
                       )}
@@ -751,7 +751,7 @@ export default function OrchestratorChat({
                     <div className="mt-4">
                       <button
                         onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
-                        className="flex items-center gap-2 px-4 py-2 border-2 border-[#FF8E24] bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 text-[#FF8E24] text-[11px] font-mono font-bold uppercase tracking-wider transition-all select-none shadow-[2px_2px_0px_#000]"
+                        className="flex items-center gap-2 px-4 py-2 border-2 border-primary bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-mono font-bold uppercase tracking-wider transition-all select-none shadow-[2px_2px_0px_black]"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{t('orchestrator.confirm_direction')}</span>
@@ -764,21 +764,21 @@ export default function OrchestratorChat({
                     <div className="mt-4 flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-emerald-500 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-success bg-success/20 hover:bg-success/40 text-success text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
                       >
                         <CheckCircle2 className="w-3 h-3" />
                         <span>{t('orchestrator.verdict_accept')}</span>
                       </button>
                       <button
                         onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-amber-500 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-border bg-background hover:border-warning text-muted-foreground hover:text-warning text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
                       >
                         <RefreshCcw className="w-3 h-3" />
                         <span>{t('orchestrator.verdict_redo')}</span>
                       </button>
                       <button
                         onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-600 bg-black hover:border-red-500 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-border bg-background hover:border-danger text-subtle-foreground hover:text-danger text-[10px] font-mono font-bold uppercase tracking-wider transition-all select-none"
                       >
                         <X className="w-3 h-3" />
                         <span>{t('orchestrator.verdict_discard')}</span>
@@ -796,7 +796,7 @@ export default function OrchestratorChat({
                   <div key={msg.id} className="flex justify-end text-[12px]">
                     <div className="max-w-[68%]">
                       <div
-                        className="px-4 py-2.5 text-gray-200 text-[12.5px] leading-relaxed font-sans whitespace-pre-line"
+                        className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans whitespace-pre-line"
                         style={{
                           background: 'rgba(120,140,170,0.10)',
                           border: '1px solid rgba(255,255,255,0.08)',
@@ -805,7 +805,7 @@ export default function OrchestratorChat({
                       >
                         {msg.text}
                       </div>
-                      <div className="text-[9px] text-gray-500 font-mono mt-1 text-right select-none">{msg.timestamp}</div>
+                      <div className="text-[9px] text-subtle-foreground font-mono mt-1 text-right select-none">{msg.timestamp}</div>
                     </div>
                   </div>
                 );
@@ -815,30 +815,30 @@ export default function OrchestratorChat({
                 <div key={msg.id} className="text-[12px] space-y-2">
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
-                    <span className="text-gray-500 flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
-                    <span className="font-bold text-gray-200">{msg.senderName}</span>
-                    <span className="text-gray-500 font-mono">•</span>
-                    <span className="text-gray-500 font-mono">{msg.timestamp}</span>
+                    <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
+                    <span className="font-bold text-foreground">{msg.senderName}</span>
+                    <span className="text-subtle-foreground font-mono">•</span>
+                    <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
                     {isArslan && (
-                      <span className="text-[9px] bg-[#1a1c22] text-[#FF8E24] px-1.5 py-0.2 rounded font-mono border border-[#FF8E24]/20 uppercase">
+                      <span className="text-[9px] bg-surface-raised text-primary px-1.5 py-0.2 rounded font-mono border border-primary/20 uppercase">
                         Orchestrator
                       </span>
                     )}
                     {!isArslan && !isUser && (
-                      <span className="text-[9px] bg-gray-950 text-amber-500 px-1.5 py-0.2 rounded font-mono border border-amber-900/40 uppercase">
+                      <span className="text-[9px] bg-background text-primary px-1.5 py-0.2 rounded font-mono border border-primary/20 uppercase">
                         Spawn • Core
                       </span>
                     )}
                   </div>
 
                   {/* Body Content */}
-                  <Markdown className="text-gray-300 font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  <Markdown className="text-muted-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (
-                    <div className="text-[10px] text-gray-500 font-mono flex items-center gap-1.5 pl-5">
-                      <span className="text-[#999]">→ Routed process to:</span>
-                      <span className="text-[#FF8E24] hover:underline font-bold select-none cursor-pointer">
+                    <div className="text-[10px] text-subtle-foreground font-mono flex items-center gap-1.5 pl-5">
+                      <span className="text-subtle-foreground">→ Routed process to:</span>
+                      <span className="text-primary hover:underline font-bold select-none cursor-pointer">
                         {msg.routedTo.spawnName}
                       </span>
                     </div>
@@ -847,22 +847,22 @@ export default function OrchestratorChat({
                   {/* Linear Minimal Spawn intro */}
                   {msg.spawnIntro && (
                     <div className="pl-5 pt-2">
-                      <div className="border border-gray-800 bg-[#0a0d13] rounded-lg p-3 space-y-2.5 max-w-xl">
+                      <div className="border border-border bg-background rounded-lg p-3 space-y-2.5 max-w-xl">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-[11px]">{msg.spawnIntro.name} Spawn Registry</span>
+                            <span className="font-bold text-foreground text-[11px]">{msg.spawnIntro.name} Spawn Registry</span>
                           </div>
-                          <span className="text-[9px] bg-gray-900 text-gray-400 px-1 py-0.2 rounded font-mono">active</span>
+                          <span className="text-[9px] bg-surface text-muted-foreground px-1 py-0.2 rounded font-mono">active</span>
                         </div>
-                        <div className="text-[10px] text-gray-500">{t('orchestrator.capabilities_matrix')}</div>
+                        <div className="text-[10px] text-subtle-foreground">{t('orchestrator.capabilities_matrix')}</div>
                         <div className="flex flex-wrap gap-1">
                           {msg.spawnIntro.tools.map(toolId => (
-                            <span key={toolId} className="text-[10px] bg-[#13151b] border border-gray-800 text-gray-300 px-1.5 py-0.2 rounded">
+                            <span key={toolId} className="text-[10px] bg-surface border border-border text-muted-foreground px-1.5 py-0.2 rounded">
                               {toolId}
                             </span>
                           ))}
                           {msg.spawnIntro.skills.map(skillId => (
-                            <span key={skillId} className="text-[10px] bg-amber-950/15 border border-amber-900/30 text-amber-500 px-1.5 py-0.2 rounded">
+                            <span key={skillId} className="text-[10px] bg-primary/15 border border-primary/20 text-primary px-1.5 py-0.2 rounded">
                               {skillId}
                             </span>
                           ))}
@@ -874,16 +874,16 @@ export default function OrchestratorChat({
                   {/* Linear Minimal Tool activity */}
                   {msg.toolActivity && (
                     <div className="pl-5 pt-2">
-                      <div className="border border-gray-800 bg-[#0d0f15]/50 rounded-lg p-2 max-w-xl font-mono text-[10.5px]">
-                        <div className="flex items-center gap-1.5 text-gray-400">
-                          <Wrench className="w-3.5 h-3.5 text-[#FF8E24]" />
+                      <div className="border border-border bg-background/50 rounded-lg p-2 max-w-xl font-mono text-[10.5px]">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Wrench className="w-3.5 h-3.5 text-primary" />
                           <span>Standard Executor tool {msg.toolActivity.toolName}:</span>
-                          <span className="text-gray-600 bg-[#121622] px-1 rounded uppercase tracking-wider text-[8px] border border-gray-800">OK</span>
+                          <span className="text-subtle-foreground bg-surface px-1 rounded uppercase tracking-wider text-[8px] border border-border">OK</span>
                         </div>
-                        <div className="mt-1 text-gray-500 pl-5">
+                        <div className="mt-1 text-subtle-foreground pl-5">
                           {msg.toolActivity.action}
                         </div>
-                        <div className="mt-1 pl-5 text-[#FF8E24]">
+                        <div className="mt-1 pl-5 text-primary">
                           Summary Outcome: {msg.toolActivity.outputSummary}
                         </div>
                       </div>
@@ -893,14 +893,14 @@ export default function OrchestratorChat({
                   {/* Linear Minimal Escalation status */}
                   {msg.escalation && (
                     <div className="pl-5 pt-2">
-                      <div className="border border-red-950/40 bg-red-950/5 border-l-2 border-l-red-500 rounded-r-lg p-3 max-w-xl">
-                        <div className="flex items-center gap-1 text-[10.5px] text-red-500 font-mono font-bold uppercase select-none">
+                      <div className="border border-danger/40 bg-danger/5 border-l-2 border-l-danger rounded-r-lg p-3 max-w-xl">
+                        <div className="flex items-center gap-1 text-[10.5px] text-danger font-mono font-bold uppercase select-none">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           <span>Escalation Exception - Spawn Access Lockout ({msg.escalation.status})</span>
                         </div>
-                        <p className="text-[11px] text-gray-300 mt-1 leading-relaxed">{msg.escalation.issue}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{msg.escalation.issue}</p>
                         {msg.escalation.resolutionMessage && (
-                          <p className="mt-2 text-red-400 text-[10px] font-mono whitespace-pre-wrap pl-2 bg-black/40 py-1.5 rounded">{msg.escalation.resolutionMessage}</p>
+                          <p className="mt-2 text-danger text-[10px] font-mono whitespace-pre-wrap pl-2 bg-background/40 py-1.5 rounded">{msg.escalation.resolutionMessage}</p>
                         )}
                       </div>
                     </div>
@@ -911,7 +911,7 @@ export default function OrchestratorChat({
                     <div className="pl-5 pt-2">
                       <button
                         onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#FF8E24]/10 hover:bg-[#FF8E24]/20 border border-[#FF8E24]/40 hover:border-[#FF8E24]/70 text-[#FF8E24] text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/40 hover:border-primary/70 text-primary text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{t('orchestrator.confirm_direction')}</span>
@@ -924,21 +924,21 @@ export default function OrchestratorChat({
                     <div className="pl-5 pt-2 flex flex-wrap items-center gap-1.5">
                       <button
                         onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-success/20 hover:bg-success/40 border border-success/40 hover:border-success/70 text-success text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                       >
                         <CheckCircle2 className="w-3 h-3" />
                         <span>{t('orchestrator.verdict_accept')}</span>
                       </button>
                       <button
                         onClick={() => onDeliverableVerdict?.('redo', Number(msg.spawnId), msg.messageId, msg.taskBrief)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-[#232840] border border-[#2c3349]/60 hover:border-amber-900/30 text-gray-400 hover:text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-raised border border-border-strong/60 hover:border-warning/30 text-muted-foreground hover:text-warning text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                       >
                         <RefreshCcw className="w-3 h-3" />
                         <span>{t('orchestrator.verdict_redo')}</span>
                       </button>
                       <button
                         onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1e2c] hover:bg-red-950/20 border border-[#2c3349]/60 hover:border-red-900/40 text-gray-500 hover:text-red-400 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-danger/20 border border-border-strong/60 hover:border-danger/40 text-subtle-foreground hover:text-danger text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
                       >
                         <X className="w-3 h-3" />
                         <span>{t('orchestrator.verdict_discard')}</span>
@@ -957,7 +957,7 @@ export default function OrchestratorChat({
 
       {/* Input Message Form Panel */}
       {chatHistory.length > 0 && (
-        <footer className="p-4 border-t border-[#1e2330] bg-[#0a0c10]/80 backdrop-blur shrink-0 z-10 select-none">
+        <footer className="p-4 border-t border-border bg-background/80 backdrop-blur shrink-0 z-10 select-none">
           <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex items-center gap-2 relative">
             <input
               id="chat-message-input"
@@ -969,22 +969,22 @@ export default function OrchestratorChat({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder={t('orchestrator.placeholder_chat')}
-              className="w-full bg-[#121520] border border-[#23293e] hover:border-[#353e5e] focus:border-[#FF8E24]/60 focus:ring-1 focus:ring-[#FF8E24]/30 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-500 focus:outline-none pr-12 transition-all font-sans"
+              className="w-full bg-surface border border-border hover:border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring/30 rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-sans"
             />
             <button
               id="chat-send-submit"
               type="submit"
               disabled={!inputValue.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-[#FF8E24] hover:bg-[#ff9c3a] disabled:bg-gray-800 disabled:text-gray-500 disabled:opacity-50 text-black font-bold uppercase rounded-lg transition-all"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
             >
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
-          <div className="flex items-center justify-center gap-6 mt-2 text-[10px] text-gray-600 font-mono">
+          <div className="flex items-center justify-center gap-6 mt-2 text-[10px] text-subtle-foreground font-mono">
             <span>{t('orchestrator.footer_hint')}</span>
             <span>•</span>
             <span className="flex items-center gap-1.5 font-sans">
-              <Layers className="w-3.5 h-3.5 text-gray-500" />
+              <Layers className="w-3.5 h-3.5 text-subtle-foreground" />
               {t('orchestrator.footer_sandboxed')}
             </span>
           </div>
@@ -999,25 +999,25 @@ export default function OrchestratorChat({
 
 
       return (
-        <div className="w-[45%] border-l border-[#1e2330] bg-[#090b0f] flex flex-col h-full animate-slide-in-right relative overflow-hidden shrink-0 z-20">
+        <div className="w-[45%] border-l border-border bg-sidebar flex flex-col h-full animate-slide-in-right relative overflow-hidden shrink-0 z-20">
           {/* Sandbox Top Header */}
-          <div className="h-[52px] border-b border-[#1e2330] px-4.5 bg-[#0a0c10]/80 backdrop-blur flex items-center justify-between select-none shrink-0">
+          <div className="h-[52px] border-b border-border px-4.5 bg-background/80 backdrop-blur flex items-center justify-between select-none shrink-0">
             <div className="flex items-center gap-2.5">
-              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-5 h-5 text-[#FF8E24]" />
+              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-5 h-5 text-primary" />
               <div>
                 <div className="flex items-center gap-1.5 leading-none">
-                  <span className="text-xs font-bold text-white font-sans">{spawn.name}</span>
-                  <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.2 rounded font-mono font-bold uppercase">
+                  <span className="text-xs font-bold text-foreground font-sans">{spawn.name}</span>
+                  <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-mono font-bold uppercase">
                     Sandbox
                   </span>
                 </div>
-                <span className="text-[9px] text-[#FF8E24] font-mono mt-1 block uppercase tracking-wider">{spawn.domain}</span>
+                <span className="text-[9px] text-primary font-mono mt-1 block uppercase tracking-wider">{spawn.domain}</span>
               </div>
             </div>
 
             <button 
               onClick={() => setSplitSpawnId(null)}
-              className="p-1 text-gray-400 hover:text-white bg-[#10131b] border border-gray-800/80 rounded hover:bg-black/30"
+              className="p-1 text-muted-foreground hover:text-foreground bg-surface border border-border/80 rounded hover:bg-background/30"
               title="Minimize Sandbox"
             >
               <X className="w-4 h-4" />
@@ -1026,21 +1026,21 @@ export default function OrchestratorChat({
 
           {/* Sandbox Content: Coming Soon — dispatch + draft backend not yet wired */}
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 select-none">
-            <div className="w-12 h-12 rounded-xl bg-amber-950/20 border border-amber-500/20 flex items-center justify-center">
-              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-6 h-6 text-amber-500" />
+            <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-6 h-6 text-primary" />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-center gap-2">
-                <span className="text-xs font-bold text-white font-sans">{spawn.name} Sandbox</span>
-                <span className="text-[9px] font-mono bg-amber-950/20 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider">{t('orchestrator.coming_soon_badge')}</span>
+                <span className="text-xs font-bold text-foreground font-sans">{spawn.name} Sandbox</span>
+                <span className="text-[9px] font-mono bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded uppercase tracking-wider">{t('orchestrator.coming_soon_badge')}</span>
               </div>
-              <p className="text-[11px] text-gray-500 font-sans leading-relaxed max-w-xs">
+              <p className="text-[11px] text-subtle-foreground font-sans leading-relaxed max-w-xs">
                 {t('orchestrator.sandbox_coming_soon_desc')}
               </p>
             </div>
             <button
               onClick={() => setSplitSpawnId(null)}
-              className="mt-2 px-4 py-1.5 bg-transparent hover:bg-white/[0.04] text-gray-400 hover:text-white text-[10px] rounded-xl border border-gray-800/80 font-mono uppercase tracking-wider transition-all"
+              className="mt-2 px-4 py-1.5 bg-transparent hover:bg-foreground/[0.04] text-muted-foreground hover:text-foreground text-[10px] rounded-xl border border-border/80 font-mono uppercase tracking-wider transition-all"
             >
               {t('orchestrator.close_panel')}
             </button>
