@@ -20,26 +20,26 @@ export default function SFSymbol({ nameOrEmoji, className = "w-4 h-4" }: SFSymbo
     case '🦊':
     case 'aletheia':
     case 'spawn-aletheia':
-      return <TrendingUp className={`${className} text-[#FF8E24]`} />;
+      return <TrendingUp className={`${className} text-primary`} />;
 
     case '🐱':
     case 'huan':
     case 'spawn-huan':
-      return <Sparkles className={`${className} text-indigo-400`} />;
+      return <Sparkles className={`${className} text-info`} />;
 
     case '🦁':
     case 'arslan':
     case 'orchestrator':
-      return <Cpu className={`${className} text-[#FF8E24]`} />;
+      return <Cpu className={`${className} text-primary`} />;
 
     // Common Fallbacks
     case 'bot':
     case '🤖':
-      return <Bot className={`${className} text-emerald-400`} />;
+      return <Bot className={`${className} text-success`} />;
 
     case 'user':
     case '👤':
-      return <CircleUser className={`${className} text-gray-300`} />;
+      return <CircleUser className={`${className} text-foreground`} />;
 
     case 'tool':
     case 'tools':

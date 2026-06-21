@@ -17,42 +17,42 @@ const ALERT_TYPES = {
   NOTE: {
     Icon: Info,
     label: 'Note',
-    colorClass: 'text-sky-400',
-    bgClass: 'bg-sky-950/30',
-    borderClass: 'border-sky-500/50',
-    titleClass: 'text-sky-400',
+    colorClass: 'text-info',
+    bgClass: 'bg-info/10',
+    borderClass: 'border-info/50',
+    titleClass: 'text-info',
   },
   TIP: {
     Icon: Lightbulb,
     label: 'Tip',
-    colorClass: 'text-emerald-400',
-    bgClass: 'bg-emerald-950/30',
-    borderClass: 'border-emerald-500/50',
-    titleClass: 'text-emerald-400',
+    colorClass: 'text-success',
+    bgClass: 'bg-success/10',
+    borderClass: 'border-success/50',
+    titleClass: 'text-success',
   },
   WARNING: {
     Icon: AlertTriangle,
     label: 'Warning',
-    colorClass: 'text-amber-400',
-    bgClass: 'bg-amber-950/30',
-    borderClass: 'border-amber-500/50',
-    titleClass: 'text-amber-400',
+    colorClass: 'text-warning',
+    bgClass: 'bg-warning/10',
+    borderClass: 'border-warning/50',
+    titleClass: 'text-warning',
   },
   IMPORTANT: {
     Icon: AlertCircle,
     label: 'Important',
-    colorClass: 'text-violet-400',
-    bgClass: 'bg-violet-950/30',
-    borderClass: 'border-violet-500/50',
-    titleClass: 'text-violet-400',
+    colorClass: 'text-info',
+    bgClass: 'bg-info/10',
+    borderClass: 'border-info/50',
+    titleClass: 'text-info',
   },
   CAUTION: {
     Icon: Flame,
     label: 'Caution',
-    colorClass: 'text-red-400',
-    bgClass: 'bg-red-950/30',
-    borderClass: 'border-red-500/50',
-    titleClass: 'text-red-400',
+    colorClass: 'text-danger',
+    bgClass: 'bg-danger/10',
+    borderClass: 'border-danger/50',
+    titleClass: 'text-danger',
   },
 } as const;
 
@@ -121,9 +121,9 @@ function CopyButton({ code }: { code: string }) {
         borderRadius: '5px',
         fontSize: '10px',
         fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-        background: copied ? 'rgba(255,142,36,0.15)' : 'rgba(255,255,255,0.05)',
-        border: `1px solid ${copied ? 'rgba(255,142,36,0.5)' : 'rgba(255,255,255,0.08)'}`,
-        color: copied ? '#FF8E24' : '#9ca3af',
+        background: copied ? 'color-mix(in srgb, var(--color-primary) 15%, transparent)' : 'rgba(255,255,255,0.05)',
+        border: `1px solid ${copied ? 'color-mix(in srgb, var(--color-primary) 50%, transparent)' : 'rgba(255,255,255,0.08)'}`,
+        color: copied ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
         lineHeight: 1,
@@ -144,17 +144,17 @@ const components: import('react-markdown').Components = {
       fontSize: '1.35em',
       fontWeight: 700,
       letterSpacing: '-0.02em',
-      color: 'var(--md-heading, #f1f5f9)',
+      color: 'var(--md-heading, var(--color-foreground))',
       marginTop: '1.4em',
       marginBottom: '0.6em',
       paddingBottom: '0.35em',
-      borderBottom: '1px solid rgba(255,142,36,0.2)',
+      borderBottom: '1px solid color-mix(in srgb, var(--color-primary) 20%, transparent)',
       lineHeight: 1.25,
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
     }}>
-      <span style={{ display: 'inline-block', width: '3px', height: '1.1em', background: '#FF8E24', borderRadius: '2px', flexShrink: 0, marginTop: '1px' }} />
+      <span style={{ display: 'inline-block', width: '3px', height: '1.1em', background: 'var(--color-primary)', borderRadius: '2px', flexShrink: 0, marginTop: '1px' }} />
       {children}
     </h1>
   ),
@@ -163,17 +163,17 @@ const components: import('react-markdown').Components = {
       fontSize: '1.15em',
       fontWeight: 700,
       letterSpacing: '-0.015em',
-      color: 'var(--md-heading, #e2e8f0)',
+      color: 'var(--md-heading, var(--color-foreground))',
       marginTop: '1.2em',
       marginBottom: '0.5em',
       paddingBottom: '0.3em',
-      borderBottom: '1px solid rgba(30,35,48,0.9)',
+      borderBottom: '1px solid color-mix(in srgb, var(--color-border) 90%, transparent)',
       lineHeight: 1.3,
       display: 'flex',
       alignItems: 'center',
       gap: '7px',
     }}>
-      <span style={{ display: 'inline-block', width: '2.5px', height: '1em', background: 'rgba(255,142,36,0.7)', borderRadius: '2px', flexShrink: 0 }} />
+      <span style={{ display: 'inline-block', width: '2.5px', height: '1em', background: 'color-mix(in srgb, var(--color-primary) 70%, transparent)', borderRadius: '2px', flexShrink: 0 }} />
       {children}
     </h2>
   ),
@@ -182,7 +182,7 @@ const components: import('react-markdown').Components = {
       fontSize: '1.02em',
       fontWeight: 600,
       letterSpacing: '-0.01em',
-      color: 'var(--md-heading, #cbd5e1)',
+      color: 'var(--md-heading, var(--color-muted-foreground))',
       marginTop: '1em',
       marginBottom: '0.4em',
       lineHeight: 1.35,
@@ -194,7 +194,7 @@ const components: import('react-markdown').Components = {
     <h4 style={{
       fontSize: '0.93em',
       fontWeight: 600,
-      color: 'var(--md-heading, #94a3b8)',
+      color: 'var(--md-heading, var(--color-muted-foreground))',
       marginTop: '0.9em',
       marginBottom: '0.3em',
       textTransform: 'uppercase',
@@ -220,7 +220,7 @@ const components: import('react-markdown').Components = {
   strong: ({ children }) => (
     <strong style={{
       fontWeight: 700,
-      color: 'var(--md-strong, #f8fafc)',
+      color: 'var(--md-strong, var(--color-foreground))',
     }}>
       {children}
     </strong>
@@ -228,7 +228,7 @@ const components: import('react-markdown').Components = {
   em: ({ children }) => (
     <em style={{
       fontStyle: 'italic',
-      color: 'var(--md-em, #cbd5e1)',
+      color: 'var(--md-em, var(--color-muted-foreground))',
     }}>
       {children}
     </em>
@@ -236,7 +236,7 @@ const components: import('react-markdown').Components = {
   del: ({ children }) => (
     <del style={{
       textDecoration: 'line-through',
-      color: '#64748b',
+      color: 'var(--color-subtle-foreground)',
       opacity: 0.85,
     }}>
       {children}
@@ -254,11 +254,11 @@ const components: import('react-markdown').Components = {
       <code style={{
         fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
         fontSize: '0.84em',
-        background: 'rgba(26,30,43,0.9)',
-        border: '1px solid rgba(35,41,62,0.9)',
+        background: 'color-mix(in srgb, var(--color-surface-raised) 90%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--color-border-strong) 90%, transparent)',
         borderRadius: '4px',
         padding: '1.5px 5px',
-        color: '#e2a86d',
+        color: 'var(--color-primary)',
         letterSpacing: '-0.01em',
       }}>
         {children}
@@ -284,8 +284,8 @@ const components: import('react-markdown').Components = {
         position: 'relative',
         margin: '1em 0',
         borderRadius: '10px',
-        border: '1px solid rgba(35,41,62,0.95)',
-        background: '#0d1017',
+        border: '1px solid color-mix(in srgb, var(--color-border-strong) 95%, transparent)',
+        background: 'var(--color-background)',
         overflow: 'hidden',
       }}>
         {/* Header bar */}
@@ -295,14 +295,14 @@ const components: import('react-markdown').Components = {
           justifyContent: 'space-between',
           padding: '6px 12px',
           background: 'rgba(255,255,255,0.02)',
-          borderBottom: '1px solid rgba(35,41,62,0.8)',
+          borderBottom: '1px solid color-mix(in srgb, var(--color-border-strong) 80%, transparent)',
           minHeight: '30px',
         }}>
           {lang ? (
             <span style={{
               fontFamily: '"JetBrains Mono", monospace',
               fontSize: '10px',
-              color: '#FF8E24',
+              color: 'var(--color-primary)',
               opacity: 0.85,
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
@@ -310,7 +310,7 @@ const components: import('react-markdown').Components = {
               {lang}
             </span>
           ) : (
-            <span style={{ fontSize: '10px', color: '#4b5563' }}>code</span>
+            <span style={{ fontSize: '10px', color: 'var(--color-subtle-foreground)' }}>code</span>
           )}
           <CopyButton code={rawCode} />
         </div>
@@ -322,7 +322,7 @@ const components: import('react-markdown').Components = {
           fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
           fontSize: '12px',
           lineHeight: 1.6,
-          color: '#c9d1d9',
+          color: 'var(--color-foreground)',
           whiteSpace: 'pre',
           WebkitOverflowScrolling: 'touch',
         }}>
@@ -339,12 +339,12 @@ const components: import('react-markdown').Components = {
       target="_blank"
       rel="noopener noreferrer"
       style={{
-        color: '#FF8E24',
+        color: 'var(--color-primary)',
         textDecoration: 'none',
         borderBottom: '1px solid transparent',
         transition: 'border-color 0.15s',
       }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = '#FF8E24'; }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--color-primary)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent'; }}
     >
       {children}
@@ -400,7 +400,7 @@ const components: import('react-markdown').Components = {
             width: '5px',
             height: '5px',
             borderRadius: '50%',
-            background: 'rgba(255,142,36,0.7)',
+            background: 'color-mix(in srgb, var(--color-primary) 70%, transparent)',
             flexShrink: 0,
           }} />
         )}
@@ -418,7 +418,7 @@ const components: import('react-markdown').Components = {
           checked={checked}
           readOnly
           style={{
-            accentColor: '#FF8E24',
+            accentColor: 'var(--color-primary)',
             marginRight: '6px',
             verticalAlign: 'middle',
             cursor: 'default',
@@ -457,7 +457,7 @@ const components: import('react-markdown').Components = {
               {label}
             </span>
           </div>
-          <div style={{ color: '#cbd5e1', lineHeight: 1.6, fontSize: '0.95em' }}>
+          <div style={{ color: 'var(--color-muted-foreground)', lineHeight: 1.6, fontSize: '0.95em' }}>
             {stripped}
           </div>
         </div>
@@ -467,12 +467,12 @@ const components: import('react-markdown').Components = {
     // Regular blockquote — premium amber-border callout
     return (
       <blockquote style={{
-        borderLeft: '3px solid #FF8E24',
-        background: 'rgba(255,142,36,0.05)',
+        borderLeft: '3px solid var(--color-primary)',
+        background: 'color-mix(in srgb, var(--color-primary) 5%, transparent)',
         borderRadius: '0 8px 8px 0',
         margin: '0.85em 0',
         padding: '10px 16px',
-        color: '#94a3b8',
+        color: 'var(--color-muted-foreground)',
         fontStyle: 'italic',
       }}>
         {children}
@@ -482,7 +482,7 @@ const components: import('react-markdown').Components = {
 
   // Tables with horizontal scroll
   table: ({ children }) => (
-    <div style={{ overflowX: 'auto', margin: '1em 0', borderRadius: '8px', border: '1px solid rgba(35,41,62,0.9)' }}>
+    <div style={{ overflowX: 'auto', margin: '1em 0', borderRadius: '8px', border: '1px solid color-mix(in srgb, var(--color-border-strong) 90%, transparent)' }}>
       <table style={{
         width: '100%',
         borderCollapse: 'collapse',
@@ -495,7 +495,7 @@ const components: import('react-markdown').Components = {
     </div>
   ),
   thead: ({ children }) => (
-    <thead style={{ background: 'rgba(255,142,36,0.07)', borderBottom: '1px solid rgba(35,41,62,0.95)' }}>
+    <thead style={{ background: 'color-mix(in srgb, var(--color-primary) 7%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--color-border-strong) 95%, transparent)' }}>
       {children}
     </thead>
   ),
@@ -503,7 +503,7 @@ const components: import('react-markdown').Components = {
     <tbody>{children}</tbody>
   ),
   tr: ({ children }) => (
-    <tr style={{ borderBottom: '1px solid rgba(30,35,48,0.7)' }}>
+    <tr style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
       {children}
     </tr>
   ),
@@ -511,7 +511,7 @@ const components: import('react-markdown').Components = {
     <th style={{
       padding: '8px 14px',
       textAlign: 'left',
-      color: '#FF8E24',
+      color: 'var(--color-primary)',
       fontWeight: 600,
       fontSize: '0.85em',
       letterSpacing: '0.04em',
@@ -524,7 +524,7 @@ const components: import('react-markdown').Components = {
   td: ({ children }) => (
     <td style={{
       padding: '8px 14px',
-      color: '#cbd5e1',
+      color: 'var(--color-muted-foreground)',
       verticalAlign: 'top',
       lineHeight: 1.5,
     }}>
@@ -536,7 +536,7 @@ const components: import('react-markdown').Components = {
   hr: () => (
     <hr style={{
       border: 'none',
-      borderTop: '1px solid rgba(30,35,48,0.9)',
+      borderTop: '1px solid color-mix(in srgb, var(--color-border) 90%, transparent)',
       margin: '1.4em 0',
     }} />
   ),
