@@ -18,6 +18,7 @@ import SettingsScreen from './components/SettingsScreen';
 import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush, Satellite, Wrench, Brain } from 'lucide-react';
 import { getIcon } from './components/iconMap';
 import SFSymbol from './components/SFSymbol';
+import { ThemeApplier } from './components/ThemeApplier';
 
 interface ArslanThread {
   id: string;
@@ -399,7 +400,8 @@ export default function App() {
   const isThreadEmpty = activeSection === 'arslan' && orchestratorChatHistory.length === 0;
 
   return (
-    <div className={`flex w-screen h-screen bg-[#07090d] text-gray-100 overflow-hidden font-sans antialiased select-none ${settings.theme === 'light' ? 'light-theme' : ''}`}>
+    <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased select-none">
+      <ThemeApplier />
       
       {/* Sidebar with macOS window decorations & CPU load monitors */}
       <Sidebar
