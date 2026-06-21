@@ -23,7 +23,10 @@ def _table_def(metadata: sa.MetaData) -> sa.Table:
         metadata,
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("conversation_id", sa.String(50), nullable=False),
-        sa.Column("spawn_id", sa.Integer(), sa.ForeignKey("spawns.id"), nullable=False),
+        # Plain Integer column (no FK in the migration DDL) — matches _0004's pattern so 0005
+        # applies standalone/incrementally without needing 'spawns' in this isolated MetaData.
+        # The ORM model (ConversationSpawn) keeps the ForeignKey for relationships.
+        sa.Column("spawn_id", sa.Integer(), nullable=False),
         sa.Column("joined_via", sa.String(16), nullable=False),
         sa.Column("joined_at", sa.DateTime(), nullable=True),
         sa.UniqueConstraint("conversation_id", "spawn_id", name="uq_conversation_spawn"),
