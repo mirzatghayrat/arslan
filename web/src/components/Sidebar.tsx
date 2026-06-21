@@ -129,7 +129,7 @@ export default function Sidebar({
                   <LayoutGrid className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'ledger' ? 'text-primary' : 'text-subtle-foreground'}`} />
                   <span className="truncate font-sans font-medium">{t('sidebar.spawns_ledger')}</span>
                 </div>
-                <span className="text-[8px] bg-primary/10 text-primary font-mono font-bold px-1.5 py-0.2 rounded border border-primary/15 shrink-0">
+                <span className="text-[8px] bg-primary/10 text-primary font-mono font-bold px-1.5 py-0.2 rounded shrink-0">
                   {spawns.length}
                 </span>
               </button>
@@ -145,7 +145,7 @@ export default function Sidebar({
               <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
                 {t('sidebar.active_chats')}
               </span>
-              <span className="text-[8.5px] text-primary font-mono bg-primary/5 border border-primary/15 rounded px-1.5 py-0.2 select-none font-bold">
+              <span className="text-[8.5px] text-primary font-mono bg-primary/10 rounded px-1.5 py-0.2 select-none font-bold">
                 {t('sidebar.chats_count', { count: threads.length })}
               </span>
             </div>
@@ -181,7 +181,7 @@ export default function Sidebar({
               <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
                 {t('sidebar.active_spawns')}
               </span>
-              <span className="text-[9.5px] text-success font-mono bg-success/5 border border-success/15 rounded px-1.5 py-0.2 select-none font-bold">
+              <span className="text-[9.5px] text-success font-mono bg-success/10 rounded px-1.5 py-0.2 select-none font-bold">
                 {t('sidebar.live_count', { count: spawns.length })}
               </span>
             </div>
@@ -206,7 +206,7 @@ export default function Sidebar({
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="truncate flex-1 font-sans">{spawn.name}</span>
-                      <span className="text-[8.5px] font-mono bg-primary/15 text-primary border border-primary/20 rounded px-1.2 py-0.2 scale-90 flex-shrink-0 font-extrabold select-none">
+                      <span className="text-[8.5px] font-mono bg-primary/15 text-primary rounded px-1.2 py-0.2 scale-90 flex-shrink-0 font-extrabold select-none">
                         L.{Math.max(1, Math.floor(spawn.totalTasks / 10) + 1)}
                       </span>
                     </div>
