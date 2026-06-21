@@ -19,6 +19,7 @@
   --color-success: var(--success);
   --color-danger: var(--danger);
   --color-warning: var(--warning);
+  --color-info: var(--info);
 }
 
 @import "./theme/tokens.css";
