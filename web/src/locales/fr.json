@@ -262,7 +262,12 @@
     "security_policy_title": "Daemon Security Policy Restricted Scope",
     "security_policy_desc": "Under self-hosted client credentials, Tier-3 advanced tools (🔒) are locked behind standard security sandboxing bounds. Host directory integrations are restricted to local virtual directories to prevent malicious root execution commands from remote nodes.",
     "spawn_not_found": "Spawn not found.",
-    "go_back": "Go back"
+    "go_back": "Go back",
+    "exit": "Déconnecter le spawn du chat",
+    "connectedExit": "Connecté — Quitter",
+    "pullIn": "Inviter le spawn dans le chat",
+    "pullIntoChat": "+ Intégrer au Chat",
+    "kickConfirm": "Retirer ce spawn de la conversation ?"
   },
   "spawn_chat": {
     "direct_channel_suffix": "Direct Channel",

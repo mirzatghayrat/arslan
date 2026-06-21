@@ -12,6 +12,7 @@ import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import Markdown from './Markdown';
+import { useArslanStore } from '../stores/arslanStore';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -40,6 +41,8 @@ export default function OrchestratorChat({
   onDeliverableVerdict,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
+  // Live roster from store — used to determine which spawns are in this conversation
+  const roster = useArslanStore((s) => s.roster);
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
@@ -155,10 +158,10 @@ export default function OrchestratorChat({
 
         <div className="flex items-center gap-3 flex-wrap">
           {(() => {
-            const currentThreadMembers = activeThread?.memberSpawnIds || [];
-            const memberSpawns = spawns.filter(s => currentThreadMembers.includes(s.id));
-            
-            // Show only thread members; no fallback to mock names
+            // Derive member spawns from the live store roster
+            const rosterIds = new Set(roster.map((m) => String(m.spawnId)));
+            const memberSpawns = spawns.filter((s) => rosterIds.has(s.id));
+            // Show only roster members; no fallback to mock names
             const activeDisplayList = memberSpawns;
 
             return activeDisplayList.map(spawn => {

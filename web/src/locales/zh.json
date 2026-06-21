@@ -262,7 +262,12 @@
     "security_policy_title": "守护程序安全策略限制范围",
     "security_policy_desc": "在自托管客户端凭证下，Tier-3 高级工具（🔒）受标准安全沙盒限制。主机目录集成仅限于本地虚拟目录，以防止来自远程节点的恶意根执行命令。",
     "spawn_not_found": "未找到分身。",
-    "go_back": "返回"
+    "go_back": "返回",
+    "exit": "断开分身连接",
+    "connectedExit": "已连接 — 退出",
+    "pullIn": "邀请分身加入对话",
+    "pullIntoChat": "+ 拉入对话",
+    "kickConfirm": "从对话中移除此分身？"
   },
   "spawn_chat": {
     "direct_channel_suffix": "直连频道",

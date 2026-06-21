@@ -18,6 +18,7 @@ import SettingsScreen from './components/SettingsScreen';
 import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush, Satellite, Wrench, Brain } from 'lucide-react';
 import { getIcon } from './components/iconMap';
 import SFSymbol from './components/SFSymbol';
+import { LedgerRow } from './components/LedgerRow';
 
 interface ArslanThread {
   id: string;
@@ -76,6 +77,10 @@ export default function App() {
   const arslanItems = useArslanStore((s) => s.items);
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
+  // Live roster from backend roster_update frames
+  const roster = useArslanStore((s) => s.roster);
+  // Returns true if a spawn (identified by its UI string id) is in the current roster
+  const isRosterMember = (spawnId: string) => roster.some((m) => m.spawnId === Number(spawnId));
 
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
@@ -299,62 +304,13 @@ export default function App() {
   };
 
   const handleToggleSpawnMembership = (spawnId: string) => {
-    const spawn = spawns.find(s => s.id === spawnId);
-    if (!spawn || !activeThread) return;
-
-    const isMember = activeThread.memberSpawnIds?.includes(spawnId);
-
-    if (isMember) {
-      setThreads(prev => prev.map(t => {
-        if (t.id === activeThreadId) {
-          const nextMembers = (t.memberSpawnIds || []).filter(id => id !== spawnId);
-          
-          const leaveMsg: Message = {
-            id: `msg-leave-${Date.now()}`,
-            sender: 'arslan',
-            senderName: 'Arslan Core',
-            senderAvatar: '🦁',
-            text: `🔌 **Pipeline Terminated:** **${spawn.name}** was disconnected and returned to the Spawns registry context pool.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          };
-
-          return {
-            ...t,
-            memberSpawnIds: nextMembers,
-            history: [...t.history, leaveMsg]
-          };
-        }
-        return t;
-      }));
+    const numericId = Number(spawnId);
+    if (isRosterMember(spawnId)) {
+      if (window.confirm(t('ledger.kickConfirm'))) {
+        wsSend({ type: 'roster_kick', spawn_id: numericId });
+      }
     } else {
-      setThreads(prev => prev.map(t => {
-        if (t.id === activeThreadId) {
-          const nextMembers = [...(t.memberSpawnIds || []), spawnId];
-
-          const joinMsg: Message = {
-            id: `msg-join-${Date.now()}`,
-            sender: 'spawn',
-            senderName: spawn.name,
-            senderAvatar: spawn.avatarEmoji,
-            text: `👋 **Pipeline Integrated:** Active specialty socket initialized for **${spawn.name}**. I've synchronized into thread: *"${t.title}"*.\n\nReady to accept direct prompts or general multi-agent task distribution from the Arslan Core.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            spawnIntro: {
-              name: spawn.name,
-              domain: spawn.domain,
-              avatarEmoji: spawn.avatarEmoji,
-              tools: spawn.tools,
-              skills: spawn.tools
-            }
-          };
-
-          return {
-            ...t,
-            memberSpawnIds: nextMembers,
-            history: [...t.history, joinMsg]
-          };
-        }
-        return t;
-      }));
+      wsSend({ type: 'roster_invite', spawn_id: numericId });
     }
   };
 
@@ -369,8 +325,7 @@ export default function App() {
     let activeMembers: Spawn[] = [];
     
     if (activeSection === 'arslan') {
-      const currentThreadMembers = activeThread?.memberSpawnIds || [];
-      activeMembers = spawns.filter((s) => currentThreadMembers.includes(s.id));
+      activeMembers = spawns.filter((s) => isRosterMember(s.id));
       title = `${activeThread?.title || "Active Thread"} Context`;
     } else if (activeSection === 'spawn') {
       const currentActiveSpawn = spawns.find((s) => s.id === activeSpawnChatId);
@@ -693,8 +648,7 @@ export default function App() {
 
               <div className="space-y-2.5">
                 {(() => {
-                  const currentThreadMembers = activeThread?.memberSpawnIds || [];
-                  const activeMembers = spawns.filter((s) => currentThreadMembers.includes(s.id));
+                  const activeMembers = spawns.filter((s) => isRosterMember(s.id));
 
                   if (activeMembers.length === 0) {
                     return (
@@ -949,12 +903,6 @@ export default function App() {
               />
             </div>
 
-            {/* Invite/kick backend is not yet implemented — actions disabled with coming-soon badge */}
-            <div className="px-6 py-2 bg-amber-950/10 border-b border-amber-900/20 flex items-center gap-2 text-[10px] font-mono text-amber-600/80 shrink-0">
-              <span>⚠</span>
-              <span>{t('modal.ledger_coming_soon_warning')}</span>
-            </div>
-
             {/* Scrollable list content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-3.5">
               {(() => {
@@ -975,8 +923,8 @@ export default function App() {
                 }
 
                 return filtered.map((spawn) => {
-                  const isMember = activeThread?.memberSpawnIds?.includes(spawn.id);
                   const spawnLevel = Math.max(1, Math.floor(spawn.totalTasks / 10) + 1);
+                  const numericId = Number(spawn.id);
 
                   return (
                     <div
@@ -1005,19 +953,16 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Invite/kick disabled — backend not yet available */}
-                      <div
-                        className="px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider border border-[#1e2330]/60 bg-[#0b0d14]/60 text-gray-600 cursor-not-allowed opacity-50 shrink-0 flex items-center gap-1"
-                        title={t('common.coming_soon')}
-                      >
-                        {isMember ? (
-                          <>
-                            <span>✓ {t('modal.ledger_listed')}</span>
-                          </>
-                        ) : (
-                          <span>+ {t('modal.ledger_pull_into_chat')}</span>
-                        )}
-                      </div>
+                      <LedgerRow
+                        spawn={{ id: numericId, name: spawn.name }}
+                        isMember={isRosterMember(spawn.id)}
+                        onInvite={(id) => wsSend({ type: 'roster_invite', spawn_id: id })}
+                        onKick={(id) => {
+                          if (window.confirm(t('ledger.kickConfirm'))) {
+                            wsSend({ type: 'roster_kick', spawn_id: id });
+                          }
+                        }}
+                      />
                     </div>
                   );
                 });
