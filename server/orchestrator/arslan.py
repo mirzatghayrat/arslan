@@ -321,7 +321,9 @@ async def _dispatch_spawn(  # noqa: ANN001
     """
     # Resolve the spawn name first so the routing caption is complete before streaming.
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
-    await roster_service.join(conversation_id, spawn_id, via="routed")
+    newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
+    if newly_joined:
+        emit({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
     emit({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     emit({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
     emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})

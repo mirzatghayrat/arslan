@@ -1,6 +1,13 @@
 {
-  "app": { "name": "Arslan", "tagline": "Crea tus propios spawns de IA" },
-  "nav": { "dashboard": "Panel", "spawns": "Spawns", "settings": "Ajustes" },
+  "app": {
+    "name": "Arslan",
+    "tagline": "Crea tus propios spawns de IA"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "spawns": "Spawns",
+    "settings": "Ajustes"
+  },
   "dashboard": {
     "title": "Tus spawns",
     "create": "Crear nuevo spawn",
@@ -43,7 +50,9 @@
     "info": "Información del spawn",
     "stats": "Estadísticas",
     "reconnecting": "Reconectando...",
-    "thinking": "Pensando..."
+    "thinking": "Pensando...",
+    "roster_joined": "{{name}} se unió a la conversación",
+    "roster_left": "{{name}} salió de la conversación"
   },
   "conversation": {
     "title": "Arslan",
@@ -56,8 +65,16 @@
     "thinking_arslan": "Arslan está pensando…",
     "thinking_spawn": "{{name}} está trabajando…"
   },
-  "artifact": { "report": "informe", "expand": "Expandir", "collapse": "Contraer", "download": "Descargar .md" },
-  "feedback": { "redo": "Rehacer", "tweak": "Ajustar" },
+  "artifact": {
+    "report": "informe",
+    "expand": "Expandir",
+    "collapse": "Contraer",
+    "download": "Descargar .md"
+  },
+  "feedback": {
+    "redo": "Rehacer",
+    "tweak": "Ajustar"
+  },
   "manual_create": {
     "title": "Crear un especialista",
     "describe_placeholder": "Describe el especialista que quieres…",

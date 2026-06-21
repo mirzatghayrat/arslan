@@ -78,11 +78,12 @@ def test_on_connect_sends_roster(staged_client):
 
 
 def test_roster_invite_adds_member(staged_client):
-    """roster_invite with valid spawn_id → roster_update with that member."""
+    """roster_invite with valid spawn_id → roster_event(joined) then roster_update with that member."""
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
         ws.receive_json()  # on-connect roster_update (empty)
         ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        ws.receive_json()  # roster_event "joined"
         frame = ws.receive_json()
         assert frame["type"] == "roster_update"
         assert len(frame["members"]) == 1
@@ -90,13 +91,15 @@ def test_roster_invite_adds_member(staged_client):
 
 
 def test_roster_kick_removes_member(staged_client):
-    """roster_kick after invite → roster_update with members==[]."""
+    """roster_kick after invite → roster_event(left) then roster_update with members==[]."""
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
         ws.receive_json()  # on-connect roster_update (empty)
         ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        ws.receive_json()  # roster_event "joined"
         ws.receive_json()  # roster_update after invite
         ws.send_json({"type": "roster_kick", "spawn_id": 4})
+        ws.receive_json()  # roster_event "left"
         frame = ws.receive_json()
         assert frame["type"] == "roster_update"
         assert frame["members"] == []
@@ -113,6 +116,59 @@ def test_roster_invite_bad_spawn_id_error(staged_client):
         assert err["code"] == "INVALID_INPUT"
         # Socket still open — confirm by sending a valid invite
         ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        ws.receive_json()  # roster_event "joined"
         frame = ws.receive_json()
         assert frame["type"] == "roster_update"
         assert frame["members"][0]["spawn_id"] == 4
+
+
+def test_roster_invite_emits_roster_event(staged_client):
+    """roster_invite for a new spawn → roster_event(joined) then roster_update."""
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update (empty)
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        event = ws.receive_json()
+        assert event["type"] == "roster_event"
+        assert event["action"] == "joined"
+        assert event["spawn_id"] == 4
+        roster = ws.receive_json()
+        assert roster["type"] == "roster_update"
+        assert len(roster["members"]) == 1
+
+
+def test_roster_invite_idempotent_no_second_event(staged_client):
+    """Re-inviting a spawn already in the roster does NOT emit a second roster_event."""
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        # First invite — should get roster_event + roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        first_event = ws.receive_json()
+        assert first_event["type"] == "roster_event"
+        assert first_event["action"] == "joined"
+        ws.receive_json()  # roster_update
+        # Second invite (already a member) — should get ONLY roster_update, no roster_event
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        second = ws.receive_json()
+        assert second["type"] == "roster_update", (
+            "expected roster_update only on idempotent re-invite, got: " + second["type"]
+        )
+
+
+def test_roster_kick_emits_roster_event(staged_client):
+    """roster_kick after invite → roster_event(left) then roster_update with empty members."""
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        ws.receive_json()  # roster_event "joined"
+        ws.receive_json()  # roster_update
+        ws.send_json({"type": "roster_kick", "spawn_id": 4})
+        event = ws.receive_json()
+        assert event["type"] == "roster_event"
+        assert event["action"] == "left"
+        assert event["spawn_id"] == 4
+        roster = ws.receive_json()
+        assert roster["type"] == "roster_update"
+        assert roster["members"] == []

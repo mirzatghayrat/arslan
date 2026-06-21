@@ -383,6 +383,22 @@ function makeActions(set: SetState, get: GetState) {
             })),
           });
           break;
+        case "roster_event":
+          set({
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "system",
+                role: "arslan",
+                content: "",
+                spawnId: frame.spawn_id,
+                spawnName: frame.spawn_name,
+                rosterAction: frame.action,
+              },
+            ],
+          });
+          break;
         case "error":
           set({
             error: frame.message,

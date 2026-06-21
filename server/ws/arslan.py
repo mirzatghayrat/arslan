@@ -11,7 +11,7 @@ from sqlalchemy import select
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
-from server.orchestrator import arslan
+from server.orchestrator import arslan, dispatcher
 from server.services import spawn_service
 from server.ws import protocol
 
@@ -133,7 +133,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name,
                                                           equipment=equipment, intro=intro))
                 from server.services import roster_service
-                await roster_service.join(conversation_id, spawn_id, via="created")
+                newly_joined = await roster_service.join(conversation_id, spawn_id, via="created")
+                if newly_joined:
+                    await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 if task_brief.strip():
                     await run_spawn(spawn_id, task_brief)
@@ -226,7 +228,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
                     continue
                 from server.services import roster_service
-                await roster_service.join(conversation_id, spawn_id, via="invited")
+                newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")
+                if newly_joined:
+                    spawn_name = await dispatcher.get_spawn_name(spawn_id)
+                    await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 continue
 
@@ -238,7 +243,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
                     continue
                 from server.services import roster_service
-                await roster_service.kick(conversation_id, spawn_id)
+                # Resolve name before kicking so we can name the notice.
+                kick_spawn_name = await dispatcher.get_spawn_name(spawn_id)
+                was_removed = await roster_service.kick(conversation_id, spawn_id)
+                if was_removed:
+                    await ws.send_json(protocol.roster_event("left", spawn_id, kick_spawn_name))
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 continue
 
@@ -304,4 +313,8 @@ def _to_frame(ev: dict) -> dict:
         )
     if t == "orchestrator_action":
         return protocol.orchestrator_action(ev.get("tool", ""), ev.get("reason", ""))
+    if t == "roster_event":
+        return protocol.roster_event(ev.get("action", ""), ev.get("spawn_id"), ev.get("spawn_name"))
+    if t == "roster_update":
+        return protocol.roster_update(ev.get("members", []))
     return ev  # stream_chunk / stream_end / error / spawn_meta already match the wire shape

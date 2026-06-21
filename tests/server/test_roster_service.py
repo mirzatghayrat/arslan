@@ -21,8 +21,10 @@ def maker(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_join_idempotent_keeps_via(maker):
     from server.services import roster_service
-    await roster_service.join("c1", 4, via="routed")
-    await roster_service.join("c1", 4, via="invited")
+    first = await roster_service.join("c1", 4, via="routed")
+    assert first is True, "first join should return True (newly inserted)"
+    second = await roster_service.join("c1", 4, via="invited")
+    assert second is False, "idempotent re-add should return False"
     members = await roster_service.list_roster("c1")
     assert len(members) == 1
     assert members[0]["spawn_id"] == 4

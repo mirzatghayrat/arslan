@@ -8,9 +8,11 @@ from server.db.models import ConversationSpawn, Spawn
 from server.services import phase_service
 
 
-async def join(conversation_id: str, spawn_id: int, *, via: str) -> None:
+async def join(conversation_id: str, spawn_id: int, *, via: str) -> bool:
     """Add a spawn to a conversation's roster. Idempotent: an existing membership is kept
-    as-is (a later auto-`routed` join never downgrades a manual `invited` membership)."""
+    as-is (a later auto-`routed` join never downgrades a manual `invited` membership).
+
+    Returns True if a new row was inserted, False if the spawn was already a member."""
     async with db_session.AsyncSessionLocal() as db:
         existing = await db.execute(
             select(ConversationSpawn).where(
@@ -19,9 +21,10 @@ async def join(conversation_id: str, spawn_id: int, *, via: str) -> None:
             )
         )
         if existing.scalar_one_or_none() is not None:
-            return
+            return False
         db.add(ConversationSpawn(conversation_id=conversation_id, spawn_id=spawn_id, joined_via=via))
         await db.commit()
+        return True
 
 
 async def kick(conversation_id: str, spawn_id: int) -> bool:

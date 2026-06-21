@@ -1,6 +1,13 @@
 {
-  "app": { "name": "Arslan", "tagline": "Build your own AI spawns" },
-  "nav": { "dashboard": "Dashboard", "spawns": "Spawns", "settings": "Settings" },
+  "app": {
+    "name": "Arslan",
+    "tagline": "Build your own AI spawns"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "spawns": "Spawns",
+    "settings": "Settings"
+  },
   "dashboard": {
     "title": "Your Spawns",
     "create": "Create New Spawn",
@@ -43,7 +50,9 @@
     "info": "Spawn info",
     "stats": "Stats",
     "reconnecting": "Reconnecting...",
-    "thinking": "Thinking..."
+    "thinking": "Thinking...",
+    "roster_joined": "{{name}} joined the conversation",
+    "roster_left": "{{name}} left the conversation"
   },
   "conversation": {
     "title": "Arslan",
@@ -56,8 +65,16 @@
     "thinking_arslan": "Arslan is thinking…",
     "thinking_spawn": "{{name}} is working…"
   },
-  "artifact": { "report": "report", "expand": "Expand", "collapse": "Collapse", "download": "Download .md" },
-  "feedback": { "redo": "Redo", "tweak": "Tweak" },
+  "artifact": {
+    "report": "report",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "download": "Download .md"
+  },
+  "feedback": {
+    "redo": "Redo",
+    "tweak": "Tweak"
+  },
   "manual_create": {
     "title": "Create a specialist",
     "describe_placeholder": "Describe the specialist you want…",

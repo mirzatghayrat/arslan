@@ -379,6 +379,23 @@ export default function OrchestratorChat({
             const isArslan = msg.sender === 'arslan';
             const isSpawn = msg.sender === 'spawn';
 
+            // Roster notice: render for all themes as a subtle centered line
+            if (msg.rosterAction) {
+              const name = msg.rosterSpawnName ?? '';
+              const label = msg.rosterAction === 'joined'
+                ? t('chat.roster_joined', { name })
+                : t('chat.roster_left', { name });
+              return (
+                <div key={msg.id} className="flex items-center gap-3 py-1 select-none">
+                  <div className="flex-1 h-px bg-[#1e2330]/60" />
+                  <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">
+                    {msg.rosterAction === 'joined' ? '🔗' : '✕'} {label}
+                  </span>
+                  <div className="flex-1 h-px bg-[#1e2330]/60" />
+                </div>
+              );
+            }
+
             // Quartz Theme Rendering
             if (currentStyle === 'quartz') {
               return (

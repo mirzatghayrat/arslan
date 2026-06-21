@@ -159,6 +159,8 @@ export interface ArslanThreadItem {
   isProposal?: boolean;
   /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
   verdict?: string;
+  /** kind === "system" roster notice: "joined" | "left" */
+  rosterAction?: string;
 }
 
 /** A row from the server `history` frame. */
@@ -189,7 +191,8 @@ export type ArslanServerMessage =
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean }
   | { type: "verdict_recorded"; spawn_id: number; action: string }
-  | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] };
+  | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
+  | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null };
 
 export interface RosterMember {
   spawnId: number;

@@ -1,6 +1,13 @@
 {
-  "app": { "name": "Arslan", "tagline": "打造你专属的 AI 分身" },
-  "nav": { "dashboard": "仪表盘", "spawns": "分身", "settings": "设置" },
+  "app": {
+    "name": "Arslan",
+    "tagline": "打造你专属的 AI 分身"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "spawns": "分身",
+    "settings": "设置"
+  },
   "dashboard": {
     "title": "你的分身",
     "create": "创建新分身",
@@ -43,7 +50,9 @@
     "info": "分身信息",
     "stats": "统计",
     "reconnecting": "正在重新连接……",
-    "thinking": "思考中……"
+    "thinking": "思考中……",
+    "roster_joined": "{{name}} 加入了对话",
+    "roster_left": "{{name}} 离开了对话"
   },
   "conversation": {
     "title": "Arslan",
@@ -56,8 +65,16 @@
     "thinking_arslan": "Arslan 正在思考…",
     "thinking_spawn": "{{name}} 正在处理…"
   },
-  "artifact": { "report": "报告", "expand": "展开", "collapse": "收起", "download": "下载 .md" },
-  "feedback": { "redo": "重做", "tweak": "微调" },
+  "artifact": {
+    "report": "报告",
+    "expand": "展开",
+    "collapse": "收起",
+    "download": "下载 .md"
+  },
+  "feedback": {
+    "redo": "重做",
+    "tweak": "微调"
+  },
   "manual_create": {
     "title": "创建一个专家",
     "describe_placeholder": "描述你想要的专家…",

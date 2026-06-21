@@ -131,3 +131,11 @@ def proposal(spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
 
 def roster_update(members: list[dict[str, Any]]) -> dict[str, Any]:
     return {"type": "roster_update", "members": members}
+
+
+def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
+    """Notify the client that a spawn joined or left the roster.
+
+    `action` is "joined" or "left".
+    """
+    return {"type": "roster_event", "action": action, "spawn_id": spawn_id, "spawn_name": spawn_name}
