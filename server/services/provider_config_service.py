@@ -4,6 +4,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arslan.llm import routing
+from arslan.llm.catalog import capabilities_for
 from server import crypto
 from server.db.models import ProviderConfig
 from server.services.settings_service import _looks_masked, mask_secret
@@ -101,3 +103,14 @@ async def get_primary(session: AsyncSession) -> ProviderConfig | None:
 async def get_decrypted_key(session: AsyncSession, config_id: int) -> str:
     row = await session.get(ProviderConfig, config_id)
     return _safe(row.api_key) if row else ""
+
+
+async def suggest_primary(session: AsyncSession, language: str | None) -> dict | None:
+    configs = await list_for_routing(session)
+    pick = routing.suggest_primary(configs, language)
+    if pick is None:
+        return None
+    caps = capabilities_for(pick["provider"])
+    rationale = (f"Best all-round quality among your keys "
+                 f"(reasoning {caps['reasoning']}/10, tool-calling {caps['tool_calling']}/10).")
+    return {"id": pick["id"], "provider": pick["provider"], "rationale": rationale}

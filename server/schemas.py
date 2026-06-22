@@ -216,3 +216,9 @@ class SkillPackOut(BaseModel):
 class RegistryOut(BaseModel):
     toolsets: list[ToolsetOut]
     skills: list[SkillPackOut]
+
+
+class SuggestPrimaryOut(BaseModel):
+    id: int
+    provider: str
+    rationale: str
