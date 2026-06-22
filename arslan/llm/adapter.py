@@ -56,6 +56,7 @@ class LLMAdapter:
     ) -> None:
         self.provider_name = provider_name
         self.model = model
+        self.api_key = api_key
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
 
     # ------------------------------------------------------------------
