@@ -53,14 +53,14 @@ export function ArslanMarkAnimated({ size = 48, className = "" }: Props) {
           <path d="M48 41 Q36 41 34 53 Q43 51 48 42 Z" fill="url(#am-ear)"/>
           <path d="M52 41 Q64 41 66 53 Q57 51 52 42 Z" fill="url(#am-ear)"/>
         </g>
-        <path d="M50 58.5 L42 67" fill="none" stroke="#F08C24" strokeWidth="3" strokeLinecap="round"/>
-        <path d="M50 58.5 L58 67" fill="none" stroke="#F08C24" strokeWidth="3" strokeLinecap="round"/>
-        <path d="M50 58.5 V75" fill="none" stroke="#F08C24" strokeWidth="3" strokeLinecap="round"/>
-        <circle cx="50" cy="55" r="4" fill="url(#am-node)"/>
-        <circle cx="42" cy="68" r="3.4" fill="url(#am-node)"/>
-        <circle cx="58" cy="68" r="3.4" fill="url(#am-node)"/>
-        <circle cx="50" cy="76" r="3.4" fill="url(#am-node)"/>
-        <circle cx="48.7" cy="53.7" r="1.1" fill="#fff" opacity="0.8"/>
+        <path d="M50 52.5 L50 58" fill="none" stroke="#F08C24" strokeWidth="3" strokeLinecap="round"/>
+        <path d="M50 61 L41 70" fill="none" stroke="#F08C24" strokeWidth="3" strokeLinecap="round"/>
+        <path d="M50 61 L59 70" fill="none" stroke="#F08C24" strokeWidth="3" strokeLinecap="round"/>
+        <circle cx="50" cy="50" r="3.2" fill="url(#am-node)"/>
+        <circle cx="50" cy="61" r="4.3" fill="url(#am-node)"/>
+        <circle cx="41" cy="71" r="3.2" fill="url(#am-node)"/>
+        <circle cx="59" cy="71" r="3.2" fill="url(#am-node)"/>
+        <circle cx="48.7" cy="59.6" r="1.2" fill="#fff" opacity="0.8"/>
         <ellipse cx="68" cy="36" rx="2.2" ry="2.2" fill="#fff" opacity="0.55"/>
       </svg>
     </span>
