@@ -64,26 +64,7 @@ export default function Sidebar({
 
         {/* Brand Header */}
         <div className="px-5 py-3 mb-6 flex items-center gap-3 flex-shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary via-primary/90 to-primary-hover flex items-center justify-center shadow-lg shadow-primary/20 border border-primary/50 relative overflow-hidden group">
-            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <svg
-              className="w-5.5 h-5.5 text-white drop-shadow-md"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 21a9 9 0 010-18 2 2 0 012 2l-2 3M8 12c-1.5 0-2.5-1-3-2.5a3.5 3.5 0 014.5-4C10 6 11 8.5 12 10" />
-              <path d="M12 10c1-1.5 2-4 2-5.5a3.5 3.5 0 015.5 1.5c.3.9 0 2.5-1.5 3" />
-              <circle cx="12" cy="10" r="1.5" fill="currentColor" />
-              <circle cx="12" cy="15" r="1.5" fill="currentColor" />
-              <path d="M12 10l-4 4M12 10l4 4" />
-              <circle cx="8" cy="14" r="1" fill="currentColor" />
-              <circle cx="16" cy="14" r="1" fill="currentColor" />
-            </svg>
-          </div>
+          <img src="/arslan-mark.png" alt={t('app.name')} className="w-9 h-9 object-contain flex-shrink-0 select-none" draggable={false} />
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="font-sans font-bold text-foreground text-sm tracking-tight">

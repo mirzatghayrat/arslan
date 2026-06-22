@@ -389,9 +389,7 @@ export default function OrchestratorChat({
                     <div className="flex flex-col items-center select-none">
                       <div className="relative">
                         {isArslan ? (
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-tr from-primary to-primary-hover text-primary-foreground shadow-lg shadow-primary/15">
-                            <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-4 h-4 text-primary-foreground" />
-                          </div>
+                          <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none" draggable={false} />
                         ) : (
                           <SpawnAvatar seed={msg.senderName} size={36} />
                         )}
@@ -816,7 +814,9 @@ export default function OrchestratorChat({
                 <div key={msg.id} className="text-[12px] space-y-2">
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
-                    {isArslan || isUser
+                    {isArslan
+                      ? <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
+                      : isUser
                       ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
                       : <SpawnAvatar seed={msg.senderName} size={18} />}
                     <span className="font-bold text-foreground">{msg.senderName}</span>
