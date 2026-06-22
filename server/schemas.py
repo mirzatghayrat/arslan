@@ -14,6 +14,7 @@ class SettingsIn(BaseModel):
     language: str | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
+    llm_strategy: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -24,6 +25,7 @@ class SettingsOut(BaseModel):
     language: str = "en"
     search_provider: str = "tavily"
     search_api_key: str = ""  # masked
+    llm_strategy: str = "single"
 
 
 class ProviderOption(BaseModel):
