@@ -23,9 +23,9 @@ interface ProviderConfigListProps {
 }
 
 const INPUT_CLS =
-  'w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-mono';
+  'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
 const SELECT_CLS =
-  'w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none transition-all font-sans';
+  'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none transition-all font-sans';
 
 export default function ProviderConfigList({
   llmProviders,
@@ -142,7 +142,7 @@ export default function ProviderConfigList({
     <div className="space-y-4">
       {/* Strategy selector */}
       <div className="space-y-2">
-        <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
+        <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
           {t('settings.labelStrategy')}
         </label>
         <select
@@ -165,12 +165,12 @@ export default function ProviderConfigList({
           return (
             <div
               key={config.id}
-              className="flex flex-wrap items-center gap-2 bg-[#0d0f15] border border-[#1e2330] rounded-xl px-4 py-3"
+              className="flex flex-wrap items-center gap-2 bg-surface border border-border rounded-xl px-4 py-3"
             >
               {/* Primary indicator */}
               <div className="w-5 flex-shrink-0 flex items-center justify-center">
                 {config.is_primary ? (
-                  <span className="text-[#FF8E24] text-sm" title="Primary">★</span>
+                  <span className="text-primary text-sm" title="Primary">★</span>
                 ) : null}
               </div>
 
@@ -226,7 +226,7 @@ export default function ProviderConfigList({
                   type="button"
                   onClick={() => handleSetPrimary(config.id)}
                   disabled={busy === config.id}
-                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-gray-400 hover:text-[#FF8E24] border border-[#23293e] hover:border-[#FF8E24]/50 rounded-lg transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
                   title={t('settings.btnSetPrimary')}
                 >
                   <Star className="w-3 h-3" />
@@ -239,7 +239,7 @@ export default function ProviderConfigList({
                 type="button"
                 onClick={() => handleDelete(config.id)}
                 disabled={busy === config.id || config.is_primary}
-                className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-gray-500 hover:text-red-400 border border-[#23293e] hover:border-red-500/50 rounded-lg transition-colors disabled:opacity-30"
+                className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-subtle-foreground hover:text-danger border border-border hover:border-danger/50 rounded-lg transition-colors disabled:opacity-30"
                 title={t('settings.btnDelete')}
               >
                 <Trash2 className="w-3 h-3" />
@@ -255,18 +255,18 @@ export default function ProviderConfigList({
           type="button"
           onClick={handleSuggest}
           disabled={suggestBusy}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-gray-400 hover:text-[#FF8E24] border border-[#23293e] hover:border-[#FF8E24]/50 rounded-xl transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
         >
           {t('settings.btnSuggestPrimary')}
         </button>
         {suggestion && (
-          <div className="flex items-start gap-3 bg-[#0d1017] border border-[#FF8E24]/20 rounded-xl px-4 py-3">
-            <p className="flex-1 text-xs text-gray-300 font-mono">{suggestion.rationale}</p>
+          <div className="flex items-start gap-3 bg-surface/80 border border-primary/20 rounded-xl px-4 py-3">
+            <p className="flex-1 text-xs text-foreground font-mono">{suggestion.rationale}</p>
             <button
               type="button"
               onClick={handleUseThis}
               disabled={busy === suggestion.id}
-              className="flex-shrink-0 px-2 py-1 text-[10px] font-mono font-medium text-[#FF8E24] border border-[#FF8E24]/40 hover:border-[#FF8E24]/80 rounded-lg transition-colors disabled:opacity-50"
+              className="flex-shrink-0 px-2 py-1 text-[10px] font-mono font-medium text-primary border border-primary/40 hover:border-primary/80 rounded-lg transition-colors disabled:opacity-50"
             >
               {t('settings.btnUseThis')}
             </button>
@@ -279,7 +279,7 @@ export default function ProviderConfigList({
         type="button"
         onClick={handleAddModel}
         disabled={busy === -1 || llmProviders.length === 0}
-        className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-[#FF8E24] border border-[#FF8E24]/30 hover:border-[#FF8E24]/60 rounded-xl transition-colors disabled:opacity-50"
+        className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-xl transition-colors disabled:opacity-50"
       >
         <Plus className="w-3.5 h-3.5" />
         {t('settings.btnAddModel')}
@@ -288,30 +288,30 @@ export default function ProviderConfigList({
       {/* Read-only capability table */}
       {catalog.length > 0 && (
         <details className="group">
-          <summary className="cursor-pointer list-none text-[10.5px] font-mono font-medium text-gray-500 hover:text-gray-300 uppercase tracking-wide transition-colors">
+          <summary className="cursor-pointer list-none text-[10.5px] font-mono font-medium text-subtle-foreground hover:text-foreground uppercase tracking-wide transition-colors">
             {t('settings.capabilityTable')}
           </summary>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full text-[10px] font-mono border-collapse">
               <thead>
-                <tr className="border-b border-[#1e2330]">
-                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">{t('settings.capColProvider')}</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColCost')}</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColSpeed')}</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColTools')}</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColReasoning')}</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColContext')}</th>
+                <tr className="border-b border-border">
+                  <th className="text-left py-1.5 pr-3 text-subtle-foreground font-medium">{t('settings.capColProvider')}</th>
+                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColCost')}</th>
+                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColSpeed')}</th>
+                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColTools')}</th>
+                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColReasoning')}</th>
+                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColContext')}</th>
                 </tr>
               </thead>
               <tbody>
                 {catalog.map((entry) => (
-                  <tr key={entry.provider} className="border-b border-[#1a1e2b] hover:bg-[#0d0f15]">
-                    <td className="py-1.5 pr-3 text-gray-300">{entry.provider}</td>
-                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.cost}</td>
-                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.speed}</td>
-                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.tool_calling}</td>
-                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.reasoning}</td>
-                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.long_context}</td>
+                  <tr key={entry.provider} className="border-b border-border/50 hover:bg-surface">
+                    <td className="py-1.5 pr-3 text-foreground">{entry.provider}</td>
+                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.cost}</td>
+                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.speed}</td>
+                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.tool_calling}</td>
+                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.reasoning}</td>
+                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.long_context}</td>
                   </tr>
                 ))}
               </tbody>

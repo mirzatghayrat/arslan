@@ -10,6 +10,7 @@ import {
   Info, AlertCircle, WifiOff
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
+import { AppearanceSettings } from './AppearanceSettings';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -50,27 +51,27 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#0d0f15] p-8 select-none relative">
+    <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
       {/* Decorative Blur Ambient Lights */}
-      <div className="absolute bottom-0 left-1/4 w-[30rem] h-[30rem] bg-[#FF8E24]/[0.01] blur-[120px] rounded-full pointer-events-none"></div>
+      <div className="absolute bottom-0 left-1/4 w-[30rem] h-[30rem] bg-primary/[0.01] blur-[120px] rounded-full pointer-events-none"></div>
 
       {/* Header bar */}
       <div className="mb-8">
-        <h1 className="text-xl font-bold text-white tracking-tight font-sans">System Diagnostics & Configuration</h1>
-        <p className="text-xs text-gray-500 font-sans mt-1">
+        <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">System Diagnostics & Configuration</h1>
+        <p className="text-xs text-subtle-foreground font-sans mt-1">
           Calibrate the neural orchestrator core, assign LLM credential keys, and configure telemetry parameters.
         </p>
       </div>
 
       {/* Backend-down honest banner — shown when health check fails */}
       {backendStatus === 'offline' && (
-        <div className="max-w-4xl mb-6 flex items-start gap-3 bg-red-950/30 border border-red-800/50 rounded-xl px-5 py-4">
-          <WifiOff className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+        <div className="max-w-4xl mb-6 flex items-start gap-3 bg-danger/30 border border-danger/50 rounded-xl px-5 py-4">
+          <WifiOff className="w-4 h-4 text-danger shrink-0 mt-0.5" />
           <div>
-            <p className="text-xs font-bold text-red-300 font-mono uppercase tracking-wide">
+            <p className="text-xs font-bold text-danger font-mono uppercase tracking-wide">
               后端未连接 / Backend not connected
             </p>
-            <p className="text-[11px] text-red-400/80 font-sans mt-1 leading-relaxed">
+            <p className="text-[11px] text-danger/80 font-sans mt-1 leading-relaxed">
               Settings could not be loaded from the server. Displaying defaults — do not treat these values as real configuration. Save is disabled until the backend is reachable.
             </p>
           </div>
@@ -80,16 +81,16 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <form onSubmit={handleSave} className="max-w-4xl space-y-8">
         
         {/* API Credentials Card */}
-        <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
-            <Key className="w-4.5 h-4.5 text-[#FF8E24]" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">Security API Credentials</h3>
+        <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+            <Key className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">Security API Credentials</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Cognitive Search Key Input */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
+              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
                 Tavily / Google Search API Private key
               </label>
               <div className="relative">
@@ -98,19 +99,19 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                   type={showSearchKey ? "text" : "password"}
                   value={localSettings.apiKeySearch}
                   onChange={(e) => setLocalSettings(prev => ({ ...prev, apiKeySearch: e.target.value }))}
-                  className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none pr-12 transition-all font-mono"
+                  className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
                   placeholder="Enter search provider key..."
                 />
                 <button
                   id="toggle-show-search-key"
                   type="button"
                   onClick={() => setShowSearchKey(!showSearchKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-foreground transition-colors"
                 >
                   {showSearchKey ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
                 </button>
               </div>
-              <p className="text-[10px] text-gray-500 font-sans leading-relaxed">
+              <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
                 Allocated to standard spawns carrying "Web Search" capability chips. Ensure live indices limits are sufficient.
               </p>
             </div>
@@ -118,23 +119,23 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
 
         {/* Model Architecture Configuration options */}
-        <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
-            <Sliders className="w-4.5 h-4.5 text-[#FF8E24]" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">{t('settings.sectionModelSearch')}</h3>
+        <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+            <Sliders className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionModelSearch')}</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Cognitive Search selections */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
+              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
                 {t('settings.labelSearchProvider')}
               </label>
               <select
                 id="settings-search-provider"
                 value={localSettings.searchProvider}
                 onChange={(e) => setLocalSettings(prev => ({ ...prev, searchProvider: e.target.value }))}
-                className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
+                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
               >
                 {searchProviders.length === 0 && (
                   <option value={localSettings.searchProvider}>{localSettings.searchProvider || 'Loading...'}</option>
@@ -147,14 +148,14 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
             {/* Language Localizations */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
+              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
                 {t('settings.labelLanguage')}
               </label>
               <select
                 id="settings-language"
                 value={localSettings.language}
                 onChange={(e) => setLocalSettings(prev => ({ ...prev, language: e.target.value }))}
-                className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-[#FF8E24] focus:outline-none transition-all font-sans"
+                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
               >
                 <option value="English (US)">English (US) - Standard</option>
                 <option value="Chinese (Simplified)">简体中文 (Simplified Chinese)</option>
@@ -163,33 +164,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               </select>
             </div>
 
-            {/* Theme / Visual Style Select */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                {t('settings.labelTheme')}
-              </label>
-              <select
-                id="settings-theme"
-                value={localSettings.theme}
-                onChange={(e: any) => {
-                  const targetTheme = e.target.value;
-                  setLocalSettings(prev => ({ ...prev, theme: targetTheme }));
-                  setSettings(prev => ({ ...prev, theme: targetTheme }));
-                }}
-                className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-[#FF8E24] focus:outline-none transition-all font-sans"
-              >
-                <option value="dark">Dark Mode (Sleek Slate Dark)</option>
-                <option value="light">Light Mode (High-Contrast Pearl Light)</option>
-              </select>
+            {/* Appearance — palette picker + mode toggle */}
+            <div className="md:col-span-2">
+              <AppearanceSettings />
             </div>
           </div>
         </div>
 
         {/* Multi-Model Provider Configuration */}
-        <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
-            <Sliders className="w-4.5 h-4.5 text-[#FF8E24]" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">{t('settings.sectionProviderConfigs')}</h3>
+        <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+            <Sliders className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionProviderConfigs')}</h3>
           </div>
           <ProviderConfigList
             llmProviders={llmProviders}
@@ -206,18 +192,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
 
         {/* Miscellaneous configurations */}
-        <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
-            <Globe className="w-4.5 h-4.5 text-[#FF8E24]" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">{t('settings.sectionInterface')}</h3>
+        <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+            <Globe className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionInterface')}</h3>
           </div>
 
           <div className="space-y-4">
             {/* Toggle telemetry */}
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-xs font-bold text-white font-sans">{t('settings.labelTelemetry')}</h4>
-                <p className="text-[11px] text-gray-400 font-sans mt-0.5 max-w-xl">
+                <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelTelemetry')}</h4>
+                <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
                   {t('settings.telemetryDesc')}
                 </p>
               </div>
@@ -226,18 +212,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                 type="checkbox"
                 checked={localSettings.telemetry}
                 onChange={(e) => setLocalSettings(prev => ({ ...prev, telemetry: e.target.checked }))}
-                className="w-4 h-4 text-[#FF8E24] bg-gray-950 border-gray-700 rounded focus:ring-0 select-none cursor-pointer"
+                className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
               />
             </div>
 
             {/* Separation divider */}
-            <div className="h-[1px] bg-[#1e2330]/40"></div>
+            <div className="h-[1px] bg-border/40"></div>
 
             {/* Spawns synthesis modes */}
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-xs font-bold text-white font-sans">{t('settings.labelSpawnMode')}</h4>
-                <p className="text-[11px] text-gray-400 font-sans mt-0.5 max-w-xl">
+                <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelSpawnMode')}</h4>
+                <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
                   Choose how sub-agents are created. Auto: instant delegation without checks. Interactive: asks user approval on the fly before spinning up new spawns.
                 </p>
               </div>
@@ -245,7 +231,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                 id="settings-spawn-mode"
                 value={localSettings.spawnMode}
                 onChange={(e: any) => setLocalSettings(prev => ({ ...prev, spawnMode: e.target.value }))}
-                className="bg-[#0a0c11] border border-[#23293e] focus:outline-none font-sans text-xs text-white rounded-lg p-2"
+                className="bg-surface border border-border-strong focus:outline-none font-sans text-xs text-foreground rounded-lg p-2"
               >
                 <option value="auto">Autonomous Synthesis</option>
                 <option value="interactive">Interactive Sandbox Auth</option>
@@ -256,16 +242,16 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
 
         {/* Footer actions bar */}
-        <div className="flex select-none items-center justify-between pt-4 border-t border-[#1e2330]/60 text-[10.5px] font-mono text-gray-500">
+        <div className="flex select-none items-center justify-between pt-4 border-t border-border/60 text-[10.5px] font-mono text-subtle-foreground">
           <div className="flex items-center gap-1.5 matches">
             {saveError ? (
               <>
-                <AlertCircle className="w-4 h-4 text-red-500" />
-                <span className="text-red-400">{saveError}</span>
+                <AlertCircle className="w-4 h-4 text-danger" />
+                <span className="text-danger">{saveError}</span>
               </>
             ) : (
               <>
-                <Info className="w-4 h-4 text-gray-600" />
+                <Info className="w-4 h-4 text-subtle-foreground" />
                 <span>Diagnostics confirm hardware configurations match system boundaries.</span>
               </>
             )}
@@ -277,10 +263,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             disabled={backendStatus === 'offline'}
             className={`px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1.5 ${
               backendStatus === 'offline'
-                ? 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-50'
+                ? 'bg-surface-raised text-subtle-foreground cursor-not-allowed opacity-50'
                 : isSaved
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-[#FF8E24] hover:bg-[#ff9c3a] text-black shadow-lg shadow-[#FF8E24]/10'
+                  ? 'bg-success text-white'
+                  : 'bg-primary hover:bg-primary-hover text-primary-foreground shadow-lg shadow-primary/10'
             }`}
           >
             {isSaved ? <Check className="w-4 h-4 text-white" /> : <Save className="w-4 h-4" />}

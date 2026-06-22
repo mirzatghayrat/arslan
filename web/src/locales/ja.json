@@ -193,7 +193,18 @@
     "capColSpeed": "速度",
     "capColTools": "ツール",
     "capColReasoning": "推論",
-    "capColContext": "コンテキスト"
+    "capColContext": "コンテキスト",
+    "appearance": "外観",
+    "palette": "テーマパレット",
+    "mode": "ライト / ダーク",
+    "modeDark": "ダーク",
+    "modeLight": "ライト",
+    "paletteCurrent": "Current",
+    "paletteEmber": "Ember",
+    "paletteTerminal": "Terminal",
+    "paletteNebula": "Nebula",
+    "paletteSlate": "Slate",
+    "paletteGlacier": "Glacier"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

@@ -193,7 +193,18 @@
     "capColSpeed": "Speed",
     "capColTools": "Tools",
     "capColReasoning": "Reasoning",
-    "capColContext": "Context"
+    "capColContext": "Context",
+    "appearance": "Appearance",
+    "palette": "Theme palette",
+    "mode": "Light / Dark",
+    "modeDark": "Dark",
+    "modeLight": "Light",
+    "paletteCurrent": "Current",
+    "paletteEmber": "Ember",
+    "paletteTerminal": "Terminal",
+    "paletteNebula": "Nebula",
+    "paletteSlate": "Slate",
+    "paletteGlacier": "Glacier"
   },
   "errors": {
     "load_failed": "Failed to load data.",
