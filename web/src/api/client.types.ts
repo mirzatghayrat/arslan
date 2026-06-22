@@ -84,6 +84,17 @@ export interface ProviderOption {
   base_url: string;
   default_model: string;
   native: boolean;
+  models: string[];
+}
+
+export interface ProviderConfig {
+  id: number;
+  label: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;     // masked on read
+  is_primary: boolean;
 }
 
 export interface TemplateInfo {

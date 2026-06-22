@@ -2,6 +2,7 @@ import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
   EvolutionStats,
+  ProviderConfig,
   ProviderOption,
   RegistryCatalog,
   SpawnDetail,
@@ -91,3 +92,20 @@ export const api = {
     request<UserFact>(`/facts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteFact: (id: number) => request<void>(`/facts/${id}`, { method: "DELETE" }),
 };
+
+// ── Provider Config CRUD ───────────────────────────────────────────────────────
+
+export const listProviderConfigs = () =>
+  request<ProviderConfig[]>("/settings/provider-configs");
+
+export const addProviderConfig = (body: Omit<ProviderConfig, "id" | "is_primary">) =>
+  request<ProviderConfig>("/settings/provider-configs", { method: "POST", body: JSON.stringify(body) });
+
+export const updateProviderConfig = (id: number, body: Partial<ProviderConfig>) =>
+  request<ProviderConfig>(`/settings/provider-configs/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const setPrimaryProviderConfig = (id: number) =>
+  request<{ ok: boolean }>(`/settings/provider-configs/${id}/primary`, { method: "PATCH" });
+
+export const deleteProviderConfig = (id: number) =>
+  request<{ ok: boolean }>(`/settings/provider-configs/${id}`, { method: "DELETE" });
