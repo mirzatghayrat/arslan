@@ -21,9 +21,10 @@ STAGE="${TMPDIR:-/tmp}/arslan-web-stage"
 mkdir -p "$STAGE"
 # Refresh config files (cheap; keeps staging in sync with the repo).
 cp "$WEB_DIR/package.json" "$WEB_DIR/vite.config.ts" "$WEB_DIR/tsconfig.json" "$WEB_DIR/index.html" "$STAGE/"
-# (Re)create symlinks to the real source + installed deps.
+# (Re)create symlinks to the real source + installed deps + public assets.
 ln -sfn "$WEB_DIR/src" "$STAGE/src"
 ln -sfn "$WEB_DIR/node_modules" "$STAGE/node_modules"
+ln -sfn "$WEB_DIR/public" "$STAGE/public"
 
 cd "$STAGE"
 npx vite "$@"

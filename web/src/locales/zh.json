@@ -172,7 +172,18 @@
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
     "labelSpawnMode": "生成合成模式",
     "btnSave": "保存设置",
-    "btnSaving": "保存中..."
+    "btnSaving": "保存中...",
+    "appearance": "外观",
+    "palette": "主题配色",
+    "mode": "明亮 / 暗色",
+    "modeDark": "暗色",
+    "modeLight": "明亮",
+    "paletteCurrent": "Current",
+    "paletteEmber": "Ember",
+    "paletteTerminal": "Terminal",
+    "paletteNebula": "Nebula",
+    "paletteSlate": "Slate",
+    "paletteGlacier": "Glacier"
   },
   "errors": {
     "load_failed": "加载数据失败。",
