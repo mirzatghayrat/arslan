@@ -28,23 +28,12 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showLLMKey, setShowLLMKey] = useState(false);
   const [showSearchKey, setShowSearchKey] = useState(false);
 
   // Sync local form when parent settings update (e.g. after initial backend fetch)
   useEffect(() => {
     setLocalSettings((prev) => ({ ...prev, ...settings }));
   }, [settings]);
-
-  // When provider changes, auto-populate the default model for that provider
-  const handleProviderChange = (providerKey: string) => {
-    const found = llmProviders.find((p) => p.key === providerKey);
-    setLocalSettings((prev) => ({
-      ...prev,
-      llmProvider: providerKey,
-      llmModel: found?.default_model ?? prev.llmModel,
-    }));
-  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,34 +87,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* LLM Key Input */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                {t('settings.labelApiKey')}
-              </label>
-              <div className="relative">
-                <input
-                  id="settings-llm-key"
-                  type={showLLMKey ? "text" : "password"}
-                  value={localSettings.apiKeyLLM}
-                  onChange={(e) => setLocalSettings(prev => ({ ...prev, apiKeyLLM: e.target.value }))}
-                  className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none pr-12 transition-all font-mono"
-                  placeholder="Enter API Secret Key..."
-                />
-                <button
-                  id="toggle-show-llm-key"
-                  type="button"
-                  onClick={() => setShowLLMKey(!showLLMKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
-                >
-                  {showLLMKey ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                </button>
-              </div>
-              <p className="text-[10px] text-gray-500 font-sans leading-relaxed">
-                Required to authorize Arslan Prime orchestrator models. Local keychain storage is protected by HMAC sandbox.
-              </p>
-            </div>
-
             {/* Cognitive Search Key Input */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
@@ -164,46 +125,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* LLM Provider selections */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                {t('settings.labelProvider')}
-              </label>
-              <select
-                id="settings-llm-provider"
-                value={localSettings.llmProvider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-                className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-sans"
-              >
-                {llmProviders.length === 0 && (
-                  <option value={localSettings.llmProvider}>{localSettings.llmProvider || 'Loading...'}</option>
-                )}
-                {llmProviders.map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}{p.native ? ' (Native)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Router model — free-text input */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">
-                {t('settings.labelModel')}
-              </label>
-              <input
-                id="settings-llm-model"
-                type="text"
-                value={localSettings.llmModel}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, llmModel: e.target.value }))}
-                placeholder={
-                  llmProviders.find((p) => p.key === localSettings.llmProvider)?.default_model ??
-                  'e.g. deepseek-v4-flash'
-                }
-                className="w-full bg-[#0a0c11] border border-[#23293e] focus:border-[#FF8E24]/50 focus:ring-1 focus:ring-[#FF8E24]/20 rounded-xl px-4 py-3 text-xs text-white placeholder-gray-600 focus:outline-none transition-all font-mono"
-              />
-            </div>
-
             {/* Cognitive Search selections */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-gray-400 uppercase tracking-wide">

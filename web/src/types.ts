@@ -81,10 +81,7 @@ export interface Spawn {
 }
 
 export interface AppSettings {
-  llmProvider: string;
-  llmModel: string;
   searchProvider: string;
-  apiKeyLLM: string;
   apiKeySearch: string;
   language: string;
   theme: 'dark' | 'light';

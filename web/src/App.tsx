@@ -540,10 +540,7 @@ export default function App() {
                   <span className="text-gray-500">{t('rail.routing_agent')}</span>
                   <span className="text-[#FF8E24]">Arslan Primary</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">{t('rail.model_deployment')}</span>
-                  <span className="text-white lowercase bg-white/5 px-1 rounded">{settings.llmModel}</span>
-                </div>
+
                 <div className="flex justify-between">
                   <span className="text-gray-500">{t('rail.active_slots')}</span>
                   <span className="text-white">{t('rail.slots_loaded', { count: spawns.length })}</span>

@@ -50,15 +50,19 @@ describe("toUiSettings", () => {
 
   it("maps snake_case backend fields to camelCase UI fields", () => {
     const ui = toUiSettings(backendBase);
-    expect(ui.llmProvider).toBe("anthropic");
-    expect(ui.llmModel).toBe("claude-sonnet-4-5");
     expect(ui.searchProvider).toBe("tavily");
     expect(ui.language).toBe("en");
   });
 
-  it("passes through masked key values as-is", () => {
+  it("legacy flat LLM fields are NOT mapped to UI (multi-config list is source of truth)", () => {
+    const ui = toUiSettings(backendBase) as Record<string, unknown>;
+    expect(ui.llmProvider).toBeUndefined();
+    expect(ui.llmModel).toBeUndefined();
+    expect(ui.apiKeyLLM).toBeUndefined();
+  });
+
+  it("passes through masked search key value as-is", () => {
     const ui = toUiSettings(backendBase);
-    expect(ui.apiKeyLLM).toBe("sk-ant-••••••••");
     expect(ui.apiKeySearch).toBe("tvly-••••••••");
   });
 
@@ -69,10 +73,9 @@ describe("toUiSettings", () => {
     expect(ui.spawnMode).toBeUndefined();
   });
 
-  it("falls back to empty string when optional fields are absent", () => {
-    const partial = { ...backendBase, llm_api_key: undefined as unknown as string, search_api_key: undefined as unknown as string };
+  it("falls back to empty string when search_api_key is absent", () => {
+    const partial = { ...backendBase, search_api_key: undefined as unknown as string };
     const ui = toUiSettings(partial);
-    expect(ui.apiKeyLLM).toBe("");
     expect(ui.apiKeySearch).toBe("");
   });
 });
@@ -81,43 +84,42 @@ describe("toUiSettings", () => {
 
 describe("toBackendSettings", () => {
   const baseUi: AppSettings = {
-    llmProvider: "anthropic",
-    llmModel: "claude-sonnet-4-5",
     searchProvider: "tavily",
-    apiKeyLLM: "",
     apiKeySearch: "",
     language: "en",
     theme: "dark",
     telemetry: false,
     spawnMode: "auto",
+    llmStrategy: "single",
   };
 
-  it("omits apiKeyLLM when empty", () => {
-    const body = toBackendSettings({ ...baseUi, apiKeyLLM: "" });
-    expect(body.llm_api_key).toBeUndefined();
+  it("omits search_api_key when empty", () => {
+    const body = toBackendSettings({ ...baseUi, apiKeySearch: "" });
+    expect(body.search_api_key).toBeUndefined();
   });
 
-  it("omits apiKeySearch when masked (bullet pattern)", () => {
+  it("omits search_api_key when masked (bullet pattern)", () => {
     const body = toBackendSettings({ ...baseUi, apiKeySearch: "••••••••" });
     expect(body.search_api_key).toBeUndefined();
   });
 
-  it("includes apiKeyLLM when user entered a real value", () => {
-    const body = toBackendSettings({ ...baseUi, apiKeyLLM: "sk-ant-real-key" });
-    expect(body.llm_api_key).toBe("sk-ant-real-key");
-  });
-
-  it("includes apiKeySearch when user entered a real value", () => {
+  it("includes search_api_key when user entered a real value", () => {
     const body = toBackendSettings({ ...baseUi, apiKeySearch: "tvly-real-key" });
     expect(body.search_api_key).toBe("tvly-real-key");
   });
 
+  it("does NOT send legacy flat LLM fields (llm_provider / llm_model / llm_api_key)", () => {
+    const body = toBackendSettings(baseUi) as Record<string, unknown>;
+    expect(body.llm_provider).toBeUndefined();
+    expect(body.llm_model).toBeUndefined();
+    expect(body.llm_api_key).toBeUndefined();
+  });
+
   it("always includes non-key fields", () => {
     const body = toBackendSettings(baseUi);
-    expect(body.llm_provider).toBe("anthropic");
-    expect(body.llm_model).toBe("claude-sonnet-4-5");
     expect(body.search_provider).toBe("tavily");
     expect(body.language).toBe("en");
+    expect(body.llm_strategy).toBe("single");
   });
 });
 

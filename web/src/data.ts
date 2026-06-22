@@ -115,10 +115,7 @@ export const DEFAULT_SPAWNS: Spawn[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  llmProvider: 'gemini',
-  llmModel: 'gemini-3.5-flash',
   searchProvider: 'tavily',
-  apiKeyLLM: '••••••••••••••••••••••••••••••••',
   apiKeySearch: '••••••••••••••••••••••••',
   language: 'English (US)',
   theme: 'dark',

@@ -10,12 +10,12 @@ const MASKED_SENTINEL_RE = /^[•*]+$/;
  * Maps a backend AppSettings (snake_case) → UI AppSettings (camelCase).
  *
  * Field mapping:
- *   llm_provider   → llmProvider
- *   llm_model      → llmModel
- *   llm_api_key    → apiKeyLLM  (may be "" or masked "••…")
  *   search_provider → searchProvider
  *   search_api_key  → apiKeySearch (may be "" or masked)
  *   language       → language
+ *
+ * Legacy flat LLM fields (llm_provider / llm_model / llm_api_key) are no longer
+ * mapped to UI state — the multi-config provider list is the single source of truth.
  *
  * UI-only fields with no backend counterpart are kept at their current UI value
  * and therefore should NOT be overwritten on fetch; callers must merge:
@@ -23,9 +23,6 @@ const MASKED_SENTINEL_RE = /^[•*]+$/;
  */
 export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode" | "llmStrategy"> {
   return {
-    llmProvider: backend.llm_provider ?? "",
-    llmModel: backend.llm_model ?? "",
-    apiKeyLLM: backend.llm_api_key ?? "",
     searchProvider: backend.search_provider ?? "",
     apiKeySearch: backend.search_api_key ?? "",
     language: backend.language ?? "en",
@@ -41,17 +38,12 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
  */
 export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> {
   const body: Partial<BackendAppSettings> = {
-    llm_provider: ui.llmProvider,
-    llm_model: ui.llmModel,
     search_provider: ui.searchProvider,
     language: ui.language,
     llm_strategy: ui.llmStrategy,
   };
 
-  // Only send keys if the user entered something new (non-empty, non-masked).
-  if (ui.apiKeyLLM && !MASKED_SENTINEL_RE.test(ui.apiKeyLLM)) {
-    body.llm_api_key = ui.apiKeyLLM;
-  }
+  // Only send the search key if the user entered something new (non-empty, non-masked).
   if (ui.apiKeySearch && !MASKED_SENTINEL_RE.test(ui.apiKeySearch)) {
     body.search_api_key = ui.apiKeySearch;
   }
