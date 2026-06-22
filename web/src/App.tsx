@@ -113,6 +113,7 @@ export default function App() {
   // Send a user message to the live backend
   const sendOrchestratorMessage = useCallback((text: string) => {
     useArslanStore.getState().addUserMessage(text);
+    useArslanStore.getState().setThinking(true);
     wsSend({ type: 'user_message', content: text });
   }, [wsSend]);
 

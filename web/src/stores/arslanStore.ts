@@ -28,8 +28,11 @@ interface ArslanState {
   pendingProposalSpawnId: number | null;
   // Active conversation roster: spawns currently joined to this conversation thread.
   roster: RosterMember[];
+  // True from the moment the user sends a message until the first response frame arrives.
+  thinking: boolean;
 
   setSpawnNames: (map: Record<number, string>) => void;
+  setThinking: (v: boolean) => void;
   addUserMessage: (content: string) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
@@ -65,6 +68,7 @@ function initialData() {
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
+    thinking: false,
   };
 }
 
@@ -73,6 +77,8 @@ type GetState = () => ArslanState;
 
 function makeActions(set: SetState, get: GetState) {
   return {
+    setThinking: (v: boolean) => set({ thinking: v }),
+
     setSpawnNames: (map: Record<number, string>) =>
       set({ spawnNames: { ...get().spawnNames, ...map } }),
 
@@ -91,6 +97,11 @@ function makeActions(set: SetState, get: GetState) {
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
+      // Clear thinking on the first frame that signals Arslan is responding
+      const RESPONDING_TYPES = new Set(["stream_start", "routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta"]);
+      if (RESPONDING_TYPES.has(frame.type)) {
+        set({ thinking: false });
+      }
       // Maps a server row (history row or `message` frame — same field names,
       // `spawn_id` optional) to a renderable thread item, resolving spawn names.
       const rowToItem = (row: {

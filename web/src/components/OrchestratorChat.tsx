@@ -43,6 +43,8 @@ export default function OrchestratorChat({
   const { t } = useTranslation();
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
+  const thinking = useArslanStore((s) => (s as any).thinking as boolean);
+  const streaming = useArslanStore((s) => s.streaming);
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
@@ -992,6 +994,26 @@ export default function OrchestratorChat({
 
             return null;
           })
+        )}
+        {/* Thinking indicator: shown from send until first response frame */}
+        {thinking && !streaming && (
+          <div className="flex gap-3 items-center py-2 select-none">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#FF8E24] to-yellow-500 flex items-center justify-center shrink-0 shadow shadow-[#FF8E24]/20">
+              <span className="text-white text-xs">🦁</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-[#151924]/80 border border-[#23293b] rounded-2xl rounded-tl-none">
+              <span className="text-[11px] text-gray-400 font-mono">{t('chat.thinking')}</span>
+              <span className="flex gap-0.5 ml-1">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="w-1 h-1 rounded-full bg-[#FF8E24]/70 animate-bounce"
+                    style={{ animationDelay: `${i * 150}ms` }}
+                  />
+                ))}
+              </span>
+            </div>
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
