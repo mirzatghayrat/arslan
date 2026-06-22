@@ -53,6 +53,8 @@ export default function OrchestratorChat({
   const roster = useArslanStore((s) => s.roster);
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
   const streaming = useArslanStore((s) => s.streaming);
+  const llmError = useArslanStore((s) => s.error);
+  const clearLlmError = useArslanStore((s) => s.clearError);
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
@@ -994,6 +996,26 @@ export default function OrchestratorChat({
 
             return null;
           })
+        )}
+        {/* LLM error banner: shown when the backend emits an error frame (e.g. LLM timeout, auth failure) */}
+        {llmError && (
+          <div className="flex gap-3 items-start py-2 select-none">
+            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark mt-0.5" draggable={false} />
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-danger/10 border border-danger/30 rounded-2xl rounded-tl-none max-w-2xl">
+              <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] text-danger font-semibold">{t('chat.llm_error_title', 'Model error')}</span>
+                <span className="text-[11px] text-danger/80 font-mono break-words">{llmError}</span>
+              </div>
+              <button
+                onClick={clearLlmError}
+                className="ml-auto shrink-0 p-0.5 rounded hover:bg-danger/20 text-danger/60 hover:text-danger transition-colors"
+                aria-label="Dismiss error"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
         )}
         {/* Thinking indicator: shown from send until first response frame */}
         {thinking && !streaming && (

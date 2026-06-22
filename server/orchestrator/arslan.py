@@ -118,7 +118,14 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
     # 1b. if a proposal is pending, classify the reply before routing
     pending = await phase_service.get_pending(conversation_id)
     if pending and pending["phase"] == "proposing":
-        kind = await _classify_followup(user_message, pending["direction"])
+        # _classify_followup calls the LLM — guard it so an LLM error surfaces as
+        # an in-chat error frame instead of crashing the WebSocket.
+        try:
+            kind = await _classify_followup(user_message, pending["direction"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_classify_followup raised (surfacing as error): %s", exc)
+            emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+            return
         if kind == "confirm":
             await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
             await memory.maybe_compact(conversation_id)
@@ -139,8 +146,15 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
         # kind == "new" → clear the stale pending phase and fall through to normal routing
         await phase_service.clear(conversation_id, pending["spawn_id"])
 
-    # 2. route (one decision call; also returns new_facts)
-    result = await router.route(conversation_id, user_message)
+    # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
+    # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
+    # frame instead of propagating out of run_with_live_frames and closing the WS.
+    try:
+        result = await router.route(conversation_id, user_message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("router.route raised (surfacing as error): %s", exc)
+        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+        return
 
     # 3. persist + announce extracted facts (transparency note)
     if result.new_facts:
