@@ -187,7 +187,13 @@
     "labelConfigApiKey": "API-Schlüssel",
     "btnSuggestPrimary": "Primäranbieter vorschlagen",
     "btnUseThis": "Verwenden",
-    "capabilityTable": "Anbieterfähigkeiten"
+    "capabilityTable": "Anbieterfähigkeiten",
+    "capColProvider": "Anbieter",
+    "capColCost": "Kosten",
+    "capColSpeed": "Geschwindigkeit",
+    "capColTools": "Werkzeuge",
+    "capColReasoning": "Reasoning",
+    "capColContext": "Kontext"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

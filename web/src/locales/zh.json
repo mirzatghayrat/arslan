@@ -187,7 +187,13 @@
     "labelConfigApiKey": "API 密钥",
     "btnSuggestPrimary": "推荐主要提供商",
     "btnUseThis": "使用此项",
-    "capabilityTable": "提供商能力表"
+    "capabilityTable": "提供商能力表",
+    "capColProvider": "提供商",
+    "capColCost": "费用",
+    "capColSpeed": "速度",
+    "capColTools": "工具",
+    "capColReasoning": "推理",
+    "capColContext": "上下文"
   },
   "errors": {
     "load_failed": "加载数据失败。",

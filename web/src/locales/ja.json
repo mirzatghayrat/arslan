@@ -187,7 +187,13 @@
     "labelConfigApiKey": "APIキー",
     "btnSuggestPrimary": "プライマリを提案",
     "btnUseThis": "これを使用",
-    "capabilityTable": "プロバイダー能力表"
+    "capabilityTable": "プロバイダー能力表",
+    "capColProvider": "プロバイダー",
+    "capColCost": "コスト",
+    "capColSpeed": "速度",
+    "capColTools": "ツール",
+    "capColReasoning": "推論",
+    "capColContext": "コンテキスト"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

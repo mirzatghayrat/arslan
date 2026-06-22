@@ -187,7 +187,13 @@
     "labelConfigApiKey": "API Key",
     "btnSuggestPrimary": "Suggest primary",
     "btnUseThis": "Use this",
-    "capabilityTable": "Provider capability table"
+    "capabilityTable": "Provider capability table",
+    "capColProvider": "Provider",
+    "capColCost": "Cost",
+    "capColSpeed": "Speed",
+    "capColTools": "Tools",
+    "capColReasoning": "Reasoning",
+    "capColContext": "Context"
   },
   "errors": {
     "load_failed": "Failed to load data.",

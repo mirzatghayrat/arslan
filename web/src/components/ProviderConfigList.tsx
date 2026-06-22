@@ -295,12 +295,12 @@ export default function ProviderConfigList({
             <table className="w-full text-[10px] font-mono border-collapse">
               <thead>
                 <tr className="border-b border-[#1e2330]">
-                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">Provider</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Cost</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Speed</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Tools</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Reasoning</th>
-                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Context</th>
+                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">{t('settings.capColProvider')}</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColCost')}</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColSpeed')}</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColTools')}</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColReasoning')}</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">{t('settings.capColContext')}</th>
                 </tr>
               </thead>
               <tbody>
