@@ -7,7 +7,7 @@ import { api } from '../api/client';
 import { toBackendSettings } from '../api/adapters';
 import {
   Key, Sliders, Globe, Check, Eye, EyeOff, Save,
-  Info, AlertCircle, WifiOff
+  Info, AlertCircle, WifiOff, Search, Palette
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
 import { AppearanceSettings } from './AppearanceSettings';
@@ -81,15 +81,39 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
       <form onSubmit={handleSave} className="max-w-4xl space-y-8">
         
-        {/* API Credentials Card */}
+        {/* Search Card — search provider + search key together */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-            <Key className="w-4.5 h-4.5 text-primary" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">Security API Credentials</h3>
+            <Search className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionSearch')}</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Cognitive Search Key Input */}
+            {/* Search Provider select */}
+            <div className="space-y-2">
+              <label
+                htmlFor="settings-search-provider"
+                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+              >
+                {t('settings.labelSearchProvider')}
+              </label>
+              <Select
+                id="settings-search-provider"
+                value={localSettings.searchProvider}
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
+                options={
+                  searchProviders.length > 0
+                    ? searchProviders.map((k) => ({
+                        value: k,
+                        label: k.charAt(0).toUpperCase() + k.slice(1),
+                      }))
+                    : [{ value: localSettings.searchProvider, label: localSettings.searchProvider || 'Loading…' }]
+                }
+                ariaLabel={t('settings.labelSearchProvider')}
+              />
+            </div>
+
+            {/* Search API Key input */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
                 Tavily / Google Search API Private key
@@ -119,39 +143,15 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
         </div>
 
-        {/* Model Architecture Configuration options */}
+        {/* Theme Palette Card — language + appearance */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-            <Sliders className="w-4.5 h-4.5 text-primary" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionModelSearch')}</h3>
+            <Palette className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionAppearance')}</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Cognitive Search selections */}
-            <div className="space-y-2">
-              <label
-                htmlFor="settings-search-provider"
-                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
-              >
-                {t('settings.labelSearchProvider')}
-              </label>
-              <Select
-                id="settings-search-provider"
-                value={localSettings.searchProvider}
-                onChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
-                options={
-                  searchProviders.length > 0
-                    ? searchProviders.map((k) => ({
-                        value: k,
-                        label: k.charAt(0).toUpperCase() + k.slice(1),
-                      }))
-                    : [{ value: localSettings.searchProvider, label: localSettings.searchProvider || 'Loading…' }]
-                }
-                ariaLabel={t('settings.labelSearchProvider')}
-              />
-            </div>
-
-            {/* Language Localizations */}
+            {/* Language */}
             <div className="space-y-2">
               <label
                 htmlFor="settings-language"
@@ -180,11 +180,11 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
         </div>
 
-        {/* Multi-Model Provider Configuration */}
+        {/* LLM Configuration Card */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
             <Sliders className="w-4.5 h-4.5 text-primary" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionProviderConfigs')}</h3>
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionLlmConfig')}</h3>
           </div>
           <ProviderConfigList
             llmProviders={llmProviders}
@@ -200,7 +200,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           />
         </div>
 
-        {/* Miscellaneous configurations */}
+        {/* Interface — telemetry + spawn mode */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
             <Globe className="w-4.5 h-4.5 text-primary" />

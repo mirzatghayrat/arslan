@@ -110,8 +110,8 @@ describe("SettingsScreen", () => {
 
   it("renders the multi-config provider list section heading", () => {
     renderSettings();
-    // ProviderConfigList is rendered inside the card whose heading key is 'settings.sectionProviderConfigs'
-    expect(screen.getByText("settings.sectionProviderConfigs")).toBeInTheDocument();
+    // ProviderConfigList is rendered inside the card whose heading key is 'settings.sectionLlmConfig'
+    expect(screen.getByText("settings.sectionLlmConfig")).toBeInTheDocument();
   });
 
   // ── Kept fields must still be present ─────────────────────────────────────────

@@ -208,7 +208,11 @@
     "strategyHint": "Ajoutez 2+ modèles pour activer les stratégies de routage",
     "btnTest": "Tester",
     "testOk": "✓ Connecté",
-    "btnAddConfirm": "Ajouter"
+    "btnAddConfirm": "Ajouter",
+    "btnTestAll": "Tout tester",
+    "sectionSearch": "Recherche",
+    "sectionAppearance": "Palette de thème",
+    "sectionLlmConfig": "Configuration LLM"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

@@ -256,10 +256,10 @@ describe("(D) Strategy gating by config count", () => {
   });
 });
 
-// ── (E) Per-config Test button ────────────────────────────────────────────────
+// ── (E) "Test all" batch button ───────────────────────────────────────────────
 
-describe("(E) Per-config Test button on saved rows", () => {
-  it("each saved config row shows a Test button", () => {
+describe("(E) Test all batch button", () => {
+  it("shows a single 'Test all' button when there are saved configs", () => {
     render(
       <ProviderConfigList
         llmProviders={providers}
@@ -270,14 +270,25 @@ describe("(E) Per-config Test button on saved rows", () => {
       />
     );
 
-    // Each row gets a data-testid="provider-config-test-{idx}"
-    const testBtn0 = screen.getByTestId("provider-config-test-0");
-    const testBtn1 = screen.getByTestId("provider-config-test-1");
-    expect(testBtn0).toBeInTheDocument();
-    expect(testBtn1).toBeInTheDocument();
+    expect(screen.getByTestId("provider-test-all")).toBeInTheDocument();
   });
 
-  it("Test button calls testProviderConfig with config id", async () => {
+  it("does NOT show per-row Test buttons on saved rows", () => {
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={twoConfigs}
+        onConfigsChange={vi.fn()}
+        strategy="single"
+        onStrategyChange={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByTestId("provider-config-test-0")).toBeNull();
+    expect(screen.queryByTestId("provider-config-test-1")).toBeNull();
+  });
+
+  it("clicking Test all calls testProviderConfig for each config and shows ok indicators", async () => {
     mockTestProviderConfig.mockResolvedValue({ ok: true, latency_ms: 200 });
 
     render(
@@ -290,37 +301,24 @@ describe("(E) Per-config Test button on saved rows", () => {
       />
     );
 
-    const testBtn0 = screen.getByTestId("provider-config-test-0");
-    fireEvent.click(testBtn0);
+    const testAllBtn = screen.getByTestId("provider-test-all");
+    fireEvent.click(testAllBtn);
 
     await waitFor(() => {
       expect(mockTestProviderConfig).toHaveBeenCalledWith(1);
+      expect(mockTestProviderConfig).toHaveBeenCalledWith(2);
     });
-  });
-
-  it("shows success status after successful test", async () => {
-    mockTestProviderConfig.mockResolvedValue({ ok: true, latency_ms: 200 });
-
-    render(
-      <ProviderConfigList
-        llmProviders={providers}
-        providerConfigs={twoConfigs}
-        onConfigsChange={vi.fn()}
-        strategy="single"
-        onStrategyChange={vi.fn()}
-      />
-    );
-
-    const testBtn0 = screen.getByTestId("provider-config-test-0");
-    fireEvent.click(testBtn0);
 
     await waitFor(() => {
-      expect(screen.getByText("settings.testOk")).toBeInTheDocument();
+      // Both rows should show the ok indicator
+      const okIndicators = screen.getAllByText("settings.testOk");
+      expect(okIndicators.length).toBe(2);
     });
   });
 
-  it("shows failure status after failed test", async () => {
-    mockTestProviderConfig.mockResolvedValue({ ok: false, error: "Invalid API key" });
+  it("shows failure indicators for failed tests after Test all", async () => {
+    mockTestProviderConfig.mockResolvedValueOnce({ ok: false, error: "Invalid API key" });
+    mockTestProviderConfig.mockResolvedValueOnce({ ok: true, latency_ms: 100 });
 
     render(
       <ProviderConfigList
@@ -332,30 +330,19 @@ describe("(E) Per-config Test button on saved rows", () => {
       />
     );
 
-    const testBtn0 = screen.getByTestId("provider-config-test-0");
-    fireEvent.click(testBtn0);
+    fireEvent.click(screen.getByTestId("provider-test-all"));
 
     await waitFor(() => {
       expect(screen.getByText(/Invalid API key/)).toBeInTheDocument();
+      expect(screen.getByText("settings.testOk")).toBeInTheDocument();
     });
   });
 });
 
-// ── (E) Draft / add-new flow: Add gated until Test passes ────────────────────
+// ── (E) Draft / add-new flow: Add enabled when fields filled (no test gate) ──
 
-describe("(E) Draft config: Add gated until successful test", () => {
-  it("Add button is disabled until Test passes for a new draft row", async () => {
-    mockTestLlm.mockResolvedValue({ ok: true, latency_ms: 100 });
-    mockAddProviderConfig.mockResolvedValue({
-      id: 10,
-      label: "New",
-      provider: "deepseek",
-      model: "deepseek-chat",
-      base_url: "",
-      api_key: "",
-      is_primary: false,
-    });
-
+describe("(E) Draft config: Add enabled when fields are filled", () => {
+  it("Add button is disabled when draft has empty api_key", async () => {
     render(
       <ProviderConfigList
         llmProviders={providers}
@@ -366,24 +353,55 @@ describe("(E) Draft config: Add gated until successful test", () => {
       />
     );
 
-    // Click "Add model" to open the draft form
-    const addBtn = screen.getByRole("button", { name: /btnAddModel/i });
-    fireEvent.click(addBtn);
+    // Open draft form
+    fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
 
-    // The confirm button in the draft form should be disabled initially
+    // Confirm button should be disabled (api_key is empty)
     await waitFor(() => {
-      const confirmBtn = screen.getByTestId("provider-draft-confirm");
-      expect(confirmBtn).toBeDisabled();
+      expect(screen.getByTestId("provider-draft-confirm")).toBeDisabled();
     });
+  });
 
-    // Click Test in the draft
-    const testBtn = screen.getByTestId("provider-draft-test");
-    fireEvent.click(testBtn);
+  it("Add button is enabled once provider + model + api_key are non-empty (no test required)", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+        strategy="single"
+        onStrategyChange={vi.fn()}
+      />
+    );
 
-    // After successful test, Add/confirm should be enabled
+    // Open draft form
+    fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
+
+    // Type an api_key — provider+model are pre-filled from defaults
+    const keyInput = await screen.findByPlaceholderText("settings.labelConfigApiKey");
+    await user.type(keyInput, "sk-test-key");
+
+    // Confirm button should now be enabled WITHOUT needing to test first
     await waitFor(() => {
-      const confirmBtn = screen.getByTestId("provider-draft-confirm");
-      expect(confirmBtn).not.toBeDisabled();
+      expect(screen.getByTestId("provider-draft-confirm")).not.toBeDisabled();
+    });
+  });
+
+  it("does NOT render a per-draft Test button", async () => {
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+        strategy="single"
+        onStrategyChange={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("provider-draft-test")).toBeNull();
     });
   });
 });

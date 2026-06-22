@@ -36,6 +36,8 @@ vi.mock("../api/client", () => ({
   deleteProviderConfig: (...args: unknown[]) => mockDeleteProviderConfig(...args),
   suggestPrimary: vi.fn().mockResolvedValue(null),
   getCatalog: vi.fn().mockResolvedValue([]),
+  testLlm: vi.fn().mockResolvedValue({ ok: true }),
+  testProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("../stores/authStore", () => ({
@@ -197,5 +199,76 @@ describe("ProviderConfigList", () => {
     expect(balancedOpt).toBeTruthy();
     await user.click(balancedOpt!);
     expect(onStrategyChange).toHaveBeenCalledWith("balanced");
+  });
+});
+
+// ── Change 1: base_url is updated when a saved row's provider changes ─────────
+
+describe("base_url update on provider change (Change 1)", () => {
+  it("switching a saved row's provider sends the new provider's base_url in the update patch", async () => {
+    const user = userEvent.setup();
+
+    // Use providers with distinct base_urls
+    const providersWithUrls: ProviderOption[] = [
+      {
+        key: "deepseek",
+        label: "DeepSeek",
+        base_url: "https://api.deepseek.com",
+        default_model: "deepseek-chat",
+        native: false,
+        models: ["deepseek-chat"],
+      },
+      {
+        key: "gemini",
+        label: "Gemini",
+        base_url: "",
+        default_model: "gemini-1.5-flash",
+        native: true,
+        models: ["gemini-1.5-flash"],
+      },
+    ];
+
+    const oneConfig: ProviderConfig[] = [
+      {
+        id: 10,
+        label: "X",
+        provider: "deepseek",
+        model: "deepseek-chat",
+        base_url: "https://api.deepseek.com",
+        api_key: "ds-key",
+        is_primary: true,
+      },
+    ];
+
+    mockUpdateProviderConfig.mockResolvedValue({});
+
+    render(
+      <ProviderConfigList
+        llmProviders={providersWithUrls}
+        providerConfigs={oneConfig}
+        onConfigsChange={vi.fn()}
+        strategy="single"
+        onStrategyChange={vi.fn()}
+      />
+    );
+
+    // Open provider select for row 0 and switch to Gemini
+    const providerTrigger = document.getElementById("provider-config-provider-0") as HTMLButtonElement;
+    expect(providerTrigger).not.toBeNull();
+    await user.click(providerTrigger);
+
+    const geminiOption = screen.getAllByRole("option").find((o) =>
+      /gemini/i.test(o.textContent ?? ""),
+    );
+    expect(geminiOption).toBeTruthy();
+    await user.click(geminiOption!);
+
+    // The updateProviderConfig call should include base_url matching Gemini's base_url ("")
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ base_url: "" }),
+      );
+    });
   });
 });

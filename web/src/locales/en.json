@@ -208,7 +208,11 @@
     "strategyHint": "Add 2+ models to enable routing strategies",
     "btnTest": "Test",
     "testOk": "✓ Connected",
-    "btnAddConfirm": "Add"
+    "btnAddConfirm": "Add",
+    "btnTestAll": "Test all",
+    "sectionSearch": "Search",
+    "sectionAppearance": "Theme Palette",
+    "sectionLlmConfig": "LLM Configuration"
   },
   "errors": {
     "load_failed": "Failed to load data.",

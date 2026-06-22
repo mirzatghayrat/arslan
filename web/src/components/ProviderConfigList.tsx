@@ -12,7 +12,7 @@ import {
   testProviderConfig,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Plus, Star, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Star, Trash2, Loader2, FlaskConical } from 'lucide-react';
 import Select from './Select';
 import type { SelectOption } from './Select';
 
@@ -60,6 +60,7 @@ export default function ProviderConfigList({
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
+  const [testAllBusy, setTestAllBusy] = useState(false);
 
   useEffect(() => {
     getCatalog().then(setCatalog).catch(() => setCatalog([]));
@@ -113,6 +114,7 @@ export default function ProviderConfigList({
     let patch: Partial<ProviderConfig> = { [field]: value };
     if (field === 'provider') {
       patch.model = defaultModelFor(value);
+      patch.base_url = baseUrlFor(value);
     }
     const optimistic = providerConfigs.map((c) =>
       c.id === config.id ? { ...c, ...patch } : c,
@@ -145,6 +147,40 @@ export default function ProviderConfigList({
         [id]: { state: 'failed', error: err instanceof Error ? err.message : 'Test failed' },
       }));
     }
+  };
+
+  const handleTestAll = async () => {
+    if (providerConfigs.length === 0) return;
+    setTestAllBusy(true);
+    // Set all to 'testing' first
+    setTestStatus((prev) => {
+      const next = { ...prev };
+      for (const c of providerConfigs) {
+        next[c.id] = { state: 'testing' };
+      }
+      return next;
+    });
+    await Promise.all(
+      providerConfigs.map(async (c) => {
+        try {
+          const result: TestLlmResult = await testProviderConfig(c.id);
+          if (result.ok) {
+            setTestStatus((prev) => ({ ...prev, [c.id]: { state: 'ok' } }));
+          } else {
+            setTestStatus((prev) => ({
+              ...prev,
+              [c.id]: { state: 'failed', error: result.error ?? 'Test failed' },
+            }));
+          }
+        } catch (err) {
+          setTestStatus((prev) => ({
+            ...prev,
+            [c.id]: { state: 'failed', error: err instanceof Error ? err.message : 'Test failed' },
+          }));
+        }
+      }),
+    );
+    setTestAllBusy(false);
   };
 
   const handleSuggest = async () => {
@@ -232,7 +268,7 @@ export default function ProviderConfigList({
   };
 
   const handleDraftConfirm = async () => {
-    if (!draft || draft.testState !== 'ok') return;
+    if (!draft || !draft.provider || !draft.model || !draft.api_key) return;
     const providerInfo = llmProviders.find((p) => p.key === draft.provider);
     setBusy(-1);
     try {
@@ -337,20 +373,11 @@ export default function ProviderConfigList({
                 />
               </div>
 
-              {/* Test button + status */}
+              {/* Per-row test result indicator (populated by Test all) */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  data-testid={`provider-config-test-${idx}`}
-                  onClick={() => handleTestSaved(config.id)}
-                  disabled={ts?.state === 'testing'}
-                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {ts?.state === 'testing' ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : null}
-                  {t('settings.btnTest')}
-                </button>
+                {ts?.state === 'testing' && (
+                  <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                )}
                 {ts?.state === 'ok' && (
                   <span className="text-[10px] font-mono text-success">{t('settings.testOk')}</span>
                 )}
@@ -388,16 +415,34 @@ export default function ProviderConfigList({
         })}
       </div>
 
-      {/* Suggest primary button + rationale panel */}
+      {/* Test all button + Suggest primary button + rationale panel */}
       <div className="space-y-2">
-        <button
-          type="button"
-          onClick={handleSuggest}
-          disabled={suggestBusy}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
-        >
-          {t('settings.btnSuggestPrimary')}
-        </button>
+        <div className="flex items-center gap-2">
+          {providerConfigs.length > 0 && (
+            <button
+              type="button"
+              data-testid="provider-test-all"
+              onClick={handleTestAll}
+              disabled={testAllBusy}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
+            >
+              {testAllBusy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FlaskConical className="w-3.5 h-3.5" />
+              )}
+              {t('settings.btnTestAll')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleSuggest}
+            disabled={suggestBusy}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
+          >
+            {t('settings.btnSuggestPrimary')}
+          </button>
+        </div>
         {suggestion && (
           <div className="flex items-start gap-3 bg-surface/80 border border-primary/20 rounded-xl px-4 py-3">
             <p className="flex-1 text-xs text-foreground font-mono">{suggestion.rationale}</p>
@@ -468,35 +513,13 @@ export default function ProviderConfigList({
             />
           </div>
 
-          {/* Test button */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              data-testid="provider-draft-test"
-              onClick={handleDraftTest}
-              disabled={draft.testState === 'testing'}
-              className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {draft.testState === 'testing' ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : null}
-              {t('settings.btnTest')}
-            </button>
-            {draft.testState === 'ok' && (
-              <span className="text-[10px] font-mono text-success">{t('settings.testOk')}</span>
-            )}
-            {draft.testState === 'failed' && (
-              <span className="text-[10px] font-mono text-danger">✗ {draft.testError}</span>
-            )}
-          </div>
-
           {/* Confirm / Cancel */}
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
               data-testid="provider-draft-confirm"
               onClick={handleDraftConfirm}
-              disabled={draft.testState !== 'ok' || busy === -1}
+              disabled={!draft.provider || !draft.model || !draft.api_key || busy === -1}
               className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-primary border border-primary/40 hover:border-primary/80 rounded-lg transition-colors disabled:opacity-30"
             >
               {t('settings.btnAddConfirm')}

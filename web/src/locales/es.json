@@ -208,7 +208,11 @@
     "strategyHint": "Agrega 2+ modelos para habilitar estrategias de enrutamiento",
     "btnTest": "Probar",
     "testOk": "✓ Conectado",
-    "btnAddConfirm": "Agregar"
+    "btnAddConfirm": "Agregar",
+    "btnTestAll": "Probar todo",
+    "sectionSearch": "Búsqueda",
+    "sectionAppearance": "Paleta de temas",
+    "sectionLlmConfig": "Configuración LLM"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
