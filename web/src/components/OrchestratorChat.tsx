@@ -12,7 +12,6 @@ import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
-import { ArslanMarkAnimated } from './ArslanMarkAnimated';
 import Markdown from './Markdown';
 
 interface OrchestratorChatProps {
@@ -249,8 +248,8 @@ export default function OrchestratorChat({
             {/* Greeting Header inspired by Claude's elegant style */}
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
-                {/* Arslan mark — animated (breathes, glances, blinks) */}
-                <ArslanMarkAnimated size={46} />
+                {/* Arslan mark */}
+                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} />
 
                 {/* Elegant serif-style greeting */}
                 <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
