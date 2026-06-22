@@ -14,6 +14,7 @@ import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import Markdown from './Markdown';
 import { useArslanStore } from '../stores/arslanStore';
+import NoModelHint from './NoModelHint';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -28,6 +29,10 @@ interface OrchestratorChatProps {
   onConfirmDirection?: (spawnId: number) => void;
   /** Called when the user submits a verdict on a spawn deliverable. */
   onDeliverableVerdict?: (action: string, spawnId: number, messageId?: number, taskBrief?: string | null) => void;
+  /** True when at least one ProviderConfig exists. When false, a hint to configure a model is shown. */
+  hasModel?: boolean;
+  /** Navigate to the Settings screen. Used by the no-model hint. */
+  onOpenSettings?: () => void;
 }
 
 export default function OrchestratorChat({
@@ -40,6 +45,8 @@ export default function OrchestratorChat({
   activeThread,
   onConfirmDirection,
   onDeliverableVerdict,
+  hasModel = true,
+  onOpenSettings,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   // Live roster from store — used to determine which spawns are in this conversation
@@ -267,6 +274,9 @@ export default function OrchestratorChat({
                 </h1>
               </div>
             </div>
+
+            {/* No-model hint — shown when zero ProviderConfigs are configured */}
+            <NoModelHint hasModel={hasModel} onOpenSettings={onOpenSettings ?? (() => {})} />
 
             {/* Luxurious prompt input box resembling Claude's container design */}
             <div className="w-full max-w-xl bg-surface border border-border-strong rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all">

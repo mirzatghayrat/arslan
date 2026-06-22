@@ -277,7 +277,9 @@
     "verdict_redo": "Wiederholen",
     "verdict_discard": "Verwerfen",
     "verdict_accepted": "Akzeptiert",
-    "verdict_discarded": "Verworfen"
+    "verdict_discarded": "Verworfen",
+    "no_model_hint": "Noch kein Modell konfiguriert — füge in den Einstellungen ein LLM hinzu, um zu starten.",
+    "open_settings": "Einstellungen öffnen"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

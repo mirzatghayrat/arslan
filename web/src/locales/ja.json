@@ -277,7 +277,9 @@
     "verdict_redo": "やり直し",
     "verdict_discard": "破棄",
     "verdict_accepted": "採用済み",
-    "verdict_discarded": "破棄済み"
+    "verdict_discarded": "破棄済み",
+    "no_model_hint": "モデルがまだ設定されていません — 設定でLLMを追加してください。",
+    "open_settings": "設定を開く"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

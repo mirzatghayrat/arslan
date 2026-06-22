@@ -444,6 +444,11 @@ export default function App() {
                 currentStyle={currentChatStyle}
                 setCurrentStyle={setCurrentChatStyle}
                 activeThread={activeThread}
+                hasModel={providerConfigs.length > 0}
+                onOpenSettings={() => {
+                  setActiveSection('settings');
+                  setPanelView('default');
+                }}
                 onConfirmDirection={(spawnId) =>
                   wsSend({ type: 'confirm_direction', spawn_id: spawnId })
                 }

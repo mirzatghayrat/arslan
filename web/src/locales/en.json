@@ -277,7 +277,9 @@
     "verdict_redo": "Redo",
     "verdict_discard": "Discard",
     "verdict_accepted": "Accepted",
-    "verdict_discarded": "Discarded"
+    "verdict_discarded": "Discarded",
+    "no_model_hint": "No model configured yet — add an LLM in Settings to start.",
+    "open_settings": "Open Settings"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
