@@ -337,10 +337,10 @@ export default function OrchestratorChat({
               <span className="text-[10px] font-mono text-subtle-foreground uppercase tracking-widest block">{t('orchestrator.presets_label')}</span>
               <div className="flex flex-wrap gap-1.5 justify-center">
                 {[
-                  { label: `✏️ ${t('orchestrator.preset_code_audit')}`, prompt: "Conduct automatic code analysis on sandbox files to discover vulnerability patterns." },
-                  { label: `🎓 ${t('orchestrator.preset_financial')}`, prompt: "Summarize Q1 market ratings and consensus predictions for Blackwell chipsets output." },
-                  { label: `💻 ${t('orchestrator.preset_slogan')}`, prompt: "Draft optimized copywriting hooks for key promotional tech campaigns with emojis." },
-                  { label: `🔍 ${t('orchestrator.preset_drive')}`, prompt: "Use Brave registry crawler tool to catalog recent AI deployment metrics." }
+                  { icon: 'vuln-test', label: t('orchestrator.preset_code_audit'), prompt: "Conduct automatic code analysis on sandbox files to discover vulnerability patterns." },
+                  { icon: 'financial-res', label: t('orchestrator.preset_financial'), prompt: "Summarize Q1 market ratings and consensus predictions for Blackwell chipsets output." },
+                  { icon: 'seo-opt', label: t('orchestrator.preset_slogan'), prompt: "Draft optimized copywriting hooks for key promotional tech campaigns with emojis." },
+                  { icon: 'web-search', label: t('orchestrator.preset_drive'), prompt: "Use Brave registry crawler tool to catalog recent AI deployment metrics." }
                 ].map((item, idx) => (
                   <button
                     key={idx}
@@ -351,6 +351,7 @@ export default function OrchestratorChat({
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-surface/60 hover:bg-surface-raised border border-border/80 rounded-full text-[11px] text-muted-foreground hover:text-foreground transition-all cursor-pointer select-none font-sans"
                   >
+                    {getIcon(item.icon, 'w-3.5 h-3.5')}
                     <span>{item.label}</span>
                   </button>
                 ))}
