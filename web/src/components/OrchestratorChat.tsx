@@ -261,7 +261,7 @@ export default function OrchestratorChat({
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
                 {/* Arslan mark */}
-                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} />
+                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none arslan-mark dark:brightness-75" draggable={false} />
 
                 {/* Elegant serif-style greeting */}
                 <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
@@ -408,7 +408,7 @@ export default function OrchestratorChat({
                     <div className="flex flex-col items-center select-none">
                       <div className="relative">
                         {isArslan ? (
-                          <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none" draggable={false} />
+                          <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none arslan-mark dark:brightness-75" draggable={false} />
                         ) : (
                           <SpawnAvatar seed={msg.senderName} size={36} />
                         )}
@@ -848,7 +848,7 @@ export default function OrchestratorChat({
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
                     {isArslan
-                      ? <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
+                      ? <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none arslan-mark dark:brightness-75" draggable={false} />
                       : isUser
                       ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
                       : <SpawnAvatar seed={msg.senderName} size={18} />}
@@ -998,7 +998,7 @@ export default function OrchestratorChat({
         {/* Thinking indicator: shown from send until first response frame */}
         {thinking && !streaming && (
           <div className="flex gap-3 items-center py-2 select-none">
-            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0" draggable={false} />
+            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark dark:brightness-75" draggable={false} />
             <div className="flex items-center gap-1.5 px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
               <span className="text-[11px] text-muted-foreground font-mono">{t('chat.thinking')}</span>
               <span className="flex gap-0.5 ml-1">
