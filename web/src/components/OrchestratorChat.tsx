@@ -11,6 +11,7 @@ import { getIcon } from './iconMap';
 import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
+import { SpawnAvatar } from './SpawnAvatar';
 import Markdown from './Markdown';
 
 interface OrchestratorChatProps {
@@ -386,12 +387,14 @@ export default function OrchestratorChat({
                   {/* Avatar left (for system) */}
                   {!isUser && (
                     <div className="flex flex-col items-center select-none">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-sans relative ${
-                        isArslan
-                          ? 'bg-gradient-to-tr from-primary to-primary-hover text-primary-foreground shadow-lg shadow-primary/15'
-                          : 'bg-surface-raised border border-primary/30 text-foreground'
-                      }`}>
-                        <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-4 h-4 text-foreground" />
+                      <div className="relative">
+                        {isArslan ? (
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-tr from-primary to-primary-hover text-primary-foreground shadow-lg shadow-primary/15">
+                            <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        ) : (
+                          <SpawnAvatar seed={msg.senderName} size={36} />
+                        )}
                         <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background ${
                           isArslan ? 'bg-success' : 'bg-primary'
                         }`} />
@@ -456,9 +459,7 @@ export default function OrchestratorChat({
                         <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-xl group-hover:bg-primary/10 transition-all rounded-full pointer-events-none"></div>
 
                         <div className="flex items-start gap-3.5">
-                          <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-xl shadow-inner shadow-primary/10">
-                            <SFSymbol nameOrEmoji={msg.spawnIntro.avatarEmoji} className="w-6 h-6" />
-                          </div>
+                          <SpawnAvatar seed={msg.spawnIntro.name} size={44} />
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-foreground font-sans">{msg.spawnIntro.name}</h4>
@@ -815,7 +816,9 @@ export default function OrchestratorChat({
                 <div key={msg.id} className="text-[12px] space-y-2">
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
-                    <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
+                    {isArslan || isUser
+                      ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
+                      : <SpawnAvatar seed={msg.senderName} size={18} />}
                     <span className="font-bold text-foreground">{msg.senderName}</span>
                     <span className="text-subtle-foreground font-mono">•</span>
                     <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
@@ -1003,7 +1006,7 @@ export default function OrchestratorChat({
           {/* Sandbox Top Header */}
           <div className="h-[52px] border-b border-border px-4.5 bg-background/80 backdrop-blur flex items-center justify-between select-none shrink-0">
             <div className="flex items-center gap-2.5">
-              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-5 h-5 text-primary" />
+              <SpawnAvatar seed={spawn.name} size={28} />
               <div>
                 <div className="flex items-center gap-1.5 leading-none">
                   <span className="text-xs font-bold text-foreground font-sans">{spawn.name}</span>
@@ -1026,9 +1029,7 @@ export default function OrchestratorChat({
 
           {/* Sandbox Content: Coming Soon — dispatch + draft backend not yet wired */}
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 select-none">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-6 h-6 text-primary" />
-            </div>
+            <SpawnAvatar seed={spawn.name} size={48} className="mx-auto" />
             <div className="space-y-2">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-xs font-bold text-foreground font-sans">{spawn.name} Sandbox</span>

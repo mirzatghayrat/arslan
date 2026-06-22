@@ -7,7 +7,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { Spawn } from '../types';
-import SFSymbol from './SFSymbol';
+import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface ArslanThread {
@@ -204,7 +204,7 @@ export default function Sidebar({
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 flex-shrink-0" />
+                      <SpawnAvatar seed={spawn.name} size={22} />
                       <span className="truncate flex-1 font-sans">{spawn.name}</span>
                       <span className="text-[8.5px] font-mono bg-primary/15 text-primary rounded px-2 py-0.5 flex-shrink-0 font-extrabold select-none">
                         L.{Math.max(1, Math.floor(spawn.totalTasks / 10) + 1)}

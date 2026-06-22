@@ -17,7 +17,7 @@ import SpawnEditor from './components/SpawnEditor';
 import SettingsScreen from './components/SettingsScreen';
 import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush, Satellite, Wrench, Brain } from 'lucide-react';
 import { getIcon } from './components/iconMap';
-import SFSymbol from './components/SFSymbol';
+import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 
 interface ArslanThread {
@@ -731,7 +731,7 @@ export default function App() {
                           <div className="flex items-center gap-2">
                             <div>
                               <div className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5">
-                                <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-primary" />
+                                <SpawnAvatar seed={spawn.name} size={20} />
                                 <span>{spawn.name}</span>
                                 <span className="text-[8px] font-mono bg-primary/10 text-primary rounded px-1.5 py-0.5 font-bold">L.{spawnLevel}</span>
                               </div>
@@ -839,19 +839,10 @@ export default function App() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-mono text-muted-foreground uppercase tracking-wider">{t('modal.avatar_emoji')}</label>
-                  <select
-                    value={newSpawnEmoji}
-                    onChange={(e) => setNewSpawnEmoji(e.target.value)}
-                    className="w-full bg-background border border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring/20 rounded-xl px-3.5 py-2.5 text-xs text-foreground focus:outline-none transition-all font-sans"
-                  >
-                    <option value="🦊">🦊 Fox</option>
-                    <option value="🐱">🐱 Cat</option>
-                    <option value="🐒">🐒 Monkey</option>
-                    <option value="🦉">🦉 Owl</option>
-                    <option value="🦁">🦁 Lion</option>
-                    <option value="🤖">🤖 Bot</option>
-                    <option value="🦄">🦄 Pegasus</option>
-                  </select>
+                  <div className="flex items-center gap-3 bg-background border border-border-strong rounded-xl px-3.5 py-2">
+                    <SpawnAvatar seed={newSpawnName || 'new spawn'} size={36} />
+                    <span className="text-[10px] text-subtle-foreground font-mono">Auto-generated from name</span>
+                  </div>
                 </div>
               </div>
 
@@ -988,7 +979,7 @@ export default function App() {
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         <div className="space-y-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-primary" />
+                            <SpawnAvatar seed={spawn.name} size={20} />
                             <span className="font-bold text-foreground text-xs select-text">{spawn.name}</span>
                             <span className="text-[8px] font-mono bg-background text-muted-foreground rounded-md px-1.5 py-0.5 select-none font-bold uppercase tracking-wider">L.{spawnLevel}</span>
                             <span className="text-[8px] font-mono bg-primary/10 text-primary rounded px-1.5 py-0.5 select-none font-bold uppercase tracking-wider">{spawn.domain}</span>

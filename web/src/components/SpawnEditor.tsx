@@ -6,7 +6,7 @@ import {
   Check, Save, RefreshCw, Sparkles, Volume2, ShieldAlert
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import SFSymbol from './SFSymbol';
+import { SpawnAvatar } from './SpawnAvatar';
 import { getIcon } from './iconMap';
 
 interface SpawnEditorProps {
@@ -104,9 +104,7 @@ export default function SpawnEditor({
       {/* Spawn profile details */}
       <div className="bg-gradient-to-r from-surface to-background border border-border rounded-2xl p-6 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden group">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center text-sm shadow-inner shadow-primary/10 select-none">
-            <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-6 h-6 text-primary" />
-          </div>
+          <SpawnAvatar seed={spawn.name} size={56} />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-foreground font-sans">{spawn.name}</h1>

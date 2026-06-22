@@ -8,7 +8,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
 import { motion, AnimatePresence } from 'motion/react';
-import SFSymbol from './SFSymbol';
+import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface SpawnsDashboardProps {
@@ -238,9 +238,7 @@ export default function SpawnsDashboard({
                   {/* Title Info Row */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-xl bg-surface-raised/60 border border-border-strong group-hover:border-primary/40 flex items-center justify-center text-sm transition-colors shadow-inner shadow-black/40">
-                        <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-5 h-5 text-primary" />
-                      </div>
+                      <SpawnAvatar seed={spawn.name} size={48} />
                       <div>
                         <div className="flex items-center gap-1.5">
                           <h3 className="text-xs font-bold text-foreground font-sans tracking-wide group-hover:text-primary transition-colors">
@@ -353,9 +351,7 @@ export default function SpawnsDashboard({
 
                   {/* Header info */}
                   <div className="pb-2 border-b border-dashed border-border mb-3 flex items-start gap-3">
-                    <span className="inline-block p-1 bg-primary/10 border border-primary/20 rounded flex items-center justify-center">
-                      <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-4 h-4 text-primary" />
-                    </span>
+                    <SpawnAvatar seed={spawn.name} size={26} />
                     <div className="flex-1">
                       <div className="font-bold text-foreground text-[12px] hover:text-primary flex items-center justify-between">
                         <span>{spawn.name.toUpperCase()}</span>
@@ -420,9 +416,7 @@ export default function SpawnsDashboard({
                     } rounded-xl p-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all cursor-pointer`}
                   >
                     <div className="flex items-center gap-3 w-full sm:w-auto flex-1 min-w-0">
-                      <span className="p-1.5 bg-surface-raised border border-border rounded-lg select-none shrink-0 flex items-center justify-center">
-                        <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-4 h-4 text-primary" />
-                      </span>
+                      <SpawnAvatar seed={spawn.name} size={30} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-foreground text-xs">{spawn.name}</span>

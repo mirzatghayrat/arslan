@@ -104,9 +104,7 @@ export default function SpawnDirectChat({
       {/* Spawn Header details */}
       <div className={`px-6 py-4 flex items-center justify-between border-b border-border/80 relative z-10 bg-background/80 backdrop-blur`}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-sm">
-            <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-4 h-4" />
-          </div>
+          <SpawnAvatar seed={spawn.name} size={36} />
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-bold font-mono tracking-widest text-foreground uppercase">{spawn.name} {t('spawn_chat.direct_channel_suffix')}</h2>
@@ -128,9 +126,7 @@ export default function SpawnDirectChat({
         <div className="relative max-w-3xl mx-auto mb-8">
           {chatHistory.length === 0 && <SandboxBackdrop />}
           <div className="relative z-10 bg-surface/30 border border-border/80 rounded-2xl p-6 text-center space-y-4">
-          <span className="inline-block p-4 bg-primary/5 rounded-2xl border border-primary/10">
-            <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-8 h-8 text-primary" />
-          </span>
+          <SpawnAvatar seed={spawn.name} size={64} className="mx-auto" />
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-foreground font-sans flex items-center justify-center gap-2">
               <span>{spawn.name}</span>
@@ -208,9 +204,7 @@ export default function SpawnDirectChat({
             if (currentStyle === 'linear') {
               return (
                 <div key={msg.id} className="flex items-start gap-4">
-                  <div className="w-7 h-7 rounded-lg bg-surface border border-border flex items-center justify-center text-xs shrink-0">
-                    <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" />
-                  </div>
+                  <SpawnAvatar seed={msg.senderName} size={28} />
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-foreground font-sans">{msg.senderName}</span>
@@ -244,9 +238,7 @@ export default function SpawnDirectChat({
             if (currentStyle === 'quartz') {
               return (
                 <div key={msg.id} className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-sm shadow shrink-0">
-                    <SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" />
-                  </div>
+                  <SpawnAvatar seed={msg.senderName} size={32} className="shadow" />
                   <div className="max-w-xl p-4 rounded-2xl bg-surface/80 border border-border-strong/50 text-foreground shadow-xl relative">
                     <div className="flex items-center gap-2 mb-1.5 select-none opacity-80">
                       <span className="text-[10px] font-bold font-mono tracking-widest uppercase">{msg.senderName}</span>
