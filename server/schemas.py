@@ -224,6 +224,23 @@ class SuggestPrimaryOut(BaseModel):
     rationale: str
 
 
+class TestLLMIn(BaseModel):
+    """Body for POST /settings/test-llm."""
+
+    provider: str
+    model: str = ""
+    base_url: str = ""
+    api_key: str = ""
+
+
+class TestLLMOut(BaseModel):
+    """Response from both test-connection endpoints."""
+
+    ok: bool
+    error: str | None = None
+    latency_ms: int | None = None
+
+
 class CatalogCapabilities(BaseModel):
     cost: int
     speed: int
