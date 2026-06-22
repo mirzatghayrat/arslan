@@ -184,7 +184,10 @@
     "btnAddModel": "モデルを追加",
     "btnSetPrimary": "プライマリに設定",
     "btnDelete": "削除",
-    "labelConfigApiKey": "APIキー"
+    "labelConfigApiKey": "APIキー",
+    "btnSuggestPrimary": "プライマリを提案",
+    "btnUseThis": "これを使用",
+    "capabilityTable": "プロバイダー能力表"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

@@ -1,6 +1,7 @@
 import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
+  CatalogEntry,
   EvolutionStats,
   ProviderConfig,
   ProviderOption,
@@ -8,6 +9,7 @@ import type {
   SpawnDetail,
   SpawnSummary,
   SuggestDraft,
+  SuggestPrimaryResult,
   TemplateInfo,
   UserFact,
 } from "./client.types";
@@ -109,3 +111,9 @@ export const setPrimaryProviderConfig = (id: number) =>
 
 export const deleteProviderConfig = (id: number) =>
   request<{ ok: boolean }>(`/settings/provider-configs/${id}`, { method: "DELETE" });
+
+export const suggestPrimary = () =>
+  request<SuggestPrimaryResult | null>("/settings/suggest-primary");
+
+export const getCatalog = () =>
+  request<CatalogEntry[]>("/settings/catalog");

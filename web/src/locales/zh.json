@@ -184,7 +184,10 @@
     "btnAddModel": "添加模型",
     "btnSetPrimary": "设为主要",
     "btnDelete": "删除",
-    "labelConfigApiKey": "API 密钥"
+    "labelConfigApiKey": "API 密钥",
+    "btnSuggestPrimary": "推荐主要提供商",
+    "btnUseThis": "使用此项",
+    "capabilityTable": "提供商能力表"
   },
   "errors": {
     "load_failed": "加载数据失败。",

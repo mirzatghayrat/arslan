@@ -29,6 +29,12 @@ vi.mock("../api/client", () => ({
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
   },
   API_BASE: "",
+  suggestPrimary: vi.fn().mockResolvedValue(null),
+  getCatalog: vi.fn().mockResolvedValue([]),
+  addProviderConfig: vi.fn().mockResolvedValue({}),
+  updateProviderConfig: vi.fn().mockResolvedValue({}),
+  setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
+  deleteProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // ── auth store mock (api/client imports authStore) ─────────────────────────────

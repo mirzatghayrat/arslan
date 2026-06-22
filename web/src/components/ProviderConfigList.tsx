@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ProviderOption, ProviderConfig } from '../api/client.types';
+import type { CatalogEntry, ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
 import {
   addProviderConfig,
   updateProviderConfig,
   setPrimaryProviderConfig,
   deleteProviderConfig,
+  suggestPrimary,
+  getCatalog,
 } from '../api/client';
 import { Plus, Star, Trash2 } from 'lucide-react';
 
@@ -34,6 +36,13 @@ export default function ProviderConfigList({
 }: ProviderConfigListProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<number | null>(null);
+  const [suggestion, setSuggestion] = useState<SuggestPrimaryResult | null>(null);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+
+  useEffect(() => {
+    getCatalog().then(setCatalog).catch(() => setCatalog([]));
+  }, []);
 
   // --- helpers ---
 
@@ -85,6 +94,29 @@ export default function ProviderConfigList({
     } catch {
       // Revert on failure
       onConfigsChange(providerConfigs);
+    }
+  };
+
+  const handleSuggest = async () => {
+    setSuggestBusy(true);
+    try {
+      const result = await suggestPrimary();
+      setSuggestion(result);
+    } finally {
+      setSuggestBusy(false);
+    }
+  };
+
+  const handleUseThis = async () => {
+    if (!suggestion) return;
+    setBusy(suggestion.id);
+    try {
+      await setPrimaryProviderConfig(suggestion.id);
+      const updated = providerConfigs.map((c) => ({ ...c, is_primary: c.id === suggestion.id }));
+      onConfigsChange(updated);
+      setSuggestion(null);
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -217,6 +249,31 @@ export default function ProviderConfigList({
         })}
       </div>
 
+      {/* Suggest primary button + rationale panel */}
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={handleSuggest}
+          disabled={suggestBusy}
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-gray-400 hover:text-[#FF8E24] border border-[#23293e] hover:border-[#FF8E24]/50 rounded-xl transition-colors disabled:opacity-50"
+        >
+          {t('settings.btnSuggestPrimary')}
+        </button>
+        {suggestion && (
+          <div className="flex items-start gap-3 bg-[#0d1017] border border-[#FF8E24]/20 rounded-xl px-4 py-3">
+            <p className="flex-1 text-xs text-gray-300 font-mono">{suggestion.rationale}</p>
+            <button
+              type="button"
+              onClick={handleUseThis}
+              disabled={busy === suggestion.id}
+              className="flex-shrink-0 px-2 py-1 text-[10px] font-mono font-medium text-[#FF8E24] border border-[#FF8E24]/40 hover:border-[#FF8E24]/80 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {t('settings.btnUseThis')}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Add model button */}
       <button
         type="button"
@@ -227,6 +284,41 @@ export default function ProviderConfigList({
         <Plus className="w-3.5 h-3.5" />
         {t('settings.btnAddModel')}
       </button>
+
+      {/* Read-only capability table */}
+      {catalog.length > 0 && (
+        <details className="group">
+          <summary className="cursor-pointer list-none text-[10.5px] font-mono font-medium text-gray-500 hover:text-gray-300 uppercase tracking-wide transition-colors">
+            {t('settings.capabilityTable')}
+          </summary>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-[10px] font-mono border-collapse">
+              <thead>
+                <tr className="border-b border-[#1e2330]">
+                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">Provider</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Cost</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Speed</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Tools</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Reasoning</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500 font-medium">Context</th>
+                </tr>
+              </thead>
+              <tbody>
+                {catalog.map((entry) => (
+                  <tr key={entry.provider} className="border-b border-[#1a1e2b] hover:bg-[#0d0f15]">
+                    <td className="py-1.5 pr-3 text-gray-300">{entry.provider}</td>
+                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.cost}</td>
+                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.speed}</td>
+                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.tool_calling}</td>
+                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.reasoning}</td>
+                    <td className="py-1.5 px-2 text-center text-gray-400">{entry.capabilities.long_context}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

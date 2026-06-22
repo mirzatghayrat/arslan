@@ -184,7 +184,10 @@
     "btnAddModel": "Modell hinzufügen",
     "btnSetPrimary": "Als primär festlegen",
     "btnDelete": "Löschen",
-    "labelConfigApiKey": "API-Schlüssel"
+    "labelConfigApiKey": "API-Schlüssel",
+    "btnSuggestPrimary": "Primäranbieter vorschlagen",
+    "btnUseThis": "Verwenden",
+    "capabilityTable": "Anbieterfähigkeiten"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

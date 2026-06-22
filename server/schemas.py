@@ -222,3 +222,17 @@ class SuggestPrimaryOut(BaseModel):
     id: int
     provider: str
     rationale: str
+
+
+class CatalogCapabilities(BaseModel):
+    cost: int
+    speed: int
+    tool_calling: int
+    reasoning: int
+    long_context: int
+
+
+class CatalogEntryOut(BaseModel):
+    provider: str
+    capabilities: CatalogCapabilities
+    languages: dict[str, int]

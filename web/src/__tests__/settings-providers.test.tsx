@@ -33,6 +33,8 @@ vi.mock("../api/client", () => ({
   updateProviderConfig: (...args: unknown[]) => mockUpdateProviderConfig(...args),
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
   deleteProviderConfig: (...args: unknown[]) => mockDeleteProviderConfig(...args),
+  suggestPrimary: vi.fn().mockResolvedValue(null),
+  getCatalog: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../stores/authStore", () => ({

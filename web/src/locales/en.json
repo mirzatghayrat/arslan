@@ -184,7 +184,10 @@
     "btnAddModel": "Add model",
     "btnSetPrimary": "Set primary",
     "btnDelete": "Delete",
-    "labelConfigApiKey": "API Key"
+    "labelConfigApiKey": "API Key",
+    "btnSuggestPrimary": "Suggest primary",
+    "btnUseThis": "Use this",
+    "capabilityTable": "Provider capability table"
   },
   "errors": {
     "load_failed": "Failed to load data.",

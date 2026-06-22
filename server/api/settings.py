@@ -4,11 +4,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arslan.llm.catalog import CATALOG
 from arslan.llm.presets import provider_options
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut
+from server.schemas import CatalogEntryOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut
 from server.services import provider_config_service, settings_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -80,3 +81,16 @@ async def delete_provider_config(config_id: int, session: AsyncSession = Depends
 async def suggest_primary(session: AsyncSession = Depends(get_session)):
     cfg = await settings_service.get_settings(session)
     return await provider_config_service.suggest_primary(session, cfg.get("language"))
+
+
+@router.get("/settings/catalog", response_model=list[CatalogEntryOut])
+async def get_catalog() -> list[CatalogEntryOut]:
+    """Read-only provider capability catalog for the transparency table."""
+    return [
+        CatalogEntryOut(
+            provider=provider,
+            capabilities=entry["capabilities"],
+            languages=entry["languages"],
+        )
+        for provider, entry in CATALOG.items()
+    ]

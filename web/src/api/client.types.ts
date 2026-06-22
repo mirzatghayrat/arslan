@@ -212,3 +212,23 @@ export interface RosterMember {
   joinedVia: string;
   status: string;
 }
+
+export interface SuggestPrimaryResult {
+  id: number;
+  provider: string;
+  rationale: string;
+}
+
+export interface CatalogCapabilities {
+  cost: number;
+  speed: number;
+  tool_calling: number;
+  reasoning: number;
+  long_context: number;
+}
+
+export interface CatalogEntry {
+  provider: string;
+  capabilities: CatalogCapabilities;
+  languages: Record<string, number>;
+}

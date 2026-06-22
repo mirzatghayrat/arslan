@@ -184,7 +184,10 @@
     "btnAddModel": "Agregar modelo",
     "btnSetPrimary": "Establecer como primario",
     "btnDelete": "Eliminar",
-    "labelConfigApiKey": "Clave API"
+    "labelConfigApiKey": "Clave API",
+    "btnSuggestPrimary": "Sugerir principal",
+    "btnUseThis": "Usar este",
+    "capabilityTable": "Tabla de capacidades del proveedor"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
