@@ -248,22 +248,8 @@ export default function OrchestratorChat({
             {/* Greeting Header inspired by Claude's elegant style */}
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
-                {/* Custom sunburst flower symbol / asterisk resembling Claude's */}
-                <svg className="w-10 h-10 text-primary/90 animate-pulse" viewBox="0 0 100 100" fill="currentColor">
-                  {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-                    <rect
-                      key={angle}
-                      x="46"
-                      y="14"
-                      width="8"
-                      height="72"
-                      rx="4"
-                      transform={`rotate(${angle} 50 50)`}
-                      className="origin-center text-primary"
-                    />
-                  ))}
-                  <circle cx="50" cy="50" r="14" className="text-primary" />
-                </svg>
+                {/* Arslan mark */}
+                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} />
 
                 {/* Elegant serif-style greeting */}
                 <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
