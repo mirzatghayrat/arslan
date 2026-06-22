@@ -211,3 +211,19 @@ class SpawnPhase(Base):
     phase = Column(String(20), nullable=False)   # 'proposing'
     direction = Column(Text, nullable=False, default="")
     updated_at = Column(String(50), nullable=False, default="")
+
+
+class ConversationSpawn(Base):
+    """Per-conversation spawn roster membership (conversation-workbench #2)."""
+
+    __tablename__ = "conversation_spawns"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=False)
+    joined_via = Column(String(16), nullable=False)  # "routed" | "created" | "invited"
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "spawn_id", name="uq_conversation_spawn"),
+    )

@@ -90,10 +90,19 @@ async def assemble_working_context(conversation_id: str) -> dict:
             .order_by(ArslanMessage.id)
         )
         msgs = rows.scalars().all()
-    history = [
-        {"role": "user" if m.role == "user" else "assistant", "content": m.content}
-        for m in msgs
-    ]
+    history = []
+    for m in msgs:
+        if m.role == "user":
+            history.append({"role": "user", "content": m.content})
+        elif m.role == "spawn_summary":
+            # A specialist spawn's relayed output. Frame it in the third person so the answer
+            # model treats it as a teammate's message and never adopts the spawn's identity
+            # (otherwise Arslan continues a spawn's first-person voice, e.g. "我是 Mermer").
+            history.append(
+                {"role": "assistant", "content": f"(relayed output from a specialist spawn) {m.content}"}
+            )
+        else:  # arslan's own turns pass through verbatim
+            history.append({"role": "assistant", "content": m.content})
     return {"summary": summ.summary if summ else "", "history": history}
 
 

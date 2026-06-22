@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo } from "../api/client.types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember } from "../api/client.types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -26,8 +26,13 @@ interface ArslanState {
   // Pending proposal: when a `proposal` frame arrives, the next spawn deliverable
   // created at stream_end for that spawn_id should be flagged isProposal: true.
   pendingProposalSpawnId: number | null;
+  // Active conversation roster: spawns currently joined to this conversation thread.
+  roster: RosterMember[];
+  // True from the moment the user sends a message until the first response frame arrives.
+  thinking: boolean;
 
   setSpawnNames: (map: Record<number, string>) => void;
+  setThinking: (v: boolean) => void;
   addUserMessage: (content: string) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
@@ -62,6 +67,8 @@ function initialData() {
     pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
+    roster: [] as RosterMember[],
+    thinking: false,
   };
 }
 
@@ -70,6 +77,8 @@ type GetState = () => ArslanState;
 
 function makeActions(set: SetState, get: GetState) {
   return {
+    setThinking: (v: boolean) => set({ thinking: v }),
+
     setSpawnNames: (map: Record<number, string>) =>
       set({ spawnNames: { ...get().spawnNames, ...map } }),
 
@@ -88,6 +97,11 @@ function makeActions(set: SetState, get: GetState) {
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
+      // Clear thinking on the first frame that signals Arslan is responding
+      const RESPONDING_TYPES = new Set(["stream_start", "routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta"]);
+      if (RESPONDING_TYPES.has(frame.type)) {
+        set({ thinking: false });
+      }
       // Maps a server row (history row or `message` frame — same field names,
       // `spawn_id` optional) to a renderable thread item, resolving spawn names.
       const rowToItem = (row: {
@@ -356,9 +370,45 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
-        case "verdict_recorded":
-          // Ack from the server confirming that the deliverable verdict (leveling signal)
-          // was successfully recorded. No UI change needed — this is a silent confirmation.
+        case "verdict_recorded": {
+          // Mark the most recent spawn deliverable (role==='spawn', !isProposal) for
+          // this spawn_id with the verdict action so the UI can show confirmed state.
+          const items = [...state.items];
+          for (let i = items.length - 1; i >= 0; i--) {
+            const it = items[i];
+            if (it.role === "spawn" && !it.isProposal && it.spawnId === frame.spawn_id) {
+              items[i] = { ...it, verdict: frame.action };
+              break;
+            }
+          }
+          set({ items });
+          break;
+        }
+        case "roster_update":
+          set({
+            roster: frame.members.map((m) => ({
+              spawnId: m.spawn_id,
+              spawnName: m.spawn_name,
+              joinedVia: m.joined_via,
+              status: m.status,
+            })),
+          });
+          break;
+        case "roster_event":
+          set({
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "system",
+                role: "arslan",
+                content: "",
+                spawnId: frame.spawn_id,
+                spawnName: frame.spawn_name,
+                rosterAction: frame.action,
+              },
+            ],
+          });
           break;
         case "error":
           set({

@@ -304,8 +304,14 @@ def test_accept_deliverable_bad_spawn_id(verdict_client, monkeypatch):
     with verdict_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
         ws.send_json({"type": "accept_deliverable", "spawn_id": None})
-        err = ws.receive_json()
-        assert err["type"] == "error"
+        # drain the on-connect roster_update broadcast, then assert the error
+        err = None
+        for _ in range(10):
+            f = ws.receive_json()
+            if f.get("type") == "error":
+                err = f
+                break
+        assert err is not None
         assert err["code"] == "INVALID_INPUT"
         # Socket still open — send valid message
         ws.send_json({"type": "accept_deliverable", "spawn_id": 4, "message_id": 1})

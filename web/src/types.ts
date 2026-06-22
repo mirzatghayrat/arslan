@@ -43,6 +43,8 @@ export interface Message {
   spawnId?: string;
   /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
   isProposal?: boolean;
+  /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
+  verdict?: string;
   /** Backend message id for verdict frames (spawnMessageId from the store item). */
   messageId?: number;
   /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */
@@ -51,6 +53,10 @@ export interface Message {
     spawnId: string;
     spawnName: string;
   };
+  /** Roster notice: "joined" | "left" — present on system messages from roster_event frames. */
+  rosterAction?: string;
+  /** The spawn name for a roster notice item. */
+  rosterSpawnName?: string | null;
   spawnIntro?: {
     name: string;
     domain: string;

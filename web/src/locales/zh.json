@@ -1,6 +1,13 @@
 {
-  "app": { "name": "Arslan", "tagline": "打造你专属的 AI 分身" },
-  "nav": { "dashboard": "仪表盘", "spawns": "分身", "settings": "设置" },
+  "app": {
+    "name": "Arslan",
+    "tagline": "打造你专属的 AI 分身"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "spawns": "分身",
+    "settings": "设置"
+  },
   "dashboard": {
     "title": "你的分身",
     "create": "创建新分身",
@@ -43,7 +50,9 @@
     "info": "分身信息",
     "stats": "统计",
     "reconnecting": "正在重新连接……",
-    "thinking": "思考中……"
+    "thinking": "思考中……",
+    "roster_joined": "{{name}} 加入了对话",
+    "roster_left": "{{name}} 离开了对话"
   },
   "conversation": {
     "title": "Arslan",
@@ -56,8 +65,16 @@
     "thinking_arslan": "Arslan 正在思考…",
     "thinking_spawn": "{{name}} 正在处理…"
   },
-  "artifact": { "report": "报告", "expand": "展开", "collapse": "收起", "download": "下载 .md" },
-  "feedback": { "redo": "重做", "tweak": "微调" },
+  "artifact": {
+    "report": "报告",
+    "expand": "展开",
+    "collapse": "收起",
+    "download": "下载 .md"
+  },
+  "feedback": {
+    "redo": "重做",
+    "tweak": "微调"
+  },
   "manual_create": {
     "title": "创建一个专家",
     "describe_placeholder": "描述你想要的专家…",
@@ -233,7 +250,9 @@
     "verdict_accept": "采纳",
     "verdict_edit": "精炼",
     "verdict_redo": "重做",
-    "verdict_discard": "丢弃"
+    "verdict_discard": "丢弃",
+    "verdict_accepted": "已采纳",
+    "verdict_discarded": "已弃用"
   },
   "ledger": {
     "title": "活跃分身账本",
@@ -271,7 +290,12 @@
     "security_policy_title": "守护程序安全策略限制范围",
     "security_policy_desc": "在自托管客户端凭证下，Tier-3 高级工具（🔒）受标准安全沙盒限制。主机目录集成仅限于本地虚拟目录，以防止来自远程节点的恶意根执行命令。",
     "spawn_not_found": "未找到分身。",
-    "go_back": "返回"
+    "go_back": "返回",
+    "exit": "断开分身连接",
+    "connectedExit": "已连接 — 退出",
+    "pullIn": "邀请分身加入对话",
+    "pullIntoChat": "+ 拉入对话",
+    "kickConfirm": "从对话中移除此分身？"
   },
   "spawn_chat": {
     "direct_channel_suffix": "直连频道",
