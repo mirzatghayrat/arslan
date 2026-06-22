@@ -98,6 +98,7 @@ def test_confirm_create_makes_spawn(app_client):
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
         assert created["spawn_name"] == "translator"
+        _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
     async def _check():
         async with db_session.AsyncSessionLocal() as s:
@@ -140,6 +141,7 @@ def test_confirm_create_dedups_duplicate_name(app_client):
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
         assert created["spawn_name"] == "beauty-guru-2"
+        _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
 
 def _drain(ws, max_frames: int = 30) -> list[dict]:
@@ -151,6 +153,20 @@ def _drain(ws, max_frames: int = 30) -> list[dict]:
         if f.get("type") == "stream_end":
             break
     return frames
+
+
+def _drain_roster_after_created(ws) -> None:
+    """After receiving spawn_created, drain the roster frames the server now always emits:
+    optionally roster_event("joined", ...) followed by roster_update(...).
+    Call this any time a test receives spawn_created and doesn't need the roster frames."""
+    f = ws.receive_json()
+    if f.get("type") == "roster_event":
+        # roster_event is only emitted when newly_joined; consume it then get roster_update
+        roster = ws.receive_json()
+        assert roster["type"] == "roster_update"
+    else:
+        # No roster_event, this frame should already be roster_update
+        assert f["type"] == "roster_update"
 
 
 def test_confirm_create_then_executes(app_client, monkeypatch):
@@ -235,16 +251,15 @@ def test_confirm_create_without_task_brief_does_not_dispatch(app_client, monkeyp
         ws.send_json({"type": "confirm_create", "draft": draft, "task_brief": ""})
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
-        roster = ws.receive_json()  # roster_update emitted on create
-        assert roster["type"] == "roster_update"
+        _drain_roster_after_created(ws)  # drain roster_event (newly_joined) + roster_update
         # No dispatch: send a follow-up and prove the very next frame is a routing frame from route_to.
         ws.send_json({"type": "route_to", "spawn_id": 7, "task_brief": "ping"})
-        # roster_update from the route_to dispatch comes first, then routing
-        nxt = ws.receive_json()
-        assert nxt["type"] == "roster_update"
-        routing = ws.receive_json()
-        assert routing["type"] == "routing"
-        assert routing["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
+        # dispatch_spawn emits roster_event (newly joined) then roster_update then routing
+        frames = _drain(ws)
+        types = [f["type"] for f in frames]
+        assert "routing" in types, f"expected routing in {types}"
+        routing_frame = next(f for f in frames if f["type"] == "routing")
+        assert routing_frame["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
 
 
 def test_route_to_existing_dispatches(app_client, monkeypatch):
@@ -358,6 +373,7 @@ def test_confirm_create_dedups_at_create_time(app_client):
         })
         frame = ws.receive_json()
         assert frame["type"] == "spawn_created"
+        _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
 
 # ---------------------------------------------------------------------------
