@@ -204,7 +204,11 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "添加 2 个或更多模型以启用路由策略",
+    "btnTest": "测试",
+    "testOk": "✓ 已连接",
+    "btnAddConfirm": "添加"
   },
   "errors": {
     "load_failed": "加载数据失败。",

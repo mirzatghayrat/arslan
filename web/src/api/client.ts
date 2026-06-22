@@ -117,3 +117,31 @@ export const suggestPrimary = () =>
 
 export const getCatalog = () =>
   request<CatalogEntry[]>("/settings/catalog");
+
+// ── LLM connection test endpoints (UX1) ───────────────────────────────────────
+
+export interface TestLlmBody {
+  provider: string;
+  model: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface TestLlmResult {
+  ok: boolean;
+  error?: string;
+  latency_ms?: number;
+}
+
+/** Test an ad-hoc set of credentials (for new/draft configs). */
+export const testLlm = (body: TestLlmBody) =>
+  request<TestLlmResult>("/settings/test-llm", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Test a saved provider config by id. */
+export const testProviderConfig = (id: number) =>
+  request<TestLlmResult>(`/settings/provider-configs/${id}/test`, {
+    method: "POST",
+  });

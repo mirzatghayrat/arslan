@@ -204,7 +204,11 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "Add 2+ models to enable routing strategies",
+    "btnTest": "Test",
+    "testOk": "✓ Connected",
+    "btnAddConfirm": "Add"
   },
   "errors": {
     "load_failed": "Failed to load data.",

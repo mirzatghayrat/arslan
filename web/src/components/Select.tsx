@@ -14,6 +14,8 @@ import { ChevronDown, Check } from "lucide-react";
 export interface SelectOption {
   value: string;
   label: string;
+  /** When true the option is shown but cannot be selected (greyed, not clickable). */
+  disabled?: boolean;
 }
 
 export interface SelectProps {
@@ -52,7 +54,9 @@ export default function Select({
   const openPanel = useCallback(() => {
     if (disabled) return;
     const idx = options.findIndex((o) => o.value === value);
-    setHighlightedIndex(idx >= 0 ? idx : 0);
+    // Start highlight on the current value, or first non-disabled option
+    const fallback = options.findIndex((o) => !o.disabled);
+    setHighlightedIndex(idx >= 0 ? idx : fallback >= 0 ? fallback : 0);
     setOpen(true);
   }, [disabled, options, value]);
 
@@ -90,9 +94,12 @@ export default function Select({
       case " ":
         e.preventDefault();
         if (open && highlightedIndex >= 0) {
-          // Confirm selection
-          onChange(options[highlightedIndex].value);
-          closePanel();
+          // Confirm selection — skip disabled options
+          const opt = options[highlightedIndex];
+          if (opt && !opt.disabled) {
+            onChange(opt.value);
+            closePanel();
+          }
         } else {
           openPanel();
         }
@@ -102,15 +109,22 @@ export default function Select({
         if (!open) {
           openPanel();
         } else {
-          setHighlightedIndex((prev) =>
-            prev < options.length - 1 ? prev + 1 : prev
-          );
+          // Skip over disabled options
+          setHighlightedIndex((prev) => {
+            let next = prev + 1;
+            while (next < options.length && options[next]?.disabled) next++;
+            return next < options.length ? next : prev;
+          });
         }
         break;
       case "ArrowUp":
         e.preventDefault();
         if (open) {
-          setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+          setHighlightedIndex((prev) => {
+            let next = prev - 1;
+            while (next >= 0 && options[next]?.disabled) next--;
+            return next >= 0 ? next : prev;
+          });
         }
         break;
       case "Escape":
@@ -124,8 +138,9 @@ export default function Select({
 
   // ── option click ────────────────────────────────────────────────────────
 
-  const handleOptionClick = (optValue: string) => {
-    onChange(optValue);
+  const handleOptionClick = (opt: SelectOption) => {
+    if (opt.disabled) return;
+    onChange(opt.value);
     closePanel();
     triggerRef.current?.focus();
   };
@@ -195,31 +210,36 @@ export default function Select({
           {options.map((option, idx) => {
             const isSelected = option.value === value;
             const isHighlighted = idx === highlightedIndex;
+            const isDisabled = !!option.disabled;
             return (
               <li
                 key={option.value}
                 role="option"
                 aria-selected={isSelected}
+                aria-disabled={isDisabled || undefined}
                 onPointerDown={(e) => {
                   // Prevent blur on the trigger
                   e.preventDefault();
-                  handleOptionClick(option.value);
+                  handleOptionClick(option);
                 }}
-                onMouseEnter={() => setHighlightedIndex(idx)}
+                onMouseEnter={() => !isDisabled && setHighlightedIndex(idx)}
                 className={[
                   "flex items-center justify-between gap-2 px-3 py-2",
-                  "text-xs font-sans cursor-pointer select-none",
+                  "text-xs font-sans select-none",
                   "transition-colors duration-75",
-                  isHighlighted && !isSelected
+                  isDisabled
+                    ? "opacity-40 cursor-not-allowed text-subtle-foreground"
+                    : "cursor-pointer",
+                  isHighlighted && !isSelected && !isDisabled
                     ? "bg-surface-raised text-foreground"
                     : "",
-                  isSelected
+                  isSelected && !isDisabled
                     ? "text-primary bg-primary/10"
-                    : "text-foreground",
+                    : !isDisabled ? "text-foreground" : "",
                 ].join(" ")}
               >
                 <span className="truncate">{option.label}</span>
-                {isSelected && (
+                {isSelected && !isDisabled && (
                   <Check className="w-3 h-3 flex-shrink-0 text-primary" />
                 )}
               </li>

@@ -116,13 +116,17 @@ describe("SettingsScreen", () => {
 
   // ── Kept fields must still be present ─────────────────────────────────────────
 
-  it("renders the search provider dropdown with fetched options", () => {
+  it("renders the search provider dropdown with fetched options", async () => {
+    const user = userEvent.setup();
     renderSettings();
-    const select = document.getElementById("settings-search-provider") as HTMLSelectElement;
-    expect(select).not.toBeNull();
-    const options = Array.from(select.options).map((o) => o.value);
-    expect(options).toContain("tavily");
-    expect(options).toContain("serpapi");
+    // Custom Select renders a button trigger; open it to inspect options
+    const trigger = document.getElementById("settings-search-provider") as HTMLButtonElement;
+    expect(trigger).not.toBeNull();
+    await user.click(trigger);
+    // Options appear as role="option" in the listbox
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
+    expect(options.some((o) => /tavily/i.test(o ?? ""))).toBe(true);
+    expect(options.some((o) => /serpapi/i.test(o ?? ""))).toBe(true);
   });
 
   it("renders the search API key input", () => {

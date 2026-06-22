@@ -8,8 +8,13 @@ import {
   deleteProviderConfig,
   suggestPrimary,
   getCatalog,
+  testLlm,
+  testProviderConfig,
 } from '../api/client';
-import { Plus, Star, Trash2 } from 'lucide-react';
+import type { TestLlmResult } from '../api/client';
+import { Plus, Star, Trash2, Loader2 } from 'lucide-react';
+import Select from './Select';
+import type { SelectOption } from './Select';
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -24,8 +29,22 @@ interface ProviderConfigListProps {
 
 const INPUT_CLS =
   'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
-const SELECT_CLS =
-  'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none transition-all font-sans';
+
+/** Draft state for the add-new flow */
+interface DraftConfig {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  testState: 'idle' | 'testing' | 'ok' | 'failed';
+  testError?: string;
+}
+
+/** Test status per saved config id */
+type TestStatusMap = Record<
+  number,
+  { state: 'idle' | 'testing' | 'ok' | 'failed'; error?: string }
+>;
 
 export default function ProviderConfigList({
   llmProviders,
@@ -39,6 +58,8 @@ export default function ProviderConfigList({
   const [suggestion, setSuggestion] = useState<SuggestPrimaryResult | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [testStatus, setTestStatus] = useState<TestStatusMap>({});
+  const [draft, setDraft] = useState<DraftConfig | null>(null);
 
   useEffect(() => {
     getCatalog().then(setCatalog).catch(() => setCatalog([]));
@@ -51,6 +72,9 @@ export default function ProviderConfigList({
 
   const defaultModelFor = (providerKey: string): string =>
     llmProviders.find((p) => p.key === providerKey)?.default_model ?? '';
+
+  const baseUrlFor = (providerKey: string): string =>
+    llmProviders.find((p) => p.key === providerKey)?.base_url ?? '';
 
   // --- mutations ---
 
@@ -70,6 +94,12 @@ export default function ProviderConfigList({
     try {
       await deleteProviderConfig(id);
       onConfigsChange(providerConfigs.filter((c) => c.id !== id));
+      // Clear test status for deleted row
+      setTestStatus((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } finally {
       setBusy(null);
     }
@@ -81,7 +111,6 @@ export default function ProviderConfigList({
     value: string,
   ) => {
     let patch: Partial<ProviderConfig> = { [field]: value };
-    // When provider changes auto-set model to the provider's default
     if (field === 'provider') {
       patch.model = defaultModelFor(value);
     }
@@ -89,11 +118,32 @@ export default function ProviderConfigList({
       c.id === config.id ? { ...c, ...patch } : c,
     );
     onConfigsChange(optimistic);
+    // Clear test status since config changed
+    setTestStatus((prev) => ({ ...prev, [config.id]: { state: 'idle' } }));
     try {
       await updateProviderConfig(config.id, patch);
     } catch {
-      // Revert on failure
       onConfigsChange(providerConfigs);
+    }
+  };
+
+  const handleTestSaved = async (id: number) => {
+    setTestStatus((prev) => ({ ...prev, [id]: { state: 'testing' } }));
+    try {
+      const result: TestLlmResult = await testProviderConfig(id);
+      if (result.ok) {
+        setTestStatus((prev) => ({ ...prev, [id]: { state: 'ok' } }));
+      } else {
+        setTestStatus((prev) => ({
+          ...prev,
+          [id]: { state: 'failed', error: result.error ?? 'Test failed' },
+        }));
+      }
+    } catch (err) {
+      setTestStatus((prev) => ({
+        ...prev,
+        [id]: { state: 'failed', error: err instanceof Error ? err.message : 'Test failed' },
+      }));
     }
   };
 
@@ -120,55 +170,132 @@ export default function ProviderConfigList({
     }
   };
 
-  const handleAddModel = async () => {
+  // --- Draft (add-new) flow ---
+
+  const openDraft = () => {
     const firstProvider = llmProviders[0];
     if (!firstProvider) return;
+    setDraft({
+      provider: firstProvider.key,
+      model: firstProvider.default_model,
+      base_url: firstProvider.base_url,
+      api_key: '',
+      testState: 'idle',
+    });
+  };
+
+  const handleDraftProviderChange = (providerKey: string) => {
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            provider: providerKey,
+            model: defaultModelFor(providerKey),
+            base_url: baseUrlFor(providerKey),
+            testState: 'idle',
+            testError: undefined,
+          }
+        : prev,
+    );
+  };
+
+  const handleDraftTest = async () => {
+    if (!draft) return;
+    setDraft((prev) => prev ? { ...prev, testState: 'testing', testError: undefined } : prev);
+    try {
+      const result: TestLlmResult = await testLlm({
+        provider: draft.provider,
+        model: draft.model,
+        base_url: draft.base_url || undefined,
+        api_key: draft.api_key || undefined,
+      });
+      if (result.ok) {
+        setDraft((prev) => prev ? { ...prev, testState: 'ok' } : prev);
+      } else {
+        setDraft((prev) =>
+          prev
+            ? { ...prev, testState: 'failed', testError: result.error ?? 'Test failed' }
+            : prev,
+        );
+      }
+    } catch (err) {
+      setDraft((prev) =>
+        prev
+          ? {
+              ...prev,
+              testState: 'failed',
+              testError: err instanceof Error ? err.message : 'Test failed',
+            }
+          : prev,
+      );
+    }
+  };
+
+  const handleDraftConfirm = async () => {
+    if (!draft || draft.testState !== 'ok') return;
+    const providerInfo = llmProviders.find((p) => p.key === draft.provider);
     setBusy(-1);
     try {
       const newConfig = await addProviderConfig({
-        label: firstProvider.label,
-        provider: firstProvider.key,
-        model: firstProvider.default_model,
-        base_url: firstProvider.base_url,
-        api_key: '',
+        label: providerInfo?.label ?? draft.provider,
+        provider: draft.provider,
+        model: draft.model,
+        base_url: draft.base_url,
+        api_key: draft.api_key,
       });
       onConfigsChange([...providerConfigs, newConfig]);
+      setDraft(null);
     } finally {
       setBusy(null);
     }
   };
 
+  const handleDraftCancel = () => setDraft(null);
+
+  // --- Strategy options with gating ---
+  const canUseMultiStrategy = providerConfigs.length >= 2;
+  const strategyOptions: SelectOption[] = [
+    { value: 'single', label: t('settings.strategyOptions.single') },
+    {
+      value: 'cost',
+      label: t('settings.strategyOptions.cost'),
+      disabled: !canUseMultiStrategy,
+    },
+    {
+      value: 'balanced',
+      label: t('settings.strategyOptions.balanced'),
+      disabled: !canUseMultiStrategy,
+    },
+    {
+      value: 'performance',
+      label: t('settings.strategyOptions.performance'),
+      disabled: !canUseMultiStrategy,
+    },
+  ];
+
+  const providerSelectOptions: SelectOption[] = llmProviders.map((p) => ({
+    value: p.key,
+    label: `${p.label}${p.native ? ' (Native)' : ''}`,
+  }));
+
   return (
     <div className="space-y-4">
-      {/* Strategy selector */}
-      <div className="space-y-2">
-        <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-          {t('settings.labelStrategy')}
-        </label>
-        <select
-          data-testid="provider-strategy-select"
-          value={strategy}
-          onChange={(e) => onStrategyChange?.(e.target.value)}
-          className={SELECT_CLS}
-        >
-          <option value="single">{t('settings.strategyOptions.single')}</option>
-          <option value="cost">{t('settings.strategyOptions.cost')}</option>
-          <option value="balanced">{t('settings.strategyOptions.balanced')}</option>
-          <option value="performance">{t('settings.strategyOptions.performance')}</option>
-        </select>
-      </div>
-
       {/* Config rows */}
       <div className="space-y-3">
         {providerConfigs.map((config, idx) => {
           const models = modelsFor(config.provider);
+          const modelOptions: SelectOption[] = models.length > 0
+            ? models.map((m) => ({ value: m, label: m }))
+            : [{ value: config.model, label: config.model }];
+          const ts = testStatus[config.id];
+
           return (
             <div
               key={config.id}
-              className="flex flex-wrap items-center gap-2 bg-surface border border-border rounded-xl px-4 py-3"
+              className="flex flex-wrap items-start gap-2 bg-surface border border-border rounded-xl px-4 py-3"
             >
               {/* Primary indicator */}
-              <div className="w-5 flex-shrink-0 flex items-center justify-center">
+              <div className="w-5 flex-shrink-0 flex items-center justify-center pt-2">
                 {config.is_primary ? (
                   <span className="text-primary text-sm" title="Primary">★</span>
                 ) : null}
@@ -176,39 +303,29 @@ export default function ProviderConfigList({
 
               {/* Provider select */}
               <div className="flex-1 min-w-[120px]">
-                <select
+                <Select
                   data-testid={`provider-config-provider-${idx}`}
+                  id={`provider-config-provider-${idx}`}
                   value={config.provider}
-                  onChange={(e) => handleFieldChange(config, 'provider', e.target.value)}
-                  className={SELECT_CLS}
-                >
-                  {llmProviders.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}{p.native ? ' (Native)' : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => handleFieldChange(config, 'provider', v)}
+                  options={providerSelectOptions}
+                  ariaLabel="Provider"
+                />
               </div>
 
               {/* Model select */}
               <div className="flex-1 min-w-[120px]">
-                <select
+                <Select
                   data-testid={`provider-config-model-${idx}`}
+                  id={`provider-config-model-${idx}`}
                   value={config.model}
-                  onChange={(e) => handleFieldChange(config, 'model', e.target.value)}
-                  className={SELECT_CLS}
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                  {/* Fallback if model not in list */}
-                  {models.length === 0 && (
-                    <option value={config.model}>{config.model}</option>
-                  )}
-                </select>
+                  onChange={(v) => handleFieldChange(config, 'model', v)}
+                  options={modelOptions}
+                  ariaLabel="Model"
+                />
               </div>
 
-              {/* API key (masked input) */}
+              {/* API key */}
               <div className="flex-1 min-w-[100px]">
                 <input
                   type="password"
@@ -218,6 +335,28 @@ export default function ProviderConfigList({
                   placeholder={t('settings.labelConfigApiKey')}
                   className={INPUT_CLS}
                 />
+              </div>
+
+              {/* Test button + status */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  data-testid={`provider-config-test-${idx}`}
+                  onClick={() => handleTestSaved(config.id)}
+                  disabled={ts?.state === 'testing'}
+                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {ts?.state === 'testing' ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : null}
+                  {t('settings.btnTest')}
+                </button>
+                {ts?.state === 'ok' && (
+                  <span className="text-[10px] font-mono text-success">{t('settings.testOk')}</span>
+                )}
+                {ts?.state === 'failed' && (
+                  <span className="text-[10px] font-mono text-danger">✗ {ts.error}</span>
+                )}
               </div>
 
               {/* Set primary button (only for non-primary rows) */}
@@ -274,16 +413,124 @@ export default function ProviderConfigList({
         )}
       </div>
 
-      {/* Add model button */}
-      <button
-        type="button"
-        onClick={handleAddModel}
-        disabled={busy === -1 || llmProviders.length === 0}
-        className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-xl transition-colors disabled:opacity-50"
-      >
-        <Plus className="w-3.5 h-3.5" />
-        {t('settings.btnAddModel')}
-      </button>
+      {/* Add model button OR draft form */}
+      {draft === null ? (
+        <button
+          type="button"
+          onClick={openDraft}
+          disabled={llmProviders.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-xl transition-colors disabled:opacity-50"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {t('settings.btnAddModel')}
+        </button>
+      ) : (
+        /* Draft / new config form */
+        <div className="flex flex-wrap items-start gap-2 bg-surface border border-primary/30 rounded-xl px-4 py-3">
+          {/* Provider select */}
+          <div className="flex-1 min-w-[120px]">
+            <Select
+              value={draft.provider}
+              onChange={handleDraftProviderChange}
+              options={providerSelectOptions}
+              ariaLabel="Provider"
+            />
+          </div>
+
+          {/* Model select */}
+          <div className="flex-1 min-w-[120px]">
+            <Select
+              value={draft.model}
+              onChange={(v) =>
+                setDraft((prev) => prev ? { ...prev, model: v, testState: 'idle', testError: undefined } : prev)
+              }
+              options={
+                modelsFor(draft.provider).length > 0
+                  ? modelsFor(draft.provider).map((m) => ({ value: m, label: m }))
+                  : [{ value: draft.model, label: draft.model }]
+              }
+              ariaLabel="Model"
+            />
+          </div>
+
+          {/* API key */}
+          <div className="flex-1 min-w-[100px]">
+            <input
+              type="password"
+              value={draft.api_key}
+              onChange={(e) =>
+                setDraft((prev) =>
+                  prev ? { ...prev, api_key: e.target.value, testState: 'idle', testError: undefined } : prev,
+                )
+              }
+              placeholder={t('settings.labelConfigApiKey')}
+              className={INPUT_CLS}
+            />
+          </div>
+
+          {/* Test button */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              data-testid="provider-draft-test"
+              onClick={handleDraftTest}
+              disabled={draft.testState === 'testing'}
+              className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {draft.testState === 'testing' ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : null}
+              {t('settings.btnTest')}
+            </button>
+            {draft.testState === 'ok' && (
+              <span className="text-[10px] font-mono text-success">{t('settings.testOk')}</span>
+            )}
+            {draft.testState === 'failed' && (
+              <span className="text-[10px] font-mono text-danger">✗ {draft.testError}</span>
+            )}
+          </div>
+
+          {/* Confirm / Cancel */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              data-testid="provider-draft-confirm"
+              onClick={handleDraftConfirm}
+              disabled={draft.testState !== 'ok' || busy === -1}
+              className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-primary border border-primary/40 hover:border-primary/80 rounded-lg transition-colors disabled:opacity-30"
+            >
+              {t('settings.btnAddConfirm')}
+            </button>
+            <button
+              type="button"
+              onClick={handleDraftCancel}
+              className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-subtle-foreground hover:text-foreground border border-border hover:border-border-strong rounded-lg transition-colors"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Strategy selector (C: below the config rows) ── */}
+      <div className="space-y-1.5 pt-2 border-t border-border/40">
+        <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+          {t('settings.labelStrategy')}
+        </label>
+        <Select
+          data-testid="provider-strategy-select"
+          id="provider-strategy-select"
+          value={canUseMultiStrategy ? strategy : 'single'}
+          onChange={(v) => onStrategyChange?.(v)}
+          options={strategyOptions}
+          ariaLabel={t('settings.labelStrategy')}
+        />
+        {!canUseMultiStrategy && (
+          <p className="text-[10px] text-subtle-foreground font-mono">
+            {t('settings.strategyHint')}
+          </p>
+        )}
+      </div>
 
       {/* Read-only capability table */}
       {catalog.length > 0 && (

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
 import { AppearanceSettings } from './AppearanceSettings';
+import Select from './Select';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -128,40 +129,48 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Cognitive Search selections */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+              <label
+                htmlFor="settings-search-provider"
+                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+              >
                 {t('settings.labelSearchProvider')}
               </label>
-              <select
+              <Select
                 id="settings-search-provider"
                 value={localSettings.searchProvider}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, searchProvider: e.target.value }))}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
-              >
-                {searchProviders.length === 0 && (
-                  <option value={localSettings.searchProvider}>{localSettings.searchProvider || 'Loading...'}</option>
-                )}
-                {searchProviders.map((key) => (
-                  <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
-                ))}
-              </select>
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
+                options={
+                  searchProviders.length > 0
+                    ? searchProviders.map((k) => ({
+                        value: k,
+                        label: k.charAt(0).toUpperCase() + k.slice(1),
+                      }))
+                    : [{ value: localSettings.searchProvider, label: localSettings.searchProvider || 'Loading…' }]
+                }
+                ariaLabel={t('settings.labelSearchProvider')}
+              />
             </div>
 
             {/* Language Localizations */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+              <label
+                htmlFor="settings-language"
+                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+              >
                 {t('settings.labelLanguage')}
               </label>
-              <select
+              <Select
                 id="settings-language"
                 value={localSettings.language}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, language: e.target.value }))}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
-              >
-                <option value="English (US)">English (US) - Standard</option>
-                <option value="Chinese (Simplified)">简体中文 (Simplified Chinese)</option>
-                <option value="Japanese">日本語 (Japanese)</option>
-                <option value="German">Deutsch (German)</option>
-              </select>
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, language: v }))}
+                options={[
+                  { value: 'English (US)', label: 'English (US) - Standard' },
+                  { value: 'Chinese (Simplified)', label: '简体中文 (Simplified Chinese)' },
+                  { value: 'Japanese', label: '日本語 (Japanese)' },
+                  { value: 'German', label: 'Deutsch (German)' },
+                ]}
+                ariaLabel={t('settings.labelLanguage')}
+              />
             </div>
 
             {/* Appearance — palette picker + mode toggle */}
@@ -227,16 +236,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                   Choose how sub-agents are created. Auto: instant delegation without checks. Interactive: asks user approval on the fly before spinning up new spawns.
                 </p>
               </div>
-              <select
+              <Select
                 id="settings-spawn-mode"
                 value={localSettings.spawnMode}
-                onChange={(e: any) => setLocalSettings(prev => ({ ...prev, spawnMode: e.target.value }))}
-                className="bg-surface border border-border-strong focus:outline-none font-sans text-xs text-foreground rounded-lg p-2"
-              >
-                <option value="auto">Autonomous Synthesis</option>
-                <option value="interactive">Interactive Sandbox Auth</option>
-                <option value="strict">Strict Static Lock</option>
-              </select>
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, spawnMode: v as AppSettings['spawnMode'] }))}
+                options={[
+                  { value: 'auto', label: 'Autonomous Synthesis' },
+                  { value: 'interactive', label: 'Interactive Sandbox Auth' },
+                  { value: 'strict', label: 'Strict Static Lock' },
+                ]}
+                className="w-40"
+                ariaLabel="Spawn synthesis mode"
+              />
             </div>
           </div>
         </div>

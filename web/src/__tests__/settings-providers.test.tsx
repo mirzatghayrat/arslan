@@ -7,7 +7,8 @@
 
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 // ── i18n mock ──────────────────────────────────────────────────────────────────
 vi.mock("react-i18next", () => ({
@@ -55,7 +56,8 @@ const configs: ProviderConfig[] = [
 ];
 
 describe("ProviderConfigList", () => {
-  it("renders configured rows with provider model visible", () => {
+  it("renders configured rows with provider model visible", async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -64,9 +66,14 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // Both rows rendered — model values should be visible
-    expect(screen.getByDisplayValue("deepseek-chat")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("qwen-max")).toBeInTheDocument();
+    // Custom Select triggers: open the model select for the first row by id
+    const modelTrigger0 = document.getElementById("provider-config-model-0") as HTMLButtonElement;
+    expect(modelTrigger0).not.toBeNull();
+    // The trigger shows the selected model label in its text
+    expect(modelTrigger0.textContent).toContain("deepseek-chat");
+    const modelTrigger1 = document.getElementById("provider-config-model-1") as HTMLButtonElement;
+    expect(modelTrigger1).not.toBeNull();
+    expect(modelTrigger1.textContent).toContain("qwen-max");
   });
 
   it("shows a set-primary button for non-primary rows", () => {
@@ -124,7 +131,8 @@ describe("ProviderConfigList", () => {
     expect(mockSetPrimaryProviderConfig).toHaveBeenCalledWith(2);
   });
 
-  it("renders model options from the selected provider's models array", () => {
+  it("renders model options from the selected provider's models array", async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -133,15 +141,17 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // The deepseek row should have both deepseek model options in its select
-    const modelSelects = screen.getAllByTestId(/provider-config-model-/);
-    const deepseekSelect = modelSelects[0] as HTMLSelectElement;
-    const options = Array.from(deepseekSelect.options).map((o) => o.value);
+    // Open the model select for the first (deepseek) row
+    const modelTrigger0 = document.getElementById("provider-config-model-0") as HTMLButtonElement;
+    await user.click(modelTrigger0);
+    // Both model options should be rendered in the listbox
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
     expect(options).toContain("deepseek-chat");
     expect(options).toContain("deepseek-reasoner");
   });
 
-  it("renders a strategy dropdown with 4 options", () => {
+  it("renders a strategy dropdown with 4 options", async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -152,15 +162,21 @@ describe("ProviderConfigList", () => {
         onStrategyChange={vi.fn()}
       />
     );
-    const strategySelect = screen.getByTestId("provider-strategy-select") as HTMLSelectElement;
-    const options = Array.from(strategySelect.options).map((o) => o.value);
-    expect(options).toContain("single");
-    expect(options).toContain("cost");
-    expect(options).toContain("balanced");
-    expect(options).toContain("performance");
+    // Custom Select: trigger is a button with id "provider-strategy-select"
+    const strategyTrigger = document.getElementById("provider-strategy-select") as HTMLButtonElement;
+    await user.click(strategyTrigger);
+    // All 4 strategy options should appear in the listbox
+    const options = screen.getAllByRole("option").map((o) => o.getAttribute("data-value") ?? o.textContent?.trim());
+    // Check via text content matching i18n key
+    const optionTexts = screen.getAllByRole("option").map((o) => o.textContent?.trim());
+    expect(optionTexts.some((t) => /single/i.test(t ?? ""))).toBe(true);
+    expect(optionTexts.some((t) => /cost/i.test(t ?? ""))).toBe(true);
+    expect(optionTexts.some((t) => /balanced/i.test(t ?? ""))).toBe(true);
+    expect(optionTexts.some((t) => /performance/i.test(t ?? ""))).toBe(true);
   });
 
-  it("calls onStrategyChange when strategy dropdown changes", () => {
+  it("calls onStrategyChange when strategy option is clicked", async () => {
+    const user = userEvent.setup();
     const onStrategyChange = vi.fn();
     render(
       <ProviderConfigList
@@ -171,8 +187,15 @@ describe("ProviderConfigList", () => {
         onStrategyChange={onStrategyChange}
       />
     );
-    const strategySelect = screen.getByTestId("provider-strategy-select");
-    fireEvent.change(strategySelect, { target: { value: "balanced" } });
+    // Open the strategy custom select
+    const strategyTrigger = document.getElementById("provider-strategy-select") as HTMLButtonElement;
+    await user.click(strategyTrigger);
+    // Click "balanced" option (2 configs so not disabled)
+    const balancedOpt = screen.getAllByRole("option").find((o) =>
+      /balanced/i.test(o.textContent ?? ""),
+    );
+    expect(balancedOpt).toBeTruthy();
+    await user.click(balancedOpt!);
     expect(onStrategyChange).toHaveBeenCalledWith("balanced");
   });
 });

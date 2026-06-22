@@ -204,7 +204,11 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "Ajoutez 2+ modèles pour activer les stratégies de routage",
+    "btnTest": "Tester",
+    "testOk": "✓ Connecté",
+    "btnAddConfirm": "Ajouter"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
