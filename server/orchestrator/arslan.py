@@ -73,7 +73,7 @@ _CLARIFY_ADDENDUM = (
 
 async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[str]:  # noqa: ANN001
     """Stream a direct Arslan reply. Separate fn so tests can stub it."""
-    adapter = await build_adapter()
+    adapter = await build_adapter(role="converse")
     async for piece in adapter.chat_stream(system, user, history=history):
         yield piece
 
@@ -89,7 +89,7 @@ _CLASSIFY_SYSTEM = (
 
 async def _build_classify_adapter():
     """Indirection so tests can stub adapter construction."""
-    return await build_adapter()
+    return await build_adapter(role="converse")
 
 
 async def _classify_followup(user_message: str, direction: str) -> str:

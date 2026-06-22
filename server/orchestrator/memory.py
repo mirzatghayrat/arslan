@@ -158,7 +158,7 @@ async def maybe_compact(conversation_id: str) -> None:
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="summarize")
 
 
 async def _summarize(adapter, text: str) -> str:  # noqa: ANN001

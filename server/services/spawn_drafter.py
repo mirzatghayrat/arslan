@@ -25,7 +25,7 @@ _SYSTEM = (
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="draft")
 
 
 def _parse(content: str) -> dict[str, Any]:
