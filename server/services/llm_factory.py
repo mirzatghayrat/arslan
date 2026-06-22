@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from arslan.llm.adapter import LLMAdapter
 from arslan.llm.presets import expand_preset
+from arslan.llm import routing
 from server.db import session as db_session
 from server.services import provider_config_service, settings_service
 
@@ -18,8 +19,11 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
         configs = await provider_config_service.list_for_routing(db)
         if not configs:
             return await _legacy_build_adapter(db)
-        primary = next((c for c in configs if c["is_primary"]), configs[0])
-        chosen = primary  # Phase B: routing.select(role, strategy, configs, language)
+        cfg = await settings_service.get_settings(db)
+        strategy = cfg.get("llm_strategy") or "single"
+        language = cfg.get("language") or None
+        chosen = routing.select(role, strategy, configs, language) or next(
+            (c for c in configs if c["is_primary"]), configs[0])
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
     return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url)
