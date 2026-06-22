@@ -12,6 +12,7 @@ import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import Markdown from './Markdown';
+import { useArslanStore } from '../stores/arslanStore';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -40,6 +41,10 @@ export default function OrchestratorChat({
   onDeliverableVerdict,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
+  // Live roster from store — used to determine which spawns are in this conversation
+  const roster = useArslanStore((s) => s.roster);
+  const thinking = useArslanStore((s) => (s as any).thinking as boolean);
+  const streaming = useArslanStore((s) => s.streaming);
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
@@ -155,10 +160,10 @@ export default function OrchestratorChat({
 
         <div className="flex items-center gap-3 flex-wrap">
           {(() => {
-            const currentThreadMembers = activeThread?.memberSpawnIds || [];
-            const memberSpawns = spawns.filter(s => currentThreadMembers.includes(s.id));
-            
-            // Show only thread members; no fallback to mock names
+            // Derive member spawns from the live store roster
+            const rosterIds = new Set(roster.map((m) => String(m.spawnId)));
+            const memberSpawns = spawns.filter((s) => rosterIds.has(s.id));
+            // Show only roster members; no fallback to mock names
             const activeDisplayList = memberSpawns;
 
             return activeDisplayList.map(spawn => {
@@ -375,6 +380,23 @@ export default function OrchestratorChat({
             const isUser = msg.sender === 'user';
             const isArslan = msg.sender === 'arslan';
             const isSpawn = msg.sender === 'spawn';
+
+            // Roster notice: render for all themes as a subtle centered line
+            if (msg.rosterAction) {
+              const name = msg.rosterSpawnName ?? '';
+              const label = msg.rosterAction === 'joined'
+                ? t('chat.roster_joined', { name })
+                : t('chat.roster_left', { name });
+              return (
+                <div key={msg.id} className="flex items-center gap-3 py-1 select-none">
+                  <div className="flex-1 h-px bg-[#1e2330]/60" />
+                  <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">
+                    {msg.rosterAction === 'joined' ? '🔗' : '✕'} {label}
+                  </span>
+                  <div className="flex-1 h-px bg-[#1e2330]/60" />
+                </div>
+              );
+            }
 
             // Quartz Theme Rendering
             if (currentStyle === 'quartz') {
@@ -972,6 +994,26 @@ export default function OrchestratorChat({
 
             return null;
           })
+        )}
+        {/* Thinking indicator: shown from send until first response frame */}
+        {thinking && !streaming && (
+          <div className="flex gap-3 items-center py-2 select-none">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#FF8E24] to-yellow-500 flex items-center justify-center shrink-0 shadow shadow-[#FF8E24]/20">
+              <span className="text-white text-xs">🦁</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-[#151924]/80 border border-[#23293b] rounded-2xl rounded-tl-none">
+              <span className="text-[11px] text-gray-400 font-mono">{t('chat.thinking')}</span>
+              <span className="flex gap-0.5 ml-1">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="w-1 h-1 rounded-full bg-[#FF8E24]/70 animate-bounce"
+                    style={{ animationDelay: `${i * 150}ms` }}
+                  />
+                ))}
+              </span>
+            </div>
+          </div>
         )}
         <div ref={bottomRef} />
       </div>

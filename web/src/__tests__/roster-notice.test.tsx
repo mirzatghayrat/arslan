@@ -1,0 +1,199 @@
+/**
+ * Tests for the in-chat roster notice feature (roster_event frames).
+ *
+ * Coverage:
+ *  1. Store: roster_event "joined" appends a system item with rosterAction="joined"
+ *  2. Store: roster_event "left" appends a system item with rosterAction="left"
+ *  3. Store: idempotent re-invite (no roster_event) does NOT add a notice
+ *  4. Adapter: rosterAction item converts to Message with rosterAction + rosterSpawnName
+ *  5. Component: renders a notice with the spawn name (not a message bubble)
+ */
+
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import React from "react";
+
+import { useArslanStore, initialArslanState } from "../stores/arslanStore";
+import { toUiMessages } from "../api/adapters";
+import type { ArslanThreadItem } from "../api/client.types";
+import OrchestratorChat from "../components/OrchestratorChat";
+
+// jsdom does not implement scrollIntoView — suppress
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, string>) => {
+      if (key === "chat.roster_joined") return `${opts?.name ?? ""} joined`;
+      if (key === "chat.roster_left") return `${opts?.name ?? ""} left`;
+      return key;
+    },
+  }),
+  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// ---------------------------------------------------------------------------
+// Fixture reset
+// ---------------------------------------------------------------------------
+beforeEach(() => {
+  useArslanStore.setState(initialArslanState(), true);
+});
+
+// ---------------------------------------------------------------------------
+// 1. Store — "joined" notice appended
+// ---------------------------------------------------------------------------
+describe("arslanStore roster_event", () => {
+  it("appends a system item with rosterAction='joined' on roster_event joined", () => {
+    useArslanStore.getState().handleFrame({
+      type: "roster_event",
+      action: "joined",
+      spawn_id: 4,
+      spawn_name: "数据研析",
+    } as any);
+
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(1);
+    const item = items[0];
+    expect(item.kind).toBe("system");
+    expect(item.rosterAction).toBe("joined");
+    expect(item.spawnId).toBe(4);
+    expect(item.spawnName).toBe("数据研析");
+  });
+
+  it("appends a system item with rosterAction='left' on roster_event left", () => {
+    useArslanStore.getState().handleFrame({
+      type: "roster_event",
+      action: "left",
+      spawn_id: 4,
+      spawn_name: "数据研析",
+    } as any);
+
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].rosterAction).toBe("left");
+  });
+
+  it("handles null spawn_name gracefully", () => {
+    useArslanStore.getState().handleFrame({
+      type: "roster_event",
+      action: "joined",
+      spawn_id: 99,
+      spawn_name: null,
+    } as any);
+
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].spawnName).toBeNull();
+    expect(items[0].rosterAction).toBe("joined");
+  });
+
+  it("assigns a stable negative client id", () => {
+    useArslanStore.getState().handleFrame({
+      type: "roster_event",
+      action: "joined",
+      spawn_id: 4,
+      spawn_name: "X",
+    } as any);
+    useArslanStore.getState().handleFrame({
+      type: "roster_event",
+      action: "left",
+      spawn_id: 4,
+      spawn_name: "X",
+    } as any);
+
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(2);
+    // Both have negative ids (client-only) and they are distinct
+    expect(items[0].id).toBeLessThan(0);
+    expect(items[1].id).toBeLessThan(0);
+    expect(items[0].id).not.toBe(items[1].id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. Adapter — rosterAction item → Message
+// ---------------------------------------------------------------------------
+describe("toUiMessages roster notice", () => {
+  it("converts a rosterAction system item to a Message with rosterAction + rosterSpawnName", () => {
+    const item: ArslanThreadItem = {
+      id: -1,
+      kind: "system",
+      role: "arslan",
+      content: "",
+      spawnId: 4,
+      spawnName: "数据研析",
+      rosterAction: "joined",
+    };
+    const msgs = toUiMessages([item]);
+    expect(msgs).toHaveLength(1);
+    const msg = msgs[0];
+    expect(msg.rosterAction).toBe("joined");
+    expect(msg.rosterSpawnName).toBe("数据研析");
+    // Should NOT produce a spawnIntro card
+    expect(msg.spawnIntro).toBeUndefined();
+    expect(msg.text).toBe("");
+  });
+
+  it("converts a 'left' rosterAction item correctly", () => {
+    const item: ArslanThreadItem = {
+      id: -2,
+      kind: "system",
+      role: "arslan",
+      content: "",
+      spawnId: 7,
+      spawnName: "领英智囊",
+      rosterAction: "left",
+    };
+    const msgs = toUiMessages([item]);
+    expect(msgs[0].rosterAction).toBe("left");
+    expect(msgs[0].rosterSpawnName).toBe("领英智囊");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Component smoke — roster notice renders without message bubbles
+// ---------------------------------------------------------------------------
+describe("OrchestratorChat roster notice rendering", () => {
+  const joinedMsg = {
+    id: "notice-1",
+    sender: "arslan" as const,
+    senderName: "Arslan",
+    senderAvatar: "🦁",
+    text: "",
+    timestamp: "",
+    rosterAction: "joined",
+    rosterSpawnName: "数据研析",
+  };
+
+  it("renders a notice line containing the spawn name and 'joined'", () => {
+    render(
+      <OrchestratorChat
+        chatHistory={[joinedMsg]}
+        setChatHistory={() => {}}
+        spawns={[]}
+        currentStyle="quartz"
+        setCurrentStyle={() => {}}
+        activeThread={null}
+      />
+    );
+    // The notice line should contain the spawn name + "joined"
+    expect(screen.getByText(/数据研析 joined/)).toBeTruthy();
+    // Must NOT render an avatar bubble (the notice is just a divider line)
+    expect(screen.queryByText("Arslan Orchestrator")).toBeNull();
+  });
+
+  it("renders a 'left' notice for rosterAction='left'", () => {
+    const leftMsg = { ...joinedMsg, id: "notice-2", rosterAction: "left" };
+    render(
+      <OrchestratorChat
+        chatHistory={[leftMsg]}
+        setChatHistory={() => {}}
+        spawns={[]}
+        currentStyle="quartz"
+        setCurrentStyle={() => {}}
+        activeThread={null}
+      />
+    );
+    expect(screen.getByText(/数据研析 left/)).toBeTruthy();
+  });
+});

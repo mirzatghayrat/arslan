@@ -1,6 +1,13 @@
 {
-  "app": { "name": "Arslan", "tagline": "Créez vos propres spawns d'IA" },
-  "nav": { "dashboard": "Tableau de bord", "spawns": "Spawns", "settings": "Paramètres" },
+  "app": {
+    "name": "Arslan",
+    "tagline": "Créez vos propres spawns d'IA"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "spawns": "Spawns",
+    "settings": "Paramètres"
+  },
   "dashboard": {
     "title": "Vos spawns",
     "create": "Créer un nouveau spawn",
@@ -43,7 +50,9 @@
     "info": "Infos du spawn",
     "stats": "Statistiques",
     "reconnecting": "Reconnexion...",
-    "thinking": "Réflexion..."
+    "thinking": "Réflexion...",
+    "roster_joined": "{{name}} a rejoint la conversation",
+    "roster_left": "{{name}} a quitté la conversation"
   },
   "conversation": {
     "title": "Arslan",
@@ -56,8 +65,16 @@
     "thinking_arslan": "Arslan réfléchit…",
     "thinking_spawn": "{{name}} travaille…"
   },
-  "artifact": { "report": "rapport", "expand": "Développer", "collapse": "Réduire", "download": "Télécharger .md" },
-  "feedback": { "redo": "Refaire", "tweak": "Ajuster" },
+  "artifact": {
+    "report": "rapport",
+    "expand": "Développer",
+    "collapse": "Réduire",
+    "download": "Télécharger .md"
+  },
+  "feedback": {
+    "redo": "Refaire",
+    "tweak": "Ajuster"
+  },
   "manual_create": {
     "title": "Créer un spécialiste",
     "describe_placeholder": "Décrivez le spécialiste que vous voulez…",
@@ -262,7 +279,12 @@
     "security_policy_title": "Daemon Security Policy Restricted Scope",
     "security_policy_desc": "Under self-hosted client credentials, Tier-3 advanced tools (🔒) are locked behind standard security sandboxing bounds. Host directory integrations are restricted to local virtual directories to prevent malicious root execution commands from remote nodes.",
     "spawn_not_found": "Spawn not found.",
-    "go_back": "Go back"
+    "go_back": "Go back",
+    "exit": "Déconnecter le spawn du chat",
+    "connectedExit": "Connecté — Quitter",
+    "pullIn": "Inviter le spawn dans le chat",
+    "pullIntoChat": "+ Intégrer au Chat",
+    "kickConfirm": "Retirer ce spawn de la conversation ?"
   },
   "spawn_chat": {
     "direct_channel_suffix": "Direct Channel",

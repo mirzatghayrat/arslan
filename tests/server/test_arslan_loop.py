@@ -37,6 +37,10 @@ def _events(collector):
     return lambda ev: collector.append(ev)
 
 
+async def _fake_noop(): pass
+async def _fake_list(): return []
+
+
 @pytest.mark.asyncio
 async def test_answer_path_streams_and_persists(maker, monkeypatch):
     from server.orchestrator import arslan, router
@@ -137,6 +141,7 @@ async def test_answer_path_grounds_real_roster_and_guards_fabrication(maker, mon
 @pytest.mark.asyncio
 async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
     from server.orchestrator import arslan, router
+    from server.services import roster_service
 
     async def _fake_route(conv, msg):
         return router.RouterResult(action="route", spawn_id=7, task_brief="draft posts")
@@ -156,13 +161,16 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
         }
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
+    monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _fake_noop())
+    monkeypatch.setattr(roster_service, "list_roster", lambda c: _fake_list())
 
     events = []
     await arslan.handle_user_message("main", "make posts", _events(events))
     types = [e["type"] for e in events]
-    assert types[0] == "routing"
+    assert "routing" in types
+    routing_ev = next(e for e in events if e.get("type") == "routing")
     # spawn name resolved (via dispatcher.get_spawn_name against the seeded spawn 7) before streaming
-    assert events[0]["spawn_name"] == "beauty-guru"
+    assert routing_ev["spawn_name"] == "beauty-guru"
     assert "stream_start" in types and "stream_end" in types
 
 

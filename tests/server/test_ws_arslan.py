@@ -76,6 +76,7 @@ def test_answer_turn_streams(app_client, monkeypatch):
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         hist = ws.receive_json()
         assert hist["type"] == "history"
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "user_message", "content": "hi"})
         assert ws.receive_json()["type"] == "stream_start"
         assert ws.receive_json() == {"type": "stream_chunk", "content": "Hello"}
@@ -92,10 +93,12 @@ def test_confirm_create_makes_spawn(app_client):
     }
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_create", "draft": draft})
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
         assert created["spawn_name"] == "translator"
+        _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
     async def _check():
         async with db_session.AsyncSessionLocal() as s:
@@ -119,6 +122,7 @@ def test_confirm_create_dedups_duplicate_name(app_client):
     }
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_create", "draft": draft})
         frame = ws.receive_json()
         # No differentiation → overlap card re-emitted, NOT created.
@@ -128,6 +132,7 @@ def test_confirm_create_dedups_duplicate_name(app_client):
     # With differentiation → auto-suffix still applies (create_spawn_unique).
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({
             "type": "confirm_create",
             "draft": draft,
@@ -136,6 +141,7 @@ def test_confirm_create_dedups_duplicate_name(app_client):
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
         assert created["spawn_name"] == "beauty-guru-2"
+        _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
 
 def _drain(ws, max_frames: int = 30) -> list[dict]:
@@ -149,11 +155,26 @@ def _drain(ws, max_frames: int = 30) -> list[dict]:
     return frames
 
 
+def _drain_roster_after_created(ws) -> None:
+    """After receiving spawn_created, drain the roster frames the server now always emits:
+    optionally roster_event("joined", ...) followed by roster_update(...).
+    Call this any time a test receives spawn_created and doesn't need the roster frames."""
+    f = ws.receive_json()
+    if f.get("type") == "roster_event":
+        # roster_event is only emitted when newly_joined; consume it then get roster_update
+        roster = ws.receive_json()
+        assert roster["type"] == "roster_update"
+    else:
+        # No roster_event, this frame should already be roster_update
+        assert f["type"] == "roster_update"
+
+
 def test_confirm_create_then_executes(app_client, monkeypatch):
     _stub_spawn_adapter(monkeypatch)
     draft = {"name": "eq", "domain": "finance.x", "capabilities": []}
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_create", "draft": draft, "task_brief": "analyze TSLA"})
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
@@ -202,6 +223,7 @@ def test_confirm_create_domain_collision_no_differentiation(app_client):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_create", "draft": draft})
         frame = ws.receive_json()
         # Domain collision without differentiation → overlap card re-emitted, NOT created.
@@ -225,14 +247,19 @@ def test_confirm_create_without_task_brief_does_not_dispatch(app_client, monkeyp
     draft = {"name": "eq", "domain": "finance.x", "capabilities": []}
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_create", "draft": draft, "task_brief": ""})
         created = ws.receive_json()
         assert created["type"] == "spawn_created"
-        # No dispatch: send a follow-up and prove the very next frame is NOT a routing frame.
+        _drain_roster_after_created(ws)  # drain roster_event (newly_joined) + roster_update
+        # No dispatch: send a follow-up and prove the very next frame is a routing frame from route_to.
         ws.send_json({"type": "route_to", "spawn_id": 7, "task_brief": "ping"})
-        nxt = ws.receive_json()
-        assert nxt["type"] == "routing"
-        assert nxt["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
+        # dispatch_spawn emits roster_event (newly joined) then roster_update then routing
+        frames = _drain(ws)
+        types = [f["type"] for f in frames]
+        assert "routing" in types, f"expected routing in {types}"
+        routing_frame = next(f for f in frames if f["type"] == "routing")
+        assert routing_frame["spawn_id"] == 7  # this routing is from route_to, not the no-op confirm_create
 
 
 def test_route_to_existing_dispatches(app_client, monkeypatch):
@@ -289,6 +316,7 @@ def test_redo_with_bad_spawn_id_is_recoverable(app_client, monkeypatch):
     _stub_spawn_adapter(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         # Malformed: spawn_id is None. Must NOT crash/close the socket.
         ws.send_json({"type": "redo", "spawn_id": None, "task_brief": "x"})
         err = ws.receive_json()
@@ -322,6 +350,7 @@ def test_confirm_create_dedups_at_create_time(app_client):
     # 1) Collision draft: server re-emits suggest_create with overlaps, creates nothing.
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({
             "type": "confirm_create",
             "draft": {"name": "beauty-guru", "domain": "content-creator.xiaohongshu"},
@@ -335,6 +364,7 @@ def test_confirm_create_dedups_at_create_time(app_client):
     # 2) Explicit differentiation overrides the dedup: spawn is created.
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
         ws.send_json({
             "type": "confirm_create",
             "draft": {"name": "beauty-guru", "domain": "content-creator.xiaohongshu"},
@@ -343,6 +373,7 @@ def test_confirm_create_dedups_at_create_time(app_client):
         })
         frame = ws.receive_json()
         assert frame["type"] == "spawn_created"
+        _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
 
 # ---------------------------------------------------------------------------

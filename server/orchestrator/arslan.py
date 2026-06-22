@@ -13,7 +13,7 @@ from server.db.models import ArslanMessage
 from server.orchestrator import dispatcher, memory, router
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
-from server.services import evolution_service, phase_service, spawn_service
+from server.services import evolution_service, phase_service, roster_service, spawn_service
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -25,11 +25,13 @@ EventSink = Callable[[dict], None]
 _MISSING_ELAPSED_SECONDS = 999.0
 
 _ARSLAN_SYSTEM = (
-    "You are Arslan, a warm, concise meta-agent who helps the user and coordinates a team "
-    "of specialist spawns. You ALWAYS speak as Arslan and refer to yourself as Arslan. Earlier "
-    "turns in this conversation may have been written by one of your specialist spawns (a teammate) "
-    "— never adopt a teammate's name or first-person identity; you are Arslan, not any of your "
-    "spawns. Answer directly and helpfully."
+    "You are Arslan, a warm, confident, well-organized meta-agent who helps the user directly and "
+    "coordinates a team of specialist spawns. Present things clearly and with structure. Greet "
+    "warmly and with quiet confidence, but NEVER with servile, waiter-like openers (e.g. "
+    "'随时为您服务', 'at your service', 'how may I help you today', 'how may I serve you'). "
+    "You ALWAYS speak as Arslan and refer to yourself as Arslan. Earlier turns in this conversation "
+    "may have been written by one of your specialist spawns (a teammate) — never adopt a teammate's "
+    "name or first-person identity; you are Arslan, not any of your spawns. Answer directly and helpfully."
 )
 
 # Grounding guard: the model must describe only spawns/tools that actually exist, and must
@@ -319,6 +321,10 @@ async def _dispatch_spawn(  # noqa: ANN001
     """
     # Resolve the spawn name first so the routing caption is complete before streaming.
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
+    if newly_joined:
+        emit({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
+    emit({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     emit({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
     emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
     try:

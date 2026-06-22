@@ -1,6 +1,6 @@
 import pytest
 from server.orchestrator import arslan, router, dispatcher
-from server.services import phase_service
+from server.services import phase_service, roster_service
 
 async def _aw(v): return v
 
@@ -14,6 +14,8 @@ async def test_open_task_proposes_and_sets_phase(monkeypatch):
     monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
     monkeypatch.setattr(dispatcher, "get_spawn_name", lambda i: _aw("x"))
     monkeypatch.setattr(phase_service, "set_proposing", lambda c,s,d: _aw(None))
+    monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _aw(None))
+    monkeypatch.setattr(roster_service, "list_roster", lambda c: _aw([]))
     r = router.RouterResult(action="route", spawn_id=4, task_brief="help linkedin", needs_proposal=True)
     await arslan._handle_route("conv-x", r, events.append)
     assert ("dispatch","propose") in events
@@ -27,6 +29,8 @@ async def test_crisp_task_executes_directly(monkeypatch):
         return {"full_output":"out","spawn_name":"x","summary_message_id":1,"assistant_message_id":2,"escalation":None}
     monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
     monkeypatch.setattr(dispatcher, "get_spawn_name", lambda i: _aw("x"))
+    monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _aw(None))
+    monkeypatch.setattr(roster_service, "list_roster", lambda c: _aw([]))
     r = router.RouterResult(action="route", spawn_id=4, task_brief="summarize this", needs_proposal=False)
     await arslan._handle_route("conv-y", r, events.append)
     assert ("dispatch","execute") in events
@@ -44,6 +48,8 @@ async def test_confirm_and_execute_dispatches_execute_confirmed_with_proposed_di
     monkeypatch.setattr(dispatcher, "last_spawn_output", lambda i: _aw("the proposed direction text"))
     monkeypatch.setattr(phase_service, "get_pending", lambda c: _aw({"spawn_id":4,"phase":"proposing","direction":"the confirmed direction"}))
     monkeypatch.setattr(phase_service, "clear", lambda c,s=None: _aw(None))
+    monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _aw(None))
+    monkeypatch.setattr(roster_service, "list_roster", lambda c: _aw([]))
     await arslan.confirm_and_execute("conv-z", 4, events.append)
     rec = next(t for t in events if isinstance(t, tuple) and t[0] == "dispatch")
     assert rec[1] == "execute_confirmed"

@@ -159,6 +159,19 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
     }
 
     if (item.kind === "system") {
+      // Roster notice: rosterAction is "joined" | "left"
+      if (item.rosterAction) {
+        return {
+          id,
+          sender: "arslan",
+          senderName: "Arslan",
+          senderAvatar: "🦁",
+          text: "",
+          timestamp,
+          rosterAction: item.rosterAction,
+          rosterSpawnName: item.spawnName ?? null,
+        };
+      }
       // spawn_created: content is "__SPAWN_CREATED__:Name" or intro text
       const spawnNameFromContent = item.content.startsWith("__SPAWN_CREATED__:")
         ? item.content.slice("__SPAWN_CREATED__:".length)

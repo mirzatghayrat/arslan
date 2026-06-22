@@ -53,6 +53,10 @@ export interface Message {
     spawnId: string;
     spawnName: string;
   };
+  /** Roster notice: "joined" | "left" — present on system messages from roster_event frames. */
+  rosterAction?: string;
+  /** The spawn name for a roster notice item. */
+  rosterSpawnName?: string | null;
   spawnIntro?: {
     name: string;
     domain: string;

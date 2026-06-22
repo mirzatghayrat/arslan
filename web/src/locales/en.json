@@ -1,6 +1,13 @@
 {
-  "app": { "name": "Arslan", "tagline": "Build your own AI spawns" },
-  "nav": { "dashboard": "Dashboard", "spawns": "Spawns", "settings": "Settings" },
+  "app": {
+    "name": "Arslan",
+    "tagline": "Build your own AI spawns"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "spawns": "Spawns",
+    "settings": "Settings"
+  },
   "dashboard": {
     "title": "Your Spawns",
     "create": "Create New Spawn",
@@ -43,7 +50,9 @@
     "info": "Spawn info",
     "stats": "Stats",
     "reconnecting": "Reconnecting...",
-    "thinking": "Thinking..."
+    "thinking": "Thinking...",
+    "roster_joined": "{{name}} joined the conversation",
+    "roster_left": "{{name}} left the conversation"
   },
   "conversation": {
     "title": "Arslan",
@@ -56,8 +65,16 @@
     "thinking_arslan": "Arslan is thinking…",
     "thinking_spawn": "{{name}} is working…"
   },
-  "artifact": { "report": "report", "expand": "Expand", "collapse": "Collapse", "download": "Download .md" },
-  "feedback": { "redo": "Redo", "tweak": "Tweak" },
+  "artifact": {
+    "report": "report",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "download": "Download .md"
+  },
+  "feedback": {
+    "redo": "Redo",
+    "tweak": "Tweak"
+  },
   "manual_create": {
     "title": "Create a specialist",
     "describe_placeholder": "Describe the specialist you want…",
@@ -262,7 +279,12 @@
     "security_policy_title": "Daemon Security Policy Restricted Scope",
     "security_policy_desc": "Under self-hosted client credentials, Tier-3 advanced tools (🔒) are locked behind standard security sandboxing bounds. Host directory integrations are restricted to local virtual directories to prevent malicious root execution commands from remote nodes.",
     "spawn_not_found": "Spawn not found.",
-    "go_back": "Go back"
+    "go_back": "Go back",
+    "exit": "Disconnect spawn from chat",
+    "connectedExit": "Connected — Exit",
+    "pullIn": "Invite spawn into chat",
+    "pullIntoChat": "+ Pull Into Chat",
+    "kickConfirm": "Remove this spawn from the conversation?"
   },
   "spawn_chat": {
     "direct_channel_suffix": "Direct Channel",
