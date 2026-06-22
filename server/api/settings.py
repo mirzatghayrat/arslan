@@ -73,7 +73,9 @@ async def set_primary_provider_config(config_id: int, session: AsyncSession = De
 
 @router.delete("/settings/provider-configs/{config_id}")
 async def delete_provider_config(config_id: int, session: AsyncSession = Depends(get_session)):
-    await provider_config_service.delete_config(session, config_id)
+    deleted = await provider_config_service.delete_config(session, config_id)
+    if not deleted:
+        raise HTTPException(status_code=400, detail="cannot delete the only provider config")
     return {"ok": True}
 
 

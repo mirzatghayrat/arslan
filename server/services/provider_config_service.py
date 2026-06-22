@@ -76,10 +76,20 @@ async def set_primary(session: AsyncSession, config_id: int) -> None:
     await session.commit()
 
 
-async def delete_config(session: AsyncSession, config_id: int) -> None:
+async def delete_config(session: AsyncSession, config_id: int) -> bool:
+    """Delete a provider config.  Returns False (and does NOT delete) if it is the only row.
+
+    The caller should translate False → HTTP 400.  Returns True on success.
+    Returns True (no-op) when config_id does not exist (already gone).
+    """
     row = await session.get(ProviderConfig, config_id)
     if row is None:
-        return
+        return True  # already absent — nothing to do
+    # Guard: refuse to delete the last remaining config
+    count_result = await session.execute(select(ProviderConfig))
+    all_rows = count_result.scalars().all()
+    if len(all_rows) <= 1:
+        return False
     was_primary = row.is_primary
     await session.delete(row)
     await session.commit()
@@ -89,6 +99,7 @@ async def delete_config(session: AsyncSession, config_id: int) -> None:
         if survivor is not None:
             survivor.is_primary = True
             await session.commit()
+    return True
 
 
 async def get_primary(session: AsyncSession) -> ProviderConfig | None:

@@ -4,6 +4,10 @@ from __future__ import annotations
 from arslan.llm.catalog import CAPABILITY_DIMENSIONS, capabilities_for, language_fit
 
 JUDGMENT_ROLES = frozenset({"router", "converse", "critical"})
+# WORKER_ROLES is illustrative/documentation only — not used in routing logic.
+# It documents the intended set of worker roles that ARE eligible for
+# strategy-based routing (i.e. roles NOT in JUDGMENT_ROLES).
+# Do not delete: preserves intent for future callers and audits.
 WORKER_ROLES = frozenset({"execute", "summarize", "draft"})
 
 STRATEGY_WEIGHTS: dict[str, dict[str, float]] = {
