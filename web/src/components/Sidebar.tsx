@@ -64,7 +64,7 @@ export default function Sidebar({
 
         {/* Brand Header */}
         <div className="px-5 py-3 mb-6 flex items-center gap-3 flex-shrink-0">
-          <img src="/arslan-mark.png" alt={t('app.name')} className="w-9 h-9 object-contain flex-shrink-0 select-none arslan-mark dark:brightness-75" draggable={false} />
+          <img src="/arslan-mark.png" alt={t('app.name')} className="w-9 h-9 object-contain flex-shrink-0 select-none arslan-mark" draggable={false} />
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="font-sans font-bold text-foreground text-sm tracking-tight">
