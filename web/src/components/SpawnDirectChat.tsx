@@ -147,7 +147,7 @@ export default function SpawnDirectChat({
             {spawn.tools.map(tId => {
               const tool = TOOLS.find(t => t.id === tId) || { name: tId };
               return (
-                <span key={tId} className="px-2 py-0.8 bg-surface border border-border-strong text-[10px] font-mono text-foreground rounded-lg flex items-center gap-1">
+                <span key={tId} className="px-2 py-0.5 bg-surface text-[10px] font-mono text-foreground rounded-lg flex items-center gap-1">
                   {getIcon(tId, 'w-3 h-3')}
                   <span>{tool.name}</span>
                 </span>
@@ -156,7 +156,7 @@ export default function SpawnDirectChat({
             {spawn.skills.map(sId => {
               const skill = SKILLS.find(s => s.id === sId) || { name: sId };
               return (
-                <span key={sId} className="px-2 py-0.8 bg-warning/[0.06] border border-warning/20 text-[10px] font-mono text-warning rounded-lg flex items-center gap-1">
+                <span key={sId} className="px-2 py-0.5 bg-warning/10 text-[10px] font-mono text-warning rounded-lg flex items-center gap-1">
                   {getIcon(sId, 'w-3 h-3 text-warning')}
                   <span>{skill.name}</span>
                 </span>

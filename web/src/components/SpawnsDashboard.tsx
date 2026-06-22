@@ -75,7 +75,7 @@ export default function SpawnsDashboard({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('ledger.title')}</h1>
-            <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 font-mono font-semibold px-2 py-0.5 rounded-full uppercase">
+            <span className="text-[10px] bg-primary/10 text-primary font-mono font-semibold px-2 py-0.5 rounded-full uppercase">
               {spawns.length} Spawns
             </span>
           </div>
@@ -148,7 +148,7 @@ export default function SpawnsDashboard({
                 <h3 className="font-sans font-bold text-sm text-foreground tracking-wide">
                   {t('ledger.tool_hub_title')} <span className="text-subtle-foreground font-normal text-xs ml-1">(Tool-Hub)</span>
                 </h3>
-                <span className="text-[8px] font-mono bg-surface-raised text-muted-foreground border border-border-strong/50 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">{t('ledger.tool_hub_coming_soon')}</span>
+                <span className="text-[8px] font-mono bg-surface-raised text-muted-foreground px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">{t('ledger.tool_hub_coming_soon')}</span>
               </div>
               <p className="text-[11.5px] text-subtle-foreground font-sans mt-0.5">
                 {t('ledger.tool_hub_subtitle')}
@@ -193,7 +193,7 @@ export default function SpawnsDashboard({
             <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-subtle-foreground select-none opacity-50">
               <span>{t('ledger.tool_hub_presets_label')}</span>
               {['Brave-MCP', 'GDrive-Workspace', 'PostgreSQL-Analyzer', 'Milvus-RAG'].map(label => (
-                <span key={label} className="px-2 py-0.5 rounded bg-foreground/[0.02] border border-border/40 text-subtle-foreground cursor-not-allowed">{label}</span>
+                <span key={label} className="px-2 py-0.5 rounded bg-foreground/[0.05] text-subtle-foreground cursor-not-allowed">{label}</span>
               ))}
             </div>
           </div>
@@ -256,10 +256,10 @@ export default function SpawnsDashboard({
                     {/* Status Badge */}
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase font-mono ${
                       spawn.status === 'working'
-                        ? 'bg-success/20 text-success border border-success/40 animate-pulse'
+                        ? 'bg-success/20 text-success animate-pulse'
                         : spawn.status === 'escalated'
-                        ? 'bg-danger/20 text-danger border border-danger/40'
-                        : 'bg-info/20 text-info border border-info/40'
+                        ? 'bg-danger/20 text-danger'
+                        : 'bg-info/20 text-info'
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${
                         spawn.status === 'working'
@@ -292,7 +292,7 @@ export default function SpawnsDashboard({
                       {spawn.tools.slice(0, 2).map(id => {
                         const meta = TOOLS.find(t => t.id === id);
                         return (
-                          <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-surface text-muted-foreground px-2 py-0.5 rounded-md border border-surface-raised">
+                          <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-surface text-muted-foreground px-2 py-0.5 rounded-md">
                             {getIcon(id, 'w-3 h-3')} {meta?.name || id}
                           </span>
                         );
@@ -300,7 +300,7 @@ export default function SpawnsDashboard({
                       {spawn.skills.slice(0, 2).map(id => {
                         const meta = SKILLS.find(s => s.id === id);
                         return (
-                          <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-warning/10 text-warning px-2 py-0.5 rounded-md border border-warning/30">
+                          <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-warning/10 text-warning px-2 py-0.5 rounded-md">
                             {getIcon(id, 'w-3 h-3')} {meta?.name || id}
                           </span>
                         );
@@ -426,7 +426,7 @@ export default function SpawnsDashboard({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-foreground text-xs">{spawn.name}</span>
-                          <span className="text-[9px] font-mono text-primary bg-primary/10 rounded border border-primary/20 px-1.5 py-0.2 select-none uppercase font-bold tracking-wider">{spawn.domain}</span>
+                          <span className="text-[9px] font-mono text-primary bg-primary/10 rounded px-2 py-0.5 select-none uppercase font-bold tracking-wider">{spawn.domain}</span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 max-w-sm truncate">
                           {spawn.description}

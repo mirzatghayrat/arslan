@@ -598,7 +598,7 @@ export default function App() {
                     <Terminal className="w-3.5 h-3.5 text-primary animate-pulse" />
                     <span className="text-[10px] font-mono text-foreground uppercase tracking-wider font-bold">{t('rail.dialogue_capabilities')}</span>
                   </div>
-                  <span className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded">
+                  <span className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest bg-primary/10 text-primary px-1.5 py-0.5 rounded">
                     {activeSection === 'arslan' ? t('rail.thread_bound') : activeSection === 'spawn' ? t('rail.spawn_bound') : t('rail.global_pool')}
                   </span>
                 </div>
@@ -613,7 +613,7 @@ export default function App() {
                 <div className="space-y-1.5 opacity-50">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[9px] font-mono text-subtle-foreground uppercase tracking-wider font-bold flex items-center gap-1"><Satellite className="w-3 h-3" /> {t('rail.mcp_servers')}</span>
-                    <span className="text-[8px] font-mono bg-surface/80 text-subtle-foreground border border-border-strong/50 px-1.5 py-0.2 rounded uppercase tracking-wider">{t('rail.mcp_coming_soon')}</span>
+                    <span className="text-[8px] font-mono bg-surface/80 text-subtle-foreground px-1.5 py-0.5 rounded uppercase tracking-wider">{t('rail.mcp_coming_soon')}</span>
                   </div>
                   <div className="bg-background/60 border border-dashed border-border/60 rounded-lg px-3 py-2.5 text-[10px] font-mono text-subtle-foreground italic">
                     {t('rail.mcp_unavailable')}
@@ -635,8 +635,8 @@ export default function App() {
                             key={tId}
                             className={`px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none ${
                               isWired
-                                ? 'bg-surface text-info border border-info/30'
-                                : 'bg-surface text-muted-foreground border border-border'
+                                ? 'bg-surface text-info'
+                                : 'bg-surface text-muted-foreground'
                             }`}
                             title={isWired ? `Tool: ${tId}` : `${tId} — 即将推出 / Coming soon`}
                           >
@@ -662,7 +662,7 @@ export default function App() {
                         return (
                           <div
                             key={sId}
-                            className="bg-warning/10 text-warning border border-warning/20 px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
+                            className="bg-warning/10 text-warning px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
                             title={`${sId} — 即将推出 / Coming soon (per-conversation skill tracking not yet available)`}
                           >
                             {getIcon(sId, 'w-3 h-3')}
@@ -733,7 +733,7 @@ export default function App() {
                               <div className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5">
                                 <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-primary" />
                                 <span>{spawn.name}</span>
-                                <span className="text-[8px] font-mono bg-primary/10 text-primary border border-primary/20 rounded px-1 font-bold">L.{spawnLevel}</span>
+                                <span className="text-[8px] font-mono bg-primary/10 text-primary rounded px-1.5 py-0.5 font-bold">L.{spawnLevel}</span>
                               </div>
                               <div className="text-[9px] text-subtle-foreground font-mono mt-0.5 max-w-[140px] truncate">{spawn.domain}</div>
                             </div>
@@ -990,8 +990,8 @@ export default function App() {
                           <div className="flex items-center gap-2">
                             <SFSymbol nameOrEmoji={spawn.avatarEmoji} className="w-3.5 h-3.5 text-primary" />
                             <span className="font-bold text-foreground text-xs select-text">{spawn.name}</span>
-                            <span className="text-[8px] font-mono bg-background text-muted-foreground border border-border rounded-md px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">L.{spawnLevel}</span>
-                            <span className="text-[8px] font-mono bg-primary/10 text-primary border border-primary/15 rounded px-1.5 py-0.2 select-none font-bold uppercase tracking-wider">{spawn.domain}</span>
+                            <span className="text-[8px] font-mono bg-background text-muted-foreground rounded-md px-1.5 py-0.5 select-none font-bold uppercase tracking-wider">L.{spawnLevel}</span>
+                            <span className="text-[8px] font-mono bg-primary/10 text-primary rounded px-1.5 py-0.5 select-none font-bold uppercase tracking-wider">{spawn.domain}</span>
                           </div>
                           <p className="text-[11px] text-muted-foreground leading-normal line-clamp-2 max-w-lg font-sans">
                             {spawn.description}
@@ -999,7 +999,7 @@ export default function App() {
                           {/* Display Tools */}
                           <div className="flex items-center gap-1.5 pt-1">
                             {spawn.tools.map(toolId => (
-                              <span key={toolId} className="text-[8px] font-mono text-subtle-foreground bg-background border border-border px-1 py-0.2 rounded-md">
+                              <span key={toolId} className="text-[8px] font-mono text-subtle-foreground bg-background px-1.5 py-0.5 rounded-md">
                                 #{toolId}
                               </span>
                             ))}

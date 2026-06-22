@@ -407,12 +407,12 @@ export default function OrchestratorChat({
                       <div className="flex items-center gap-1.5 select-none">
                         <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
                         {isArslan ? (
-                          <span className="text-[9px] bg-primary/10 text-primary border border-primary/30 px-1.5 py-0.2 rounded font-semibold font-mono uppercase tracking-wider scale-95">
+                          <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
                             {t('app.name')} Orchestrator
                           </span>
                         ) : (
-                          <div className="flex items-center gap-1 scale-95">
-                            <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-mono uppercase tracking-wider font-semibold">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">
                               Spawn Core
                             </span>
                           </div>
@@ -462,7 +462,7 @@ export default function OrchestratorChat({
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-foreground font-sans">{msg.spawnIntro.name}</h4>
-                              <span className="text-[9px] bg-primary/15 text-primary font-mono px-1.5 py-0.5 rounded font-bold uppercase tracking-widest border border-primary/10">Introduced</span>
+                              <span className="text-[9px] bg-primary/15 text-primary font-mono px-2 py-0.5 rounded font-bold uppercase tracking-widest">Introduced</span>
                             </div>
                             <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{msg.spawnIntro.domain}</p>
                           </div>
@@ -478,7 +478,7 @@ export default function OrchestratorChat({
                               return (
                                 <span
                                   key={toolId}
-                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-surface text-muted-foreground px-2 py-0.8 rounded-lg border border-border-strong hover:border-primary/30 transition-all hover:text-foreground"
+                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-surface text-muted-foreground px-2 py-0.5 rounded-lg hover:text-foreground transition-all"
                                 >
                                   {getIcon(toolId, 'w-3 h-3')}
                                   <span className="font-semibold">{toolMeta?.name || toolId}</span>
@@ -491,7 +491,7 @@ export default function OrchestratorChat({
                               return (
                                 <span
                                   key={skillId}
-                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-primary/10 text-primary px-2 py-0.8 rounded-lg border border-primary/20 hover:border-primary/30 transition-all"
+                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg transition-all"
                                 >
                                   {getIcon(skillId, 'w-3 h-3')}
                                   <span className="font-semibold">{skillMeta?.name || skillId}</span>
@@ -511,7 +511,7 @@ export default function OrchestratorChat({
                           <div className="flex items-center gap-2">
                             <RefreshCcw className="animate-spin w-3.5 h-3.5 text-primary" />
                             <span className="font-mono text-muted-foreground">Tool Socket actively engaged:</span>
-                            <span className="flex items-center gap-1 bg-primary/15 text-primary px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold tracking-wider border border-primary/10">
+                            <span className="flex items-center gap-1 bg-primary/15 text-primary px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold tracking-wider">
                               {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
                               {msg.toolActivity.toolName}
                             </span>
@@ -576,7 +576,7 @@ export default function OrchestratorChat({
                               {msg.escalation.status === 'resolved' && t('orchestrator.escalation_resolved')}
                               {msg.escalation.status === 'refused' && t('orchestrator.escalation_refused')}
                             </span>
-                            <span className="text-[9px] bg-background/30 font-mono px-1.5 border border-border/5 rounded">
+                            <span className="text-[9px] bg-background/30 font-mono px-2 py-0.5 rounded">
                               From: {msg.escalation.spawnName}
                             </span>
                           </div>
@@ -664,7 +664,7 @@ export default function OrchestratorChat({
                       <span className="text-primary font-bold flex items-center gap-1.5">
                         [<SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5 inline-block" />] {msg.senderName.toUpperCase()}
                       </span>
-                      <span className="text-[10px] px-1 py-0.2 bg-primary/20 text-primary border border-primary/25">
+                      <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
                         {msg.sender.toUpperCase()}
                       </span>
                     </div>
@@ -695,12 +695,12 @@ export default function OrchestratorChat({
                         <span className="text-subtle-foreground font-bold">EQUIPPED CAPABILITIES:</span>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {msg.spawnIntro.tools.map(toolId => (
-                            <span key={toolId} className="px-1.5 py-0.5 bg-background text-muted-foreground border border-border">
+                            <span key={toolId} className="px-2 py-0.5 bg-background text-muted-foreground">
                               [TOOL] {toolId.toUpperCase()}
                             </span>
                           ))}
                           {msg.spawnIntro.skills.map(skillId => (
-                            <span key={skillId} className="px-1.5 py-0.5 bg-background text-primary border border-primary">
+                            <span key={skillId} className="px-2 py-0.5 bg-background text-primary">
                               [SKILL] {skillId.toUpperCase()}
                             </span>
                           ))}
@@ -820,12 +820,12 @@ export default function OrchestratorChat({
                     <span className="text-subtle-foreground font-mono">•</span>
                     <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
                     {isArslan && (
-                      <span className="text-[9px] bg-surface-raised text-primary px-1.5 py-0.2 rounded font-mono border border-primary/20 uppercase">
+                      <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
                         Orchestrator
                       </span>
                     )}
                     {!isArslan && !isUser && (
-                      <span className="text-[9px] bg-background text-primary px-1.5 py-0.2 rounded font-mono border border-primary/20 uppercase">
+                      <span className="text-[9px] bg-background text-primary px-2 py-0.5 rounded font-mono uppercase">
                         Spawn • Core
                       </span>
                     )}
@@ -852,17 +852,17 @@ export default function OrchestratorChat({
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-foreground text-[11px]">{msg.spawnIntro.name} Spawn Registry</span>
                           </div>
-                          <span className="text-[9px] bg-surface text-muted-foreground px-1 py-0.2 rounded font-mono">active</span>
+                          <span className="text-[9px] bg-surface text-muted-foreground px-2 py-0.5 rounded font-mono">active</span>
                         </div>
                         <div className="text-[10px] text-subtle-foreground">{t('orchestrator.capabilities_matrix')}</div>
                         <div className="flex flex-wrap gap-1">
                           {msg.spawnIntro.tools.map(toolId => (
-                            <span key={toolId} className="text-[10px] bg-surface border border-border text-muted-foreground px-1.5 py-0.2 rounded">
+                            <span key={toolId} className="text-[10px] bg-surface text-muted-foreground px-2 py-0.5 rounded">
                               {toolId}
                             </span>
                           ))}
                           {msg.spawnIntro.skills.map(skillId => (
-                            <span key={skillId} className="text-[10px] bg-primary/15 border border-primary/20 text-primary px-1.5 py-0.2 rounded">
+                            <span key={skillId} className="text-[10px] bg-primary/15 text-primary px-2 py-0.5 rounded">
                               {skillId}
                             </span>
                           ))}
@@ -878,7 +878,7 @@ export default function OrchestratorChat({
                         <div className="flex items-center gap-1.5 text-muted-foreground">
                           <Wrench className="w-3.5 h-3.5 text-primary" />
                           <span>Standard Executor tool {msg.toolActivity.toolName}:</span>
-                          <span className="text-subtle-foreground bg-surface px-1 rounded uppercase tracking-wider text-[8px] border border-border">OK</span>
+                          <span className="text-subtle-foreground bg-surface px-1.5 py-0.5 rounded uppercase tracking-wider text-[8px]">OK</span>
                         </div>
                         <div className="mt-1 text-subtle-foreground pl-5">
                           {msg.toolActivity.action}
@@ -1007,7 +1007,7 @@ export default function OrchestratorChat({
               <div>
                 <div className="flex items-center gap-1.5 leading-none">
                   <span className="text-xs font-bold text-foreground font-sans">{spawn.name}</span>
-                  <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-mono font-bold uppercase">
+                  <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono font-bold uppercase">
                     Sandbox
                   </span>
                 </div>
@@ -1032,7 +1032,7 @@ export default function OrchestratorChat({
             <div className="space-y-2">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-xs font-bold text-foreground font-sans">{spawn.name} Sandbox</span>
-                <span className="text-[9px] font-mono bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded uppercase tracking-wider">{t('orchestrator.coming_soon_badge')}</span>
+                <span className="text-[9px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{t('orchestrator.coming_soon_badge')}</span>
               </div>
               <p className="text-[11px] text-subtle-foreground font-sans leading-relaxed max-w-xs">
                 {t('orchestrator.sandbox_coming_soon_desc')}

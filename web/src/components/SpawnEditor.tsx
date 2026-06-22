@@ -110,7 +110,7 @@ export default function SpawnEditor({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-foreground font-sans">{spawn.name}</h1>
-              <span className="text-[9px] bg-primary/15 text-primary border border-primary/30 px-2 py-0.5 rounded font-bold font-mono uppercase tracking-wider scale-95">
+              <span className="text-[9px] bg-primary/15 text-primary px-2 py-0.5 rounded font-bold font-mono uppercase tracking-wider">
                 {t('ledger.active_slot')}
               </span>
             </div>
@@ -183,12 +183,12 @@ export default function SpawnEditor({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold text-foreground font-sans">{tool.name}</h4>
-                        <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded ${
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
                           tool.tier === 'tier-1'
-                            ? 'bg-success/15 text-success border border-success/30'
+                            ? 'bg-success/15 text-success'
                             : tool.tier === 'tier-2'
-                            ? 'bg-info/20 text-info border border-info/40'
-                            : 'bg-danger/25 text-danger border border-danger/40'
+                            ? 'bg-info/20 text-info'
+                            : 'bg-danger/25 text-danger'
                         }`}>
                           {tool.tier}
                         </span>
@@ -257,7 +257,7 @@ export default function SpawnEditor({
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold text-foreground font-sans">{skill.name}</h4>
                         {isLocked && (
-                          <span className="text-[8px] bg-danger/30 text-danger font-mono px-1 border border-danger/40 uppercase">
+                          <span className="text-[8px] bg-danger/30 text-danger font-mono px-1.5 py-0.5 uppercase">
                             {t('ledger.restrictive')}
                           </span>
                         )}
