@@ -10,6 +10,8 @@ via the ``openrouter`` preset.
 """
 from __future__ import annotations
 
+from arslan.llm.catalog import models_for
+
 PRESETS: dict[str, dict[str, str]] = {
     "openai": {
         "label": "OpenAI",
@@ -130,6 +132,7 @@ def provider_options() -> list[dict[str, object]]:
                 "base_url": p["base_url"],
                 "default_model": p["default_model"],
                 "native": False,
+                "models": models_for(key),
             }
         )
     for key, p in NATIVE.items():
@@ -140,6 +143,7 @@ def provider_options() -> list[dict[str, object]]:
                 "base_url": p["base_url"],
                 "default_model": p["default_model"],
                 "native": True,
+                "models": models_for(key),
             }
         )
     return options

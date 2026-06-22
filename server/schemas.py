@@ -36,6 +36,33 @@ class ProviderOption(BaseModel):
     base_url: str = ""
     default_model: str = ""
     native: bool = False
+    models: list[str] = []
+
+
+class ProviderConfigIn(BaseModel):
+    label: str
+    provider: str
+    model: str
+    base_url: str = ""
+    api_key: str = ""
+
+
+class ProviderConfigUpdateIn(BaseModel):
+    label: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+class ProviderConfigOut(BaseModel):
+    id: int
+    label: str
+    provider: str
+    model: str
+    base_url: str = ""
+    api_key: str = ""   # masked
+    is_primary: bool = False
 
 
 class EquipmentItemOut(BaseModel):
