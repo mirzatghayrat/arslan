@@ -172,7 +172,19 @@
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
-    "btnSaving": "Saving..."
+    "btnSaving": "Saving...",
+    "sectionProviderConfigs": "Configuration multi-modèle",
+    "labelStrategy": "Stratégie de routage",
+    "strategyOptions": {
+      "single": "Unique (primaire seulement)",
+      "cost": "Optimisé par coût",
+      "balanced": "Équilibré",
+      "performance": "Performance"
+    },
+    "btnAddModel": "Ajouter un modèle",
+    "btnSetPrimary": "Définir comme primaire",
+    "btnDelete": "Supprimer",
+    "labelConfigApiKey": "Clé API"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

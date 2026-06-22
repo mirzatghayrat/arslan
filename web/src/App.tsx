@@ -6,7 +6,8 @@ import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
 import { api } from './api/client';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
-import type { ArslanServerMessage, ProviderOption } from './api/client.types';
+import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
+import { listProviderConfigs } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import Sidebar from './components/Sidebar';
@@ -130,6 +131,7 @@ export default function App() {
   // Stage B: provider/search-provider catalogs for Settings dropdowns (live from backend)
   const [llmProviders, setLlmProviders] = useState<ProviderOption[]>([]);
   const [searchProviders, setSearchProviders] = useState<string[]>([]);
+  const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
 
   // Stage B: wire Spawns Ledger and Settings to live backend on mount
   useEffect(() => {
@@ -153,6 +155,9 @@ export default function App() {
 
     // Load search provider catalog
     api.listSearchProviders().then(setSearchProviders).catch(() => {});
+
+    // Load multi-model provider configs
+    listProviderConfigs().then(setProviderConfigs).catch(() => {});
   }, []);
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
@@ -504,6 +509,8 @@ export default function App() {
                 llmProviders={llmProviders}
                 searchProviders={searchProviders}
                 backendStatus={backendStatus}
+                providerConfigs={providerConfigs}
+                onProviderConfigsChange={setProviderConfigs}
               />
             )}
           </div>

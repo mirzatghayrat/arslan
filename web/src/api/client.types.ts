@@ -76,6 +76,7 @@ export interface AppSettings {
   language: string;
   search_provider: string;
   search_api_key: string; // masked on read
+  llm_strategy?: string;
 }
 
 export interface ProviderOption {

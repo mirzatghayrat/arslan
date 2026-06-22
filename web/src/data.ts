@@ -123,7 +123,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: 'English (US)',
   theme: 'dark',
   telemetry: false,
-  spawnMode: 'interactive'
+  spawnMode: 'interactive',
+  llmStrategy: 'single'
 };
 
 export const INITIAL_CHAT_HISTORY: Message[] = [

@@ -172,7 +172,19 @@
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
-    "btnSaving": "Saving..."
+    "btnSaving": "Saving...",
+    "sectionProviderConfigs": "マルチモデル設定",
+    "labelStrategy": "ルーティング戦略",
+    "strategyOptions": {
+      "single": "シングル（プライマリのみ）",
+      "cost": "コスト最適化",
+      "balanced": "バランス",
+      "performance": "パフォーマンス"
+    },
+    "btnAddModel": "モデルを追加",
+    "btnSetPrimary": "プライマリに設定",
+    "btnDelete": "削除",
+    "labelConfigApiKey": "APIキー"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

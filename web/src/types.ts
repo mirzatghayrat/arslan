@@ -90,4 +90,5 @@ export interface AppSettings {
   theme: 'dark' | 'light';
   telemetry: boolean;
   spawnMode: 'auto' | 'interactive' | 'strict';
+  llmStrategy: 'single' | 'cost' | 'balanced' | 'performance';
 }

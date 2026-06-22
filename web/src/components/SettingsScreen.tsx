@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
-import type { ProviderOption } from '../api/client.types';
+import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import { api } from '../api/client';
 import { toBackendSettings } from '../api/adapters';
@@ -9,6 +9,7 @@ import {
   Key, Sliders, Globe, Check, Eye, EyeOff, Save,
   Info, AlertCircle, WifiOff
 } from 'lucide-react';
+import ProviderConfigList from './ProviderConfigList';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -16,9 +17,13 @@ interface SettingsScreenProps {
   llmProviders: ProviderOption[];
   searchProviders: string[];
   backendStatus: BackendStatus;
+  /** Multi-model provider configurations loaded from backend. */
+  providerConfigs?: ProviderConfig[];
+  /** Called when the configs list changes (add/update/delete/set-primary). */
+  onProviderConfigsChange?: (configs: ProviderConfig[]) => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange }: SettingsScreenProps) {
   const { t } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
@@ -257,6 +262,26 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               </select>
             </div>
           </div>
+        </div>
+
+        {/* Multi-Model Provider Configuration */}
+        <div className="bg-[#121622]/60 border border-[#1e2330] rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-[#1e2330]/50 select-none">
+            <Sliders className="w-4.5 h-4.5 text-[#FF8E24]" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-white leading-none">{t('settings.sectionProviderConfigs')}</h3>
+          </div>
+          <ProviderConfigList
+            llmProviders={llmProviders}
+            providerConfigs={providerConfigs}
+            onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
+            strategy={localSettings.llmStrategy}
+            onStrategyChange={(s) =>
+              setLocalSettings((prev) => ({
+                ...prev,
+                llmStrategy: s as AppSettings['llmStrategy'],
+              }))
+            }
+          />
         </div>
 
         {/* Miscellaneous configurations */}

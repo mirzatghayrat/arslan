@@ -21,7 +21,7 @@ const MASKED_SENTINEL_RE = /^[•*]+$/;
  * and therefore should NOT be overwritten on fetch; callers must merge:
  *   theme, telemetry, spawnMode
  */
-export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode"> {
+export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode" | "llmStrategy"> {
   return {
     llmProvider: backend.llm_provider ?? "",
     llmModel: backend.llm_model ?? "",
@@ -45,6 +45,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     llm_model: ui.llmModel,
     search_provider: ui.searchProvider,
     language: ui.language,
+    llm_strategy: ui.llmStrategy,
   };
 
   // Only send keys if the user entered something new (non-empty, non-masked).

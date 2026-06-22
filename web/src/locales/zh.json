@@ -172,7 +172,19 @@
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
     "labelSpawnMode": "生成合成模式",
     "btnSave": "保存设置",
-    "btnSaving": "保存中..."
+    "btnSaving": "保存中...",
+    "sectionProviderConfigs": "多模型配置",
+    "labelStrategy": "路由策略",
+    "strategyOptions": {
+      "single": "单一（仅主要）",
+      "cost": "成本优化",
+      "balanced": "均衡",
+      "performance": "性能优先"
+    },
+    "btnAddModel": "添加模型",
+    "btnSetPrimary": "设为主要",
+    "btnDelete": "删除",
+    "labelConfigApiKey": "API 密钥"
   },
   "errors": {
     "load_failed": "加载数据失败。",
