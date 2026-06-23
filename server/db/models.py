@@ -309,3 +309,16 @@ class EvolutionProposal(Base):
     status = Column(String(20), nullable=False, default="proposed")  # proposed|promoted|rejected
     created_at = Column(DateTime, default=datetime.utcnow)
     promoted_at = Column(DateTime, nullable=True)
+
+
+class KnowledgeChunk(Base):
+    """One chunk of a spawn's ingested knowledge base (grounding material)."""
+
+    __tablename__ = "knowledge_chunks"
+
+    id = Column(Integer, primary_key=True)
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
+    source = Column(String(200), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
