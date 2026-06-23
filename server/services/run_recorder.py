@@ -4,6 +4,10 @@ A RunRecorder is created at the top of _dispatch_spawn; its tee() wraps the
 EventSink so every emitted event is both forwarded live AND timestamped for
 step derivation. finalize() persists steps, links the spawn-summary message,
 and schedules async judge scoring.
+
+Note: the escalation re-dispatch path emits its spawn_meta through this same
+teed sink before finalize runs, so the dispatch step closes normally; finalize
+is called once per turn by the orchestrator.
 """
 from __future__ import annotations
 
@@ -31,10 +35,12 @@ schedule_scoring: Callable[[int], None] = _default_schedule
 
 
 class RunRecorder:
-    def __init__(self, run_id: int, started_at: datetime, route_ms: int | None) -> None:
+    def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
+                 spawn_name: str | None = None) -> None:
         self.run_id = run_id
         self.started_at = started_at
         self.route_ms = route_ms
+        self.spawn_name = spawn_name
         self._events: list[tuple[datetime, dict]] = []
 
     @classmethod
@@ -62,7 +68,7 @@ class RunRecorder:
             await db.commit()
             await db.refresh(run)
             run_id = run.id
-        return cls(run_id, started, route_ms)
+        return cls(run_id, started, route_ms, spawn_name)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
@@ -77,8 +83,10 @@ class RunRecorder:
         pending_tool: tuple[datetime, dict] | None = None
         pending_esc: tuple[datetime, dict] | None = None
 
-        def add(kind, ref, detail, start, end):
-            ms = int((end - start).total_seconds() * 1000) if start and end else None
+        def add(kind, ref, detail, start, end, duration_ms=None):
+            ms = duration_ms
+            if ms is None:
+                ms = int((end - start).total_seconds() * 1000) if start and end else None
             steps.append({
                 "seq": len(steps), "kind": kind, "ref": ref, "detail": detail,
                 "started_at": start, "ended_at": end, "duration_ms": ms,
@@ -87,15 +95,8 @@ class RunRecorder:
         for ts, ev in self._events:
             t = ev.get("type")
             if t == "routing":
-                end = ts
-                start = self.started_at
-                ref = {"spawn_name": ev.get("spawn_name")}
-                ms = self.route_ms if self.route_ms is not None else None
-                steps.append({
-                    "seq": len(steps), "kind": "route", "ref": ref, "detail": {},
-                    "started_at": start, "ended_at": end,
-                    "duration_ms": ms if ms is not None else int((end - start).total_seconds() * 1000),
-                })
+                add("route", {"spawn_name": ev.get("spawn_name")}, {},
+                    self.started_at, ts, duration_ms=self.route_ms)
             elif t == "stream_start" and ev.get("source") == "spawn":
                 dispatch_start = ts
             elif t == "tool_call":
@@ -120,17 +121,33 @@ class RunRecorder:
                 pending_esc = None
             elif t == "spawn_meta" and dispatch_start is not None:
                 add("dispatch",
-                    {"spawn_name": ev.get("spawn_name") or None},
+                    {"spawn_name": ev.get("spawn_name") or self.spawn_name},
                     {"output_preview": (full_output or "")[:500]},
                     dispatch_start, ts)
                 dispatch_start = None
 
+        if pending_tool is not None:
+            call_ts, call_ev = pending_tool
+            last_ts = self._events[-1][0] if self._events else call_ts
+            add("tool_call",
+                {"tool": call_ev.get("tool"), "ok": False},
+                {"args_summary": call_ev.get("args_summary", ""), "summary": ""},
+                call_ts, last_ts)
+
+        if pending_esc is not None:
+            esc_ts, esc_ev = pending_esc
+            last_ts = self._events[-1][0] if self._events else esc_ts
+            add("escalation",
+                {"kind": esc_ev.get("kind", "data"), "need": esc_ev.get("need", "")},
+                {"how": "no_resolution", "detail": "", "why": ""},
+                esc_ts, last_ts)
+
         if dispatch_start is not None:
             last_ts = self._events[-1][0] if self._events else dispatch_start
-            add("dispatch", {"spawn_name": None},
+            add("dispatch", {"spawn_name": self.spawn_name},
                 {"output_preview": (full_output or "")[:500]}, dispatch_start, last_ts)
 
-        steps.sort(key=lambda s: (s["started_at"] or self.started_at))
+        steps.sort(key=lambda s: (s["started_at"] or self.started_at, s["seq"]))
         for i, s in enumerate(steps):
             s["seq"] = i
         return steps
@@ -147,12 +164,12 @@ class RunRecorder:
                 run.total_ms = total_ms
                 run.task_tokens = tokens
                 run.status = "recorded"
-            for s in steps:
-                db.add(RunStep(run_id=self.run_id, **s))
-            if summary_message_id is not None:
-                msg = await db.get(ArslanMessage, summary_message_id)
-                if msg is not None:
-                    msg.run_id = self.run_id
+                for s in steps:
+                    db.add(RunStep(run_id=self.run_id, **s))
+                if summary_message_id is not None:
+                    msg = await db.get(ArslanMessage, summary_message_id)
+                    if msg is not None:
+                        msg.run_id = self.run_id
             await db.commit()
         try:
             schedule_scoring(self.run_id)

@@ -75,3 +75,26 @@ async def test_finalize_schedules_scoring(memdb, monkeypatch):
     with usage_sink.collecting():
         await rec.finalize(summary_message_id=None, full_output="")
     assert called == [rec.run_id]
+
+
+async def test_unpaired_tool_call_is_flushed(memdb):
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="c1", spawn_id=None, spawn_name="Mermer",
+        user_message="x", route_ms=0)
+    tee = rec.tee(lambda e: None)
+    tee({"type": "routing", "spawn_id": 1, "spawn_name": "Mermer"})
+    tee({"type": "stream_start", "source": "spawn", "spawn_id": 1})
+    tee({"type": "tool_call", "tool": "web_search", "args_summary": "{}"})
+    # no tool_result, no spawn_meta — error path
+    with usage_sink.collecting():
+        await rec.finalize(summary_message_id=None, full_output="")
+    from sqlalchemy import select
+    from server.db.models import RunStep
+    async with memdb() as db:
+        steps = (await db.execute(
+            select(RunStep).where(RunStep.run_id == rec.run_id).order_by(RunStep.seq)
+        )).scalars().all()
+    kinds = [s.kind for s in steps]
+    assert "tool_call" in kinds
+    tool = [s for s in steps if s.kind == "tool_call"][0]
+    assert tool.ref["ok"] is False
