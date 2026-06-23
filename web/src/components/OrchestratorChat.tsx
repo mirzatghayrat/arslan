@@ -15,6 +15,7 @@ import { SpawnAvatar } from './SpawnAvatar';
 import Markdown from './Markdown';
 import { useArslanStore } from '../stores/arslanStore';
 import NoModelHint from './NoModelHint';
+import RunReplay from './RunReplay';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -57,6 +58,7 @@ export default function OrchestratorChat({
   const clearLlmError = useArslanStore((s) => s.clearError);
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
+  const [replayRunId, setReplayRunId] = useState<number | null>(null);
   
   // Custom states for Spawns Pipeline Dock & Split-Screen Co-pilot Sandbox
   const [spawnStatuses, setSpawnStatuses] = useState<Record<string, 'idle' | 'working' | 'review_pending'>>({});
@@ -653,6 +655,15 @@ export default function OrchestratorChat({
                             <X className="w-3 h-3" />
                             <span>{t('orchestrator.verdict_discard')}</span>
                           </button>
+                          {msg.sender === "spawn" && msg.runId != null && (
+                            <button
+                              type="button"
+                              className="msg__replay-btn"
+                              onClick={() => setReplayRunId(msg.runId ?? null)}
+                            >
+                              查看回放
+                            </button>
+                          )}
                         </div>
                       )
                     )}
@@ -816,6 +827,15 @@ export default function OrchestratorChat({
                           <X className="w-3 h-3" />
                           <span>{t('orchestrator.verdict_discard')}</span>
                         </button>
+                        {msg.sender === "spawn" && msg.runId != null && (
+                          <button
+                            type="button"
+                            className="msg__replay-btn"
+                            onClick={() => setReplayRunId(msg.runId ?? null)}
+                          >
+                            查看回放
+                          </button>
+                        )}
                       </div>
                     )
                   )}
@@ -987,6 +1007,15 @@ export default function OrchestratorChat({
                           <X className="w-3 h-3" />
                           <span>{t('orchestrator.verdict_discard')}</span>
                         </button>
+                        {msg.sender === "spawn" && msg.runId != null && (
+                          <button
+                            type="button"
+                            className="msg__replay-btn"
+                            onClick={() => setReplayRunId(msg.runId ?? null)}
+                          >
+                            查看回放
+                          </button>
+                        )}
                       </div>
                     )
                   )}
@@ -1134,6 +1163,14 @@ export default function OrchestratorChat({
       );
     })()}
   </div>
+
+  {replayRunId != null && (
+    <div className="run-replay-overlay" onClick={() => setReplayRunId(null)}>
+      <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
+        <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
+      </div>
+    </div>
+  )}
 </div>
 );
 }

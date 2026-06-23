@@ -162,6 +162,7 @@ export interface ArslanThreadItem {
   spawnName?: string | null;
   sensitive?: boolean; // kind === "fact"
   spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
+  runId?: number | null; // trace+eval replay id, from spawn_meta
   taskBrief?: string | null; // the task this spawn turn ran, for redo/refine
   equipment?: Equipment | null; // kind === "system" (spawn_created)
   intro?: string | null; // kind === "system" (spawn_created)
@@ -192,7 +193,7 @@ export type ArslanServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number | null }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
-  | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string }
+  | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "message"; message_id: number; content: string; role: string }
   | { type: "spawn_created"; spawn_id: number; spawn_name: string; equipment?: Equipment; intro?: string | null }

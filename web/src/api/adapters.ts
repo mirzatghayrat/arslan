@@ -239,6 +239,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         isProposal: item.isProposal ?? undefined,
         messageId: item.spawnMessageId ?? undefined,
         taskBrief: item.taskBrief ?? undefined,
+        runId: item.runId ?? undefined,
       };
     }
 

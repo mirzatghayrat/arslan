@@ -19,7 +19,7 @@ interface ArslanState {
   // spawn_meta frames can arrive BEFORE the stream_end that creates the item
   // (production order). Stash them here keyed by arslan_message_id and apply on
   // stream_end. Cleared per-key once applied.
-  pendingSpawnMeta: Record<number, { assistant_message_id: number; task_brief: string }>;
+  pendingSpawnMeta: Record<number, { assistant_message_id: number; task_brief: string; run_id?: number }>;
   // Live tool-loop steps for the in-flight spawn turn, paired from
   // tool_call/tool_result frames; folded into the reply item on stream_end.
   activitySteps: ToolStep[];
@@ -64,7 +64,7 @@ function initialData() {
     pending: false,
     suggestionTaskBrief: null as string | null,
     suggestionOverlaps: null as OverlapInfo | null,
-    pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string }>,
+    pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string; run_id?: number }>,
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
@@ -220,6 +220,7 @@ function makeActions(set: SetState, get: GetState) {
             spawnId: state.streamSpawnId,
             spawnName: state.streamSpawnName,
             spawnMessageId: meta?.assistant_message_id ?? null,
+            runId: meta?.run_id ?? null,
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),
@@ -286,7 +287,7 @@ function makeActions(set: SetState, get: GetState) {
             set({
               items: state.items.map((it) =>
                 it.id === frame.arslan_message_id
-                  ? { ...it, spawnMessageId: frame.assistant_message_id, taskBrief: frame.task_brief }
+                  ? { ...it, spawnMessageId: frame.assistant_message_id, taskBrief: frame.task_brief, runId: frame.run_id ?? null }
                   : it,
               ),
             });
@@ -297,6 +298,7 @@ function makeActions(set: SetState, get: GetState) {
                 [frame.arslan_message_id]: {
                   assistant_message_id: frame.assistant_message_id,
                   task_brief: frame.task_brief,
+                  run_id: frame.run_id,
                 },
               },
             });
