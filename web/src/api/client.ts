@@ -2,7 +2,11 @@ import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
   CatalogEntry,
+  ConfirmResult,
   EvolutionStats,
+  EvolveProposal,
+  IngestResult,
+  KnowledgeSource,
   ProviderConfig,
   ProviderOption,
   RegistryCatalog,
@@ -101,6 +105,40 @@ export const api = {
       body: JSON.stringify({ first_message: firstMessage, first_reply: firstReply }),
     }),
   getRun: (id: number) => request<RunDetailDto>(`/runs/${id}`),
+  getKnowledge: (spawnId: number) =>
+    request<KnowledgeSource[]>(`/spawns/${spawnId}/knowledge`),
+  ingestKnowledgeText: (spawnId: number, source: string, text: string) =>
+    request<IngestResult>(`/spawns/${spawnId}/knowledge`, {
+      method: "POST",
+      body: JSON.stringify({ source, text }),
+    }),
+  ingestKnowledgeFile: async (spawnId: number, file: File): Promise<IngestResult> => {
+    const token = useAuthStore.getState().token;
+    const form = new FormData();
+    form.append("file", file);
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const resp = await fetch(`${BASE}/spawns/${spawnId}/knowledge`, {
+      method: "POST",
+      body: form,
+      headers,
+    });
+    if (!resp.ok) {
+      let detail = `HTTP ${resp.status}`;
+      try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ }
+      throw new ApiError(detail, resp.status);
+    }
+    return (await resp.json()) as IngestResult;
+  },
+  deleteKnowledge: (spawnId: number, source: string) =>
+    request<{ deleted: number }>(
+      `/spawns/${spawnId}/knowledge?source=${encodeURIComponent(source)}`,
+      { method: "DELETE" },
+    ),
+  evolveSpawn: (spawnId: number) =>
+    request<EvolveProposal>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
+  confirmProposal: (proposalId: number) =>
+    request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
 };
 
 // ── Provider Config CRUD ───────────────────────────────────────────────────────

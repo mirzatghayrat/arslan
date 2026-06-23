@@ -267,3 +267,23 @@ export interface RunDetailDto {
   steps: RunStepDto[];
   evaluations: RunEvaluationDto[];
 }
+
+export interface KnowledgeSource { source: string; chunks: number; }
+export interface IngestResult { source: string; chunks_added: number; }
+export interface EvolveGate {
+  passed: boolean;
+  reason: string;
+  aggregate: Record<string, unknown> | null;
+}
+export interface EvolveProposal {
+  proposal_id: number | null;
+  candidate_prompt: string | null;
+  gate: EvolveGate;
+  evidence: Record<string, unknown> | null;
+}
+export interface ConfirmResult {
+  ok: boolean;
+  reason?: string;
+  spawn_id?: number;
+  generation_level?: number;
+}
