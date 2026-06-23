@@ -294,3 +294,18 @@ class RunEvaluation(Base):
     status = Column(String(10), nullable=False)     # pass|warn|fail
     score = Column(Float, nullable=False)           # /10
     comment = Column(Text, nullable=False, default="")
+
+
+class EvolutionProposal(Base):
+    """An offline-evolution candidate prompt + its gate verdict, awaiting human confirm."""
+
+    __tablename__ = "evolution_proposals"
+
+    id = Column(Integer, primary_key=True)
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
+    candidate_prompt = Column(Text, nullable=False)
+    gate_passed = Column(Boolean, nullable=False, default=False)
+    evidence = Column(JSON, default=dict)   # aggregate + per-item summary
+    status = Column(String(20), nullable=False, default="proposed")  # proposed|promoted|rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    promoted_at = Column(DateTime, nullable=True)
