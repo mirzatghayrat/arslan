@@ -22,6 +22,7 @@ import { getIcon } from './components/iconMap';
 import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
+import SuggestCreateCard from './components/SuggestCreateCard';
 
 interface ArslanThread {
   id: string;
@@ -86,6 +87,11 @@ export default function App() {
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
   // Live roster from backend roster_update frames
   const roster = useArslanStore((s) => s.roster);
+  // suggest_create state — rendered as an inline card in the orchestrator area
+  const suggestion = useArslanStore((s) => s.suggestion);
+  const suggestionTaskBrief = useArslanStore((s) => s.suggestionTaskBrief);
+  const suggestionOverlaps = useArslanStore((s) => s.suggestionOverlaps);
+  const dismissSuggestion = useArslanStore((s) => s.dismissSuggestion);
   // Returns true if a spawn (identified by its UI string id) is in the current roster
   const isRosterMember = (spawnId: string) => roster.some((m) => m.spawnId === Number(spawnId));
 
@@ -471,6 +477,21 @@ export default function App() {
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden relative">
+            {activeSection === 'arslan' && suggestion && (
+              <div className="suggest-create-card-overlay">
+                <SuggestCreateCard
+                  draft={suggestion}
+                  taskBrief={suggestionTaskBrief}
+                  overlaps={suggestionOverlaps}
+                  onCreate={() => {
+                    wsSend({ type: 'confirm_create', draft: suggestion, task_brief: suggestionTaskBrief });
+                    dismissSuggestion();
+                  }}
+                  onDismiss={() => dismissSuggestion()}
+                />
+              </div>
+            )}
+
             {activeSection === 'arslan' && (
               <OrchestratorChat
                 chatHistory={orchestratorChatHistory}
