@@ -1,0 +1,58 @@
+import pytest
+
+from server.orchestrator import dispatcher
+from server.services import compare_judge, evaluator
+
+
+def _items(n):
+    return [{"run_id": i, "task": f"t{i}", "baseline_output": f"base{i}",
+             "baseline_overall": 6.0, "baseline_dims": {}} for i in range(n)]
+
+
+def _stub_gen(monkeypatch):
+    async def fake_dispatch(conversation_id, *, spawn_id, task_brief, system_prompt_override=None,
+                            persist=True, **kw):
+        return {"full_output": "cand", "spawn_name": "S",
+                "summary_message_id": None, "assistant_message_id": None, "escalation": None}
+    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
+
+
+def _stub_compare(monkeypatch, verdicts):
+    seq = iter(verdicts)
+    async def fake_compare(*, task, persona, output_a, output_b):
+        return next(seq)
+    monkeypatch.setattr(compare_judge, "compare", fake_compare)
+
+
+def _v(overall, fab="tie", ident="tie", comp="tie"):
+    return {"dimensions": {"fabrication": fab, "identity": ident, "completion": comp},
+            "overall": overall, "margin": 1.0, "position_sensitive": False, "reason": "r"}
+
+
+async def test_gate_pass_when_better_and_no_regression(monkeypatch):
+    _stub_gen(monkeypatch)
+    _stub_compare(monkeypatch, [_v("b", fab="b"), _v("b", comp="b")])
+    out = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="C", replay_items=_items(2))
+    assert out["aggregate"]["overall"] == {"better": 2, "worse": 0, "tie": 0}
+    assert out["gate"]["passed"] is True
+
+
+async def test_gate_fail_when_dim_regresses(monkeypatch):
+    _stub_gen(monkeypatch)
+    _stub_compare(monkeypatch, [_v("b", ident="a"), _v("b", ident="a")])
+    out = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="C", replay_items=_items(2))
+    assert out["gate"]["passed"] is False
+
+
+async def test_gate_fail_when_not_better(monkeypatch):
+    _stub_gen(monkeypatch)
+    _stub_compare(monkeypatch, [_v("tie"), _v("a")])
+    out = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="C", replay_items=_items(2))
+    assert out["gate"]["passed"] is False
+
+
+async def test_empty_replay_fails_gate(monkeypatch):
+    _stub_gen(monkeypatch)
+    _stub_compare(monkeypatch, [])
+    out = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="C", replay_items=[])
+    assert out["gate"]["passed"] is False
