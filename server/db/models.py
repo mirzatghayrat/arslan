@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -94,6 +94,7 @@ class ArslanMessage(Base):
     content = Column(Text, nullable=False)          # CONTEXT copy fed to Arslan's LLM
     display_content = Column(Text, nullable=True)   # DISPLAY copy rendered in the UI (full spawn output)
     spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 
@@ -242,3 +243,54 @@ class ProviderConfig(Base):
     api_key = Column(Text, nullable=False)           # encrypted
     is_primary = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Run(Base):
+    """One route→dispatch turn, recorded for replay + evaluation."""
+
+    __tablename__ = "runs"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    # nullable + SET NULL: a replay must survive spawn deletion (spawn_name kept below).
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="SET NULL"), nullable=True)
+    spawn_name = Column(String(100), nullable=True)
+    user_message = Column(Text, nullable=False, default="")
+    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    total_ms = Column(Integer, nullable=True)
+    task_tokens = Column(Integer, nullable=False, default=0)   # router+dispatch+tools (NOT judge)
+    status = Column(String(20), nullable=False, default="recording")
+    # "recording" | "recorded" | "scored" | "score_failed"
+    overall_score = Column(Float, nullable=True)   # /10
+    overall_badge = Column(String(10), nullable=True)  # "good" | "ok" | "bad"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RunStep(Base):
+    """One ordered step inside a Run (for the 'what it did' waterfall + gantt)."""
+
+    __tablename__ = "run_steps"
+
+    id = Column(Integer, primary_key=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    seq = Column(Integer, nullable=False)
+    kind = Column(String(30), nullable=False)  # route|dispatch|tool_call|escalation (jargon lives ONLY here)
+    ref = Column(JSON, default=dict)           # render keys: spawn_name, tool, ok, kind, need
+    detail = Column(JSON, default=dict)        # progressive-disclosure: args_summary, summary, output_preview
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+
+class RunEvaluation(Base):
+    """One judge dimension verdict for a Run (the 'how well it did' rows)."""
+
+    __tablename__ = "run_evaluations"
+
+    id = Column(Integer, primary_key=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    dimension = Column(String(20), nullable=False)  # routing|fabrication|identity|completion
+    status = Column(String(10), nullable=False)     # pass|warn|fail
+    score = Column(Float, nullable=False)           # /10
+    comment = Column(Text, nullable=False, default="")
