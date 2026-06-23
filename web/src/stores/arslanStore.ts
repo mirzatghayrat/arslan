@@ -88,7 +88,7 @@ function makeActions(set: SetState, get: GetState) {
         pending: true,
       }),
 
-    dismissSuggestion: () => set({ suggestion: null }),
+    dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
     clearError: () => set({ error: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
