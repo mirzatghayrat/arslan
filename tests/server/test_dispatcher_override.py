@@ -62,9 +62,13 @@ async def test_persist_true_still_writes(memdb, monkeypatch):
         await db.refresh(spawn)
         spawn_id = spawn.id
 
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _FakeAdapter({}))
+    sink = {}
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _FakeAdapter(sink))
     out = await dispatcher.dispatch("conv", spawn_id=spawn_id, task_brief="do X")
     assert out["summary_message_id"] is not None
+    assert sink["system"].startswith("ORIGINAL")   # no override → original base prompt
     async with memdb() as db:
         cm = (await db.execute(select(func.count()).select_from(ChatMessage))).scalar_one()
+        am = (await db.execute(select(func.count()).select_from(ArslanMessage))).scalar_one()
     assert cm == 2
+    assert am == 1   # spawn_summary persisted
