@@ -173,6 +173,27 @@
     "labelSpawnMode": "生成合成模式",
     "btnSave": "保存设置",
     "btnSaving": "保存中...",
+    "sectionProviderConfigs": "多模型配置",
+    "labelStrategy": "路由策略",
+    "strategyOptions": {
+      "single": "单一（仅主要）",
+      "cost": "成本优化",
+      "balanced": "均衡",
+      "performance": "性能优先"
+    },
+    "btnAddModel": "添加模型",
+    "btnSetPrimary": "设为主要",
+    "btnDelete": "删除",
+    "labelConfigApiKey": "API 密钥",
+    "btnSuggestPrimary": "推荐主要提供商",
+    "btnUseThis": "使用此项",
+    "capabilityTable": "提供商能力表",
+    "capColProvider": "提供商",
+    "capColCost": "费用",
+    "capColSpeed": "速度",
+    "capColTools": "工具",
+    "capColReasoning": "推理",
+    "capColContext": "上下文",
     "appearance": "外观",
     "palette": "主题配色",
     "mode": "明亮 / 暗色",
@@ -183,7 +204,15 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "添加 2 个或更多模型以启用路由策略",
+    "btnTest": "测试",
+    "testOk": "✓ 已连接",
+    "btnAddConfirm": "添加",
+    "btnTestAll": "全部测试",
+    "sectionSearch": "搜索",
+    "sectionAppearance": "主题配色",
+    "sectionLlmConfig": "LLM 配置"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -252,7 +281,9 @@
     "verdict_redo": "重做",
     "verdict_discard": "丢弃",
     "verdict_accepted": "已采纳",
-    "verdict_discarded": "已弃用"
+    "verdict_discarded": "已弃用",
+    "no_model_hint": "尚未配置模型 — 请在设置中添加 LLM 以开始使用。",
+    "open_settings": "打开设置"
   },
   "ledger": {
     "title": "活跃分身账本",

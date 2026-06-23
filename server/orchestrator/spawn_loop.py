@@ -33,7 +33,7 @@ _PROTOCOL = (
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="execute")
 
 
 def _summarize_result(result: dict) -> str:

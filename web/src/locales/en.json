@@ -173,6 +173,27 @@
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
     "btnSaving": "Saving...",
+    "sectionProviderConfigs": "Multi-Model Configuration",
+    "labelStrategy": "Routing strategy",
+    "strategyOptions": {
+      "single": "Single (primary only)",
+      "cost": "Cost-optimized",
+      "balanced": "Balanced",
+      "performance": "Performance"
+    },
+    "btnAddModel": "Add model",
+    "btnSetPrimary": "Set primary",
+    "btnDelete": "Delete",
+    "labelConfigApiKey": "API Key",
+    "btnSuggestPrimary": "Suggest primary",
+    "btnUseThis": "Use this",
+    "capabilityTable": "Provider capability table",
+    "capColProvider": "Provider",
+    "capColCost": "Cost",
+    "capColSpeed": "Speed",
+    "capColTools": "Tools",
+    "capColReasoning": "Reasoning",
+    "capColContext": "Context",
     "appearance": "Appearance",
     "palette": "Theme palette",
     "mode": "Light / Dark",
@@ -183,7 +204,15 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "Add 2+ models to enable routing strategies",
+    "btnTest": "Test",
+    "testOk": "✓ Connected",
+    "btnAddConfirm": "Add",
+    "btnTestAll": "Test all",
+    "sectionSearch": "Search",
+    "sectionAppearance": "Theme Palette",
+    "sectionLlmConfig": "LLM Configuration"
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -252,7 +281,9 @@
     "verdict_redo": "Redo",
     "verdict_discard": "Discard",
     "verdict_accepted": "Accepted",
-    "verdict_discarded": "Discarded"
+    "verdict_discarded": "Discarded",
+    "no_model_hint": "No model configured yet — add an LLM in Settings to start.",
+    "open_settings": "Open Settings"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

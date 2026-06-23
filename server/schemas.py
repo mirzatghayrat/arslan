@@ -14,6 +14,7 @@ class SettingsIn(BaseModel):
     language: str | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
+    llm_strategy: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -24,6 +25,7 @@ class SettingsOut(BaseModel):
     language: str = "en"
     search_provider: str = "tavily"
     search_api_key: str = ""  # masked
+    llm_strategy: str = "single"
 
 
 class ProviderOption(BaseModel):
@@ -34,6 +36,33 @@ class ProviderOption(BaseModel):
     base_url: str = ""
     default_model: str = ""
     native: bool = False
+    models: list[str] = []
+
+
+class ProviderConfigIn(BaseModel):
+    label: str
+    provider: str
+    model: str
+    base_url: str = ""
+    api_key: str = ""
+
+
+class ProviderConfigUpdateIn(BaseModel):
+    label: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+class ProviderConfigOut(BaseModel):
+    id: int
+    label: str
+    provider: str
+    model: str
+    base_url: str = ""
+    api_key: str = ""   # masked
+    is_primary: bool = False
 
 
 class EquipmentItemOut(BaseModel):
@@ -187,3 +216,40 @@ class SkillPackOut(BaseModel):
 class RegistryOut(BaseModel):
     toolsets: list[ToolsetOut]
     skills: list[SkillPackOut]
+
+
+class SuggestPrimaryOut(BaseModel):
+    id: int
+    provider: str
+    rationale: str
+
+
+class TestLLMIn(BaseModel):
+    """Body for POST /settings/test-llm."""
+
+    provider: str
+    model: str = ""
+    base_url: str = ""
+    api_key: str = ""
+
+
+class TestLLMOut(BaseModel):
+    """Response from both test-connection endpoints."""
+
+    ok: bool
+    error: str | None = None
+    latency_ms: int | None = None
+
+
+class CatalogCapabilities(BaseModel):
+    cost: int
+    speed: int
+    tool_calling: int
+    reasoning: int
+    long_context: int
+
+
+class CatalogEntryOut(BaseModel):
+    provider: str
+    capabilities: CatalogCapabilities
+    languages: dict[str, int]

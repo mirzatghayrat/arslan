@@ -28,3 +28,10 @@
 * {
   transition: background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Soften the Arslan mark in DARK MODE ONLY — scoped to the app's `.dark` class
+   (the theme's dark selector), NOT Tailwind's default `dark:` which keys off the
+   OS prefers-color-scheme media query. Light mode keeps the mark at full brightness. */
+.dark .arslan-mark {
+  filter: brightness(0.78);
+}

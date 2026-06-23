@@ -173,6 +173,27 @@
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
     "btnSaving": "Saving...",
+    "sectionProviderConfigs": "Multi-Model-Konfiguration",
+    "labelStrategy": "Routing-Strategie",
+    "strategyOptions": {
+      "single": "Einzeln (nur primär)",
+      "cost": "Kostenoptimiert",
+      "balanced": "Ausgewogen",
+      "performance": "Leistung"
+    },
+    "btnAddModel": "Modell hinzufügen",
+    "btnSetPrimary": "Als primär festlegen",
+    "btnDelete": "Löschen",
+    "labelConfigApiKey": "API-Schlüssel",
+    "btnSuggestPrimary": "Primäranbieter vorschlagen",
+    "btnUseThis": "Verwenden",
+    "capabilityTable": "Anbieterfähigkeiten",
+    "capColProvider": "Anbieter",
+    "capColCost": "Kosten",
+    "capColSpeed": "Geschwindigkeit",
+    "capColTools": "Werkzeuge",
+    "capColReasoning": "Reasoning",
+    "capColContext": "Kontext",
     "appearance": "Erscheinungsbild",
     "palette": "Farbpalette",
     "mode": "Hell / Dunkel",
@@ -183,7 +204,15 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "Fügen Sie 2+ Modelle hinzu, um Routing-Strategien zu aktivieren",
+    "btnTest": "Testen",
+    "testOk": "✓ Verbunden",
+    "btnAddConfirm": "Hinzufügen",
+    "btnTestAll": "Alle testen",
+    "sectionSearch": "Suche",
+    "sectionAppearance": "Farbpalette",
+    "sectionLlmConfig": "LLM-Konfiguration"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -252,7 +281,9 @@
     "verdict_redo": "Wiederholen",
     "verdict_discard": "Verwerfen",
     "verdict_accepted": "Akzeptiert",
-    "verdict_discarded": "Verworfen"
+    "verdict_discarded": "Verworfen",
+    "no_model_hint": "Noch kein Modell konfiguriert — füge in den Einstellungen ein LLM hinzu, um zu starten.",
+    "open_settings": "Einstellungen öffnen"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

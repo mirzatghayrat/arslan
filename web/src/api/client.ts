@@ -1,12 +1,15 @@
 import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
+  CatalogEntry,
   EvolutionStats,
+  ProviderConfig,
   ProviderOption,
   RegistryCatalog,
   SpawnDetail,
   SpawnSummary,
   SuggestDraft,
+  SuggestPrimaryResult,
   TemplateInfo,
   UserFact,
 } from "./client.types";
@@ -91,3 +94,54 @@ export const api = {
     request<UserFact>(`/facts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteFact: (id: number) => request<void>(`/facts/${id}`, { method: "DELETE" }),
 };
+
+// ── Provider Config CRUD ───────────────────────────────────────────────────────
+
+export const listProviderConfigs = () =>
+  request<ProviderConfig[]>("/settings/provider-configs");
+
+export const addProviderConfig = (body: Omit<ProviderConfig, "id" | "is_primary">) =>
+  request<ProviderConfig>("/settings/provider-configs", { method: "POST", body: JSON.stringify(body) });
+
+export const updateProviderConfig = (id: number, body: Partial<ProviderConfig>) =>
+  request<ProviderConfig>(`/settings/provider-configs/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const setPrimaryProviderConfig = (id: number) =>
+  request<{ ok: boolean }>(`/settings/provider-configs/${id}/primary`, { method: "PATCH" });
+
+export const deleteProviderConfig = (id: number) =>
+  request<{ ok: boolean }>(`/settings/provider-configs/${id}`, { method: "DELETE" });
+
+export const suggestPrimary = () =>
+  request<SuggestPrimaryResult | null>("/settings/suggest-primary");
+
+export const getCatalog = () =>
+  request<CatalogEntry[]>("/settings/catalog");
+
+// ── LLM connection test endpoints (UX1) ───────────────────────────────────────
+
+export interface TestLlmBody {
+  provider: string;
+  model: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface TestLlmResult {
+  ok: boolean;
+  error?: string;
+  latency_ms?: number;
+}
+
+/** Test an ad-hoc set of credentials (for new/draft configs). */
+export const testLlm = (body: TestLlmBody) =>
+  request<TestLlmResult>("/settings/test-llm", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Test a saved provider config by id. */
+export const testProviderConfig = (id: number) =>
+  request<TestLlmResult>(`/settings/provider-configs/${id}/test`, {
+    method: "POST",
+  });

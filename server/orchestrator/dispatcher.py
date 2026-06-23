@@ -37,7 +37,7 @@ def _frame_brief(task_brief: str, *, mode: str = "execute", proposed_direction: 
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="execute")
 
 
 async def _load_spawn(spawn_id: int) -> Spawn | None:

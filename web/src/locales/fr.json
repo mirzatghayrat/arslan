@@ -173,6 +173,27 @@
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
     "btnSaving": "Saving...",
+    "sectionProviderConfigs": "Configuration multi-modèle",
+    "labelStrategy": "Stratégie de routage",
+    "strategyOptions": {
+      "single": "Unique (primaire seulement)",
+      "cost": "Optimisé par coût",
+      "balanced": "Équilibré",
+      "performance": "Performance"
+    },
+    "btnAddModel": "Ajouter un modèle",
+    "btnSetPrimary": "Définir comme primaire",
+    "btnDelete": "Supprimer",
+    "labelConfigApiKey": "Clé API",
+    "btnSuggestPrimary": "Suggérer le principal",
+    "btnUseThis": "Utiliser ceci",
+    "capabilityTable": "Tableau des capacités du fournisseur",
+    "capColProvider": "Fournisseur",
+    "capColCost": "Coût",
+    "capColSpeed": "Vitesse",
+    "capColTools": "Outils",
+    "capColReasoning": "Raisonnement",
+    "capColContext": "Contexte",
     "appearance": "Apparence",
     "palette": "Palette de thème",
     "mode": "Clair / Sombre",
@@ -183,7 +204,15 @@
     "paletteTerminal": "Terminal",
     "paletteNebula": "Nebula",
     "paletteSlate": "Slate",
-    "paletteGlacier": "Glacier"
+    "paletteGlacier": "Glacier",
+    "strategyHint": "Ajoutez 2+ modèles pour activer les stratégies de routage",
+    "btnTest": "Tester",
+    "testOk": "✓ Connecté",
+    "btnAddConfirm": "Ajouter",
+    "btnTestAll": "Tout tester",
+    "sectionSearch": "Recherche",
+    "sectionAppearance": "Palette de thème",
+    "sectionLlmConfig": "Configuration LLM"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -252,7 +281,9 @@
     "verdict_redo": "Refaire",
     "verdict_discard": "Rejeter",
     "verdict_accepted": "Accepté",
-    "verdict_discarded": "Rejeté"
+    "verdict_discarded": "Rejeté",
+    "no_model_hint": "Aucun modèle configuré — ajoutez un LLM dans les paramètres pour commencer.",
+    "open_settings": "Ouvrir les paramètres"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

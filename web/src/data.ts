@@ -115,15 +115,13 @@ export const DEFAULT_SPAWNS: Spawn[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  llmProvider: 'gemini',
-  llmModel: 'gemini-3.5-flash',
   searchProvider: 'tavily',
-  apiKeyLLM: '••••••••••••••••••••••••••••••••',
   apiKeySearch: '••••••••••••••••••••••••',
   language: 'English (US)',
   theme: 'dark',
   telemetry: false,
-  spawnMode: 'interactive'
+  spawnMode: 'interactive',
+  llmStrategy: 'single'
 };
 
 export const INITIAL_CHAT_HISTORY: Message[] = [

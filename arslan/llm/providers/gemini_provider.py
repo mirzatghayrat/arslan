@@ -77,10 +77,13 @@ class GeminiProvider(BaseLLMProvider):
         temperature: float = 0.7,
     ) -> LLMResponse:
         url = f"{self.base_url}/models/{self.model}:generateContent"
+        # Use a generous read timeout — Gemini thinking models (e.g. 2.5 Pro) can
+        # hold the connection for 120 s+ before returning the first token.
+        timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
         async with self._client() as client:
             response = await client.post(
                 url, json=self._payload(messages, temperature),
-                headers=self._headers(), timeout=60.0,
+                headers=self._headers(), timeout=timeout,
             )
             response.raise_for_status()
             data = response.json()
@@ -93,10 +96,15 @@ class GeminiProvider(BaseLLMProvider):
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
         url = f"{self.base_url}/models/{self.model}:streamGenerateContent?alt=sse"
+        # For streaming, the connect timeout is short but the read timeout must be
+        # long enough for thinking models.  Each individual chunk arrives within a
+        # few seconds once the model starts, so 30 s per-chunk is ample; the overall
+        # wall-clock is bounded by the model's thinking budget, not by our timeout.
+        timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
         async with self._client() as client:
             async with client.stream(
                 "POST", url, json=self._payload(messages, temperature),
-                headers=self._headers(), timeout=60.0,
+                headers=self._headers(), timeout=timeout,
             ) as response:
                 response.raise_for_status()
                 async for raw_line in response.aiter_lines():

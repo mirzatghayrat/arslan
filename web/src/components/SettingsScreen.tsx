@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
-import type { ProviderOption } from '../api/client.types';
+import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import { api } from '../api/client';
 import { toBackendSettings } from '../api/adapters';
 import {
   Key, Sliders, Globe, Check, Eye, EyeOff, Save,
-  Info, AlertCircle, WifiOff
+  Info, AlertCircle, WifiOff, Search, Palette
 } from 'lucide-react';
+import ProviderConfigList from './ProviderConfigList';
 import { AppearanceSettings } from './AppearanceSettings';
+import Select from './Select';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -17,30 +19,23 @@ interface SettingsScreenProps {
   llmProviders: ProviderOption[];
   searchProviders: string[];
   backendStatus: BackendStatus;
+  /** Multi-model provider configurations loaded from backend. */
+  providerConfigs?: ProviderConfig[];
+  /** Called when the configs list changes (add/update/delete/set-primary). */
+  onProviderConfigsChange?: (configs: ProviderConfig[]) => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange }: SettingsScreenProps) {
   const { t } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showLLMKey, setShowLLMKey] = useState(false);
   const [showSearchKey, setShowSearchKey] = useState(false);
 
   // Sync local form when parent settings update (e.g. after initial backend fetch)
   useEffect(() => {
     setLocalSettings((prev) => ({ ...prev, ...settings }));
   }, [settings]);
-
-  // When provider changes, auto-populate the default model for that provider
-  const handleProviderChange = (providerKey: string) => {
-    const found = llmProviders.find((p) => p.key === providerKey);
-    setLocalSettings((prev) => ({
-      ...prev,
-      llmProvider: providerKey,
-      llmModel: found?.default_model ?? prev.llmModel,
-    }));
-  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,43 +81,39 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
       <form onSubmit={handleSave} className="max-w-4xl space-y-8">
         
-        {/* API Credentials Card */}
+        {/* Search Card — search provider + search key together */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-            <Key className="w-4.5 h-4.5 text-primary" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">Security API Credentials</h3>
+            <Search className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionSearch')}</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* LLM Key Input */}
+            {/* Search Provider select */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-                {t('settings.labelApiKey')}
+              <label
+                htmlFor="settings-search-provider"
+                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+              >
+                {t('settings.labelSearchProvider')}
               </label>
-              <div className="relative">
-                <input
-                  id="settings-llm-key"
-                  type={showLLMKey ? "text" : "password"}
-                  value={localSettings.apiKeyLLM}
-                  onChange={(e) => setLocalSettings(prev => ({ ...prev, apiKeyLLM: e.target.value }))}
-                  className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
-                  placeholder="Enter API Secret Key..."
-                />
-                <button
-                  id="toggle-show-llm-key"
-                  type="button"
-                  onClick={() => setShowLLMKey(!showLLMKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-foreground transition-colors"
-                >
-                  {showLLMKey ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-                </button>
-              </div>
-              <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-                Required to authorize Arslan Prime orchestrator models. Local keychain storage is protected by HMAC sandbox.
-              </p>
+              <Select
+                id="settings-search-provider"
+                value={localSettings.searchProvider}
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
+                options={
+                  searchProviders.length > 0
+                    ? searchProviders.map((k) => ({
+                        value: k,
+                        label: k.charAt(0).toUpperCase() + k.slice(1),
+                      }))
+                    : [{ value: localSettings.searchProvider, label: localSettings.searchProvider || 'Loading…' }]
+                }
+                ariaLabel={t('settings.labelSearchProvider')}
+              />
             </div>
 
-            {/* Cognitive Search Key Input */}
+            {/* Search API Key input */}
             <div className="space-y-2">
               <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
                 Tavily / Google Search API Private key
@@ -152,90 +143,34 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
         </div>
 
-        {/* Model Architecture Configuration options */}
+        {/* Theme Palette Card — language + appearance */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-            <Sliders className="w-4.5 h-4.5 text-primary" />
-            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionModelSearch')}</h3>
+            <Palette className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionAppearance')}</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* LLM Provider selections */}
+            {/* Language */}
             <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-                {t('settings.labelProvider')}
-              </label>
-              <select
-                id="settings-llm-provider"
-                value={localSettings.llmProvider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
+              <label
+                htmlFor="settings-language"
+                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
               >
-                {llmProviders.length === 0 && (
-                  <option value={localSettings.llmProvider}>{localSettings.llmProvider || 'Loading...'}</option>
-                )}
-                {llmProviders.map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}{p.native ? ' (Native)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Router model — free-text input */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-                {t('settings.labelModel')}
-              </label>
-              <input
-                id="settings-llm-model"
-                type="text"
-                value={localSettings.llmModel}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, llmModel: e.target.value }))}
-                placeholder={
-                  llmProviders.find((p) => p.key === localSettings.llmProvider)?.default_model ??
-                  'e.g. deepseek-v4-flash'
-                }
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono"
-              />
-            </div>
-
-            {/* Cognitive Search selections */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-                {t('settings.labelSearchProvider')}
-              </label>
-              <select
-                id="settings-search-provider"
-                value={localSettings.searchProvider}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, searchProvider: e.target.value }))}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
-              >
-                {searchProviders.length === 0 && (
-                  <option value={localSettings.searchProvider}>{localSettings.searchProvider || 'Loading...'}</option>
-                )}
-                {searchProviders.map((key) => (
-                  <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Language Localizations */}
-            <div className="space-y-2">
-              <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
                 {t('settings.labelLanguage')}
               </label>
-              <select
+              <Select
                 id="settings-language"
                 value={localSettings.language}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, language: e.target.value }))}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
-              >
-                <option value="English (US)">English (US) - Standard</option>
-                <option value="Chinese (Simplified)">简体中文 (Simplified Chinese)</option>
-                <option value="Japanese">日本語 (Japanese)</option>
-                <option value="German">Deutsch (German)</option>
-              </select>
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, language: v }))}
+                options={[
+                  { value: 'English (US)', label: 'English (US) - Standard' },
+                  { value: 'Chinese (Simplified)', label: '简体中文 (Simplified Chinese)' },
+                  { value: 'Japanese', label: '日本語 (Japanese)' },
+                  { value: 'German', label: 'Deutsch (German)' },
+                ]}
+                ariaLabel={t('settings.labelLanguage')}
+              />
             </div>
 
             {/* Appearance — palette picker + mode toggle */}
@@ -245,7 +180,27 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
         </div>
 
-        {/* Miscellaneous configurations */}
+        {/* LLM Configuration Card */}
+        <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+            <Sliders className="w-4.5 h-4.5 text-primary" />
+            <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionLlmConfig')}</h3>
+          </div>
+          <ProviderConfigList
+            llmProviders={llmProviders}
+            providerConfigs={providerConfigs}
+            onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
+            strategy={localSettings.llmStrategy}
+            onStrategyChange={(s) =>
+              setLocalSettings((prev) => ({
+                ...prev,
+                llmStrategy: s as AppSettings['llmStrategy'],
+              }))
+            }
+          />
+        </div>
+
+        {/* Interface — telemetry + spawn mode */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
             <Globe className="w-4.5 h-4.5 text-primary" />
@@ -281,16 +236,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                   Choose how sub-agents are created. Auto: instant delegation without checks. Interactive: asks user approval on the fly before spinning up new spawns.
                 </p>
               </div>
-              <select
+              <Select
                 id="settings-spawn-mode"
                 value={localSettings.spawnMode}
-                onChange={(e: any) => setLocalSettings(prev => ({ ...prev, spawnMode: e.target.value }))}
-                className="bg-surface border border-border-strong focus:outline-none font-sans text-xs text-foreground rounded-lg p-2"
-              >
-                <option value="auto">Autonomous Synthesis</option>
-                <option value="interactive">Interactive Sandbox Auth</option>
-                <option value="strict">Strict Static Lock</option>
-              </select>
+                onChange={(v) => setLocalSettings(prev => ({ ...prev, spawnMode: v as AppSettings['spawnMode'] }))}
+                options={[
+                  { value: 'auto', label: 'Autonomous Synthesis' },
+                  { value: 'interactive', label: 'Interactive Sandbox Auth' },
+                  { value: 'strict', label: 'Strict Static Lock' },
+                ]}
+                className="w-40"
+                ariaLabel="Spawn synthesis mode"
+              />
             </div>
           </div>
         </div>

@@ -30,6 +30,10 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        from server.db.migrations.versions._0006_provider_configs import (
+            upgrade_sync as _backfill_provider_configs,
+        )
+        await conn.run_sync(_backfill_provider_configs)
 
     from server.registry.seeder import seed_registry
 

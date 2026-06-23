@@ -35,7 +35,7 @@ _SYSTEM = (
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="draft")
 
 
 def _menu_text(menu: dict) -> str:

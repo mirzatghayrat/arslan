@@ -29,6 +29,12 @@ vi.mock("../api/client", () => ({
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
   },
   API_BASE: "",
+  suggestPrimary: vi.fn().mockResolvedValue(null),
+  getCatalog: vi.fn().mockResolvedValue([]),
+  addProviderConfig: vi.fn().mockResolvedValue({}),
+  updateProviderConfig: vi.fn().mockResolvedValue({}),
+  setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
+  deleteProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // ── auth store mock (api/client imports authStore) ─────────────────────────────
@@ -41,15 +47,13 @@ import type { AppSettings } from "../types";
 import type { ProviderOption } from "../api/client.types";
 
 const defaultSettings: AppSettings = {
-  llmProvider: "anthropic",
-  llmModel: "claude-sonnet-4-5",
   searchProvider: "tavily",
-  apiKeyLLM: "sk-ant-••••",
   apiKeySearch: "tvly-••••",
   language: "en",
   theme: "dark",
   telemetry: false,
   spawnMode: "auto",
+  llmStrategy: "single",
 };
 
 const providers: ProviderOption[] = [
@@ -85,34 +89,54 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("System Diagnostics & Configuration")).toBeInTheDocument();
   });
 
-  it("renders the LLM provider dropdown with fetched providers", () => {
+  // ── Legacy LLM fields must be ABSENT ──────────────────────────────────────────
+
+  it("does NOT render the legacy LLM provider dropdown", () => {
     renderSettings();
-    const select = document.getElementById("settings-llm-provider") as HTMLSelectElement;
-    expect(select).not.toBeNull();
-    // Both providers should be present as options
-    const options = Array.from(select.options).map((o) => o.value);
-    expect(options).toContain("anthropic");
-    expect(options).toContain("openai");
+    expect(document.getElementById("settings-llm-provider")).toBeNull();
   });
 
-  it("renders the current provider as selected", () => {
-    renderSettings({ llmProvider: "openai" });
-    const select = document.getElementById("settings-llm-provider") as HTMLSelectElement;
-    expect(select.value).toBe("openai");
-  });
-
-  it("renders the search provider dropdown with fetched options", () => {
+  it("does NOT render the legacy LLM model input", () => {
     renderSettings();
-    const select = document.getElementById("settings-search-provider") as HTMLSelectElement;
-    const options = Array.from(select.options).map((o) => o.value);
-    expect(options).toContain("tavily");
-    expect(options).toContain("serpapi");
+    expect(document.getElementById("settings-llm-model")).toBeNull();
   });
 
-  it("shows the current model value in the model input", () => {
-    renderSettings({ llmModel: "claude-opus-4" });
-    const input = document.getElementById("settings-llm-model") as HTMLInputElement;
-    expect(input.value).toBe("claude-opus-4");
+  it("does NOT render the legacy LLM API key input", () => {
+    renderSettings();
+    expect(document.getElementById("settings-llm-key")).toBeNull();
+  });
+
+  // ── Multi-config list must be PRESENT ─────────────────────────────────────────
+
+  it("renders the multi-config provider list section heading", () => {
+    renderSettings();
+    // ProviderConfigList is rendered inside the card whose heading key is 'settings.sectionLlmConfig'
+    expect(screen.getByText("settings.sectionLlmConfig")).toBeInTheDocument();
+  });
+
+  // ── Kept fields must still be present ─────────────────────────────────────────
+
+  it("renders the search provider dropdown with fetched options", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    // Custom Select renders a button trigger; open it to inspect options
+    const trigger = document.getElementById("settings-search-provider") as HTMLButtonElement;
+    expect(trigger).not.toBeNull();
+    await user.click(trigger);
+    // Options appear as role="option" in the listbox
+    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
+    expect(options.some((o) => /tavily/i.test(o ?? ""))).toBe(true);
+    expect(options.some((o) => /serpapi/i.test(o ?? ""))).toBe(true);
+  });
+
+  it("renders the search API key input", () => {
+    renderSettings();
+    expect(document.getElementById("settings-search-key")).not.toBeNull();
+  });
+
+  it("renders the language dropdown", () => {
+    renderSettings();
+    expect(document.getElementById("settings-language")).not.toBeNull();
   });
 
   it("shows the offline banner when backendStatus is offline", () => {
@@ -140,15 +164,6 @@ describe("SettingsScreen", () => {
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it("does not send masked LLM key on save", async () => {
-    const user = userEvent.setup();
-    renderSettings({ apiKeyLLM: "••••••••" });
-    await user.click(document.getElementById("settings-save-button")!);
-    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled());
-    const body = mockUpdateSettings.mock.calls[0][0];
-    expect(body.llm_api_key).toBeUndefined();
   });
 
   it("does not send empty search key on save", async () => {

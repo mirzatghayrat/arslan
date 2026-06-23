@@ -76,6 +76,7 @@ export interface AppSettings {
   language: string;
   search_provider: string;
   search_api_key: string; // masked on read
+  llm_strategy?: string;
 }
 
 export interface ProviderOption {
@@ -84,6 +85,17 @@ export interface ProviderOption {
   base_url: string;
   default_model: string;
   native: boolean;
+  models: string[];
+}
+
+export interface ProviderConfig {
+  id: number;
+  label: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;     // masked on read
+  is_primary: boolean;
 }
 
 export interface TemplateInfo {
@@ -199,4 +211,24 @@ export interface RosterMember {
   spawnName: string | null;
   joinedVia: string;
   status: string;
+}
+
+export interface SuggestPrimaryResult {
+  id: number;
+  provider: string;
+  rationale: string;
+}
+
+export interface CatalogCapabilities {
+  cost: number;
+  speed: number;
+  tool_calling: number;
+  reasoning: number;
+  long_context: number;
+}
+
+export interface CatalogEntry {
+  provider: string;
+  capabilities: CatalogCapabilities;
+  languages: Record<string, number>;
 }

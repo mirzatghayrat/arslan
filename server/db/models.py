@@ -227,3 +227,18 @@ class ConversationSpawn(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "spawn_id", name="uq_conversation_spawn"),
     )
+
+
+class ProviderConfig(Base):
+    """Multi-key BYOK provider configuration (one row per configured LLM provider key)."""
+
+    __tablename__ = "provider_configs"
+
+    id = Column(Integer, primary_key=True)
+    label = Column(String(80), nullable=False)
+    provider = Column(String(40), nullable=False)   # catalog key
+    model = Column(String(120), nullable=False)
+    base_url = Column(String(255), nullable=True)
+    api_key = Column(Text, nullable=False)           # encrypted
+    is_primary = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

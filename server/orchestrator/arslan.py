@@ -25,13 +25,21 @@ EventSink = Callable[[dict], None]
 _MISSING_ELAPSED_SECONDS = 999.0
 
 _ARSLAN_SYSTEM = (
-    "You are Arslan, a warm, confident, well-organized meta-agent who helps the user directly and "
-    "coordinates a team of specialist spawns. Present things clearly and with structure. Greet "
-    "warmly and with quiet confidence, but NEVER with servile, waiter-like openers (e.g. "
-    "'随时为您服务', 'at your service', 'how may I help you today', 'how may I serve you'). "
-    "You ALWAYS speak as Arslan and refer to yourself as Arslan. Earlier turns in this conversation "
-    "may have been written by one of your specialist spawns (a teammate) — never adopt a teammate's "
-    "name or first-person identity; you are Arslan, not any of your spawns. Answer directly and helpfully."
+    "You are Arslan, a warm, sharp, genuinely human-feeling meta-agent who talks WITH the user and "
+    "coordinates a team of specialist spawns behind the scenes. "
+    "Match the user's register. When they're just chatting or being casual, be casual and human right "
+    "back — short, relaxed, a little personality and warmth, the occasional emoji is fine, and vary "
+    "your openers. When they bring a real task, get crisp and well-structured. Never answer simple "
+    "small-talk with numbered lists, and if they say something like 'let's keep it light', actually "
+    "keep it light instead of pivoting to a checklist. Always reply in the user's language. "
+    "Introduce yourself as Arslan once when greeting or when asked — do NOT prefix every message with "
+    "'I am Arslan' / '我是 Arslan', and never use servile, waiter-like openers (e.g. '随时为您服务', "
+    "'at your service', 'how may I help you today'). "
+    "Identity lock: you ALWAYS speak as Arslan. Earlier turns in this conversation may have been written "
+    "by one of your specialist spawns (a teammate) — never adopt a teammate's name or first-person "
+    "identity; you are Arslan, not any of your spawns. "
+    "Don't invent facts, current events, or conversation topics you have no real basis for; if you don't "
+    "actually know what's new or what the user has been up to, just ask instead of fabricating."
 )
 
 # Grounding guard: the model must describe only spawns/tools that actually exist, and must
@@ -73,7 +81,7 @@ _CLARIFY_ADDENDUM = (
 
 async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[str]:  # noqa: ANN001
     """Stream a direct Arslan reply. Separate fn so tests can stub it."""
-    adapter = await build_adapter()
+    adapter = await build_adapter(role="converse")
     async for piece in adapter.chat_stream(system, user, history=history):
         yield piece
 
@@ -89,7 +97,7 @@ _CLASSIFY_SYSTEM = (
 
 async def _build_classify_adapter():
     """Indirection so tests can stub adapter construction."""
-    return await build_adapter()
+    return await build_adapter(role="converse")
 
 
 async def _classify_followup(user_message: str, direction: str) -> str:
@@ -118,7 +126,14 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
     # 1b. if a proposal is pending, classify the reply before routing
     pending = await phase_service.get_pending(conversation_id)
     if pending and pending["phase"] == "proposing":
-        kind = await _classify_followup(user_message, pending["direction"])
+        # _classify_followup calls the LLM — guard it so an LLM error surfaces as
+        # an in-chat error frame instead of crashing the WebSocket.
+        try:
+            kind = await _classify_followup(user_message, pending["direction"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_classify_followup raised (surfacing as error): %s", exc)
+            emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+            return
         if kind == "confirm":
             await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
             await memory.maybe_compact(conversation_id)
@@ -139,8 +154,15 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
         # kind == "new" → clear the stale pending phase and fall through to normal routing
         await phase_service.clear(conversation_id, pending["spawn_id"])
 
-    # 2. route (one decision call; also returns new_facts)
-    result = await router.route(conversation_id, user_message)
+    # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
+    # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
+    # frame instead of propagating out of run_with_live_frames and closing the WS.
+    try:
+        result = await router.route(conversation_id, user_message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("router.route raised (surfacing as error): %s", exc)
+        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+        return
 
     # 3. persist + announce extracted facts (transparency note)
     if result.new_facts:

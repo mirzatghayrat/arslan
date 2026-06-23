@@ -14,6 +14,7 @@ import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import Markdown from './Markdown';
 import { useArslanStore } from '../stores/arslanStore';
+import NoModelHint from './NoModelHint';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -28,6 +29,10 @@ interface OrchestratorChatProps {
   onConfirmDirection?: (spawnId: number) => void;
   /** Called when the user submits a verdict on a spawn deliverable. */
   onDeliverableVerdict?: (action: string, spawnId: number, messageId?: number, taskBrief?: string | null) => void;
+  /** True when at least one ProviderConfig exists. When false, a hint to configure a model is shown. */
+  hasModel?: boolean;
+  /** Navigate to the Settings screen. Used by the no-model hint. */
+  onOpenSettings?: () => void;
 }
 
 export default function OrchestratorChat({
@@ -40,12 +45,16 @@ export default function OrchestratorChat({
   activeThread,
   onConfirmDirection,
   onDeliverableVerdict,
+  hasModel = true,
+  onOpenSettings,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
   const streaming = useArslanStore((s) => s.streaming);
+  const llmError = useArslanStore((s) => s.error);
+  const clearLlmError = useArslanStore((s) => s.clearError);
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   
@@ -254,7 +263,7 @@ export default function OrchestratorChat({
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
                 {/* Arslan mark */}
-                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} />
+                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none arslan-mark" draggable={false} />
 
                 {/* Elegant serif-style greeting */}
                 <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
@@ -267,6 +276,9 @@ export default function OrchestratorChat({
                 </h1>
               </div>
             </div>
+
+            {/* No-model hint — shown when zero ProviderConfigs are configured */}
+            <NoModelHint hasModel={hasModel} onOpenSettings={onOpenSettings ?? (() => {})} />
 
             {/* Luxurious prompt input box resembling Claude's container design */}
             <div className="w-full max-w-xl bg-surface border border-border-strong rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all">
@@ -398,7 +410,7 @@ export default function OrchestratorChat({
                     <div className="flex flex-col items-center select-none">
                       <div className="relative">
                         {isArslan ? (
-                          <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none" draggable={false} />
+                          <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none arslan-mark" draggable={false} />
                         ) : (
                           <SpawnAvatar seed={msg.senderName} size={36} />
                         )}
@@ -838,7 +850,7 @@ export default function OrchestratorChat({
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
                     {isArslan
-                      ? <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
+                      ? <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none arslan-mark" draggable={false} />
                       : isUser
                       ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
                       : <SpawnAvatar seed={msg.senderName} size={18} />}
@@ -985,10 +997,34 @@ export default function OrchestratorChat({
             return null;
           })
         )}
-        {/* Thinking indicator: shown from send until first response frame */}
-        {thinking && !streaming && (
+        {/* LLM error banner: shown when the backend emits an error frame (e.g. LLM timeout, auth failure) */}
+        {llmError && (
+          <div className="flex gap-3 items-start py-2 select-none">
+            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark mt-0.5" draggable={false} />
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-danger/10 border border-danger/30 rounded-2xl rounded-tl-none max-w-2xl">
+              <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] text-danger font-semibold">{t('chat.llm_error_title', 'Model error')}</span>
+                <span className="text-[11px] text-danger/80 font-mono break-words">{llmError}</span>
+              </div>
+              <button
+                onClick={clearLlmError}
+                className="ml-auto shrink-0 p-0.5 rounded hover:bg-danger/20 text-danger/60 hover:text-danger transition-colors"
+                aria-label="Dismiss error"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
+        {/* Thinking indicator: shown from send until first real content chunk.
+            We no longer gate on !streaming because stream_start begins streaming
+            with empty text (slow models like Gemini 2.5 Pro have a long delay
+            before the first token). thinking stays true until stream_chunk clears
+            it, so the dots show through the blank gap. */}
+        {thinking && (
           <div className="flex gap-3 items-center py-2 select-none">
-            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0" draggable={false} />
+            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark" draggable={false} />
             <div className="flex items-center gap-1.5 px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
               <span className="text-[11px] text-muted-foreground font-mono">{t('chat.thinking')}</span>
               <span className="flex gap-0.5 ml-1">

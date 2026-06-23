@@ -36,7 +36,7 @@ _SYSTEM = (
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="critical")
 
 
 async def classify(escalation: dict) -> dict:

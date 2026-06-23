@@ -67,7 +67,7 @@ _SYSTEM = (
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
-    return build_adapter()
+    return build_adapter(role="router")
 
 
 async def _spawn_registry() -> str:
