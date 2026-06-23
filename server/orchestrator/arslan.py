@@ -13,7 +13,8 @@ from server.db.models import ArslanMessage
 from server.orchestrator import dispatcher, memory, router
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
-from server.services import evolution_service, phase_service, roster_service, spawn_service
+from arslan.llm import usage_sink
+from server.services import evolution_service, phase_service, roster_service, run_recorder, spawn_service
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -120,79 +121,83 @@ async def _classify_followup(user_message: str, direction: str) -> str:
 
 async def handle_user_message(conversation_id: str, user_message: str, emit: EventSink) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
-    # 1. persist the user turn
-    await memory.add_message(conversation_id, "user", user_message)
+    with usage_sink.collecting():
+        # 1. persist the user turn
+        await memory.add_message(conversation_id, "user", user_message)
 
-    # 1b. if a proposal is pending, classify the reply before routing
-    pending = await phase_service.get_pending(conversation_id)
-    if pending and pending["phase"] == "proposing":
-        # _classify_followup calls the LLM — guard it so an LLM error surfaces as
-        # an in-chat error frame instead of crashing the WebSocket.
+        # 1b. if a proposal is pending, classify the reply before routing
+        pending = await phase_service.get_pending(conversation_id)
+        if pending and pending["phase"] == "proposing":
+            # _classify_followup calls the LLM — guard it so an LLM error surfaces as
+            # an in-chat error frame instead of crashing the WebSocket.
+            try:
+                kind = await _classify_followup(user_message, pending["direction"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("_classify_followup raised (surfacing as error): %s", exc)
+                emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+                return
+            if kind == "confirm":
+                await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
+                await memory.maybe_compact(conversation_id)
+                return
+            if kind == "refine":
+                # task_brief stays the base direction; instruction carries the user's refinement.
+                await _dispatch_spawn(
+                    conversation_id,
+                    pending["spawn_id"],
+                    pending["direction"],
+                    emit,
+                    mode="propose",
+                    prior_output=None,
+                    instruction=user_message,
+                    user_message=user_message,
+                )
+                await memory.maybe_compact(conversation_id)
+                return
+            # kind == "new" → clear the stale pending phase and fall through to normal routing
+            await phase_service.clear(conversation_id, pending["spawn_id"])
+
+        # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
+        # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
+        # frame instead of propagating out of run_with_live_frames and closing the WS.
         try:
-            kind = await _classify_followup(user_message, pending["direction"])
+            t0 = datetime.utcnow()
+            result = await router.route(conversation_id, user_message)
+            route_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("_classify_followup raised (surfacing as error): %s", exc)
+            logger.warning("router.route raised (surfacing as error): %s", exc)
             emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
             return
-        if kind == "confirm":
-            await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
-            await memory.maybe_compact(conversation_id)
-            return
-        if kind == "refine":
-            # task_brief stays the base direction; instruction carries the user's refinement.
-            await _dispatch_spawn(
-                conversation_id,
-                pending["spawn_id"],
-                pending["direction"],
-                emit,
-                mode="propose",
-                prior_output=None,
-                instruction=user_message,
-            )
-            await memory.maybe_compact(conversation_id)
-            return
-        # kind == "new" → clear the stale pending phase and fall through to normal routing
-        await phase_service.clear(conversation_id, pending["spawn_id"])
 
-    # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
-    # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
-    # frame instead of propagating out of run_with_live_frames and closing the WS.
-    try:
-        result = await router.route(conversation_id, user_message)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("router.route raised (surfacing as error): %s", exc)
-        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
-        return
+        # 3. persist + announce extracted facts (transparency note)
+        if result.new_facts:
+            created = await memory.save_facts(result.new_facts)
+            for fact in created:
+                emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
 
-    # 3. persist + announce extracted facts (transparency note)
-    if result.new_facts:
-        created = await memory.save_facts(result.new_facts)
-        for fact in created:
-            emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
+        # 4. handle the action
+        if result.action == "route" and result.spawn_id is not None:
+            await _handle_route(conversation_id, result, emit, user_message=user_message, route_ms=route_ms)
+        elif result.action == "suggest_create":
+            draft = result.suggested_spawn or {}
+            overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
+            if overlap is not None:
+                # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
+                llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
+                overlap = {**overlap, "axes": llm_axes or overlap.get("axes") or []}
+            emit({
+                "type": "suggest_create",
+                "draft": draft,
+                "task_brief": result.task_brief,
+                "overlaps": overlap if overlap is not None else result.overlaps,
+            })
+        elif result.action == "clarify":
+            await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM)
+        else:  # answer (incl. fallback)
+            await _handle_answer(conversation_id, user_message, emit)
 
-    # 4. handle the action
-    if result.action == "route" and result.spawn_id is not None:
-        await _handle_route(conversation_id, result, emit)
-    elif result.action == "suggest_create":
-        draft = result.suggested_spawn or {}
-        overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
-        if overlap is not None:
-            # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
-            llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
-            overlap = {**overlap, "axes": llm_axes or overlap.get("axes") or []}
-        emit({
-            "type": "suggest_create",
-            "draft": draft,
-            "task_brief": result.task_brief,
-            "overlaps": overlap if overlap is not None else result.overlaps,
-        })
-    elif result.action == "clarify":
-        await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM)
-    else:  # answer (incl. fallback)
-        await _handle_answer(conversation_id, user_message, emit)
-
-    # 5. compact the working thread if it grew too long
-    await memory.maybe_compact(conversation_id)
+        # 5. compact the working thread if it grew too long
+        await memory.maybe_compact(conversation_id)
 
 
 async def _handle_answer(
@@ -222,14 +227,17 @@ async def _handle_answer(
     emit({"type": "stream_end", "message_id": msg_id})
 
 
-async def _handle_route(conversation_id, result, emit: EventSink) -> None:  # noqa: ANN001
+async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
+                        user_message: str = "", route_ms: int | None = None) -> None:
     if getattr(result, "needs_proposal", False):
         spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
         await phase_service.set_proposing(conversation_id, result.spawn_id, result.task_brief or "")
         emit({"type": "proposal", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
-        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit, mode="propose")
+        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
+                              mode="propose", user_message=user_message, route_ms=route_ms)
     else:
-        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit)
+        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
+                              user_message=user_message, route_ms=route_ms)
 
 
 def _arslan_fetch_executor():
@@ -254,7 +262,7 @@ async def _match_safe_toolset(need: str) -> str | None:
 
 async def _handle_escalation(  # noqa: ANN001
     conversation_id, spawn_id, spawn_name, task_brief, esc, emit: EventSink
-) -> None:
+) -> dict | None:
     """Spec §3.2: refused actions stop here; allowed needs get satisfied and
     the spawn is re-dispatched ONCE with escalation disabled (depth-1)."""
     from server.orchestrator import escalation as esc_guard
@@ -267,7 +275,7 @@ async def _handle_escalation(  # noqa: ANN001
     if not verdict["allowed"]:
         emit({"type": "escalation_refused", "spawn_id": spawn_id, "why": verdict["why"]})
         emit({"type": "stream_end", "message_id": None})
-        return
+        return None
 
     granted = False
     if esc.get("kind") == "capability":
@@ -321,10 +329,12 @@ async def _handle_escalation(  # noqa: ANN001
         "type": "spawn_meta",
         "arslan_message_id": out["summary_message_id"],
         "spawn_id": spawn_id,
+        "spawn_name": spawn_name,
         "assistant_message_id": out["assistant_message_id"],
         "task_brief": task_brief,
     })
     emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+    return out
 
 
 async def _dispatch_spawn(  # noqa: ANN001
@@ -336,48 +346,55 @@ async def _dispatch_spawn(  # noqa: ANN001
     prior_output: str | None = None,
     instruction: str | None = None,
     mode: str = "execute",
+    user_message: str = "",
+    route_ms: int | None = None,
 ) -> None:
-    """Run one spawn turn: routing -> stream_start -> chunks -> spawn_meta -> stream_end.
-
-    Reusable for both initial routing and refinements (via prior_output/instruction).
-    """
-    # Resolve the spawn name first so the routing caption is complete before streaming.
+    """Run one spawn turn, recording it as a Run for replay + evaluation."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    recorder = await run_recorder.RunRecorder.start(
+        conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
+        user_message=user_message or task_brief, route_ms=route_ms,
+    )
+    tee = recorder.tee(emit)
+
     newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
     if newly_joined:
-        emit({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
-    emit({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
-    emit({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
-    emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
+        tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
+    tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
+    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
+    tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
     try:
         out = await dispatcher.dispatch(
-            conversation_id,
-            spawn_id=spawn_id,
-            task_brief=task_brief,
-            on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
-            on_event=emit,
-            prior_output=prior_output,
-            instruction=instruction,
-            mode=mode,
+            conversation_id, spawn_id=spawn_id, task_brief=task_brief,
+            on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
+            on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
         )
     except Exception as exc:  # noqa: BLE001
-        emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
+        tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
+        await recorder.finalize(summary_message_id=None, full_output="")
         return
 
     if out.get("escalation"):
-        await _handle_escalation(
-            conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], emit
+        esc_out = await _handle_escalation(
+            conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee
+        )
+        final = esc_out or out
+        await recorder.finalize(
+            summary_message_id=final.get("summary_message_id"),
+            full_output=final.get("full_output", ""),
         )
         return
 
-    emit({
-        "type": "spawn_meta",
-        "arslan_message_id": out["summary_message_id"],
-        "spawn_id": spawn_id,
+    await recorder.finalize(
+        summary_message_id=out["summary_message_id"], full_output=out["full_output"],
+    )
+    tee({
+        "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],
+        "spawn_id": spawn_id, "spawn_name": spawn_name,
         "assistant_message_id": out["assistant_message_id"],
-        "task_brief": task_brief,
+        "task_brief": task_brief, "run_id": recorder.run_id,
     })
-    emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+    tee({"type": "stream_end", "message_id": out["summary_message_id"]})
 
 
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
