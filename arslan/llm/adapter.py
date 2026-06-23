@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from arslan.llm import usage_sink
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
@@ -88,7 +89,12 @@ class LLMAdapter:
     ) -> LLMResponse:
         """Build messages and delegate to the underlying provider."""
         messages = self._provider.build_messages(system, user, history)
-        return await self._provider.chat(messages, tools=tools, temperature=temperature)
+        resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
+        total = (resp.usage or {}).get("total_tokens")
+        if not total:
+            total = usage_sink.estimate_tokens(system, user, resp.content)
+        usage_sink.report(total)
+        return resp
 
     async def chat_stream(
         self,
@@ -100,10 +106,15 @@ class LLMAdapter:
     ) -> AsyncIterator[str]:
         """Build messages and stream content deltas from the provider."""
         messages = self._provider.build_messages(system, user, history)
-        async for piece in self._provider.chat_stream(
-            messages, tools=tools, temperature=temperature
-        ):
-            yield piece
+        chunks: list[str] = []
+        try:
+            async for piece in self._provider.chat_stream(
+                messages, tools=tools, temperature=temperature
+            ):
+                chunks.append(piece)
+                yield piece
+        finally:
+            usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
 
     # ------------------------------------------------------------------
     # Private helpers
