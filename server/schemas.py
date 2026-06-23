@@ -300,3 +300,23 @@ class RunDetailOut(BaseModel):
     run: RunOut
     steps: list[RunStepOut]
     evaluations: list[RunEvaluationOut]
+
+
+class GateOut(BaseModel):
+    passed: bool
+    reason: str
+    aggregate: dict | None = None
+
+
+class EvolveProposalOut(BaseModel):
+    proposal_id: int | None
+    candidate_prompt: str | None
+    gate: GateOut
+    evidence: dict | None = None
+
+
+class ConfirmProposalOut(BaseModel):
+    ok: bool
+    reason: str | None = None
+    spawn_id: int | None = None
+    generation_level: int | None = None

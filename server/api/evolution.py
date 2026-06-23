@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.models import Feedback
 from server.db.session import get_session
-from server.schemas import EvolutionOut, FeedbackIn
-from server.services import evolution_service, spawn_service
+from server.schemas import ConfirmProposalOut, EvolutionOut, EvolveProposalOut, FeedbackIn
+from server.services import evolution_loop, evolution_service, spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -55,3 +55,15 @@ async def submit_feedback(
     )
     await session.commit()
     return {"ok": True}
+
+
+@router.post("/spawns/{spawn_id}/evolve", response_model=EvolveProposalOut)
+async def evolve_spawn(spawn_id: int) -> EvolveProposalOut:
+    result = await evolution_loop.propose_improvement(spawn_id)
+    return EvolveProposalOut(**result)
+
+
+@router.post("/evolution/proposals/{proposal_id}/confirm", response_model=ConfirmProposalOut)
+async def confirm_proposal(proposal_id: int) -> ConfirmProposalOut:
+    result = await evolution_loop.confirm_proposal(proposal_id)
+    return ConfirmProposalOut(**result)
