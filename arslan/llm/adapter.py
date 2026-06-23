@@ -91,7 +91,7 @@ class LLMAdapter:
         messages = self._provider.build_messages(system, user, history)
         resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
         total = (resp.usage or {}).get("total_tokens")
-        if not total:
+        if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
         usage_sink.report(total)
         return resp

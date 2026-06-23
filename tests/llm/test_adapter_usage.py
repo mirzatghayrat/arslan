@@ -49,3 +49,10 @@ async def test_chat_stream_estimates_from_accumulated():
         out = [p async for p in a.chat_stream("sys", "user")]
         assert out == ["ab", "cd"]
         assert usage_sink.total() > 0
+
+
+async def test_chat_reports_zero_when_provider_says_zero():
+    a = _adapter({"total_tokens": 0})
+    with usage_sink.collecting():
+        await a.chat("sys", "user")
+        assert usage_sink.total() == 0
