@@ -110,6 +110,8 @@ async def dispatch(
     instruction: str | None = None,
     allow_escalation: bool = True,
     mode: str = "execute",
+    system_prompt_override: str | None = None,
+    persist: bool = True,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
     {full_output, spawn_name, summary_message_id, assistant_message_id, escalation}.
@@ -128,7 +130,8 @@ async def dispatch(
         raise ValueError(f"spawn {spawn_id} not found")
 
     facts = await memory.facts_text()
-    system = (spawn.system_prompt or "You are a helpful assistant.")
+    base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
+    system = base_prompt
     system += (
         "\n\nUse only real or user-provided information. Do not invent, simulate, or fabricate "
         "data, statistics, or sources. If you lack the data needed, say so and ask the user to "
@@ -194,29 +197,31 @@ async def dispatch(
             if on_chunk is not None:
                 on_chunk(piece)
 
-    # Scope 2: spawn's own memory — capture the assistant row id for feedback wiring.
-    # For escalating turns, persist a structured placeholder.
-    spawn_content = f"[escalation] {escalation['need']}" if escalation else full
-    async with db_session.AsyncSessionLocal() as db:
-        db.add(ChatMessage(spawn_id=spawn_id, role="user", content=user_content))
-        assistant_row = ChatMessage(spawn_id=spawn_id, role="assistant", content=spawn_content)
-        db.add(assistant_row)
-        await db.commit()
-        await db.refresh(assistant_row)
-        assistant_message_id = assistant_row.id
+    assistant_message_id = None
+    summary_id = None
+    if persist:
+        # Scope 2: spawn's own memory — capture the assistant row id for feedback wiring.
+        spawn_content = f"[escalation] {escalation['need']}" if escalation else full
+        async with db_session.AsyncSessionLocal() as db:
+            db.add(ChatMessage(spawn_id=spawn_id, role="user", content=user_content))
+            assistant_row = ChatMessage(spawn_id=spawn_id, role="assistant", content=spawn_content)
+            db.add(assistant_row)
+            await db.commit()
+            await db.refresh(assistant_row)
+            assistant_message_id = assistant_row.id
 
-    # Scope 1: Arslan memory — DISPLAY (full) vs MEMORY (1-line, deterministic — no extra LLM call)
-    if escalation:
-        summary = f"[{spawn.name}] escalated: {escalation['need']}"
-    else:
-        summary = f"[{spawn.name}] {task_brief} -> delivered"
-    summary_id = await memory.add_message(
-        conversation_id,
-        "spawn_summary",
-        summary,
-        display_content=full,
-        spawn_id=spawn_id,
-    )
+        # Scope 1: Arslan memory — DISPLAY (full) vs MEMORY (1-line, deterministic — no extra LLM call)
+        if escalation:
+            summary = f"[{spawn.name}] escalated: {escalation['need']}"
+        else:
+            summary = f"[{spawn.name}] {task_brief} -> delivered"
+        summary_id = await memory.add_message(
+            conversation_id,
+            "spawn_summary",
+            summary,
+            display_content=full,
+            spawn_id=spawn_id,
+        )
     return {
         "full_output": full,
         "spawn_name": spawn.name,
