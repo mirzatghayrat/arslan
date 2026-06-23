@@ -1,9 +1,12 @@
 """Layer 2: dispatch a clean task_brief to a spawn; persist display + memory separately."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 from server.db import session as db_session
 from server.db.models import ChatMessage, Spawn
@@ -146,6 +149,14 @@ async def dispatch(
     suffix = evolution_service.prompt_suffix(spawn.name)
     if suffix:
         system = f"{system}\n\n{suffix}"
+
+    # Knowledge-base grounding: inject task-relevant chunks (best-effort; never break dispatch).
+    from server.services import knowledge as _knowledge
+    try:
+        _kb = await _knowledge.retrieve(spawn_id, task_brief)
+        system += _knowledge.knowledge_block(_kb)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
 
     # Compute equipment once. For unequipped spawns (legacy path) skip wired query entirely.
     equipment = await registry_service.equipment_for_spawn(spawn_id)
