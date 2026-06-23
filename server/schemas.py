@@ -320,3 +320,18 @@ class ConfirmProposalOut(BaseModel):
     reason: str | None = None
     spawn_id: int | None = None
     generation_level: int | None = None
+
+
+class KnowledgeIn(BaseModel):
+    source: str
+    text: str
+
+
+class IngestOut(BaseModel):
+    source: str
+    chunks_added: int
+
+
+class KnowledgeSourceOut(BaseModel):
+    source: str
+    chunks: int
