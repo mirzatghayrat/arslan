@@ -1017,8 +1017,12 @@ export default function OrchestratorChat({
             </div>
           </div>
         )}
-        {/* Thinking indicator: shown from send until first response frame */}
-        {thinking && !streaming && (
+        {/* Thinking indicator: shown from send until first real content chunk.
+            We no longer gate on !streaming because stream_start begins streaming
+            with empty text (slow models like Gemini 2.5 Pro have a long delay
+            before the first token). thinking stays true until stream_chunk clears
+            it, so the dots show through the blank gap. */}
+        {thinking && (
           <div className="flex gap-3 items-center py-2 select-none">
             <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark" draggable={false} />
             <div className="flex items-center gap-1.5 px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">

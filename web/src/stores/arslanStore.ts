@@ -97,8 +97,12 @@ function makeActions(set: SetState, get: GetState) {
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
-      // Clear thinking on the first frame that signals Arslan is responding
-      const RESPONDING_TYPES = new Set(["stream_start", "routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta"]);
+      // Clear thinking on the first frame that signals Arslan is responding.
+      // NOTE: "stream_start" is intentionally excluded — it starts streaming but
+      // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
+      // delay between stream_start and the first token, so we keep the thinking
+      // indicator alive until stream_chunk (first real content) clears it.
+      const RESPONDING_TYPES = new Set(["routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -174,7 +178,9 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "stream_chunk":
           if (!state.streaming) break;
-          set({ streamingText: state.streamingText + frame.content });
+          // First real content arrived — clear thinking so the indicator hands
+          // off seamlessly to the streaming bubble (no blank gap).
+          set({ thinking: false, streamingText: state.streamingText + frame.content });
           break;
         case "stream_end": {
           if (!state.streaming) break;
@@ -186,6 +192,7 @@ function makeActions(set: SetState, get: GetState) {
           const hasSteps = state.activitySteps.length > 0;
           if (frame.message_id == null && !hasContent && !hasSteps) {
             set({
+              thinking: false,
               streaming: false,
               streamingText: "",
               streamSource: null,
@@ -220,6 +227,7 @@ function makeActions(set: SetState, get: GetState) {
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
           if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];
           set({
+            thinking: false,
             items: [...state.items, item],
             streaming: false,
             streamingText: "",
