@@ -92,3 +92,25 @@ async def test_confirm_refuses_when_gate_failed(memdb, monkeypatch):
     async with memdb() as db:
         s = await db.get(Spawn, sid)
     assert s.system_prompt == "ORIGINAL"
+
+
+async def test_confirm_twice_is_noop(memdb, monkeypatch):
+    sid = await _spawn(memdb, prompt="ORIGINAL")
+    async with memdb() as db:
+        p = EvolutionProposal(spawn_id=sid, candidate_prompt="NEWP", gate_passed=True,
+                              evidence={}, status="proposed")
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        pid = p.id
+
+    first = await evolution_loop.confirm_proposal(pid)
+    assert first["ok"] is True
+    second = await evolution_loop.confirm_proposal(pid)
+    assert second["ok"] is False
+    assert "already" in second["reason"]
+
+    # spawn promoted exactly once: generation_level bumped to 2 (not 3)
+    async with memdb() as db:
+        s = await db.get(Spawn, sid)
+    assert s.generation_level == 2
