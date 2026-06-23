@@ -10,6 +10,7 @@ import SFSymbol from './SFSymbol';
 import Markdown from './Markdown';
 import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
+import { SpawnAvatar } from './SpawnAvatar';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
