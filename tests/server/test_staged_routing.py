@@ -4,6 +4,25 @@ from server.services import phase_service, roster_service
 
 async def _aw(v): return v
 
+
+@pytest.fixture(autouse=True)
+def _stub_run_recorder(monkeypatch):
+    """These unit tests don't set up a DB; stub the RunRecorder so _dispatch_spawn
+    doesn't try to persist a Run (recording is covered by test_run_recording_integration)."""
+    from server.services import run_recorder
+
+    class _Rec:
+        run_id = 0
+        def tee(self, emit):
+            return emit
+        async def finalize(self, **kwargs):
+            return 0
+
+    async def _start(**kwargs):
+        return _Rec()
+
+    monkeypatch.setattr(run_recorder.RunRecorder, "start", staticmethod(_start))
+
 @pytest.mark.asyncio
 async def test_open_task_proposes_and_sets_phase(monkeypatch):
     events = []

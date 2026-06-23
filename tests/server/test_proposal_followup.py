@@ -8,6 +8,25 @@ async def _aw(v):
     return v
 
 
+@pytest.fixture(autouse=True)
+def _stub_run_recorder(monkeypatch):
+    """These unit tests don't set up a DB; stub the RunRecorder so _dispatch_spawn
+    doesn't try to persist a Run (recording is covered by test_run_recording_integration)."""
+    from server.services import run_recorder
+
+    class _Rec:
+        run_id = 0
+        def tee(self, emit):
+            return emit
+        async def finalize(self, **kwargs):
+            return 0
+
+    async def _start(**kwargs):
+        return _Rec()
+
+    monkeypatch.setattr(run_recorder.RunRecorder, "start", staticmethod(_start))
+
+
 @pytest.mark.asyncio
 async def test_nl_confirm_triggers_execute(monkeypatch):
     monkeypatch.setattr(phase_service, "get_pending", lambda c: _aw({"spawn_id": 4, "phase": "proposing", "direction": "d"}))
@@ -29,7 +48,7 @@ async def test_nl_refine_triggers_dispatch_propose(monkeypatch):
     monkeypatch.setattr(phase_service, "get_pending", lambda c: _aw({"spawn_id": 4, "phase": "proposing", "direction": "original direction"}))
     called = {}
 
-    async def fake_dispatch(conv_id, spawn_id, task_brief, emit, *, mode="execute", prior_output=None, instruction=None):
+    async def fake_dispatch(conv_id, spawn_id, task_brief, emit, *, mode="execute", prior_output=None, instruction=None, **_kw):
         called["dispatch"] = {"conv_id": conv_id, "spawn_id": spawn_id, "mode": mode, "instruction": instruction}
 
     monkeypatch.setattr(arslan, "_dispatch_spawn", fake_dispatch)
