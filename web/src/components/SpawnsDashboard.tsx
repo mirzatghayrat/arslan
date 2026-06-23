@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
+import SpawnDetail from './SpawnDetail';
 import {
   Sliders, Wrench, BookOpen, Clock, Activity, ArrowUpRight, Shield, Cpu,
   ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X, WifiOff
@@ -44,6 +45,7 @@ export default function SpawnsDashboard({
   backendStatus,
 }: SpawnsDashboardProps) {
   const { t } = useTranslation();
+  const [detailSpawnId, setDetailSpawnId] = useState<string | null>(null);
 
   // Global Integration Discovery & Repository Engine States
   // NOTE: This Tool-Hub (MCP/discovery backend) does not exist yet — kept as visual shell, actions disabled.
@@ -576,6 +578,14 @@ export default function SpawnsDashboard({
                                   <Sliders className="w-3.5 h-3.5" />
                                   <span>{t('ledger.calibrate')}</span>
                                 </button>
+
+                                <button
+                                  type="button"
+                                  className="spawn-detail-open-btn"
+                                  onClick={(e) => { e.stopPropagation(); setDetailSpawnId(spawn.id); }}
+                                >
+                                  知识·进化
+                                </button>
                               </div>
                             </div>
 
@@ -590,6 +600,18 @@ export default function SpawnsDashboard({
 
             return null;
           })}
+        </div>
+      )}
+
+      {detailSpawnId != null && (
+        <div className="run-replay-overlay" onClick={() => setDetailSpawnId(null)}>
+          <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
+            <SpawnDetail
+              spawnId={Number(detailSpawnId)}
+              spawnName={spawns.find((s) => s.id === detailSpawnId)?.name ?? ""}
+              onClose={() => setDetailSpawnId(null)}
+            />
+          </div>
         </div>
       )}
     </div>
