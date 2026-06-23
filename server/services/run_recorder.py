@@ -174,9 +174,9 @@ class RunRecorder:
                         msg.run_id = self.run_id
             await db.commit()
         try:
-            # schedule_scoring uses asyncio.create_task; the judge coroutine only runs
-            # AFTER this turn's `with usage_sink.collecting()` block has exited, so its
-            # tokens never leak into this run's task_tokens.
+            # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
+            # scheduling. The judge task inherits this context's bucket via create_task, but
+            # nothing re-reads it for this run, so its tokens never affect task_tokens.
             schedule_scoring(self.run_id)
         except Exception as exc:  # noqa: BLE001 — scoring is best-effort
             logger.warning("schedule_scoring failed (non-fatal): %s", exc)

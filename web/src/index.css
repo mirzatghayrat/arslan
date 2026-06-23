@@ -221,6 +221,12 @@
   flex-shrink: 0;
 }
 
+/* Per-kind label color accents — colors express hierarchy */
+.trace__label--route      { color: var(--muted-foreground); }
+.trace__label--dispatch   { color: var(--foreground); font-weight: 600; }
+.trace__label--tool_call  { color: var(--primary); }
+.trace__label--escalation { color: var(--warning); }
+
 /* Slow row: highlight label with accent color */
 .trace__row--slow .trace__label {
   color: var(--primary);
