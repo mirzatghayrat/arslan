@@ -261,7 +261,7 @@ async def _match_safe_toolset(need: str) -> str | None:
 
 
 async def _handle_escalation(  # noqa: ANN001
-    conversation_id, spawn_id, spawn_name, task_brief, esc, emit: EventSink
+    conversation_id, spawn_id, spawn_name, task_brief, esc, emit: EventSink, *, run_id: int | None = None
 ) -> dict | None:
     """Spec §3.2: refused actions stop here; allowed needs get satisfied and
     the spawn is re-dispatched ONCE with escalation disabled (depth-1)."""
@@ -332,6 +332,7 @@ async def _handle_escalation(  # noqa: ANN001
         "spawn_name": spawn_name,
         "assistant_message_id": out["assistant_message_id"],
         "task_brief": task_brief,
+        "run_id": run_id,
     })
     emit({"type": "stream_end", "message_id": out["summary_message_id"]})
     return out
@@ -376,7 +377,8 @@ async def _dispatch_spawn(  # noqa: ANN001
 
     if out.get("escalation"):
         esc_out = await _handle_escalation(
-            conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee
+            conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee,
+            run_id=recorder.run_id,
         )
         final = esc_out or out
         await recorder.finalize(

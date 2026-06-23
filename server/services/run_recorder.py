@@ -142,6 +142,8 @@ class RunRecorder:
                 {"how": "no_resolution", "detail": "", "why": ""},
                 esc_ts, last_ts)
 
+        # Normal path: finalize runs BEFORE spawn_meta is emitted, so spawn_meta is
+        # usually absent here and the dispatch step is closed by the fallback below.
         if dispatch_start is not None:
             last_ts = self._events[-1][0] if self._events else dispatch_start
             add("dispatch", {"spawn_name": self.spawn_name},
@@ -172,6 +174,9 @@ class RunRecorder:
                         msg.run_id = self.run_id
             await db.commit()
         try:
+            # schedule_scoring uses asyncio.create_task; the judge coroutine only runs
+            # AFTER this turn's `with usage_sink.collecting()` block has exited, so its
+            # tokens never leak into this run's task_tokens.
             schedule_scoring(self.run_id)
         except Exception as exc:  # noqa: BLE001 — scoring is best-effort
             logger.warning("schedule_scoring failed (non-fatal): %s", exc)
