@@ -253,3 +253,16 @@ class CatalogEntryOut(BaseModel):
     provider: str
     capabilities: CatalogCapabilities
     languages: dict[str, int]
+
+
+class TitleIn(BaseModel):
+    """Request body for POST /orchestrator/title."""
+
+    first_message: str
+    first_reply: str | None = None
+
+
+class TitleOut(BaseModel):
+    """Response from POST /orchestrator/title."""
+
+    title: str
