@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
 import { api } from './api/client';
+import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
 import { listProviderConfigs } from './api/client';
@@ -74,6 +75,10 @@ export default function App() {
   ]);
   const [activeThreadId, setActiveThreadId] = useState<string>("thread-default");
 
+  // ── Auto-title: track which threads have already received a generated title
+  // so we never regenerate on re-renders or subsequent messages.
+  const titledThreadIds = useRef<Set<string>>(new Set());
+
   // ── Stage B: Orchestrator chat live WS ─────────────────────────────────────
   // The store holds all thread items; we derive UI messages from it.
   const arslanItems = useArslanStore((s) => s.items);
@@ -111,6 +116,37 @@ export default function App() {
         },
       ]
     : liveOrchestratorHistory;
+
+  // ── Auto-title effect: fires when the live history gains its first assistant
+  // reply. Captures the active thread id at effect time (stable closure via
+  // dependency array) so a mid-stream thread switch never titles the wrong thread.
+  useEffect(() => {
+    // Build a synthetic thread snapshot from the live store history so we can
+    // reuse the pure shouldAutoTitle helper.
+    const syntheticThread = {
+      title: threads.find((t) => t.id === activeThreadId)?.title ?? 'New Session',
+      history: liveOrchestratorHistory,
+    };
+    if (
+      !titledThreadIds.current.has(activeThreadId) &&
+      shouldAutoTitle(syntheticThread)
+    ) {
+      // Mark immediately so concurrent renders don't fire a second call.
+      titledThreadIds.current.add(activeThreadId);
+      const capturedThreadId = activeThreadId;
+      maybeAutoTitle(
+        capturedThreadId,
+        { history: liveOrchestratorHistory },
+        (msg, reply) => api.generateTitle(msg, reply),
+        (tid, title) => {
+          setThreads((prev) =>
+            prev.map((t) => (t.id === tid ? { ...t, title } : t)),
+          );
+        },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
   const sendOrchestratorMessage = useCallback((text: string) => {

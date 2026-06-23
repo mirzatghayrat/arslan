@@ -93,6 +93,12 @@ export const api = {
   updateFact: (id: number, body: { content?: string; sensitive?: boolean }) =>
     request<UserFact>(`/facts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteFact: (id: number) => request<void>(`/facts/${id}`, { method: "DELETE" }),
+  /** Generate a concise thread title from the first user message + optional first reply. */
+  generateTitle: (firstMessage: string, firstReply?: string): Promise<{ title: string }> =>
+    request<{ title: string }>("/orchestrator/title", {
+      method: "POST",
+      body: JSON.stringify({ first_message: firstMessage, first_reply: firstReply }),
+    }),
 };
 
 // ── Provider Config CRUD ───────────────────────────────────────────────────────
