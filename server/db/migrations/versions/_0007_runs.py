@@ -16,6 +16,8 @@ depends_on = None
 
 
 def _tables(metadata: sa.MetaData) -> list[sa.Table]:
+    # Stub for the pre-existing spawns table so the FK on runs.spawn_id resolves.
+    sa.Table("spawns", metadata, sa.Column("id", sa.Integer(), primary_key=True), keep_existing=True)
     runs = sa.Table(
         "runs", metadata,
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -31,6 +33,7 @@ def _tables(metadata: sa.MetaData) -> list[sa.Table]:
         sa.Column("overall_score", sa.Float(), nullable=True),
         sa.Column("overall_badge", sa.String(10), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(["spawn_id"], ["spawns.id"], ondelete="SET NULL"),
     )
     run_steps = sa.Table(
         "run_steps", metadata,
@@ -43,6 +46,7 @@ def _tables(metadata: sa.MetaData) -> list[sa.Table]:
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("ended_at", sa.DateTime(), nullable=True),
         sa.Column("duration_ms", sa.Integer(), nullable=True),
+        sa.ForeignKeyConstraint(["run_id"], ["runs.id"], ondelete="CASCADE"),
     )
     run_evals = sa.Table(
         "run_evaluations", metadata,
@@ -52,6 +56,7 @@ def _tables(metadata: sa.MetaData) -> list[sa.Table]:
         sa.Column("status", sa.String(10), nullable=False),
         sa.Column("score", sa.Float(), nullable=False),
         sa.Column("comment", sa.Text(), nullable=False),
+        sa.ForeignKeyConstraint(["run_id"], ["runs.id"], ondelete="CASCADE"),
     )
     return [runs, run_steps, run_evals]
 
@@ -70,6 +75,8 @@ def _upgrade(bind) -> None:  # noqa: ANN001
 
 
 def _downgrade(bind) -> None:  # noqa: ANN001
+    # Note: arslan_messages.run_id is intentionally NOT dropped here (older SQLite
+    # lacks DROP COLUMN); downgrade reverts the new tables only.
     metadata = sa.MetaData()
     for tbl in reversed(_tables(metadata)):
         tbl.drop(bind, checkfirst=True)
