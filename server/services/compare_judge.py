@@ -17,13 +17,16 @@ logger = logging.getLogger(__name__)
 
 _DIMENSIONS = ("fabrication", "identity", "completion")
 
-_DEGRADED = {
-    "dimensions": {d: "tie" for d in _DIMENSIONS},
-    "overall": "tie",
-    "margin": 0.0,
-    "position_sensitive": True,
-    "reason": "judge parse/LLM failed",
-}
+def _degraded() -> dict:
+    """A fresh all-tie verdict (safe side: 'not proven better'). New dict each call
+    so callers can mutate the result without corrupting shared state."""
+    return {
+        "dimensions": {d: "tie" for d in _DIMENSIONS},
+        "overall": "tie",
+        "margin": 0.0,
+        "position_sensitive": True,
+        "reason": "judge parse/LLM failed",
+    }
 
 
 async def _judge_once(adapter, *, task: str, persona: str, first: str, second: str) -> dict | None:
@@ -75,7 +78,7 @@ async def compare(*, task: str, persona: str, output_a: str, output_b: str) -> d
     p1 = await _judge_once(adapter, task=task, persona=persona, first=output_a, second=output_b)
     p2 = await _judge_once(adapter, task=task, persona=persona, first=output_b, second=output_a)
     if p1 is None or p2 is None:
-        return dict(_DEGRADED)
+        return _degraded()
 
     d1, o1, m1 = _to_ab(p1, slot1="a", slot2="b")   # pass1: ①=A
     d2, o2, m2 = _to_ab(p2, slot1="b", slot2="a")   # pass2: ①=B

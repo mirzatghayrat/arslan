@@ -1,4 +1,4 @@
-import pytest
+import json
 
 from arslan.models import LLMResponse
 from server.services import compare_judge
@@ -20,7 +20,6 @@ def _stub(monkeypatch, responses):
 
 
 def _resp(fab, ident, comp, overall, margin=5, reason="r"):
-    import json
     return json.dumps({
         "dimensions": {"fabrication": fab, "identity": ident, "completion": comp},
         "overall": overall, "margin": margin, "reason": reason,
