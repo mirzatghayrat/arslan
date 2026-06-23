@@ -20,8 +20,8 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       proxy: {
-        '/api': 'http://localhost:8743',
-        '/ws': { target: 'ws://localhost:8743', ws: true },
+        '/api': 'http://localhost:8741',
+        '/ws': { target: 'ws://localhost:8741', ws: true },
       },
     },
     test: {
