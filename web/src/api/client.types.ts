@@ -232,3 +232,37 @@ export interface CatalogEntry {
   capabilities: CatalogCapabilities;
   languages: Record<string, number>;
 }
+
+export interface RunStepDto {
+  seq: number;
+  kind: string;
+  ref: Record<string, unknown>;
+  detail: Record<string, unknown>;
+  duration_ms: number | null;
+}
+
+export interface RunEvaluationDto {
+  dimension: string;
+  status: string;
+  score: number;
+  comment: string;
+}
+
+export interface RunDto {
+  id: number;
+  conversation_id: string;
+  spawn_id: number | null;
+  spawn_name: string | null;
+  user_message: string;
+  total_ms: number | null;
+  task_tokens: number;
+  status: string;
+  overall_score: number | null;
+  overall_badge: string | null;
+}
+
+export interface RunDetailDto {
+  run: RunDto;
+  steps: RunStepDto[];
+  evaluations: RunEvaluationDto[];
+}

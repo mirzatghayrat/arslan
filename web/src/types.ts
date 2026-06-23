@@ -47,6 +47,8 @@ export interface Message {
   verdict?: string;
   /** Backend message id for verdict frames (spawnMessageId from the store item). */
   messageId?: number;
+  /** Run id for the trace+eval replay of this spawn deliverable. */
+  runId?: number | null;
   /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */
   taskBrief?: string | null;
   routedTo?: {
@@ -78,6 +80,37 @@ export interface Spawn {
   tools: string[]; // List of Tool IDs
   skills: string[]; // List of Skill IDs
   totalTasks: number;
+}
+
+export interface UiRunStep {
+  seq: number;
+  kind: string;
+  label: string;
+  detail: Record<string, unknown>;
+  durationMs: number | null;
+  isSlowest: boolean;
+}
+
+export interface UiRunDimension {
+  dimension: string;
+  label: string;
+  status: 'pass' | 'warn' | 'fail';
+  score: number;
+  comment: string;
+}
+
+export interface UiRun {
+  id: number;
+  spawnName: string | null;
+  userMessage: string;
+  status: string;
+  totalMs: number | null;
+  taskTokens: number;
+  overallScore: number | null;
+  overallBadge: string | null;
+  steps: UiRunStep[];
+  dimensions: UiRunDimension[];
+  scored: boolean;
 }
 
 export interface AppSettings {

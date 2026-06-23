@@ -6,6 +6,7 @@ import type {
   ProviderConfig,
   ProviderOption,
   RegistryCatalog,
+  RunDetailDto,
   SpawnDetail,
   SpawnSummary,
   SuggestDraft,
@@ -99,6 +100,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ first_message: firstMessage, first_reply: firstReply }),
     }),
+  getRun: (id: number) => request<RunDetailDto>(`/runs/${id}`),
 };
 
 // ── Provider Config CRUD ───────────────────────────────────────────────────────

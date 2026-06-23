@@ -1,5 +1,5 @@
-import type { AppSettings, Message, Spawn } from "../types";
-import type { AppSettings as BackendAppSettings, ArslanThreadItem, SpawnSummary } from "./client.types";
+import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } from "../types";
+import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
@@ -252,4 +252,70 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       timestamp,
     };
   });
+}
+
+// ── Run trace+eval adapters ───────────────────────────────────────────────────
+
+const TOOL_LABELS: Record<string, string> = {
+  web_search: "查资料",
+  fetch_url: "读网页",
+  read_file: "读文件",
+};
+
+const DIMENSION_LABELS: Record<string, string> = {
+  routing: "选对了人",
+  fabrication: "没有编造",
+  identity: "没串错身份",
+  completion: "完成度",
+};
+
+function stepLabel(step: RunStepDto): string {
+  const spawn = (step.ref.spawn_name as string) ?? "";
+  switch (step.kind) {
+    case "route":
+      return `选了 ${spawn}`.trim();
+    case "dispatch":
+      return `交给 ${spawn} 处理`.trim();
+    case "tool_call": {
+      const tool = (step.ref.tool as string) ?? "";
+      return TOOL_LABELS[tool] ?? `用工具 ${tool}`.trim();
+    }
+    case "escalation":
+      return `求助：${(step.ref.need as string) ?? ""}`.trim();
+    default:
+      return step.kind;
+  }
+}
+
+export function toUiRun(dto: RunDetailDto): UiRun {
+  const { run, steps, evaluations } = dto;
+  const maxMs = steps.reduce((m, s) => Math.max(m, s.duration_ms ?? 0), 0);
+  const uiSteps: UiRunStep[] = steps.map((s) => ({
+    seq: s.seq,
+    kind: s.kind,
+    label: stepLabel(s),
+    detail: s.detail,
+    durationMs: s.duration_ms,
+    isSlowest: maxMs > 0 && (s.duration_ms ?? 0) === maxMs,
+  }));
+  const dimensions: UiRunDimension[] = evaluations.map((e) => ({
+    dimension: e.dimension,
+    label: DIMENSION_LABELS[e.dimension] ?? e.dimension,
+    status: (["pass", "warn", "fail"].includes(e.status) ? e.status : "warn") as UiRunDimension["status"],
+    score: e.score,
+    comment: e.comment,
+  }));
+  return {
+    id: run.id,
+    spawnName: run.spawn_name,
+    userMessage: run.user_message,
+    status: run.status,
+    totalMs: run.total_ms,
+    taskTokens: run.task_tokens,
+    overallScore: run.overall_score,
+    overallBadge: run.overall_badge,
+    steps: uiSteps,
+    dimensions,
+    scored: run.status === "scored",
+  };
 }
