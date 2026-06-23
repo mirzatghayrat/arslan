@@ -266,3 +266,37 @@ class TitleOut(BaseModel):
     """Response from POST /orchestrator/title."""
 
     title: str
+
+
+class RunStepOut(BaseModel):
+    seq: int
+    kind: str
+    ref: dict
+    detail: dict
+    duration_ms: int | None
+
+
+class RunEvaluationOut(BaseModel):
+    dimension: str
+    status: str
+    score: float
+    comment: str
+
+
+class RunOut(BaseModel):
+    id: int
+    conversation_id: str
+    spawn_id: int | None
+    spawn_name: str | None
+    user_message: str
+    total_ms: int | None
+    task_tokens: int
+    status: str
+    overall_score: float | None
+    overall_badge: str | None
+
+
+class RunDetailOut(BaseModel):
+    run: RunOut
+    steps: list[RunStepOut]
+    evaluations: list[RunEvaluationOut]

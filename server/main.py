@@ -90,6 +90,10 @@ def create_app() -> FastAPI:
 
     app.include_router(orchestrator_api.router, prefix="/api/v1")
 
+    from server.api import runs as runs_api
+
+    app.include_router(runs_api.router, prefix="/api/v1")
+
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
