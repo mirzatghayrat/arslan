@@ -61,6 +61,7 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
 
   async function removeSource(source: string) {
     setBusy(true);
+    setError(null);
     try {
       await api.deleteKnowledge(spawnId, source);
       await loadSources();
