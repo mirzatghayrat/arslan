@@ -11,8 +11,8 @@ from sqlalchemy import select
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
-from server.orchestrator import arslan, dispatcher
-from server.services import spawn_service
+from server.orchestrator import arslan, dispatcher, memory
+from server.services import ingest, roster_service, spawn_service, storage_intent
 from server.ws import protocol
 
 
@@ -67,7 +67,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     await ws.accept()
     await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
-    from server.services import roster_service
     await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
 
     # Emit-sink: a queue drained concurrently with the orchestration coroutine so
@@ -105,6 +104,25 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     recent_names: list[str] = []
     awaiting_store: tuple[str, list[str]] | None = None
 
+    async def _spawn_names() -> list[str]:
+        roster = await roster_service.list_roster(conversation_id)
+        return [m.get("spawn_name") for m in roster if m.get("spawn_name")]
+
+    async def _store_into(target_name: str, material: str, names: list[str]) -> bool:
+        roster = await roster_service.list_roster(conversation_id)
+        match = next((m for m in roster if m.get("spawn_name") == target_name), None)
+        if match is None:
+            return False
+        try:
+            n = await ingest.ingest_text(
+                int(match["spawn_id"]), names[0] if names else "附件", material
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ws.send_json(protocol.error("INGEST_ERROR", str(exc), recoverable=True))
+            return True  # handled (do not fall through to routing)
+        await ws.send_json(protocol.attachment_stored(target_name, n))
+        return True
+
     try:
         while True:
             data = await ws.receive_json()
@@ -137,7 +155,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 spawn_id, spawn_name, equipment, intro = await _create_from_draft(draft, differentiation)
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name,
                                                           equipment=equipment, intro=intro))
-                from server.services import roster_service
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="created")
                 if newly_joined:
                     await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
@@ -232,7 +249,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 except (TypeError, ValueError):
                     await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
                     continue
-                from server.services import roster_service
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")
                 if newly_joined:
                     spawn_name = await dispatcher.get_spawn_name(spawn_id)
@@ -247,7 +263,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 except (TypeError, ValueError):
                     await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
                     continue
-                from server.services import roster_service
                 # Resolve name before kicking so we can name the notice.
                 kick_spawn_name = await dispatcher.get_spawn_name(spawn_id)
                 was_removed = await roster_service.kick(conversation_id, spawn_id)
@@ -281,35 +296,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 recent_material = attached
                 recent_names = data.get("attached_names") or ["附件"]
 
-            from server.orchestrator import memory
-            from server.services import ingest as _ingest
-            from server.services import roster_service as _roster
-            from server.services import storage_intent as _si
-
-            async def _spawn_names() -> list[str]:
-                roster = await _roster.list_roster(conversation_id)
-                return [m.get("spawn_name") for m in roster if m.get("spawn_name")]
-
-            async def _store_into(target_name: str, material: str, names: list[str]) -> bool:
-                roster = await _roster.list_roster(conversation_id)
-                match = next((m for m in roster if m.get("spawn_name") == target_name), None)
-                if match is None:
-                    return False
-                try:
-                    n = await _ingest.ingest_text(
-                        int(match["spawn_id"]), names[0] if names else "附件", material
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    await ws.send_json(protocol.error("INGEST_ERROR", str(exc), recoverable=True))
-                    return True  # handled (do not fall through to routing)
-                await ws.send_json(protocol.attachment_stored(target_name, n))
-                return True
-
             # Reflow: a prior turn asked "记给哪个分身?" — resolve the target now.
             if awaiting_store is not None:
                 material, names = awaiting_store
                 try:
-                    intent = await _si.classify(content, names, await _spawn_names())
+                    intent = await storage_intent.classify(content, names, await _spawn_names())
                 except Exception:  # noqa: BLE001
                     intent = None
                 if (intent is not None and intent.store and intent.target
@@ -318,12 +309,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     recent_material = ""
                     recent_names = []
                     continue
-                awaiting_store = None  # give up after one try → fall through to normal handling
+                awaiting_store = None   # give up after one try → fall through to normal handling
+                recent_material = ""
+                recent_names = []
 
             # Fresh storage intent (only when material is held)
             elif recent_material:
                 try:
-                    intent = await _si.classify(content, recent_names, await _spawn_names())
+                    intent = await storage_intent.classify(content, recent_names, await _spawn_names())
                 except Exception:  # noqa: BLE001
                     intent = None
                 if intent is not None and intent.store:

@@ -501,3 +501,126 @@ def test_arslan_storage_asks_target(app_client, monkeypatch):
         assert ws.receive_json()["type"] == "stream_end"
 
     assert called["ingest"] is False
+
+
+def test_arslan_storage_reflow_resolves(app_client, monkeypatch):
+    """Turn 1: store intent, no target → Arslan asks.
+    Turn 2: names the spawn → ingest into it (reflow resolve path)."""
+    import server.services.storage_intent as si_mod
+    import server.services.ingest as ingest_mod
+    from server.services import roster_service
+
+    # Put the seeded spawn (id=7, beauty-guru) onto the roster.
+    async def _join():
+        await roster_service.join("main", 7, via="invited")
+    anyio.run(_join)
+
+    # classify: turn 1 → store but no target; turn 2 → store with target resolved.
+    call_count = {"n": 0}
+    async def _fake_classify(message, names, spawn_names):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return si_mod.StorageIntent(store=True, target=None)
+        # Turn 2: user names the spawn.
+        return si_mod.StorageIntent(store=True, target="beauty-guru")
+    monkeypatch.setattr(si_mod, "classify", _fake_classify)
+
+    captured = {}
+    async def _fake_ingest(spawn_id, source, text, *, compress=False):
+        captured["spawn_id"] = spawn_id
+        captured["text"] = text
+        return 5
+    monkeypatch.setattr(ingest_mod, "ingest_text", _fake_ingest)
+
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+
+        # Turn 1: attach material, store intent but no target → Arslan asks.
+        ws.send_json({
+            "type": "user_message",
+            "content": "记住这份材料",
+            "attached_context": "HELD MATERIAL",
+            "attached_names": ["doc.pdf"],
+        })
+        assert ws.receive_json()["type"] == "stream_start"
+        chunk = ws.receive_json()
+        assert "记给哪个分身" in chunk["content"]
+        assert ws.receive_json()["type"] == "stream_end"
+
+        # Turn 2: user names the spawn; no new attachment.
+        ws.send_json({
+            "type": "user_message",
+            "content": "存给 beauty-guru",
+        })
+        frame = ws.receive_json()
+        assert frame["type"] == "attachment_stored"
+        assert frame["spawn_name"] == "beauty-guru"
+        assert frame["chunks"] == 5
+
+    # Ingest was called with the material held from turn 1.
+    assert captured["spawn_id"] == 7
+    assert captured["text"] == "HELD MATERIAL"
+
+
+def test_arslan_storage_reflow_giveup_clears_material(app_client, monkeypatch):
+    """Turn 1: store intent, no target → asks (awaiting_store set, material held).
+    Turn 2: classify → store=False → give-up: falls through to normal handling AND
+    material is cleared so turn 3 does NOT re-trigger classify."""
+    import server.services.storage_intent as si_mod
+    import server.services.ingest as ingest_mod
+
+    classify_calls = {"n": 0}
+    async def _fake_classify(message, names, spawn_names):
+        classify_calls["n"] += 1
+        if classify_calls["n"] == 1:
+            # Turn 1: store intent but no target → Arslan asks.
+            return si_mod.StorageIntent(store=True, target=None)
+        # Turn 2: give-up (store=False).
+        return si_mod.StorageIntent(store=False, target=None)
+    monkeypatch.setattr(si_mod, "classify", _fake_classify)
+
+    async def _fake_ingest(*a, **k):
+        return 1
+    monkeypatch.setattr(ingest_mod, "ingest_text", _fake_ingest)
+
+    # Stub handle_user_message so turn 2 and 3 fall-through is observable.
+    handle_calls = {"n": 0}
+    async def _fake_handle(conv, msg, emit, *, attached_context=None):
+        handle_calls["n"] += 1
+        emit({"type": "stream_start", "source": "arslan"})
+        emit({"type": "stream_chunk", "content": "OK"})
+        emit({"type": "stream_end", "message_id": handle_calls["n"]})
+    monkeypatch.setattr(arslan_mod, "handle_user_message", _fake_handle)
+
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+
+        # Turn 1: material attached, store intent → asks which spawn.
+        ws.send_json({
+            "type": "user_message",
+            "content": "记住",
+            "attached_context": "STALE MATERIAL",
+            "attached_names": ["old.txt"],
+        })
+        assert ws.receive_json()["type"] == "stream_start"
+        assert ws.receive_json()["type"] == "stream_chunk"
+        assert ws.receive_json()["type"] == "stream_end"
+
+        # Turn 2: classify says store=False → give-up, falls through to handle_user_message.
+        ws.send_json({"type": "user_message", "content": "算了不用了"})
+        assert ws.receive_json()["type"] == "stream_start"
+        assert ws.receive_json()["type"] == "stream_chunk"
+        assert ws.receive_json()["type"] == "stream_end"
+        assert handle_calls["n"] == 1  # turn 2 reached handle_user_message
+
+        # Turn 3: unrelated message — classify must NOT be called again (material was cleared).
+        classify_before = classify_calls["n"]
+        ws.send_json({"type": "user_message", "content": "你好"})
+        assert ws.receive_json()["type"] == "stream_start"
+        assert ws.receive_json()["type"] == "stream_chunk"
+        assert ws.receive_json()["type"] == "stream_end"
+        assert handle_calls["n"] == 2  # turn 3 also reached handle_user_message
+        # classify was called for turn 1 + turn 2 (reflow) only — NOT turn 3.
+        assert classify_calls["n"] == classify_before
