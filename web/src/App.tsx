@@ -155,10 +155,14 @@ export default function App() {
   }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
-  const sendOrchestratorMessage = useCallback((text: string) => {
+  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[] }) => {
     useArslanStore.getState().addUserMessage(text);
     useArslanStore.getState().setThinking(true);
-    wsSend({ type: 'user_message', content: text });
+    wsSend({
+      type: 'user_message',
+      content: text,
+      ...(attached?.context ? { attached_context: attached.context, attached_names: attached.names } : {}),
+    });
   }, [wsSend]);
 
   const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('');

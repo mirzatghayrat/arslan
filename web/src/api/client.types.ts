@@ -205,7 +205,8 @@ export type ArslanServerMessage =
   | { type: "error"; code: string; message: string; recoverable?: boolean }
   | { type: "verdict_recorded"; spawn_id: number; action: string }
   | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
-  | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null };
+  | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null }
+| { type: "attachment_stored"; spawn_name: string | null; chunks: number };
 
 export interface RosterMember {
   spawnId: number;

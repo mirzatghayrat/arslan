@@ -420,6 +420,20 @@ function makeActions(set: SetState, get: GetState) {
             ],
           });
           break;
+        case "attachment_stored":
+          set({
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "system",
+                role: "arslan",
+                content: `📎 已记入 ${frame.spawn_name ?? "知识库"} 的知识库 · ${frame.chunks} 块`,
+                spawnName: frame.spawn_name,
+              },
+            ],
+          });
+          break;
         case "error":
           set({
             error: frame.message,

@@ -17,12 +17,13 @@ import { useArslanStore } from '../stores/arslanStore';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import EvalSummary from './EvalSummary';
+import AttachBar, { type Attachment } from './AttachBar';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
   setChatHistory: React.Dispatch<React.SetStateAction<Message[]>>;
   /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation. */
-  onSendMessage?: (text: string) => void;
+  onSendMessage?: (text: string, attached?: { context: string; names: string[] }) => void;
   spawns: Spawn[];
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
@@ -58,6 +59,8 @@ export default function OrchestratorChat({
   const llmError = useArslanStore((s) => s.error);
   const clearLlmError = useArslanStore((s) => s.clearError);
   const [inputValue, setInputValue] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachKey, setAttachKey] = useState(0);
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   const [replayRunId, setReplayRunId] = useState<number | null>(null);
   const [showEvalSummary, setShowEvalSummary] = useState(false);
@@ -132,11 +135,21 @@ export default function OrchestratorChat({
     const text = inputValue.trim();
     setInputValue('');
 
+    const context = attachments.map((a) => a.text).join("\n\n---\n\n");
+    const names = attachments.map((a) => a.name);
+    const clearAttachments = () => {
+      setAttachments([]);
+      setAttachKey((k) => k + 1);
+    };
+
     if (onSendMessage) {
       // Live WS path: delegate to parent's onSendMessage (store + WS send)
-      onSendMessage(text);
+      onSendMessage(text, context ? { context, names } : undefined);
+      clearAttachments();
       return;
     }
+
+    clearAttachments();
 
     // Non-wired thread: append the user message only; no fabricated assistant reply.
     const userMsg: Message = {
@@ -1077,6 +1090,9 @@ export default function OrchestratorChat({
       {/* Input Message Form Panel */}
       {chatHistory.length > 0 && (
         <footer className="p-4 border-t border-border bg-background/80 backdrop-blur shrink-0 z-10 select-none">
+          <div className="max-w-4xl mx-auto">
+            <AttachBar key={attachKey} onChange={setAttachments} />
+          </div>
           <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex items-center gap-2 relative">
             <input
               id="chat-message-input"
