@@ -40,7 +40,7 @@ async def test_routed_turn_creates_run_with_steps(memdb, monkeypatch):
 
     async def fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                             on_event=None, prior_output=None, instruction=None,
-                            allow_escalation=True, mode="execute"):
+                            allow_escalation=True, mode="execute", attached_context=None):
         if on_chunk:
             on_chunk("done")
         sid = await _memory.add_message(

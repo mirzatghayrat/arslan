@@ -119,7 +119,13 @@ async def _classify_followup(user_message: str, direction: str) -> str:
     return "new"
 
 
-async def handle_user_message(conversation_id: str, user_message: str, emit: EventSink) -> None:
+async def handle_user_message(
+    conversation_id: str,
+    user_message: str,
+    emit: EventSink,
+    *,
+    attached_context: str | None = None,
+) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
     with usage_sink.collecting():
         # 1. persist the user turn
@@ -177,7 +183,8 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
 
         # 4. handle the action
         if result.action == "route" and result.spawn_id is not None:
-            await _handle_route(conversation_id, result, emit, user_message=user_message, route_ms=route_ms)
+            await _handle_route(conversation_id, result, emit, user_message=user_message,
+                                route_ms=route_ms, attached_context=attached_context)
         elif result.action == "suggest_create":
             draft = result.suggested_spawn or {}
             overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
@@ -192,16 +199,18 @@ async def handle_user_message(conversation_id: str, user_message: str, emit: Eve
                 "overlaps": overlap if overlap is not None else result.overlaps,
             })
         elif result.action == "clarify":
-            await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM)
+            await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
+                                 attached_context=attached_context)
         else:  # answer (incl. fallback)
-            await _handle_answer(conversation_id, user_message, emit)
+            await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context)
 
         # 5. compact the working thread if it grew too long
         await memory.maybe_compact(conversation_id)
 
 
 async def _handle_answer(
-    conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = ""
+    conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
+    attached_context: str | None = None,
 ) -> None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
@@ -214,10 +223,14 @@ async def _handle_answer(
     if ctx["summary"]:
         system += f"\n\nConversation summary so far:\n{ctx['summary']}"
 
+    llm_user = user_message
+    if attached_context:
+        llm_user = f"[附带材料]\n{attached_context}\n\n[用户消息]\n{user_message}"
+
     emit({"type": "stream_start", "source": "arslan"})
     full = ""
     try:
-        async for piece in _answer_stream(system, user_message, history=ctx["history"][:-1]):
+        async for piece in _answer_stream(system, llm_user, history=ctx["history"][:-1]):
             full += piece
             emit({"type": "stream_chunk", "content": piece})
     except Exception as exc:  # noqa: BLE001
@@ -228,16 +241,19 @@ async def _handle_answer(
 
 
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
-                        user_message: str = "", route_ms: int | None = None) -> None:
+                        user_message: str = "", route_ms: int | None = None,
+                        attached_context: str | None = None) -> None:
     if getattr(result, "needs_proposal", False):
         spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
         await phase_service.set_proposing(conversation_id, result.spawn_id, result.task_brief or "")
         emit({"type": "proposal", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
         await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
-                              mode="propose", user_message=user_message, route_ms=route_ms)
+                              mode="propose", user_message=user_message, route_ms=route_ms,
+                              attached_context=attached_context)
     else:
         await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
-                              user_message=user_message, route_ms=route_ms)
+                              user_message=user_message, route_ms=route_ms,
+                              attached_context=attached_context)
 
 
 def _arslan_fetch_executor():
@@ -349,6 +365,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     mode: str = "execute",
     user_message: str = "",
     route_ms: int | None = None,
+    attached_context: str | None = None,
 ) -> None:
     """Run one spawn turn, recording it as a Run for replay + evaluation."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
@@ -369,6 +386,7 @@ async def _dispatch_spawn(  # noqa: ANN001
             conversation_id, spawn_id=spawn_id, task_brief=task_brief,
             on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
             on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
+            attached_context=attached_context,
         )
     except Exception as exc:  # noqa: BLE001
         tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})

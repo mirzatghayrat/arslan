@@ -66,7 +66,7 @@ def app_client(tmp_path, monkeypatch):
 
 def test_answer_turn_streams(app_client, monkeypatch):
     # Stub the orchestration loop to a deterministic answer.
-    async def _fake_handle(conv, msg, emit):
+    async def _fake_handle(conv, msg, emit, *, attached_context=None):
         emit({"type": "stream_start", "source": "arslan"})
         emit({"type": "stream_chunk", "content": "Hello"})
         emit({"type": "stream_end", "message_id": 1})
@@ -425,3 +425,79 @@ def test_to_frame_escalation_and_refused():
 
     ref = _to_frame({"type": "escalation_refused", "spawn_id": 3, "why": "action not allowed"})
     assert ref == protocol.escalation_refused(3, "action not allowed")
+
+
+# --- Task 4: in-chat attach storage intent ----------------------------------
+
+def test_arslan_storage_named(app_client, monkeypatch):
+    """attached_context + a 'store into X' message → ingest into roster spawn X,
+    emitting an attachment_stored frame with the chunk count."""
+    import server.services.storage_intent as si_mod
+    import server.services.ingest as ingest_mod
+    from server.services import roster_service
+
+    # Put the seeded spawn (id=7, beauty-guru) onto the roster for this conversation.
+    async def _join():
+        await roster_service.join("main", 7, via="invited")
+    anyio.run(_join)
+
+    async def _fake_classify(message, names, spawn_names):
+        return si_mod.StorageIntent(store=True, target="beauty-guru")
+    monkeypatch.setattr(si_mod, "classify", _fake_classify)
+
+    captured = {}
+    async def _fake_ingest(spawn_id, source, text, *, compress=False):
+        captured["spawn_id"] = spawn_id
+        captured["text"] = text
+        return 3
+    monkeypatch.setattr(ingest_mod, "ingest_text", _fake_ingest)
+
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({
+            "type": "user_message",
+            "content": "存给 beauty-guru",
+            "attached_context": "MATERIAL BODY",
+            "attached_names": ["report.docx"],
+        })
+        frame = ws.receive_json()
+        assert frame["type"] == "attachment_stored"
+        assert frame["spawn_name"] == "beauty-guru"
+        assert frame["chunks"] == 3
+
+    assert captured["spawn_id"] == 7
+    assert captured["text"] == "MATERIAL BODY"
+
+
+def test_arslan_storage_asks_target(app_client, monkeypatch):
+    """store intent but no resolvable target → Arslan asks '记给哪个分身?' and does NOT ingest."""
+    import server.services.storage_intent as si_mod
+    import server.services.ingest as ingest_mod
+
+    async def _fake_classify(message, names, spawn_names):
+        return si_mod.StorageIntent(store=True, target=None)
+    monkeypatch.setattr(si_mod, "classify", _fake_classify)
+
+    called = {"ingest": False}
+    async def _fake_ingest(*a, **k):
+        called["ingest"] = True
+        return 1
+    monkeypatch.setattr(ingest_mod, "ingest_text", _fake_ingest)
+
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({
+            "type": "user_message",
+            "content": "记住这份",
+            "attached_context": "MATERIAL BODY",
+            "attached_names": ["report.docx"],
+        })
+        assert ws.receive_json()["type"] == "stream_start"
+        chunk = ws.receive_json()
+        assert chunk["type"] == "stream_chunk"
+        assert "记给哪个分身" in chunk["content"]
+        assert ws.receive_json()["type"] == "stream_end"
+
+    assert called["ingest"] is False

@@ -48,6 +48,17 @@ async def test_dispatch_injects_retrieved_knowledge(memdb, monkeypatch):
     assert "Refund policy: 30 days." in sink["system"]
 
 
+async def test_dispatch_injects_attached_context(memdb, monkeypatch):
+    sid = await _spawn(memdb)
+    sink = {}
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _FakeAdapter(sink))
+
+    await dispatcher.dispatch(
+        "c", spawn_id=sid, task_brief="summarize", persist=False, attached_context="DOCX BODY HERE"
+    )
+    assert "DOCX BODY HERE" in sink["system"]
+
+
 async def test_dispatch_survives_retrieval_error(memdb, monkeypatch):
     sid = await _spawn(memdb)
     sink = {}

@@ -100,6 +100,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
         )
 
+    # Connection-level state for in-chat attach + storage intent (Task 4).
+    recent_material = ""
+    recent_names: list[str] = []
+    awaiting_store: tuple[str, list[str]] | None = None
+
     try:
         while True:
             data = await ws.receive_json()
@@ -270,8 +275,78 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await ws.send_json(protocol.error("INVALID_INPUT", "Unknown message type"))
                 continue
 
+            content = data.get("content", "")
+            attached = (data.get("attached_context") or "").strip()
+            if attached:
+                recent_material = attached
+                recent_names = data.get("attached_names") or ["附件"]
+
+            from server.orchestrator import memory
+            from server.services import ingest as _ingest
+            from server.services import roster_service as _roster
+            from server.services import storage_intent as _si
+
+            async def _spawn_names() -> list[str]:
+                roster = await _roster.list_roster(conversation_id)
+                return [m.get("spawn_name") for m in roster if m.get("spawn_name")]
+
+            async def _store_into(target_name: str, material: str, names: list[str]) -> bool:
+                roster = await _roster.list_roster(conversation_id)
+                match = next((m for m in roster if m.get("spawn_name") == target_name), None)
+                if match is None:
+                    return False
+                try:
+                    n = await _ingest.ingest_text(
+                        int(match["spawn_id"]), names[0] if names else "附件", material
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    await ws.send_json(protocol.error("INGEST_ERROR", str(exc), recoverable=True))
+                    return True  # handled (do not fall through to routing)
+                await ws.send_json(protocol.attachment_stored(target_name, n))
+                return True
+
+            # Reflow: a prior turn asked "记给哪个分身?" — resolve the target now.
+            if awaiting_store is not None:
+                material, names = awaiting_store
+                try:
+                    intent = await _si.classify(content, names, await _spawn_names())
+                except Exception:  # noqa: BLE001
+                    intent = None
+                if (intent is not None and intent.store and intent.target
+                        and await _store_into(intent.target, material, names)):
+                    awaiting_store = None
+                    recent_material = ""
+                    recent_names = []
+                    continue
+                awaiting_store = None  # give up after one try → fall through to normal handling
+
+            # Fresh storage intent (only when material is held)
+            elif recent_material:
+                try:
+                    intent = await _si.classify(content, recent_names, await _spawn_names())
+                except Exception:  # noqa: BLE001
+                    intent = None
+                if intent is not None and intent.store:
+                    if intent.target and await _store_into(intent.target, recent_material, recent_names):
+                        recent_material = ""
+                        recent_names = []
+                        continue
+                    # store intent but no resolvable target → ask which spawn (conversational)
+                    awaiting_store = (recent_material, recent_names)
+                    names = await _spawn_names()
+                    question = (
+                        f"这份材料记给哪个分身?在线的有:{', '.join(names) or '(暂无在线分身)'}"
+                    )
+                    # Send directly via ws.send_json: emit() only enqueues for the
+                    # run_with_live_frames drainer, which is not running on this path.
+                    await ws.send_json(protocol.stream_start_src("arslan"))
+                    await ws.send_json(protocol.stream_chunk(question))
+                    msg_id = await memory.add_message(conversation_id, "arslan", question)
+                    await ws.send_json(protocol.stream_end(msg_id))
+                    continue
+
             await run_with_live_frames(
-                arslan.handle_user_message(conversation_id, data.get("content", ""), emit)
+                arslan.handle_user_message(conversation_id, content, emit, attached_context=attached or None)
             )
     except WebSocketDisconnect:
         return

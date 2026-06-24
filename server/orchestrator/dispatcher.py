@@ -115,6 +115,7 @@ async def dispatch(
     mode: str = "execute",
     system_prompt_override: str | None = None,
     persist: bool = True,
+    attached_context: str | None = None,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
     {full_output, spawn_name, summary_message_id, assistant_message_id, escalation}.
@@ -157,6 +158,9 @@ async def dispatch(
         system += _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001
         logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
+
+    if attached_context:
+        system += f"\n\n[用户附带的临时材料]\n{attached_context}"
 
     # Compute equipment once. For unequipped spawns (legacy path) skip wired query entirely.
     equipment = await registry_service.equipment_for_spawn(spawn_id)
