@@ -33,3 +33,26 @@ async def test_get_run_returns_steps_and_eval(client):
 async def test_get_missing_run_404(client):
     resp = await client.get("/api/v1/runs/9999")
     assert resp.status_code == 404
+
+
+async def test_list_runs_returns_recent_desc_and_filters(client):
+    async with client.db_maker() as db:
+        for i, sid in enumerate([1, 1, 2]):
+            db.add(Run(conversation_id="c", spawn_id=sid, spawn_name=f"S{sid}",
+                       user_message=f"task {i}", status="scored", task_tokens=0,
+                       total_ms=100, overall_score=8.0, overall_badge="good"))
+        await db.commit()
+
+    r = await client.get("/api/v1/runs")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 3
+    assert body[0]["id"] > body[1]["id"]
+    assert {"id", "spawn_name", "status", "overall_score", "overall_badge",
+            "total_ms", "user_message"} <= set(body[0])
+
+    r2 = await client.get("/api/v1/runs", params={"spawn_id": 2})
+    assert [item["spawn_name"] for item in r2.json()] == ["S2"]
+
+    r3 = await client.get("/api/v1/runs", params={"limit": 1})
+    assert len(r3.json()) == 1

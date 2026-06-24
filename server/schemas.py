@@ -335,3 +335,14 @@ class IngestOut(BaseModel):
 class KnowledgeSourceOut(BaseModel):
     source: str
     chunks: int
+
+
+class RunListItemOut(BaseModel):
+    id: int
+    spawn_name: str | None
+    status: str
+    overall_score: float | None
+    overall_badge: str | None
+    total_ms: int | None
+    user_message: str
+    created_at: str | None = None

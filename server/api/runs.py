@@ -1,16 +1,37 @@
 """Read-only Run replay + evaluation endpoint."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
 from server.db.models import Run, RunEvaluation, RunStep
-from server.schemas import RunDetailOut, RunEvaluationOut, RunOut, RunStepOut
+from server.schemas import RunDetailOut, RunEvaluationOut, RunListItemOut, RunOut, RunStepOut
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+
+@router.get("/runs", response_model=list[RunListItemOut])
+async def list_runs(
+    spawn_id: int | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_session),
+) -> list[RunListItemOut]:
+    q = select(Run).order_by(Run.id.desc()).limit(limit)
+    if spawn_id is not None:
+        q = q.where(Run.spawn_id == spawn_id)
+    rows = (await db.execute(q)).scalars().all()
+    return [
+        RunListItemOut(
+            id=r.id, spawn_name=r.spawn_name, status=r.status,
+            overall_score=r.overall_score, overall_badge=r.overall_badge,
+            total_ms=r.total_ms, user_message=r.user_message,
+            created_at=r.created_at.isoformat() if r.created_at else None,
+        )
+        for r in rows
+    ]
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
