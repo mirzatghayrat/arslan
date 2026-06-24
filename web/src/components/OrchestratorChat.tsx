@@ -16,6 +16,7 @@ import Markdown from './Markdown';
 import { useArslanStore } from '../stores/arslanStore';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
+import EvalSummary from './EvalSummary';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -59,6 +60,7 @@ export default function OrchestratorChat({
   const [inputValue, setInputValue] = useState('');
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   const [replayRunId, setReplayRunId] = useState<number | null>(null);
+  const [showEvalSummary, setShowEvalSummary] = useState(false);
   
   // Custom states for Spawns Pipeline Dock & Split-Screen Co-pilot Sandbox
   const [spawnStatuses, setSpawnStatuses] = useState<Record<string, 'idle' | 'working' | 'review_pending'>>({});
@@ -168,6 +170,7 @@ export default function OrchestratorChat({
         <div className="flex items-center gap-2 shrink-0">
           <Terminal className="w-4 h-4 text-primary" />
           <span className="text-muted-foreground font-mono font-bold uppercase tracking-wider">{t('orchestrator.sandbox_label')}</span>
+          <button type="button" className="eval-open-btn" onClick={() => setShowEvalSummary(true)}>评估</button>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -1168,6 +1171,14 @@ export default function OrchestratorChat({
     <div className="run-replay-overlay" onClick={() => setReplayRunId(null)}>
       <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
         <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
+      </div>
+    </div>
+  )}
+
+  {showEvalSummary && (
+    <div className="run-replay-overlay" onClick={() => setShowEvalSummary(false)}>
+      <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
+        <EvalSummary onClose={() => setShowEvalSummary(false)} />
       </div>
     </div>
   )}

@@ -952,3 +952,208 @@
   border-color: var(--border-strong);
   background: var(--surface-raised);
 }
+
+/* ── EvalSummary overlay ──────────────────────────────────────────────────────── */
+
+/* Entry button — mirrors .spawn-detail-open-btn */
+.eval-open-btn {
+  padding: 0.3125rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.eval-open-btn:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* Panel root — fills the run-replay-overlay__panel */
+.eval-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  max-height: 85vh;
+  overflow-y: auto;
+  font-size: 0.75rem;
+  color: var(--foreground);
+  background: var(--surface);
+}
+
+/* Header row */
+.eval-summary__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-summary__title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.eval-summary__close {
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.eval-summary__close:hover {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
+/* Error state */
+.eval-summary__error {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+  font-size: 0.6875rem;
+}
+
+/* KPI row — 3-col grid mirroring run-replay__kpis */
+.eval-summary__kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.eval-summary__kpis .kpi {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.eval-summary__kpis .kpi__label {
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+
+.eval-summary__kpis .kpi__value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty state */
+.eval-summary__empty {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+/* Eval list */
+.eval-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.eval-list__row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.eval-list__row:hover {
+  background: var(--surface-raised);
+  border-radius: 0.375rem;
+}
+
+.eval-list__spawn {
+  font-weight: 600;
+  color: var(--foreground);
+  font-size: 0.6875rem;
+  min-width: 5rem;
+  flex-shrink: 0;
+}
+
+.eval-list__badge {
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.5625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.eval-list__badge--good {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+.eval-list__badge--ok {
+  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
+  color: var(--muted-foreground);
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 25%, transparent);
+}
+.eval-list__badge--bad {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.eval-list__badge--none {
+  display: none;
+}
+
+.eval-list__score {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  flex-shrink: 0;
+  min-width: 2.5rem;
+}
+
+.eval-list__ms {
+  font-size: 0.625rem;
+  color: var(--muted-foreground);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.eval-list__msg {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
