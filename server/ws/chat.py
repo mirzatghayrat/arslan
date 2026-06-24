@@ -10,6 +10,7 @@ from arslan.llm.adapter import LLMAdapter
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ChatMessage, Spawn
+from server.services import ingest, knowledge, storage_intent
 from server.services.llm_factory import build_adapter
 from server.ws import protocol
 
@@ -102,19 +103,25 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
 
             # storage intent — only when we have held material
             if recent_material:
-                from server.services import ingest as _ingest
-                from server.services import storage_intent as _si
                 try:
-                    intent = await _si.classify(user_content, recent_names, [spawn.name])
+                    intent = await storage_intent.classify(user_content, recent_names, [spawn.name])
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("storage intent classify failed (non-fatal): %s", exc)
                     intent = None
                 if intent is not None and intent.store:
-                    n = await _ingest.ingest_text(
-                        spawn_id, recent_names[0] if recent_names else "附件", recent_material
-                    )
+                    try:
+                        n = await ingest.ingest_text(
+                            spawn_id, recent_names[0] if recent_names else "附件", recent_material
+                        )
+                    except Exception as exc:  # noqa: BLE001  (best-effort ingest)
+                        logger.warning("attachment ingest failed (non-fatal): %s", exc)
+                        await ws.send_json(protocol.error("INGEST_ERROR", str(exc), recoverable=True))
+                        continue   # keep recent_material so the user can retry
                     recent_material = ""
                     recent_names = []
+                    await _save_message(spawn_id, "user", user_content)
+                    confirm = f"📎 已记入 {spawn.name} 的知识库 · {n} 块"
+                    await _save_message(spawn_id, "assistant", confirm)
                     await ws.send_json(protocol.attachment_stored(spawn.name, n))
                     continue   # storage replaces the LLM turn
 
@@ -129,9 +136,8 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
             # KB retrieval injected into the system prompt (best-effort, like dispatcher).
             kb_system = system_prompt
             try:
-                from server.services import knowledge as _kb
-                chunks = await _kb.retrieve(spawn_id, user_content)
-                kb_system = system_prompt + _kb.knowledge_block(chunks)
+                chunks = await knowledge.retrieve(spawn_id, user_content)
+                kb_system = system_prompt + knowledge.knowledge_block(chunks)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("chat KB retrieve failed (non-fatal): %s", exc)
 

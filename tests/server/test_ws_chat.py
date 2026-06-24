@@ -194,6 +194,38 @@ def test_chat_storage_intent_stores(app_client, monkeypatch):
     assert seen["text"] == "MATERIAL BODY"
 
 
+def test_chat_store_uses_material_from_earlier_turn(app_client, monkeypatch):
+    from server.services import storage_intent, ingest
+    from server.services.storage_intent import StorageIntent
+    # First message: classify says NO store; second message: classify says store.
+    calls = {"n": 0}
+    async def fake_classify(msg, names, spawns):
+        calls["n"] += 1
+        return StorageIntent(store=(calls["n"] >= 2), target=None)
+    monkeypatch.setattr(storage_intent, "classify", fake_classify)
+    seen = {}
+    async def fake_ingest(spawn_id, source, text, *, compress=False):
+        seen["text"] = text; seen["spawn_id"] = spawn_id; return 2
+    monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
+    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
+        yield "ok"
+    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()  # history
+        # turn 1: drop material, ask a question (no store) → normal stream
+        ws.send_json({"type": "user_message", "content": "what is this?",
+                      "attached_context": "EARLIER MATERIAL", "attached_names": ["d.pdf"]})
+        f = ws.receive_json()
+        assert f["type"] == "stream_start"
+        while ws.receive_json()["type"] != "stream_end":
+            pass
+        # turn 2: "记住" with NO new attachment → should store the EARLIER material
+        ws.send_json({"type": "user_message", "content": "记住这份"})
+        f = ws.receive_json()
+        assert f["type"] == "attachment_stored"
+    assert seen["text"] == "EARLIER MATERIAL"   # material held from turn 1
+
+
 def test_chat_no_store_when_intent_false(app_client, monkeypatch):
     from server.services import storage_intent, ingest
     from server.services.storage_intent import StorageIntent
