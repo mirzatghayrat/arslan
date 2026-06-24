@@ -323,8 +323,10 @@ class ConfirmProposalOut(BaseModel):
 
 
 class KnowledgeIn(BaseModel):
-    source: str
-    text: str
+    source: str | None = None
+    text: str | None = None
+    url: str | None = None
+    compress: bool = False
 
 
 class IngestOut(BaseModel):

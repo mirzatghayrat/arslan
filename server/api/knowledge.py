@@ -22,8 +22,9 @@ async def add_knowledge(spawn_id: int, request: Request) -> IngestOut:
         if file is None:
             raise HTTPException(status_code=400, detail="provide a 'file' field in the form")
         data = await file.read()
+        compress = str(form.get("compress", "")).lower() in ("1", "true", "yes")
         try:
-            n = await ingest.ingest_file(spawn_id, file.filename or "upload", data)
+            n = await ingest.ingest_file(spawn_id, file.filename or "upload", data, compress=compress)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -39,8 +40,16 @@ async def add_knowledge(spawn_id: int, request: Request) -> IngestOut:
         body = KnowledgeIn(**payload)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    n = await ingest.ingest_text(spawn_id, body.source, body.text)
-    return IngestOut(source=body.source, chunks_added=n)
+    if body.url:
+        try:
+            n = await ingest.ingest_url(spawn_id, body.url, compress=body.compress)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return IngestOut(source=body.url, chunks_added=n)
+    if body.text:
+        n = await ingest.ingest_text(spawn_id, body.source or "text", body.text, compress=body.compress)
+        return IngestOut(source=body.source or "text", chunks_added=n)
+    raise HTTPException(status_code=400, detail="provide url, text, or a file")
 
 
 @router.get("/spawns/{spawn_id}/knowledge", response_model=list[KnowledgeSourceOut])

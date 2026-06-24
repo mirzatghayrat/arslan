@@ -117,8 +117,8 @@ async def ingest_url(spawn_id: int, url: str, *, compress: bool = False) -> int:
     return await ingest_text(spawn_id, url, res.get("text", ""), compress=compress)
 
 
-async def ingest_file(spawn_id: int, filename: str, data: bytes) -> int:
+async def ingest_file(spawn_id: int, filename: str, data: bytes, *, compress: bool = False) -> int:
     """Extract text from a supported file then ingest. Raises ValueError on
     unsupported extension; extraction errors propagate (API maps to 400)."""
     extracted = _extract_file(filename, data)
-    return await ingest_text(spawn_id, filename, extracted)
+    return await ingest_text(spawn_id, filename, extracted, compress=compress)

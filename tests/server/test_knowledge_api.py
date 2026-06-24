@@ -79,3 +79,49 @@ async def test_post_unsupported_file_400(client):
     files = {"file": ("img.png", b"\x89PNG", "image/png")}
     r = await client.post(f"/api/v1/spawns/{sid}/knowledge", files=files)
     assert r.status_code == 400
+
+
+async def test_post_url_ingests(client, monkeypatch):
+    sid = await _spawn(client)
+    captured = {}
+
+    async def fake_ingest_url(spawn_id, url, *, compress=False):
+        captured["spawn_id"] = spawn_id
+        captured["url"] = url
+        captured["compress"] = compress
+        return 3
+
+    monkeypatch.setattr("server.api.knowledge.ingest.ingest_url", fake_ingest_url)
+    r = await client.post(
+        f"/api/v1/spawns/{sid}/knowledge",
+        json={"url": "https://example.com", "compress": True},
+    )
+    assert r.status_code == 200
+    assert r.json()["chunks_added"] == 3
+    assert captured["compress"] is True
+
+
+async def test_post_url_private_rejected_400(client):
+    sid = await _spawn(client)
+    r = await client.post(
+        f"/api/v1/spawns/{sid}/knowledge",
+        json={"url": "http://169.254.169.254/latest/meta-data/"},
+    )
+    assert r.status_code == 400
+
+
+async def test_post_text_compress_passthrough(client, monkeypatch):
+    sid = await _spawn(client)
+    captured = {}
+
+    async def fake_ingest_text(spawn_id, source, text, *, compress=False):
+        captured["compress"] = compress
+        return 1
+
+    monkeypatch.setattr("server.api.knowledge.ingest.ingest_text", fake_ingest_text)
+    r = await client.post(
+        f"/api/v1/spawns/{sid}/knowledge",
+        json={"source": "s", "text": "t", "compress": True},
+    )
+    assert r.status_code == 200
+    assert captured["compress"] is True
