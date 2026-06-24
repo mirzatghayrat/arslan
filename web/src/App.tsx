@@ -262,23 +262,6 @@ export default function App() {
     });
   };
 
-  // Live updater that routes SetStateAction into the direct Spawn chat histories
-  const setSpawnChatHistoryForActiveSpawn = (valueOrFn: React.SetStateAction<Message[]>) => {
-    setSpawnChats(prevChats => {
-      const prevHistory = prevChats[activeSpawnChatId] || [];
-      let newHistory: Message[];
-      if (typeof valueOrFn === 'function') {
-        newHistory = (valueOrFn as (prev: Message[]) => Message[])(prevHistory);
-      } else {
-        newHistory = valueOrFn;
-      }
-      return {
-        ...prevChats,
-        [activeSpawnChatId]: newHistory
-      };
-    });
-  };
-
   // Handle opening Editor for a specific spawn
   const handleEditSpawnEquipment = (spawnId: string) => {
     setSelectedSpawnId(spawnId);
@@ -366,7 +349,6 @@ export default function App() {
   // Calculate current active histories
   const activeThread = threads.find(t => t.id === activeThreadId) || threads[0];
   const activeSpawn = spawns.find(s => s.id === activeSpawnChatId) || spawns[0];
-  const activeSpawnChatHistory = spawnChats[activeSpawnChatId] || [];
 
   // Compute capability registries for current dialog / context
   const getContextCapabilities = () => {
@@ -525,8 +507,6 @@ export default function App() {
             {activeSection === 'spawn' && activeSpawn && (
               <SpawnDirectChat
                 spawn={activeSpawn}
-                chatHistory={activeSpawnChatHistory}
-                setChatHistory={setSpawnChatHistoryForActiveSpawn}
                 currentStyle={currentChatStyle}
               />
             )}

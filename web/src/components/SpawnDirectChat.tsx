@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Send, Sparkles, Terminal, Wrench, BookOpen,
-  Cpu, CheckCircle2, Clock, Play, User, RefreshCcw, Info
+  Send, RefreshCcw
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Message, Spawn } from '../types';
@@ -11,32 +10,123 @@ import Markdown from './Markdown';
 import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
-  chatHistory: Message[];
-  setChatHistory: (valueOrFn: React.SetStateAction<Message[]>) => void;
   currentStyle: 'quartz' | 'brutalist' | 'linear';
+}
+
+interface BackendMessage {
+  message_id: number;
+  role: string;
+  content: string;
 }
 
 export default function SpawnDirectChat({
   spawn,
-  chatHistory,
-  setChatHistory,
   currentStyle
 }: SpawnDirectChatProps) {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory]);
+  }, [messages]);
+
+  // Reset messages when spawn changes (before new history frame arrives)
+  useEffect(() => {
+    setMessages([]);
+    setStreaming(false);
+  }, [spawn.id]);
+
+  const toMessage = useCallback((m: BackendMessage): Message => {
+    const isUser = m.role === 'user';
+    return {
+      id: String(m.message_id),
+      messageId: m.message_id,
+      sender: isUser ? 'user' : 'spawn',
+      senderName: isUser ? 'Mirzat' : spawn.name,
+      senderAvatar: isUser ? '🦁' : spawn.avatarEmoji,
+      text: m.content,
+      timestamp: '',
+    };
+  }, [spawn.name, spawn.avatarEmoji]);
+
+  const onFrame = useCallback((raw: unknown) => {
+    const m = raw as any;
+    switch (m.type) {
+      case 'history': {
+        const msgs: Message[] = (m.messages as BackendMessage[]).map(toMessage);
+        setMessages(msgs);
+        const maxId = msgs.reduce((acc, msg) => Math.max(acc, msg.messageId ?? 0), 0);
+        setLastMessageId(maxId);
+        break;
+      }
+      case 'message': {
+        const newMsg = toMessage(m as BackendMessage);
+        setMessages(prev => {
+          if (prev.some(p => p.messageId === newMsg.messageId)) return prev;
+          return [...prev, newMsg];
+        });
+        break;
+      }
+      case 'stream_start': {
+        setStreaming(true);
+        const placeholder: Message = {
+          id: '__streaming__',
+          sender: 'spawn',
+          senderName: spawn.name,
+          senderAvatar: spawn.avatarEmoji,
+          text: '',
+          timestamp: '',
+        };
+        setMessages(prev => [...prev.filter(p => p.id !== '__streaming__'), placeholder]);
+        break;
+      }
+      case 'stream_chunk': {
+        setMessages(prev => prev.map(p =>
+          p.id === '__streaming__' ? { ...p, text: p.text + (m.content as string) } : p
+        ));
+        break;
+      }
+      case 'stream_end': {
+        setMessages(prev => prev.map(p =>
+          p.id === '__streaming__'
+            ? { ...p, id: String(m.message_id), messageId: m.message_id as number }
+            : p
+        ));
+        setStreaming(false);
+        setLastMessageId(m.message_id as number);
+        break;
+      }
+      case 'error': {
+        setStreaming(false);
+        const errMsg: Message = {
+          id: `err-${Date.now()}`,
+          sender: 'spawn',
+          senderName: spawn.name,
+          senderAvatar: spawn.avatarEmoji,
+          text: `⚠️ ${m.detail ?? m.message ?? 'An error occurred.'}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        setMessages(prev => [...prev, errMsg]);
+        break;
+      }
+      default:
+        break;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spawn.name, spawn.avatarEmoji, toMessage]);
+
+  const { send, setLastMessageId } = useWebSocket(`/ws/chat/${Number(spawn.id)}`, onFrame);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || isSimulating) return;
+    if (!inputValue.trim() || streaming) return;
 
     const userMsg: Message = {
       id: `msg-direct-user-${Date.now()}`,
@@ -44,63 +134,17 @@ export default function SpawnDirectChat({
       senderName: 'Mirzat',
       senderAvatar: '🦁',
       text: inputValue,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setChatHistory(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, userMsg]);
+    send({ type: 'user_message', content: inputValue });
     setInputValue('');
-    setIsSimulating(true);
-
-    // Dynamic responses tailored to spawn specialized domain & tools!
-    setTimeout(() => {
-      // 1. Tool execution log message
-      const toolUsed = spawn.tools[0] || 'web-search';
-      const toolMeta = TOOLS.find(t => t.id === toolUsed) || TOOLS[0];
-      
-      const toolActMsg: Message = {
-        id: `msg-direct-tool-${Date.now()}`,
-        sender: 'spawn',
-        senderName: spawn.name,
-        senderAvatar: spawn.avatarEmoji,
-        text: `Invoking equipped capability: **${toolMeta.name}** in sandbox environment.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        toolActivity: {
-          id: `direct-tool-act-${Date.now()}`,
-          toolName: toolMeta.name,
-          emoji: toolMeta.emoji,
-          status: 'completed',
-          action: `Executing custom local query sequence on domain: "${spawn.domain}"`,
-          outputSummary: `Sandbox task executed successfully. Extracted state mappings and calculated optimized directives for query: "${userMsg.text}".`,
-          collapsed: false
-        }
-      };
-      
-      setChatHistory(prev => [...prev, toolActMsg]);
-
-      setTimeout(() => {
-        // 2. Specialized response from the spawn itself
-        const replyText = `**[${spawn.name} Direct Reply]** Direct specialist analysis completed for your query of *"${userMsg.text}"*.\n\n` + 
-          `Applying my specialized training in **${spawn.domain}**. Based on my local model parameters, we should prioritize structured validation across our active equipment pipelines. Let me know what specific sub-parameters to recalibrate next!`;
-
-        const replyMsg: Message = {
-          id: `msg-direct-reply-${Date.now()}`,
-          sender: 'spawn',
-          senderName: spawn.name,
-          senderAvatar: spawn.avatarEmoji,
-          text: replyText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-
-        setChatHistory(prev => [...prev, replyMsg]);
-        setIsSimulating(false);
-      }, 1500);
-
-    }, 1000);
+    setStreaming(true);
   };
 
   return (
     <div className="flex-grow flex flex-col h-full overflow-hidden bg-background select-none relative font-sans">
-      
 
       {/* Spawn Header details */}
       <div className={`px-6 py-4 flex items-center justify-between border-b border-border/80 relative z-10 bg-background/80 backdrop-blur`}>
@@ -122,10 +166,10 @@ export default function SpawnDirectChat({
 
       {/* Messages Thread Container */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 relative z-10">
-        
+
         {/* Header Hero card for direct chat — prism halo behind it in the empty state */}
         <div className="relative max-w-3xl mx-auto mb-8">
-          {chatHistory.length === 0 && <SandboxBackdrop />}
+          {messages.length === 0 && <SandboxBackdrop />}
           <div className="relative z-10 bg-surface/30 border border-border/80 rounded-2xl p-6 text-center space-y-4">
           <SpawnAvatar seed={spawn.name} size={64} className="mx-auto" />
           <div className="space-y-1">
@@ -136,7 +180,7 @@ export default function SpawnDirectChat({
               {spawn.description}
             </p>
           </div>
-          
+
           <div className="h-[1px] bg-border/50 max-w-md mx-auto"></div>
 
           {/* Capabilities Badges */}
@@ -165,7 +209,7 @@ export default function SpawnDirectChat({
 
         {/* Individual Messages */}
         <div className="max-w-3xl mx-auto space-y-6">
-          {chatHistory.map((msg) => {
+          {messages.map((msg) => {
             const isUser = msg.sender === 'user';
 
             // Shared user bubble (all themes use right-aligned cool/neutral bubble)
@@ -301,15 +345,15 @@ export default function SpawnDirectChat({
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            disabled={isSimulating}
-            placeholder={isSimulating ? t('spawn_chat.placeholder_working', { name: spawn.name }) : t('spawn_chat.placeholder_input')}
+            disabled={streaming}
+            placeholder={streaming ? t('spawn_chat.placeholder_working', { name: spawn.name }) : t('spawn_chat.placeholder_input')}
             className="w-full bg-background border border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring rounded-xl pl-4 pr-12 py-3.5 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
           />
           <button
             type="submit"
-            disabled={isSimulating || !inputValue.trim()}
+            disabled={streaming || !inputValue.trim()}
             className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${
-              inputValue.trim() && !isSimulating
+              inputValue.trim() && !streaming
                 ? 'bg-primary text-primary-foreground hover:bg-primary-hover'
                 : 'bg-foreground/[0.02] text-subtle-foreground'
             }`}
