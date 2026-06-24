@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
 
 from sqlalchemy import text as sa_text
@@ -11,11 +12,41 @@ from arslan.core.chunking import chunk_text
 from server.db import session as db_session
 from server.db.models import KnowledgeChunk
 
+logger = logging.getLogger(__name__)
+
 _PRIVATE_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
+_OCR_MIN_CHARS = 20
 
 
 def _strip_private(text: str) -> str:
     return _PRIVATE_RE.sub("", text or "")
+
+
+def _pdf_text_layer(data: bytes) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(data))
+    return "\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+def _ocr_pdf(data: bytes) -> str:
+    """OCR a scanned PDF (no text layer). Best-effort; returns '' on any failure."""
+    try:
+        import fitz  # pymupdf
+        import pytesseract
+        from PIL import Image
+        out = []
+        doc = fitz.open(stream=data, filetype="pdf")
+        for page in doc:
+            pix = page.get_pixmap(dpi=200)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            try:
+                out.append(pytesseract.image_to_string(img, lang="chi_sim+eng"))
+            except Exception:  # noqa: BLE001 — language pack missing → English only
+                out.append(pytesseract.image_to_string(img))
+        return "\n".join(out)
+    except Exception as exc:  # noqa: BLE001 — OCR is best-effort
+        logger.warning("OCR failed: %s", exc)
+        return ""
 
 
 def _extract_file(filename: str, data: bytes) -> str:
@@ -23,9 +54,16 @@ def _extract_file(filename: str, data: bytes) -> str:
     if name.endswith(".txt") or name.endswith(".md"):
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):
-        from pypdf import PdfReader
-        reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
+        text = _pdf_text_layer(data)
+        if len(text.strip()) < _OCR_MIN_CHARS:
+            try:
+                ocr = _ocr_pdf(data)
+            except Exception as exc:  # noqa: BLE001 — defense in depth (stubbed _ocr_pdf may raise)
+                logger.warning("OCR fallback errored: %s", exc)
+                ocr = ""
+            if ocr.strip():
+                return ocr
+        return text
     if name.endswith(".docx"):
         import docx  # python-docx
         document = docx.Document(io.BytesIO(data))
