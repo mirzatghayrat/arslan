@@ -114,15 +114,16 @@ export const api = {
   },
   getKnowledge: (spawnId: number) =>
     request<KnowledgeSource[]>(`/spawns/${spawnId}/knowledge`),
-  ingestKnowledgeText: (spawnId: number, source: string, text: string) =>
+  ingestKnowledgeText: (spawnId: number, source: string, text: string, compress = false) =>
     request<IngestResult>(`/spawns/${spawnId}/knowledge`, {
       method: "POST",
-      body: JSON.stringify({ source, text }),
+      body: JSON.stringify({ source, text, compress }),
     }),
-  ingestKnowledgeFile: async (spawnId: number, file: File): Promise<IngestResult> => {
+  ingestKnowledgeFile: async (spawnId: number, file: File, compress = false): Promise<IngestResult> => {
     const token = useAuthStore.getState().token;
     const form = new FormData();
     form.append("file", file);
+    form.append("compress", String(compress));
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     const resp = await fetch(`${BASE}/spawns/${spawnId}/knowledge`, {
@@ -137,6 +138,11 @@ export const api = {
     }
     return (await resp.json()) as IngestResult;
   },
+  ingestKnowledgeUrl: (spawnId: number, url: string, compress = false) =>
+    request<IngestResult>(`/spawns/${spawnId}/knowledge`, {
+      method: "POST",
+      body: JSON.stringify({ url, compress }),
+    }),
   deleteKnowledge: (spawnId: number, source: string) =>
     request<{ deleted: number }>(
       `/spawns/${spawnId}/knowledge?source=${encodeURIComponent(source)}`,

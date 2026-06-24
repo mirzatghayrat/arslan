@@ -646,6 +646,37 @@
   background: color-mix(in srgb, var(--primary) 6%, var(--surface-raised));
 }
 
+.kb-add__url {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  color: var(--foreground);
+  font-size: 0.6875rem;
+  padding: 0.375rem 0.5rem;
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.kb-add__url:focus {
+  border-color: var(--primary);
+}
+
+.kb-add__compress {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  user-select: none;
+}
+.kb-add__compress input[type="checkbox"] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 /* Evolution section */
 .evo-propose {
   align-self: flex-start;

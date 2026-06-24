@@ -7,6 +7,7 @@ vi.mock("../api/client", () => ({
     getKnowledge: vi.fn(),
     ingestKnowledgeText: vi.fn(),
     ingestKnowledgeFile: vi.fn(),
+    ingestKnowledgeUrl: vi.fn(),
     deleteKnowledge: vi.fn(),
     evolveSpawn: vi.fn(),
     confirmProposal: vi.fn(),
@@ -37,7 +38,7 @@ describe("SpawnDetail", () => {
     fireEvent.change(screen.getByPlaceholderText(/粘贴|文本|text/i), { target: { value: "some material" } });
     fireEvent.click(screen.getByText("添加文本"));
 
-    await waitFor(() => expect(m.ingestKnowledgeText).toHaveBeenCalledWith(7, "note", "some material"));
+    await waitFor(() => expect(m.ingestKnowledgeText).toHaveBeenCalledWith(7, "note", "some material", false));
     expect(m.getKnowledge).toHaveBeenCalledTimes(2);
   });
 
@@ -79,5 +80,14 @@ describe("SpawnDetail", () => {
     fireEvent.click(screen.getByText("提出进化提案"));
     await screen.findByText(/no scored runs|可评估/);
     expect(screen.queryByText("采纳")).toBeNull();
+  });
+
+  it("ingests a URL and refreshes", async () => {
+    m.ingestKnowledgeUrl.mockResolvedValue({ source: "https://x.com", chunks_added: 2 });
+    render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
+    await screen.findByText("policy.txt");
+    fireEvent.change(screen.getByPlaceholderText(/网址|url|http/i), { target: { value: "https://x.com" } });
+    fireEvent.click(screen.getByText("抓取"));
+    await waitFor(() => expect(m.ingestKnowledgeUrl).toHaveBeenCalledWith(7, "https://x.com", false));
   });
 });

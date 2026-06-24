@@ -12,6 +12,8 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [label, setLabel] = useState("");
   const [text, setText] = useState("");
+  const [url, setUrl] = useState("");
+  const [compress, setCompress] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<EvolveProposal | null>(null);
@@ -35,7 +37,7 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await api.ingestKnowledgeText(spawnId, label.trim(), text);
+      await api.ingestKnowledgeText(spawnId, label.trim(), text, compress);
       setLabel("");
       setText("");
       await loadSources();
@@ -50,7 +52,22 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await api.ingestKnowledgeFile(spawnId, file);
+      await api.ingestKnowledgeFile(spawnId, file, compress);
+      await loadSources();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addUrl() {
+    if (!url.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.ingestKnowledgeUrl(spawnId, url.trim(), compress);
+      setUrl("");
       await loadSources();
     } catch (e) {
       setError(String(e));
@@ -131,11 +148,18 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
           </ul>
         )}
         <div className="kb-add">
+          <input className="kb-add__url" placeholder="网址 (https://…)" value={url}
+                 onChange={(e) => setUrl(e.target.value)} />
           <input className="kb-add__label" placeholder="标签 (source)" value={label}
                  onChange={(e) => setLabel(e.target.value)} />
           <textarea className="kb-add__text" placeholder="粘贴要喂给它的文本…" value={text}
                     onChange={(e) => setText(e.target.value)} />
+          <label className="kb-add__compress">
+            <input type="checkbox" checked={compress} onChange={(e) => setCompress(e.target.checked)} />
+            LLM 压缩
+          </label>
           <div className="kb-add__actions">
+            <button disabled={busy} onClick={addUrl}>抓取</button>
             <button disabled={busy} onClick={addText}>添加文本</button>
             <label className="kb-add__file">
               上传文件
