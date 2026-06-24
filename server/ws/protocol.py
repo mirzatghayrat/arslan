@@ -133,6 +133,10 @@ def roster_update(members: list[dict[str, Any]]) -> dict[str, Any]:
     return {"type": "roster_update", "members": members}
 
 
+def attachment_stored(spawn_name: str | None, chunks: int) -> dict[str, Any]:
+    return {"type": "attachment_stored", "spawn_name": spawn_name, "chunks": chunks}
+
+
 def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
     """Notify the client that a spawn joined or left the roster.
 

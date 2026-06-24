@@ -137,3 +137,81 @@ def test_chat_llm_error_emits_recoverable_error_frame(app_client, monkeypatch):
         assert err["type"] == "error"
         assert err["code"] == "LLM_ERROR"
         assert err["recoverable"] is True
+
+
+def test_chat_injects_kb(app_client, monkeypatch):
+    captured = {}
+    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
+        captured["system"] = system; captured["user"] = user
+        yield "ok"
+    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
+    from server.services import knowledge
+    async def fake_retrieve(spawn_id, query, *, k=5): return ["KB FACT: serum X is best"]
+    monkeypatch.setattr(knowledge, "retrieve", fake_retrieve)
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "user_message", "content": "what serum?"})
+        # drain to stream_end
+        while ws.receive_json()["type"] != "stream_end":
+            pass
+    assert "KB FACT: serum X is best" in captured["system"]
+
+
+def test_chat_uses_attached_context(app_client, monkeypatch):
+    captured = {}
+    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
+        captured["user"] = user
+        yield "ok"
+    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "summarise",
+                      "attached_context": "DOC: q3 revenue up 20%", "attached_names": ["q3.pdf"]})
+        while ws.receive_json()["type"] != "stream_end":
+            pass
+    assert "DOC: q3 revenue up 20%" in captured["user"]
+
+
+def test_chat_storage_intent_stores(app_client, monkeypatch):
+    from server.services import storage_intent, ingest
+    from server.services.storage_intent import StorageIntent
+    async def fake_classify(msg, names, spawns): return StorageIntent(store=True, target=None)
+    monkeypatch.setattr(storage_intent, "classify", fake_classify)
+    seen = {}
+    async def fake_ingest(spawn_id, source, text, *, compress=False):
+        seen["spawn_id"] = spawn_id; seen["text"] = text; return 4
+    monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()  # history
+        # 1) drop material (ephemeral) — classify returns store via fake, so this very msg stores;
+        #    to isolate, first send with attachment + a benign msg won't help since fake always stores.
+        ws.send_json({"type": "user_message", "content": "记住这份",
+                      "attached_context": "MATERIAL BODY", "attached_names": ["doc.pdf"]})
+        frame = ws.receive_json()
+        assert frame["type"] == "attachment_stored"
+        assert frame["chunks"] == 4
+    assert seen["spawn_id"] == 1
+    assert seen["text"] == "MATERIAL BODY"
+
+
+def test_chat_no_store_when_intent_false(app_client, monkeypatch):
+    from server.services import storage_intent, ingest
+    from server.services.storage_intent import StorageIntent
+    async def fake_classify(msg, names, spawns): return StorageIntent(store=False, target=None)
+    monkeypatch.setattr(storage_intent, "classify", fake_classify)
+    called = {"ingest": False}
+    async def fake_ingest(*a, **k): called["ingest"] = True; return 1
+    monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
+    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
+        yield "reply"
+    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "what's in this?",
+                      "attached_context": "MATERIAL", "attached_names": ["d.pdf"]})
+        # should get a normal stream, NOT attachment_stored
+        f = ws.receive_json()
+        assert f["type"] == "stream_start"
+        while ws.receive_json()["type"] != "stream_end":
+            pass
+    assert called["ingest"] is False
