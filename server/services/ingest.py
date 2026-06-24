@@ -35,14 +35,14 @@ def _ocr_pdf(data: bytes) -> str:
         import pytesseract
         from PIL import Image
         out = []
-        doc = fitz.open(stream=data, filetype="pdf")
-        for page in doc:
-            pix = page.get_pixmap(dpi=200)
-            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-            try:
-                out.append(pytesseract.image_to_string(img, lang="chi_sim+eng"))
-            except Exception:  # noqa: BLE001 — language pack missing → English only
-                out.append(pytesseract.image_to_string(img))
+        with fitz.open(stream=data, filetype="pdf") as doc:
+            for page in doc:
+                pix = page.get_pixmap(dpi=200)
+                img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                try:
+                    out.append(pytesseract.image_to_string(img, lang="chi_sim+eng"))
+                except Exception:  # noqa: BLE001 — language pack missing → English only
+                    out.append(pytesseract.image_to_string(img))
         return "\n".join(out)
     except Exception as exc:  # noqa: BLE001 — OCR is best-effort
         logger.warning("OCR failed: %s", exc)
