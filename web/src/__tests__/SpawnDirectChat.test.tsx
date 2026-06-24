@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import SpawnDirectChat from '../components/SpawnDirectChat'
 
@@ -11,6 +11,13 @@ vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (_path: string, onMessage: (m: any) => void) => {
     frameCb = onMessage;
     return { send: sendSpy, reconnecting: false, setLastMessageId: vi.fn() };
+  },
+}));
+
+vi.mock('../api/client', () => ({
+  api: {
+    extractAttachmentUrl: vi.fn(),
+    extractAttachmentFile: vi.fn(),
   },
 }));
 
@@ -45,8 +52,8 @@ describe('SpawnDirectChat', () => {
   it('sends a real WS frame on submit', async () => {
     sendSpy.mockClear();
     render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
-    // Find the input
-    const input = screen.getByPlaceholderText(/./);
+    // Find the message input (not the URL input in AttachBar)
+    const input = screen.getByPlaceholderText(/spawn_chat/i);
     fireEvent.change(input, { target: { value: 'hi' } });
     const form = input.closest('form');
     if (form) {
@@ -68,10 +75,40 @@ describe('SpawnDirectChat', () => {
     expect(screen.getByText('部分回复')).toBeTruthy();
   });
 
+  it('sends attached_context + attached_names with the message', async () => {
+    const { api } = await import('../api/client');
+    (api.extractAttachmentUrl as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: 'DOC BODY', chars: 8, truncated: false,
+    });
+    sendSpy.mockClear();
+    render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
+    // Add an attachment via AttachBar URL input
+    fireEvent.change(screen.getByPlaceholderText(/网址|http/i), { target: { value: 'https://x.com' } });
+    fireEvent.click(screen.getByText('读取'));
+    await screen.findByLabelText('remove-attachment');  // chip present
+    // type message in the message input (different placeholder from url input)
+    const msgInput = screen.getByPlaceholderText(/spawn_chat/i);
+    fireEvent.change(msgInput, { target: { value: 'summarise' } });
+    const form = msgInput.closest('form');
+    if (form) fireEvent.submit(form);
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'user_message',
+      content: 'summarise',
+      attached_context: 'DOC BODY',
+      attached_names: ['https://x.com'],
+    })));
+  });
+
+  it('renders an attachment_stored system note', () => {
+    render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
+    act(() => frameCb({ type: 'attachment_stored', spawn_name: '小美', chunks: 3 }));
+    expect(screen.getByText(/已记入.*小美|记入.*小美/)).toBeInTheDocument();
+  });
+
   it('REGRESSION: no fabricated tool activity after real reply', async () => {
     sendSpy.mockClear();
     render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
-    const input = screen.getByPlaceholderText(/./);
+    const input = screen.getByPlaceholderText(/spawn_chat/i);
     fireEvent.change(input, { target: { value: 'hi' } });
     const form = input.closest('form');
     if (form) fireEvent.submit(form);

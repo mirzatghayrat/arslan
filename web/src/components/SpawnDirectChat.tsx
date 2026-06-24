@@ -11,6 +11,7 @@ import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
 import { useWebSocket } from '../hooks/useWebSocket';
+import AttachBar, { type Attachment } from './AttachBar';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -31,6 +32,8 @@ export default function SpawnDirectChat({
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachKey, setAttachKey] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -116,6 +119,18 @@ export default function SpawnDirectChat({
         setMessages(prev => [...prev, errMsg]);
         break;
       }
+      case 'attachment_stored': {
+        setStreaming(false);
+        setMessages(prev => [...prev, {
+          id: `stored-${prev.length}-${m.chunks}`,
+          sender: 'spawn',
+          senderName: spawn.name ?? '知识库',
+          senderAvatar: spawn.avatarEmoji ?? '📎',
+          text: `📎 已记入 ${m.spawn_name ?? '知识库'} 的知识库 · ${m.chunks} 块`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }]);
+        break;
+      }
       default:
         break;
     }
@@ -137,9 +152,18 @@ export default function SpawnDirectChat({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
+    const attached_context = attachments.map((a) => a.text).join('\n\n---\n\n');
+    const attached_names = attachments.map((a) => a.name);
+
     setMessages(prev => [...prev, userMsg]);
-    send({ type: 'user_message', content: inputValue });
+    send({
+      type: 'user_message',
+      content: inputValue,
+      ...(attached_context ? { attached_context, attached_names } : {}),
+    });
     setInputValue('');
+    setAttachments([]);
+    setAttachKey((k) => k + 1);
     setStreaming(true);
   };
 
@@ -340,6 +364,9 @@ export default function SpawnDirectChat({
 
       {/* Message input bar */}
       <div className="p-4 border-t border-border/80 relative z-10 bg-background/40 backdrop-blur">
+        <div className="max-w-3xl mx-auto">
+          <AttachBar key={attachKey} onChange={setAttachments} />
+        </div>
         <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto relative select-none">
           <input
             type="text"
