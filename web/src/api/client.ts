@@ -152,6 +152,22 @@ export const api = {
     request<EvolveProposal>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
   confirmProposal: (proposalId: number) =>
     request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
+  extractAttachmentUrl: (url: string, compress = false) =>
+    request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {
+      method: "POST",
+      body: JSON.stringify({ url, compress }),
+    }),
+  extractAttachmentFile: async (file: File, compress = false): Promise<{ text: string; chars: number; truncated: boolean }> => {
+    const token = useAuthStore.getState().token;
+    const form = new FormData();
+    form.append("file", file);
+    form.append("compress", String(compress));
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const resp = await fetch(`${BASE}/extract`, { method: "POST", body: form, headers });
+    if (!resp.ok) { let detail = `HTTP ${resp.status}`; try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ } throw new ApiError(detail, resp.status); }
+    return (await resp.json()) as { text: string; chars: number; truncated: boolean };
+  },
 };
 
 // ── Provider Config CRUD ───────────────────────────────────────────────────────
