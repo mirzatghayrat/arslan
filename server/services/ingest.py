@@ -11,6 +11,8 @@ from sqlalchemy import text as sa_text
 from arslan.core.chunking import chunk_text
 from server.db import session as db_session
 from server.db.models import KnowledgeChunk
+from server.services.llm_factory import build_adapter
+from server.services.prompts.kb_compress import COMPRESS_SYSTEM
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +73,24 @@ def _extract_file(filename: str, data: bytes) -> str:
     raise ValueError(f"unsupported file type: {filename}")
 
 
-async def ingest_text(spawn_id: int, source: str, text: str) -> int:
+async def _compress(text: str) -> str:
+    """LLM-clean text; best-effort — returns original on failure/empty."""
+    try:
+        adapter = await build_adapter(role="converse")
+        resp = await adapter.chat(system=COMPRESS_SYSTEM, user=text)
+        cleaned = (resp.content or "").strip()
+        return cleaned if cleaned else text
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("kb compress failed, using original: %s", exc)
+        return text
+
+
+async def ingest_text(spawn_id: int, source: str, text: str, *, compress: bool = False) -> int:
     """Strip private blocks, chunk, store. Returns number of chunks stored."""
-    chunks = chunk_text(_strip_private(text))
+    cleaned = _strip_private(text)
+    if compress:
+        cleaned = await _compress(cleaned)
+    chunks = chunk_text(cleaned)
     if not chunks:
         return 0
     async with db_session.AsyncSessionLocal() as db:
