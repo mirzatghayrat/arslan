@@ -161,9 +161,6 @@ export default function App() {
     wsSend({ type: 'user_message', content: text });
   }, [wsSend]);
 
-  // Active direct private chats with individual Spawns — keyed by real backend spawn ID
-  // Initialized empty; populated when user opens a direct channel or creates a spawn.
-  const [spawnChats, setSpawnChats] = useState<Record<string, Message[]>>({});
   const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('');
 
   // Shared application state databases
@@ -308,20 +305,6 @@ export default function App() {
       return t;
     }));
 
-    // Initialize private direct line conversations for this spawn
-    setSpawnChats(prev => ({
-      ...prev,
-      [newSpawn.id]: [
-        {
-          id: `sc-init-${Date.now()}`,
-          sender: 'spawn',
-          senderName: newSpawn.name,
-          senderAvatar: newSpawn.avatarEmoji,
-          text: `🤖 **Direct specialist socket established.**\nI am **${newSpawn.name}**, newly delegated to handle high-integrity outcomes in **${newSpawn.domain}**. Give me a direct prompt!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]
-    }));
 
     // Cleanup and reset modal form
     setNewSpawnName('');
@@ -528,7 +511,6 @@ export default function App() {
                 setSpawns={setSpawns}
                 setThreads={setThreads}
                 activeThreadId={activeThreadId}
-                setSpawnChats={setSpawnChats}
                 backendStatus={backendStatus}
               />
             )}

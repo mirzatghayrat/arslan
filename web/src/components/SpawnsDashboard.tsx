@@ -25,7 +25,6 @@ interface SpawnsDashboardProps {
   setSpawns?: React.Dispatch<React.SetStateAction<Spawn[]>>;
   setThreads?: React.Dispatch<React.SetStateAction<any[]>>;
   activeThreadId?: string;
-  setSpawnChats?: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
   backendStatus?: BackendStatus;
 }
 
@@ -41,7 +40,6 @@ export default function SpawnsDashboard({
   setSpawns,
   setThreads,
   activeThreadId,
-  setSpawnChats,
   backendStatus,
 }: SpawnsDashboardProps) {
   const { t } = useTranslation();
