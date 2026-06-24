@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { Spawn } from '../types';
 import { SpawnAvatar } from './SpawnAvatar';
+import { BUILD_TAG } from '../buildInfo';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface ArslanThread {
@@ -58,7 +59,7 @@ export default function Sidebar({
           <div className="w-3 h-3 rounded-full bg-warning border border-black/20 cursor-pointer"></div>
           <div className="w-3 h-3 rounded-full bg-success border border-black/20 cursor-pointer"></div>
           <span className="text-[9.5px] text-subtle-foreground font-mono tracking-wider ml-auto uppercase opacity-60">
-            {t('sidebar.node_version')}
+            {t('sidebar.node_version')} · build {BUILD_TAG}
           </span>
         </div>
 
