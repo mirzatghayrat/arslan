@@ -287,3 +287,14 @@ export interface ConfirmResult {
   spawn_id?: number;
   generation_level?: number;
 }
+
+export interface RunListItem {
+  id: number;
+  spawn_name: string | null;
+  status: string;
+  overall_score: number | null;
+  overall_badge: string | null;
+  total_ms: number | null;
+  user_message: string;
+  created_at?: string | null;
+}

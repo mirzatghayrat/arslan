@@ -11,6 +11,7 @@ import type {
   ProviderOption,
   RegistryCatalog,
   RunDetailDto,
+  RunListItem,
   SpawnDetail,
   SpawnSummary,
   SuggestDraft,
@@ -105,6 +106,12 @@ export const api = {
       body: JSON.stringify({ first_message: firstMessage, first_reply: firstReply }),
     }),
   getRun: (id: number) => request<RunDetailDto>(`/runs/${id}`),
+  getRuns: (spawnId?: number, limit = 50) => {
+    const qs = new URLSearchParams();
+    if (spawnId != null) qs.set("spawn_id", String(spawnId));
+    qs.set("limit", String(limit));
+    return request<RunListItem[]>(`/runs?${qs.toString()}`);
+  },
   getKnowledge: (spawnId: number) =>
     request<KnowledgeSource[]>(`/spawns/${spawnId}/knowledge`),
   ingestKnowledgeText: (spawnId: number, source: string, text: string) =>
