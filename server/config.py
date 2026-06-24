@@ -16,6 +16,7 @@ class Settings:
     spawns_dir: Path
     static_dir: str = ""
     app_version: str = "0.1.0"
+    attach_extract_char_limit: int = 12000
 
     @property
     def db_url(self) -> str:
@@ -35,6 +36,7 @@ def load_settings() -> Settings:
         db_path=db_path,
         spawns_dir=spawns_dir,
         static_dir=static_dir,
+        attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "12000")),
     )
 
 

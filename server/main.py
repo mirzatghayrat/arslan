@@ -102,6 +102,10 @@ def create_app() -> FastAPI:
 
     app.include_router(knowledge_api.router, prefix="/api/v1")
 
+    from server.api.extract import router as extract_router
+
+    app.include_router(extract_router)
+
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
