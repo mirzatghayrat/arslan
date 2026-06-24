@@ -106,6 +106,17 @@ async def ingest_text(spawn_id: int, source: str, text: str, *, compress: bool =
     return len(chunks)
 
 
+async def ingest_url(spawn_id: int, url: str, *, compress: bool = False) -> int:
+    """Fetch + extract a web page via the SSRF-guarded WebExtractExecutor (per-hop
+    host revalidation + private-IP block — NEVER a raw httpx request), then ingest.
+    Raises ValueError on fetch failure / private-address rejection."""
+    from server.registry.executors import EXECUTORS
+    res = await EXECUTORS["web_extract"].execute({"url": url})
+    if not res.get("ok"):
+        raise ValueError(res.get("error") or "fetch failed")
+    return await ingest_text(spawn_id, url, res.get("text", ""), compress=compress)
+
+
 async def ingest_file(spawn_id: int, filename: str, data: bytes) -> int:
     """Extract text from a supported file then ingest. Raises ValueError on
     unsupported extension; extraction errors propagate (API maps to 400)."""
