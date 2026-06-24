@@ -14,7 +14,8 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 @router.post("/spawns/{spawn_id}/knowledge", response_model=IngestOut)
 async def add_knowledge(spawn_id: int, request: Request) -> IngestOut:
-    """Accept either JSON {source, text} or a multipart file upload."""
+    """Ingest knowledge: JSON {text} OR {url} (web page, SSRF-guarded) OR a multipart
+    file upload. Optional `compress` (JSON bool / form field) runs an LLM cleanup pass."""
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" in content_type:
         form = await request.form()
