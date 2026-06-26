@@ -121,12 +121,15 @@ async def test_answer_stream_raise_emits_error_frame(db, monkeypatch):
     monkeypatch.setattr(router, "route", _fake_route)
     monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
 
-    async def _boom_stream(system, user, history=None):
-        raise TimeoutError("read timeout")
-        # unreachable but makes this an async generator
-        yield  # noqa: unreachable
+    from server.orchestrator import tool_loop
 
-    monkeypatch.setattr(arslan, "_answer_stream", _boom_stream)
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            raise TimeoutError("read timeout")
+            # unreachable but makes this an async generator
+            yield  # noqa: unreachable
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
 
     events, emit = _collect()
     await arslan.handle_user_message("test-conv", "hi", emit)
@@ -153,11 +156,14 @@ async def test_normal_answer_still_works_after_error_guard(db, monkeypatch):
     monkeypatch.setattr(router, "route", _fake_route)
     monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
 
-    async def _fake_stream(system, user, history=None):
-        for chunk in ["Hello ", "world"]:
-            yield chunk
+    from server.orchestrator import tool_loop
 
-    monkeypatch.setattr(arslan, "_answer_stream", _fake_stream)
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            for chunk in ["Hello ", "world"]:
+                yield chunk
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
 
     events, emit = _collect()
     await arslan.handle_user_message("test-conv", "hi", emit)

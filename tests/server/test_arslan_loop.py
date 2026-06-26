@@ -52,12 +52,15 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
 
     captured = {}
 
-    async def _fake_answer_stream(system, user, history=None):
-        captured["system"] = system
-        for piece in ["Hi ", "there"]:
-            yield piece
+    from server.orchestrator import tool_loop
 
-    monkeypatch.setattr(arslan, "_answer_stream", _fake_answer_stream)
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            captured["system"] = system
+            for piece in ["Hi ", "there"]:
+                yield piece
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
 
     events = []
     await arslan.handle_user_message("main", "hello", _events(events))
@@ -77,6 +80,64 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_arslan_answer_calls_web_tool(maker, monkeypatch):
+    # Arslan's answer path runs tool_loop; the model calls web_search, then streams a final answer.
+    from server.orchestrator import arslan, router, tool_loop
+    from server.registry import executors
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    class _A:
+        def __init__(self):
+            self._q = ['{"tool":"web_search","args":{"query":"today"}}', "Fresh info: X happened."]
+
+        async def chat_stream(self, system, user, history=None):
+            yield self._q.pop(0)
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+
+    class _Stub:
+        async def execute(self, args):
+            return {"ok": True, "results": [{"title": "t", "url": "u"}]}
+
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+
+    events = []
+    await arslan.handle_user_message("main", "what happened today?", _events(events))
+    types = [e["type"] for e in events]
+    assert "tool_call" in types and "tool_result" in types
+    streamed = "".join(e["content"] for e in events if e["type"] == "stream_chunk")
+    assert "Fresh info: X happened." in streamed
+    assert "stream_end" in types
+
+
+@pytest.mark.asyncio
+async def test_arslan_answer_plain_no_tool(maker, monkeypatch):
+    from server.orchestrator import arslan, router, tool_loop
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            yield "just a friendly reply"
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+
+    events = []
+    await arslan.handle_user_message("main", "哈喽", _events(events))
+    types = [e["type"] for e in events]
+    assert "tool_call" not in types
+    streamed = "".join(e["content"] for e in events if e["type"] == "stream_chunk")
+    assert "just a friendly reply" in streamed
+
+
+@pytest.mark.asyncio
 async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(maker, monkeypatch):
     from server.orchestrator import arslan, router
 
@@ -87,12 +148,15 @@ async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(mak
 
     captured = {}
 
-    async def _fake_answer_stream(system, user, history=None):
-        captured["system"] = system
-        for piece in ["What ", "topic?"]:
-            yield piece
+    from server.orchestrator import tool_loop
 
-    monkeypatch.setattr(arslan, "_answer_stream", _fake_answer_stream)
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            captured["system"] = system
+            for piece in ["What ", "topic?"]:
+                yield piece
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
 
     events = []
     await arslan.handle_user_message("main", "research stuff", _events(events))
@@ -121,12 +185,15 @@ async def test_answer_path_grounds_real_roster_and_guards_fabrication(maker, mon
 
     captured = {}
 
-    async def _fake_answer_stream(system, user, history=None):
-        captured["system"] = system
-        for piece in ["hi"]:
-            yield piece
+    from server.orchestrator import tool_loop
 
-    monkeypatch.setattr(arslan, "_answer_stream", _fake_answer_stream)
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            captured["system"] = system
+            for piece in ["hi"]:
+                yield piece
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
 
     await arslan.handle_user_message("main", "哈喽", _events([]))
 

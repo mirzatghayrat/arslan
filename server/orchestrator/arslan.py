@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage
-from server.orchestrator import dispatcher, memory, router
+from server.orchestrator import dispatcher, memory, router, tool_loop
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from arslan.llm import usage_sink
@@ -228,14 +228,20 @@ async def _handle_answer(
         llm_user = f"[附带材料]\n{attached_context}\n\n[用户消息]\n{user_message}"
 
     emit({"type": "stream_start", "source": "arslan"})
-    full = ""
     try:
-        async for piece in _answer_stream(system, llm_user, history=ctx["history"][:-1]):
-            full += piece
-            emit({"type": "stream_chunk", "content": piece})
+        result = await tool_loop.run(
+            system=system,
+            user_content=llm_user,
+            history=ctx["history"][:-1],
+            emit=emit,
+            on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
+            resolve_tools=_arslan_tools,
+            allow_escalation=False,
+        )
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
         return
+    full = result.get("final") or ""
     msg_id = await memory.add_message(conversation_id, "arslan", full)
     emit({"type": "stream_end", "message_id": msg_id})
 
@@ -261,6 +267,17 @@ def _arslan_fetch_executor():
     from server.registry.executors import EXECUTORS
 
     return EXECUTORS["web_search"]
+
+
+async def _arslan_tools() -> list[dict]:
+    """Arslan's host-level safe toolset: web_search + web_extract (no spawn wiring)."""
+    from server.registry.executors import EXECUTORS
+
+    desc = {
+        "web_search": "Search the web for fresh/factual info; returns titles/urls/snippets.",
+        "web_extract": "Fetch a URL and return its main text (SSRF-guarded).",
+    }
+    return [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract") if k in EXECUTORS]
 
 
 async def _match_safe_toolset(need: str) -> str | None:
