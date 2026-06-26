@@ -151,3 +151,17 @@ async def test_leading_whitespace_then_prose_streams(monkeypatch):
                               resolve_tools=_tools())
     assert out["final"] == "actual answer"
     assert "".join(chunks).strip() == "actual answer"
+
+
+async def test_brace_prefix_non_json_emits_once(monkeypatch):
+    # Final answer that starts with '{' but is NOT valid tool/escalate JSON →
+    # buffered silently, then emitted exactly once at the final branch (no leak, no double-emit).
+    adapter = _ScriptedAdapter(["{this is prose, not json}... here is your answer"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="hi", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools())
+    assert out["final"] == "{this is prose, not json}... here is your answer"
+    assert len(chunks) == 1
+    assert chunks[0] == out["final"]
