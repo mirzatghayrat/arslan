@@ -46,7 +46,7 @@ def _scripted_adapter(replies):
 
 @pytest.mark.asyncio
 async def test_tool_call_then_final(maker, monkeypatch):
-    from server.orchestrator import spawn_loop
+    from server.orchestrator import spawn_loop, tool_loop
     from server.orchestrator.untrusted import DELIM_CLOSE, DELIM_OPEN
 
     calls = {}
@@ -59,7 +59,7 @@ async def test_tool_call_then_final(maker, monkeypatch):
             calls["args"] = args
             return {"ok": True, "results": [{"title": "T", "url": "u", "snippet": "s"}]}
 
-    monkeypatch.setattr(spawn_loop, "EXECUTORS", {"web_search": _Exec()})
+    monkeypatch.setattr(tool_loop, "EXECUTORS", {"web_search": _Exec()})
 
     class _CapturingAdapter:
         _replies = iter([
@@ -71,7 +71,7 @@ async def test_tool_call_then_final(maker, monkeypatch):
             captured_convo.append({"system": system, "user": user, "history": list(history or [])})
             return _Resp(next(self._replies))
 
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: _CapturingAdapter())
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _CapturingAdapter())
 
     events, chunks = [], []
     out = await spawn_loop.run(
@@ -102,7 +102,7 @@ async def test_tool_call_then_final(maker, monkeypatch):
 async def test_unequipped_tool_refused_in_loop(maker, monkeypatch):
     """Spec test #4 runtime half: naming execute_code verbatim gets a refusal,
     never an execution."""
-    from server.orchestrator import spawn_loop
+    from server.orchestrator import spawn_loop, tool_loop
 
     executed = []
 
@@ -114,12 +114,12 @@ async def test_unequipped_tool_refused_in_loop(maker, monkeypatch):
             return {"ok": True}
 
     # even if an executor EXISTS, the gate must refuse: it's not in the spawn's wired set
-    monkeypatch.setattr(spawn_loop, "EXECUTORS", {"execute_code": _Exec()})
+    monkeypatch.setattr(tool_loop, "EXECUTORS", {"execute_code": _Exec()})
     adapter = _scripted_adapter([
         '{"tool": "execute_code", "args": {"code": "rm -rf /"}}',
         "ok, answering without it.",
     ])
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     events = []
     out = await spawn_loop.run(
@@ -135,7 +135,7 @@ async def test_unequipped_tool_refused_in_loop(maker, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_budget_forces_final(maker, monkeypatch):
-    from server.orchestrator import spawn_loop
+    from server.orchestrator import spawn_loop, tool_loop
 
     class _Exec:
         key = "web_search"
@@ -143,10 +143,10 @@ async def test_budget_forces_final(maker, monkeypatch):
         async def execute(self, args):
             return {"ok": True, "results": []}
 
-    monkeypatch.setattr(spawn_loop, "EXECUTORS", {"web_search": _Exec()})
+    monkeypatch.setattr(tool_loop, "EXECUTORS", {"web_search": _Exec()})
     replies = ['{"tool": "web_search", "args": {"query": "q"}}'] * 5 + ["forced answer"]
     adapter = _scripted_adapter(replies)
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     out = await spawn_loop.run(
         spawn_id=7, system="sp", user_content="x", history=[],
@@ -157,12 +157,12 @@ async def test_budget_forces_final(maker, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_escalate_ends_turn(maker, monkeypatch):
-    from server.orchestrator import spawn_loop
+    from server.orchestrator import spawn_loop, tool_loop
 
     adapter = _scripted_adapter([
         '{"escalate": {"kind": "data", "need": "latest trend data", "context": "for the post"}}',
     ])
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     out = await spawn_loop.run(
         spawn_id=7, system="sp", user_content="x", history=[],
@@ -175,13 +175,13 @@ async def test_escalate_ends_turn(maker, monkeypatch):
 @pytest.mark.asyncio
 async def test_escalate_disabled_feeds_back_and_continues(maker, monkeypatch):
     """When allow_escalation=False, escalate reply becomes feedback line and loop continues."""
-    from server.orchestrator import spawn_loop
+    from server.orchestrator import spawn_loop, tool_loop
 
     adapter = _scripted_adapter([
         '{"escalate": {"kind": "data", "need": "more info", "context": ""}}',
         "final answer without escalation",
     ])
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     out = await spawn_loop.run(
         spawn_id=7, system="sp", user_content="x", history=[],

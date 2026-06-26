@@ -37,7 +37,7 @@ def maker(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_equipped_spawn_system_lists_equipment(maker, monkeypatch):
-    from server.orchestrator import dispatcher, spawn_loop
+    from server.orchestrator import dispatcher, tool_loop
 
     captured = {}
 
@@ -55,7 +55,7 @@ async def test_equipped_spawn_system_lists_equipment(maker, monkeypatch):
             return _R()
 
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
-    monkeypatch.setattr(spawn_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
     await dispatcher.dispatch("main", spawn_id=7, task_brief="do X")
     s = captured["system"]
     assert "web_search" in s and "web_extract" in s
