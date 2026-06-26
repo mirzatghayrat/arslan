@@ -44,3 +44,41 @@ def parse_json_object(content: str) -> dict | None:
         # Weak models often wrap the JSON in commentary; rescue the object.
         obj = _loads_or_none(text[text.find("{") : text.rfind("}") + 1])
     return obj if isinstance(obj, dict) else None
+
+
+def first_json_object(content: str) -> dict | None:
+    """Return the FIRST complete, balanced ``{...}`` object as a dict, or None.
+
+    Unlike parse_json_object's find-first/rfind-last rescue (which spans EVERYTHING
+    between the outermost braces), this walks brace depth (string-aware) and stops at
+    the first balanced object. That correctly handles a model emitting prose + several
+    objects, e.g. '好，我去搜{"tool":"a"}{"tool":"b"}' → returns the first tool call,
+    so the tool loop fires it (and can issue the next on a later step) instead of
+    seeing two-objects-as-one, failing to parse, and falling through to a leaky final.
+    """
+    text = content or ""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                obj = _loads_or_none(text[start : i + 1])
+                return obj if isinstance(obj, dict) else None
+    return None

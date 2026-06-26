@@ -189,3 +189,46 @@ async def test_prose_preamble_then_tool_json_no_leak(monkeypatch):
     assert "好的我去搜一下" in joined                          # prose preamble may show (fine)
     assert any(e["type"] == "tool_call" for e in events)     # tool still fired
     assert out["final"] == "real answer"
+
+
+async def test_multiple_tool_calls_dispatch_first_no_leak(monkeypatch):
+    # Model emits prose + TWO tool JSONs (asked about two things). The FIRST must fire and NO
+    # raw JSON may reach on_chunk — the bug where 'prose{a}{b}' parsed as one blob → None → leak.
+    from server.registry import executors
+    adapter = _StreamAdapter([
+        '好，我直接搜一下。{"tool": "web_search", "args": {"q": "a"}}{"tool": "web_search", "args": {"q": "b"}}',
+        "combined answer",
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    calls = []
+
+    class _Stub:
+        async def execute(self, args):
+            calls.append(args)
+            return {"ok": True, "results": []}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+
+    chunks, events = [], []
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=events.append, on_chunk=chunks.append,
+                              resolve_tools=_tools("web_search"))
+    joined = "".join(chunks)
+    assert '"tool"' not in joined and "{" not in joined   # no JSON leaked
+    assert "好，我直接搜一下。" in joined                    # prose preamble shown
+    assert any(e["type"] == "tool_call" for e in events)  # first tool fired
+    assert calls[0]["q"] == "a"                            # the FIRST tool
+    assert out["final"] == "combined answer"
+
+
+async def test_non_tool_json_blob_final_not_leaked(monkeypatch):
+    # A final answer that ends in a non-tool JSON blob must show the prose, drop the blob.
+    adapter = _ScriptedAdapter(['这是结论。{"note": "internal", "x": 1}'])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools())
+    joined = "".join(chunks)
+    assert "这是结论。" in joined
+    assert "{" not in joined and "note" not in joined     # JSON blob dropped from display
+    assert out["final"] == "这是结论。"                     # and from the persisted final

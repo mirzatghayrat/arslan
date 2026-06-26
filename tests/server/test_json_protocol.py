@@ -47,3 +47,24 @@ def test_garbage_returns_none():
 def test_none_input_returns_none():
     # content arg accepts str; callers may pass empty string
     assert parse_json_object("") is None
+
+
+def test_first_json_object_extracts_first_of_many():
+    from server.orchestrator.json_protocol import first_json_object
+    # prose + two objects → returns the FIRST balanced object (not first-{ to last-})
+    txt = '好，我去搜。{"tool": "a", "args": {"q": "x"}}{"tool": "b"}'
+    obj = first_json_object(txt)
+    assert obj == {"tool": "a", "args": {"q": "x"}}
+
+
+def test_first_json_object_handles_nested_and_strings():
+    from server.orchestrator.json_protocol import first_json_object
+    # braces inside strings must not break balance tracking
+    obj = first_json_object('{"k": "a{b}c", "n": {"d": 1}}trailing')
+    assert obj == {"k": "a{b}c", "n": {"d": 1}}
+
+
+def test_first_json_object_none_when_no_object():
+    from server.orchestrator.json_protocol import first_json_object
+    assert first_json_object("just prose, no json") is None
+    assert first_json_object("{not valid json}") is None

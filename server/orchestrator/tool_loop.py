@@ -11,7 +11,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 
-from server.orchestrator.json_protocol import parse_json_object
+from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS
 from server.services.llm_factory import build_adapter
@@ -96,7 +96,9 @@ async def run(
                 on_chunk(raw[shown:visible_end])
                 shown = visible_end
         content = raw.strip()
-        parsed = parse_json_object(content)
+        # first_json_object extracts the FIRST balanced {...} (handles prose + multiple objects,
+        # e.g. '好我去搜{tool a}{tool b}' → dispatch tool a now, the rest on a later step).
+        parsed = first_json_object(content) or parse_json_object(content)
 
         if not forced and isinstance(parsed, dict) and isinstance(parsed.get("escalate"), dict):
             if not allow_escalation:
@@ -143,9 +145,24 @@ async def run(
                                      "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
 
-        # plain text (or unparseable JSON) = final answer
-        if shown < len(raw):
-            on_chunk(raw[shown:])    # flush any buffered tail (a '{' that wasn't a tool/escalate → it's prose)
-        return {"final": content, "escalation": None, "tool_trace": tool_trace}
+        # plain text = final answer (parsed was not a dispatchable tool/escalate)
+        if isinstance(parsed, dict):
+            # The model emitted a real JSON object that we did NOT dispatch (a non-tool dict, or
+            # extra/garbled tool blobs after the first). It is protocol output, not prose — drop
+            # it from BOTH display and the persisted final. The answer is the prose before it
+            # (already streamed up to the first '{').
+            brace = raw.find("{")
+            final_text = raw[:brace].strip() if brace != -1 else content
+            if not final_text:
+                # nothing but a JSON object and no prose → show it rather than an empty reply
+                final_text = content
+                if shown < len(raw):
+                    on_chunk(raw[shown:])
+        else:
+            # no valid JSON object: any '{' was ordinary prose → flush the unshown remainder
+            if shown < len(raw):
+                on_chunk(raw[shown:])
+            final_text = content
+        return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
 
     raise AssertionError("unreachable")  # forced branch always returns
