@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from datetime import datetime
 
 from sqlalchemy import select
@@ -59,6 +59,21 @@ _ANTI_FABRICATION = (
     "help directly and invite the user to describe their need — do not make up a roster."
 )
 
+# Binds "unsure about something current" → "search", NOT → "ask / fabricate". Without this,
+# the model narrates "let me search" (or invents) instead of emitting the tool call. Only added
+# on Arslan's answer path, where web_search/web_extract are actually available.
+_WEB_TOOL_GUIDANCE = (
+    "\n\nGoing online — you CAN search the web (web_search) and fetch a page's text (web_extract):\n"
+    "- When the user asks about anything current, real-time, or recent that you cannot be certain of "
+    "from memory — today's date/time, latest news, prices or markets, a product's newest version, "
+    "recent events, someone's current status — you MUST actually CALL web_search (emit the tool call). "
+    "Even when you think you know, if the question is about 'right now', search to verify.\n"
+    "- Use search INSTEAD of fabricating and INSTEAD of just asking the user or telling them to look it "
+    "up themselves. Never say 'let me search' / '我去搜一下' without actually emitting the tool call.\n"
+    "- If the search returns nothing useful, or reports it is not configured, say so plainly and answer "
+    "with only what you reliably know — never invent a result."
+)
+
 
 async def _team_roster() -> str:
     """A concise, user-facing list of the real spawns, to ground Arslan's self-description."""
@@ -78,13 +93,6 @@ _CLARIFY_ADDENDUM = (
     "direction and ask them to confirm (e.g. \"I'll research X with angle Y as a Z — sound right?\"). "
     "Do not produce the deliverable yet."
 )
-
-
-async def _answer_stream(system: str, user: str, history=None) -> AsyncIterator[str]:  # noqa: ANN001
-    """Stream a direct Arslan reply. Separate fn so tests can stub it."""
-    adapter = await build_adapter(role="converse")
-    async for piece in adapter.chat_stream(system, user, history=history):
-        yield piece
 
 
 _CLASSIFY_SYSTEM = (
@@ -216,7 +224,7 @@ async def _handle_answer(
     facts = await memory.facts_text()
     roster = await _team_roster()
     system = (
-        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION
+        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _WEB_TOOL_GUIDANCE
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )

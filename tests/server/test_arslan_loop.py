@@ -371,3 +371,31 @@ async def test_route_path_emits_spawn_meta(maker, monkeypatch):
     assert isinstance(meta["assistant_message_id"], int)
     end = next(e for e in events if e["type"] == "stream_end")
     assert meta["arslan_message_id"] == end["message_id"]
+
+
+@pytest.mark.asyncio
+async def test_arslan_answer_prompt_has_web_tool_guidance(maker, monkeypatch):
+    # Regression: Arslan's answer-path system prompt must bind "unsure about something
+    # current" → "search" (not → ask/fabricate), or the model narrates instead of calling
+    # the tool. Asserts the guidance + the reconciliation with anti-fabrication are present.
+    from server.orchestrator import arslan, router, tool_loop
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    captured = {}
+
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            captured["system"] = system
+            yield "ok"
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+
+    await arslan.handle_user_message("main", "今天的新闻", _events([]))
+    sys = captured["system"]
+    assert "web_search" in sys
+    assert "MUST" in sys                       # "you MUST actually CALL web_search"
+    assert "INSTEAD of fabricating" in sys     # reconciled with anti-fabrication
