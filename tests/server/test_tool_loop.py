@@ -165,3 +165,27 @@ async def test_brace_prefix_non_json_emits_once(monkeypatch):
     assert out["final"] == "{this is prose, not json}... here is your answer"
     assert len(chunks) == 1
     assert chunks[0] == out["final"]
+
+
+async def test_prose_preamble_then_tool_json_no_leak(monkeypatch):
+    # Model violates "ONLY JSON" by prepending prose before the tool call. The prose preamble
+    # may show, but the raw JSON must NEVER reach on_chunk (structural separation), and the tool
+    # must still fire (parse_json_object rescues the embedded object).
+    from server.registry import executors
+    adapter = _StreamAdapter(['好的我去搜一下{"tool": "web_search", "args": {"q": "x"}}', "real answer"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _Stub:
+        async def execute(self, args):
+            return {"ok": True, "results": [{"title": "t"}]}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+
+    events, chunks = [], []
+    out = await tool_loop.run(system="S", user_content="news?", history=[],
+                              emit=events.append, on_chunk=chunks.append,
+                              resolve_tools=_tools("web_search"))
+    joined = "".join(chunks)
+    assert '"tool"' not in joined and "{" not in joined     # raw JSON never leaked
+    assert "好的我去搜一下" in joined                          # prose preamble may show (fine)
+    assert any(e["type"] == "tool_call" for e in events)     # tool still fired
+    assert out["final"] == "real answer"

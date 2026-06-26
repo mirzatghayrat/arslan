@@ -20,7 +20,9 @@ MAX_TOOL_CALLS = 5
 TOOL_TIMEOUT_S = 20.0
 
 _PROTOCOL = (
-    "\n\nTOOL PROTOCOL: To use a tool, reply with ONLY this JSON and nothing else: "
+    "\n\nTOOL PROTOCOL: To use a tool, reply with ONLY this JSON and nothing else — NO text "
+    "before or after it, not even '好的' / 'let me search'; the JSON object must be the ENTIRE "
+    "message: "
     '{{"tool": "<name>", "args": {{...}}}}. Available tools:\n{tool_lines}\n'
     "To escalate a missing capability or missing data, reply with ONLY: "
     '{{"escalate": {{"kind": "data" or "capability", "need": "<what outcome you need>", '
@@ -78,20 +80,22 @@ async def run(
         sys_now = system if not forced else (
             system + "\n\nTool budget exhausted: answer now with what you have. Text only."
         )
-        content = ""
-        mode: str | None = None  # None until first non-ws char, then "stream" | "buffer"
+        raw = ""
+        shown = 0  # chars already forwarded to on_chunk — never includes a '{'-led tool/escalate JSON
         async for piece in a.chat_stream(sys_now, convo[-1]["content"], history=convo[:-1]):
-            content += piece
-            if mode is None:
-                stripped = content.lstrip()
-                if not stripped:
-                    continue                       # still only whitespace; keep accumulating
-                mode = "buffer" if stripped[0] == "{" else "stream"
-                if mode == "stream":
-                    on_chunk(content)              # flush accumulated prefix (incl this piece)
-            elif mode == "stream":
-                on_chunk(piece)                    # forward subsequent pieces live
-        content = content.strip()
+            raw += piece
+            if not raw.lstrip():
+                continue                           # still only whitespace; keep accumulating
+            # Structural separation (no first-char guessing): stream visible prose ONLY up to the
+            # first '{'. Any tool/escalate JSON — even when the model prepends prose like '好的我去搜'
+            # — is buffered from the '{' onward and never shown. parse_json_object (below) rescues an
+            # embedded object, so the tool still fires; the raw JSON just never reaches the user.
+            brace = raw.find("{")
+            visible_end = brace if brace != -1 else len(raw)
+            if visible_end > shown:
+                on_chunk(raw[shown:visible_end])
+                shown = visible_end
+        content = raw.strip()
         parsed = parse_json_object(content)
 
         if not forced and isinstance(parsed, dict) and isinstance(parsed.get("escalate"), dict):
@@ -140,8 +144,8 @@ async def run(
             continue
 
         # plain text (or unparseable JSON) = final answer
-        if mode != "stream":
-            on_chunk(content)        # buffered (started with '{' but not a valid tool/escalate) → emit once now
+        if shown < len(raw):
+            on_chunk(raw[shown:])    # flush any buffered tail (a '{' that wasn't a tool/escalate → it's prose)
         return {"final": content, "escalation": None, "tool_trace": tool_trace}
 
     raise AssertionError("unreachable")  # forced branch always returns
