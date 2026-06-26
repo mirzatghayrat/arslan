@@ -100,6 +100,8 @@ async def run(
             args = parsed.get("args") if isinstance(parsed.get("args"), dict) else {}
             emit({"type": "tool_call", "tool": tool_key,
                   "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+            # Gate: re-resolve the live tool set per call (grants may expire); execute
+            # only if the key is both currently allowed AND backed by an executor.
             live = {t["key"] for t in await resolve_tools()}
             if tool_key not in live or tool_key not in EXECUTORS:
                 result = {"ok": False,
