@@ -65,14 +65,29 @@ _ANTI_FABRICATION = (
 _WEB_TOOL_GUIDANCE = (
     "\n\nGoing online — you CAN search the web (web_search) and fetch a page's text (web_extract):\n"
     "- When the user asks about anything current, real-time, or recent that you cannot be certain of "
-    "from memory — today's date/time, latest news, prices or markets, a product's newest version, "
-    "recent events, someone's current status — you MUST actually CALL web_search (emit the tool call). "
-    "Even when you think you know, if the question is about 'right now', search to verify.\n"
+    "from memory — latest news, prices or markets, a product's newest version, recent events, "
+    "someone's current status — you MUST actually CALL web_search (emit the tool call). Even when you "
+    "think you know, if the question is about 'right now', search to verify.\n"
     "- Use search INSTEAD of fabricating and INSTEAD of just asking the user or telling them to look it "
-    "up themselves. Never say 'let me search' / '我去搜一下' without actually emitting the tool call.\n"
+    "up themselves.\n"
+    "- ACT, don't narrate: NEVER end your turn with a promise to search ('我去搜一下' / 'let me search' / "
+    "'我直接搜一下') — in THIS reply you either emit the web_search tool call OR answer directly. A "
+    "promise to search without the tool call does nothing and leaves the user waiting.\n"
+    "- Note: you do NOT need web_search for the current date/time — it is given to you below. web_search "
+    "returns web pages, not a live clock, so don't use it to fetch the exact current minute.\n"
     "- If the search returns nothing useful, or reports it is not configured, say so plainly and answer "
     "with only what you reliably know — never invent a result."
 )
+
+
+def _now_line() -> str:
+    """Current server time injected into Arslan's prompt so date/time questions need no search."""
+    now = datetime.utcnow()
+    return (
+        f"\n\nCurrent date/time (server clock, UTC): {now:%Y-%m-%d %H:%M} ({now:%A}). "
+        "Use this directly for 'today' / 'now' / the current date; convert to the user's timezone "
+        "when asked (e.g. Beijing = UTC+8). Do NOT search the web for the current date/time."
+    )
 
 
 async def _team_roster() -> str:
@@ -224,7 +239,7 @@ async def _handle_answer(
     facts = await memory.facts_text()
     roster = await _team_roster()
     system = (
-        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _WEB_TOOL_GUIDANCE
+        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _WEB_TOOL_GUIDANCE + _now_line()
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )

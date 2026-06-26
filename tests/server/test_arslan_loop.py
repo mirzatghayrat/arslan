@@ -399,3 +399,5 @@ async def test_arslan_answer_prompt_has_web_tool_guidance(maker, monkeypatch):
     assert "web_search" in sys
     assert "MUST" in sys                       # "you MUST actually CALL web_search"
     assert "INSTEAD of fabricating" in sys     # reconciled with anti-fabrication
+    assert "ACT, don't narrate" in sys         # forbid ending a turn with "I'll search"
+    assert "Current date/time" in sys          # current time injected → no search needed for 'now'
