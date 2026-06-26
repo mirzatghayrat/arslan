@@ -34,12 +34,12 @@ class _Resp:
 
 
 def _scripted_adapter(replies):
-    """Adapter stub returning canned .chat replies in order."""
+    """Adapter stub yielding canned chat_stream replies in order."""
     it = iter(replies)
 
     class _A:
-        async def chat(self, system, user, history=None, **kw):
-            return _Resp(next(it))
+        async def chat_stream(self, system, user, history=None, **kw):
+            yield next(it)
 
     return _A()
 
@@ -67,9 +67,9 @@ async def test_tool_call_then_final(maker, monkeypatch):
             "最终答案：成分党内容上升。",
         ])
 
-        async def chat(self, system, user, history=None, **kw):
+        async def chat_stream(self, system, user, history=None, **kw):
             captured_convo.append({"system": system, "user": user, "history": list(history or [])})
-            return _Resp(next(self._replies))
+            yield next(self._replies)
 
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _CapturingAdapter())
 

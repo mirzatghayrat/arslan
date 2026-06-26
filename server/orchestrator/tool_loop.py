@@ -78,8 +78,20 @@ async def run(
         sys_now = system if not forced else (
             system + "\n\nTool budget exhausted: answer now with what you have. Text only."
         )
-        resp = await a.chat(sys_now, convo[-1]["content"], history=convo[:-1])
-        content = (resp.content or "").strip()
+        content = ""
+        mode: str | None = None  # None until first non-ws char, then "stream" | "buffer"
+        async for piece in a.chat_stream(sys_now, convo[-1]["content"], history=convo[:-1]):
+            content += piece
+            if mode is None:
+                stripped = content.lstrip()
+                if not stripped:
+                    continue                       # still only whitespace; keep accumulating
+                mode = "buffer" if stripped[0] == "{" else "stream"
+                if mode == "stream":
+                    on_chunk(content)              # flush accumulated prefix (incl this piece)
+            elif mode == "stream":
+                on_chunk(piece)                    # forward subsequent pieces live
+        content = content.strip()
         parsed = parse_json_object(content)
 
         if not forced and isinstance(parsed, dict) and isinstance(parsed.get("escalate"), dict):
@@ -127,7 +139,9 @@ async def run(
                                      "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
 
-        on_chunk(content)
+        # plain text (or unparseable JSON) = final answer
+        if mode != "stream":
+            on_chunk(content)        # buffered (started with '{' but not a valid tool/escalate) → emit once now
         return {"final": content, "escalation": None, "tool_trace": tool_trace}
 
     raise AssertionError("unreachable")  # forced branch always returns

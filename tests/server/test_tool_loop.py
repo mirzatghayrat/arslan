@@ -9,9 +9,20 @@ class _Resp:
 class _ScriptedAdapter:
     """Returns queued responses; records the systems/users it saw."""
     def __init__(self, replies): self._replies = list(replies); self.calls = []
-    async def chat(self, system, user, history=None):
+    async def chat_stream(self, system, user, history=None):
         self.calls.append({"system": system, "user": user, "history": history})
-        return _Resp(self._replies.pop(0))
+        yield self._replies.pop(0)
+
+
+class _StreamAdapter:
+    """chat_stream yields the response in small pieces."""
+    def __init__(self, replies, piece_size=3):
+        self._replies = list(replies); self._ps = piece_size; self.calls = []
+    async def chat_stream(self, system, user, history=None):
+        self.calls.append({"system": system, "user": user})
+        text = self._replies.pop(0)
+        for i in range(0, len(text), self._ps):
+            yield text[i:i + self._ps]
 
 
 def _tools(*keys):
@@ -101,3 +112,42 @@ async def test_budget_exhaustion_forces_final(monkeypatch):
     assert "".join(chunks) == "forced final answer"
     # the forced step's system prompt must carry the budget-exhausted instruction
     assert "Tool budget exhausted" in adapter.calls[-1]["system"]
+
+
+async def test_final_answer_streams(monkeypatch):
+    adapter = _StreamAdapter(["hello world answer"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="hi", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools())
+    assert out["final"] == "hello world answer"
+    assert len(chunks) > 1                       # genuinely streamed in pieces
+    assert "".join(chunks) == "hello world answer"
+
+
+async def test_tool_json_is_buffered_silently(monkeypatch):
+    from server.registry import executors
+    adapter = _StreamAdapter(['{"tool": "web_search", "args": {"query": "x"}}', "streamed final"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    class _Stub:
+        async def execute(self, args): return {"ok": True, "results": []}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="search", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools("web_search"))
+    assert "".join(chunks) == "streamed final"   # only the final prose streamed
+    assert "{" not in "".join(chunks)            # the tool JSON never leaked to on_chunk
+    assert out["final"] == "streamed final"
+
+
+async def test_leading_whitespace_then_prose_streams(monkeypatch):
+    adapter = _StreamAdapter(["   actual answer"])  # leading spaces before first real char
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="hi", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools())
+    assert out["final"] == "actual answer"
+    assert "".join(chunks).strip() == "actual answer"
