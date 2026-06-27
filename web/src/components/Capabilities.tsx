@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import CapabilityTabs from "./CapabilityTabs";
 import CapabilityCatalog from "./CapabilityCatalog";
 import ToolHubDiscover from "./ToolHubDiscover";
+import McpServers from "./McpServers";
 
 export default function Capabilities() {
   const { t } = useTranslation();
@@ -27,7 +28,7 @@ export default function Capabilities() {
       {/* Tab panels (Task 4 wires MCPs) */}
       {tab === "tools" && <CapabilityCatalog kind="tools" />}
       {tab === "skills" && <CapabilityCatalog kind="skills" />}
-      {tab === "mcps" && <div className="text-xs text-subtle-foreground">…</div>}
+      {tab === "mcps" && <McpServers />}
     </div>
   );
 }
