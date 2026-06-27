@@ -10,6 +10,7 @@ import {
   type EvalResult, type SearchItem, type Candidate, type SkillDraft,
 } from '../api/discovery';
 import { addMcpServer } from '../api/mcp';
+import { MCP_PRESETS } from '../data/mcpPresets';
 
 // Prefill payload handed to the MCP add-form (wired by Task 5's presets row).
 export type McpPrefill = { label: string; command: string; args: string[]; transport: string; url?: string; envKeys?: string[]; note?: string };
@@ -19,8 +20,6 @@ export type McpPrefill = { label: string; command: string; args: string[]; trans
 // "Add" promotes the candidate into the live MCP registry via the existing P2b addMcpServer (locked).
 export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: McpPrefill) => void } = {}) {
   const { t } = useTranslation();
-  // onPrefillMcp is consumed by the presets row in Task 5; referenced here to keep the prop live.
-  void onPrefillMcp;
 
   const [showSandboxSearch, setShowSandboxSearch] = useState(true);
   const [integrationQuery, setIntegrationQuery] = useState('');
@@ -322,22 +321,18 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
             </button>
           </div>
 
-          {/* Quick Presets — clicking fills the search box with a repo ref */}
+          {/* Curated MCP presets — clicking pre-fills the MCP add form (review + connect, not auto-installed) */}
           <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-subtle-foreground select-none">
             <span>{t('ledger.tool_hub_presets_label')}</span>
-            {[
-              { label: 'MCP-Servers', ref: 'modelcontextprotocol/servers' },
-              { label: 'Brave-Search', ref: 'modelcontextprotocol/servers' },
-              { label: 'GitHub-MCP', ref: 'github/github-mcp-server' },
-              { label: 'Filesystem', ref: 'modelcontextprotocol/servers' },
-            ].map(({ label, ref }) => (
+            {MCP_PRESETS.map((preset) => (
               <button
-                key={label}
+                key={preset.label}
                 type="button"
-                onClick={() => setIntegrationQuery(ref)}
+                title={preset.note}
+                onClick={() => onPrefillMcp?.(preset)}
                 className="px-2 py-0.5 rounded bg-foreground/[0.05] hover:bg-primary/10 hover:text-primary text-subtle-foreground transition-colors cursor-pointer"
               >
-                {label}
+                {preset.label}
               </button>
             ))}
           </div>
