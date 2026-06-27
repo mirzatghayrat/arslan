@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, Spawn, SpawnCapability
+from server.registry import executors
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ async def test_tool_call_then_final(maker, monkeypatch):
             calls["args"] = args
             return {"ok": True, "results": [{"title": "T", "url": "u", "snippet": "s"}]}
 
-    monkeypatch.setattr(tool_loop, "EXECUTORS", {"web_search": _Exec()})
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Exec())
 
     class _CapturingAdapter:
         _replies = iter([
@@ -114,7 +115,7 @@ async def test_unequipped_tool_refused_in_loop(maker, monkeypatch):
             return {"ok": True}
 
     # even if an executor EXISTS, the gate must refuse: it's not in the spawn's wired set
-    monkeypatch.setattr(tool_loop, "EXECUTORS", {"execute_code": _Exec()})
+    monkeypatch.setitem(executors.EXECUTORS, "execute_code", _Exec())
     adapter = _scripted_adapter([
         '{"tool": "execute_code", "args": {"code": "rm -rf /"}}',
         "ok, answering without it.",
@@ -143,7 +144,7 @@ async def test_budget_forces_final(maker, monkeypatch):
         async def execute(self, args):
             return {"ok": True, "results": []}
 
-    monkeypatch.setattr(tool_loop, "EXECUTORS", {"web_search": _Exec()})
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Exec())
     replies = ['{"tool": "web_search", "args": {"query": "q"}}'] * 5 + ["forced answer"]
     adapter = _scripted_adapter(replies)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
