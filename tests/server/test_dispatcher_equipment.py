@@ -107,3 +107,27 @@ async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
     s = captured["system"]
     assert "(not yet live)" in s
     assert "Image Generation" in s
+
+
+@pytest.mark.asyncio
+async def test_spawn_prompt_has_tool_use_guidance(maker, monkeypatch):
+    """The spawn system prompt must tell it to USE its tools (emit the tool call), not
+    narrate a tool call as text nor fabricate data + return code. Regression for spawns
+    that printed matplotlib code / 'STEP 1 调用 web_search' instead of calling tools."""
+    from server.orchestrator import dispatcher, tool_loop
+
+    captured = {}
+
+    class _A:
+        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
+            captured["system"] = system
+            yield "ok"
+
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    await dispatcher.dispatch("main", spawn_id=8, task_brief="chart tesla prices this week")
+    s = captured["system"]
+    assert "render_chart" in s
+    # the guidance must explicitly forbid narrating / fabricating-then-coding and require emitting the tool call
+    assert "ACT" in s or "emit the tool call" in s
+    assert "never" in s.lower()

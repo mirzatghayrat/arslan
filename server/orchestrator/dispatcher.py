@@ -16,6 +16,22 @@ from server.services.llm_factory import build_adapter
 
 _SPAWN_HISTORY_LIMIT = 10  # recent spawn turns included for continuity
 
+_SPAWN_TOOL_GUIDANCE = (
+    "\n\nUSE YOUR TOOLS — do not narrate or fabricate:\n"
+    "- You have the tools listed under 'Your equipment' (and you can chart with render_chart). "
+    "When you need fresh/factual data you are not certain of (prices, news, a repo's stars, recent "
+    "events), you MUST actually CALL web_search by emitting the tool-call JSON — NEVER write 'STEP 1: "
+    "call web_search' or '调用 web_search' as plain text; that does nothing.\n"
+    "- When the user asks for a chart/graph/图, CALL render_chart with the structured data "
+    "({type, x, series}) so a real chart is drawn. NEVER return matplotlib/Python code or a data "
+    "table instead of the chart, and NEVER invent 'simulated'/'模拟' data to fill it — get the real "
+    "numbers via web_search first, then render_chart.\n"
+    "- ACT in THIS reply: emit the tool call now, or give your final answer. A promise to use a tool, "
+    "or code for the user to run, is not acceptable.\n"
+    "- If you genuinely lack a tool needed for the task, escalate a need (see protocol) — do not "
+    "fabricate a result."
+)
+
 _PROPOSE_PREFIX = (
     "PROPOSE MODE: Do NOT produce the final deliverable yet. First propose a concrete "
     "direction for this task and ask 1-3 short clarifying questions, then ask the user to "
@@ -137,9 +153,9 @@ async def dispatch(
     base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
     system = base_prompt
     system += (
-        "\n\nUse only real or user-provided information. Do not invent, simulate, or fabricate "
-        "data, statistics, or sources. If you lack the data needed, say so and ask the user to "
-        "provide it, or clearly label any example as hypothetical."
+        "\n\nUse only real or tool-obtained or user-provided information. Do not invent, simulate, "
+        "or fabricate data, statistics, or sources. If you lack data, get it with your tools "
+        "(web_search/web_extract); if you truly cannot, say so or escalate — never fabricate."
     )
     if facts:
         system = f"{system}\n\n{facts}"
@@ -169,6 +185,7 @@ async def dispatch(
     # path below is kept only as a defensive fallback (e.g. catalog missing the baseline rows).
     wired = await registry_service.wired_tools_for_spawn(spawn_id, current_turn=current_turn)
     system += _equipment_block_from(equipment, wired)
+    system += _SPAWN_TOOL_GUIDANCE
 
     history = await _spawn_history(spawn_id)
 
