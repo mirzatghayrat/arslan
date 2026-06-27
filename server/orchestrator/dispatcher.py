@@ -27,9 +27,18 @@ _SPAWN_TOOL_GUIDANCE = (
     "table instead of the chart, and NEVER invent 'simulated'/'模拟' data to fill it — get the real "
     "numbers via web_search first, then render_chart.\n"
     "- ACT in THIS reply: emit the tool call now, or give your final answer. A promise to use a tool, "
-    "or code for the user to run, is not acceptable.\n"
+    "or code for the user to run, is not acceptable. Writing '我来搜索…' / '我获取到了数据' / "
+    "'上图已为您生成' WITHOUT actually emitting the tool JSON is a HALLUCINATION — the tool did NOT run "
+    "and there is NO chart. Never describe a tool result you did not actually receive.\n"
     "- If you genuinely lack a tool needed for the task, escalate a need (see protocol) — do not "
-    "fabricate a result."
+    "fabricate a result.\n"
+    "WORKED EXAMPLE — user: '查特斯拉近一周股价,用折线图画出来'. Your replies, one tool per turn, "
+    "each reply being ONLY the JSON (no prose):\n"
+    "  turn 1 → {\"tool\": \"web_search\", \"args\": {\"query\": \"Tesla TSLA stock price past week\"}}\n"
+    "  turn 2 (after the TOOL RESULT) → {\"tool\": \"render_chart\", \"args\": {\"type\": \"line\", "
+    "\"title\": \"TSLA 近一周\", \"x\": [\"6/20\",\"6/23\",\"6/24\"], \"series\": [{\"name\": \"close\", "
+    "\"values\": [305.1, 312.4, 309.8]}]}}\n"
+    "  turn 3 → your short final text answer. Follow this shape exactly for any 'search + chart' task."
 )
 
 _PROPOSE_PREFIX = (
