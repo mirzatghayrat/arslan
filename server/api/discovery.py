@@ -2,6 +2,7 @@
 'Add as MCP server' happens client-side via the existing P2b POST /mcp/servers."""
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -24,6 +25,8 @@ async def evaluate(body: EvaluateBody):
         meta = await github_eval.fetch_repo(owner, repo)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="GitHub request failed; try again later")
     readme = await github_eval.fetch_readme(owner, repo)
     suggestion = await mcp_suggest.classify_and_suggest(meta, readme)
     return {
