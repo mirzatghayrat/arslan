@@ -82,8 +82,13 @@ async def test_unequipped_spawn_keeps_legacy_path(maker, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
-    """Spawn equipped with a registered (not wired) toolset gets '(not yet live)' label."""
-    from server.orchestrator import dispatcher
+    """Spawn equipped with a registered (not wired) toolset gets '(not yet live)' label.
+
+    Spawn 9 is equipped (image_generation) → has_equipment → dispatch resolves wired tools,
+    which now always include the universal safe tool render_chart → the spawn runs through the
+    tool loop. Stub tool_loop's adapter (not the legacy dispatcher one) so no real LLM call fires.
+    """
+    from server.orchestrator import dispatcher, tool_loop
 
     captured = {}
 
@@ -93,6 +98,7 @@ async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
             yield "ok"
 
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
     await dispatcher.dispatch("main", spawn_id=9, task_brief="draw something")
     s = captured["system"]
     assert "(not yet live)" in s
