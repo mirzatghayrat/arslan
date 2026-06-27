@@ -168,6 +168,7 @@ class Tool(Base):
     status = Column(String(20), nullable=False, default="registered")
     input_schema = Column(JSON, default=dict)
     external_name = Column(String(120), nullable=True)   # original MCP tool name (NULL for built-ins)
+    host_enabled = Column(Boolean, nullable=False, default=False, server_default="0")  # Arslan (host) may use this MCP tool
 
 
 class SkillPack(Base):
@@ -240,6 +241,7 @@ class MCPServer(Base):
     command = Column(String(255), nullable=False)
     args = Column(JSON, nullable=False, default=list)
     env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
+    url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
     status = Column(String(20), nullable=False, default="registered")  # registered|connected|error
     last_error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
