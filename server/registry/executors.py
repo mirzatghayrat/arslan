@@ -181,3 +181,14 @@ class ChartExecutor:
 
 
 EXECUTORS = {e.key: e for e in (WebSearchExecutor(), WebExtractExecutor(), ChartExecutor())}
+
+
+async def resolve_executor(tool_key: str):
+    """Route a tool key to its executor: built-in (static EXECUTORS), MCP proxy, or None.
+    Does NOT widen assignability — the SQL choke point still decides which keys reach here."""
+    if tool_key in EXECUTORS:
+        return EXECUTORS[tool_key]
+    if tool_key.startswith("mcp_"):
+        from server.mcp.executor import build_mcp_executor   # lazy: avoids import cycle
+        return await build_mcp_executor(tool_key)
+    return None
