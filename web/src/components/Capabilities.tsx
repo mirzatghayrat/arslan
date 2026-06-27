@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import CapabilityTabs from "./CapabilityTabs";
+import ToolHubDiscover from "./ToolHubDiscover";
 
 export default function Capabilities() {
   const { t } = useTranslation();
@@ -11,7 +12,8 @@ export default function Capabilities() {
         {t("capabilities.title")}
       </h2>
       <p className="text-[11px] text-subtle-foreground font-sans mb-6">{t("capabilities.subtitle")}</p>
-      {/* Discover (Task 2) mounts here */}
+      {/* Shared Discover area (Tool-Hub) — Task 5 wires onPrefillMcp to the presets row. */}
+      <ToolHubDiscover onPrefillMcp={() => {}} />
       <CapabilityTabs
         active={tab}
         onChange={(id) => setTab(id as "tools" | "skills" | "mcps")}
