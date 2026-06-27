@@ -226,7 +226,9 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             collapsed: false,
             // 🔒 SECURITY: backend render_chart artifact only (set in arslanStore
             // from the tool_result frame), NEVER from LLM message text.
-            artifactSvg: firstStep.artifactSvg,
+            // Surface the artifact from whichever step produced one (a chart is often
+            // not the first tool, e.g. search-then-chart), not just toolSteps[0].
+            artifactSvg: item.toolSteps?.find((s) => s.artifactSvg)?.artifactSvg,
           }
         : undefined;
       return {

@@ -196,6 +196,23 @@ describe("toUiMessages", () => {
     expect(msg.toolActivity?.status).toBe("completed");
   });
 
+  it("surfaces a chart artifact even when render_chart is not the first tool step", () => {
+    const item: ArslanThreadItem = {
+      id: 9,
+      kind: "message",
+      role: "spawn",
+      content: "Here is the trend",
+      spawnName: "GitTrend",
+      toolSteps: [
+        { tool: "web_search", argsSummary: "query: stars", status: "ok", resultSummary: "5 results" },
+        { tool: "render_chart", argsSummary: "type: line", status: "ok", resultSummary: "rendered line",
+          artifactSvg: "<svg>CHART</svg>" },
+      ],
+    } as ArslanThreadItem;
+    const [msg] = toUiMessages([item]);
+    expect(msg.toolActivity?.artifactSvg).toBe("<svg>CHART</svg>");
+  });
+
   it("maps escalation item to spawn message with escalation card", () => {
     const [msg] = toUiMessages([escalationItem]);
     expect(msg.sender).toBe("spawn");
