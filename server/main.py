@@ -111,6 +111,10 @@ def create_app() -> FastAPI:
 
     app.include_router(extract_router)
 
+    from server.api.mcp import router as mcp_router
+
+    app.include_router(mcp_router, prefix="/api/v1")
+
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}

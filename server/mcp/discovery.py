@@ -33,7 +33,16 @@ def mcp_tool_key(server_id: int, name: str) -> str:
 
 
 def _server_dict(srv: MCPServer) -> dict:
-    return {"id": srv.id, "command": srv.command, "args": srv.args or [], "env": {}}  # env decrypt happens in service layer for real calls
+    import json
+
+    from server import crypto
+    env = {}
+    if srv.env:
+        try:
+            env = json.loads(crypto.decrypt(srv.env))
+        except Exception:  # noqa: BLE001
+            env = {}
+    return {"id": srv.id, "command": srv.command, "args": srv.args or [], "env": env}
 
 
 async def connect_and_discover(server_id: int) -> list[dict]:
