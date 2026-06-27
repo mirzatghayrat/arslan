@@ -257,6 +257,16 @@ TOOLSETS: list[dict] = [
         "tools": [("x_search", "Search X.", "safe", "registered")],
     },
     {
+        "key": "charting",
+        "name": "Charting",
+        "description": "render_chart — turn structured data into a line/bar/pie chart (SVG).",
+        "tier": "safe",
+        "status": "wired",
+        "tools": [
+            ("render_chart", "Render a line/bar/pie chart from structured data; returns an SVG shown to the user.", "safe", "wired"),
+        ],
+    },
+    {
         "key": "yuanbao",
         "name": "Yuanbao",
         "description": "Group info, member queries, DM.",

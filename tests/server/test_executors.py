@@ -9,7 +9,7 @@ import pytest
 async def test_executor_map_covers_wired_tools():
     from server.registry.executors import EXECUTORS
 
-    assert set(EXECUTORS) == {"web_search", "web_extract"}
+    assert set(EXECUTORS) == {"web_search", "web_extract", "render_chart"}
 
 
 @pytest.mark.asyncio
