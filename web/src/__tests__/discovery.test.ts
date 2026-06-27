@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evaluateRepo } from "../api/discovery";
+import {
+  deleteCandidate,
+  evaluateRepo,
+  refreshCandidate,
+  saveCandidate,
+  searchRepos,
+  type EvalResult,
+} from "../api/discovery";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -45,5 +52,39 @@ describe("discovery client", () => {
     expect(result.trust.tier).toBe("high");
     expect(result.suggestion.is_mcp).toBe(true);
     expect(result.suggestion.command).toBe("npx");
+  });
+
+  it("searchRepos GETs /discovery/search?q=mcp", async () => {
+    const f = mockFetch([]);
+    await searchRepos("mcp");
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/discovery/search?q=mcp");
+    expect(init.method ?? "GET").toBe("GET");
+  });
+
+  it("saveCandidate POSTs /discovery/catalog with { snapshot }", async () => {
+    const f = mockFetch({});
+    const snap = { repo: { full_name: "o/r" } } as unknown as EvalResult;
+    await saveCandidate(snap);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/discovery/catalog");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ snapshot: snap });
+  });
+
+  it("refreshCandidate POSTs /discovery/catalog/3/refresh", async () => {
+    const f = mockFetch({});
+    await refreshCandidate(3);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/discovery/catalog/3/refresh");
+    expect(init.method).toBe("POST");
+  });
+
+  it("deleteCandidate DELETEs /discovery/catalog/3", async () => {
+    const f = mockFetch({});
+    await deleteCandidate(3);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/discovery/catalog/3");
+    expect(init.method).toBe("DELETE");
   });
 });
