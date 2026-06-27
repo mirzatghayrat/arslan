@@ -32,7 +32,8 @@ def mcp_tool_key(server_id: int, name: str) -> str:
     return (prefix + name)[: 50 - 9] + "_" + digest     # keep prefix + 8-char hash, fits 50
 
 
-def _server_dict(srv: MCPServer) -> dict:
+def runtime_dict(srv) -> dict:
+    """Decrypted, transport-aware server dict for the session manager."""
     import json
 
     from server import crypto
@@ -42,7 +43,8 @@ def _server_dict(srv: MCPServer) -> dict:
             env = json.loads(crypto.decrypt(srv.env))
         except Exception:  # noqa: BLE001
             env = {}
-    return {"id": srv.id, "command": srv.command, "args": srv.args or [], "env": env}
+    return {"id": srv.id, "transport": srv.transport or "stdio",
+            "command": srv.command, "args": srv.args or [], "url": srv.url, "env": env}
 
 
 async def connect_and_discover(server_id: int) -> list[dict]:
@@ -51,7 +53,7 @@ async def connect_and_discover(server_id: int) -> list[dict]:
         srv = await db.get(MCPServer, server_id)
         if srv is None:
             raise ValueError(f"mcp server {server_id} not found")
-        server = _server_dict(srv)
+        server = runtime_dict(srv)
     try:
         listed = await manager.list_tools(server)
     except Exception as exc:  # noqa: BLE001

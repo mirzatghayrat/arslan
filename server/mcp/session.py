@@ -8,6 +8,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
+_CONNECT_TIMEOUT = 30.0
+
 
 class MCPSessionManager:
     def __init__(self) -> None:
@@ -15,19 +17,29 @@ class MCPSessionManager:
         self._lock = asyncio.Lock()
 
     async def _open_session(self, server: dict):
-        """Launch the stdio MCP server and return (ClientSession, AsyncExitStack). SDK-only seam."""
+        """Open the MCP session for this server's transport. SDK-only seam (overridden in tests)."""
         from contextlib import AsyncExitStack
 
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
+        from mcp import ClientSession
 
         stack = AsyncExitStack()
-        params = StdioServerParameters(
-            command=server["command"],
-            args=list(server.get("args") or []),
-            env={**os.environ, **(server.get("env") or {})},
-        )
-        read, write = await stack.enter_async_context(stdio_client(params))
+        transport = server.get("transport") or "stdio"
+        if transport == "http":
+            from mcp.client.streamable_http import streamablehttp_client
+            streams = await stack.enter_async_context(
+                streamablehttp_client(server["url"], headers=server.get("env") or {})
+            )
+            read, write = streams[0], streams[1]          # http yields (read, write, get_session_id)
+        else:
+            import os
+
+            from mcp import StdioServerParameters
+            from mcp.client.stdio import stdio_client
+            params = StdioServerParameters(
+                command=server["command"], args=list(server.get("args") or []),
+                env={**os.environ, **(server.get("env") or {})},
+            )
+            read, write = await stack.enter_async_context(stdio_client(params))
         client = await stack.enter_async_context(ClientSession(read, write))
         await client.initialize()
         return client, stack
@@ -36,7 +48,9 @@ class MCPSessionManager:
         sid = server["id"]
         async with self._lock:
             if sid not in self._sessions:
-                self._sessions[sid] = await self._open_session(server)
+                self._sessions[sid] = await asyncio.wait_for(
+                    self._open_session(server), timeout=_CONNECT_TIMEOUT
+                )
             return self._sessions[sid][0]
 
     async def _drop(self, sid: int) -> None:

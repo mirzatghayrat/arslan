@@ -23,15 +23,8 @@ class MCPProxyExecutor:
             srv = await db.get(MCPServer, self.server_id)
         if srv is None:
             return {"ok": False, "error": f"MCP server {self.server_id} not found"}
-        from server import crypto
-        import json
-        env = {}
-        if srv.env:
-            try:
-                env = json.loads(crypto.decrypt(srv.env))
-            except Exception:  # noqa: BLE001
-                env = {}
-        server = {"id": srv.id, "command": srv.command, "args": srv.args or [], "env": env}
+        from server.mcp.discovery import runtime_dict
+        server = runtime_dict(srv)
         try:
             result = await manager.call_tool(server, self.external_name, args or {})
         except Exception as exc:  # noqa: BLE001
