@@ -41,3 +41,12 @@ def test_xml_escaping_in_labels_and_title():
 def test_unknown_type_raises():
     with pytest.raises(ValueError):
         chart_svg.render({"type": "donut", "x": ["a"], "series": [{"name": "s", "values": [1]}]})
+
+
+def test_xml_escaping_in_series_name():
+    # series name is the only string between user input and output via _text/_esc — lock it.
+    spec = {"type": "line", "title": "t",
+            "x": ["a", "b"], "series": [{"name": "</text><script>xss</script>", "values": [1, 2]}]}
+    svg = chart_svg.render(spec)
+    assert "<script>" not in svg
+    assert "&lt;" in svg
