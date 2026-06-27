@@ -16,7 +16,7 @@ ASSIGNABLE_STATUSES = ("wired", "registered")
 
 # Deterministic, side-effect-free safe tools every spawn may use without per-spawn equipment.
 # The safe+wired filter STILL applies — this cannot be used to bypass the choke point.
-_UNIVERSAL_SAFE_TOOLS = ["render_chart"]
+_UNIVERSAL_SAFE_TOOLS = ["web_search", "web_extract", "render_chart"]  # safe "work-smart" baseline every spawn has
 
 
 def is_assignable(tier: str, status: str) -> bool:

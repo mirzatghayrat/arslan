@@ -84,21 +84,39 @@ async def test_wired_tools_for_spawn_gate(seeded, maker):
     assert keys == {"web_search", "web_extract", "render_chart"}
 
 
+_UNIVERSAL = {"web_search", "web_extract", "render_chart"}
+
+
+async def _add_extra_safe_wired_tool(maker):
+    """Seed a non-universal safe+wired toolset/tool so a temporary grant's effect is
+    observable distinct from the universal baseline (the catalog's only safe+wired
+    tools ARE the universal three)."""
+    from server.db.models import Tool, Toolset
+
+    async with maker() as s:
+        s.add(Toolset(key="extra_ts", name="Extra", description="d", tier="safe", status="wired"))
+        s.add(Tool(key="extra_tool", toolset_key="extra_ts", description="d",
+                   tier="safe", status="wired", input_schema={}))
+        await s.commit()
+
+
 @pytest.mark.asyncio
 async def test_temporary_grant_expiry(seeded, maker):
     from server.registry import service
 
+    await _add_extra_safe_wired_tool(maker)
     async with maker() as s:
         s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
-        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="web_search_scraping",
+        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="extra_ts",
                               grant="temporary", granted_by="escalation", expires_turn=5))
         await s.commit()
 
-    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=5)} == {
-        "web_search", "web_extract", "render_chart"  # render_chart is universal
-    }
-    # Temporary toolset grant expired; only the universal safe tool remains
-    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=6)} == {"render_chart"}
+    # While active: the granted tool joins the universal baseline.
+    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=5)} == (
+        _UNIVERSAL | {"extra_tool"}
+    )
+    # Temporary toolset grant expired; only the universal safe baseline remains.
+    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=6)} == _UNIVERSAL
 
 
 @pytest.mark.asyncio
@@ -106,15 +124,16 @@ async def test_temporary_none_expiry_fails_closed(seeded, maker):
     """Regression: temporary grant with expires_turn=None must not be treated as active."""
     from server.registry import service
 
+    await _add_extra_safe_wired_tool(maker)
     async with maker() as s:
         s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
-        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="web_search_scraping",
+        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="extra_ts",
                               grant="temporary", granted_by="escalation", expires_turn=None))
         await s.commit()
 
-    # The temporary grant (expires_turn=None) must NOT be treated as active.
-    # render_chart is present because it is a universal safe tool, not from the excluded grant.
-    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=0)} == {"render_chart"}
+    # The temporary grant (expires_turn=None) must NOT be treated as active, so extra_tool
+    # is absent — only the universal safe baseline remains.
+    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=0)} == _UNIVERSAL
 
 
 @pytest.mark.asyncio

@@ -162,17 +162,13 @@ async def dispatch(
     if attached_context:
         system += f"\n\n[用户附带的临时材料]\n{attached_context}"
 
-    # Compute equipment once. For unequipped spawns (legacy path) skip wired query entirely.
     equipment = await registry_service.equipment_for_spawn(spawn_id)
-    has_equipment = bool(equipment["toolsets"] or equipment["skills"])
-
     current_turn = await memory.user_turn_count(conversation_id)
-    wired: list[dict] = []
-    if has_equipment:
-        wired = await registry_service.wired_tools_for_spawn(
-            spawn_id, current_turn=current_turn
-        )
-        system += _equipment_block_from(equipment, wired)
+    # Every spawn carries the universal safe baseline (web_search/web_extract/render_chart),
+    # so wired is never empty → every spawn runs through the tool loop. The legacy zero-tool
+    # path below is kept only as a defensive fallback (e.g. catalog missing the baseline rows).
+    wired = await registry_service.wired_tools_for_spawn(spawn_id, current_turn=current_turn)
+    system += _equipment_block_from(equipment, wired)
 
     history = await _spawn_history(spawn_id)
 

@@ -29,6 +29,12 @@ async def test_render_chart_universal_even_without_equipment(seeded):
     assert "render_chart" in keys     # available to every spawn with zero equipped toolsets
 
 
+async def test_web_tools_universal_even_without_equipment(seeded):
+    tools = await service.wired_tools_for_spawn(seeded, current_turn=1)
+    keys = {t["key"] for t in tools}
+    assert {"web_search", "web_extract", "render_chart"} <= keys   # full safe baseline, no equipment needed
+
+
 async def test_arslan_host_tools_include_render_chart(monkeypatch):
     from server.orchestrator import arslan
     tools = await arslan._arslan_tools()

@@ -65,8 +65,10 @@ async def test_equipped_spawn_system_lists_equipment(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_unequipped_spawn_keeps_legacy_path(maker, monkeypatch):
-    from server.orchestrator import dispatcher
+async def test_unequipped_spawn_gets_universal_baseline(maker, monkeypatch):
+    """Every spawn now has the universal safe baseline (web_search/web_extract/render_chart)
+    and runs through the tool loop — the legacy zero-tool path is retired."""
+    from server.orchestrator import dispatcher, tool_loop
 
     captured = {}
 
@@ -76,8 +78,10 @@ async def test_unequipped_spawn_keeps_legacy_path(maker, monkeypatch):
             yield "ok"
 
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
     await dispatcher.dispatch("main", spawn_id=8, task_brief="do Y")
-    assert "web_search" not in captured["system"]
+    s = captured["system"]
+    assert "render_chart" in s and "web_search" in s   # baseline tools listed in the equipment block
 
 
 @pytest.mark.asyncio

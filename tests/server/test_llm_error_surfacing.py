@@ -105,11 +105,12 @@ async def test_classify_followup_raise_emits_error_frame(db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 3. _answer_stream raises → error frame emitted, no exception propagated
+# 3. tool_loop adapter raises in _handle_answer → error frame emitted,
+#    no exception propagated
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_answer_stream_raise_emits_error_frame(db, monkeypatch):
+async def test_handle_answer_llm_error_emits_error_frame(db, monkeypatch):
     """If the LLM raises during streaming in _handle_answer, an error frame
     must be emitted and the function must return normally."""
     from server.orchestrator import arslan, router
