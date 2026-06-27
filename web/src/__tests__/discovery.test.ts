@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createSkill,
   deleteCandidate,
   evaluateRepo,
+  generateSkill,
   refreshCandidate,
   saveCandidate,
   searchRepos,
@@ -86,5 +88,47 @@ describe("discovery client", () => {
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/discovery/catalog/3");
     expect(init.method).toBe("DELETE");
+  });
+
+  it("generateSkill POSTs /discovery/skill/generate with { ref }", async () => {
+    const f = mockFetch({
+      repo: { full_name: "o/r", html_url: "https://github.com/o/r" },
+      skill: { name: "T", category: "research", description: "d", body: "## Trigger\nx\n## 决策规则\ny" },
+    });
+
+    const result = await generateSkill("o/r");
+
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/discovery/skill/generate");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ ref: "o/r" });
+    expect(result.skill?.name).toBe("T");
+  });
+
+  it("createSkill POSTs /discovery/skill with the payload", async () => {
+    const f = mockFetch({
+      key: "gh-o-r",
+      name: "My Tech",
+      category: "research",
+      description: "d",
+      tier: "safe",
+      status: "registered",
+    });
+    const payload = {
+      full_name: "o/r",
+      name: "My Tech",
+      category: "research",
+      description: "d",
+      body: "## Trigger\nx\n## 决策规则\ny",
+    };
+
+    const result = await createSkill(payload);
+
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/discovery/skill");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual(payload);
+    expect(result.key).toBe("gh-o-r");
+    expect(result.tier).toBe("safe");
   });
 });

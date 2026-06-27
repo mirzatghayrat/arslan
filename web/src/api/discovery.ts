@@ -69,3 +69,17 @@ export const refreshCandidate = (id: number) =>
 
 export const deleteCandidate = (id: number) =>
   request<void>(`/discovery/catalog/${id}`, { method: "DELETE" });
+
+// ── Add as Skill: distill a repo into a SkillPack (generate → editable body → create) ─────
+// generateSkill is read-only (persists nothing). The user reviews/edits the body (the
+// human-review/consent step), then createSkill persists it as tier=safe/status=registered.
+
+export type SkillDraft = { name: string; category: string; description: string; body: string };
+export type SkillGenResult = { repo: { full_name: string; html_url: string }; skill: SkillDraft | null };
+export type CreatedSkill = { key: string; name: string; category: string; description: string; tier: string; status: string };
+
+export const generateSkill = (ref: string) =>
+  request<SkillGenResult>("/discovery/skill/generate", { method: "POST", body: JSON.stringify({ ref }) });
+
+export const createSkill = (b: { full_name: string; name: string; category: string; description: string; body: string }) =>
+  request<CreatedSkill>("/discovery/skill", { method: "POST", body: JSON.stringify(b) });

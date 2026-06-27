@@ -13,7 +13,8 @@ import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import {
   evaluateRepo, searchRepos, saveCandidate, listCandidates, refreshCandidate, deleteCandidate,
-  type EvalResult, type SearchItem, type Candidate,
+  generateSkill, createSkill,
+  type EvalResult, type SearchItem, type Candidate, type SkillDraft,
 } from '../api/discovery';
 import { addMcpServer } from '../api/mcp';
 
@@ -74,6 +75,58 @@ export default function SpawnsDashboard({
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [busyCandidateId, setBusyCandidateId] = useState<number | null>(null);
+
+  // "Add as Skill" — distill a repo into a SkillPack. generate (read-only) → editable draft
+  // (the human-review/consent step — body is editable before Create) → create (safe/registered).
+  // One draft panel at a time. The body is shown ONLY in a <textarea> (plain text, never HTML).
+  const [skillBusyRef, setSkillBusyRef] = useState<string | null>(null);
+  const [skillDraft, setSkillDraft] = useState<
+    { full_name: string } & SkillDraft | null
+  >(null);
+  const [skillCreating, setSkillCreating] = useState(false);
+  const [skillNotice, setSkillNotice] = useState<string | null>(null);
+  const [skillError, setSkillError] = useState<string | null>(null);
+
+  const handleGenerateSkill = async (fullName: string) => {
+    setSkillBusyRef(fullName);
+    setSkillDraft(null);
+    setSkillNotice(null);
+    setSkillError(null);
+    try {
+      const result = await generateSkill(fullName);
+      if (!result.skill) {
+        setSkillNotice(`Couldn't distill a skill from ${result.repo.full_name}.`);
+        return;
+      }
+      setSkillDraft({ full_name: result.repo.full_name, ...result.skill });
+    } catch (e) {
+      setSkillError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setSkillBusyRef(null);
+    }
+  };
+
+  const handleCreateSkill = async () => {
+    if (!skillDraft) return;
+    setSkillCreating(true);
+    setSkillNotice(null);
+    setSkillError(null);
+    try {
+      await createSkill({
+        full_name: skillDraft.full_name,
+        name: skillDraft.name,
+        category: skillDraft.category,
+        description: skillDraft.description,
+        body: skillDraft.body,
+      });
+      setSkillNotice('Added to Skills library (safe) — equip it from a spawn\'s skill menu.');
+      setSkillDraft(null);
+    } catch (e) {
+      setSkillError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setSkillCreating(false);
+    }
+  };
 
   const reloadCandidates = async () => {
     try {
@@ -586,7 +639,7 @@ export default function SpawnsDashboard({
                   </div>
                 )}
 
-                {/* Save snapshot to the persistent catalog */}
+                {/* Save snapshot to the persistent catalog + Add as Skill */}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 border-t border-border/40 pt-3">
                   <button
                     type="button"
@@ -595,6 +648,17 @@ export default function SpawnsDashboard({
                   >
                     <Database className="w-3.5 h-3.5" />
                     <span>Save to catalog</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateSkill(evaluationResult.repo.full_name)}
+                    disabled={skillBusyRef === evaluationResult.repo.full_name}
+                    className="px-4 py-2 bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning text-[11px] font-bold font-mono uppercase rounded-lg flex items-center gap-1.5 transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {skillBusyRef === evaluationResult.repo.full_name
+                      ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                      : <BookOpen className="w-3.5 h-3.5" />}
+                    <span>Add as Skill</span>
                   </button>
                   {catalogNotice && (
                     <span className="text-[11px] text-success font-sans inline-flex items-center gap-1.5">
@@ -606,6 +670,103 @@ export default function SpawnsDashboard({
                     <span className="text-[11px] text-danger font-sans inline-flex items-center gap-1.5">
                       <X className="w-3.5 h-3.5 shrink-0" />
                       {catalogError}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Add-as-Skill notice / error (when no draft panel is open) */}
+            {!skillDraft && (skillNotice || skillError) && (
+              skillError ? (
+                <div className="flex items-start gap-2 bg-danger/15 border border-danger/40 rounded-xl px-4 py-3 text-[11px] text-danger font-sans">
+                  <X className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{skillError}</span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 bg-success/15 border border-success/40 rounded-xl px-4 py-3 text-[11px] text-success font-sans">
+                  <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{skillNotice}</span>
+                </div>
+              )
+            )}
+
+            {/* Editable Skill draft panel — review & edit before Create (consent step).
+                🔒 body is shown ONLY in a <textarea> (plain text), never rendered as HTML. */}
+            {skillDraft && (
+              <div className="bg-background border border-warning/40 rounded-xl p-5 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block">
+                    Distilled skill from <span className="text-foreground font-bold">{skillDraft.full_name}</span> (review &amp; edit)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setSkillDraft(null); setSkillError(null); setSkillNotice(null); }}
+                    className="p-1 text-subtle-foreground hover:text-foreground transition-colors"
+                    aria-label="Cancel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={skillDraft.name}
+                    onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, name: e.target.value }))}
+                    placeholder="Skill name"
+                    className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-sans placeholder-subtle-foreground"
+                  />
+                  <input
+                    type="text"
+                    value={skillDraft.category}
+                    onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, category: e.target.value }))}
+                    placeholder="category"
+                    className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
+                  />
+                  <input
+                    type="text"
+                    value={skillDraft.description}
+                    onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, description: e.target.value }))}
+                    placeholder="one-line description"
+                    className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-sans placeholder-subtle-foreground"
+                  />
+                </div>
+
+                <div>
+                  <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block mb-1">
+                    SKILL.md body (must contain ## Trigger and ## 决策规则)
+                  </span>
+                  <textarea
+                    value={skillDraft.body}
+                    onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, body: e.target.value }))}
+                    rows={12}
+                    spellCheck={false}
+                    className="w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono placeholder-subtle-foreground resize-y"
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCreateSkill}
+                    disabled={skillCreating || !skillDraft.name.trim() || !skillDraft.body.trim()}
+                    className="px-4 py-2 bg-warning hover:opacity-90 text-background text-[11px] font-bold font-mono uppercase rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {skillCreating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    <span>Create skill</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSkillDraft(null); setSkillError(null); setSkillNotice(null); }}
+                    className="px-4 py-2 bg-surface hover:bg-foreground/[0.04] border border-border hover:border-border-strong text-muted-foreground hover:text-foreground text-[11px] font-mono uppercase rounded-lg transition-all shrink-0"
+                  >
+                    Cancel
+                  </button>
+                  {skillError && (
+                    <span className="text-[11px] text-danger font-sans inline-flex items-center gap-1.5">
+                      <X className="w-3.5 h-3.5 shrink-0" />
+                      {skillError}
                     </span>
                   )}
                 </div>
@@ -688,6 +849,17 @@ export default function SpawnsDashboard({
                               <span>Add as MCP server</span>
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateSkill(cand.full_name)}
+                            disabled={skillBusyRef === cand.full_name}
+                            className="px-3 py-1.5 bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {skillBusyRef === cand.full_name
+                              ? <RefreshCcw className="w-3 h-3 animate-spin" />
+                              : <BookOpen className="w-3 h-3" />}
+                            <span>Add as Skill</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteCandidate(cand.id)}
