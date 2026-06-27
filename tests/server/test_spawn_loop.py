@@ -190,3 +190,21 @@ async def test_escalate_disabled_feeds_back_and_continues(maker, monkeypatch):
     )
     assert out["escalation"] is None
     assert out["final"] == "final answer without escalation"
+
+
+def test_spawn_loop_forces_tools(maker, monkeypatch):
+    """spawn_loop must pass force_tools=True to tool_loop.run (spawns structurally use tools)."""
+    from server.orchestrator import spawn_loop, tool_loop
+
+    seen = {}
+
+    async def fake_run(**kw):
+        seen["force_tools"] = kw.get("force_tools")
+        return {"final": "ok", "escalation": None, "tool_trace": []}
+
+    monkeypatch.setattr(tool_loop, "run", fake_run)
+    anyio.run(lambda: spawn_loop.run(
+        spawn_id=7, system="s", user_content="u", history=[],
+        current_turn=1, emit=lambda e: None, on_chunk=lambda c: None,
+    ))
+    assert seen["force_tools"] is True

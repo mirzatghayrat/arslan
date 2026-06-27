@@ -32,5 +32,5 @@ async def run(
     return await tool_loop.run(
         system=system, user_content=user_content, history=history,
         emit=emit, on_chunk=on_chunk, resolve_tools=_resolve,
-        allow_escalation=allow_escalation,
+        allow_escalation=allow_escalation, force_tools=True,
     )
