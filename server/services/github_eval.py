@@ -67,6 +67,19 @@ def _headers(token: str) -> dict:
     return h
 
 
+def _pushed_days(pushed: str | None) -> int | None:
+    if not pushed:
+        return None
+    try:
+        dt = datetime.fromisoformat(pushed.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - dt).days
+    except ValueError:
+        return None
+
+
+_SEARCH_LIMIT = 15
+
+
 async def fetch_repo(owner: str, repo: str) -> dict:
     token = await _token()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -77,14 +90,7 @@ async def fetch_repo(owner: str, repo: str) -> dict:
         raise ValueError("GitHub rate-limited — set GITHUB_TOKEN in Settings to raise the limit")
     r.raise_for_status()
     d = r.json()
-    pushed_days = None
-    pushed = d.get("pushed_at")
-    if pushed:
-        try:
-            dt = datetime.fromisoformat(pushed.replace("Z", "+00:00"))
-            pushed_days = (datetime.now(timezone.utc) - dt).days
-        except ValueError:
-            pushed_days = None
+    pushed_days = _pushed_days(d.get("pushed_at"))
     return {
         "full_name": d.get("full_name") or f"{owner}/{repo}",
         "html_url": d.get("html_url") or f"https://github.com/{owner}/{repo}",
@@ -95,6 +101,39 @@ async def fetch_repo(owner: str, repo: str) -> dict:
         "description": d.get("description") or "",
         "topics": d.get("topics") or [],
     }
+
+
+async def search_repos(query: str) -> list[dict]:
+    q = (query or "").strip()
+    if not q:
+        raise ValueError("query required")
+    token = await _token()
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.get(
+            f"{_GITHUB_API}/search/repositories",
+            headers=_headers(token),
+            params={"q": q, "sort": "stars", "order": "desc", "per_page": _SEARCH_LIMIT},
+        )
+    if r.status_code == 403 and "rate limit" in (r.text or "").lower():
+        raise ValueError("GitHub rate-limited — set GITHUB_TOKEN in Settings to raise the limit")
+    r.raise_for_status()
+    items = r.json().get("items") or []
+    out: list[dict] = []
+    for d in items:
+        stars = d.get("stargazers_count", 0)
+        pdays = _pushed_days(d.get("pushed_at"))
+        spdx = (d.get("license") or {}).get("spdx_id")
+        out.append({
+            "full_name": d.get("full_name"),
+            "html_url": d.get("html_url"),
+            "stars": stars,
+            "forks": d.get("forks_count", 0),
+            "license": spdx,
+            "pushed_days": pdays,
+            "description": d.get("description") or "",
+            "trust": {"tier": trust_tier(stars, pdays), "license_note": license_note(spdx)},
+        })
+    return out
 
 
 async def fetch_readme(owner: str, repo: str) -> str:
