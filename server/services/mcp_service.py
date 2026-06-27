@@ -54,7 +54,8 @@ async def list_tools(server_id: int) -> list[dict]:
             select(Tool).where(Tool.toolset_key == f"mcp_{server_id}").order_by(Tool.key)
         )).scalars().all()
         return [{"key": t.key, "name": t.external_name or t.key, "description": t.description,
-                 "tier": t.tier, "status": t.status, "suggested_tier": discovery.suggest_tier(t.external_name or "")}
+                 "tier": t.tier, "status": t.status, "host_enabled": t.host_enabled,
+                 "suggested_tier": discovery.suggest_tier(t.external_name or "")}
                 for t in rows]
 
 
@@ -77,6 +78,15 @@ async def wire_tool(tool_key: str, tier: str, wired: bool) -> None:
             raise ValueError("not an MCP tool")
         tool.tier = tier
         tool.status = "wired" if wired else "registered"
+        await db.commit()
+
+
+async def set_host_enabled(tool_key: str, enabled: bool) -> None:
+    async with db_session.AsyncSessionLocal() as db:
+        tool = await db.get(Tool, tool_key)
+        if tool is None or not (tool.toolset_key or "").startswith("mcp_"):
+            raise ValueError("not an MCP tool")
+        tool.host_enabled = enabled
         await db.commit()
 
 

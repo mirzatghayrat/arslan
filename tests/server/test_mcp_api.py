@@ -75,3 +75,21 @@ async def test_expose_and_wire_open_the_choke_point(client, monkeypatch):
         tool = (await s.execute(select(Tool).where(Tool.key == f"mcp_{sid}__read_file"))).scalar_one()
     assert ts.tier == "safe"                       # exposed → equippable
     assert tool.tier == "safe" and tool.status == "wired"   # wired → reachable by wired_tools_for_spawn
+
+
+async def test_host_toggle_endpoint(client, monkeypatch):
+    c, m = client
+    from server.mcp import session
+    class _T:
+        def __init__(self, n): self.name, self.description, self.inputSchema = n, n, {}
+    class _L:
+        def __init__(self, ts): self.tools = ts
+    async def fake_list(server): return _L([_T("read")])
+    monkeypatch.setattr(session.manager, "list_tools", fake_list)
+    async with c:
+        sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]
+        await c.post(f"/api/v1/mcp/servers/{sid}/connect")
+        r = await c.patch(f"/api/v1/mcp/tools/mcp_{sid}__read/host", json={"enabled": True})
+        assert r.status_code == 200
+        tools = (await c.get(f"/api/v1/mcp/servers/{sid}/tools")).json()
+    assert next(t for t in tools if t["name"] == "read")["host_enabled"] is True

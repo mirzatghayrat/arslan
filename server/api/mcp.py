@@ -25,6 +25,10 @@ class WireBody(BaseModel):
     wired: bool
 
 
+class HostBody(BaseModel):
+    enabled: bool
+
+
 @router.post("/servers")
 async def add_server(body: AddServerBody):
     return await mcp_service.add_server(body.label, body.command, body.args, body.env)
@@ -54,6 +58,12 @@ async def expose(server_id: int, body: ExposeBody):
 @router.patch("/tools/{tool_key}/wire")
 async def wire(tool_key: str, body: WireBody):
     await mcp_service.wire_tool(tool_key, body.tier, body.wired)
+    return {"ok": True}
+
+
+@router.patch("/tools/{tool_key}/host")
+async def set_host(tool_key: str, body: HostBody):
+    await mcp_service.set_host_enabled(tool_key, body.enabled)
     return {"ok": True}
 
 

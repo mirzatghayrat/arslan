@@ -301,7 +301,19 @@ async def _arslan_tools() -> list[dict]:
         "web_extract": "Fetch a URL and return its main text (SSRF-guarded).",
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
     }
-    return [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
+    tools = [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
+    # Host-allowed MCP tools: human-wired AND explicitly host_enabled (default off).
+    from sqlalchemy import select
+
+    from server.db import session as db_session
+    from server.db.models import Tool
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(Tool).where(Tool.toolset_key.like("mcp_%"),
+                               Tool.status == "wired", Tool.host_enabled.is_(True))
+        )).scalars().all()
+    tools += [{"key": t.key, "description": t.description} for t in rows]
+    return tools
 
 
 async def _match_safe_toolset(need: str) -> str | None:
