@@ -311,6 +311,7 @@ export interface McpServer {
   status: string; // registered|connected|error
   last_error?: string | null;
   transport?: string;
+  url?: string | null; // streamable-HTTP endpoint (transport === "http")
 }
 
 export interface McpTool {
@@ -320,4 +321,5 @@ export interface McpTool {
   tier: string; // safe|orchestrator
   status: string; // registered|wired
   suggested_tier: string; // safe|orchestrator (UI hint)
+  host_enabled: boolean; // Arslan (host) may use this MCP tool
 }

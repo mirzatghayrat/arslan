@@ -8,9 +8,11 @@ export const listMcpServers = () => request<McpServer[]>("/mcp/servers");
 
 export const addMcpServer = (body: {
   label: string;
-  command: string;
+  command?: string;
   args: string[];
   env: Record<string, string>;
+  transport?: string;
+  url?: string;
 }) =>
   request<McpServer>("/mcp/servers", {
     method: "POST",
@@ -34,6 +36,15 @@ export const wireMcpTool = (key: string, tier: string, wired: boolean) =>
     method: "PATCH",
     body: JSON.stringify({ tier, wired }),
   });
+
+export const setMcpToolHost = (key: string, enabled: boolean) =>
+  request<{ ok: boolean }>(`/mcp/tools/${encodeURIComponent(key)}/host`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+
+export const reconnectMcpServer = (id: number) =>
+  request<{ ok: boolean }>(`/mcp/servers/${id}/reconnect`, { method: "POST" });
 
 export const deleteMcpServer = (id: number) =>
   request<{ ok: boolean }>(`/mcp/servers/${id}`, { method: "DELETE" });

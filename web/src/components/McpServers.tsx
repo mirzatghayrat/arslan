@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plug, Plus, Trash2, X, AlertCircle, Zap } from "lucide-react";
+import { Plug, Plus, Trash2, X, AlertCircle, Zap, RefreshCw } from "lucide-react";
 import type { McpServer, McpTool } from "../api/client.types";
 import {
   addMcpServer,
@@ -8,6 +8,8 @@ import {
   exposeMcpServer,
   listMcpServers,
   listMcpTools,
+  reconnectMcpServer,
+  setMcpToolHost,
   wireMcpTool,
 } from "../api/mcp";
 
@@ -28,9 +30,11 @@ export default function McpServers() {
   const [error, setError] = useState<string | null>(null);
 
   // add-server form state
+  const [transport, setTransport] = useState<"stdio" | "http">("stdio");
   const [label, setLabel] = useState("");
   const [command, setCommand] = useState("");
   const [argsText, setArgsText] = useState("");
+  const [url, setUrl] = useState("");
   const [envRows, setEnvRows] = useState<EnvRow[]>([{ k: "", v: "" }]);
 
   async function loadServers() {
@@ -45,8 +49,11 @@ export default function McpServers() {
     loadServers();
   }, []);
 
+  const canAdd =
+    !!label.trim() && (transport === "http" ? !!url.trim() : !!command.trim());
+
   async function addServer() {
-    if (!label.trim() || !command.trim()) return;
+    if (!canAdd) return;
     setBusy(true);
     setError(null);
     try {
@@ -54,16 +61,54 @@ export default function McpServers() {
         .split(/\s+/)
         .map((a) => a.trim())
         .filter(Boolean);
+      // env doubles as HTTP headers (key/value rows).
       const env: Record<string, string> = {};
       for (const r of envRows) {
         if (r.k.trim()) env[r.k.trim()] = r.v;
       }
-      await addMcpServer({ label: label.trim(), command: command.trim(), args, env });
+      if (transport === "http") {
+        await addMcpServer({ label: label.trim(), args: [], env, transport: "http", url: url.trim() });
+      } else {
+        await addMcpServer({
+          label: label.trim(),
+          command: command.trim(),
+          args,
+          env,
+          transport: "stdio",
+        });
+      }
       setLabel("");
       setCommand("");
       setArgsText("");
+      setUrl("");
       setEnvRows([{ k: "", v: "" }]);
       await loadServers();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reconnect(id: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      await reconnectMcpServer(id);
+      await loadServers();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleHost(id: number, tool: McpTool) {
+    setBusy(true);
+    setError(null);
+    try {
+      await setMcpToolHost(tool.key, !tool.host_enabled);
+      await refreshTools(id);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -196,7 +241,9 @@ export default function McpServers() {
                       </span>
                     </div>
                     <p className="text-[10px] text-subtle-foreground font-mono mt-0.5 truncate">
-                      {s.command} {s.args.join(" ")}
+                      {s.transport === "http"
+                        ? `http · ${s.url ?? ""}`
+                        : `${s.command} ${s.args.join(" ")}`}
                     </p>
                     {s.last_error && (
                       <p className="text-[10px] text-danger font-mono mt-1 break-words">
@@ -212,6 +259,14 @@ export default function McpServers() {
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50"
                     >
                       <Zap className="w-3 h-3" /> Connect
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => reconnect(s.id)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-surface-raised hover:bg-surface text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Reconnect
                     </button>
                     <button
                       type="button"
@@ -281,6 +336,16 @@ export default function McpServers() {
                             />
                             wire
                           </label>
+                          <label className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono select-none">
+                            <input
+                              type="checkbox"
+                              checked={t.host_enabled}
+                              disabled={busy}
+                              onChange={() => toggleHost(s.id, t)}
+                              className="w-3.5 h-3.5 accent-primary"
+                            />
+                            allow Arslan
+                          </label>
                         </div>
                       </li>
                     ))}
@@ -295,7 +360,7 @@ export default function McpServers() {
       {/* Add-server form */}
       <div className="space-y-3 pt-4 border-t border-border/50">
         <h4 className="text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-          Register a stdio MCP server
+          Register an MCP server
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
@@ -305,24 +370,45 @@ export default function McpServers() {
             onChange={(e) => setLabel(e.target.value)}
             autoComplete="off"
           />
+          <select
+            className={inputCls}
+            value={transport}
+            onChange={(e) => setTransport(e.target.value as "stdio" | "http")}
+            aria-label="transport"
+          >
+            <option value="stdio">stdio (local process)</option>
+            <option value="http">http (streamable)</option>
+          </select>
+        </div>
+        {transport === "http" ? (
           <input
             className={inputCls}
-            placeholder="Command (e.g. npx)"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            placeholder="URL (e.g. https://api.example.com/mcp)"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
             autoComplete="off"
           />
-        </div>
-        <input
-          className={inputCls}
-          placeholder="Args (space-separated, e.g. -y @modelcontextprotocol/server-everything)"
-          value={argsText}
-          onChange={(e) => setArgsText(e.target.value)}
-          autoComplete="off"
-        />
+        ) : (
+          <>
+            <input
+              className={inputCls}
+              placeholder="Command (e.g. npx)"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              autoComplete="off"
+            />
+            <input
+              className={inputCls}
+              placeholder="Args (space-separated, e.g. -y @modelcontextprotocol/server-everything)"
+              value={argsText}
+              onChange={(e) => setArgsText(e.target.value)}
+              autoComplete="off"
+            />
+          </>
+        )}
         <div className="space-y-2">
           <span className="block text-[10px] text-subtle-foreground font-mono uppercase tracking-wide">
-            Environment variables
+            {transport === "http" ? "Headers" : "Environment variables"}
           </span>
           {envRows.map((r, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -358,12 +444,12 @@ export default function McpServers() {
             onClick={() => setEnvRows((rows) => [...rows, { k: "", v: "" }])}
             className="flex items-center gap-1 text-[10px] text-primary hover:text-primary-hover font-mono transition-colors"
           >
-            <Plus className="w-3 h-3" /> Add env var
+            <Plus className="w-3 h-3" /> {transport === "http" ? "Add header" : "Add env var"}
           </button>
         </div>
         <button
           type="button"
-          disabled={busy || !label.trim() || !command.trim()}
+          disabled={busy || !canAdd}
           onClick={addServer}
           className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >

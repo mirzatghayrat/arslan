@@ -6,6 +6,8 @@ import {
   exposeMcpServer,
   listMcpServers,
   listMcpTools,
+  reconnectMcpServer,
+  setMcpToolHost,
   wireMcpTool,
 } from "../api/mcp";
 
@@ -79,5 +81,38 @@ describe("mcp client", () => {
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/mcp/servers/7");
     expect(init.method).toBe("DELETE");
+  });
+
+  it("addMcpServer POSTs http transport + url fields", async () => {
+    const f = mockFetch({ id: 2 });
+    const body = {
+      label: "remote",
+      args: [],
+      env: { Authorization: "Bearer s" },
+      transport: "http",
+      url: "https://x/mcp",
+    };
+    await addMcpServer(body);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/mcp/servers");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it("setMcpToolHost PATCHes /mcp/tools/:key/host with { enabled }", async () => {
+    const f = mockFetch({ ok: true });
+    await setMcpToolHost("mcp_1__t", true);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/mcp/tools/mcp_1__t/host");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: true });
+  });
+
+  it("reconnectMcpServer POSTs /mcp/servers/:id/reconnect", async () => {
+    const f = mockFetch({ ok: true });
+    await reconnectMcpServer(3);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/mcp/servers/3/reconnect");
+    expect(init.method).toBe("POST");
   });
 });
