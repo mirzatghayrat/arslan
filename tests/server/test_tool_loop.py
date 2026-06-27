@@ -232,3 +232,43 @@ async def test_non_tool_json_blob_final_not_leaked(monkeypatch):
     assert "这是结论。" in joined
     assert "{" not in joined and "note" not in joined     # JSON blob dropped from display
     assert out["final"] == "这是结论。"                     # and from the persisted final
+
+
+async def test_artifact_flows_to_frame_not_to_llm(monkeypatch):
+    from server.registry import executors
+    adapter = _ScriptedAdapter(['{"tool": "render_chart", "args": {"type": "bar"}}', "here is your chart"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _Chart:
+        async def execute(self, args):
+            return {"ok": True, "external": False, "summary": "rendered bar",
+                    "artifact": {"kind": "svg", "content": "<svg>BARS</svg>"}}
+    monkeypatch.setitem(executors.EXECUTORS, "render_chart", _Chart())
+
+    events = []
+    out = await tool_loop.run(system="S", user_content="chart it", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("render_chart"))
+    tr = [e for e in events if e["type"] == "tool_result"][0]
+    assert tr["artifact"] == {"kind": "svg", "content": "<svg>BARS</svg>"}
+    assert tr["summary"] == "rendered bar"
+    # the SVG must NOT be fed back to the LLM (2nd chat's user input has no '<svg>')
+    assert "<svg>" not in adapter.calls[1]["user"]
+    # external is False → chart summary is NOT wrapped in the EXTERNAL frame
+    assert "EXTERNAL_WEB_CONTENT" not in adapter.calls[1]["user"]
+    assert out["final"] == "here is your chart"
+
+
+async def test_external_tool_result_still_wrapped(monkeypatch):
+    from server.registry import executors
+    adapter = _ScriptedAdapter(['{"tool": "web_search", "args": {"query": "x"}}', "answer"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _Web:
+        async def execute(self, args):
+            return {"ok": True, "results": [{"title": "t"}]}   # no 'external' key → defaults to wrapped
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Web())
+    out = await tool_loop.run(system="S", user_content="go", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert "EXTERNAL_WEB_CONTENT" in adapter.calls[1]["user"]   # external content still framed

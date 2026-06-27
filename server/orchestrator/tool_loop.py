@@ -43,6 +43,8 @@ def _get_adapter():
 def _summarize_result(result: dict) -> str:
     if not result.get("ok"):
         return str(result.get("error") or "failed")
+    if result.get("summary"):
+        return str(result["summary"])
     if "results" in result:
         return f"{len(result['results'])} results"
     if "text" in result:
@@ -135,13 +137,15 @@ async def run(
                 except Exception as exc:  # noqa: BLE001
                     result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
             emit({"type": "tool_result", "tool": tool_key,
-                  "ok": bool(result.get("ok")), "summary": _summarize_result(result)})
+                  "ok": bool(result.get("ok")), "summary": _summarize_result(result),
+                  "artifact": result.get("artifact")})            # artifact (chart SVG) → UI frame only
             tool_trace.append({"tool": tool_key, "args": args, "result": result})
             convo.append({"role": "assistant", "content": content})
-            raw_payload = json.dumps(result, ensure_ascii=False)[:8000]
+            feedback = {k: v for k, v in result.items() if k != "artifact"}   # never feed the SVG to the LLM
+            raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
+            framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
             convo.append({"role": "user",
-                          "content": "TOOL RESULT for "
-                                     f"{tool_key}:\n{wrap_external(raw_payload)}"
+                          "content": f"TOOL RESULT for {tool_key}:\n{framed}"
                                      "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
 
