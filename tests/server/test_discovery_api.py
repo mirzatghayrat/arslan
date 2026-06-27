@@ -126,3 +126,40 @@ async def test_catalog_refresh_404(client):
     async with c:
         r = await c.post("/api/v1/discovery/catalog/9999/refresh")
     assert r.status_code == 404
+
+
+async def test_skill_generate_endpoint(client, monkeypatch):
+    c, m = client
+    from server.services import discovery_service
+    async def fake_draft(owner, repo): return {"repo": {"full_name": f"{owner}/{repo}", "html_url": "u"},
+        "skill": {"name": "T", "category": "research", "description": "d", "body": "## Trigger\nx\n## 决策规则\ny"}}
+    monkeypatch.setattr(discovery_service, "generate_skill_draft", fake_draft)
+    async with c:
+        r = await c.post("/api/v1/discovery/skill/generate", json={"ref": "o/r"})
+    assert r.status_code == 200 and r.json()["skill"]["name"] == "T"
+
+
+async def test_skill_generate_bad_ref_400(client):
+    c, m = client
+    async with c:
+        r = await c.post("/api/v1/discovery/skill/generate", json={"ref": "not a repo"})
+    assert r.status_code == 400
+
+
+async def test_skill_create_endpoint(client):
+    c, m = client
+    body = "## Trigger\nx\n## 决策规则\ny"
+    async with c:
+        r = await c.post("/api/v1/discovery/skill", json={"full_name": "o/r", "name": "My Tech",
+            "category": "research", "description": "d", "body": body})
+        created = r.json()
+    assert r.status_code == 200 and created["key"].startswith("gh-")
+    assert created["tier"] == "safe" and created["status"] == "registered"
+
+
+async def test_skill_create_missing_sections_400(client):
+    c, m = client
+    async with c:
+        r = await c.post("/api/v1/discovery/skill", json={"full_name": "o/r", "name": "n",
+            "category": "c", "description": "d", "body": "no sections"})
+    assert r.status_code == 400

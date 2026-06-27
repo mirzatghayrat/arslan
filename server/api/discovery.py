@@ -71,3 +71,37 @@ async def refresh_candidate(cand_id: int):
 async def delete_candidate(cand_id: int):
     await discovery_service.delete_candidate(cand_id)
     return {"ok": True}
+
+
+class SkillGenerateBody(BaseModel):
+    ref: str
+
+
+class SkillCreateBody(BaseModel):
+    full_name: str
+    name: str
+    category: str = "general"
+    description: str = ""
+    body: str
+
+
+@router.post("/skill/generate")
+async def generate_skill(body: SkillGenerateBody):
+    parsed = github_eval.parse_repo_ref(body.ref)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="invalid repo ref — use owner/repo or a github.com URL")
+    try:
+        return await discovery_service.generate_skill_draft(*parsed)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="GitHub request failed; try again later")
+
+
+@router.post("/skill")
+async def create_skill(body: SkillCreateBody):
+    try:
+        return await discovery_service.create_skill(body.full_name, body.name, body.category,
+                                                    body.description, body.body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
