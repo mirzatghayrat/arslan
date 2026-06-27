@@ -393,6 +393,11 @@
       "tools": "工具",
       "skills": "技能",
       "mcps": "MCP"
+    },
+    "catalog": {
+      "loading": "正在加载注册表…",
+      "empty": "这里还没有内容。",
+      "equip_hint": "从分身的菜单中装配这些能力。"
     }
   }
 }

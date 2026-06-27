@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import CapabilityTabs from "./CapabilityTabs";
+import CapabilityCatalog from "./CapabilityCatalog";
 import ToolHubDiscover from "./ToolHubDiscover";
 
 export default function Capabilities() {
@@ -23,9 +24,9 @@ export default function Capabilities() {
           { id: "mcps", label: t("capabilities.tabs.mcps") },
         ]}
       />
-      {/* Tab panels (Tasks 3/4) */}
-      {tab === "tools" && <div className="text-xs text-subtle-foreground">…</div>}
-      {tab === "skills" && <div className="text-xs text-subtle-foreground">…</div>}
+      {/* Tab panels (Task 4 wires MCPs) */}
+      {tab === "tools" && <CapabilityCatalog kind="tools" />}
+      {tab === "skills" && <CapabilityCatalog kind="skills" />}
       {tab === "mcps" && <div className="text-xs text-subtle-foreground">…</div>}
     </div>
   );

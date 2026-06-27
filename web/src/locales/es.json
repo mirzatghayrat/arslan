@@ -393,6 +393,11 @@
       "tools": "Tools",
       "skills": "Skills",
       "mcps": "MCPs"
+    },
+    "catalog": {
+      "loading": "Loading registry…",
+      "empty": "Nothing here yet.",
+      "equip_hint": "Equip these from a spawn's menu."
     }
   }
 }
