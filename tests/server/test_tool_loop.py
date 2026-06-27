@@ -391,3 +391,37 @@ async def test_external_tool_result_still_wrapped(monkeypatch):
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert "EXTERNAL_WEB_CONTENT" in adapter.calls[1]["user"]   # external content still framed
+
+
+async def test_tool_loop_executes_mcp_tool_via_resolve(monkeypatch):
+    # An mcp_* tool that is in the live set + resolves to a proxy executes and feeds back.
+    from server.registry import executors as ex
+    adapter = _ScriptedAdapter(['{"tool": "mcp_9__read_file", "args": {"path": "/a"}}', "done"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _Proxy:
+        key = "mcp_9__read_file"
+        async def execute(self, args): return {"ok": True, "summary": "file body"}
+    async def fake_resolve(key):
+        return _Proxy() if key == "mcp_9__read_file" else (ex.EXECUTORS.get(key))
+    monkeypatch.setattr(tool_loop, "resolve_executor", fake_resolve)
+
+    events = []
+    out = await tool_loop.run(system="S", user_content="read it", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("mcp_9__read_file"))
+    assert any(e["type"] == "tool_result" and e["tool"] == "mcp_9__read_file" and e["ok"] for e in events)
+    assert out["final"] == "done"
+
+
+async def test_tool_loop_unresolvable_tool_errors(monkeypatch):
+    adapter = _ScriptedAdapter(['{"tool": "ghost_tool", "args": {}}', "ok anyway"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    async def fake_resolve(key): return None
+    monkeypatch.setattr(tool_loop, "resolve_executor", fake_resolve)
+    events = []
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("ghost_tool"))
+    assert any(e["type"] == "tool_result" and e["tool"] == "ghost_tool" and e["ok"] is False for e in events)
+    assert out["final"] == "ok anyway"

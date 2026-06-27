@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
-from server.registry.executors import EXECUTORS
+from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
 
 MAX_TOOL_CALLS = 5
@@ -76,11 +76,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
     live = {t["key"] for t in await resolve_tools()}
-    if tool_key not in live or tool_key not in EXECUTORS:
-        result = {"ok": False, "error": f"tool '{tool_key}' is not available to you; you may escalate a need instead"}
+    executor = (await resolve_executor(tool_key)) if tool_key in live else None
+    if executor is None:
+        result = {"ok": False,
+                  "error": f"tool '{tool_key}' is not available to you; you may escalate a need instead"}
     else:
         try:
-            result = await asyncio.wait_for(EXECUTORS[tool_key].execute(args), timeout=tool_timeout_s)
+            result = await asyncio.wait_for(executor.execute(args), timeout=tool_timeout_s)
         except TimeoutError:
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
         except Exception as exc:  # noqa: BLE001
