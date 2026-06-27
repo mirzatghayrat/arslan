@@ -55,6 +55,9 @@ async def lifespan(app: FastAPI):
         await db.commit()
     yield
 
+    from server.mcp.session import manager as _mcp_manager
+    await _mcp_manager.aclose_all()
+
 
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
