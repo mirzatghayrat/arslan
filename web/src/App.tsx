@@ -17,6 +17,7 @@ import SpawnDirectChat from './components/SpawnDirectChat';
 import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnEditor from './components/SpawnEditor';
 import SettingsScreen from './components/SettingsScreen';
+import Capabilities from './components/Capabilities';
 import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush, Satellite, Wrench, Brain } from 'lucide-react';
 import { getIcon } from './components/iconMap';
 import { SpawnAvatar } from './components/SpawnAvatar';
@@ -53,8 +54,8 @@ export default function App() {
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
 
-// Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'settings'
-  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'settings'>('arslan');
+// Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings'
+  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings'>('arslan');
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -419,7 +420,8 @@ export default function App() {
                 {t('modal.workspace_label')} <span className="text-foreground font-bold">
                   {activeSection === 'arslan' ? t('modal.workspace_orchestrator', { title: activeThread.title }) :
                    activeSection === 'spawn' ? t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' }) :
-                   activeSection === 'ledger' ? t('modal.workspace_ledger') : t('modal.workspace_settings')}
+                   activeSection === 'ledger' ? t('modal.workspace_ledger') :
+                   activeSection === 'capabilities' ? t('modal.workspace_capabilities') : t('modal.workspace_settings')}
                 </span>
               </span>
             </div>
@@ -530,6 +532,10 @@ export default function App() {
                   setActiveSection('ledger');
                 }}
               />
+            )}
+
+            {activeSection === 'capabilities' && (
+              <Capabilities />
             )}
 
             {activeSection === 'settings' && (

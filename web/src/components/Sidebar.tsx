@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
   Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Boxes
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
@@ -26,8 +26,8 @@ interface SidebarProps {
   onSelectSpawnChat: (id: string) => void;
 
   // Outer global view states
-  activeSection: 'arslan' | 'spawn' | 'ledger' | 'settings';
-  onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'settings') => void;
+  activeSection: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings';
+  onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings') => void;
 
   /** Real backend reachability signal from useBackendStatus */
   backendStatus: BackendStatus;
@@ -116,6 +116,21 @@ export default function Sidebar({
                 </span>
               </button>
 
+              {/* Capabilities */}
+              <button
+                id="nav-btn-capabilities-deck"
+                onClick={() => onChangeSection('capabilities')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
+                  activeSection === 'capabilities'
+                    ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Boxes className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'capabilities' ? 'text-primary' : 'text-subtle-foreground'}`} />
+                  <span className="truncate font-sans font-medium">{t('sidebar.capabilities')}</span>
+                </div>
+              </button>
 
             </div>
           </div>

@@ -247,7 +247,8 @@
     "system_settings": "System Settings",
     "daemon_core": "Daemon Core",
     "brand_subtitle": "One Becomes Many",
-    "node_version": "Node-Client v1.2"
+    "node_version": "Node-Client v1.2",
+    "capabilities": "Capabilities"
   },
   "orchestrator": {
     "sandbox_label": "Interactive Spawner Sandbox:",
@@ -382,6 +383,16 @@
     "workspace_orchestrator": "Orchestrator Thread: {{title}}",
     "workspace_specialist": "Specialist Stream: {{name}}",
     "workspace_ledger": "Spawns Ledger Dashboard",
-    "workspace_settings": "System Diagnostics Config"
+    "workspace_settings": "System Diagnostics Config",
+    "workspace_capabilities": "Capability Library"
+  },
+  "capabilities": {
+    "title": "Capability Library",
+    "subtitle": "Discover, install, and manage tools, skills, and MCP servers.",
+    "tabs": {
+      "tools": "Tools",
+      "skills": "Skills",
+      "mcps": "MCPs"
+    }
   }
 }

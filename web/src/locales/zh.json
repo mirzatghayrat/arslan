@@ -247,7 +247,8 @@
     "system_settings": "系统设置",
     "daemon_core": "守护核心",
     "brand_subtitle": "一变多",
-    "node_version": "节点客户端 v1.2"
+    "node_version": "节点客户端 v1.2",
+    "capabilities": "能力库"
   },
   "orchestrator": {
     "sandbox_label": "交互式分身沙盒：",
@@ -382,6 +383,16 @@
     "workspace_orchestrator": "编排线程：{{title}}",
     "workspace_specialist": "专家流：{{name}}",
     "workspace_ledger": "分身账本仪表盘",
-    "workspace_settings": "系统诊断配置"
+    "workspace_settings": "系统诊断配置",
+    "workspace_capabilities": "能力库"
+  },
+  "capabilities": {
+    "title": "能力库",
+    "subtitle": "发现、安装、管理工具、技能与 MCP 服务器。",
+    "tabs": {
+      "tools": "工具",
+      "skills": "技能",
+      "mcps": "MCP"
+    }
   }
 }
