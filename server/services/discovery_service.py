@@ -2,13 +2,14 @@
 The catalog is read-only curation; the only ingestion path remains P2b add_server."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import DiscoveryCandidate
-from server.services import github_eval, mcp_suggest
+from server.db.models import DiscoveryCandidate, SkillPack
+from server.services import github_eval, mcp_suggest, skill_suggest
 
 
 async def evaluate_ref(owner: str, repo: str) -> dict:
@@ -77,12 +78,6 @@ async def delete_candidate(cand_id: int) -> None:
         if row is not None:
             await db.delete(row)
             await db.commit()
-
-
-import re
-
-from server.db.models import SkillPack
-from server.services import skill_suggest
 
 
 async def generate_skill_draft(owner: str, repo: str) -> dict:
