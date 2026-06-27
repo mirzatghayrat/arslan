@@ -575,6 +575,11 @@ export default function OrchestratorChat({
                                 {msg.toolActivity.outputSummary}
                               </p>
                             </div>
+                            {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
+                                frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
+                            {msg.toolActivity?.artifactSvg && (
+                              <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                            )}
                             <div className="flex items-center gap-1 text-[10px] text-primary/70">
                               <CheckCircle2 className="w-3.5 h-3.5 text-success inline mr-0.5" />
                               <span>{t('orchestrator.exec_validated')}</span>
@@ -781,6 +786,11 @@ export default function OrchestratorChat({
                       <div className="mt-2 text-primary">
                         RETURN VALUE SUMMARY: {msg.toolActivity.outputSummary}
                       </div>
+                      {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
+                          frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
+                      {msg.toolActivity?.artifactSvg && (
+                        <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                      )}
                     </div>
                   )}
 
@@ -960,6 +970,11 @@ export default function OrchestratorChat({
                         <div className="mt-1 pl-5 text-primary">
                           Summary Outcome: {msg.toolActivity.outputSummary}
                         </div>
+                        {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
+                            frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
+                        {msg.toolActivity?.artifactSvg && (
+                          <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                        )}
                       </div>
                     </div>
                   )}

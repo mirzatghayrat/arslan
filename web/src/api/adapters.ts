@@ -224,6 +224,9 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             action: firstStep.argsSummary,
             outputSummary: firstStep.resultSummary ?? "",
             collapsed: false,
+            // 🔒 SECURITY: backend render_chart artifact only (set in arslanStore
+            // from the tool_result frame), NEVER from LLM message text.
+            artifactSvg: firstStep.artifactSvg,
           }
         : undefined;
       return {

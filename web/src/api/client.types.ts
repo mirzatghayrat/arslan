@@ -29,6 +29,8 @@ export interface ToolStep {
   argsSummary: string;
   status: "running" | "ok" | "error";
   resultSummary?: string;
+  /** SVG markup from a backend render_chart tool_result artifact. NEVER from LLM message text. */
+  artifactSvg?: string;
 }
 
 export interface EscalationInfo {
@@ -198,7 +200,7 @@ export type ArslanServerMessage =
   | { type: "message"; message_id: number; content: string; role: string }
   | { type: "spawn_created"; spawn_id: number; spawn_name: string; equipment?: Equipment; intro?: string | null }
   | { type: "tool_call"; tool: string; args_summary: string }
-  | { type: "tool_result"; tool: string; ok: boolean; summary: string }
+  | { type: "tool_result"; tool: string; ok: boolean; summary: string; artifact?: { kind: string; content: string } }
   | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
   | { type: "escalation_refused"; spawn_id: number; why: string }
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }

@@ -23,6 +23,8 @@ export interface ToolActivity {
   action: string;
   outputSummary: string;
   collapsed: boolean;
+  /** SVG markup from a backend render_chart tool_result artifact. NEVER from LLM message text. */
+  artifactSvg?: string;
 }
 
 export interface Escalation {
