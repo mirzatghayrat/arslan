@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   ArrowUpRight, Shield, Cpu, ChevronDown, ChevronUp, Search, Globe,
   RefreshCcw, Plus, Database, X, Check, BookOpen,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
-  evaluateRepo, searchRepos, saveCandidate, listCandidates, refreshCandidate, deleteCandidate,
+  evaluateRepo, searchRepos, saveCandidate,
   generateSkill, createSkill,
-  type EvalResult, type SearchItem, type Candidate, type SkillDraft,
+  type EvalResult, type SearchItem, type SkillDraft,
 } from '../api/discovery';
 import { addMcpServer } from '../api/mcp';
 import { MCP_PRESETS } from '../data/mcpPresets';
@@ -38,10 +38,8 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
   const [searchItems, setSearchItems] = useState<SearchItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [busyCandidateId, setBusyCandidateId] = useState<number | null>(null);
 
   // "Add as Skill" — distill a repo into a SkillPack. generate (read-only) → editable draft
   // (the human-review/consent step — body is editable before Create) → create (safe/registered).
@@ -95,18 +93,6 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
     }
   };
 
-  const reloadCandidates = async () => {
-    try {
-      setCandidates(await listCandidates());
-    } catch (e) {
-      setCatalogError(String(e instanceof Error ? e.message : e));
-    }
-  };
-
-  useEffect(() => {
-    void reloadCandidates();
-  }, []);
-
   const handleSearch = async (q: string) => {
     const trimmed = (q ?? '').trim();
     if (!trimmed) return;
@@ -127,7 +113,6 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
     setCatalogError(null);
     try {
       await saveCandidate(snapshot);
-      await reloadCandidates();
       setCatalogNotice(`Saved ${snapshot.repo.full_name} to catalog.`);
     } catch (e) {
       setCatalogError(String(e instanceof Error ? e.message : e));
@@ -143,64 +128,13 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
           ? evaluationResult
           : await evaluateRepo(item.full_name);
       await saveCandidate(snapshot);
-      await reloadCandidates();
       setCatalogNotice(`Saved ${item.full_name} to catalog.`);
     } catch (e) {
       setCatalogError(String(e instanceof Error ? e.message : e));
     }
   };
 
-  const handleRefreshCandidate = async (id: number) => {
-    setBusyCandidateId(id);
-    setCatalogNotice(null);
-    setCatalogError(null);
-    try {
-      const updated = await refreshCandidate(id);
-      setCandidates(prev => prev.map(c => (c.id === id ? updated : c)));
-    } catch (e) {
-      setCatalogError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusyCandidateId(null);
-    }
-  };
-
-  const handleDeleteCandidate = async (id: number) => {
-    setBusyCandidateId(id);
-    setCatalogNotice(null);
-    setCatalogError(null);
-    try {
-      await deleteCandidate(id);
-      await reloadCandidates();
-    } catch (e) {
-      setCatalogError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusyCandidateId(null);
-    }
-  };
-
-  const handleAddCandidateToMcp = async (cand: Candidate) => {
-    const s = cand.snapshot.suggestion;
-    setBusyCandidateId(cand.id);
-    setCatalogNotice(null);
-    setCatalogError(null);
-    try {
-      await addMcpServer({
-        label: cand.full_name.split('/').pop()!,
-        transport: s.transport ?? 'stdio',
-        command: s.command ?? undefined,
-        args: s.args || [],
-        url: s.url || undefined,
-        env: {},
-      });
-      setCatalogNotice(`Added ${cand.full_name} to MCP panel (locked) — connect it from System Settings → MCP Servers.`);
-    } catch (e) {
-      setCatalogError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusyCandidateId(null);
-    }
-  };
-
-  // Trust tier → semantic token classes (shared by search rows + candidate rows).
+  // Trust tier → semantic token classes (shared by search rows).
   const trustBadgeCls = (tier: 'high' | 'medium' | 'low') =>
     tier === 'high'
       ? 'bg-success/15 text-success border-success/30'
@@ -663,110 +597,6 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
               </div>
             </div>
           )}
-
-          {/* Saved Candidates */}
-          <div className="space-y-3 border-t border-border/40 pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block">
-                Saved Candidates ({candidates.length})
-              </span>
-              {(catalogNotice || catalogError) && !evaluationResult && (
-                catalogError ? (
-                  <span className="text-[11px] text-danger font-sans inline-flex items-center gap-1.5">
-                    <X className="w-3.5 h-3.5 shrink-0" />
-                    {catalogError}
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-success font-sans inline-flex items-center gap-1.5">
-                    <Check className="w-3.5 h-3.5 shrink-0" />
-                    {catalogNotice}
-                  </span>
-                )
-              )}
-            </div>
-
-            {candidates.length === 0 ? (
-              <div className="text-center py-4 bg-background border border-dashed border-border rounded-xl">
-                <span className="text-[10px] text-subtle-foreground font-mono">No saved candidates yet — search and save repos to build a catalog.</span>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {candidates.map((cand) => {
-                  const isMcp = cand.snapshot.suggestion.is_mcp;
-                  const busy = busyCandidateId === cand.id;
-                  return (
-                    <div
-                      key={cand.id}
-                      className="bg-background border border-border-strong rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <a
-                            href={cand.html_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[12px] font-bold text-foreground hover:text-primary transition-colors inline-flex items-center gap-1"
-                          >
-                            {cand.full_name}
-                            <ArrowUpRight className="w-3 h-3" />
-                          </a>
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono uppercase tracking-wider border ${trustBadgeCls(cand.snapshot.trust.tier)}`}>
-                            <Shield className="w-2.5 h-2.5" />
-                            {cand.snapshot.trust.tier}
-                          </span>
-                          <span className={`text-[9.5px] font-mono font-bold ${isMcp ? 'text-success' : 'text-subtle-foreground'}`}>
-                            {isMcp ? 'MCP ✓' : 'not MCP'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleRefreshCandidate(cand.id)}
-                          disabled={busy}
-                          className="px-3 py-1.5 bg-surface hover:bg-foreground/[0.04] border border-border hover:border-border-strong text-muted-foreground hover:text-foreground text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {busy ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
-                          <span>Refresh</span>
-                        </button>
-                        {isMcp && (
-                          <button
-                            type="button"
-                            onClick={() => handleAddCandidateToMcp(cand)}
-                            disabled={busy}
-                            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>Add as MCP server</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleGenerateSkill(cand.full_name)}
-                          disabled={skillBusyRef === cand.full_name}
-                          className="px-3 py-1.5 bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {skillBusyRef === cand.full_name
-                            ? <RefreshCcw className="w-3 h-3 animate-spin" />
-                            : <BookOpen className="w-3 h-3" />}
-                          <span>Add as Skill</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCandidate(cand.id)}
-                          disabled={busy}
-                          className="px-3 py-1.5 bg-danger/10 hover:bg-danger/20 border border-danger/30 text-danger text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <X className="w-3 h-3" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>
