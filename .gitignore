@@ -21,8 +21,9 @@ htmlcov/
 spawns/*/
 !spawns/.gitkeep
 
-# Local runtime data (SQLite DB + generated spawns)
-data/
+# Local runtime data (SQLite DB + generated spawns) — anchored to repo root so
+# source dirs like web/src/data/ are NOT ignored.
+/data/
 *.db
 *.db-wal
 *.db-shm
