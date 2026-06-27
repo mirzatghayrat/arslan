@@ -80,7 +80,8 @@ async def test_wired_tools_for_spawn_gate(seeded, maker):
 
     tools = await service.wired_tools_for_spawn(1, current_turn=0)
     keys = {t["key"] for t in tools}
-    assert keys == {"web_search", "web_extract"}  # file ops not wired; write_file never
+    # file ops not wired; write_file never. render_chart is now a universal safe tool.
+    assert keys == {"web_search", "web_extract", "render_chart"}
 
 
 @pytest.mark.asyncio
@@ -94,9 +95,10 @@ async def test_temporary_grant_expiry(seeded, maker):
         await s.commit()
 
     assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=5)} == {
-        "web_search", "web_extract"
+        "web_search", "web_extract", "render_chart"  # render_chart is universal
     }
-    assert await service.wired_tools_for_spawn(1, current_turn=6) == []
+    # Temporary toolset grant expired; only the universal safe tool remains
+    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=6)} == {"render_chart"}
 
 
 @pytest.mark.asyncio
@@ -110,7 +112,9 @@ async def test_temporary_none_expiry_fails_closed(seeded, maker):
                               grant="temporary", granted_by="escalation", expires_turn=None))
         await s.commit()
 
-    assert await service.wired_tools_for_spawn(1, current_turn=0) == []
+    # The temporary grant (expires_turn=None) must NOT be treated as active.
+    # render_chart is present because it is a universal safe tool, not from the excluded grant.
+    assert {t["key"] for t in await service.wired_tools_for_spawn(1, current_turn=0)} == {"render_chart"}
 
 
 @pytest.mark.asyncio

@@ -293,14 +293,15 @@ def _arslan_fetch_executor():
 
 
 async def _arslan_tools() -> list[dict]:
-    """Arslan's host-level safe toolset: web_search + web_extract (no spawn wiring)."""
+    """Arslan's host-level safe toolset: web + chart (no spawn wiring)."""
     from server.registry.executors import EXECUTORS
 
     desc = {
         "web_search": "Search the web for fresh/factual info; returns titles/urls/snippets.",
         "web_extract": "Fetch a URL and return its main text (SSRF-guarded).",
+        "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
     }
-    return [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract") if k in EXECUTORS]
+    return [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
 
 
 async def _match_safe_toolset(need: str) -> str | None:

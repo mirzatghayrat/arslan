@@ -14,6 +14,10 @@ from server.db.models import SkillPack, SpawnCapability, Tool, Toolset
 
 ASSIGNABLE_STATUSES = ("wired", "registered")
 
+# Deterministic, side-effect-free safe tools every spawn may use without per-spawn equipment.
+# The safe+wired filter STILL applies — this cannot be used to bypass the choke point.
+_UNIVERSAL_SAFE_TOOLS = ["render_chart"]
+
 
 def is_assignable(tier: str, status: str) -> bool:
     """The one assignability predicate: safe tier + wired/registered status."""
@@ -154,11 +158,8 @@ async def replace_user_equipment(session: AsyncSession, spawn_id: int,
 
 
 async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dict]:
-    """Layer-3 gate: tools callable by this spawn RIGHT NOW.
-
-    equipped toolsets (permanent, or temporary with expires_turn >= current_turn)
-    ∩ tool.tier == "safe" ∩ tool.status == "wired".
-    """
+    """Layer-3 gate: tools callable by this spawn RIGHT NOW = (equipped toolsets, permanent
+    or unexpired-temporary) ∩ safe ∩ wired, UNION the universal safe tools (also safe ∩ wired)."""
     async with db_session.AsyncSessionLocal() as db:
         caps = (await db.execute(
             select(SpawnCapability).where(
@@ -171,17 +172,27 @@ async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dic
             if c.grant == "permanent"
             or (c.expires_turn is not None and c.expires_turn >= current_turn)
         ]
-        if not active_keys:
-            return []
-        tools = (await db.execute(
+        equipped: list = []
+        if active_keys:
+            equipped = (await db.execute(
+                select(Tool).where(
+                    Tool.toolset_key.in_(active_keys),
+                    Tool.tier == "safe",
+                    Tool.status == "wired",
+                )
+            )).scalars().all()
+        universal = (await db.execute(
             select(Tool).where(
-                Tool.toolset_key.in_(active_keys),
+                Tool.key.in_(_UNIVERSAL_SAFE_TOOLS),
                 Tool.tier == "safe",
                 Tool.status == "wired",
-            ).order_by(Tool.key)
+            )
         )).scalars().all()
-    return [{"key": t.key, "description": t.description,
-             "input_schema": t.input_schema or {}} for t in tools]
+    by_key: dict = {}
+    for t in [*equipped, *universal]:
+        by_key.setdefault(t.key, t)
+    rows = sorted(by_key.values(), key=lambda t: t.key)
+    return [{"key": t.key, "description": t.description, "input_schema": t.input_schema or {}} for t in rows]
 
 
 async def grant_temporary(spawn_id: int, ref_key: str, *, current_turn: int,
