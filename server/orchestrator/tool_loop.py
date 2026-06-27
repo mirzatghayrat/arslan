@@ -69,6 +69,35 @@ def _claims_search(text: str) -> bool:
     return bool(_CLAIMS_SEARCH_RE.search(text or ""))
 
 
+async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
+                         tool_timeout_s, tool_trace, convo) -> dict:
+    """Execute one tool (gated), emit its frames, record the trace, and append the
+    assistant turn + framed tool result into convo. Returns the raw result dict."""
+    emit({"type": "tool_call", "tool": tool_key,
+          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+    live = {t["key"] for t in await resolve_tools()}
+    if tool_key not in live or tool_key not in EXECUTORS:
+        result = {"ok": False, "error": f"tool '{tool_key}' is not available to you; you may escalate a need instead"}
+    else:
+        try:
+            result = await asyncio.wait_for(EXECUTORS[tool_key].execute(args), timeout=tool_timeout_s)
+        except TimeoutError:
+            result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
+        except Exception as exc:  # noqa: BLE001
+            result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
+    emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
+          "summary": _summarize_result(result), "artifact": result.get("artifact")})
+    tool_trace.append({"tool": tool_key, "args": args, "result": result})
+    convo.append({"role": "assistant", "content": assistant_content})
+    feedback = {k: v for k, v in result.items() if k != "artifact"}
+    raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
+    framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
+    convo.append({"role": "user",
+                  "content": f"TOOL RESULT for {tool_key}:\n{framed}"
+                             "\nUse this to continue: call another tool, escalate, or give your final answer."})
+    return result
+
+
 async def run(
     *,
     system: str,
@@ -80,6 +109,7 @@ async def run(
     allow_escalation: bool = True,
     max_tool_calls: int = MAX_TOOL_CALLS,
     tool_timeout_s: float = TOOL_TIMEOUT_S,
+    force_tools: bool = False,
 ) -> dict:
     """Run the loop. Returns {"final": str|None, "escalation": dict|None, "tool_trace": list}.
     Exactly one of final/escalation is non-None. resolve_tools() returns the currently
@@ -96,6 +126,24 @@ async def run(
     fired: set[str] = set()          # tool keys actually executed this run
     forced_retry: set[str] = set()   # tools we've already forced a retry for (bound the loop)
     wired_keys = {t["key"] for t in wired}
+
+    # Proactive deterministic forcing (spawn path only): when force_tools=True and the
+    # classifier says the task needs web_search, run it ourselves before the model's first
+    # turn — no model dependence. Only web_search is force-run (its call is a deterministic
+    # {"query": ...} we can build from the task); other tools still go through the model.
+    if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
+        from server.services import tool_intent
+        try:
+            intent = await tool_intent.classify(user_content, sorted(wired_keys))
+        except Exception:  # noqa: BLE001
+            intent = None
+        if intent is not None and intent.needs and intent.tool == "web_search":
+            q = (intent.query or user_content)[:400]
+            await _dispatch_tool("web_search", {"query": q},
+                                 json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
+                                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
+                                 tool_trace=tool_trace, convo=convo)
+            fired.add("web_search")
 
     for step in range(max_tool_calls + 1):
         forced = step == max_tool_calls
@@ -138,36 +186,10 @@ async def run(
         if not forced and isinstance(parsed, dict) and parsed.get("tool"):
             tool_key = str(parsed["tool"])
             args = parsed.get("args") if isinstance(parsed.get("args"), dict) else {}
-            emit({"type": "tool_call", "tool": tool_key,
-                  "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-            # Gate: re-resolve the live tool set per call (grants may expire); execute
-            # only if the key is both currently allowed AND backed by an executor.
-            live = {t["key"] for t in await resolve_tools()}
-            if tool_key not in live or tool_key not in EXECUTORS:
-                result = {"ok": False,
-                          "error": f"tool '{tool_key}' is not available to you; "
-                                   "you may escalate a need instead"}
-            else:
-                try:
-                    result = await asyncio.wait_for(
-                        EXECUTORS[tool_key].execute(args), timeout=tool_timeout_s
-                    )
-                except TimeoutError:
-                    result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
-                except Exception as exc:  # noqa: BLE001
-                    result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
-            emit({"type": "tool_result", "tool": tool_key,
-                  "ok": bool(result.get("ok")), "summary": _summarize_result(result),
-                  "artifact": result.get("artifact")})            # artifact (chart SVG) → UI frame only
-            tool_trace.append({"tool": tool_key, "args": args, "result": result})
+            await _dispatch_tool(tool_key, args, content, resolve_tools=resolve_tools,
+                                 emit=emit, tool_timeout_s=tool_timeout_s,
+                                 tool_trace=tool_trace, convo=convo)
             fired.add(tool_key)
-            convo.append({"role": "assistant", "content": content})
-            feedback = {k: v for k, v in result.items() if k != "artifact"}   # never feed the SVG to the LLM
-            raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
-            framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
-            convo.append({"role": "user",
-                          "content": f"TOOL RESULT for {tool_key}:\n{framed}"
-                                     "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
 
         # Reactive hallucination guard: the model claims a tool result it never produced this run.

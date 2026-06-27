@@ -319,6 +319,65 @@ async def test_retry_at_most_once_per_tool(monkeypatch):
     assert out["final"] == "我又搜索了…"   # retried once, then accepted (no infinite loop)
 
 
+async def test_force_tools_runs_web_search_first(monkeypatch):
+    from server.registry import executors
+    from server.services import tool_intent
+    from server.services.tool_intent import ToolIntent
+    adapter = _ScriptedAdapter(["here is the answer using the data"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    async def fake_classify(task, keys): return ToolIntent(needs=True, tool="web_search", query="tsla price")
+    monkeypatch.setattr(tool_intent, "classify", fake_classify)
+    seen = {}
+    class _W:
+        async def execute(self, args): seen["q"] = args.get("query"); return {"ok": True, "results": [{"t": "x"}]}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
+    events = []
+    out = await tool_loop.run(system="S", user_content="chart tsla", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search", "render_chart"),
+                              force_tools=True)
+    assert seen["q"] == "tsla price"                                    # deterministic, classifier query
+    assert any(e["type"] == "tool_call" and e["tool"] == "web_search" for e in events)
+    # the model's first turn saw the forced TOOL RESULT (it is the latest convo turn → the
+    # `user` content passed to chat_stream, with the assistant tool turn in history)
+    first = adapter.calls[0]
+    convo_blob = str(first.get("user")) + str(first.get("history"))
+    assert "TOOL RESULT for web_search" in convo_blob
+    assert out["final"] == "here is the answer using the data"
+
+
+async def test_force_tools_off_does_not_classify(monkeypatch):
+    from server.services import tool_intent
+    from server.services.tool_intent import ToolIntent
+    called = {"n": 0}
+    async def fake_classify(task, keys):
+        called["n"] += 1
+        return ToolIntent(needs=True, tool="web_search", query="x")
+    monkeypatch.setattr(tool_intent, "classify", fake_classify)
+    adapter = _ScriptedAdapter(["plain answer"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="hi", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))   # force_tools defaults False
+    assert called["n"] == 0
+    assert out["final"] == "plain answer"
+
+
+async def test_force_tools_skips_when_intent_says_no(monkeypatch):
+    from server.services import tool_intent
+    from server.services.tool_intent import ToolIntent
+    async def fake_classify(task, keys): return ToolIntent(needs=False, tool=None, query=None)
+    monkeypatch.setattr(tool_intent, "classify", fake_classify)
+    adapter = _ScriptedAdapter(["just chatting"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    events = []
+    out = await tool_loop.run(system="S", user_content="hello", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"), force_tools=True)
+    assert not any(e["type"] == "tool_call" for e in events)
+    assert out["final"] == "just chatting"
+
+
 async def test_external_tool_result_still_wrapped(monkeypatch):
     from server.registry import executors
     adapter = _ScriptedAdapter(['{"tool": "web_search", "args": {"query": "x"}}', "answer"])
