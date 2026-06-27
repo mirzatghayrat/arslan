@@ -32,6 +32,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showSearchKey, setShowSearchKey] = useState(false);
+  const [showGithubToken, setShowGithubToken] = useState(false);
 
   // Sync local form when parent settings update (e.g. after initial backend fetch)
   useEffect(() => {
@@ -141,6 +142,34 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                 Allocated to standard spawns carrying "Web Search" capability chips. Ensure live indices limits are sufficient.
               </p>
             </div>
+          </div>
+
+          {/* GitHub Token input — secret, raises Tool-Hub discovery rate limit */}
+          <div className="space-y-2">
+            <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+              GitHub Token (optional — raises rate limit)
+            </label>
+            <div className="relative">
+              <input
+                id="settings-github-token"
+                type={showGithubToken ? "text" : "password"}
+                value={localSettings.githubToken}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, githubToken: e.target.value }))}
+                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
+                placeholder="ghp_… (optional)"
+              />
+              <button
+                id="toggle-show-github-token"
+                type="button"
+                onClick={() => setShowGithubToken(!showGithubToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-foreground transition-colors"
+              >
+                {showGithubToken ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+              Used by the Tool-Hub to evaluate GitHub repos. Without a token, GitHub rate-limits anonymous requests.
+            </p>
           </div>
         </div>
 

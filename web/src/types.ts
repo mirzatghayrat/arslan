@@ -118,6 +118,7 @@ export interface UiRun {
 export interface AppSettings {
   searchProvider: string;
   apiKeySearch: string;
+  githubToken: string;
   language: string;
   theme: 'dark' | 'light';
   telemetry: boolean;

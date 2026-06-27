@@ -46,6 +46,7 @@ describe("toUiSettings", () => {
     language: "en",
     search_provider: "tavily",
     search_api_key: "tvly-••••••••",
+    github_token: "",
   };
 
   it("maps snake_case backend fields to camelCase UI fields", () => {
@@ -86,6 +87,7 @@ describe("toBackendSettings", () => {
   const baseUi: AppSettings = {
     searchProvider: "tavily",
     apiKeySearch: "",
+    githubToken: "",
     language: "en",
     theme: "dark",
     telemetry: false,

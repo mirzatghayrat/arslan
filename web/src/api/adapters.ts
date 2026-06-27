@@ -25,6 +25,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
   return {
     searchProvider: backend.search_provider ?? "",
     apiKeySearch: backend.search_api_key ?? "",
+    githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
   };
 }
@@ -46,6 +47,11 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
   // Only send the search key if the user entered something new (non-empty, non-masked).
   if (ui.apiKeySearch && !MASKED_SENTINEL_RE.test(ui.apiKeySearch)) {
     body.search_api_key = ui.apiKeySearch;
+  }
+
+  // Same mask-aware round-trip for the GitHub token secret.
+  if (ui.githubToken && !MASKED_SENTINEL_RE.test(ui.githubToken)) {
+    body.github_token = ui.githubToken;
   }
 
   return body;

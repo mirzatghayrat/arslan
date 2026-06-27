@@ -49,6 +49,7 @@ import type { ProviderOption } from "../api/client.types";
 const defaultSettings: AppSettings = {
   searchProvider: "tavily",
   apiKeySearch: "tvly-••••",
+  githubToken: "",
   language: "en",
   theme: "dark",
   telemetry: false,
@@ -57,8 +58,8 @@ const defaultSettings: AppSettings = {
 };
 
 const providers: ProviderOption[] = [
-  { key: "anthropic", label: "Anthropic", base_url: "https://api.anthropic.com", default_model: "claude-sonnet-4-5", native: true },
-  { key: "openai", label: "OpenAI", base_url: "https://api.openai.com", default_model: "gpt-4o", native: false },
+  { key: "anthropic", label: "Anthropic", base_url: "https://api.anthropic.com", default_model: "claude-sonnet-4-5", native: true, models: ["claude-sonnet-4-5"] },
+  { key: "openai", label: "OpenAI", base_url: "https://api.openai.com", default_model: "gpt-4o", native: false, models: ["gpt-4o"] },
 ];
 
 const searchProviders = ["tavily", "serpapi"];

@@ -4,13 +4,15 @@ import { TOOLS, SKILLS } from '../data';
 import SpawnDetail from './SpawnDetail';
 import {
   Sliders, Wrench, BookOpen, Clock, Activity, ArrowUpRight, Shield, Cpu,
-  ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X, WifiOff
+  ChevronDown, ChevronUp, Terminal, MessageSquare, Search, Globe, RefreshCcw, Sparkles, Plus, Database, X, WifiOff, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
 import { motion, AnimatePresence } from 'motion/react';
 import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
+import { evaluateRepo, type EvalResult } from '../api/discovery';
+import { addMcpServer } from '../api/mcp';
 
 interface SpawnsDashboardProps {
   spawns: Spawn[];
@@ -45,23 +47,74 @@ export default function SpawnsDashboard({
   const { t } = useTranslation();
   const [detailSpawnId, setDetailSpawnId] = useState<string | null>(null);
 
-  // Global Integration Discovery & Repository Engine States
-  // NOTE: This Tool-Hub (MCP/discovery backend) does not exist yet — kept as visual shell, actions disabled.
+  // Global Integration Discovery & Repository Engine (Tool-Hub) — LIVE.
+  // Read-only discovery: paste a GitHub repo → backend evaluates trust + classifies MCP.
+  // "Add" promotes the candidate into the live MCP registry via the existing P2b addMcpServer (locked).
   const [showSandboxSearch, setShowSandboxSearch] = useState(true);
   const [integrationQuery, setIntegrationQuery] = useState('');
-  const isEvaluating = false; // evaluation backend not yet available — do not enable
-  const [mcpRegistry] = useState<{name: string, url: string, description: string, tags: string[]}[]>([]); // no real MCP servers yet
-  const [skillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([]); // no real skill registry yet
-  const evaluationResult = null; // evaluation results disabled
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [evaluationResult, setEvaluationResult] = useState<EvalResult | null>(null);
+  const [evalError, setEvalError] = useState<string | null>(null);
+  // Editable suggested-command draft (pre-filled from the LLM suggestion so the user can review/edit).
+  const [draft, setDraft] = useState<{ transport: string; command: string; args: string; url: string }>({
+    transport: 'stdio', command: '', args: '', url: '',
+  });
+  const [isAdding, setIsAdding] = useState(false);
+  const [addNotice, setAddNotice] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
 
-  // Tool-Hub evaluation handlers are disabled — no MCP/discovery backend exists yet.
-  // Keeping stubs to avoid removing prop references from the render tree.
-  const handleEvaluateRepository = (_urlOrQuery: string) => {
-    // No-op: evaluation backend not yet available (即将推出)
+  const handleEvaluateRepository = async (ref: string) => {
+    const trimmed = (ref ?? '').trim();
+    if (!trimmed) return;
+    setIsEvaluating(true);
+    setEvalError(null);
+    setAddNotice(null);
+    setAddError(null);
+    try {
+      const res = await evaluateRepo(trimmed);
+      setEvaluationResult(res);
+      const s = res.suggestion;
+      setDraft({
+        transport: s.transport ?? 'stdio',
+        command: s.command ?? '',
+        args: (s.args || []).join(' '),
+        url: s.url ?? '',
+      });
+    } catch (e) {
+      setEvaluationResult(null);
+      setEvalError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setIsEvaluating(false);
+    }
   };
-  const handleAddToMCP = () => { /* coming soon */ };
-  const handleAddToSkill = () => { /* coming soon */ };
-  const handleSynthesizeSpawn = () => { /* coming soon */ };
+
+  const handleAddToMCP = async () => {
+    if (!evaluationResult) return;
+    const repo = evaluationResult.repo;
+    setIsAdding(true);
+    setAddNotice(null);
+    setAddError(null);
+    try {
+      await addMcpServer({
+        label: repo.full_name.split('/').pop()!,
+        transport: draft.transport,
+        command: draft.command,
+        args: draft.args.split(/\s+/).filter(Boolean),
+        url: draft.url || undefined,
+        env: {},
+      });
+      setAddNotice('Added to MCP panel (locked) — open System Settings → MCP Servers to connect it.');
+    } catch (e) {
+      setAddError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const canAdd = Boolean(
+    evaluationResult?.suggestion.is_mcp &&
+    (draft.transport === 'http' ? draft.url.trim() : draft.command.trim())
+  );
 
   return (
     <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
@@ -135,9 +188,8 @@ export default function SpawnsDashboard({
         </div>
       </div>
 
-      {/* Global Integration Discovery & Repository Engine (Tool-Hub) */}
-      {/* NOTE: MCP/discovery backend does not exist yet — kept as visual shell, actions disabled */}
-      <div className="bg-surface/40 border border-border-strong rounded-2xl p-6 mb-8 transition-all z-10 select-text opacity-70">
+      {/* Global Integration Discovery & Repository Engine (Tool-Hub) — LIVE */}
+      <div className="bg-surface/40 border border-border-strong rounded-2xl p-6 mb-8 transition-all z-10 select-text">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-sm transition-colors shadow-inner shadow-black/40">
@@ -148,7 +200,6 @@ export default function SpawnsDashboard({
                 <h3 className="font-sans font-bold text-sm text-foreground tracking-wide">
                   {t('ledger.tool_hub_title')} <span className="text-subtle-foreground font-normal text-xs ml-1">(Tool-Hub)</span>
                 </h3>
-                <span className="text-[8px] font-mono bg-surface-raised text-muted-foreground px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">{t('ledger.tool_hub_coming_soon')}</span>
               </div>
               <p className="text-[11.5px] text-subtle-foreground font-sans mt-0.5">
                 {t('ledger.tool_hub_subtitle')}
@@ -175,27 +226,172 @@ export default function SpawnsDashboard({
                   placeholder={t('ledger.tool_hub_search_placeholder')}
                   value={integrationQuery}
                   onChange={(e) => setIntegrationQuery(e.target.value)}
-                  disabled
-                  className="w-full bg-background border border-border/60 rounded-xl pl-10 pr-4 py-2.5 text-xs text-subtle-foreground placeholder-subtle-foreground cursor-not-allowed transition-all font-sans"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !isEvaluating) handleEvaluateRepository(integrationQuery); }}
+                  className="w-full bg-background border border-border/60 focus:border-primary focus:ring-1 focus:ring-ring rounded-xl pl-10 pr-4 py-2.5 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
                 />
               </div>
               <button
-                disabled
-                title={t('ledger.tool_hub_coming_soon')}
-                className="px-5 py-2.5 bg-surface/60 border border-border/40 text-subtle-foreground text-xs font-bold font-mono uppercase rounded-xl flex items-center gap-1 shrink-0 cursor-not-allowed opacity-50"
+                onClick={() => handleEvaluateRepository(integrationQuery)}
+                disabled={isEvaluating || !integrationQuery.trim()}
+                className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold font-mono uppercase rounded-xl flex items-center gap-1 shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Cpu className="w-3.5 h-3.5" />
+                {isEvaluating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
                 <span>{t('ledger.tool_hub_evaluate')}</span>
               </button>
             </div>
 
-            {/* Quick Presets — disabled */}
-            <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-subtle-foreground select-none opacity-50">
+            {/* Quick Presets — clicking fills the search box with a repo ref */}
+            <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-subtle-foreground select-none">
               <span>{t('ledger.tool_hub_presets_label')}</span>
-              {['Brave-MCP', 'GDrive-Workspace', 'PostgreSQL-Analyzer', 'Milvus-RAG'].map(label => (
-                <span key={label} className="px-2 py-0.5 rounded bg-foreground/[0.05] text-subtle-foreground cursor-not-allowed">{label}</span>
+              {[
+                { label: 'MCP-Servers', ref: 'modelcontextprotocol/servers' },
+                { label: 'Brave-Search', ref: 'modelcontextprotocol/servers' },
+                { label: 'GitHub-MCP', ref: 'github/github-mcp-server' },
+                { label: 'Filesystem', ref: 'modelcontextprotocol/servers' },
+              ].map(({ label, ref }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setIntegrationQuery(ref)}
+                  className="px-2 py-0.5 rounded bg-foreground/[0.05] hover:bg-primary/10 hover:text-primary text-subtle-foreground transition-colors cursor-pointer"
+                >
+                  {label}
+                </button>
               ))}
             </div>
+
+            {evalError && (
+              <div className="flex items-start gap-2 bg-danger/15 border border-danger/40 rounded-xl px-4 py-3 text-[11px] text-danger font-sans">
+                <X className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{evalError}</span>
+              </div>
+            )}
+
+            {/* Evaluation card */}
+            {evaluationResult && (
+              <div className="bg-background border border-border-strong rounded-xl p-5 space-y-4">
+                {/* Repo header + trust badge */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <a
+                      href={evaluationResult.repo.html_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-bold text-foreground hover:text-primary transition-colors inline-flex items-center gap-1"
+                    >
+                      {evaluationResult.repo.full_name}
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </a>
+                    <p className="text-[11px] text-subtle-foreground font-mono mt-1">
+                      ⭐{evaluationResult.repo.stars} · {evaluationResult.repo.forks} forks · {evaluationResult.repo.license ?? 'no license'} · pushed {evaluationResult.repo.pushed_days ?? '?'}d ago
+                    </p>
+                  </div>
+                  <div className="shrink-0">
+                    {(() => {
+                      const tier = evaluationResult.trust.tier;
+                      const cls = tier === 'high'
+                        ? 'bg-success/15 text-success border-success/30'
+                        : tier === 'medium'
+                        ? 'bg-warning/15 text-warning border-warning/30'
+                        : 'bg-danger/15 text-danger border-danger/30';
+                      return (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider border ${cls}`}>
+                          <Shield className="w-3 h-3" />
+                          {tier} trust
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {evaluationResult.repo.description && (
+                  <p className="text-[11.5px] text-muted-foreground font-sans leading-relaxed">
+                    {evaluationResult.repo.description}
+                  </p>
+                )}
+
+                <p className="text-[10.5px] text-subtle-foreground font-mono">{evaluationResult.trust.license_note}</p>
+
+                {/* Classification line */}
+                <div className="flex items-start gap-2 text-[11.5px] font-sans border-t border-border/40 pt-3">
+                  <span className={`font-bold shrink-0 ${evaluationResult.suggestion.is_mcp ? 'text-success' : 'text-danger'}`}>
+                    {evaluationResult.suggestion.is_mcp ? 'MCP server ✓' : 'Not an MCP server ✗'}
+                  </span>
+                  {evaluationResult.suggestion.reason && (
+                    <span className="text-muted-foreground">— {evaluationResult.suggestion.reason}</span>
+                  )}
+                </div>
+
+                {/* Editable suggested-command fields */}
+                {evaluationResult.suggestion.is_mcp && (
+                  <div className="space-y-3 border-t border-border/40 pt-3">
+                    <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block">Suggested launch command (review &amp; edit)</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                      <div className="sm:col-span-1">
+                        <select
+                          value={draft.transport}
+                          onChange={(e) => setDraft(prev => ({ ...prev, transport: e.target.value }))}
+                          className="w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono"
+                        >
+                          <option value="stdio">stdio</option>
+                          <option value="http">http</option>
+                        </select>
+                      </div>
+                      {draft.transport === 'http' ? (
+                        <input
+                          type="text"
+                          value={draft.url}
+                          onChange={(e) => setDraft(prev => ({ ...prev, url: e.target.value }))}
+                          placeholder="https://…/mcp"
+                          className="sm:col-span-3 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
+                        />
+                      ) : (
+                        <>
+                          <input
+                            type="text"
+                            value={draft.command}
+                            onChange={(e) => setDraft(prev => ({ ...prev, command: e.target.value }))}
+                            placeholder="npx"
+                            className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
+                          />
+                          <input
+                            type="text"
+                            value={draft.args}
+                            onChange={(e) => setDraft(prev => ({ ...prev, args: e.target.value }))}
+                            placeholder="-y @scope/server"
+                            className="sm:col-span-2 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
+                          />
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleAddToMCP}
+                        disabled={!canAdd || isAdding}
+                        className="px-4 py-2 bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-bold font-mono uppercase rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      >
+                        {isAdding ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span>Add as MCP server</span>
+                      </button>
+                      {addNotice && (
+                        <span className="text-[11px] text-success font-sans inline-flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                          {addNotice}
+                        </span>
+                      )}
+                      {addError && (
+                        <span className="text-[11px] text-danger font-sans inline-flex items-center gap-1.5">
+                          <X className="w-3.5 h-3.5 shrink-0" />
+                          {addError}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

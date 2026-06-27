@@ -117,6 +117,7 @@ export const DEFAULT_SPAWNS: Spawn[] = [
 export const DEFAULT_SETTINGS: AppSettings = {
   searchProvider: 'tavily',
   apiKeySearch: '••••••••••••••••••••••••',
+  githubToken: '',
   language: 'English (US)',
   theme: 'dark',
   telemetry: false,
