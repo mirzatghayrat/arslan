@@ -121,3 +121,16 @@ async def test_reconnect_drops_cached_session(client, monkeypatch):
 
 class _FakeStackR:
     async def aclose(self): pass
+
+
+async def test_add_server_rejects_malformed_transport(client):
+    c, m = client
+    import pytest as _pytest
+
+    from server.services import mcp_service
+    with _pytest.raises(ValueError):
+        await mcp_service.add_server("l", "x", [], {}, transport="ftp")          # bad transport
+    with _pytest.raises(ValueError):
+        await mcp_service.add_server("l", "", [], {}, transport="http", url="")  # http needs url
+    with _pytest.raises(ValueError):
+        await mcp_service.add_server("l", "", [], {}, transport="stdio")         # stdio needs command

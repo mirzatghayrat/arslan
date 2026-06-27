@@ -30,6 +30,12 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
 
 async def add_server(label: str, command: str, args: list[str], env: dict,
                      transport: str = "stdio", url: str | None = None) -> dict:
+    if transport not in ("stdio", "http"):
+        raise ValueError("transport must be stdio|http")
+    if transport == "http" and not (url or "").strip():
+        raise ValueError("http transport requires a url")
+    if transport == "stdio" and not (command or "").strip():
+        raise ValueError("stdio transport requires a command")
     async with db_session.AsyncSessionLocal() as db:
         srv = MCPServer(label=label, command=command or "", args=args or [], transport=transport, url=url,
                         env=crypto.encrypt(json.dumps(env or {})), status="registered")

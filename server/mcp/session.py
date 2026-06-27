@@ -23,26 +23,30 @@ class MCPSessionManager:
         from mcp import ClientSession
 
         stack = AsyncExitStack()
-        transport = server.get("transport") or "stdio"
-        if transport == "http":
-            from mcp.client.streamable_http import streamablehttp_client
-            streams = await stack.enter_async_context(
-                streamablehttp_client(server["url"], headers=server.get("env") or {})
-            )
-            read, write = streams[0], streams[1]          # http yields (read, write, get_session_id)
-        else:
-            import os
-
-            from mcp import StdioServerParameters
-            from mcp.client.stdio import stdio_client
-            params = StdioServerParameters(
-                command=server["command"], args=list(server.get("args") or []),
-                env={**os.environ, **(server.get("env") or {})},
-            )
-            read, write = await stack.enter_async_context(stdio_client(params))
-        client = await stack.enter_async_context(ClientSession(read, write))
-        await client.initialize()
-        return client, stack
+        try:
+            transport = server.get("transport") or "stdio"
+            if transport == "http":
+                from mcp.client.streamable_http import streamablehttp_client
+                streams = await stack.enter_async_context(
+                    streamablehttp_client(server["url"], headers=server.get("env") or {})
+                )
+                read, write = streams[0], streams[1]          # http yields (read, write, get_session_id)
+            else:
+                from mcp import StdioServerParameters
+                from mcp.client.stdio import stdio_client
+                params = StdioServerParameters(
+                    command=server["command"], args=list(server.get("args") or []),
+                    env={**os.environ, **(server.get("env") or {})},
+                )
+                read, write = await stack.enter_async_context(stdio_client(params))
+            client = await stack.enter_async_context(ClientSession(read, write))
+            await client.initialize()
+            return client, stack
+        except BaseException:
+            # On any failure — including a connect-timeout cancellation — close the partial
+            # stack so a half-started subprocess/connection doesn't leak on repeated timeouts.
+            await stack.aclose()
+            raise
 
     async def get_session(self, server: dict):
         sid = server["id"]
