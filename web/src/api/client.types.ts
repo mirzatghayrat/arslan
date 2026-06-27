@@ -301,3 +301,23 @@ export interface RunListItem {
   user_message: string;
   created_at?: string | null;
 }
+
+export interface McpServer {
+  id: number;
+  label: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>; // masked on read
+  status: string; // registered|connected|error
+  last_error?: string | null;
+  transport?: string;
+}
+
+export interface McpTool {
+  key: string;
+  name: string;
+  description: string;
+  tier: string; // safe|orchestrator
+  status: string; // registered|wired
+  suggested_tier: string; // safe|orchestrator (UI hint)
+}

@@ -12,6 +12,7 @@ import {
 import ProviderConfigList from './ProviderConfigList';
 import { AppearanceSettings } from './AppearanceSettings';
 import Select from './Select';
+import McpServers from './McpServers';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -251,6 +252,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             </div>
           </div>
         </div>
+
+        {/* MCP Servers Card — register/connect/expose/wire external MCP tools */}
+        <McpServers />
 
         {/* Footer actions bar */}
         <div className="flex select-none items-center justify-between pt-4 border-t border-border/60 text-[10.5px] font-mono text-subtle-foreground">
