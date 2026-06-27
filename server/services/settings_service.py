@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider", "llm_strategy")
 # Secret keys stored encrypted, returned masked.
-_SECRET_KEYS = ("llm_api_key", "search_api_key")
+_SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
 
 # Matches the two mask shapes produced by mask_secret():
 #   "***"                    – short-key mask (len < 8)
