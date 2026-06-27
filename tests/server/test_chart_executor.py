@@ -34,3 +34,17 @@ async def test_non_numeric_values_rejected():
 async def test_empty_series_rejected():
     out = await ChartExecutor().execute({"type": "line", "x": ["a"], "series": []})
     assert out["ok"] is False
+
+
+async def test_bool_values_rejected():
+    # bool ⊂ int — the numeric check must exclude booleans (named spec invariant)
+    out = await ChartExecutor().execute({
+        "type": "bar", "x": ["a", "b"], "series": [{"name": "s", "values": [True, False]}]})
+    assert out["ok"] is False
+
+
+async def test_series_values_cap_independent():
+    # valid-length x but an over-cap series exercises the per-series cap branch on its own
+    out = await ChartExecutor().execute({
+        "type": "line", "x": ["a", "b", "c"], "series": [{"name": "s", "values": [1] * 51}]})
+    assert out["ok"] is False
