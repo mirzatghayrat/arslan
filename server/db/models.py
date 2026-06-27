@@ -247,6 +247,16 @@ class MCPServer(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class DiscoveryCandidate(Base):
+    __tablename__ = "discovery_candidates"
+
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String(140), nullable=False, unique=True)   # owner/repo
+    html_url = Column(String(500), nullable=True)
+    snapshot = Column(JSON, nullable=False)                        # {repo, trust, suggestion}
+    saved_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ProviderConfig(Base):
     """Multi-key BYOK provider configuration (one row per configured LLM provider key)."""
 
