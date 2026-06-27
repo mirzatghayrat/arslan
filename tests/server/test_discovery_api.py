@@ -71,3 +71,58 @@ async def test_evaluate_persists_nothing(client, monkeypatch):
 
 async def _empty(): return ""
 async def _no_mcp(): return {"is_mcp": False, "transport": None, "command": None, "args": [], "url": None, "reason": "x"}
+
+
+async def test_search_endpoint(client, monkeypatch):
+    c, m = client
+    from server.services import github_eval
+    async def fake_search(q): return [{"full_name": "o/a", "html_url": "h", "stars": 1500, "forks": 1,
+        "license": "MIT", "pushed_days": 5, "description": "d", "trust": {"tier": "high", "license_note": "MIT: commercial-safe"}}]
+    monkeypatch.setattr(github_eval, "search_repos", fake_search)
+    async with c:
+        r = await c.get("/api/v1/discovery/search", params={"q": "mcp"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body[0]["full_name"] == "o/a" and body[0]["trust"]["tier"] == "high"
+
+
+async def test_search_empty_400(client, monkeypatch):
+    c, m = client
+    from server.services import github_eval
+    async def boom(q): raise ValueError("query required")
+    monkeypatch.setattr(github_eval, "search_repos", boom)
+    async with c:
+        r = await c.get("/api/v1/discovery/search", params={"q": "  "})
+    assert r.status_code == 400
+
+
+async def test_catalog_save_list_delete(client, monkeypatch):
+    c, m = client
+    snap = {"repo": {"full_name": "o/r", "html_url": "u", "stars": 9}, "trust": {"tier": "low"}, "suggestion": {"is_mcp": False}}
+    async with c:
+        saved = (await c.post("/api/v1/discovery/catalog", json={"snapshot": snap})).json()
+        listed = (await c.get("/api/v1/discovery/catalog")).json()
+        d = await c.delete(f"/api/v1/discovery/catalog/{saved['id']}")
+        after = (await c.get("/api/v1/discovery/catalog")).json()
+    assert any(x["full_name"] == "o/r" for x in listed)
+    assert d.status_code == 200 and after == []
+
+
+async def test_catalog_refresh(client, monkeypatch):
+    c, m = client
+    from server.services import discovery_service
+    async def fake_eval(owner, repo): return {"repo": {"full_name": f"{owner}/{repo}", "html_url": "u", "stars": 999},
+        "trust": {"tier": "high"}, "suggestion": {"is_mcp": True}}
+    monkeypatch.setattr(discovery_service, "evaluate_ref", fake_eval)
+    snap = {"repo": {"full_name": "o/r", "html_url": "u", "stars": 9}, "trust": {"tier": "low"}, "suggestion": {"is_mcp": False}}
+    async with c:
+        saved = (await c.post("/api/v1/discovery/catalog", json={"snapshot": snap})).json()
+        refreshed = (await c.post(f"/api/v1/discovery/catalog/{saved['id']}/refresh")).json()
+    assert refreshed["snapshot"]["trust"]["tier"] == "high"
+
+
+async def test_catalog_refresh_404(client):
+    c, m = client
+    async with c:
+        r = await c.post("/api/v1/discovery/catalog/9999/refresh")
+    assert r.status_code == 404
