@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable
 
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
@@ -52,6 +53,22 @@ def _summarize_result(result: dict) -> str:
     return "ok"
 
 
+_CLAIMS_CHART_RE = re.compile(
+    r"上图|已生成图|已为您生成|已绘制|图表已|chart (is )?(generated|ready|done)|here('s| is) (the|your) chart",
+    re.IGNORECASE)
+_CLAIMS_SEARCH_RE = re.compile(
+    r"我搜索|搜索了|查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
+    re.IGNORECASE)
+
+
+def _claims_chart(text: str) -> bool:
+    return bool(_CLAIMS_CHART_RE.search(text or ""))
+
+
+def _claims_search(text: str) -> bool:
+    return bool(_CLAIMS_SEARCH_RE.search(text or ""))
+
+
 async def run(
     *,
     system: str,
@@ -76,6 +93,9 @@ async def run(
 
     convo = list(history) + [{"role": "user", "content": user_content}]
     tool_trace: list[dict] = []
+    fired: set[str] = set()          # tool keys actually executed this run
+    forced_retry: set[str] = set()   # tools we've already forced a retry for (bound the loop)
+    wired_keys = {t["key"] for t in wired}
 
     for step in range(max_tool_calls + 1):
         forced = step == max_tool_calls
@@ -140,6 +160,7 @@ async def run(
                   "ok": bool(result.get("ok")), "summary": _summarize_result(result),
                   "artifact": result.get("artifact")})            # artifact (chart SVG) → UI frame only
             tool_trace.append({"tool": tool_key, "args": args, "result": result})
+            fired.add(tool_key)
             convo.append({"role": "assistant", "content": content})
             feedback = {k: v for k, v in result.items() if k != "artifact"}   # never feed the SVG to the LLM
             raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
@@ -148,6 +169,24 @@ async def run(
                           "content": f"TOOL RESULT for {tool_key}:\n{framed}"
                                      "\nUse this to continue: call another tool, escalate, or give your final answer."})
             continue
+
+        # Reactive hallucination guard: the model claims a tool result it never produced this run.
+        if not forced:
+            claimed = None
+            if (_claims_chart(content) and "render_chart" in wired_keys
+                    and "render_chart" not in fired and "render_chart" not in forced_retry):
+                claimed = "render_chart"
+            elif (_claims_search(content) and "web_search" in wired_keys
+                    and "web_search" not in fired and "web_search" not in forced_retry):
+                claimed = "web_search"
+            if claimed:
+                forced_retry.add(claimed)
+                convo.append({"role": "assistant", "content": content})
+                convo.append({"role": "user", "content":
+                    f"You claimed to have used {claimed} (searched / produced a chart), but you did NOT "
+                    f"actually call it this turn — so there is no result and no chart. Emit ONLY the "
+                    f"{claimed} tool JSON now, or answer honestly WITHOUT claiming you used a tool or made a chart."})
+                continue
 
         # plain text = final answer (parsed was not a dispatchable tool/escalate)
         if isinstance(parsed, dict):

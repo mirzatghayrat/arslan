@@ -259,6 +259,66 @@ async def test_artifact_flows_to_frame_not_to_llm(monkeypatch):
     assert out["final"] == "here is your chart"
 
 
+async def test_reactive_retry_on_hallucinated_search(monkeypatch):
+    # First turn narrates a search without calling it. Retry → real web_search → answer.
+    from server.registry import executors
+    adapter = _ScriptedAdapter(["我搜索了特斯拉股价,得到了数据。",
+                                '{"tool": "web_search", "args": {"query": "tsla"}}',
+                                "Based on results: …"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    class _W:
+        async def execute(self, args): return {"ok": True, "results": [{"title": "t"}]}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
+    events = []
+    out = await tool_loop.run(system="S", user_content="tsla price", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert any(e["type"] == "tool_call" and e["tool"] == "web_search" for e in events)
+    assert out["final"] == "Based on results: …"
+
+
+async def test_reactive_retry_on_hallucinated_chart_after_real_search(monkeypatch):
+    # web_search really fires; then the model claims '上图已生成' WITHOUT render_chart →
+    # must STILL retry for render_chart (proves per-claimed-tool, not global tools_fired==0).
+    from server.registry import executors
+    adapter = _ScriptedAdapter(['{"tool": "web_search", "args": {"query": "tsla"}}',
+                                "上图已为您生成。",
+                                '{"tool": "render_chart", "args": {"type": "line", "x": ["a"], "series": [{"name": "p", "values": [1]}]}}',
+                                "done"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    class _W:
+        async def execute(self, args): return {"ok": True, "results": []}
+    class _C:
+        async def execute(self, args): return {"ok": True, "external": False, "summary": "chart",
+                                               "artifact": {"kind": "svg", "content": "<svg/>"}}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
+    monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
+    events = []
+    out = await tool_loop.run(system="S", user_content="chart tsla", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search", "render_chart"))
+    assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
+    assert out["final"] == "done"
+
+
+async def test_no_retry_when_honest_final(monkeypatch):
+    adapter = _ScriptedAdapter(["Here's a joke: …"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="tell a joke", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert out["final"] == "Here's a joke: …"
+
+
+async def test_retry_at_most_once_per_tool(monkeypatch):
+    adapter = _ScriptedAdapter(["我搜索了…", "我又搜索了…"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert out["final"] == "我又搜索了…"   # retried once, then accepted (no infinite loop)
+
+
 async def test_external_tool_result_still_wrapped(monkeypatch):
     from server.registry import executors
     adapter = _ScriptedAdapter(['{"tool": "web_search", "args": {"query": "x"}}', "answer"])
