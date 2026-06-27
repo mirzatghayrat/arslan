@@ -397,7 +397,9 @@
     "catalog": {
       "loading": "正在加载注册表…",
       "empty": "这里还没有内容。",
-      "equip_hint": "从分身的菜单中装配这些能力。"
+      "equip_hint": "从分身的菜单中装配这些能力。",
+      "assignable_group": "可装备",
+      "locked_group": "主机级 / 未启用"
     }
   }
 }

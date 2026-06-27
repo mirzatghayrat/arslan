@@ -397,7 +397,9 @@
     "catalog": {
       "loading": "Loading registry…",
       "empty": "Nothing here yet.",
-      "equip_hint": "Equip these from a spawn's menu."
+      "equip_hint": "Equip these from a spawn's menu.",
+      "assignable_group": "Assignable",
+      "locked_group": "Locked / host-only"
     }
   }
 }
