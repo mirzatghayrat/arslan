@@ -119,6 +119,18 @@ async def equipment_for_spawn(spawn_id: int, *, session=None) -> dict:
         return await _equipment_for_spawn_in(db, spawn_id)
 
 
+async def skill_bodies(keys: list[str]) -> dict[str, str | None]:
+    """Map skill key -> body for the given keys (for dispatch-time injection only).
+    Kept off _skill_dict/SkillPackOut so body never leaks to list/detail APIs."""
+    if not keys:
+        return {}
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(SkillPack.key, SkillPack.body).where(SkillPack.key.in_(keys))
+        )).all()
+    return {k: b for k, b in rows}
+
+
 async def replace_user_equipment(session: AsyncSession, spawn_id: int,
                                  toolsets: list[str], skills: list[str]) -> None:
     """User equipment editor write path: declarative replace of user-managed

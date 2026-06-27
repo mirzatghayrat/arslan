@@ -15,6 +15,7 @@ from server.registry import service as registry_service
 from server.services.llm_factory import build_adapter
 
 _SPAWN_HISTORY_LIMIT = 10  # recent spawn turns included for continuity
+_SKILL_BODY_LIMIT = 1500  # max chars of a skill body injected per technique (bounded)
 
 _SPAWN_TOOL_GUIDANCE = (
     "\n\nUSE YOUR TOOLS — do not narrate or fabricate:\n"
@@ -103,13 +104,14 @@ async def _spawn_history(spawn_id: int) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
-def _equipment_block_from(equipment: dict, wired: list[dict]) -> str:
+def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict[str, str | None] | None = None) -> str:
     """Build the equipment section given precomputed equipment + wired tool dicts.
 
     Design note: called from dispatch() which already holds both values (computed
     once) so we avoid a duplicate wired_tools_for_spawn query. Unequipped spawns
     never reach here — dispatch() skips the call when equipment is empty.
     """
+    skill_bodies = skill_bodies or {}
     lines: list[str] = []
     wired_keys = {t["key"] for t in wired}
     for t in wired:
@@ -117,14 +119,22 @@ def _equipment_block_from(equipment: dict, wired: list[dict]) -> str:
     for ts in equipment["toolsets"]:
         if ts["status"] != "wired" or ts["key"] not in wired_keys:
             lines.append(f"- {ts['name']} (not yet live)")
+    technique_blocks: list[str] = []
     for sk in equipment["skills"]:
-        lines.append(f"- TECHNIQUE {sk['name']}: {sk['description']}")
+        body = (skill_bodies.get(sk["key"]) or "").strip()
+        if body:
+            technique_blocks.append(f"### {sk['name']}\n{body[:_SKILL_BODY_LIMIT]}")
+        else:
+            lines.append(f"- TECHNIQUE {sk['name']}: {sk['description']}")
     lines.append(
         "You have NO other tools. If you lack a capability or data, escalate a need "
         "(see protocol); never ask the user to run things and never pretend to have "
         "other tools."
     )
-    return "\n\nYour equipment:\n" + "\n".join(lines)
+    block = "\n\nYour equipment:\n" + "\n".join(lines)
+    if technique_blocks:
+        block += "\n\nYour techniques:\n" + "\n\n".join(technique_blocks)
+    return block
 
 
 async def dispatch(
@@ -193,7 +203,9 @@ async def dispatch(
     # so wired is never empty → every spawn runs through the tool loop. The legacy zero-tool
     # path below is kept only as a defensive fallback (e.g. catalog missing the baseline rows).
     wired = await registry_service.wired_tools_for_spawn(spawn_id, current_turn=current_turn)
-    system += _equipment_block_from(equipment, wired)
+    skill_keys = [s["key"] for s in equipment["skills"]]
+    skill_body_map = await registry_service.skill_bodies(skill_keys)
+    system += _equipment_block_from(equipment, wired, skill_body_map)
     system += _SPAWN_TOOL_GUIDANCE
 
     history = await _spawn_history(spawn_id)
