@@ -392,7 +392,8 @@
     "tabs": {
       "tools": "工具",
       "skills": "技能",
-      "mcps": "MCP"
+      "mcps": "MCP",
+      "saved": "已存"
     },
     "catalog": {
       "loading": "正在加载注册表…",

@@ -392,7 +392,8 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
-      "mcps": "MCPs"
+      "mcps": "MCPs",
+      "saved": "Saved"
     },
     "catalog": {
       "loading": "Loading registry…",
