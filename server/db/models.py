@@ -167,6 +167,7 @@ class Tool(Base):
     tier = Column(String(20), nullable=False)
     status = Column(String(20), nullable=False, default="registered")
     input_schema = Column(JSON, default=dict)
+    external_name = Column(String(120), nullable=True)   # original MCP tool name (NULL for built-ins)
 
 
 class SkillPack(Base):
@@ -228,6 +229,20 @@ class ConversationSpawn(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "spawn_id", name="uq_conversation_spawn"),
     )
+
+
+class MCPServer(Base):
+    __tablename__ = "mcp_servers"
+
+    id = Column(Integer, primary_key=True)
+    label = Column(String(80), nullable=False)
+    transport = Column(String(20), nullable=False, default="stdio")
+    command = Column(String(255), nullable=False)
+    args = Column(JSON, nullable=False, default=list)
+    env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
+    status = Column(String(20), nullable=False, default="registered")  # registered|connected|error
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class ProviderConfig(Base):
