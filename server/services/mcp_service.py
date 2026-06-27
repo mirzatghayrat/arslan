@@ -24,13 +24,14 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
         except Exception:  # noqa: BLE001
             env = {}
     return {"id": srv.id, "label": srv.label, "command": srv.command, "args": srv.args or [],
-            "env": _mask_env(env) if mask else env, "status": srv.status, "last_error": srv.last_error,
-            "transport": srv.transport}
+            "url": srv.url, "env": _mask_env(env) if mask else env, "status": srv.status,
+            "last_error": srv.last_error, "transport": srv.transport}
 
 
-async def add_server(label: str, command: str, args: list[str], env: dict) -> dict:
+async def add_server(label: str, command: str, args: list[str], env: dict,
+                     transport: str = "stdio", url: str | None = None) -> dict:
     async with db_session.AsyncSessionLocal() as db:
-        srv = MCPServer(label=label, command=command, args=args or [],
+        srv = MCPServer(label=label, command=command or "", args=args or [], transport=transport, url=url,
                         env=crypto.encrypt(json.dumps(env or {})), status="registered")
         db.add(srv)
         await db.commit()
@@ -88,6 +89,11 @@ async def set_host_enabled(tool_key: str, enabled: bool) -> None:
             raise ValueError("not an MCP tool")
         tool.host_enabled = enabled
         await db.commit()
+
+
+async def reconnect(server_id: int) -> None:
+    from server.mcp.session import manager
+    await manager._drop(server_id)
 
 
 async def delete_server(server_id: int) -> None:

@@ -93,3 +93,31 @@ async def test_host_toggle_endpoint(client, monkeypatch):
         assert r.status_code == 200
         tools = (await c.get(f"/api/v1/mcp/servers/{sid}/tools")).json()
     assert next(t for t in tools if t["name"] == "read")["host_enabled"] is True
+
+
+async def test_add_http_server_stores_url_transport(client):
+    c, m = client
+    async with c:
+        r = await c.post("/api/v1/mcp/servers", json={"label": "remote", "transport": "http",
+                                                       "url": "https://api.example/mcp", "command": "",
+                                                       "args": [], "env": {"Authorization": "Bearer s3cr3t"}})
+        assert r.status_code == 200
+        row = r.json()
+    assert row["transport"] == "http" and row["url"] == "https://api.example/mcp"
+    assert row["env"].get("Authorization") != "Bearer s3cr3t"     # masked
+
+
+async def test_reconnect_drops_cached_session(client, monkeypatch):
+    c, m = client
+    from server.mcp import session
+    # seed a fake cached session for server id we will create
+    async with c:
+        sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]
+        session.manager._sessions[sid] = ("fake-session", _FakeStackR())
+        r = await c.post(f"/api/v1/mcp/servers/{sid}/reconnect")
+        assert r.status_code == 200
+    assert sid not in session.manager._sessions       # dropped
+
+
+class _FakeStackR:
+    async def aclose(self): pass

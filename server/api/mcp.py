@@ -11,9 +11,11 @@ router = APIRouter(prefix="/mcp", tags=["mcp"])
 
 class AddServerBody(BaseModel):
     label: str
-    command: str
+    command: str = ""
     args: list[str] = []
     env: dict[str, str] = {}
+    transport: str = "stdio"
+    url: str | None = None
 
 
 class ExposeBody(BaseModel):
@@ -31,7 +33,8 @@ class HostBody(BaseModel):
 
 @router.post("/servers")
 async def add_server(body: AddServerBody):
-    return await mcp_service.add_server(body.label, body.command, body.args, body.env)
+    return await mcp_service.add_server(body.label, body.command, body.args, body.env,
+                                        transport=body.transport, url=body.url)
 
 
 @router.get("/servers")
@@ -64,6 +67,12 @@ async def wire(tool_key: str, body: WireBody):
 @router.patch("/tools/{tool_key}/host")
 async def set_host(tool_key: str, body: HostBody):
     await mcp_service.set_host_enabled(tool_key, body.enabled)
+    return {"ok": True}
+
+
+@router.post("/servers/{server_id}/reconnect")
+async def reconnect(server_id: int):
+    await mcp_service.reconnect(server_id)
     return {"ok": True}
 
 
