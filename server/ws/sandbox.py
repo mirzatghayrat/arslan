@@ -74,6 +74,11 @@ async def sandbox_endpoint(ws: WebSocket, spawn_id: int) -> None:
                 new_id = await arslan_mod.confirm_sandbox_merge(
                     conversation_id, spawn_id, final, summary, elapsed, lambda e: None
                 )
+                if new_id is None:
+                    # Spawn vanished mid-session (narrow race): don't emit a `merged`
+                    # frame with a null id — the client would push a broken card.
+                    await ws.send_json(protocol.error("INVALID_INPUT", "merge failed", recoverable=True))
+                    continue
                 try:
                     await distill_service.distill_from_signals(spawn_id, _signals(transcript))
                 except Exception as exc:  # noqa: BLE001

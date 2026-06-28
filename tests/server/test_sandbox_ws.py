@@ -80,6 +80,22 @@ def test_sandbox_confirm_merges_to_main(sandbox_client, monkeypatch):
     assert "精简版周报" in rows[0].display_content
 
 
+def test_sandbox_confirm_merge_failure_emits_error_not_merged(sandbox_client, monkeypatch):
+    """If confirm_sandbox_merge returns None (spawn vanished mid-session), the WS must
+    emit an error and NOT a `merged` frame with a null message id."""
+    import server.orchestrator.arslan as arslan_mod
+    async def fake_merge(*a, **k):
+        return None
+    monkeypatch.setattr(arslan_mod, "confirm_sandbox_merge", fake_merge)
+
+    with sandbox_client.websocket_connect("/ws/sandbox/5") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "user_message", "content": "草稿"})
+        assert _read_until(ws, "stream_end") is not None
+        ws.send_json({"type": "confirm_merge", "conversation_id": "main"})
+        assert _read_until(ws, "error") is not None
+
+
 def test_sandbox_discard_writes_nothing(sandbox_client):
     with sandbox_client.websocket_connect("/ws/sandbox/5") as ws:
         ws.receive_json()  # history
