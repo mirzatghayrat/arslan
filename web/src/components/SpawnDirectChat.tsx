@@ -16,7 +16,11 @@ import AttachBar, { type Attachment } from './AttachBar';
 interface SpawnDirectChatProps {
   spawn: Spawn;
   currentStyle: 'quartz' | 'brutalist' | 'linear';
+  refineDeliverable?: string | null;
+  onFinalize?: (content: string) => void;
 }
+
+const REFINE_ATTACH_NAME = '正在精修的产出';
 
 interface BackendMessage {
   message_id: number;
@@ -34,7 +38,8 @@ interface ToolStep {
 
 export default function SpawnDirectChat({
   spawn,
-  currentStyle
+  currentStyle,
+  refineDeliverable,
 }: SpawnDirectChatProps) {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
@@ -55,6 +60,20 @@ export default function SpawnDirectChat({
     setMessages([]);
     setStreaming(false);
   }, [spawn.id]);
+
+  // Seed the deliverable being refined as a pinned attachment (once, guarded by name).
+  useEffect(() => {
+    if (refineDeliverable) {
+      setAttachments(prev => {
+        if (prev.some(a => a.name === REFINE_ATTACH_NAME)) return prev;
+        return [
+          { name: REFINE_ATTACH_NAME, text: refineDeliverable, chars: refineDeliverable.length, truncated: false },
+          ...prev,
+        ];
+      });
+      setAttachKey(k => k + 1);
+    }
+  }, [refineDeliverable]);
 
   const toMessage = useCallback((m: BackendMessage): Message => {
     const isUser = m.role === 'user';
@@ -232,6 +251,13 @@ export default function SpawnDirectChat({
         <div className="flex items-center gap-3">
         </div>
       </div>
+
+      {/* Refine banner — shown when this spawn chat was opened to refine a deliverable */}
+      {refineDeliverable && (
+        <div className="px-6 py-2 text-[11px] text-muted-foreground bg-surface border-b border-border/80 relative z-10 font-sans">
+          {`正在精修：${spawn.name} 的这条产出`}
+        </div>
+      )}
 
       {/* Messages Thread Container */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 relative z-10">

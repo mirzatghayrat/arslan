@@ -11,9 +11,22 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import OrchestratorChat from "../components/OrchestratorChat";
+import SpawnDirectChat from "../components/SpawnDirectChat";
 
 // Deterministic i18n — t returns the key.
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+
+// WS mock for SpawnDirectChat (mirror spawn-direct-chat-tools.test.tsx).
+vi.mock("../hooks/useWebSocket", () => ({
+  useWebSocket: () => ({ send: vi.fn(), reconnecting: false, setLastMessageId: vi.fn() }),
+}));
+
+vi.mock("../api/client", () => ({
+  api: {
+    extractAttachmentUrl: vi.fn(),
+    extractAttachmentFile: vi.fn(),
+  },
+}));
 
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -71,5 +84,41 @@ describe("OrchestratorChat — light feedback UI (👍/👎/精修)", () => {
     // 精修 — refine button.
     fireEvent.click(screen.getByText("orchestrator.refine"));
     expect(onRefine).toHaveBeenCalledWith(3, 42, "OUT", "小美");
+  });
+});
+
+const refineSpawn = {
+  id: "3",
+  name: "小美",
+  avatarEmoji: "🌸",
+  domain: "Test",
+  description: "Test spawn",
+  status: "idle" as const,
+  tools: [],
+  skills: [],
+  totalTasks: 0,
+} as any;
+
+describe("SpawnDirectChat — refine handoff (banner + seed)", () => {
+  it("renders the 正在精修 banner with the spawn name when refineDeliverable is set", () => {
+    render(
+      <SpawnDirectChat
+        spawn={refineSpawn}
+        currentStyle="quartz"
+        refineDeliverable={"DELIVERABLE TEXT"}
+        onFinalize={vi.fn()}
+      />,
+    );
+
+    // Banner names the spawn + carries the 正在精修 marker (this also proves the
+    // refineDeliverable seed path ran — same flag drives both).
+    const banner = screen.getByText(/正在精修：小美/);
+    expect(banner).toBeDefined();
+    expect(banner.textContent).toContain("正在精修");
+  });
+
+  it("does NOT render the banner without refineDeliverable", () => {
+    render(<SpawnDirectChat spawn={refineSpawn} currentStyle="quartz" />);
+    expect(screen.queryByText(/正在精修：/)).toBeNull();
   });
 });

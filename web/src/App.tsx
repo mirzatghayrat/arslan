@@ -168,6 +168,14 @@ export default function App() {
 
   const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('');
 
+  // Refine handoff: 精修 on a deliverable opens this spawn's side chat seeded with it.
+  const [refineCtx, setRefineCtx] = useState<{ spawnId: number; messageId?: number; spawnName: string; deliverable: string } | null>(null);
+  const handleRefine = useCallback((spawnId: number, messageId: number | undefined, content: string, spawnName: string) => {
+    setRefineCtx({ spawnId, messageId, spawnName, deliverable: content });
+    setActiveSpawnChatId(String(spawnId));
+    setActiveSection('spawn');
+  }, []);
+
   // Shared application state databases
   // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
   const [spawns, setSpawns] = useState<Spawn[]>([]);
@@ -487,7 +495,7 @@ export default function App() {
                     wsSend({ type: 'discard', spawn_id: spawnId, message_id: messageId });
                   }
                 }}
-                onRefine={() => {}}
+                onRefine={handleRefine}
               />
             )}
 
@@ -495,6 +503,8 @@ export default function App() {
               <SpawnDirectChat
                 spawn={activeSpawn}
                 currentStyle={currentChatStyle}
+                refineDeliverable={refineCtx && String(refineCtx.spawnId) === activeSpawnChatId ? refineCtx.deliverable : null}
+                onFinalize={() => {}}
               />
             )}
 
