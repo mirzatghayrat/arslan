@@ -27,20 +27,21 @@ logger = logging.getLogger(__name__)
 _MAX_FACTS = 8
 
 
-async def distill_facts(existing: list[str], signals: str) -> list[str]:
-    """LLM-consolidate existing prefs + this session's signals → ≤8 prefs. On any
-    failure return *existing* unchanged (best-effort)."""
+async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
+    """LLM-consolidate existing prefs + this session's signals → ≤8 prefs. Returns None
+    on any failure (LLM error / unparseable / bad shape) so the caller can skip the write
+    AND the idempotency marker — a transient failure must not permanently consume the session."""
     user = f"现有偏好:\n{existing}\n\n本次会话信号:\n{signals[:8000]}"
     try:
         adapter = await build_adapter(role="judgment")
         resp = await adapter.chat(system=DISTILL_SYSTEM, user=user)
         parsed = parse_json_object(resp.content or "") or {}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("distill_facts failed (keeping existing): %s", exc)
-        return existing
+        logger.warning("distill_facts failed (will retry next session): %s", exc)
+        return None
     facts = parsed.get("facts")
     if not isinstance(facts, list):
-        return existing
+        return None
     return [str(f).strip() for f in facts if str(f).strip()][:_MAX_FACTS]
 
 
@@ -89,6 +90,8 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> None:
         return  # nothing to distill
 
     new_facts = await distill_facts(existing, signals)
+    if new_facts is None:
+        return  # distillation failed — write nothing + no marker, so it retries next session
 
     async with db_session.AsyncSessionLocal() as db:
         spawn = await db.get(Spawn, spawn_id)

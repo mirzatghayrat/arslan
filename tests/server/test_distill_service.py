@@ -54,13 +54,20 @@ def test_distill_idempotent(maker, monkeypatch):
     assert anyio.run(_run) == 1   # distilled once
 
 
-def test_distill_llm_failure_keeps_existing(maker, monkeypatch):
+def test_distill_llm_failure_keeps_existing_and_no_marker(maker, monkeypatch):
+    """A transient LLM failure (real path: build_adapter raises inside distill_facts) must
+    leave memory_facts unchanged AND write NO DistilledSession marker, so it retries."""
     from server.services import distill_service
-    async def boom(existing, signals):
+    async def boom_adapter(*a, **k):
         raise RuntimeError("llm down")
-    monkeypatch.setattr(distill_service, "distill_facts", boom)
+    monkeypatch.setattr(distill_service, "build_adapter", boom_adapter)
     async def _run():
         await distill_service.distill_session("c1")   # must not raise
         async with maker() as s:
-            return (await s.get(Spawn, 3)).memory_facts
-    assert anyio.run(_run) == []   # unchanged
+            facts = (await s.get(Spawn, 3)).memory_facts
+            marks = (await s.execute(select(DistilledSession).where(
+                DistilledSession.conversation_id == "c1", DistilledSession.spawn_id == 3))).scalars().all()
+        return facts, marks
+    facts, marks = anyio.run(_run)
+    assert facts == []          # unchanged
+    assert len(marks) == 0      # NOT marked → retryable next session

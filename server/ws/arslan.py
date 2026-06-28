@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Coroutine
 from typing import Any
 
@@ -21,6 +22,8 @@ from server.services import (
     storage_intent,
 )
 from server.ws import protocol
+
+logger = logging.getLogger(__name__)
 
 
 async def _history(conversation_id: str) -> list[dict]:
@@ -302,10 +305,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             if msg_type == "session_ended":
                 old_cid = data.get("conversation_id")
                 if old_cid:
-                    async with db_session.AsyncSessionLocal() as _s:
-                        enabled = await settings_service.distill_enabled(_s)
-                    if enabled:
-                        asyncio.create_task(distill_service.distill_session(str(old_cid)))
+                    # Best-effort: an optional feature must never suppress the ack or close the socket.
+                    try:
+                        async with db_session.AsyncSessionLocal() as _s:
+                            enabled = await settings_service.distill_enabled(_s)
+                        if enabled:
+                            asyncio.create_task(distill_service.distill_session(str(old_cid)))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("session_ended distill trigger failed (non-fatal): %s", exc)
                 await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
                 continue
 
