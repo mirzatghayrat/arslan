@@ -15,11 +15,12 @@ interface SandboxPanelProps {
   onMerged: (payload: {           // Confirm & Merge succeeded — append to main store
     spawn_id: number; message_id: number; content: string; summary: string; spawn_name: string;
   }) => void;
+  hidden?: boolean;               // mounted but not the active pane — keep socket alive
 }
 
 type Msg = { id: string; role: 'user' | 'spawn'; text: string; tools?: string[] };
 
-export default function SandboxPanel({ spawn, sessionId, seed, conversationId, onClose, onMerged }: SandboxPanelProps) {
+export default function SandboxPanel({ spawn, sessionId, seed, conversationId, onClose, onMerged, hidden = false }: SandboxPanelProps) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -64,7 +65,11 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
     }
   }, [onClose, onMerged]);
 
-  const { send } = useWebSocket(`/ws/sandbox/${Number(spawn.id)}?s=${sessionId}`, onFrame);
+  // No query string here: ws.ts appends `?token=…`, so a `?s=` would collide into a
+  // double-`?` and drop the token. The session is isolated by the parent's
+  // key={sessionId}, which forces a fresh socket per session anyway.
+  void sessionId;
+  const { send } = useWebSocket(`/ws/sandbox/${Number(spawn.id)}`, onFrame);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +89,7 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
   };
 
   return (
-    <div className="w-[45%] border-l border-border bg-sidebar flex flex-col h-full animate-slide-in-right shrink-0 z-20">
+    <div className={`w-[45%] border-l border-border bg-sidebar flex-col h-full animate-slide-in-right shrink-0 z-20 ${hidden ? 'hidden' : 'flex'}`}>
       <div className="h-[52px] border-b border-border px-4 bg-background/80 backdrop-blur flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
           <SpawnAvatar seed={spawn.name} size={28} />

@@ -73,13 +73,9 @@ export default function OrchestratorChat({
   const [replayRunId, setReplayRunId] = useState<number | null>(null);
   const [showEvalSummary, setShowEvalSummary] = useState(false);
   
-  // Custom states for Spawns Pipeline Dock & Split-Screen Co-pilot Sandbox
-  const [spawnStatuses, setSpawnStatuses] = useState<Record<string, 'idle' | 'working' | 'review_pending'>>({});
-  const [selectedAssignSpawnId, setSelectedAssignSpawnId] = useState<string | null>(null);
-  const [assignTaskText, setAssignTaskText] = useState('');
-
-  // Open sandbox sessions: { spawnId, sessionId, seed? }. Multiple can be alive; the
-  // 45% pane renders the active one. seed = a deliverable to tune (refine entry).
+  // Open sandbox sessions: { spawnId, sessionId, seed? }. Multiple stay alive at once
+  // (each SandboxPanel keeps its own socket); the 45% pane shows the active one, the
+  // rest are mounted-but-hidden. seed = a deliverable to tune (refine entry).
   type OpenSandbox = { spawnId: string; sessionId: string; seed: string | null };
   const [openSandboxes, setOpenSandboxes] = useState<OpenSandbox[]>([]);
   const [activeSandboxSpawnId, setActiveSandboxSpawnId] = useState<string | null>(null);
@@ -93,11 +89,13 @@ export default function OrchestratorChat({
     setActiveSandboxSpawnId(spawnId);
   };
   const closeSandbox = (spawnId: string) => {
-    setOpenSandboxes((prev) => prev.filter((s) => s.spawnId !== spawnId));
-    setActiveSandboxSpawnId((cur) => (cur === spawnId ? null : cur));
+    const remaining = openSandboxes.filter((s) => s.spawnId !== spawnId);
+    setOpenSandboxes(remaining);
+    // If the closed pane was active, promote another open sandbox (if any) so the user
+    // never lands on an empty-but-non-full layout.
+    setActiveSandboxSpawnId((cur) => (cur === spawnId ? (remaining[0]?.spawnId ?? null) : cur));
   };
-  const splitSpawnId = activeSandboxSpawnId;  // back-compat alias for the layout width logic + the existing right pane
-  // subInputValue, subChats, subDrafts, subTyping removed — sandbox not yet wired to backend
+  const splitSpawnId = activeSandboxSpawnId;  // back-compat alias for the layout width logic
 
   // Global Integration Discovery & Repository Engine — no MCP backend yet; tool-hub disabled
   const [showSandboxSearch, setShowSandboxSearch] = useState(true);
@@ -121,31 +119,6 @@ export default function OrchestratorChat({
   const handleAddToMCP = () => { /* coming soon */ };
   const handleAddToSkill = () => { /* coming soon */ };
   const handleSynthesizeSpawn = () => { /* coming soon */ };
-
-  // Sandbox per-spawn orchestration is not yet wired to a real backend frame.
-  // Opening the sandbox panel just shows the coming-soon placeholder.
-  const handleLaunchSpawnTask = (_spawnId: string, _customTask?: string) => {
-    setSelectedAssignSpawnId(null);
-    setAssignTaskText('');
-    // Do not fabricate messages or tool runs — sandbox dispatch coming soon.
-  };
-
-  // Sandbox sub-chat and draft refinement are not yet wired to a real backend frame.
-  // These handlers are stubs — no fake messages are injected.
-  const handleSendSubMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    // coming soon — no fabricated spawn replies
-  };
-
-  const handleConfirmMergeDraft = (_spawnId: string) => {
-    // coming soon — no fabricated merge output
-    closeSandbox(_spawnId);
-  };
-
-  const handleDiscardSubSession = (spawnId: string) => {
-    setSpawnStatuses(prev => ({ ...prev, [spawnId]: 'idle' }));
-    closeSandbox(spawnId);
-  };
 
   const toggleToolCollapse = (id: string) => {
     setCollapsedToolActivities(prev => ({
@@ -221,37 +194,23 @@ export default function OrchestratorChat({
             const activeDisplayList = memberSpawns;
 
             return activeDisplayList.map(spawn => {
-              const status = spawnStatuses[spawn.id] || 'idle';
-              const isWorking = status === 'working';
-              const isReviewPending = status === 'review_pending';
               const isSplitActive = activeSandboxSpawnId === spawn.id;
+              const isOpen = openSandboxes.some((s) => s.spawnId === spawn.id);
 
-              // Determine status indicator animation to place in front of spawn name
-              let statusIndicator = null;
-              if (isWorking) {
-                // Active running indicator
-                statusIndicator = (
-                  <span className="relative flex h-2 w-2 mr-1">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-warning"></span>
-                  </span>
-                );
-              } else if (isReviewPending) {
-                // High-energy blinking alert indicator requesting action
-                statusIndicator = (
-                  <span className="relative flex h-2 w-2 mr-1">
-                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-danger/80 opacity-80 scale-125"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-danger animate-ping"></span>
-                  </span>
-                );
-              } else {
-                // Normal quiet breathing green indicator for ready/idle
-                statusIndicator = (
-                  <span className="relative flex h-1.5 w-1.5 mr-1">
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success/80"></span>
-                  </span>
-                );
-              }
+              // Indicator: spawns with an open sandbox get a solid primary dot (the
+              // active one pulses); spawns with no sandbox get a quiet green idle dot.
+              const statusIndicator = isOpen ? (
+                <span className="relative flex h-2 w-2 mr-1">
+                  {isSplitActive && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60"></span>
+                  )}
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                </span>
+              ) : (
+                <span className="relative flex h-1.5 w-1.5 mr-1">
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success/80"></span>
+                </span>
+              );
 
               return (
                 <button
@@ -264,20 +223,16 @@ export default function OrchestratorChat({
                     }
                   }}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold select-none cursor-pointer ${
-                    isReviewPending
-                      ? 'border-danger/60 bg-danger/15 text-danger hover:border-danger shadow-md shadow-danger/5 animate-pulse'
-                      : isWorking
-                      ? 'border-warning/30 bg-warning/5 text-warning/80 hover:border-warning/60'
-                      : isSplitActive
+                    isSplitActive
                       ? 'border-primary bg-primary/10 text-primary'
+                      : isOpen
+                      ? 'border-primary/40 bg-primary/5 text-foreground hover:border-primary/60'
                       : 'border-border bg-surface/40 hover:border-border-strong text-muted-foreground hover:text-foreground'
                   }`}
                   title={
-                    isReviewPending 
-                      ? 'Action Required - Click to confirm or adjust work' 
-                      : isWorking 
-                      ? `${spawn.name} is working... Click to view live buffer` 
-                      : `Click to toggle split-dialog and trigger ${spawn.name}`
+                    isOpen
+                      ? `${spawn.name} sandbox open — click to ${isSplitActive ? 'close' : 'view'}`
+                      : `Open ${spawn.name} sandbox`
                   }
                 >
                   {statusIndicator}
@@ -1177,11 +1132,11 @@ export default function OrchestratorChat({
       )}
     </div>
 
-    {/* Right Pane: Isolated Co-Pilot Private Sandbox (副对话框) — active session */}
-    {activeSandboxSpawnId && (() => {
-      const open = openSandboxes.find((s) => s.spawnId === activeSandboxSpawnId);
-      const spawn = spawns.find((s) => s.id === activeSandboxSpawnId);
-      if (!open || !spawn) return null;
+    {/* Right Pane: Isolated Co-Pilot Private Sandboxes (副对话框). All open sessions stay
+        mounted (sockets alive); only the active one is visible, the rest are hidden. */}
+    {openSandboxes.map((open) => {
+      const spawn = spawns.find((s) => s.id === open.spawnId);
+      if (!spawn) return null;
       return (
         <SandboxPanel
           key={open.sessionId}
@@ -1189,6 +1144,7 @@ export default function OrchestratorChat({
           sessionId={open.sessionId}
           seed={open.seed}
           conversationId={conversationId ?? 'main'}
+          hidden={open.spawnId !== activeSandboxSpawnId}
           onClose={() => closeSandbox(spawn.id)}
           onMerged={(payload) => {
             // The card lives in the MAIN thread store — reuse the existing
@@ -1204,7 +1160,7 @@ export default function OrchestratorChat({
           }}
         />
       );
-    })()}
+    })}
   </div>
 
   {replayRunId != null && (
