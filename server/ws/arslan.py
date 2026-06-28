@@ -12,7 +12,14 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan, dispatcher, memory
-from server.services import ingest, roster_service, spawn_service, storage_intent
+from server.services import (
+    distill_service,
+    ingest,
+    roster_service,
+    settings_service,
+    spawn_service,
+    storage_intent,
+)
 from server.ws import protocol
 
 
@@ -290,6 +297,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if was_removed:
                     await ws.send_json(protocol.roster_event("left", spawn_id, kick_spawn_name))
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
+                continue
+
+            if msg_type == "session_ended":
+                old_cid = data.get("conversation_id")
+                if old_cid:
+                    async with db_session.AsyncSessionLocal() as _s:
+                        enabled = await settings_service.distill_enabled(_s)
+                    if enabled:
+                        asyncio.create_task(distill_service.distill_session(str(old_cid)))
+                await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
                 continue
 
             if msg_type == "refine_draft":
