@@ -1,11 +1,33 @@
 """Idempotent registry seeding: insert-or-update by key; never deletes."""
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import arslan.spawn
+from arslan.spawn.skillpack import SkillPack as _SkillPackSpec
 from server.db import session as db_session
 from server.db.models import SkillPack, Tool, Toolset
 from server.registry.seed_catalog import SKILLS, TOOLSETS
+
+logger = logging.getLogger(__name__)
+
+_SEEDS_DIR = Path(arslan.spawn.__file__).parent / "seeds"
+
+
+def _skill_body(key: str) -> str | None:
+    """Read the SKILL.md body for a seeded skill key, or None if absent/unparseable.
+    Catalog tuple stays authoritative for metadata; the file provides ONLY the body."""
+    md = _SEEDS_DIR / key / "SKILL.md"
+    if not md.exists():
+        return None
+    try:
+        return _SkillPackSpec.from_skill_md(md.read_text(encoding="utf-8")).body or None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("seed skill body parse failed for %s: %s", key, exc)
+        return None
 
 
 async def seed_registry_with(db: AsyncSession) -> None:
@@ -41,6 +63,7 @@ async def seed_registry_with(db: AsyncSession) -> None:
         srow.description = description
         srow.tier = tier
         srow.status = status
+        srow.body = _skill_body(key)
     await db.commit()
 
 
