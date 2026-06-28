@@ -55,6 +55,8 @@ export interface Message {
   taskBrief?: string | null;
   /** The spawn's display name for this deliverable — used to seed the refine side chat. */
   spawnName?: string;
+  /** Original deliverable message id this was refined from (deliverable_finalized) — drives the 定稿 badge. */
+  refinedFrom?: number | null;
   routedTo?: {
     spawnId: string;
     spawnName: string;

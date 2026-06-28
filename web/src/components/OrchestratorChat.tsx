@@ -450,6 +450,9 @@ export default function OrchestratorChat({
                     {!isUser && (
                       <div className="flex items-center gap-1.5 select-none">
                         <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
+                        {msg.refinedFrom != null && (
+                          <span className="text-[9px] bg-success/10 text-success px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">{t('orchestrator.refined_badge')}</span>
+                        )}
                         {isArslan ? (
                           <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
                             {t('app.name')} Orchestrator
@@ -731,6 +734,9 @@ export default function OrchestratorChat({
                       <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
                         {msg.sender.toUpperCase()}
                       </span>
+                      {msg.refinedFrom != null && (
+                        <span className="text-[10px] px-2 py-0.5 bg-success/20 text-success">{t('orchestrator.refined_badge')}</span>
+                      )}
                     </div>
                     <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                   </div>
@@ -907,6 +913,9 @@ export default function OrchestratorChat({
                       ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
                       : <SpawnAvatar seed={msg.senderName} size={18} />}
                     <span className="font-bold text-foreground">{msg.senderName}</span>
+                    {msg.refinedFrom != null && (
+                      <span className="text-[9px] bg-success/10 text-success px-2 py-0.5 rounded font-mono uppercase">{t('orchestrator.refined_badge')}</span>
+                    )}
                     <span className="text-subtle-foreground font-mono">•</span>
                     <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
                     {isArslan && (

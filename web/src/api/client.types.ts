@@ -175,6 +175,8 @@ export interface ArslanThreadItem {
   isProposal?: boolean;
   /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
   verdict?: string;
+  /** Original deliverable message id this item was refined from (deliverable_finalized). */
+  refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
   rosterAction?: string;
 }
@@ -207,6 +209,7 @@ export type ArslanServerMessage =
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
   | { type: "error"; code: string; message: string; recoverable?: boolean }
   | { type: "verdict_recorded"; spawn_id: number; action: string }
+  | { type: "deliverable_finalized"; spawn_id: number; message_id: number; content: string; refined_from: number | null; spawn_name?: string }
   | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
   | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null }
 | { type: "attachment_stored"; spawn_name: string | null; chunks: number };

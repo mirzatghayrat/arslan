@@ -397,6 +397,26 @@ function makeActions(set: SetState, get: GetState) {
           set({ items });
           break;
         }
+        case "deliverable_finalized": {
+          // A refined spawn deliverable, posted back from the side chat into the
+          // main thread. Append as a spawn item; the verdict_recorded that follows
+          // marks it accepted via the existing case.
+          const item: ArslanThreadItem = {
+            id: frame.message_id ?? nextClientId(),
+            kind: "message",
+            role: "spawn",
+            content: frame.content,
+            spawnId: frame.spawn_id,
+            spawnName: frame.spawn_name ?? state.spawnNames[frame.spawn_id] ?? null,
+            refinedFrom: frame.refined_from ?? null,
+          };
+          set({
+            items: [...state.items, item],
+            lastMessageId:
+              frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
+          });
+          break;
+        }
         case "roster_update":
           set({
             roster: frame.members.map((m) => ({

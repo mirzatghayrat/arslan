@@ -504,7 +504,11 @@ export default function App() {
                 spawn={activeSpawn}
                 currentStyle={currentChatStyle}
                 refineDeliverable={refineCtx && String(refineCtx.spawnId) === activeSpawnChatId ? refineCtx.deliverable : null}
-                onFinalize={() => {}}
+                onFinalize={(content) => {
+                  if (!refineCtx) return;
+                  wsSend({ type: 'finalize_refinement', spawn_id: refineCtx.spawnId, message_id: refineCtx.messageId ?? null, content });
+                  setRefineCtx(null);
+                }}
               />
             )}
 

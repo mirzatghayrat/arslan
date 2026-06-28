@@ -287,7 +287,8 @@
     "verdict_like": "Helpful",
     "verdict_dislike": "Not helpful",
     "no_model_hint": "モデルがまだ設定されていません — 設定でLLMを追加してください。",
-    "open_settings": "設定を開く"
+    "open_settings": "設定を開く",
+    "refined_badge": "Refined"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -405,5 +406,8 @@
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
     }
+  },
+  "spawn": {
+    "finalize_to_main": "Finalize to main"
   }
 }

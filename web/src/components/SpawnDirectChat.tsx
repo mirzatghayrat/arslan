@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Send, RefreshCcw
+  Send, RefreshCcw, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Message, Spawn } from '../types';
@@ -40,6 +40,7 @@ export default function SpawnDirectChat({
   spawn,
   currentStyle,
   refineDeliverable,
+  onFinalize,
 }: SpawnDirectChatProps) {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
@@ -60,20 +61,6 @@ export default function SpawnDirectChat({
     setMessages([]);
     setStreaming(false);
   }, [spawn.id]);
-
-  // Seed the deliverable being refined as a pinned attachment (once, guarded by name).
-  useEffect(() => {
-    if (refineDeliverable) {
-      setAttachments(prev => {
-        if (prev.some(a => a.name === REFINE_ATTACH_NAME)) return prev;
-        return [
-          { name: REFINE_ATTACH_NAME, text: refineDeliverable, chars: refineDeliverable.length, truncated: false },
-          ...prev,
-        ];
-      });
-      setAttachKey(k => k + 1);
-    }
-  }, [refineDeliverable]);
 
   const toMessage = useCallback((m: BackendMessage): Message => {
     const isUser = m.role === 'user';
@@ -216,8 +203,17 @@ export default function SpawnDirectChat({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    const attached_context = attachments.map((a) => a.text).join('\n\n---\n\n');
-    const attached_names = attachments.map((a) => a.name);
+    // In refine mode, the deliverable being refined must reach the spawn reliably
+    // via attached_context — independent of the (user-mutable) attachments array.
+    const parts = attachments.map((a) => a.text);
+    if (refineDeliverable && !parts.includes(refineDeliverable)) parts.unshift(refineDeliverable);
+    const attached_context = parts.join('\n\n---\n\n');
+    const attached_names = [
+      ...(refineDeliverable && !attachments.some((a) => a.name === REFINE_ATTACH_NAME)
+        ? [REFINE_ATTACH_NAME]
+        : []),
+      ...attachments.map((a) => a.name),
+    ];
 
     setMessages(prev => [...prev, userMsg]);
     send({
@@ -249,6 +245,19 @@ export default function SpawnDirectChat({
         </div>
 
         <div className="flex items-center gap-3">
+          {refineDeliverable && (
+            <button
+              type="button"
+              onClick={() => {
+                const latestAssistant = [...messages].reverse().find((m) => m.sender !== 'user');
+                if (latestAssistant?.text) onFinalize?.(latestAssistant.text);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider rounded-lg bg-primary text-primary-foreground hover:bg-primary-hover transition-all select-none"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{t('spawn.finalize_to_main')}</span>
+            </button>
+          )}
         </div>
       </div>
 

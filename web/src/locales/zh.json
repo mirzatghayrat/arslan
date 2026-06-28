@@ -287,7 +287,8 @@
     "verdict_like": "赞",
     "verdict_dislike": "踩",
     "no_model_hint": "尚未配置模型 — 请在设置中添加 LLM 以开始使用。",
-    "open_settings": "打开设置"
+    "open_settings": "打开设置",
+    "refined_badge": "定稿"
   },
   "ledger": {
     "title": "活跃分身账本",
@@ -405,5 +406,8 @@
       "assignable_group": "可装备",
       "locked_group": "主机级 / 未启用"
     }
+  },
+  "spawn": {
+    "finalize_to_main": "定稿回主框"
   }
 }

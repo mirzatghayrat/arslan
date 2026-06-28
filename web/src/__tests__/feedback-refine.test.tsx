@@ -8,17 +8,24 @@
  *  - 精修 → onRefine(3, 42, 'OUT', '小美')
  */
 
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import OrchestratorChat from "../components/OrchestratorChat";
 import SpawnDirectChat from "../components/SpawnDirectChat";
+import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 // Deterministic i18n — t returns the key.
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
-// WS mock for SpawnDirectChat (mirror spawn-direct-chat-tools.test.tsx).
+// WS mock for SpawnDirectChat — capture the frame callback + the send spy so tests
+// can drive incoming frames and inspect outgoing frames (mirror spawn-direct-chat-tools).
+let frameCb: (m: any) => void = () => {};
+const sendSpy = vi.fn();
 vi.mock("../hooks/useWebSocket", () => ({
-  useWebSocket: () => ({ send: vi.fn(), reconnecting: false, setLastMessageId: vi.fn() }),
+  useWebSocket: (_path: string, onMessage?: (m: any) => void) => {
+    if (onMessage) frameCb = onMessage;
+    return { send: sendSpy, reconnecting: false, setLastMessageId: vi.fn() };
+  },
 }));
 
 vi.mock("../api/client", () => ({
@@ -30,6 +37,10 @@ vi.mock("../api/client", () => ({
 
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
+});
+
+beforeEach(() => {
+  sendSpy.mockClear();
 });
 
 const baseProps = {
@@ -120,5 +131,74 @@ describe("SpawnDirectChat — refine handoff (banner + seed)", () => {
   it("does NOT render the banner without refineDeliverable", () => {
     render(<SpawnDirectChat spawn={refineSpawn} currentStyle="quartz" />);
     expect(screen.queryByText(/正在精修：/)).toBeNull();
+  });
+});
+
+describe("SpawnDirectChat — refine send + 定稿 (Part A + Task 4)", () => {
+  it("includes the deliverable in attached_context on send during refine mode", () => {
+    render(
+      <SpawnDirectChat
+        spawn={refineSpawn}
+        currentStyle="quartz"
+        refineDeliverable={"DELIVERABLE TEXT"}
+        onFinalize={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText("spawn_chat.placeholder_input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "tighten the intro" } });
+    fireEvent.submit(input.closest("form")!);
+
+    const userFrame = sendSpy.mock.calls
+      .map((c) => c[0])
+      .find((f: any) => f?.type === "user_message");
+    expect(userFrame).toBeDefined();
+    expect(userFrame.attached_context).toContain("DELIVERABLE TEXT");
+    expect(userFrame.attached_names).toContain("正在精修的产出");
+  });
+
+  it("renders 定稿 and calls onFinalize with the latest assistant reply", () => {
+    const onFinalize = vi.fn();
+    render(
+      <SpawnDirectChat
+        spawn={refineSpawn}
+        currentStyle="quartz"
+        refineDeliverable={"DELIVERABLE TEXT"}
+        onFinalize={onFinalize}
+      />,
+    );
+
+    // Drive the WS mock to deliver an assistant reply "REFINED".
+    act(() => { frameCb({ type: "stream_start", message_id: 0 }); });
+    act(() => { frameCb({ type: "stream_chunk", content: "REFINED" }); });
+    act(() => { frameCb({ type: "stream_end", message_id: 88 }); });
+
+    const finalizeBtn = screen.getByText("spawn.finalize_to_main");
+    fireEvent.click(finalizeBtn);
+    expect(onFinalize).toHaveBeenCalledWith("REFINED");
+  });
+});
+
+describe("arslanStore — deliverable_finalized", () => {
+  beforeEach(() => useArslanStore.setState(initialArslanState(), true));
+
+  it("appends a spawn item carrying refinedFrom", () => {
+    const store = () => useArslanStore.getState();
+    store().handleFrame({
+      type: "deliverable_finalized",
+      spawn_id: 3,
+      message_id: 77,
+      content: "REFINED",
+      refined_from: 42,
+      spawn_name: "小美",
+    } as any);
+
+    const items = store().items;
+    const last = items[items.length - 1];
+    expect(last.role).toBe("spawn");
+    expect(last.spawnId).toBe(3);
+    expect(last.content).toBe("REFINED");
+    expect(last.refinedFrom).toBe(42);
+    expect(last.spawnName).toBe("小美");
   });
 });

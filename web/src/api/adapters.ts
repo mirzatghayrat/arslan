@@ -251,6 +251,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         messageId: item.spawnMessageId ?? undefined,
         taskBrief: item.taskBrief ?? undefined,
         runId: item.runId ?? undefined,
+        refinedFrom: item.refinedFrom ?? undefined,
       };
     }
 

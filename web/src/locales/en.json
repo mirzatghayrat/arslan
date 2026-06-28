@@ -287,7 +287,8 @@
     "verdict_like": "Helpful",
     "verdict_dislike": "Not helpful",
     "no_model_hint": "No model configured yet — add an LLM in Settings to start.",
-    "open_settings": "Open Settings"
+    "open_settings": "Open Settings",
+    "refined_badge": "Refined"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -405,5 +406,8 @@
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
     }
+  },
+  "spawn": {
+    "finalize_to_main": "Finalize to main"
   }
 }
