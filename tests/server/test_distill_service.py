@@ -96,3 +96,36 @@ def test_distill_llm_failure_keeps_existing_and_no_marker(maker, monkeypatch):
     facts, marks = anyio.run(_run)
     assert facts == []          # unchanged
     assert len(marks) == 0      # NOT marked → retryable next session
+
+
+def test_distill_from_signals_merges_into_memory_facts(maker, monkeypatch):
+    """Ephemeral sandbox sessions distill from an in-memory signals string (no DB
+    transcript), merging into the spawn's memory_facts. No DistilledSession marker."""
+    from server.services import distill_service
+    captured = {}
+    async def fake_distill_facts(existing, signals):
+        captured["existing"] = existing
+        captured["signals"] = signals
+        return ["用户偏好更紧凑的开头"]
+    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
+
+    async def _run():
+        await distill_service.distill_from_signals(3, "用户消息:\n把开头改紧凑\n\n分身产出:\n紧凑版")
+        async with maker() as s:
+            return (await s.get(Spawn, 3)).memory_facts
+    facts = anyio.run(_run)
+    assert facts == ["用户偏好更紧凑的开头"]
+    assert "把开头改紧凑" in captured["signals"]
+
+
+def test_distill_from_signals_noop_on_llm_failure(maker, monkeypatch):
+    """distill_facts returning None (LLM failure) leaves memory_facts untouched."""
+    from server.services import distill_service
+    async def fake_distill_facts(existing, signals):
+        return None
+    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
+    async def _run():
+        await distill_service.distill_from_signals(3, "signals")
+        async with maker() as s:
+            return (await s.get(Spawn, 3)).memory_facts
+    assert anyio.run(_run) == []

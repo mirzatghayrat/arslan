@@ -103,3 +103,26 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> None:
             spawn.memory_facts = new_facts
         db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
+
+
+async def distill_from_signals(spawn_id: int, signals: str) -> None:
+    """Distill an EPHEMERAL session (sandbox) whose transcript lives only in memory.
+    Unlike distill_session, takes signals directly (no DB query) and writes no
+    DistilledSession marker (each sandbox confirm is its own one-shot session).
+    Best-effort, never raises."""
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            spawn = await db.get(Spawn, spawn_id)
+            if spawn is None:
+                return
+            existing = list(spawn.memory_facts or [])
+        new_facts = await distill_facts(existing, signals)
+        if new_facts is None:
+            return
+        async with db_session.AsyncSessionLocal() as db:
+            spawn = await db.get(Spawn, spawn_id)
+            if spawn is not None:
+                spawn.memory_facts = new_facts
+                await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("distill_from_signals(spawn=%s) failed: %s", spawn_id, exc)
