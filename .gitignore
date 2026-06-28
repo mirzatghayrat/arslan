@@ -27,3 +27,6 @@ spawns/*/
 *.db
 *.db-wal
 *.db-shm
+
+# brainstorming visual-companion mockups
+.superpowers/
