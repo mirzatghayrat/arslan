@@ -554,5 +554,31 @@ async def record_deliverable_verdict(
     emit({"type": "verdict_recorded", "spawn_id": spawn_id, "action": action})
 
 
+async def finalize_refinement(
+    conversation_id: str,
+    spawn_id: int,
+    original_message_id: int | None,
+    content: str,
+    emit: EventSink,
+) -> None:
+    """Persist a refined spawn deliverable into the orchestrator conversation and
+    record it as an accepted verdict. Content is the spawn's own refined output
+    (from its direct-chat), posted back to the main thread by the user."""
+    spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    if spawn_name is None:
+        emit({"type": "error", "code": "INVALID_INPUT", "message": "unknown spawn", "recoverable": True})
+        return
+    new_id = await memory.add_message(
+        conversation_id, "spawn_summary", content, display_content=content, spawn_id=spawn_id
+    )
+    emit({
+        "type": "deliverable_finalized", "spawn_id": spawn_id, "message_id": new_id,
+        "content": content, "refined_from": original_message_id, "spawn_name": spawn_name,
+    })
+    # Record an accept signal against the finalized deliverable (reuses evolution path;
+    # its verdict_recorded ack marks the just-appended item accepted in the UI).
+    await record_deliverable_verdict(conversation_id, spawn_id, "accept", new_id, emit)
+
+
 # Public alias for reuse from other orchestration entry points (e.g. refinements).
 dispatch_spawn = _dispatch_spawn

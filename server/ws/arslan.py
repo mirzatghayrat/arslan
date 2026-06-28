@@ -242,6 +242,27 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 )
                 continue
 
+            if msg_type == "finalize_refinement":
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                raw_mid = data.get("message_id")
+                try:
+                    original_message_id = int(raw_mid) if raw_mid is not None else None
+                except (TypeError, ValueError):
+                    original_message_id = None
+                content = (data.get("content") or "").strip()
+                if not content:
+                    await ws.send_json(protocol.error("INVALID_INPUT", "content required"))
+                    continue
+                await run_with_live_frames(
+                    arslan.finalize_refinement(conversation_id, spawn_id, original_message_id, content, emit)
+                )
+                continue
+
             if msg_type == "roster_invite":
                 raw_id = data.get("spawn_id")
                 try:
