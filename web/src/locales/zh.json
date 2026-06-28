@@ -283,6 +283,9 @@
     "verdict_discard": "丢弃",
     "verdict_accepted": "已采纳",
     "verdict_discarded": "已弃用",
+    "refine": "精修",
+    "verdict_like": "赞",
+    "verdict_dislike": "踩",
     "no_model_hint": "尚未配置模型 — 请在设置中添加 LLM 以开始使用。",
     "open_settings": "打开设置"
   },

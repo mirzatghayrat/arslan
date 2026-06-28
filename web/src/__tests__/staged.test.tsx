@@ -71,7 +71,8 @@ describe("staged orchestration UI", () => {
       />,
     );
 
-    const acceptBtn = screen.getByRole("button", { name: /orchestrator\.verdict_accept/i });
+    // 👍 is now an icon button with a title (no text label).
+    const acceptBtn = screen.getByTitle("orchestrator.verdict_like");
     await userEvent.click(acceptBtn);
     expect(onVerdict).toHaveBeenCalledWith("accept", 7, undefined);
   });
@@ -96,7 +97,8 @@ describe("staged orchestration UI", () => {
       />,
     );
 
-    const discardBtn = screen.getByRole("button", { name: /orchestrator\.verdict_discard/i });
+    // 👎 is now an icon button with a title (no text label).
+    const discardBtn = screen.getByTitle("orchestrator.verdict_dislike");
     await userEvent.click(discardBtn);
     expect(onVerdict).toHaveBeenCalledWith("discard", 3, undefined);
   });

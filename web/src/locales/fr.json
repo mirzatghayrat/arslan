@@ -283,6 +283,9 @@
     "verdict_discard": "Rejeter",
     "verdict_accepted": "Accepté",
     "verdict_discarded": "Rejeté",
+    "refine": "Refine",
+    "verdict_like": "Helpful",
+    "verdict_dislike": "Not helpful",
     "no_model_hint": "Aucun modèle configuré — ajoutez un LLM dans les paramètres pour commencer.",
     "open_settings": "Ouvrir les paramètres"
   },

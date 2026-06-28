@@ -53,6 +53,8 @@ export interface Message {
   runId?: number | null;
   /** The task brief this spawn turn ran — used to re-dispatch the same task on redo. */
   taskBrief?: string | null;
+  /** The spawn's display name for this deliverable — used to seed the refine side chat. */
+  spawnName?: string;
   routedTo?: {
     spawnId: string;
     spawnName: string;

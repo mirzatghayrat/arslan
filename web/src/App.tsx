@@ -480,16 +480,14 @@ export default function App() {
                 onConfirmDirection={(spawnId) =>
                   wsSend({ type: 'confirm_direction', spawn_id: spawnId })
                 }
-                onDeliverableVerdict={(action, spawnId, messageId, taskBrief) => {
+                onDeliverableVerdict={(action, spawnId, messageId) => {
                   if (action === 'accept') {
                     wsSend({ type: 'accept_deliverable', spawn_id: spawnId, message_id: messageId });
                   } else if (action === 'discard') {
                     wsSend({ type: 'discard', spawn_id: spawnId, message_id: messageId });
-                  } else if (action === 'redo') {
-                    // task_brief is required so the backend re-dispatches the same task
-                    wsSend({ type: 'redo', spawn_id: spawnId, task_brief: taskBrief ?? '' });
                   }
                 }}
+                onRefine={() => {}}
               />
             )}
 

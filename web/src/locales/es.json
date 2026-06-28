@@ -283,6 +283,9 @@
     "verdict_discard": "Descartar",
     "verdict_accepted": "Aceptado",
     "verdict_discarded": "Descartado",
+    "refine": "Refine",
+    "verdict_like": "Helpful",
+    "verdict_dislike": "Not helpful",
     "no_model_hint": "Aún no hay modelo configurado — agrega un LLM en Configuración para comenzar.",
     "open_settings": "Abrir configuración"
   },

@@ -283,6 +283,9 @@
     "verdict_discard": "破棄",
     "verdict_accepted": "採用済み",
     "verdict_discarded": "破棄済み",
+    "refine": "Refine",
+    "verdict_like": "Helpful",
+    "verdict_dislike": "Not helpful",
     "no_model_hint": "モデルがまだ設定されていません — 設定でLLMを追加してください。",
     "open_settings": "設定を開く"
   },
