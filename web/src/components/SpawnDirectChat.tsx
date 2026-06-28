@@ -248,11 +248,13 @@ export default function SpawnDirectChat({
           {refineDeliverable && (
             <button
               type="button"
+              disabled={streaming}
               onClick={() => {
+                if (streaming) return;
                 const latestAssistant = [...messages].reverse().find((m) => m.sender !== 'user');
                 if (latestAssistant?.text) onFinalize?.(latestAssistant.text);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider rounded-lg bg-primary text-primary-foreground hover:bg-primary-hover transition-all select-none"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider rounded-lg bg-primary text-primary-foreground hover:bg-primary-hover transition-all select-none disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{t('spawn.finalize_to_main')}</span>

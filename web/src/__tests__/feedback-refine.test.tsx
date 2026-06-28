@@ -177,6 +177,26 @@ describe("SpawnDirectChat — refine send + 定稿 (Part A + Task 4)", () => {
     fireEvent.click(finalizeBtn);
     expect(onFinalize).toHaveBeenCalledWith("REFINED");
   });
+
+  it("does not finalize a partial reply mid-stream (定稿 disabled while streaming)", () => {
+    const onFinalize = vi.fn();
+    render(
+      <SpawnDirectChat
+        spawn={refineSpawn}
+        currentStyle="quartz"
+        refineDeliverable={"DELIVERABLE TEXT"}
+        onFinalize={onFinalize}
+      />,
+    );
+    // Stream is in flight (no stream_end) → reply is partial.
+    act(() => { frameCb({ type: "stream_start", message_id: 0 }); });
+    act(() => { frameCb({ type: "stream_chunk", content: "PARTIA" }); });
+
+    const finalizeBtn = screen.getByText("spawn.finalize_to_main").closest("button")!;
+    expect(finalizeBtn).toBeDisabled();
+    fireEvent.click(finalizeBtn);
+    expect(onFinalize).not.toHaveBeenCalled();
+  });
 });
 
 describe("arslanStore — deliverable_finalized", () => {
