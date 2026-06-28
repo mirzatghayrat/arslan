@@ -39,6 +39,8 @@ interface OrchestratorChatProps {
   hasModel?: boolean;
   /** Navigate to the Settings screen. Used by the no-model hint. */
   onOpenSettings?: () => void;
+  /** The active conversation id — consumed by SandboxPanel (later task). */
+  conversationId?: string;
 }
 
 export default function OrchestratorChat({
@@ -54,6 +56,7 @@ export default function OrchestratorChat({
   onRefine,
   hasModel = true,
   onOpenSettings,
+  conversationId,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   // Live roster from store — used to determine which spawns are in this conversation
@@ -74,7 +77,25 @@ export default function OrchestratorChat({
   const [selectedAssignSpawnId, setSelectedAssignSpawnId] = useState<string | null>(null);
   const [assignTaskText, setAssignTaskText] = useState('');
 
-  const [splitSpawnId, setSplitSpawnId] = useState<string | null>(null);
+  // Open sandbox sessions: { spawnId, sessionId, seed? }. Multiple can be alive; the
+  // 45% pane renders the active one. seed = a deliverable to tune (refine entry).
+  type OpenSandbox = { spawnId: string; sessionId: string; seed: string | null };
+  const [openSandboxes, setOpenSandboxes] = useState<OpenSandbox[]>([]);
+  const [activeSandboxSpawnId, setActiveSandboxSpawnId] = useState<string | null>(null);
+
+  const openSandbox = (spawnId: string, seed: string | null = null) => {
+    setOpenSandboxes((prev) =>
+      prev.some((s) => s.spawnId === spawnId)
+        ? prev.map((s) => (s.spawnId === spawnId && seed ? { ...s, seed } : s))
+        : [...prev, { spawnId, sessionId: `sbx-${spawnId}-${prev.length}-${performance.now()}`, seed }]
+    );
+    setActiveSandboxSpawnId(spawnId);
+  };
+  const closeSandbox = (spawnId: string) => {
+    setOpenSandboxes((prev) => prev.filter((s) => s.spawnId !== spawnId));
+    setActiveSandboxSpawnId((cur) => (cur === spawnId ? null : cur));
+  };
+  const splitSpawnId = activeSandboxSpawnId;  // back-compat alias for the layout width logic + the existing right pane
   // subInputValue, subChats, subDrafts, subTyping removed — sandbox not yet wired to backend
 
   // Global Integration Discovery & Repository Engine — no MCP backend yet; tool-hub disabled
@@ -117,12 +138,12 @@ export default function OrchestratorChat({
 
   const handleConfirmMergeDraft = (_spawnId: string) => {
     // coming soon — no fabricated merge output
-    setSplitSpawnId(null);
+    closeSandbox(_spawnId);
   };
 
   const handleDiscardSubSession = (spawnId: string) => {
     setSpawnStatuses(prev => ({ ...prev, [spawnId]: 'idle' }));
-    setSplitSpawnId(null);
+    closeSandbox(spawnId);
   };
 
   const toggleToolCollapse = (id: string) => {
@@ -202,7 +223,7 @@ export default function OrchestratorChat({
               const status = spawnStatuses[spawn.id] || 'idle';
               const isWorking = status === 'working';
               const isReviewPending = status === 'review_pending';
-              const isSplitActive = splitSpawnId === spawn.id;
+              const isSplitActive = activeSandboxSpawnId === spawn.id;
 
               // Determine status indicator animation to place in front of spawn name
               let statusIndicator = null;
@@ -235,13 +256,10 @@ export default function OrchestratorChat({
                 <button
                   key={spawn.id}
                   onClick={() => {
-                    if (splitSpawnId === spawn.id) {
-                      setSplitSpawnId(null);
+                    if (activeSandboxSpawnId === spawn.id) {
+                      closeSandbox(spawn.id);
                     } else {
-                      setSplitSpawnId(spawn.id);
-                      if (status === 'idle') {
-                        handleLaunchSpawnTask(spawn.id);
-                      }
+                      openSandbox(spawn.id);
                     }
                   }}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold select-none cursor-pointer ${
@@ -678,7 +696,7 @@ export default function OrchestratorChat({
                           </button>
                           <button
                             title={t('orchestrator.refine')}
-                            onClick={() => onRefine?.(Number(msg.spawnId), msg.messageId, msg.text, msg.spawnName ?? '')}
+                            onClick={() => openSandbox(String(msg.spawnId), msg.text)}
                             className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none"
                           >
                             <Wand2 className="w-3.5 h-3.5" />
@@ -859,7 +877,7 @@ export default function OrchestratorChat({
                         </button>
                         <button
                           title={t('orchestrator.refine')}
-                          onClick={() => onRefine?.(Number(msg.spawnId), msg.messageId, msg.text, msg.spawnName ?? '')}
+                          onClick={() => openSandbox(String(msg.spawnId), msg.text)}
                           className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none"
                         >
                           <Wand2 className="w-3.5 h-3.5" />
@@ -1048,7 +1066,7 @@ export default function OrchestratorChat({
                         </button>
                         <button
                           title={t('orchestrator.refine')}
-                          onClick={() => onRefine?.(Number(msg.spawnId), msg.messageId, msg.text, msg.spawnName ?? '')}
+                          onClick={() => openSandbox(String(msg.spawnId), msg.text)}
                           className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none"
                         >
                           <Wand2 className="w-3.5 h-3.5" />
@@ -1182,7 +1200,7 @@ export default function OrchestratorChat({
             </div>
 
             <button 
-              onClick={() => setSplitSpawnId(null)}
+              onClick={() => splitSpawnId && closeSandbox(splitSpawnId)}
               className="p-1 text-muted-foreground hover:text-foreground bg-surface border border-border/80 rounded hover:bg-background/30"
               title="Minimize Sandbox"
             >
@@ -1203,7 +1221,7 @@ export default function OrchestratorChat({
               </p>
             </div>
             <button
-              onClick={() => setSplitSpawnId(null)}
+              onClick={() => splitSpawnId && closeSandbox(splitSpawnId)}
               className="mt-2 px-4 py-1.5 bg-transparent hover:bg-foreground/[0.04] text-muted-foreground hover:text-foreground text-[10px] rounded-xl border border-border/80 font-mono uppercase tracking-wider transition-all"
             >
               {t('orchestrator.close_panel')}
