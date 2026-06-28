@@ -65,6 +65,18 @@ class Feedback(Base):
     spawn = relationship("Spawn", back_populates="feedback_entries")
 
 
+class DistilledSession(Base):
+    """Idempotency marker: a (conversation, spawn) pair already distilled into prefs."""
+
+    __tablename__ = "distilled_sessions"
+    __table_args__ = (UniqueConstraint("conversation_id", "spawn_id", name="uq_distilled_conv_spawn"),)
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    spawn_id = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+
 class Setting(Base):
     __tablename__ = "settings"
 
