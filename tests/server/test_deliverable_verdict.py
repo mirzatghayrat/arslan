@@ -58,11 +58,12 @@ def verdict_db(tmp_path, monkeypatch):
                 content="write me a poem",
                 timestamp=datetime.utcnow() - timedelta(seconds=10),
             ))
-            # Deliverable spawn summary (id=2)
+            # Deliverable (id=2) — role="deliverable" so confirm_sandbox_merge tests can
+            # assert exactly 1 spawn_summary row after the merge without colliding here.
             s.add(ArslanMessage(
                 id=2,
                 conversation_id=CONVERSATION_ID,
-                role="spawn_summary",
+                role="deliverable",
                 content="[summary]",
                 display_content="Roses are red, violets are blue.",
                 spawn_id=7,
@@ -382,3 +383,37 @@ def test_record_deliverable_verdict_elapsed_override(verdict_db, monkeypatch):
         )
     anyio.run(_run)
     assert captured["elapsed_seconds"] == 3.5
+
+
+def test_confirm_sandbox_merge_posts_summary_card_and_accepts(verdict_db, monkeypatch):
+    """confirm_sandbox_merge appends a spawn_summary whose display_content carries the
+    TL;DR caption + full content, emits deliverable_finalized(+summary), and records an
+    accept verdict with the supplied elapsed."""
+    from server.db.models import ArslanMessage, Feedback
+    from sqlalchemy import select
+    captured = {}
+    def fake_record_verdict(spawn_name, *, session_id, user_input, agent_output, action, elapsed_seconds, **kw):
+        captured["elapsed_seconds"] = elapsed_seconds
+        captured["action"] = action
+    monkeypatch.setattr(evolution_service, "record_verdict", fake_record_verdict)
+
+    emitted = []
+    async def _run():
+        await arslan_mod.confirm_sandbox_merge(
+            verdict_db, spawn_id=7, content="精简版周报全文",
+            summary="精简版周报", elapsed_seconds=2.0, emit=emitted.append,
+        )
+        async with db_session.AsyncSessionLocal() as s:
+            rows = (await s.execute(select(ArslanMessage).where(
+                ArslanMessage.role == "spawn_summary", ArslanMessage.spawn_id == 7))).scalars().all()
+            fb = (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
+        return rows, fb
+    rows, fb = anyio.run(_run)
+
+    assert len(rows) == 1
+    assert rows[0].content == "精简版周报全文"
+    assert "精简版周报" in rows[0].display_content and "精简版周报全文" in rows[0].display_content
+    finalized = [e for e in emitted if e.get("type") == "deliverable_finalized"]
+    assert finalized and finalized[0]["summary"] == "精简版周报"
+    assert captured["action"] == "accept" and captured["elapsed_seconds"] == 2.0
+    assert len(fb) == 1 and fb[0].user_action == "thumbs_up"

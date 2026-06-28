@@ -601,5 +601,35 @@ async def finalize_refinement(
     await record_deliverable_verdict(conversation_id, spawn_id, "accept", new_id, emit)
 
 
+async def confirm_sandbox_merge(
+    conversation_id: str,
+    spawn_id: int,
+    content: str,
+    summary: str,
+    elapsed_seconds: float,
+    emit: EventSink,
+) -> int | None:
+    """Merge a sandbox session's final deliverable into the main orchestration thread:
+    append a spawn_summary card (display_content = TL;DR caption + full content), emit
+    deliverable_finalized(+summary), and record a speed-weighted accept verdict.
+    Returns the new message id, or None if the spawn is unknown."""
+    spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    if spawn_name is None:
+        emit({"type": "error", "code": "INVALID_INPUT", "message": "unknown spawn", "recoverable": True})
+        return None
+    display = f"**✓ {summary}**\n\n{content}" if summary else content
+    new_id = await memory.add_message(
+        conversation_id, "spawn_summary", content, display_content=display, spawn_id=spawn_id
+    )
+    emit({
+        "type": "deliverable_finalized", "spawn_id": spawn_id, "message_id": new_id,
+        "content": content, "summary": summary, "refined_from": None, "spawn_name": spawn_name,
+    })
+    await record_deliverable_verdict(
+        conversation_id, spawn_id, "accept", new_id, emit, elapsed_override=elapsed_seconds
+    )
+    return new_id
+
+
 # Public alias for reuse from other orchestration entry points (e.g. refinements).
 dispatch_spawn = _dispatch_spawn
