@@ -6,12 +6,10 @@ import logging
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from arslan.llm.adapter import LLMAdapter
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ChatMessage, Spawn
-from server.services import ingest, knowledge, storage_intent
-from server.services.llm_factory import build_adapter
+from server.services import ingest, storage_intent
 from server.ws import protocol
 
 logger = logging.getLogger(__name__)
@@ -41,11 +39,6 @@ async def _save_message(spawn_id: int, role: str, content: str) -> int:
         return msg.id
 
 
-async def _build_adapter() -> LLMAdapter:
-    # Single source of truth for settings → adapter (incl. Tier-0 preset expansion).
-    return await build_adapter()
-
-
 async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
     token = ws.query_params.get("token")
     if not is_ws_token_valid(token):
@@ -59,7 +52,6 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
         return
 
     await ws.accept()
-    system_prompt = spawn.system_prompt or "You are a helpful assistant."
 
     # Send existing history so a fresh client can render the conversation.
     existing = await _history(spawn_id)
@@ -133,34 +125,60 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
                 for m in await _history(spawn_id)
             ][:-1]  # exclude the just-saved user message; passed as `user`
 
-            # KB retrieval injected into the system prompt (best-effort, like dispatcher).
-            kb_system = system_prompt
-            try:
-                chunks = await knowledge.retrieve(spawn_id, user_content)
-                kb_system = system_prompt + knowledge.knowledge_block(chunks)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("chat KB retrieve failed (non-fatal): %s", exc)
-
             llm_user = user_content
             if attached:
                 llm_user = f"[附带材料]\n{attached}\n\n[用户消息]\n{user_content}"
 
-            adapter = await _build_adapter()
-            assistant_text = ""
-            # Reserve the assistant message id by streaming first, persisting on end.
-            await ws.send_json(protocol.stream_start(0))
-            try:
-                async for piece in adapter.chat_stream(
-                    kb_system, llm_user, history=history
-                ):
-                    assistant_text += piece
-                    await ws.send_json(protocol.stream_chunk(piece))
-            except Exception as exc:  # noqa: BLE001
-                await ws.send_json(
-                    protocol.error("LLM_ERROR", str(exc), recoverable=True)
-                )
-                continue
+            import asyncio
 
+            from server.orchestrator import spawn_loop
+            from server.orchestrator.dispatcher import build_spawn_system
+
+            # current_turn ≈ this spawn's user-message count (direct chat has no conversation turn).
+            current_turn = sum(1 for m in await _history(spawn_id) if m.role == "user")
+            system, _wired = await build_spawn_system(
+                spawn, retrieval_query=user_content, current_turn=current_turn,
+                attached_context=(attached or None),
+            )
+
+            await ws.send_json(protocol.stream_start(0))
+            queue: asyncio.Queue = asyncio.Queue()
+
+            def _emit(ev: dict) -> None:
+                queue.put_nowait(ev)
+
+            def _on_chunk(piece: str) -> None:
+                queue.put_nowait({"type": "stream_chunk", "content": piece})
+
+            async def _drain() -> None:
+                while True:
+                    ev = await queue.get()
+                    if ev is None:
+                        return
+                    t = ev.get("type")
+                    if t == "stream_chunk":
+                        await ws.send_json(protocol.stream_chunk(ev["content"]))
+                    elif t == "tool_call":
+                        await ws.send_json(protocol.tool_call(ev["tool"], ev.get("args_summary", "")))
+                    elif t == "tool_result":
+                        await ws.send_json(protocol.tool_result(
+                            ev["tool"], bool(ev.get("ok")), ev.get("summary", ""), ev.get("artifact")))
+
+            sender = asyncio.create_task(_drain())
+            try:
+                out = await spawn_loop.run(
+                    spawn_id=spawn_id, system=system, user_content=llm_user, history=history,
+                    current_turn=current_turn, emit=_emit, on_chunk=_on_chunk, allow_escalation=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                queue.put_nowait(None)
+                await sender
+                await ws.send_json(protocol.error("LLM_ERROR", str(exc), recoverable=True))
+                continue
+            queue.put_nowait(None)
+            await sender
+
+            assistant_text = out.get("final") or ""
             msg_id = await _save_message(spawn_id, "assistant", assistant_text)
             await ws.send_json(protocol.stream_end(msg_id))
     except WebSocketDisconnect:

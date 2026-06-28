@@ -1,4 +1,11 @@
-"""Chat WebSocket: streaming, persistence, and resume."""
+"""Chat WebSocket: streaming, persistence, and resume.
+
+The direct-chat reply now runs through ``spawn_loop.run`` (tools + force_tools,
+allow_escalation=False) instead of a bare ``adapter.chat_stream`` — these tests
+stub ``spawn_loop.run``/``build_spawn_system`` to keep the LLM offline while
+exercising the same WS contract (stream frames, persistence, resume) and the
+unchanged attach/storage-intent path.
+"""
 import anyio
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +15,8 @@ from starlette.websockets import WebSocketDisconnect
 import server.db.session as db_session
 import server.ws.chat as chat_module
 from server.db.models import Base, Spawn
+from server.orchestrator import spawn_loop
+from server.orchestrator import dispatcher
 
 
 @pytest.fixture
@@ -42,12 +51,34 @@ def app_client(tmp_path, monkeypatch):
     # Point the WS handlers' session factory at the isolated temp DB.
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
-    # Stub the LLM so no network call happens; yield deterministic chunks.
-    async def _fake_stream(self, system, user, history=None, tools=None, temperature=0.7):
-        for token in ["Based ", "on ", "trends..."]:
-            yield token
+    # Stub build_spawn_system so we don't need the full registry/seeder here;
+    # echoes the persona + any KB/attached context so KB/attach tests can assert.
+    async def _fake_build_spawn_system(spawn, *, retrieval_query, current_turn,
+                                       attached_context=None, system_prompt_override=None):
+        from server.services import knowledge
+        base = system_prompt_override if system_prompt_override is not None else (
+            spawn.system_prompt or "You are a helpful assistant.")
+        system = base
+        try:
+            chunks = await knowledge.retrieve(spawn.id, retrieval_query)
+            system += knowledge.knowledge_block(chunks)
+        except Exception:  # noqa: BLE001
+            pass
+        if attached_context:
+            system += f"\n\n[用户附带的临时材料]\n{attached_context}"
+        return system, []
 
-    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _fake_stream)
+    monkeypatch.setattr(dispatcher, "build_spawn_system", _fake_build_spawn_system)
+    monkeypatch.setattr(chat_module, "build_spawn_system", _fake_build_spawn_system, raising=False)
+
+    # Stub spawn_loop.run so no network call happens; emit deterministic chunks.
+    async def _fake_run(*, spawn_id, system, user_content, history, current_turn,
+                        emit, on_chunk, allow_escalation):
+        for token in ["Based ", "on ", "trends..."]:
+            on_chunk(token)
+        return {"final": "Based on trends...", "escalation": None, "tool_trace": []}
+
+    monkeypatch.setattr(spawn_loop, "run", _fake_run)
 
     from server.main import create_app
 
@@ -121,12 +152,12 @@ def test_chat_missing_spawn_closes_4004(app_client):
 
 
 def test_chat_llm_error_emits_recoverable_error_frame(app_client, monkeypatch):
-    # Override the stubbed stream so the LLM "fails" mid-turn.
-    async def _boom(self, system, user, history=None, tools=None, temperature=0.7):
+    # Override the stubbed run so the LLM "fails" mid-turn.
+    async def _boom(*, spawn_id, system, user_content, history, current_turn,
+                    emit, on_chunk, allow_escalation):
         raise RuntimeError("llm down")
-        yield ""  # unreachable; makes this an async generator
 
-    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _boom)
+    monkeypatch.setattr(spawn_loop, "run", _boom)
 
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()  # history frame
@@ -141,10 +172,12 @@ def test_chat_llm_error_emits_recoverable_error_frame(app_client, monkeypatch):
 
 def test_chat_injects_kb(app_client, monkeypatch):
     captured = {}
-    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
-        captured["system"] = system; captured["user"] = user
-        yield "ok"
-    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
+    async def _s(*, spawn_id, system, user_content, history, current_turn,
+                 emit, on_chunk, allow_escalation):
+        captured["system"] = system; captured["user"] = user_content
+        on_chunk("ok")
+        return {"final": "ok", "escalation": None, "tool_trace": []}
+    monkeypatch.setattr(spawn_loop, "run", _s)
     from server.services import knowledge
     async def fake_retrieve(spawn_id, query, *, k=5): return ["KB FACT: serum X is best"]
     monkeypatch.setattr(knowledge, "retrieve", fake_retrieve)
@@ -159,10 +192,12 @@ def test_chat_injects_kb(app_client, monkeypatch):
 
 def test_chat_uses_attached_context(app_client, monkeypatch):
     captured = {}
-    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
-        captured["user"] = user
-        yield "ok"
-    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
+    async def _s(*, spawn_id, system, user_content, history, current_turn,
+                 emit, on_chunk, allow_escalation):
+        captured["user"] = user_content
+        on_chunk("ok")
+        return {"final": "ok", "escalation": None, "tool_trace": []}
+    monkeypatch.setattr(spawn_loop, "run", _s)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "summarise",
@@ -207,9 +242,6 @@ def test_chat_store_uses_material_from_earlier_turn(app_client, monkeypatch):
     async def fake_ingest(spawn_id, source, text, *, compress=False):
         seen["text"] = text; seen["spawn_id"] = spawn_id; return 2
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
-    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
-        yield "ok"
-    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()  # history
         # turn 1: drop material, ask a question (no store) → normal stream
@@ -234,9 +266,6 @@ def test_chat_no_store_when_intent_false(app_client, monkeypatch):
     called = {"ingest": False}
     async def fake_ingest(*a, **k): called["ingest"] = True; return 1
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
-    async def _s(self, system, user, history=None, tools=None, temperature=0.7):
-        yield "reply"
-    monkeypatch.setattr(chat_module.LLMAdapter, "chat_stream", _s)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "what's in this?",
