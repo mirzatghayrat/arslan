@@ -5,11 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
+from server.db.models import Spawn
 from server.db.session import get_session
 from server.schemas import (
     ConfigUpdateIn,
     EquipmentOut,
     EquipmentUpdateIn,
+    PreferenceDeleteIn,
+    PreferencesOut,
     SpawnDetailOut,
     SpawnOut,
 )
@@ -91,6 +94,25 @@ async def update_equipment(
     assert detail is not None
     await _attach_equipment(detail, spawn_id, session)
     return detail
+
+
+@router.get("/spawns/{spawn_id}/preferences", response_model=PreferencesOut)
+async def get_preferences(spawn_id: int, session: AsyncSession = Depends(get_session)) -> PreferencesOut:
+    spawn = await session.get(Spawn, spawn_id)
+    if spawn is None:
+        raise HTTPException(status_code=404, detail="spawn not found")
+    return PreferencesOut(preferences=list(spawn.memory_facts or []))
+
+
+@router.delete("/spawns/{spawn_id}/preferences", response_model=PreferencesOut)
+async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
+                            session: AsyncSession = Depends(get_session)) -> PreferencesOut:
+    spawn = await session.get(Spawn, spawn_id)
+    if spawn is None:
+        raise HTTPException(status_code=404, detail="spawn not found")
+    spawn.memory_facts = [f for f in (spawn.memory_facts or []) if f != body.fact]
+    await session.commit()
+    return PreferencesOut(preferences=list(spawn.memory_facts))
 
 
 @router.delete("/spawns/{spawn_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -350,3 +350,11 @@ class RunListItemOut(BaseModel):
     total_ms: int | None
     user_message: str
     created_at: str | None = None
+
+
+class PreferencesOut(BaseModel):
+    preferences: list[str] = []
+
+
+class PreferenceDeleteIn(BaseModel):
+    fact: str
