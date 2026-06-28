@@ -24,6 +24,14 @@ interface BackendMessage {
   content: string;
 }
 
+interface ToolStep {
+  tool: string;
+  argsSummary: string;
+  status: 'running' | 'ok' | 'error';
+  resultSummary?: string;
+  artifactSvg?: string;
+}
+
 export default function SpawnDirectChat({
   spawn,
   currentStyle
@@ -35,6 +43,8 @@ export default function SpawnDirectChat({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachKey, setAttachKey] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Per-stream tool steps accumulated from tool_call/tool_result frames, attached on stream_end.
+  const toolStepsRef = useRef<ToolStep[]>([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,6 +89,7 @@ export default function SpawnDirectChat({
       }
       case 'stream_start': {
         setStreaming(true);
+        toolStepsRef.current = [];
         const placeholder: Message = {
           id: '__streaming__',
           sender: 'spawn',
@@ -96,12 +107,46 @@ export default function SpawnDirectChat({
         ));
         break;
       }
+      case 'tool_call': {
+        toolStepsRef.current.push({
+          tool: m.tool as string,
+          argsSummary: (m.args_summary as string) ?? '',
+          status: 'running',
+        });
+        break;
+      }
+      case 'tool_result': {
+        // Find the LAST running step with the same tool and finalize it.
+        const steps = toolStepsRef.current;
+        for (let i = steps.length - 1; i >= 0; i--) {
+          if (steps[i].tool === m.tool && steps[i].status === 'running') {
+            steps[i].status = m.ok ? 'ok' : 'error';
+            steps[i].resultSummary = (m.summary as string) ?? '';
+            steps[i].artifactSvg =
+              m.artifact?.kind === 'svg' ? (m.artifact.content as string) : undefined;
+            break;
+          }
+        }
+        break;
+      }
       case 'stream_end': {
+        const steps = toolStepsRef.current;
+        const toolActivity = steps.length > 0 ? {
+          id: String(m.message_id),
+          toolName: steps[0].tool,
+          emoji: '🔧',
+          status: 'completed' as const,
+          action: steps[0].argsSummary,
+          outputSummary: steps.map(s => s.resultSummary).filter(Boolean).join('\n'),
+          collapsed: false,
+          artifactSvg: steps.find(s => s.artifactSvg)?.artifactSvg,
+        } : undefined;
         setMessages(prev => prev.map(p =>
           p.id === '__streaming__'
-            ? { ...p, id: String(m.message_id), messageId: m.message_id as number }
+            ? { ...p, id: String(m.message_id), messageId: m.message_id as number, ...(toolActivity ? { toolActivity } : {}) }
             : p
         ));
+        toolStepsRef.current = [];
         setStreaming(false);
         setLastMessageId(m.message_id as number);
         break;
@@ -296,6 +341,10 @@ export default function SpawnDirectChat({
                         <p className="text-foreground text-[10.5px] whitespace-pre-line border-l-2 border-primary pl-3 py-1 bg-foreground/[0.01]">
                           {msg.toolActivity.outputSummary}
                         </p>
+                        {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                        {msg.toolActivity?.artifactSvg && (
+                          <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -325,6 +374,10 @@ export default function SpawnDirectChat({
                         <div className="p-3 text-foreground whitespace-pre-line leading-relaxed">
                           {msg.toolActivity.outputSummary}
                         </div>
+                        {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                        {msg.toolActivity?.artifactSvg && (
+                          <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -352,6 +405,10 @@ export default function SpawnDirectChat({
                   <div className="mt-3 border border-primary/40 p-2 text-[11px] bg-background">
                     <div className="text-warning mb-1">STDOUT RESULT &gt; {msg.toolActivity.toolName}</div>
                     <p className="text-foreground">{msg.toolActivity.outputSummary}</p>
+                    {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                    {msg.toolActivity?.artifactSvg && (
+                      <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                    )}
                   </div>
                 )}
               </div>
