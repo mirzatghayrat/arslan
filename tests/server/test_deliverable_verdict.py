@@ -365,3 +365,20 @@ def test_accept_deliverable_bad_spawn_id(verdict_client, monkeypatch):
                 break
 
     assert 4 in calls
+
+
+def test_record_deliverable_verdict_elapsed_override(verdict_db, monkeypatch):
+    """An explicit elapsed_override is passed through to record_verdict verbatim
+    (sandbox confirm measures open→confirm, not message-timestamp age)."""
+    captured = {}
+    def fake_record_verdict(spawn_name, *, session_id, user_input, agent_output, action, elapsed_seconds, **kw):
+        captured["elapsed_seconds"] = elapsed_seconds
+    monkeypatch.setattr(evolution_service, "record_verdict", fake_record_verdict)
+
+    async def _run():
+        await arslan_mod.record_deliverable_verdict(
+            verdict_db, spawn_id=7, action="accept", message_id=2, emit=lambda e: None,
+            elapsed_override=3.5,
+        )
+    anyio.run(_run)
+    assert captured["elapsed_seconds"] == 3.5

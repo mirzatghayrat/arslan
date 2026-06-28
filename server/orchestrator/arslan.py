@@ -493,6 +493,8 @@ async def record_deliverable_verdict(
     action: str,
     message_id: int | None,
     emit: EventSink,
+    *,
+    elapsed_override: float | None = None,
 ) -> None:
     """Record an accept/discard verdict for a deliverable message as a leveling signal.
 
@@ -510,6 +512,8 @@ async def record_deliverable_verdict(
     # Fetch the deliverable message and compute elapsed seconds
     agent_output = ""
     elapsed_seconds = _MISSING_ELAPSED_SECONDS
+    if elapsed_override is not None:
+        elapsed_seconds = max(0.0, float(elapsed_override))
     if message_id is not None:
         async with db_session.AsyncSessionLocal() as db:
             row = await db.execute(
@@ -518,7 +522,7 @@ async def record_deliverable_verdict(
             msg = row.scalar_one_or_none()
         if msg is not None:
             agent_output = msg.display_content or msg.content or ""
-            if msg.timestamp is not None:
+            if elapsed_override is None and msg.timestamp is not None:
                 raw = (datetime.utcnow() - msg.timestamp).total_seconds()
                 elapsed_seconds = max(0.0, raw)
 
