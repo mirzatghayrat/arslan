@@ -137,6 +137,42 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     return block
 
 
+async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
+                             attached_context: str | None = None,
+                             system_prompt_override: str | None = None) -> tuple[str, list[dict]]:
+    """Full spawn system prompt (base + anti-fab + facts + evolution + KB + attached +
+    equipment block + tool guidance) + the live wired tools. Shared by dispatch() and /ws/chat."""
+    from server.services import evolution_service
+    from server.services import knowledge as _knowledge
+
+    facts = await memory.facts_text()
+    base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
+    system = base_prompt
+    system += (
+        "\n\nUse only real or tool-obtained or user-provided information. Do not invent, simulate, "
+        "or fabricate data, statistics, or sources. If you lack data, get it with your tools "
+        "(web_search/web_extract); if you truly cannot, say so or escalate — never fabricate."
+    )
+    if facts:
+        system = f"{system}\n\n{facts}"
+    suffix = evolution_service.prompt_suffix(spawn.name)
+    if suffix:
+        system = f"{system}\n\n{suffix}"
+    try:
+        _kb = await _knowledge.retrieve(spawn.id, retrieval_query)
+        system += _knowledge.knowledge_block(_kb)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
+    if attached_context:
+        system += f"\n\n[用户附带的临时材料]\n{attached_context}"
+    equipment = await registry_service.equipment_for_spawn(spawn.id)
+    wired = await registry_service.wired_tools_for_spawn(spawn.id, current_turn=current_turn)
+    skill_body_map = await registry_service.skill_bodies([s["key"] for s in equipment["skills"]])
+    system += _equipment_block_from(equipment, wired, skill_body_map)
+    system += _SPAWN_TOOL_GUIDANCE
+    return system, wired
+
+
 async def dispatch(
     conversation_id: str,
     *,
@@ -168,45 +204,11 @@ async def dispatch(
     if spawn is None:
         raise ValueError(f"spawn {spawn_id} not found")
 
-    facts = await memory.facts_text()
-    base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
-    system = base_prompt
-    system += (
-        "\n\nUse only real or tool-obtained or user-provided information. Do not invent, simulate, "
-        "or fabricate data, statistics, or sources. If you lack data, get it with your tools "
-        "(web_search/web_extract); if you truly cannot, say so or escalate — never fabricate."
-    )
-    if facts:
-        system = f"{system}\n\n{facts}"
-
-    # Tier-1 evolution reaches the running spawn here: learned rules as a suffix.
-    from server.services import evolution_service
-
-    suffix = evolution_service.prompt_suffix(spawn.name)
-    if suffix:
-        system = f"{system}\n\n{suffix}"
-
-    # Knowledge-base grounding: inject task-relevant chunks (best-effort; never break dispatch).
-    from server.services import knowledge as _knowledge
-    try:
-        _kb = await _knowledge.retrieve(spawn_id, task_brief)
-        system += _knowledge.knowledge_block(_kb)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
-
-    if attached_context:
-        system += f"\n\n[用户附带的临时材料]\n{attached_context}"
-
-    equipment = await registry_service.equipment_for_spawn(spawn_id)
     current_turn = await memory.user_turn_count(conversation_id)
-    # Every spawn carries the universal safe baseline (web_search/web_extract/render_chart),
-    # so wired is never empty → every spawn runs through the tool loop. The legacy zero-tool
-    # path below is kept only as a defensive fallback (e.g. catalog missing the baseline rows).
-    wired = await registry_service.wired_tools_for_spawn(spawn_id, current_turn=current_turn)
-    skill_keys = [s["key"] for s in equipment["skills"]]
-    skill_body_map = await registry_service.skill_bodies(skill_keys)
-    system += _equipment_block_from(equipment, wired, skill_body_map)
-    system += _SPAWN_TOOL_GUIDANCE
+    system, wired = await build_spawn_system(
+        spawn, retrieval_query=task_brief, current_turn=current_turn,
+        attached_context=attached_context, system_prompt_override=system_prompt_override,
+    )
 
     history = await _spawn_history(spawn_id)
 
