@@ -166,6 +166,17 @@ export default function App() {
     });
   }, [wsSend]);
 
+  // Best-effort: flush a session_ended for the active thread if the page is closed/hidden
+  // without an explicit thread switch, so the last conversation still gets its background
+  // distill. pagehide fires on tab close and bfcache navigation; the WS send is best-effort.
+  useEffect(() => {
+    const onPageHide = () => {
+      if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [wsSend, activeThreadId]);
+
   const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('');
 
   // Refine handoff: 精修 on a deliverable opens this spawn's side chat seeded with it.
@@ -508,6 +519,7 @@ export default function App() {
 
             {activeSection === 'spawn' && activeSpawn && (
               <SpawnDirectChat
+                key={activeSpawn.id}
                 spawn={activeSpawn}
                 currentStyle={currentChatStyle}
                 refineDeliverable={refineCtx && String(refineCtx.spawnId) === activeSpawnChatId ? refineCtx.deliverable : null}

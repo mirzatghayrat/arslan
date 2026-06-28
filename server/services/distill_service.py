@@ -1,14 +1,12 @@
 """Session-end distillation: consolidate a spawn's session signals into ≤8 behavioral
 preferences stored in Spawn.memory_facts. Best-effort, background, never raises.
 
-Step-1 finding (verdict source): per-session 👍/👎 verdicts/feedback are recorded by
-`evolution_service.record_feedback` into the per-spawn on-disk EvolutionEngine store
-(`spawns_dir/<name>/.evolution`), NOT cleanly per-conversation. The DB `Feedback` table
-IS written (server/api/evolution.py) but keyed by `session_id="spawn-{spawn_id}"` — i.e.
-per-spawn, not per (conversation_id, spawn_id). So verdicts are not cleanly queryable for a
-given distill session; we DEGRADE to conversation-only signals (user messages + the spawn's
-deliverables from ArslanMessage), which are always present per conversation. Verdicts remain
-an additive signal that can be wired in later if a per-conversation feedback key lands.
+Verdict source: deliverable 👍/👎 verdicts are persisted as DB `Feedback` rows keyed by the
+REAL `conversation_id` (see `record_deliverable_verdict` in server/orchestrator/arslan.py),
+so they ARE cleanly queryable per (conversation_id, spawn_id). We fold them into the distill
+signals alongside conversation material (user messages + the spawn's deliverables from
+ArslanMessage). The REST `/feedback` endpoint still writes a degenerate `spawn-{id}` key; those
+rows are intentionally excluded here since they aren't tied to a specific conversation.
 """
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ import logging
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, DistilledSession, Spawn
+from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.distill import DISTILL_SYSTEM
@@ -80,12 +78,18 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> None:
         user_msgs = (await db.execute(select(ArslanMessage.content).where(
             ArslanMessage.conversation_id == conversation_id,
             ArslanMessage.role == "user"))).scalars().all()
+        verdicts = (await db.execute(select(Feedback.user_action).where(
+            Feedback.session_id == conversation_id,
+            Feedback.spawn_id == spawn_id))).scalars().all()
         existing = list(spawn.memory_facts or [])
 
-    # Conversation-only signals (see Step-1 note in module docstring): verdicts are not
-    # cleanly per-(conversation,spawn) queryable, so we feed the conversation material only.
+    # Conversation material + per-conversation 👍/👎 verdict counts (now cleanly queryable).
+    ups = sum(1 for v in verdicts if v == "thumbs_up")
+    downs = sum(1 for v in verdicts if v == "thumbs_down")
+    feedback_line = f"\n\n用户反馈:👍×{ups} 👎×{downs}" if (ups or downs) else ""
     signals = "用户消息:\n" + "\n".join(u for u in user_msgs if u) + \
-              "\n\n分身产出:\n" + "\n".join(d for d in deliverables if d)
+              "\n\n分身产出:\n" + "\n".join(d for d in deliverables if d) + \
+              feedback_line
     if not deliverables and not user_msgs:
         return  # nothing to distill
 

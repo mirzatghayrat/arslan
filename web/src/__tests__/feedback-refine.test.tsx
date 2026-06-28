@@ -14,8 +14,13 @@ import OrchestratorChat from "../components/OrchestratorChat";
 import SpawnDirectChat from "../components/SpawnDirectChat";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
-// Deterministic i18n — t returns the key.
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+// Deterministic i18n — t returns the key, appending the interpolated name when present so
+// name-carrying strings (e.g. the refine banner) stay assertable.
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (k: string, opts?: { name?: string }) => (opts?.name ? `${k} ${opts.name}` : k),
+  }),
+}));
 
 // WS mock for SpawnDirectChat — capture the frame callback + the send spy so tests
 // can drive incoming frames and inspect outgoing frames (mirror spawn-direct-chat-tools).
@@ -111,7 +116,7 @@ const refineSpawn = {
 } as any;
 
 describe("SpawnDirectChat — refine handoff (banner + seed)", () => {
-  it("renders the 正在精修 banner with the spawn name when refineDeliverable is set", () => {
+  it("renders the refine banner with the spawn name when refineDeliverable is set", () => {
     render(
       <SpawnDirectChat
         spawn={refineSpawn}
@@ -121,16 +126,16 @@ describe("SpawnDirectChat — refine handoff (banner + seed)", () => {
       />,
     );
 
-    // Banner names the spawn + carries the 正在精修 marker (this also proves the
-    // refineDeliverable seed path ran — same flag drives both).
-    const banner = screen.getByText(/正在精修：小美/);
+    // Banner is i18n-driven (spawn_chat.refine_banner) and names the spawn — this also
+    // proves the refineDeliverable seed path ran (same flag drives both).
+    const banner = screen.getByText(/spawn_chat\.refine_banner 小美/);
     expect(banner).toBeDefined();
-    expect(banner.textContent).toContain("正在精修");
+    expect(banner.textContent).toContain("小美");
   });
 
   it("does NOT render the banner without refineDeliverable", () => {
     render(<SpawnDirectChat spawn={refineSpawn} currentStyle="quartz" />);
-    expect(screen.queryByText(/正在精修：/)).toBeNull();
+    expect(screen.queryByText(/spawn_chat\.refine_banner/)).toBeNull();
   });
 });
 
@@ -154,7 +159,7 @@ describe("SpawnDirectChat — refine send + 定稿 (Part A + Task 4)", () => {
       .find((f: any) => f?.type === "user_message");
     expect(userFrame).toBeDefined();
     expect(userFrame.attached_context).toContain("DELIVERABLE TEXT");
-    expect(userFrame.attached_names).toContain("正在精修的产出");
+    expect(userFrame.attached_names).toContain("spawn_chat.refine_attach_name");
   });
 
   it("renders 定稿 and calls onFinalize with the latest assistant reply", () => {

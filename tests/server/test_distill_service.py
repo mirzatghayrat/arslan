@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Spawn, ArslanMessage, DistilledSession
+from server.db.models import Base, Spawn, ArslanMessage, DistilledSession, Feedback
 
 
 @pytest.fixture
@@ -38,6 +38,31 @@ def test_distill_writes_facts_and_marks(maker, monkeypatch):
         return spawn.memory_facts, marks
     facts, marks = anyio.run(_run)
     assert facts == ["用户偏好更简短的输出"] and len(marks) == 1
+
+
+def test_distill_includes_per_conversation_feedback(maker, monkeypatch):
+    """👍/👎 Feedback rows keyed by the conversation_id must be folded into the distill
+    signals (the loop closed in this round: thumbs now feed evolution)."""
+    from server.services import distill_service
+    captured = {}
+    async def fake_distill_facts(existing, signals):
+        captured["signals"] = signals
+        return ["x"]
+    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
+    async def _run():
+        async with maker() as s:
+            s.add(Feedback(spawn_id=3, session_id="c1", user_action="thumbs_up", quality_signal=1))
+            s.add(Feedback(spawn_id=3, session_id="c1", user_action="thumbs_down", quality_signal=-1))
+            # A row from a DIFFERENT conversation must NOT leak in.
+            s.add(Feedback(spawn_id=3, session_id="other-conv", user_action="thumbs_up", quality_signal=1))
+            await s.commit()
+        await distill_service.distill_session("c1")
+    anyio.run(_run)
+    assert "👍" in captured["signals"]
+    assert "👎" in captured["signals"]
+    # exactly 1 up + 1 down from c1, the other-conv up excluded
+    assert "👍×1" in captured["signals"]
+    assert "👎×1" in captured["signals"]
 
 
 def test_distill_idempotent(maker, monkeypatch):

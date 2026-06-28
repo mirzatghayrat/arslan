@@ -20,8 +20,6 @@ interface SpawnDirectChatProps {
   onFinalize?: (content: string) => void;
 }
 
-const REFINE_ATTACH_NAME = '正在精修的产出';
-
 interface BackendMessage {
   message_id: number;
   role: string;
@@ -43,6 +41,7 @@ export default function SpawnDirectChat({
   onFinalize,
 }: SpawnDirectChatProps) {
   const { t } = useTranslation();
+  const refineAttachName = t('spawn_chat.refine_attach_name');
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -209,8 +208,8 @@ export default function SpawnDirectChat({
     if (refineDeliverable && !parts.includes(refineDeliverable)) parts.unshift(refineDeliverable);
     const attached_context = parts.join('\n\n---\n\n');
     const attached_names = [
-      ...(refineDeliverable && !attachments.some((a) => a.name === REFINE_ATTACH_NAME)
-        ? [REFINE_ATTACH_NAME]
+      ...(refineDeliverable && !attachments.some((a) => a.name === refineAttachName)
+        ? [refineAttachName]
         : []),
       ...attachments.map((a) => a.name),
     ];
@@ -266,7 +265,7 @@ export default function SpawnDirectChat({
       {/* Refine banner — shown when this spawn chat was opened to refine a deliverable */}
       {refineDeliverable && (
         <div className="px-6 py-2 text-[11px] text-muted-foreground bg-surface border-b border-border/80 relative z-10 font-sans">
-          {`正在精修：${spawn.name} 的这条产出`}
+          {t('spawn_chat.refine_banner', { name: spawn.name })}
         </div>
       )}
 

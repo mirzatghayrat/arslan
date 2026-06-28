@@ -339,7 +339,9 @@
     "direct_channel_suffix": "Direct Channel",
     "specialist_field": "Specialist assigned to field:",
     "placeholder_working": "Specialist {{name}} is working...",
-    "placeholder_input": "Task directive direct socket input..."
+    "placeholder_input": "Task directive direct socket input...",
+    "refine_banner": "Refining: this deliverable from {{name}}",
+    "refine_attach_name": "Deliverable being refined"
   },
   "rail": {
     "diagnostics_engine": "Diagnostics Engine",

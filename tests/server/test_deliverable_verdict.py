@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import anyio
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -119,6 +120,49 @@ def test_record_deliverable_verdict_accept(verdict_db, monkeypatch, tmp_path):
     assert len(acks) == 1
     assert acks[0]["spawn_id"] == 7
     assert acks[0]["action"] == "accept"
+
+
+def test_record_deliverable_verdict_persists_feedback_row(verdict_db, monkeypatch):
+    """A verdict must also persist a per-conversation Feedback DB row (keyed by the real
+    conversation_id, action mapped to thumbs vocabulary) so session-end distillation can
+    read 👍/👎 as a signal."""
+    from server.db.models import Feedback
+
+    conversation_id = verdict_db
+    monkeypatch.setattr(evolution_service, "record_verdict", lambda *a, **kw: None)
+
+    async def _run():
+        await arslan_mod.record_deliverable_verdict(
+            conversation_id, spawn_id=7, action="accept", message_id=2, emit=lambda e: None
+        )
+        async with db_session.AsyncSessionLocal() as s:
+            return (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
+
+    rows = anyio.run(_run)
+    assert len(rows) == 1
+    assert rows[0].session_id == conversation_id
+    assert rows[0].user_action == "thumbs_up"
+    assert rows[0].quality_signal == 1
+
+
+def test_record_deliverable_verdict_discard_persists_thumbs_down(verdict_db, monkeypatch):
+    """A discard verdict persists a thumbs_down Feedback row with quality_signal -1."""
+    from server.db.models import Feedback
+
+    conversation_id = verdict_db
+    monkeypatch.setattr(evolution_service, "record_verdict", lambda *a, **kw: None)
+
+    async def _run():
+        await arslan_mod.record_deliverable_verdict(
+            conversation_id, spawn_id=7, action="discard", message_id=2, emit=lambda e: None
+        )
+        async with db_session.AsyncSessionLocal() as s:
+            return (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
+
+    rows = anyio.run(_run)
+    assert len(rows) == 1
+    assert rows[0].user_action == "thumbs_down"
+    assert rows[0].quality_signal == -1
 
 
 def test_record_deliverable_verdict_missing_message(verdict_db, monkeypatch):

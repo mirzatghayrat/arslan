@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage
+from server.db.models import ArslanMessage, Feedback
 from server.orchestrator import dispatcher, memory, router, tool_loop
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
@@ -549,6 +549,23 @@ async def record_deliverable_verdict(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("record_verdict failed (non-fatal): %s", exc)
+
+    # Also persist a per-conversation Feedback row (keyed by the REAL conversation_id, not
+    # the degenerate `spawn-{id}` key) so session-end distillation can read 👍/👎 as a
+    # signal. Best-effort — must never break the verdict ack.
+    try:
+        feedback_action = "thumbs_up" if action == "accept" else "thumbs_down"
+        async with db_session.AsyncSessionLocal() as db:
+            db.add(Feedback(
+                spawn_id=spawn_id,
+                session_id=conversation_id,
+                message_id=message_id,
+                user_action=feedback_action,
+                quality_signal=evolution_service.quality_signal_for(feedback_action),
+            ))
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("verdict Feedback persist failed (non-fatal): %s", exc)
 
     # Ack to the client
     emit({"type": "verdict_recorded", "spawn_id": spawn_id, "action": action})

@@ -339,7 +339,9 @@
     "direct_channel_suffix": "直连频道",
     "specialist_field": "专家所属领域：",
     "placeholder_working": "专家 {{name}} 正在工作...",
-    "placeholder_input": "任务指令直连套接字输入..."
+    "placeholder_input": "任务指令直连套接字输入...",
+    "refine_banner": "正在精修：{{name}} 的这条产出",
+    "refine_attach_name": "正在精修的产出"
   },
   "rail": {
     "diagnostics_engine": "诊断引擎",
