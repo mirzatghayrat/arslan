@@ -80,6 +80,7 @@ export interface AppSettings {
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   llm_strategy?: string;
+  distill_on_session_end?: boolean;
 }
 
 export interface ProviderOption {

@@ -170,6 +170,8 @@
     "labelTheme": "Theme",
     "labelTelemetry": "Diagnostic telemetry",
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
+    "distill_on_session_end": "Distill preferences at session end",
+    "distill_hint": "Learn per-spawn preferences from your feedback when a conversation ends",
     "labelSpawnMode": "Spawn synthesis mode",
     "btnSave": "Save settings",
     "btnSaving": "Saving...",

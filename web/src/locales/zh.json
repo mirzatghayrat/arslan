@@ -170,6 +170,8 @@
     "labelTheme": "主题",
     "labelTelemetry": "诊断遥测",
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
+    "distill_on_session_end": "会话结束时蒸馏偏好",
+    "distill_hint": "会话结束时从你的反馈学习每个分身的偏好",
     "labelSpawnMode": "生成合成模式",
     "btnSave": "保存设置",
     "btnSaving": "保存中...",

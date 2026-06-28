@@ -234,6 +234,10 @@ export default function App() {
       history: []
     };
 
+    // Signal the OLD conversation ended (backend may background-distill prefs).
+    // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
+    if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
+
     // Clear the store so the new conversation starts with empty history (the
     // backend will send an empty `history` frame for the new conversation_id).
     useArslanStore.getState().resetForNewConversation();
@@ -389,6 +393,9 @@ export default function App() {
         threads={threads}
         activeThreadId={activeThreadId}
         onSelectThread={(id) => {
+          // Signal the OLD conversation ended (backend may background-distill prefs).
+          // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
+          if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
           // Reset store first so stale items from the previous conversation are
           // cleared before the new conversation_id's WS connects and sends its
           // `history` frame.

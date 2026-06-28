@@ -257,6 +257,26 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* Separation divider */}
             <div className="h-[1px] bg-border/40"></div>
 
+            {/* Toggle session-end distillation */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.distill_on_session_end')}</h4>
+                <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+                  {t('settings.distill_hint')}
+                </p>
+              </div>
+              <input
+                id="settings-distill-toggle"
+                type="checkbox"
+                checked={localSettings.distillOnSessionEnd ?? true}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, distillOnSessionEnd: e.target.checked }))}
+                className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+              />
+            </div>
+
+            {/* Separation divider */}
+            <div className="h-[1px] bg-border/40"></div>
+
             {/* Spawns synthesis modes */}
             <div className="flex items-center justify-between">
               <div>

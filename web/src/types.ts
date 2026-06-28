@@ -128,4 +128,5 @@ export interface AppSettings {
   telemetry: boolean;
   spawnMode: 'auto' | 'interactive' | 'strict';
   llmStrategy: 'single' | 'cost' | 'balanced' | 'performance';
+  distillOnSessionEnd: boolean;
 }

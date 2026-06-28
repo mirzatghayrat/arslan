@@ -27,6 +27,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
+    distillOnSessionEnd: backend.distill_on_session_end ?? true,
   };
 }
 
@@ -42,6 +43,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     search_provider: ui.searchProvider,
     language: ui.language,
     llm_strategy: ui.llmStrategy,
+    distill_on_session_end: ui.distillOnSessionEnd,
   };
 
   // Only send the search key if the user entered something new (non-empty, non-masked).

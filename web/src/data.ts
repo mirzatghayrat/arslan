@@ -122,7 +122,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   telemetry: false,
   spawnMode: 'interactive',
-  llmStrategy: 'single'
+  llmStrategy: 'single',
+  distillOnSessionEnd: true
 };
 
 export const INITIAL_CHAT_HISTORY: Message[] = [

@@ -93,6 +93,7 @@ describe("toBackendSettings", () => {
     telemetry: false,
     spawnMode: "auto",
     llmStrategy: "single",
+    distillOnSessionEnd: true,
   };
 
   it("omits search_api_key when empty", () => {

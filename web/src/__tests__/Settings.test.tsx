@@ -55,6 +55,7 @@ const defaultSettings: AppSettings = {
   telemetry: false,
   spawnMode: "auto",
   llmStrategy: "single",
+  distillOnSessionEnd: true,
 };
 
 const providers: ProviderOption[] = [
