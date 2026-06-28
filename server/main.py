@@ -145,6 +145,12 @@ def create_app() -> FastAPI:
     async def _ws_arslan(websocket: WebSocket, conversation_id: str):  # noqa: ANN202
         await arslan_endpoint(websocket, conversation_id)
 
+    from server.ws.sandbox import sandbox_endpoint
+
+    @app.websocket("/ws/sandbox/{spawn_id}")
+    async def _ws_sandbox(websocket: WebSocket, spawn_id: int):  # noqa: ANN202
+        await sandbox_endpoint(websocket, spawn_id)
+
     import os
     from pathlib import Path
 
