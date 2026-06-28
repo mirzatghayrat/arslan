@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { EvolveProposal, KnowledgeSource } from "../api/client.types";
 
@@ -9,7 +10,9 @@ interface Props {
 }
 
 export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
+  const { t } = useTranslation();
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [prefs, setPrefs] = useState<string[]>([]);
   const [label, setLabel] = useState("");
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
@@ -27,8 +30,31 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     }
   }
 
+  async function loadPrefs() {
+    try {
+      const res = await api.getPreferences(spawnId);
+      setPrefs(res.preferences);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function removePref(fact: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.deletePreference(spawnId, fact);
+      setPrefs(res.preferences);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     loadSources();
+    loadPrefs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spawnId]);
 
@@ -168,6 +194,23 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
             </label>
           </div>
         </div>
+      </section>
+
+      <section className="spawn-detail__section">
+        <h4>{t("spawn.learned_prefs")}</h4>
+        {prefs.length === 0 ? (
+          <p className="spawn-detail__empty">{t("spawn.no_prefs")}</p>
+        ) : (
+          <ul className="pref-list">
+            {prefs.map((p) => (
+              <li key={p} className="pref-list__row">
+                <span className="pref-list__text">{p}</span>
+                <button className="pref-list__del" disabled={busy} aria-label="delete"
+                        onClick={() => removePref(p)}>✕</button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="spawn-detail__section">

@@ -23,9 +23,14 @@ vi.mock("react-i18next", () => ({
 
 // ── api mock ───────────────────────────────────────────────────────────────────
 const mockUpdateSettings = vi.fn().mockResolvedValue({});
+const mockGetPreferences = vi.fn();
+const mockDeletePreference = vi.fn();
 vi.mock("../api/client", () => ({
   api: {
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
+    getPreferences: (...args: unknown[]) => mockGetPreferences(...args),
+    deletePreference: (...args: unknown[]) => mockDeletePreference(...args),
+    getKnowledge: vi.fn().mockResolvedValue([]),
   },
   API_BASE: "",
   suggestPrimary: vi.fn().mockResolvedValue(null),
@@ -41,6 +46,7 @@ vi.mock("../stores/authStore", () => ({
 }));
 
 import SettingsScreen from "../components/SettingsScreen";
+import SpawnDetail from "../components/SpawnDetail";
 import type { AppSettings } from "../types";
 import type { ProviderOption } from "../api/client.types";
 
@@ -103,5 +109,34 @@ describe("distillation Settings toggle", () => {
     await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled());
     const body = mockUpdateSettings.mock.calls[0][0];
     expect(body.distill_on_session_end).toBe(false);
+  });
+});
+
+describe("SpawnDetail learned-preferences block", () => {
+  beforeEach(() => {
+    mockGetPreferences.mockReset();
+    mockDeletePreference.mockReset();
+  });
+
+  it("lists the spawn's preferences under the learned-prefs heading", async () => {
+    mockGetPreferences.mockResolvedValue({ preferences: ["输出更简短", "标注来源"] });
+    render(<SpawnDetail spawnId={3} spawnName="小美" onClose={vi.fn()} />);
+    expect(await screen.findByText("spawn.learned_prefs")).toBeTruthy();
+    expect(await screen.findByText("输出更简短")).toBeTruthy();
+    expect(await screen.findByText("标注来源")).toBeTruthy();
+    expect(mockGetPreferences).toHaveBeenCalledWith(3);
+  });
+
+  it("deleting a preference calls deletePreference(spawnId, fact) and the row disappears", async () => {
+    const user = userEvent.setup();
+    mockGetPreferences.mockResolvedValue({ preferences: ["输出更简短", "标注来源"] });
+    mockDeletePreference.mockResolvedValue({ preferences: ["输出更简短"] });
+    render(<SpawnDetail spawnId={3} spawnName="小美" onClose={vi.fn()} />);
+    const row = (await screen.findByText("标注来源")).closest("li")!;
+    const delBtn = row.querySelector("button")!;
+    await user.click(delBtn);
+    await waitFor(() => expect(mockDeletePreference).toHaveBeenCalledWith(3, "标注来源"));
+    await waitFor(() => expect(screen.queryByText("标注来源")).toBeNull());
+    expect(screen.getByText("输出更简短")).toBeTruthy();
   });
 });

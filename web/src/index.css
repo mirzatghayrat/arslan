@@ -568,6 +568,51 @@
   cursor: not-allowed;
 }
 
+.pref-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pref-list__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.6875rem;
+}
+
+.pref-list__text {
+  flex: 1;
+  color: var(--foreground);
+  min-width: 0;
+}
+
+.pref-list__del {
+  padding: 0.125rem 0.375rem;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 0.25rem;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.pref-list__del:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: var(--danger);
+}
+.pref-list__del:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Knowledge add form */
 .kb-add {
   display: flex;

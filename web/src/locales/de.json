@@ -410,6 +410,8 @@
     }
   },
   "spawn": {
-    "finalize_to_main": "Finalize to main"
+    "finalize_to_main": "Finalize to main",
+    "learned_prefs": "Learned preferences",
+    "no_prefs": "None yet"
   }
 }

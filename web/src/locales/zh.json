@@ -410,6 +410,8 @@
     }
   },
   "spawn": {
-    "finalize_to_main": "定稿回主框"
+    "finalize_to_main": "定稿回主框",
+    "learned_prefs": "学到的偏好",
+    "no_prefs": "暂无"
   }
 }

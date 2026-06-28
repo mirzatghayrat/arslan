@@ -148,6 +148,13 @@ export const api = {
       `/spawns/${spawnId}/knowledge?source=${encodeURIComponent(source)}`,
       { method: "DELETE" },
     ),
+  getPreferences: (spawnId: number) =>
+    request<{ preferences: string[] }>(`/spawns/${spawnId}/preferences`),
+  deletePreference: (spawnId: number, fact: string) =>
+    request<{ preferences: string[] }>(`/spawns/${spawnId}/preferences`, {
+      method: "DELETE",
+      body: JSON.stringify({ fact }),
+    }),
   evolveSpawn: (spawnId: number) =>
     request<EvolveProposal>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
   confirmProposal: (proposalId: number) =>
