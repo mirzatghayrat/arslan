@@ -179,13 +179,9 @@ export default function App() {
 
   const [activeSpawnChatId, setActiveSpawnChatId] = useState<string>('');
 
-  // Refine handoff: 精修 on a deliverable opens this spawn's side chat seeded with it.
+  // Refine handoff: 精修 now opens a SandboxPanel inside OrchestratorChat (not full-nav).
+  // refineCtx + setRefineCtx remain for SpawnDirectChat's onFinalize wiring below.
   const [refineCtx, setRefineCtx] = useState<{ spawnId: number; messageId?: number; spawnName: string; deliverable: string } | null>(null);
-  const handleRefine = useCallback((spawnId: number, messageId: number | undefined, content: string, spawnName: string) => {
-    setRefineCtx({ spawnId, messageId, spawnName, deliverable: content });
-    setActiveSpawnChatId(String(spawnId));
-    setActiveSection('spawn');
-  }, []);
 
   // Shared application state databases
   // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
@@ -513,7 +509,7 @@ export default function App() {
                     wsSend({ type: 'discard', spawn_id: spawnId, message_id: messageId });
                   }
                 }}
-                onRefine={handleRefine}
+                conversationId={activeThreadId}
               />
             )}
 

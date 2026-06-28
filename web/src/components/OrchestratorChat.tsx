@@ -15,6 +15,7 @@ import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import Markdown from './Markdown';
 import { useArslanStore } from '../stores/arslanStore';
+import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import EvalSummary from './EvalSummary';
@@ -1176,58 +1177,32 @@ export default function OrchestratorChat({
       )}
     </div>
 
-    {/* Right Pane: Isolated Co-Pilot Private Sandbox (副对话框) */}
-    {splitSpawnId && (() => {
-      const spawn = spawns.find(s => s.id === splitSpawnId);
-      if (!spawn) return null;
-
-
+    {/* Right Pane: Isolated Co-Pilot Private Sandbox (副对话框) — active session */}
+    {activeSandboxSpawnId && (() => {
+      const open = openSandboxes.find((s) => s.spawnId === activeSandboxSpawnId);
+      const spawn = spawns.find((s) => s.id === activeSandboxSpawnId);
+      if (!open || !spawn) return null;
       return (
-        <div className="w-[45%] border-l border-border bg-sidebar flex flex-col h-full animate-slide-in-right relative overflow-hidden shrink-0 z-20">
-          {/* Sandbox Top Header */}
-          <div className="h-[52px] border-b border-border px-4.5 bg-background/80 backdrop-blur flex items-center justify-between select-none shrink-0">
-            <div className="flex items-center gap-2.5">
-              <SpawnAvatar seed={spawn.name} size={28} />
-              <div>
-                <div className="flex items-center gap-1.5 leading-none">
-                  <span className="text-xs font-bold text-foreground font-sans">{spawn.name}</span>
-                  <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono font-bold uppercase">
-                    Sandbox
-                  </span>
-                </div>
-                <span className="text-[9px] text-primary font-mono mt-1 block uppercase tracking-wider">{spawn.domain}</span>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => splitSpawnId && closeSandbox(splitSpawnId)}
-              className="p-1 text-muted-foreground hover:text-foreground bg-surface border border-border/80 rounded hover:bg-background/30"
-              title="Minimize Sandbox"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Sandbox Content: Coming Soon — dispatch + draft backend not yet wired */}
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 select-none">
-            <SpawnAvatar seed={spawn.name} size={48} className="mx-auto" />
-            <div className="space-y-2">
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-xs font-bold text-foreground font-sans">{spawn.name} Sandbox</span>
-                <span className="text-[9px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{t('orchestrator.coming_soon_badge')}</span>
-              </div>
-              <p className="text-[11px] text-subtle-foreground font-sans leading-relaxed max-w-xs">
-                {t('orchestrator.sandbox_coming_soon_desc')}
-              </p>
-            </div>
-            <button
-              onClick={() => splitSpawnId && closeSandbox(splitSpawnId)}
-              className="mt-2 px-4 py-1.5 bg-transparent hover:bg-foreground/[0.04] text-muted-foreground hover:text-foreground text-[10px] rounded-xl border border-border/80 font-mono uppercase tracking-wider transition-all"
-            >
-              {t('orchestrator.close_panel')}
-            </button>
-          </div>
-        </div>
+        <SandboxPanel
+          key={open.sessionId}
+          spawn={spawn}
+          sessionId={open.sessionId}
+          seed={open.seed}
+          conversationId={conversationId ?? 'main'}
+          onClose={() => closeSandbox(spawn.id)}
+          onMerged={(payload) => {
+            // The card lives in the MAIN thread store — reuse the existing
+            // deliverable_finalized + verdict_recorded handlers to append it live.
+            const store = useArslanStore.getState();
+            store.handleFrame({
+              type: 'deliverable_finalized', spawn_id: payload.spawn_id,
+              message_id: payload.message_id, content: payload.content,
+              refined_from: null, spawn_name: payload.spawn_name,
+            } as never);
+            store.handleFrame({ type: 'verdict_recorded', spawn_id: payload.spawn_id, action: 'accept' } as never);
+            closeSandbox(spawn.id);
+          }}
+        />
       );
     })()}
   </div>

@@ -48,9 +48,14 @@ beforeEach(() => {
   sendSpy.mockClear();
 });
 
+const spawnObj = {
+  id: "3", name: "小美", avatarEmoji: "🌸", domain: "content",
+  status: "idle" as const, tools: [], skills: [], totalTasks: 0,
+} as any;
+
 const baseProps = {
   setChatHistory: () => {},
-  spawns: [],
+  spawns: [spawnObj],
   currentStyle: "quartz" as const,
   setCurrentStyle: () => {},
   activeThread: { memberSpawnIds: [] },
@@ -71,13 +76,11 @@ const deliverable = {
 describe("OrchestratorChat — light feedback UI (👍/👎/精修)", () => {
   it("renders 👍 / 👎 / 精修 and NO redo button; wires the handlers", () => {
     const onDeliverableVerdict = vi.fn();
-    const onRefine = vi.fn();
     render(
       <OrchestratorChat
         {...baseProps}
         chatHistory={[deliverable]}
         onDeliverableVerdict={onDeliverableVerdict}
-        onRefine={onRefine}
       />,
     );
 
@@ -97,9 +100,10 @@ describe("OrchestratorChat — light feedback UI (👍/👎/精修)", () => {
     fireEvent.click(dislike);
     expect(onDeliverableVerdict).toHaveBeenCalledWith("discard", 3, 42);
 
-    // 精修 — refine button.
+    // 精修 — refine button now opens the SandboxPanel in-place (not full-nav).
     fireEvent.click(screen.getByText("orchestrator.refine"));
-    expect(onRefine).toHaveBeenCalledWith(3, 42, "OUT", "小美");
+    // The sandbox panel mounts and shows its confirm-merge button.
+    expect(screen.getByText("orchestrator.sandbox_confirm_merge")).toBeDefined();
   });
 });
 

@@ -1,10 +1,14 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import SandboxPanel from "../components/SandboxPanel";
+import OrchestratorChat from "../components/OrchestratorChat";
+import { useArslanStore } from "../stores/arslanStore";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: { name?: string }) => (o?.name ? `${k} ${o.name}` : k) }),
 }));
+
+vi.mock("../api/client", () => ({ api: { extractAttachmentUrl: vi.fn(), extractAttachmentFile: vi.fn() } }));
 // Capture outgoing frames + the inbound frame callback from the sandbox socket.
 let sandboxFrameCb: (m: any) => void = () => {};
 const sandboxSend = vi.fn();
@@ -46,5 +50,20 @@ describe("SandboxPanel", () => {
     expect(sandboxSend).toHaveBeenCalledWith(
       expect.objectContaining({ type: "confirm_merge", conversation_id: "main" }),
     );
+  });
+});
+
+const deliverable = { id: "d1", sender: "spawn", senderName: "小美", senderAvatar: "x", text: "OUT",
+  timestamp: "", spawnId: "3", messageId: 42, spawnName: "小美" } as any;
+const ocBaseProps = { setChatHistory: () => {}, spawns: [spawn], currentStyle: "quartz" as const,
+  setCurrentStyle: () => {}, activeThread: { memberSpawnIds: ["3"] }, conversationId: "main" } as any;
+
+describe("OrchestratorChat — refine opens a sandbox (not full-nav)", () => {
+  it("clicking 精修 opens the sandbox panel seeded with the deliverable", () => {
+    useArslanStore.setState({ roster: [{ spawnId: 3, name: "小美", status: "idle" }] } as never);
+    render(<OrchestratorChat {...ocBaseProps} chatHistory={[deliverable]} />);
+    fireEvent.click(screen.getByText("orchestrator.refine"));
+    expect(screen.getByText("orchestrator.sandbox_confirm_merge")).toBeDefined();
+    expect(screen.getByText("orchestrator.sandbox_seed_label")).toBeDefined();
   });
 });
