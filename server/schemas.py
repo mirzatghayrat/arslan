@@ -15,6 +15,7 @@ class SettingsIn(BaseModel):
     search_provider: str | None = None
     search_api_key: str | None = None
     llm_strategy: str | None = None
+    distill_on_session_end: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -26,6 +27,7 @@ class SettingsOut(BaseModel):
     search_provider: str = "tavily"
     search_api_key: str = ""  # masked
     llm_strategy: str = "single"
+    distill_on_session_end: bool = True
 
 
 class ProviderOption(BaseModel):

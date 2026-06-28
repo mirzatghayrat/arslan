@@ -14,7 +14,7 @@ from server.db.models import Setting
 logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
-_PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider", "llm_strategy")
+_PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider", "llm_strategy", "distill_on_session_end")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
 
@@ -112,3 +112,9 @@ async def get_decrypted(session: AsyncSession, key: str) -> str:
 async def get_decrypted_api_key(session: AsyncSession) -> str:
     """Return the plaintext LLM API key for making LLM calls (never exposed via API)."""
     return await get_decrypted(session, "llm_api_key")
+
+
+async def distill_enabled(session: AsyncSession) -> bool:
+    """Whether session-end distillation is on (default True; only an explicit 'false' disables)."""
+    raw = await _get_raw(session, "distill_on_session_end")
+    return raw is None or str(raw).strip().lower() != "false"
