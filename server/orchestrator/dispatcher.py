@@ -155,6 +155,10 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     )
     if facts:
         system = f"{system}\n\n{facts}"
+    if spawn.memory_facts:
+        prefs = "\n- ".join(str(f) for f in spawn.memory_facts if str(f).strip())
+        if prefs:
+            system += f"\n\n[关于如何为这位用户工作,你已学到的偏好]\n- {prefs}"
     suffix = evolution_service.prompt_suffix(spawn.name)
     if suffix:
         system = f"{system}\n\n{suffix}"
