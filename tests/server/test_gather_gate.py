@@ -40,6 +40,17 @@ async def _fake_curate(need):
     return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
 
 
+async def _incomplete_slots(history_text):
+    """Slot extraction returning an under-specified need (gate must NOT pass)."""
+    return {"domain": None, "capability": None, "first_task": None, "recurrence": None}
+
+
+async def _ready_slots(history_text):
+    """Slot extraction returning a complete need (gate passes → propose)."""
+    return {"domain": "marketing.seo", "capability": "seo-audit",
+            "first_task": "audit keywords", "recurrence": True}
+
+
 @pytest.mark.asyncio
 async def test_underspecified_create_downgrades_to_clarify(maker, monkeypatch):
     """A bare 'make me a spawn' (no domain/caps/task) must NOT emit suggest_create —
@@ -54,6 +65,7 @@ async def test_underspecified_create_downgrades_to_clarify(maker, monkeypatch):
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _incomplete_slots)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     captured = {}
@@ -98,6 +110,7 @@ async def test_specified_create_proposes(maker, monkeypatch):
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     events = []

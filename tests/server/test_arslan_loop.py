@@ -46,6 +46,12 @@ async def _fake_curate(need):
     return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
 
 
+async def _ready_slots(history_text):
+    """Hermetic stub for staffing_gather.extract_slots returning a READY slot set —
+    drives the spine's ready path (match-and-propose / suggest_create card)."""
+    return {"domain": "x.y", "capability": "do-x", "first_task": "run x", "recurrence": True}
+
+
 @pytest.mark.asyncio
 async def test_answer_path_streams_and_persists(maker, monkeypatch):
     from server.orchestrator import arslan, router
@@ -263,6 +269,7 @@ async def test_suggest_create_emits_card(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
 
     events = []
     await arslan.handle_user_message("main", "translate things often", _events(events))
@@ -286,6 +293,7 @@ async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
 
     events = []
     await arslan.handle_user_message("main", "look at TSLA", _events(events))
@@ -324,6 +332,7 @@ async def test_suggest_create_injects_overlap_for_existing_same_name_spawn(maker
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
 
     events = []
     await arslan.handle_user_message("main", "research internet data", _events(events))
@@ -349,6 +358,7 @@ async def test_suggest_create_leaves_overlaps_when_no_existing_match(maker, monk
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
 
     events = []
     await arslan.handle_user_message("main", "translate things", _events(events))

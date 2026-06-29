@@ -22,6 +22,7 @@ from server.services import (
     roster_service,
     run_recorder,
     spawn_service,
+    staffing_gather,
 )
 from server.services.llm_factory import build_adapter
 
@@ -110,13 +111,12 @@ async def _team_roster() -> str:
         lines.append(f"- {s.name} ({domain})" + (f" — {role}" if role else ""))
     return "\n".join(lines)
 
-def _draft_is_sufficient(draft: dict, task_brief: str | None) -> bool:
-    """A proposal needs enough to draft a capable spawn: a domain, at least one
-    capability, and a concrete task to run. Otherwise Arslan clarifies first."""
-    has_domain = bool((draft.get("domain") or "").strip())
-    has_caps = bool(draft.get("capabilities"))
-    has_task = bool((task_brief or "").strip())
-    return has_domain and has_caps and has_task
+def _is_gather_phase(pending: dict | None) -> bool:
+    """The two pre-spawn phases during which routing to an existing spawn is
+    suppressed (the follow-up must keep gathering in Arslan's voice instead of
+    leaking spawn identity): the legacy `clarifying` flag and the slot-based
+    `gathering` phase. `proposing` is handled separately and returns earlier."""
+    return bool(pending and pending.get("phase") in ("clarifying", "gathering"))
 
 
 _CLARIFY_ADDENDUM = (
@@ -125,6 +125,47 @@ _CLARIFY_ADDENDUM = (
     "direction and ask them to confirm (e.g. \"I'll research X with angle Y as a Z — sound right?\"). "
     "Do not produce the deliverable yet."
 )
+
+# Human-readable prompts per staffing slot, so the clarify addendum asks for exactly
+# what is still missing (incl. the recurrence question that decides spawn-vs-one-off).
+_SLOT_QUESTIONS = {
+    "domain": "what area/domain this is in (e.g. marketing, finance, data analysis)",
+    "capability": "the specific capability or skill needed",
+    "first_task": "a concrete first task they want run right now",
+    "recurrence": "whether this is a recurring/ongoing need (worth a dedicated agent) "
+                  "or just a one-off",
+}
+
+
+def _gather_clarify_addendum(missing: list[str]) -> str:
+    """Build the clarify addendum for a gather turn, naming the still-missing slots
+    so Arslan asks the right thing (including the recurrence question)."""
+    wanted = [_SLOT_QUESTIONS[k] for k in missing if k in _SLOT_QUESTIONS]
+    if not wanted:
+        return _CLARIFY_ADDENDUM
+    bullet = "\n".join(f"- {w}" for w in wanted)
+    return (
+        "\n\nThe user may want a dedicated agent for a recurring need, but the request is "
+        "under-specified. Ask 1-3 short, specific clarifying questions to fill in the "
+        f"following before proposing anything:\n{bullet}\n"
+        "Ask warmly in your own voice; do not propose or create a spawn yet."
+    )
+
+
+async def _gather_history_text(conversation_id: str, user_message: str) -> str:
+    """The text fed to slot extraction: the same working context the answer path
+    uses, with this turn's user message appended (newest last)."""
+    ctx = await memory.assemble_working_context(conversation_id)
+    lines = []
+    if ctx.get("summary"):
+        lines.append(f"[summary] {ctx['summary']}")
+    for m in ctx.get("history", []):
+        lines.append(f"{m['role']}: {m['content']}")
+    # assemble_working_context already includes the just-persisted user turn, but be
+    # robust if it does not (e.g. compaction edge) — only append when absent.
+    if not lines or user_message not in lines[-1]:
+        lines.append(f"user: {user_message}")
+    return "\n".join(lines)
 
 
 _CLASSIFY_SYSTEM = (
@@ -203,15 +244,16 @@ async def handle_user_message(
             # kind == "new" → clear the stale pending phase and fall through to normal routing
             await phase_service.clear(conversation_id, pending["spawn_id"])
 
-        # 1c. clarifying-create phase (B4): while Arslan is gathering an under-specified
-        # create request, the follow-up answer must keep clarifying (Arslan's voice) — it
-        # must NOT be routed/dispatched to an existing spawn (routing leaks "请以X的身份"
-        # identity-bleed into the answer layer). We still route() below, but if the router
-        # wants to route to an existing spawn we OVERRIDE it to the clarify path. A
-        # sufficient suggest_create (the user finally gave enough) is allowed and clears
-        # the phase; answer/clarify proceed normally. Proposing takes precedence (handled
-        # above and returns), so the two phases are never both live here.
-        clarifying = bool(pending and pending["phase"] == "clarifying")
+        # 1c. gather phases (B3/B4): while Arslan is gathering an under-specified create
+        # request — whether via the legacy `clarifying` flag or the slot-based `gathering`
+        # phase — the follow-up answer must keep clarifying (Arslan's voice). It must NOT be
+        # routed/dispatched to an existing spawn (routing leaks "请以X的身份" identity-bleed
+        # into the answer layer). We still route() below, but if the router wants to route
+        # to an existing spawn we OVERRIDE it to the clarify path. A ready staffing need (the
+        # user finally gave enough) clears the phase and proposes; answer/clarify proceed
+        # normally. Proposing takes precedence (handled above and returns), so the proposing
+        # and gather phases are never both live here.
+        gathering = _is_gather_phase(pending)
 
         # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
         # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
@@ -231,14 +273,14 @@ async def handle_user_message(
             for fact in created:
                 emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
 
-        # B4: while clarifying a create, suppress routing to an existing spawn —
-        # keep clarifying in Arslan's voice instead of leaking spawn identity.
-        # Invariant: the clarifying phase persists ONLY while the router keeps
-        # producing an insufficient create-downgrade; clear it on every other
-        # terminal outcome. Here the user wants a DIFFERENT spawn — divert THIS
+        # B3/B4: while in a gather phase (clarifying or gathering a create), suppress
+        # routing to an existing spawn — keep clarifying in Arslan's voice instead of
+        # leaking spawn identity. Invariant: the gather phase persists ONLY while the
+        # router keeps producing an insufficient create-downgrade; clear it on every
+        # other terminal outcome. Here the user wants a DIFFERENT spawn — divert THIS
         # turn (no bleed), but clear so the next route dispatches normally.
-        if clarifying and result.action == "route":
-            await phase_service.clear_clarifying(conversation_id)
+        if gathering and result.action == "route":
+            await phase_service.clear(conversation_id)
             await _handle_answer(conversation_id, user_message, emit,
                                  extra_system=_CLARIFY_ADDENDUM,
                                  attached_context=attached_context)
@@ -250,63 +292,91 @@ async def handle_user_message(
             await _handle_route(conversation_id, result, emit, user_message=user_message,
                                 route_ms=route_ms, attached_context=attached_context)
         elif result.action == "suggest_create":
-            draft = result.suggested_spawn or {}
-            if not _draft_is_sufficient(draft, result.task_brief):
-                # Gather first — Arslan asks for the missing piece in its own voice,
-                # rather than proposing a thin/premature spawn. B4 pins a "clarifying"
-                # phase here so the follow-up keeps gathering (not routes to an existing
-                # spawn) until the user supplies enough or changes subject.
-                await phase_service.set_clarifying(conversation_id)
-                await _handle_answer(conversation_id, user_message, emit,
-                                     extra_system=_CLARIFY_ADDENDUM,
-                                     attached_context=attached_context)
+            # Staffing spine ①–③: the router signalled a (possibly-recurring)
+            # capability need. Run extract→accumulate→gate over the staffing slots.
+            # ② accumulate: load slots carried across the gather phase, extract from
+            # this turn, and merge (a filled slot is never overwritten with null).
+            slots = await phase_service.get_gathered_slots(conversation_id)
+            history_text = await _gather_history_text(conversation_id, user_message)
+            slots = staffing_gather.merge_slots(
+                slots, await staffing_gather.extract_slots(history_text)
+            )
+            # ③ gate: ONE readiness gate (the slot gate; subsumes the old draft gate).
+            if not staffing_gather.is_ready(slots):
+                # Not enough yet — pin the gathering phase (carrying accumulated slots)
+                # and clarify in Arslan's own voice, asking for exactly what's missing
+                # (incl. the recurrence question when `recurrence` is still null).
+                await phase_service.set_gathering(conversation_id, slots)
+                await _handle_answer(
+                    conversation_id, user_message, emit,
+                    extra_system=_gather_clarify_addendum(staffing_gather.missing_slots(slots)),
+                    attached_context=attached_context,
+                )
                 await memory.maybe_compact(conversation_id)
                 return
-            # Sufficient draft: the user gave enough — clear any clarifying phase and
-            # proceed to the proposal (routing/proposing resumes normally).
-            if clarifying:
-                await phase_service.clear_clarifying(conversation_id)
-            # Enrich the draft with real equipment via the same L1 mapping (curate),
-            # best-effort: a failure must never block the suggestion. setdefault keeps
-            # any equipment a future drafter path may already have supplied.
-            need = " ".join(filter(None, [
-                draft.get("name"), draft.get("domain"), draft.get("persona_role"),
-                ", ".join(draft.get("capabilities") or []),
-            ]))
-            try:
-                eq = await equipment_service.curate(need) if need.strip() else {}
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("suggest_create equipment enrichment failed: %s", exc)
-                eq = {}
-            draft.setdefault("tools", eq.get("toolsets") or [])
-            draft.setdefault("skills", eq.get("skills") or [])
-            draft.setdefault("mcps", eq.get("mcps") or [])
-            draft.setdefault("gaps", eq.get("gaps") or [])
-            overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
-            if overlap is not None:
-                # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
-                llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
-                overlap = {**overlap, "axes": llm_axes or overlap.get("axes") or []}
-            emit({
-                "type": "suggest_create",
-                "draft": draft,
-                "task_brief": result.task_brief,
-                "overlaps": overlap if overlap is not None else result.overlaps,
-            })
+            # Ready: the user gave enough — clear the gather phase and hand to B4's
+            # match-and-propose with the gathered slots (routing/proposing resumes).
+            await phase_service.clear(conversation_id)
+            await _staffing_match_and_propose(
+                conversation_id, user_message, slots, result, emit,
+                attached_context=attached_context,
+            )
         elif result.action == "clarify":
-            # Router no longer sees create-intent — release any clarifying phase.
-            if clarifying:
-                await phase_service.clear_clarifying(conversation_id)
+            # Router no longer sees create-intent — release any gather phase.
+            if gathering:
+                await phase_service.clear(conversation_id)
             await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
                                  attached_context=attached_context)
         else:  # answer (incl. fallback)
-            # Router no longer sees create-intent — release any clarifying phase.
-            if clarifying:
-                await phase_service.clear_clarifying(conversation_id)
+            # Router no longer sees create-intent — release any gather phase.
+            if gathering:
+                await phase_service.clear(conversation_id)
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context)
 
         # 5. compact the working thread if it grew too long
         await memory.maybe_compact(conversation_id)
+
+
+async def _staffing_match_and_propose(  # noqa: ANN001
+    conversation_id, user_message, slots, result, emit: EventSink, *,
+    attached_context: str | None = None,
+) -> None:
+    """Ready-path seam (B3↔B4 boundary). The gather gate has passed — the staffing
+    `slots` are complete. For B3 this preserves the existing L2 behavior: enrich the
+    router's draft with curated equipment and emit a `suggest_create` card.
+
+    # B4 will replace this body with the 3-band match-and-propose (score existing
+    # spawns against the need, then route/invite/propose-create per band), using the
+    # gathered `slots`. The signature is the stable seam; only the body changes.
+    """
+    draft = result.suggested_spawn or {}
+    # Enrich the draft with real equipment via the same L1 mapping (curate),
+    # best-effort: a failure must never block the suggestion. setdefault keeps
+    # any equipment a future drafter path may already have supplied.
+    need = " ".join(filter(None, [
+        draft.get("name"), draft.get("domain"), draft.get("persona_role"),
+        ", ".join(draft.get("capabilities") or []),
+    ]))
+    try:
+        eq = await equipment_service.curate(need) if need.strip() else {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("suggest_create equipment enrichment failed: %s", exc)
+        eq = {}
+    draft.setdefault("tools", eq.get("toolsets") or [])
+    draft.setdefault("skills", eq.get("skills") or [])
+    draft.setdefault("mcps", eq.get("mcps") or [])
+    draft.setdefault("gaps", eq.get("gaps") or [])
+    overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
+    if overlap is not None:
+        # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
+        llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
+        overlap = {**overlap, "axes": llm_axes or overlap.get("axes") or []}
+    emit({
+        "type": "suggest_create",
+        "draft": draft,
+        "task_brief": result.task_brief,
+        "overlaps": overlap if overlap is not None else result.overlaps,
+    })
 
 
 async def _handle_answer(

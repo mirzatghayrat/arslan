@@ -12,6 +12,11 @@ import server.db.session as db_session
 from server.db.models import Base
 
 
+async def _ready_slots(history_text):
+    """Drive the staffing spine's ready path so the suggest_create card emits."""
+    return {"domain": "x.y", "capability": "do-x", "first_task": "run x", "recurrence": True}
+
+
 @pytest.fixture
 def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'equip.db'}")
@@ -56,6 +61,7 @@ async def test_suggest_create_draft_carries_equipment(maker, monkeypatch):
         }
 
     monkeypatch.setattr(arslan.equipment_service, "curate", fake_curate)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
 
     events = []
     await arslan.handle_user_message("main", "I need SERP analysis often", lambda ev: events.append(ev))
@@ -90,6 +96,7 @@ async def test_suggest_create_enrichment_best_effort_on_curate_failure(maker, mo
         raise RuntimeError("LLM down")
 
     monkeypatch.setattr(arslan.equipment_service, "curate", boom)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
 
     events = []
     await arslan.handle_user_message("main", "translate things", lambda ev: events.append(ev))

@@ -44,6 +44,17 @@ async def _fake_curate(need):
     return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
 
 
+async def _incomplete_slots(history_text):
+    """Slot extraction returning an under-specified need (gather gate must NOT pass)."""
+    return {"domain": None, "capability": None, "first_task": None, "recurrence": None}
+
+
+async def _ready_slots(history_text):
+    """Slot extraction returning a complete need (gate passes → propose)."""
+    return {"domain": "marketing.seo", "capability": "seo-audit",
+            "first_task": "audit keywords", "recurrence": True}
+
+
 @pytest.mark.asyncio
 async def test_followup_during_clarify_does_not_route(maker, monkeypatch):
     """With a clarifying-create phase pinned, a follow-up that the router would
@@ -93,9 +104,9 @@ async def test_followup_during_clarify_does_not_route(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_b3_downgrade_pins_clarifying_phase(maker, monkeypatch):
+async def test_b3_downgrade_pins_gathering_phase(maker, monkeypatch):
     """A bare under-specified create downgrades to clarify (B3) AND pins the
-    clarifying phase (B4) so the next turn keeps gathering."""
+    `gathering` phase so the next turn keeps gathering (slot-based gate)."""
     from server.orchestrator import arslan, router, tool_loop
 
     async def _fake_route(conv, msg):
@@ -106,6 +117,7 @@ async def test_b3_downgrade_pins_clarifying_phase(maker, monkeypatch):
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _incomplete_slots)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     class _A:
@@ -119,9 +131,9 @@ async def test_b3_downgrade_pins_clarifying_phase(maker, monkeypatch):
     await arslan.handle_user_message("main", "make me a spawn", _events(events))
     assert "suggest_create" not in [e["type"] for e in events]
 
-    # B4: the clarifying phase is now pinned.
+    # The slot-based gather phase is now pinned (the next turn keeps gathering).
     p = await phase_service.get_pending("main")
-    assert p is not None and p["phase"] == "clarifying"
+    assert p is not None and p["phase"] == "gathering"
 
 
 @pytest.mark.asyncio
@@ -147,6 +159,7 @@ async def test_sufficient_create_during_clarify_proposes_and_clears(maker, monke
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     events = []
