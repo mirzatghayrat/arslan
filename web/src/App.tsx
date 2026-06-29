@@ -25,6 +25,7 @@ import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
 import RailMcpList from './components/RailMcpList';
+import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 
 interface ArslanThread {
   id: string;
@@ -694,7 +695,11 @@ export default function App() {
               </div>
             )}
 
-            {/* Spawns Active Pool list */}
+            {/* Per-spawn knowledge panel (when in spawn direct-chat) */}
+            {activeSection === 'spawn' && spawns.find((s) => s.id === activeSpawnChatId) ? (
+              <SpawnRailKnowledge spawnId={Number(spawns.find((s) => s.id === activeSpawnChatId)!.id)} />
+            ) : (
+            /* Spawns Active Pool list */
             <div className="p-5 flex-1 space-y-4 overflow-y-auto">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -782,6 +787,7 @@ export default function App() {
                 })()}
               </div>
             </div>
+            )}
 
           </aside>
         )}
