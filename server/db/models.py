@@ -46,6 +46,7 @@ class ChatMessage(Base):
     role = Column(String(20), nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    archived = Column(Boolean, nullable=False, default=False, server_default="0")
 
     spawn = relationship("Spawn", back_populates="messages")
 
