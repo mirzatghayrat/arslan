@@ -9,10 +9,13 @@ depends_on = None
 
 
 def _upgrade(bind) -> None:
+    # Raw ALTER (not op.add_column) so this works both under alembic AND via the
+    # main.py boot `upgrade_sync(connection)` backfill path (mirrors _0011).
     insp = sa.inspect(bind)
-    cols = {c["name"] for c in insp.get_columns("chat_messages")}
-    if "archived" not in cols:
-        op.add_column("chat_messages", sa.Column("archived", sa.Boolean(), nullable=False, server_default="0"))
+    if "chat_messages" in set(insp.get_table_names()):
+        cols = {c["name"] for c in insp.get_columns("chat_messages")}
+        if "archived" not in cols:
+            bind.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN archived BOOLEAN NOT NULL DEFAULT 0")
 
 
 def upgrade() -> None:
