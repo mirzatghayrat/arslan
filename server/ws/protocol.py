@@ -140,6 +140,16 @@ def attachment_stored(spawn_name: str | None, chunks: int) -> dict[str, Any]:
     return {"type": "attachment_stored", "spawn_name": spawn_name, "chunks": chunks}
 
 
+def propose_invite(spawn_id: int, reason: str) -> dict[str, Any]:
+    """Arslan proposes bringing an existing spawn into the conversation.
+
+    The frontend renders a confirmation card; on confirm it sends the existing
+    `roster_invite {spawn_id}` frame which joins exactly that one spawn. Emitting
+    this frame does NOT join the roster — the join awaits the user's confirmation.
+    """
+    return {"type": "propose_invite", "spawn_id": spawn_id, "reason": reason}
+
+
 def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
     """Notify the client that a spawn joined or left the roster.
 

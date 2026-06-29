@@ -13,6 +13,7 @@ from server.db.models import ArslanMessage, Feedback
 from server.orchestrator import dispatcher, memory, router, tool_loop
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
+from server.ws import protocol
 from arslan.llm import usage_sink
 from server.services import (
     equipment_service,
@@ -360,6 +361,20 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
                               user_message=user_message, route_ms=route_ms,
                               attached_context=attached_context)
+
+
+async def propose_invite(
+    conversation_id: str, *, spawn_id: int, reason: str, emit: EventSink
+) -> None:
+    """Propose bringing an existing spawn into the conversation (B5).
+
+    Emits a `propose_invite` frame and joins NOTHING. The frontend renders a
+    confirmation card; on confirm it sends the existing `roster_invite {spawn_id}`
+    frame, which is the single, idempotent join path. Keeping the join out of this
+    step is the whole point — "邀请无确认" is fixed by deferring the join to the
+    user's explicit confirmation.
+    """
+    emit(protocol.propose_invite(spawn_id, reason))
 
 
 def _arslan_fetch_executor():
