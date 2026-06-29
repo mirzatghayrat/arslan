@@ -48,6 +48,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_disc_upgrade)
         from server.db.migrations.versions._0014_chat_archived import upgrade_sync as _chat_archived_upgrade
         await conn.run_sync(_chat_archived_upgrade)
+        from server.db.migrations.versions._0015_persona_seeds import upgrade_sync as _persona_fts_upgrade
+        await conn.run_sync(_persona_fts_upgrade)
 
     from server.registry.seeder import seed_registry
 

@@ -362,3 +362,23 @@ class KnowledgeChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PersonaSeed(Base):
+    """A seed persona definition (e.g. from agency-agents) used to bootstrap spawns."""
+
+    __tablename__ = "persona_seeds"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(120), nullable=False, unique=True)
+    division = Column(String(80), nullable=True)
+    name = Column(String(160), nullable=True)
+    identity = Column(Text, nullable=True)
+    mission = Column(Text, nullable=True)
+    rules = Column(Text, nullable=True)
+    deliverables = Column(Text, nullable=True)
+    workflow = Column(Text, nullable=True)
+    success_metrics = Column(Text, nullable=True)
+    raw = Column(Text, nullable=False)
+    source = Column(String(200), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
