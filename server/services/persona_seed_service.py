@@ -19,6 +19,22 @@ _SECTION = re.compile(r"^#{1,3}\s*(identity|mission|rules?|deliverables?|workflo
 # Word tokens: alphanumeric runs or CJK chars. Mirrors knowledge.py's safe-FTS helper.
 _TOKEN = re.compile(r"[A-Za-z0-9]+|[一-鿿]")
 
+# Top-level dirs in agency-agents that are NOT persona divisions (tooling/docs/examples).
+_NON_PERSONA_DIRS = {".github", "scripts", "examples", "docs", "tests"}
+
+
+def _is_persona_path(path: str) -> bool:
+    """True only for real `<division>/<name>.md` persona files.
+
+    Excludes nested READMEs, the PR template, and non-persona top-level dirs so junk
+    files don't collapse onto a single slug and pollute the library.
+    """
+    if not path.endswith(".md") or "/" not in path:
+        return False
+    if path.rsplit("/", 1)[-1].lower().startswith("readme"):
+        return False
+    return path.split("/", 1)[0] not in _NON_PERSONA_DIRS
+
 
 def _fts_query(text: str) -> str:
     """Quoted/OR-joined FTS5 MATCH string (mirrors knowledge.py) so arbitrary input is safe."""
@@ -79,8 +95,7 @@ async def _list_md_paths(owner: str, repo: str) -> list[str]:
         r = await c.get(url, headers=github_eval._headers(token))
         r.raise_for_status()
         tree = r.json().get("tree", [])
-    return [t["path"] for t in tree if t.get("type") == "blob" and t["path"].endswith(".md")
-            and "/" in t["path"] and not t["path"].lower().startswith(("readme", "docs/"))]
+    return [t["path"] for t in tree if t.get("type") == "blob" and _is_persona_path(t["path"])]
 
 
 async def _fetch_md(owner: str, repo: str, path: str) -> str:

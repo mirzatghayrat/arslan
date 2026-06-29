@@ -72,6 +72,30 @@ def test_count_returns_seed_total(seeded):
     assert anyio.run(persona_seed_service.count) == 2
 
 
+def test_is_persona_path_filters():
+    from server.services.persona_seed_service import _is_persona_path
+    included = [
+        "engineering/backend-architect.md",
+        "specialized/some-agent.md",
+        "integrations/some-real-agent.md",
+    ]
+    excluded = [
+        "README.md",
+        "integrations/aider/README.md",
+        "scripts/i18n/README.md",
+        "examples/README.md",
+        "examples/workflow-book-chapter.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "docs/guide.md",
+        "toplevel.md",
+        "engineering/notes.txt",
+    ]
+    for p in included:
+        assert _is_persona_path(p) is True, f"should include {p}"
+    for p in excluded:
+        assert _is_persona_path(p) is False, f"should exclude {p}"
+
+
 def test_import_parses_and_upserts(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'imp.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
