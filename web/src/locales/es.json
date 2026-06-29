@@ -116,7 +116,8 @@
       "mcp": "Elegir un MCP",
       "close": "Cerrar",
       "loading": "Cargando registro…",
-      "empty": "Nada asignable aquí."
+      "empty": "Nada asignable aquí.",
+      "error": "No se pudo cargar el registro."
     }
   },
   "equipment": {

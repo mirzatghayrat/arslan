@@ -116,7 +116,8 @@
       "mcp": "MCP wählen",
       "close": "Schließen",
       "loading": "Registry wird geladen…",
-      "empty": "Nichts Zuweisbares hier."
+      "empty": "Nichts Zuweisbares hier.",
+      "error": "Registry konnte nicht geladen werden."
     }
   },
   "equipment": {

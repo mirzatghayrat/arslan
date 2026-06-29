@@ -154,6 +154,25 @@ describe("SuggestCreateCard (editable config card)", () => {
     expect(sent.name).toBe("MarketBot");
   });
 
+  it("carries the edited brief out on create (regression)", () => {
+    const onCreate = vi.fn();
+    render(
+      <SuggestCreateCard
+        draft={fullDraft}
+        taskBrief="research the market"
+        overlaps={null}
+        onCreate={onCreate}
+        onDismiss={vi.fn()}
+      />,
+    );
+    const briefInput = screen.getByTestId("edit-brief") as HTMLTextAreaElement;
+    fireEvent.change(briefInput, { target: { value: "research EV chargers in the EU" } });
+    fireEvent.click(screen.getByTestId("btn-create"));
+    const sent = onCreate.mock.calls[0][0] as { brief: string };
+    // The edited brief — not the original taskBrief — must reach the payload.
+    expect(sent.brief).toBe("research EV chargers in the EU");
+  });
+
   it("adds a tool from the registry picker", async () => {
     const onCreate = vi.fn();
     render(

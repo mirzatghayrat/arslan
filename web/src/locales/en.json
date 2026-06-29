@@ -116,7 +116,8 @@
       "mcp": "Pick an MCP",
       "close": "Close",
       "loading": "Loading registry…",
-      "empty": "Nothing assignable here."
+      "empty": "Nothing assignable here.",
+      "error": "Couldn't load the registry."
     }
   },
   "equipment": {

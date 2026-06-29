@@ -987,6 +987,192 @@
   color: color-mix(in srgb, var(--warning) 80%, var(--foreground));
 }
 
+/* Editable header fields */
+.suggest-create-card__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.suggest-create-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.suggest-create-card__field-label {
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtle-foreground);
+}
+
+.suggest-create-card__input {
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--foreground);
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.suggest-create-card__input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.suggest-create-card__textarea {
+  resize: vertical;
+  min-height: 2.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Equipment chip rows */
+.suggest-create-card__chiprow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.suggest-create-card__chiprow-label {
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--subtle-foreground);
+}
+
+.suggest-create-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.suggest-create-card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.3rem 0.2rem 0.6rem;
+  font-size: 0.6875rem;
+  color: var(--foreground);
+}
+
+.suggest-create-card__chip-text {
+  line-height: 1;
+}
+
+.suggest-create-card__chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  line-height: 1;
+  color: var(--subtle-foreground);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.suggest-create-card__chip-x:hover {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+
+.suggest-create-card__chip-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.suggest-create-card__chip-add:hover {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+
+/* Capability gaps */
+.suggest-create-card__gaps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.625rem;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+  border-radius: 0.5rem;
+}
+
+.suggest-create-card__gaps-title {
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--warning) 85%, var(--foreground));
+}
+
+.suggest-create-card__gap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.suggest-create-card__gap-text {
+  font-size: 0.6875rem;
+  color: var(--foreground);
+}
+
+.suggest-create-card__gap-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.suggest-create-card__gap-btn {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.625rem;
+  font-family: monospace;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.suggest-create-card__gap-btn:hover {
+  color: var(--foreground);
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+/* Seed provenance */
+.suggest-create-card__provenance {
+  font-size: 0.625rem;
+  color: var(--subtle-foreground);
+  font-family: monospace;
+  word-break: break-word;
+}
+
 /* Action buttons row */
 .suggest-create-card__actions {
   display: flex;

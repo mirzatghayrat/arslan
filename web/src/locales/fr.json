@@ -116,7 +116,8 @@
       "mcp": "Choisir un MCP",
       "close": "Fermer",
       "loading": "Chargement du registre…",
-      "empty": "Rien à attribuer ici."
+      "empty": "Rien à attribuer ici.",
+      "error": "Impossible de charger le registre."
     }
   },
   "equipment": {

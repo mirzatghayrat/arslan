@@ -6,6 +6,8 @@ import RegistryPicker, { type PickKind } from "./RegistryPicker";
 /** Equipment shape the backend (B1) consumes; MCPs fold into toolsets. */
 export interface EditedDraft extends SuggestDraft {
   capabilities: string[];
+  /** The edited task brief (may differ from the original suggestionTaskBrief). */
+  brief: string;
   equipment: { toolsets: string[]; skills: string[] };
 }
 
@@ -67,6 +69,7 @@ export default function SuggestCreateCard({
       persona_role: role || null,
       persona_tone: tone || null,
       capabilities: draft.capabilities,
+      brief,
       tools,
       skills,
       mcps,

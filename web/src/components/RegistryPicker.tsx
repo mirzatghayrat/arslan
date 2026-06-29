@@ -25,8 +25,19 @@ export default function RegistryPicker({ kind, selected, onPick, onClose }: Prop
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getRegistry().then(setCat).catch((e) => setError(String(e)));
-  }, []);
+    let alive = true;
+    api
+      .getRegistry()
+      .then((c) => {
+        if (alive) setCat(c);
+      })
+      .catch(() => {
+        if (alive) setError(t("create_card.picker.error"));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [t]);
 
   let items: { key: string; name: string; description: string }[] = [];
   if (cat) {
