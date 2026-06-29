@@ -96,7 +96,7 @@ describe("arslanStore — verdict_recorded marks the deliverable", () => {
 // Component tests
 // ---------------------------------------------------------------------------
 describe("OrchestratorChat — verdict confirmed state", () => {
-  it("shows accepted label and hides accept button when msg.verdict is 'accept'", () => {
+  it("shows voted state (filled thumbs) and hides buttons when msg.verdict is 'accept'", () => {
     render(
       <OrchestratorChat
         {...baseProps}
@@ -116,14 +116,16 @@ describe("OrchestratorChat — verdict confirmed state", () => {
       />,
     );
 
-    // The confirmed label should be visible
-    expect(screen.getByText("orchestrator.verdict_accepted")).toBeDefined();
+    // The voted marker is shown with the correct verdict
+    const voted = screen.getByTestId("verdict-voted");
+    expect(voted.getAttribute("data-verdict")).toBe("accept");
 
-    // The accept button should NOT be present
-    expect(screen.queryByRole("button", { name: /orchestrator\.verdict_accept$/i })).toBeNull();
+    // The vote buttons are NOT present
+    expect(screen.queryByTitle("orchestrator.verdict_like")).toBeNull();
+    expect(screen.queryByTitle("orchestrator.verdict_dislike")).toBeNull();
   });
 
-  it("shows discarded label and hides discard button when msg.verdict is 'discard'", () => {
+  it("shows voted state with discard and hides buttons when msg.verdict is 'discard'", () => {
     render(
       <OrchestratorChat
         {...baseProps}
@@ -143,7 +145,9 @@ describe("OrchestratorChat — verdict confirmed state", () => {
       />,
     );
 
-    expect(screen.getByText("orchestrator.verdict_discarded")).toBeDefined();
-    expect(screen.queryByRole("button", { name: /orchestrator\.verdict_discard$/i })).toBeNull();
+    const voted = screen.getByTestId("verdict-voted");
+    expect(voted.getAttribute("data-verdict")).toBe("discard");
+    expect(screen.queryByTitle("orchestrator.verdict_like")).toBeNull();
+    expect(screen.queryByTitle("orchestrator.verdict_dislike")).toBeNull();
   });
 });

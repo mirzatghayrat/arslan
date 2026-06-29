@@ -70,6 +70,13 @@ export default function OrchestratorChat({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachKey, setAttachKey] = useState(0);
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
+  // Optimistic verdicts: filled immediately on click, before the backend verdict_recorded
+  // frame round-trips (which sets msg.verdict via the store). Keyed by messageId.
+  const [optimisticVerdicts, setOptimisticVerdicts] = useState<Record<number, 'accept' | 'discard'>>({});
+  const castVerdict = (action: 'accept' | 'discard', spawnId: number, messageId?: number) => {
+    if (messageId != null) setOptimisticVerdicts((p) => ({ ...p, [messageId]: action }));
+    onDeliverableVerdict?.(action, spawnId, messageId);
+  };
   const [replayRunId, setReplayRunId] = useState<number | null>(null);
   const [showEvalSummary, setShowEvalSummary] = useState(false);
   
@@ -628,33 +635,32 @@ export default function OrchestratorChat({
                     )}
 
                     {/* Staged orchestration: deliverable verdict bar (quartz) */}
-                    {isSpawn && !msg.isProposal && msg.spawnId && (
-                      msg.verdict ? (
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-subtle-foreground select-none">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{msg.verdict === 'discard' ? t('orchestrator.verdict_discarded') : t('orchestrator.verdict_accepted')}</span>
-                        </div>
-                      ) : (
+                    {isSpawn && !msg.isProposal && msg.spawnId && (() => {
+                      const verdict = msg.verdict ?? (msg.messageId != null ? optimisticVerdicts[msg.messageId] : undefined);
+                      if (verdict) {
+                        return (
+                          <div data-testid="verdict-voted" data-verdict={verdict}
+                            className="flex items-center gap-2 px-2 py-1 select-none">
+                            <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                            <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                          </div>
+                        );
+                      }
+                      return (
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <button
-                            title={t('orchestrator.verdict_like')}
-                            onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-success text-[11px] rounded-md hover:bg-success/10 transition-all select-none"
-                          >
+                          <button title={t('orchestrator.verdict_like')}
+                            onClick={() => castVerdict('accept', Number(msg.spawnId), msg.messageId)}
+                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-success text-[11px] rounded-md hover:bg-success/10 transition-all select-none">
                             <ThumbsUp className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            title={t('orchestrator.verdict_dislike')}
-                            onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none"
-                          >
+                          <button title={t('orchestrator.verdict_dislike')}
+                            onClick={() => castVerdict('discard', Number(msg.spawnId), msg.messageId)}
+                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none">
                             <ThumbsDown className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            title={t('orchestrator.refine')}
+                          <button title={t('orchestrator.refine')}
                             onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none"
-                          >
+                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
                             <Wand2 className="w-3.5 h-3.5" />
                             <span>{t('orchestrator.refine')}</span>
                           </button>
@@ -668,8 +674,8 @@ export default function OrchestratorChat({
                             </button>
                           )}
                         </div>
-                      )
-                    )}
+                      );
+                    })()}
                   </div>
 
                   {/* Timestamp for user bubble (right-aligned, no avatar needed — position conveys identity) */}
@@ -809,33 +815,32 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Staged orchestration: deliverable verdict bar (brutalist) */}
-                  {isSpawn && !msg.isProposal && msg.spawnId && (
-                    msg.verdict ? (
-                      <div className="mt-4 flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-subtle-foreground select-none">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>{msg.verdict === 'discard' ? t('orchestrator.verdict_discarded') : t('orchestrator.verdict_accepted')}</span>
-                      </div>
-                    ) : (
+                  {isSpawn && !msg.isProposal && msg.spawnId && (() => {
+                    const verdict = msg.verdict ?? (msg.messageId != null ? optimisticVerdicts[msg.messageId] : undefined);
+                    if (verdict) {
+                      return (
+                        <div data-testid="verdict-voted" data-verdict={verdict}
+                          className="mt-4 flex items-center gap-2 px-2 py-1 select-none">
+                          <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                          <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                        </div>
+                      );
+                    }
+                    return (
                       <div className="mt-4 flex items-center gap-2 flex-wrap">
-                        <button
-                          title={t('orchestrator.verdict_like')}
-                          onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-success text-subtle-foreground hover:text-success text-[11px] transition-all select-none"
-                        >
+                        <button title={t('orchestrator.verdict_like')}
+                          onClick={() => castVerdict('accept', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-success text-subtle-foreground hover:text-success text-[11px] transition-all select-none">
                           <ThumbsUp className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          title={t('orchestrator.verdict_dislike')}
-                          onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-danger text-subtle-foreground hover:text-danger text-[11px] transition-all select-none"
-                        >
+                        <button title={t('orchestrator.verdict_dislike')}
+                          onClick={() => castVerdict('discard', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-danger text-subtle-foreground hover:text-danger text-[11px] transition-all select-none">
                           <ThumbsDown className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          title={t('orchestrator.refine')}
+                        <button title={t('orchestrator.refine')}
                           onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none"
-                        >
+                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none">
                           <Wand2 className="w-3.5 h-3.5" />
                           <span>{t('orchestrator.refine')}</span>
                         </button>
@@ -849,8 +854,8 @@ export default function OrchestratorChat({
                           </button>
                         )}
                       </div>
-                    )
-                  )}
+                    );
+                  })()}
                 </div>
               );
             }
@@ -998,33 +1003,32 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Staged orchestration: deliverable verdict bar */}
-                  {isSpawn && !msg.isProposal && msg.spawnId && (
-                    msg.verdict ? (
-                      <div className="pl-5 pt-2 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-subtle-foreground select-none">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>{msg.verdict === 'discard' ? t('orchestrator.verdict_discarded') : t('orchestrator.verdict_accepted')}</span>
-                      </div>
-                    ) : (
+                  {isSpawn && !msg.isProposal && msg.spawnId && (() => {
+                    const verdict = msg.verdict ?? (msg.messageId != null ? optimisticVerdicts[msg.messageId] : undefined);
+                    if (verdict) {
+                      return (
+                        <div data-testid="verdict-voted" data-verdict={verdict}
+                          className="pl-5 pt-2 flex items-center gap-2 px-2 py-1 select-none">
+                          <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                          <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                        </div>
+                      );
+                    }
+                    return (
                       <div className="pl-5 pt-2 flex flex-wrap items-center gap-1.5">
-                        <button
-                          title={t('orchestrator.verdict_like')}
-                          onClick={() => onDeliverableVerdict?.('accept', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-success text-[11px] rounded-md hover:bg-success/10 transition-all select-none"
-                        >
+                        <button title={t('orchestrator.verdict_like')}
+                          onClick={() => castVerdict('accept', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-success text-[11px] rounded-md hover:bg-success/10 transition-all select-none">
                           <ThumbsUp className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          title={t('orchestrator.verdict_dislike')}
-                          onClick={() => onDeliverableVerdict?.('discard', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none"
-                        >
+                        <button title={t('orchestrator.verdict_dislike')}
+                          onClick={() => castVerdict('discard', Number(msg.spawnId), msg.messageId)}
+                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none">
                           <ThumbsDown className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          title={t('orchestrator.refine')}
+                        <button title={t('orchestrator.refine')}
                           onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none"
-                        >
+                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
                           <Wand2 className="w-3.5 h-3.5" />
                           <span>{t('orchestrator.refine')}</span>
                         </button>
@@ -1038,8 +1042,8 @@ export default function OrchestratorChat({
                           </button>
                         )}
                       </div>
-                    )
-                  )}
+                    );
+                  })()}
                 </div>
               );
             }

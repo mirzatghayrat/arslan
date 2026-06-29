@@ -74,35 +74,28 @@ const deliverable = {
 } as any;
 
 describe("OrchestratorChat — light feedback UI (👍/👎/精修)", () => {
-  it("renders 👍 / 👎 / 精修 and NO redo button; wires the handlers", () => {
-    const onDeliverableVerdict = vi.fn();
-    render(
-      <OrchestratorChat
-        {...baseProps}
-        chatHistory={[deliverable]}
-        onDeliverableVerdict={onDeliverableVerdict}
-      />,
-    );
-
-    // The 精修 label renders (from t('orchestrator.refine')).
+  it("renders 👍 / 👎 / 精修 and NO redo button", () => {
+    render(<OrchestratorChat {...baseProps} chatHistory={[deliverable]} onDeliverableVerdict={vi.fn()} />);
     expect(screen.getByText("orchestrator.refine")).toBeDefined();
-
-    // No redo button.
+    expect(screen.getByTitle("orchestrator.verdict_like")).toBeDefined();
+    expect(screen.getByTitle("orchestrator.verdict_dislike")).toBeDefined();
     expect(screen.queryByText("orchestrator.verdict_redo")).toBeNull();
-
-    // 👍 — button with the like title.
-    const like = screen.getByTitle("orchestrator.verdict_like");
-    fireEvent.click(like);
+  });
+  it("👍 fires accept", () => {
+    const onDeliverableVerdict = vi.fn();
+    render(<OrchestratorChat {...baseProps} chatHistory={[deliverable]} onDeliverableVerdict={onDeliverableVerdict} />);
+    fireEvent.click(screen.getByTitle("orchestrator.verdict_like"));
     expect(onDeliverableVerdict).toHaveBeenCalledWith("accept", 3, 42);
-
-    // 👎 — button with the dislike title.
-    const dislike = screen.getByTitle("orchestrator.verdict_dislike");
-    fireEvent.click(dislike);
+  });
+  it("👎 fires discard", () => {
+    const onDeliverableVerdict = vi.fn();
+    render(<OrchestratorChat {...baseProps} chatHistory={[deliverable]} onDeliverableVerdict={onDeliverableVerdict} />);
+    fireEvent.click(screen.getByTitle("orchestrator.verdict_dislike"));
     expect(onDeliverableVerdict).toHaveBeenCalledWith("discard", 3, 42);
-
-    // 精修 — refine button now opens the SandboxPanel in-place (not full-nav).
+  });
+  it("精修 opens the sandbox panel in-place", () => {
+    render(<OrchestratorChat {...baseProps} chatHistory={[deliverable]} onDeliverableVerdict={vi.fn()} />);
     fireEvent.click(screen.getByText("orchestrator.refine"));
-    // The sandbox panel mounts and shows its confirm-merge button.
     expect(screen.getByText("orchestrator.sandbox_confirm_merge")).toBeDefined();
   });
 });
