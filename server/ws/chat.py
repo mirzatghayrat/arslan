@@ -24,7 +24,7 @@ async def _history(spawn_id: int) -> list[ChatMessage]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
             select(ChatMessage)
-            .where(ChatMessage.spawn_id == spawn_id)
+            .where(ChatMessage.spawn_id == spawn_id, ChatMessage.archived == False)  # noqa: E712
             .order_by(ChatMessage.id)
         )
         return list(rows.scalars().all())
