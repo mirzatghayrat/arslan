@@ -7,7 +7,7 @@ from typing import Any
 from server.orchestrator import memory
 from server.orchestrator import router as _router  # used only for _spawn_registry
 from server.orchestrator.json_protocol import parse_json_object
-from server.services import spawn_service
+from server.services import equipment_service, persona_seed_service, spawn_service
 from server.services.llm_factory import build_adapter
 
 _SYSTEM = (
@@ -53,4 +53,23 @@ async def draft_from_text(description: str, *, previous: dict[str, Any] | None =
     draft.setdefault("domain", "other")
     # Coerce capabilities to a clean list (the model may return a comma-joined string).
     draft["capabilities"] = spawn_service.normalize_capabilities(draft.get("capabilities"))
+
+    # Seed-grounded capability mapping. Retrieve by the drafted English domain + capabilities
+    # (the cross-language bridge — the raw need may be in any language).
+    caps_text = " ".join(draft.get("capabilities") or [])
+    seed_query = f"{draft.get('domain', '')} {caps_text}".strip()
+    try:
+        seeds = await persona_seed_service.search(seed_query, k=3)
+    except Exception:  # noqa: BLE001
+        seeds = []
+    draft["seed_refs"] = [s["slug"] for s in seeds]
+    need = f"{draft.get('persona_role', '')} — {caps_text}".strip(" —")
+    try:
+        eq = await equipment_service.curate(need or seed_query or caps_text)
+    except Exception:  # noqa: BLE001
+        eq = {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
+    draft["tools"] = eq.get("toolsets") or []
+    draft["skills"] = eq.get("skills") or []
+    draft["mcps"] = eq.get("mcps") or []
+    draft["gaps"] = eq.get("gaps") or []
     return draft
