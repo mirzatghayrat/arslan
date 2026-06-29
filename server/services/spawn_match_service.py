@@ -17,22 +17,35 @@ _COVER_WEIGHT = 0.6
 
 
 def _split_domain(domain: str) -> tuple[str, str | None]:
-    parts = (domain or "").split(".", 1)
-    return parts[0], (parts[1] if len(parts) > 1 else None)
+    cat, _, sub = (domain or "").partition(".")
+    return cat, (sub or None)
+
+
+def _spawn_domain(spawn: dict) -> tuple[str | None, str | None]:
+    """Accept both spawn-dict shapes: ORM-style split keys
+    ({domain_category, domain_subcategory}) and SpawnOut-style single string
+    ({domain: "cat.sub"}). Returns (category, subcategory)."""
+    if spawn.get("domain_category") is not None:
+        return spawn.get("domain_category"), spawn.get("domain_subcategory")
+    if spawn.get("domain"):
+        return _split_domain(spawn["domain"])
+    return None, None
 
 
 def _structural_score(need: dict, spawn: dict) -> float:
     cat, sub = _split_domain(need.get("domain", ""))
-    if not cat or spawn.get("domain_category") != cat:
+    spawn_cat, spawn_sub = _spawn_domain(spawn)
+    if not cat or spawn_cat != cat:
         return 0.0
     score = 0.5
-    if sub and spawn.get("domain_subcategory") == sub:
+    if sub and spawn_sub == sub:
         score += 0.5
     return score
 
 
 def _get_adapter():
     """Indirection so tests can stub adapter construction."""
+    # role="draft" to match equipment_service.curate (lightweight coverage scoring).
     return build_adapter(role="draft")
 
 
@@ -41,6 +54,8 @@ async def _llm_coverage(need: dict, spawns: list[dict]) -> dict[int, float]:
 
     Best-effort: on failure returns {} (callers treat missing as 0.0).
     """
+    if not spawns:
+        return {}
     caps = ", ".join(need.get("capabilities") or [])
     roster = "\n".join(
         f'{s["id"]}: {s.get("name")} — caps: {", ".join(s.get("capabilities") or [])}'
@@ -63,6 +78,13 @@ async def _llm_coverage(need: dict, spawns: list[dict]) -> dict[int, float]:
 
 
 async def score_spawns(need: dict, spawns: list[dict]) -> list[dict]:
+    """Rank spawns against a need by structural + LLM-coverage score.
+
+    Each spawn dict needs an ``id`` and may carry its domain in either shape:
+    ORM-style split keys ({domain_category, domain_subcategory}) or SpawnOut-style
+    single string ({domain: "category.subcategory"}). Returns a list sorted by
+    score desc, each item {spawn_id, name, score, why}.
+    """
     cover = await _llm_coverage(need, spawns)
     ranked = []
     for s in spawns:

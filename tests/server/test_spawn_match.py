@@ -1,5 +1,4 @@
 import anyio
-import pytest
 from server.services import spawn_match_service as sms
 
 
@@ -11,6 +10,22 @@ def test_structural_score_domain_alignment():
     assert sms._structural_score(need, same_both) == 1.0
     assert sms._structural_score(need, same_cat) == 0.5
     assert sms._structural_score(need, other) == 0.0
+
+
+def test_structural_score_accepts_single_domain_string():
+    # SpawnOut-style shape: one "category.subcategory" string, no split keys.
+    need = {"domain": "data-analysis.finance", "capabilities": ["x"]}
+    spawn = {"id": 1, "name": "fin", "domain": "data-analysis.finance",
+             "capabilities": ["forecasting"]}
+    assert sms._structural_score(need, spawn) == 1.0
+
+
+def test_llm_coverage_empty_spawns_short_circuits(monkeypatch):
+    def _boom():
+        raise AssertionError("_get_adapter must not be called for empty spawns")
+    monkeypatch.setattr(sms, "_get_adapter", _boom)
+    result = anyio.run(lambda: sms._llm_coverage({"capabilities": ["x"]}, []))
+    assert result == {}
 
 
 def test_classify_band_invite_one():
