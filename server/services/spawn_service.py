@@ -307,10 +307,25 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
         )
 
     explicit = draft.get("equipment") or None
+    drafter_tools = draft.get("tools")
+    drafter_skills = draft.get("skills")
+    drafter_mcps = draft.get("mcps")
     if explicit:
         keys = {
             "toolsets": [str(k) for k in explicit.get("toolsets") or []],
             "skills": [str(k) for k in explicit.get("skills") or []],
+        }
+        for k in keys["toolsets"]:
+            await registry_service.assert_assignable("toolset", k)
+        for k in keys["skills"]:
+            await registry_service.assert_assignable("skill", k)
+    elif drafter_tools is not None or drafter_skills is not None or drafter_mcps is not None:
+        # L2 bridge: the drafter already mapped capabilities to the real registry.
+        # MCPs are toolset rows keyed mcp_<id>, so they go in the toolsets bucket.
+        keys = {
+            "toolsets": [str(k) for k in (drafter_tools or [])]
+                        + [str(k) for k in (drafter_mcps or [])],
+            "skills": [str(k) for k in (drafter_skills or [])],
         }
         for k in keys["toolsets"]:
             await registry_service.assert_assignable("toolset", k)
@@ -321,7 +336,12 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
             filter(None, [draft.get("name"), domain, draft.get("persona_role"),
                           ", ".join(draft.get("capabilities") or [])])
         )
+        # curate validates every key it returns internally; no re-validation here.
         keys = await equipment_service.curate(need)
+        keys = {
+            "toolsets": list(keys.get("toolsets") or []) + list(keys.get("mcps") or []),
+            "skills": list(keys.get("skills") or []),
+        }
 
     async with db_session.AsyncSessionLocal() as db:
         spawn = await create_spawn_unique(
