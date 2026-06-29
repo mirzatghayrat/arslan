@@ -43,7 +43,9 @@ def test_curate_returns_mcps_and_gaps(monkeypatch):
     monkeypatch.setattr(equipment_service.registry_service, "assert_assignable", fake_assert)
 
     class Resp:
-        content = ('{"toolsets":["web_search_scraping"],"skills":["statistical-analysis"],'
+        # mcp_7 is echoed into BOTH toolsets and mcps — it must surface only in mcps.
+        content = ('{"toolsets":["web_search_scraping","mcp_7"],'
+                   '"skills":["statistical-analysis"],'
                    '"mcps":["mcp_7"],"gaps":["实时榜单/营收数据"]}')
 
     class A:
@@ -53,7 +55,8 @@ def test_curate_returns_mcps_and_gaps(monkeypatch):
     monkeypatch.setattr(equipment_service, "_get_adapter", lambda: A())
 
     out = anyio.run(lambda: equipment_service.curate("拆解手游数值,需要实时榜单数据"))
-    assert out["toolsets"] == ["web_search_scraping"]
+    assert out["toolsets"] == ["web_search_scraping"]  # mcp_7 excluded from toolsets
+    assert "mcp_7" not in out["toolsets"]
     assert out["skills"] == ["statistical-analysis"]
     assert out["mcps"] == ["mcp_7"]
     assert out["gaps"] == ["实时榜单/营收数据"]

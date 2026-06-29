@@ -46,7 +46,12 @@ def _get_adapter():
 
 
 def _is_mcp(entry: dict) -> bool:
-    """An MCP server is represented as a toolset whose key is namespaced 'mcp_<id>'."""
+    """An MCP server is represented as a toolset whose key is namespaced 'mcp_<id>'.
+
+    The 'mcp_' prefix is a reserved namespace owned by server/mcp/discovery.py
+    (where MCP toolset keys are minted as 'mcp_<server_id>'); never mint a plain
+    toolset with this prefix or it will collide.
+    """
     return str(entry.get("key", "")).startswith("mcp_")
 
 
@@ -71,7 +76,12 @@ def _menu_text(menu: dict) -> str:
 
 
 async def curate(need_description: str) -> dict:
-    """Return {"toolsets": [keys], "skills": [keys]} — validated safe-subset only."""
+    """Return {"toolsets": [keys], "skills": [keys], "mcps": [keys], "gaps": [phrases]}.
+
+    toolsets/skills/mcps are validated safe-subset keys only (mcps are MCP-server
+    toolsets, surfaced separately from plain toolsets — no overlap). gaps are
+    short LLM-flagged needs that NO menu toolset, skill, or MCP covers.
+    """
     menu = await registry_service.safe_menu()
     adapter = _get_adapter()
     a = await adapter if hasattr(adapter, "__await__") else adapter
@@ -87,6 +97,10 @@ async def curate(need_description: str) -> dict:
 
     toolsets: list[str] = []
     for key in (parsed.get("toolsets") or []):
+        # MCP toolsets (mcp_ prefix) belong only in the mcps list; if the LLM
+        # echoes one here too, skip it so toolsets and mcps never overlap.
+        if str(key).startswith("mcp_"):
+            continue
         try:
             await registry_service.assert_assignable("toolset", str(key))
             toolsets.append(str(key))
