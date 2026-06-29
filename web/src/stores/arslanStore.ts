@@ -114,7 +114,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta"]);
+      const RESPONDING_TYPES = new Set(["routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta", "propose_invite", "propose_staffing"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }

@@ -154,6 +154,7 @@ export interface SuggestDraft {
   mcps?: string[];
   gaps?: string[];
   seed_refs?: string[];
+  task_brief?: string | null;
 }
 
 export interface OverlapInfo {

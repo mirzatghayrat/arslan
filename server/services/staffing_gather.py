@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from server.orchestrator.json_protocol import parse_json_object
+from server.orchestrator.untrusted import wrap_external
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -15,8 +16,10 @@ _SYSTEM = (
     "domain (english 'category.subcategory' of the need, or null if not yet clear), "
     "capability (one concrete capability phrase, or null), "
     "first_task (a concrete first task to run, or null), "
-    "recurrence (true ONLY if the user signalled this is a recurring/ongoing need worth a "
-    "dedicated agent, else null). Use null for anything not yet confidently present — do NOT guess."
+    "recurrence (true if the user signalled this is a recurring/ongoing need worth a "
+    "dedicated agent; false if the user signalled this is a one-off/just-this-once task; "
+    "null only if it is not yet clear whether the need is recurring or one-off). "
+    "Use null for the OTHER keys when not yet confidently present — do NOT guess."
 )
 
 
@@ -51,7 +54,7 @@ async def extract_slots(history_text: str) -> dict:
     try:
         adapter = _get_adapter()
         adapter = await adapter if hasattr(adapter, "__await__") else adapter
-        resp = await adapter.chat(system=_SYSTEM, user=history_text)
+        resp = await adapter.chat(system=_SYSTEM, user=wrap_external(history_text))
         parsed = parse_json_object(resp.content or "") or {}
     except Exception as exc:  # noqa: BLE001
         logger.warning("gather: extract failed: %s", exc)

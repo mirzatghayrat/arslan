@@ -581,9 +581,11 @@ export default function App() {
                     // Open the existing editable SuggestCreateCard with this draft.
                     // Setting suggestion state causes App to render SuggestCreateCard,
                     // whose onCreate sends confirm_create — the existing flow is reused.
+                    // Carry task_brief from the gathered staffing slots so the created
+                    // spawn receives its first-task context.
                     useArslanStore.setState({
                       suggestion: draft,
-                      suggestionTaskBrief: null,
+                      suggestionTaskBrief: draft.task_brief ?? null,
                       suggestionOverlaps: null,
                     });
                     clearPendingStaffing();

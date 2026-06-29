@@ -133,4 +133,28 @@ describe("StaffingPickerCard", () => {
     );
     expect(screen.getByText("#99")).toBeInTheDocument();
   });
+
+  it("onCreateNew receives the full createDraft including task_brief (Fix #3)", () => {
+    // Verify the component passes the full draft object (including task_brief) to
+    // the callback so App.tsx can carry it into suggestionTaskBrief.
+    const draftWithTaskBrief: SuggestDraft = {
+      ...createDraft,
+      task_brief: "Write a competitive analysis report on three SaaS tools",
+    };
+    const onCreateNew = vi.fn();
+    render(
+      <StaffingPickerCard
+        candidates={candidates}
+        createDraft={draftWithTaskBrief}
+        onInvite={vi.fn()}
+        onCreateNew={onCreateNew}
+        onDismiss={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("staffing-build-new"));
+    expect(onCreateNew).toHaveBeenCalledWith(draftWithTaskBrief);
+    expect(onCreateNew.mock.calls[0][0].task_brief).toBe(
+      "Write a competitive analysis report on three SaaS tools",
+    );
+  });
 });

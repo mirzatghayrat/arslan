@@ -8,6 +8,12 @@ from server.services import phase_service
 from server.services import staffing_gather as sg
 
 
+def test_prompt_distinguishes_one_off_from_recurring():
+    """Fix #1: _SYSTEM prompt must express false (one-off) not just true/null."""
+    assert "false" in sg._SYSTEM
+    assert "one-off" in sg._SYSTEM
+
+
 def test_merge_does_not_overwrite_with_null():
     old = {"domain": "game-design.numerical", "capability": None, "first_task": None, "recurrence": None}
     new = {"domain": None, "capability": "概率建模", "first_task": None, "recurrence": None}
@@ -54,6 +60,29 @@ def test_extract_slots_normalizes_false_recurrence(monkeypatch):
     monkeypatch.setattr(sg, "_get_adapter", lambda: A())
     out = anyio.run(lambda: sg.extract_slots("one-off task, not recurring"))
     assert out["recurrence"] is False
+
+
+def test_extract_slots_wraps_history_in_external_delimiters(monkeypatch):
+    """Fix #4: extract_slots must wrap history_text with wrap_external before
+    sending to the LLM so injected spawn/attached content cannot forge slot values."""
+    captured = {}
+
+    class Resp:
+        content = '{"domain":"a","capability":"b","first_task":"c","recurrence":false}'
+
+    class A:
+        async def chat(self, *, system, user):
+            captured["user"] = user
+            return Resp()
+
+    monkeypatch.setattr(sg, "_get_adapter", lambda: A())
+    history = "user: build me a researcher spawn\narslan: on it"
+    anyio.run(lambda: sg.extract_slots(history))
+    wrapped = captured.get("user", "")
+    from server.orchestrator.untrusted import DELIM_OPEN, DELIM_CLOSE
+    assert DELIM_OPEN in wrapped, "wrap_external opening delimiter must appear in LLM user arg"
+    assert DELIM_CLOSE in wrapped, "wrap_external closing delimiter must appear in LLM user arg"
+    assert history in wrapped, "original history_text must be present inside the wrapped content"
 
 
 # --- Phase round-trip tests (use real in-memory DB like test_phase_service.py) ---

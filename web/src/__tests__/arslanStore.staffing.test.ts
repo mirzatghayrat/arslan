@@ -60,3 +60,25 @@ describe("propose_staffing frame", () => {
     expect((useArslanStore.getState() as any).pendingStaffing).toBeNull();
   });
 });
+
+describe("thinking cleared by propose frames (Fix #2)", () => {
+  it("clears thinking when propose_staffing frame arrives", () => {
+    useArslanStore.setState({ thinking: true } as any, false);
+    useArslanStore.getState().handleFrame({
+      type: "propose_staffing",
+      candidates: [{ spawn_id: 1, name: "A", score: 0.8, why: "good" }],
+      create_draft: null,
+    } as any);
+    expect(useArslanStore.getState().thinking).toBe(false);
+  });
+
+  it("clears thinking when propose_invite frame arrives", () => {
+    useArslanStore.setState({ thinking: true } as any, false);
+    useArslanStore.getState().handleFrame({
+      type: "propose_invite",
+      spawn_id: 5,
+      reason: "fits the task",
+    } as any);
+    expect(useArslanStore.getState().thinking).toBe(false);
+  });
+});
