@@ -94,7 +94,30 @@
     "route_to": "转给 {{name}}",
     "create_new": "仍然新建",
     "refine_placeholder": "优化此草稿……",
-    "differ_placeholder": "在 {{axis}} 上与 {{name}} 有何不同？"
+    "differ_placeholder": "在 {{axis}} 上与 {{name}} 有何不同？",
+    "title": "新建分身",
+    "name": "名称",
+    "role": "角色",
+    "tone": "风格",
+    "brief": "任务",
+    "tools": "工具",
+    "skills": "技能",
+    "mcps": "MCP",
+    "add": "添加",
+    "refine": "继续聊改",
+    "gaps": "能力缺口",
+    "gap_discover_mcp": "发现MCP",
+    "gap_distill_skill": "蒸馏skill",
+    "gap_request_grant": "请求授权",
+    "seed_provenance": "参考自 agency-agents：",
+    "picker": {
+      "tool": "选择工具",
+      "skill": "选择技能",
+      "mcp": "选择 MCP",
+      "close": "关闭",
+      "loading": "加载注册表……",
+      "empty": "这里没有可分配项。"
+    }
   },
   "equipment": {
     "title": "装备",

@@ -94,7 +94,30 @@
     "route_to": "{{name}} に転送",
     "create_new": "それでも新規作成",
     "refine_placeholder": "この下書きを調整…",
-    "differ_placeholder": "{{axis}} において {{name}} とどう異なりますか？"
+    "differ_placeholder": "{{axis}} において {{name}} とどう異なりますか？",
+    "title": "新しいスポーン",
+    "name": "名前",
+    "role": "役割",
+    "tone": "トーン",
+    "brief": "タスク",
+    "tools": "ツール",
+    "skills": "スキル",
+    "mcps": "MCP",
+    "add": "追加",
+    "refine": "チャットで調整",
+    "gaps": "能力ギャップ",
+    "gap_discover_mcp": "MCPを探す",
+    "gap_distill_skill": "スキルを蒸留",
+    "gap_request_grant": "権限を要求",
+    "seed_provenance": "参考元 agency-agents：",
+    "picker": {
+      "tool": "ツールを選択",
+      "skill": "スキルを選択",
+      "mcp": "MCPを選択",
+      "close": "閉じる",
+      "loading": "レジストリを読み込み中…",
+      "empty": "割り当て可能な項目がありません。"
+    }
   },
   "equipment": {
     "title": "装備",

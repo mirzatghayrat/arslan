@@ -94,7 +94,30 @@
     "route_to": "Rediriger vers {{name}}",
     "create_new": "Créer un nouveau quand même",
     "refine_placeholder": "Affiner ce brouillon…",
-    "differ_placeholder": "En quoi cela doit-il différer de {{name}} sur {{axis}} ?"
+    "differ_placeholder": "En quoi cela doit-il différer de {{name}} sur {{axis}} ?",
+    "title": "Nouveau spawn",
+    "name": "Nom",
+    "role": "Rôle",
+    "tone": "Ton",
+    "brief": "Tâche",
+    "tools": "Outils",
+    "skills": "Compétences",
+    "mcps": "MCP",
+    "add": "Ajouter",
+    "refine": "Continuer à discuter",
+    "gaps": "Lacunes de capacité",
+    "gap_discover_mcp": "Trouver un MCP",
+    "gap_distill_skill": "Distiller une compétence",
+    "gap_request_grant": "Demander l'accès",
+    "seed_provenance": "Basé sur agency-agents :",
+    "picker": {
+      "tool": "Choisir un outil",
+      "skill": "Choisir une compétence",
+      "mcp": "Choisir un MCP",
+      "close": "Fermer",
+      "loading": "Chargement du registre…",
+      "empty": "Rien à attribuer ici."
+    }
   },
   "equipment": {
     "title": "Équipement",

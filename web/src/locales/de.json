@@ -94,7 +94,30 @@
     "route_to": "An {{name}} weiterleiten",
     "create_new": "Trotzdem neu erstellen",
     "refine_placeholder": "Diesen Entwurf verfeinern…",
-    "differ_placeholder": "Wie soll sich dies von {{name}} bei {{axis}} unterscheiden?"
+    "differ_placeholder": "Wie soll sich dies von {{name}} bei {{axis}} unterscheiden?",
+    "title": "Neuer Spawn",
+    "name": "Name",
+    "role": "Rolle",
+    "tone": "Ton",
+    "brief": "Aufgabe",
+    "tools": "Werkzeuge",
+    "skills": "Fähigkeiten",
+    "mcps": "MCPs",
+    "add": "Hinzufügen",
+    "refine": "Weiter chatten",
+    "gaps": "Fähigkeitslücken",
+    "gap_discover_mcp": "MCP finden",
+    "gap_distill_skill": "Skill destillieren",
+    "gap_request_grant": "Freigabe anfordern",
+    "seed_provenance": "Basierend auf agency-agents:",
+    "picker": {
+      "tool": "Werkzeug wählen",
+      "skill": "Fähigkeit wählen",
+      "mcp": "MCP wählen",
+      "close": "Schließen",
+      "loading": "Registry wird geladen…",
+      "empty": "Nichts Zuweisbares hier."
+    }
   },
   "equipment": {
     "title": "Ausrüstung",

@@ -489,10 +489,11 @@ export default function App() {
                   draft={suggestion}
                   taskBrief={suggestionTaskBrief}
                   overlaps={suggestionOverlaps}
-                  onCreate={() => {
-                    wsSend({ type: 'confirm_create', draft: suggestion, task_brief: suggestionTaskBrief });
+                  onCreate={(finalDraft) => {
+                    wsSend({ type: 'confirm_create', draft: finalDraft, task_brief: suggestionTaskBrief });
                     dismissSuggestion();
                   }}
+                  onRefine={() => dismissSuggestion()}
                   onDismiss={() => dismissSuggestion()}
                 />
               </div>

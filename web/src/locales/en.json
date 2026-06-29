@@ -94,7 +94,30 @@
     "route_to": "Route to {{name}}",
     "create_new": "Create new anyway",
     "refine_placeholder": "Refine this draft…",
-    "differ_placeholder": "How should this differ from {{name}} on {{axis}}?"
+    "differ_placeholder": "How should this differ from {{name}} on {{axis}}?",
+    "title": "New spawn",
+    "name": "Name",
+    "role": "Role",
+    "tone": "Tone",
+    "brief": "Task",
+    "tools": "Tools",
+    "skills": "Skills",
+    "mcps": "MCPs",
+    "add": "Add",
+    "refine": "Keep chatting",
+    "gaps": "Capability gaps",
+    "gap_discover_mcp": "Find MCP",
+    "gap_distill_skill": "Distill skill",
+    "gap_request_grant": "Request grant",
+    "seed_provenance": "Based on agency-agents:",
+    "picker": {
+      "tool": "Pick a tool",
+      "skill": "Pick a skill",
+      "mcp": "Pick an MCP",
+      "close": "Close",
+      "loading": "Loading registry…",
+      "empty": "Nothing assignable here."
+    }
   },
   "equipment": {
     "title": "Equipment",

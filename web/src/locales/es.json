@@ -94,7 +94,30 @@
     "route_to": "Enviar a {{name}}",
     "create_new": "Crear nuevo de todos modos",
     "refine_placeholder": "Refinar este borrador…",
-    "differ_placeholder": "¿En qué debería diferir de {{name}} en {{axis}}?"
+    "differ_placeholder": "¿En qué debería diferir de {{name}} en {{axis}}?",
+    "title": "Nuevo spawn",
+    "name": "Nombre",
+    "role": "Rol",
+    "tone": "Tono",
+    "brief": "Tarea",
+    "tools": "Herramientas",
+    "skills": "Habilidades",
+    "mcps": "MCPs",
+    "add": "Añadir",
+    "refine": "Seguir en el chat",
+    "gaps": "Carencias de capacidad",
+    "gap_discover_mcp": "Buscar MCP",
+    "gap_distill_skill": "Destilar skill",
+    "gap_request_grant": "Solicitar permiso",
+    "seed_provenance": "Basado en agency-agents:",
+    "picker": {
+      "tool": "Elegir una herramienta",
+      "skill": "Elegir una habilidad",
+      "mcp": "Elegir un MCP",
+      "close": "Cerrar",
+      "loading": "Cargando registro…",
+      "empty": "Nada asignable aquí."
+    }
   },
   "equipment": {
     "title": "Equipamiento",
