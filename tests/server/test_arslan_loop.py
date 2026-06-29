@@ -267,13 +267,21 @@ async def test_suggest_create_emits_card(maker, monkeypatch):
             action="suggest_create", suggested_spawn=draft, task_brief="translate this doc"
         )
 
+    async def _fake_draft(description, *, previous=None):
+        # B4 create-band fuses an LLM-drafted spawn; return the draft + equipment keys.
+        return {**draft, "tools": [], "skills": [], "mcps": [], "gaps": []}
+
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
     monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
+    monkeypatch.setattr(arslan.spawn_drafter, "draft_from_text", _fake_draft)
 
     events = []
     await arslan.handle_user_message("main", "translate things often", _events(events))
-    assert any(e["type"] == "suggest_create" and e["draft"] == draft for e in events)
+    # B4: no existing spawns → create band → suggest_create with the fused draft.
+    sc = next(e for e in events if e["type"] == "suggest_create")
+    assert sc["draft"]["name"] == "translator"
+    assert sc["draft"]["capabilities"] == ["translation"]
 
 
 @pytest.mark.asyncio
@@ -291,15 +299,21 @@ async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch
             overlaps=overlaps,
         )
 
+    async def _fake_draft(description, *, previous=None):
+        return {**draft, "tools": [], "skills": [], "mcps": [], "gaps": []}
+
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
     monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
+    monkeypatch.setattr(arslan.spawn_drafter, "draft_from_text", _fake_draft)
 
     events = []
     await arslan.handle_user_message("main", "look at TSLA", _events(events))
     sc = next(e for e in events if e["type"] == "suggest_create")
-    assert sc["draft"] == draft
-    assert sc["task_brief"] == "analyze TSLA"
+    assert sc["draft"]["name"] == "stock-helper"
+    # B4: task_brief now carries the gathered first_task slot (not the router brief).
+    assert sc["task_brief"] == "run x"
+    # No existing spawn matches by name/domain → the router's overlaps passes through.
     assert sc["overlaps"] == overlaps
 
 
@@ -330,9 +344,13 @@ async def test_suggest_create_injects_overlap_for_existing_same_name_spawn(maker
             overlaps=None,  # LLM missed it; deterministic check must inject it
         )
 
+    async def _fake_draft(description, *, previous=None):
+        return {**draft, "tools": [], "skills": [], "mcps": [], "gaps": []}
+
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
     monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
+    monkeypatch.setattr(arslan.spawn_drafter, "draft_from_text", _fake_draft)
 
     events = []
     await arslan.handle_user_message("main", "research internet data", _events(events))
@@ -356,9 +374,13 @@ async def test_suggest_create_leaves_overlaps_when_no_existing_match(maker, monk
             overlaps=None,
         )
 
+    async def _fake_draft(description, *, previous=None):
+        return {**draft, "tools": [], "skills": [], "mcps": [], "gaps": []}
+
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
     monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _ready_slots)
+    monkeypatch.setattr(arslan.spawn_drafter, "draft_from_text", _fake_draft)
 
     events = []
     await arslan.handle_user_message("main", "translate things", _events(events))

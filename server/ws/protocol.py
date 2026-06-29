@@ -150,6 +150,17 @@ def propose_invite(spawn_id: int, reason: str) -> dict[str, Any]:
     return {"type": "propose_invite", "spawn_id": spawn_id, "reason": reason}
 
 
+def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, Any]:
+    """Arslan offers a staffing choice: pick one of the comparable existing spawns
+    (each {spawn_id, name, score, why}) OR create a fresh one from `create_draft`.
+
+    Like `propose_invite`, emitting this frame joins NOTHING and creates NOTHING —
+    the frontend renders a picker card; the user's choice drives a `roster_invite`
+    (pick) or a `confirm_create` (create) on the existing single, idempotent paths.
+    """
+    return {"type": "propose_staffing", "candidates": candidates, "create_draft": create_draft}
+
+
 def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
     """Notify the client that a spawn joined or left the roster.
 

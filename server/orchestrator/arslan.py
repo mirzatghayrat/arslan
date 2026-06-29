@@ -15,12 +15,15 @@ from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
 from arslan.llm import usage_sink
+from server.registry import service as registry_service
 from server.services import (
     equipment_service,
     evolution_service,
     phase_service,
     roster_service,
     run_recorder,
+    spawn_drafter,
+    spawn_match_service,
     spawn_service,
     staffing_gather,
 )
@@ -153,8 +156,9 @@ def _gather_clarify_addendum(missing: list[str]) -> str:
 
 
 async def _gather_history_text(conversation_id: str, user_message: str) -> str:
-    """The text fed to slot extraction: the same working context the answer path
-    uses, with this turn's user message appended (newest last)."""
+    """The text fed to slot extraction: reuses the same *source* the answer path
+    uses (`memory.assemble_working_context`), with this turn's user message appended
+    (newest last)."""
     ctx = await memory.assemble_working_context(conversation_id)
     lines = []
     if ctx.get("summary"):
@@ -337,46 +341,141 @@ async def handle_user_message(
         await memory.maybe_compact(conversation_id)
 
 
+def _spawn_to_match_dict(s) -> dict:  # noqa: ANN001
+    """Convert an ORM Spawn to the dict shape spawn_match_service.score_spawns
+    expects (ORM-style split domain columns, so the matcher uses category +
+    subcategory directly)."""
+    return {
+        "id": s.id,
+        "name": s.name,
+        "domain_category": s.domain_category,
+        "domain_subcategory": s.domain_subcategory,
+        "capabilities": s.capabilities,
+    }
+
+
+async def _fused_create_draft(slots: dict, result, seed_spawn_ids: list[int]) -> dict:
+    """Build ONE fused create draft from the gathered slots (LLM-drafted name/persona/
+    equipment), reusing the L2-B2 curate enrichment as the base, then seed its
+    tools/skills/mcps by unioning the near-match candidates' equipment.
+
+    The need string is user-derived (slots) — wrap it before feeding the drafter LLM.
+    The drafter (draft_from_text) already returns curated tools/skills/mcps/gaps; we
+    only fold in near-match equipment on top. Equipment keys remain plain strings and
+    are still validated by assert_assignable at create time (create_from_draft) — we
+    only seed here. MCP toolsets (key 'mcp_<id>') are routed to `mcps` to keep the
+    kind="toolset"/ref_key="mcp_<id>" convention."""
+    domain = slots.get("domain") or ""
+    capability = slots.get("capability") or ""
+    first_task = slots.get("first_task") or ""
+    need_str = (
+        f"Domain: {domain}. Capability: {capability}. First task: {first_task}."
+    )
+    try:
+        draft = await spawn_drafter.draft_from_text(wrap_external(need_str))
+    except Exception as exc:  # noqa: BLE001
+        # Best-effort fallback: fall back to the router's draft enriched via curate,
+        # mirroring the old L2-B2 path so a drafter failure never blocks the proposal.
+        logger.warning("staffing: draft_from_text failed, falling back to router draft: %s", exc)
+        draft = dict(result.suggested_spawn or {})
+        draft.setdefault("domain", domain)
+        draft.setdefault("capabilities", [capability] if capability else [])
+        try:
+            eq = await equipment_service.curate(need_str)
+        except Exception as exc2:  # noqa: BLE001
+            logger.warning("staffing: curate fallback failed: %s", exc2)
+            eq = {}
+        draft.setdefault("tools", eq.get("toolsets") or [])
+        draft.setdefault("skills", eq.get("skills") or [])
+        draft.setdefault("mcps", eq.get("mcps") or [])
+        draft.setdefault("gaps", eq.get("gaps") or [])
+
+    # carry the gathered first_task as the draft's task_brief
+    draft.setdefault("task_brief", first_task)
+
+    # Seed equipment from near-match candidates: union their toolsets/skills into the
+    # draft (mcp_* toolsets → mcps). Best-effort per spawn.
+    tools = list(draft.get("tools") or [])
+    skills = list(draft.get("skills") or [])
+    mcps = list(draft.get("mcps") or [])
+    for sid in seed_spawn_ids:
+        try:
+            eq = await registry_service.equipment_for_spawn(sid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("staffing: equipment seed for spawn %s failed: %s", sid, exc)
+            continue
+        for t in eq.get("toolsets") or []:
+            key = t.get("key")
+            if not key:
+                continue
+            if key.startswith("mcp_"):
+                if key not in mcps:
+                    mcps.append(key)
+            elif key not in tools:
+                tools.append(key)
+        for s in eq.get("skills") or []:
+            key = s.get("key")
+            if key and key not in skills:
+                skills.append(key)
+    draft["tools"] = tools
+    draft["skills"] = skills
+    draft["mcps"] = mcps
+    return draft
+
+
 async def _staffing_match_and_propose(  # noqa: ANN001
     conversation_id, user_message, slots, result, emit: EventSink, *,
     attached_context: str | None = None,
 ) -> None:
-    """Ready-path seam (B3↔B4 boundary). The gather gate has passed — the staffing
-    `slots` are complete. For B3 this preserves the existing L2 behavior: enrich the
-    router's draft with curated equipment and emit a `suggest_create` card.
+    """Ready-path (B4): the gather gate has passed and the staffing `slots` are
+    complete. Score existing spawns against the need, classify into one of three
+    bands, and emit exactly one frame:
+      - invite_one: a single strong match → propose_invite (reuse an existing spawn);
+      - picker: comparable matches → propose_staffing (pick one OR create);
+      - create: no useful match → suggest_create with a fused, equipment-seeded draft.
 
-    # B4 will replace this body with the 3-band match-and-propose (score existing
-    # spawns against the need, then route/invite/propose-create per band), using the
-    # gathered `slots`. The signature is the stable seam; only the body changes.
+    One-off short-circuit: a slot set with recurrence explicitly False means the user
+    said this is NOT recurring — never staff it. Just do/answer the first_task once.
     """
-    draft = result.suggested_spawn or {}
-    # Enrich the draft with real equipment via the same L1 mapping (curate),
-    # best-effort: a failure must never block the suggestion. setdefault keeps
-    # any equipment a future drafter path may already have supplied.
-    need = " ".join(filter(None, [
-        draft.get("name"), draft.get("domain"), draft.get("persona_role"),
-        ", ".join(draft.get("capabilities") or []),
-    ]))
-    try:
-        eq = await equipment_service.curate(need) if need.strip() else {}
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("suggest_create equipment enrichment failed: %s", exc)
-        eq = {}
-    draft.setdefault("tools", eq.get("toolsets") or [])
-    draft.setdefault("skills", eq.get("skills") or [])
-    draft.setdefault("mcps", eq.get("mcps") or [])
-    draft.setdefault("gaps", eq.get("gaps") or [])
-    overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
+    # recurrence is False → one-off, do it once, never staff.
+    if slots.get("recurrence") is False:
+        await _handle_answer(conversation_id, user_message, emit,
+                             attached_context=attached_context)
+        return
+
+    # Score existing spawns against the gathered need, then classify into a band.
+    need = {"domain": slots.get("domain") or "",
+            "capabilities": [slots["capability"]] if slots.get("capability") else []}
+    spawns = await spawn_service.load_all_spawns()
+    spawn_dicts = [_spawn_to_match_dict(s) for s in spawns]
+    ranked = await spawn_match_service.score_spawns(need, spawn_dicts)
+    band, payload = spawn_match_service.classify_band(ranked)
+
+    if band == "invite_one":
+        emit(protocol.propose_invite(payload["spawn_id"], payload["why"]))
+        return
+
+    if band == "picker":
+        candidates = payload.get("candidates") or []
+        seed_ids = [c["spawn_id"] for c in candidates if c.get("spawn_id") is not None]
+        create_draft = await _fused_create_draft(slots, result, seed_ids)
+        emit(protocol.propose_staffing(candidates, create_draft))
+        return
+
+    # band == "create": fuse a draft (seed from any near-matches that scored at all),
+    # then run the existing L2-B2 overlap detection and emit suggest_create.
+    near_ids = [r["spawn_id"] for r in ranked if r.get("spawn_id") is not None]
+    draft = await _fused_create_draft(slots, result, near_ids)
+    overlap = spawn_service.find_overlap(draft, spawns)
     if overlap is not None:
         # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
         llm_axes = (result.overlaps or {}).get("axes") if isinstance(result.overlaps, dict) else None
         overlap = {**overlap, "axes": llm_axes or overlap.get("axes") or []}
-    emit({
-        "type": "suggest_create",
-        "draft": draft,
-        "task_brief": result.task_brief,
-        "overlaps": overlap if overlap is not None else result.overlaps,
-    })
+    emit(protocol.suggest_create(
+        draft,
+        task_brief=slots.get("first_task") or result.task_brief,
+        overlaps=overlap if overlap is not None else result.overlaps,
+    ))
 
 
 async def _handle_answer(

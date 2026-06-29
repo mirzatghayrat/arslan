@@ -46,7 +46,12 @@ async def set_proposing(conversation_id: str, spawn_id: int, direction: str) -> 
 async def set_clarifying(conversation_id: str) -> None:
     """Pin a 'clarifying' create phase for the conversation. While active, the
     turn model suppresses routing to existing spawns so the follow-up keeps
-    clarifying."""
+    clarifying.
+
+    Retained only for the legacy "clarifying" phase value: the staffing spine
+    no longer invokes this — it uses `set_gathering` (slot-based) instead. The
+    turn model still recognizes the "clarifying" phase for backward compatibility.
+    """
     await _upsert_phase(conversation_id, spawn_id=_CLARIFYING_SPAWN_ID, phase="clarifying", direction="")
 
 
