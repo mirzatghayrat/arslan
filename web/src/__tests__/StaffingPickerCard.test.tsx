@@ -47,6 +47,19 @@ describe("StaffingPickerCard", () => {
     expect(screen.getByText("Strong data skills")).toBeInTheDocument();
   });
 
+  it("renders each candidate's match score as a percentage", () => {
+    render(
+      <StaffingPickerCard
+        candidates={[{ spawnId: 5, name: "Picker", score: 0.6, why: "fits" }]}
+        createDraft={null}
+        onInvite={vi.fn()}
+        onCreateNew={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("60%")).toBeInTheDocument();
+  });
+
   it("calls onInvite(spawnId) when the invite button for a candidate is clicked", () => {
     const onInvite = vi.fn();
     render(

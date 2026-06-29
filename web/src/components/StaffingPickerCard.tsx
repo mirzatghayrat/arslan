@@ -49,7 +49,15 @@ export default function StaffingPickerCard({
               data-testid={`staffing-candidate-${c.spawnId}`}
             >
               <div className="staffing-picker-card__info">
-                <span className="staffing-picker-card__name">{name}</span>
+                <div className="staffing-picker-card__name-row">
+                  <span className="staffing-picker-card__name">{name}</span>
+                  <span
+                    className="staffing-picker-card__score"
+                    data-testid={`staffing-score-${c.spawnId}`}
+                  >
+                    {Math.round(c.score * 100)}%
+                  </span>
+                </div>
                 <span className="staffing-picker-card__why">
                   <span className="staffing-picker-card__why-label">
                     {t("staffing_card.why")}
