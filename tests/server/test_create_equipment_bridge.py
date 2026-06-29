@@ -23,6 +23,18 @@ def db(tmp_path, monkeypatch):
     return maker
 
 
+def _persisted_caps(maker, spawn_id):
+    """Return the set of (kind, ref_key) SpawnCapability rows for a spawn."""
+
+    async def _caps():
+        async with maker() as s:
+            rows = (await s.execute(select(SpawnCapability).where(
+                SpawnCapability.spawn_id == spawn_id))).scalars().all()
+            return {(r.kind, r.ref_key) for r in rows}
+
+    return anyio.run(_caps)
+
+
 def test_create_uses_drafter_tools_skills_mcps(db, monkeypatch):
     async def fake_assert(kind, key, **kw):
         assert kind in ("toolset", "skill")
@@ -41,13 +53,7 @@ def test_create_uses_drafter_tools_skills_mcps(db, monkeypatch):
              "mcps": ["mcp_7"]}
     spawn_id, name, equipment, intro = anyio.run(lambda: spawn_service.create_from_draft(draft))
 
-    async def _caps():
-        async with db() as s:
-            rows = (await s.execute(select(SpawnCapability).where(
-                SpawnCapability.spawn_id == spawn_id))).scalars().all()
-            return {(r.kind, r.ref_key) for r in rows}
-
-    caps = anyio.run(_caps)
+    caps = _persisted_caps(db, spawn_id)
     assert ("toolset", "web_search_scraping") in caps
     assert ("skill", "statistical-analysis") in caps
     assert ("toolset", "mcp_7") in caps
@@ -69,12 +75,35 @@ def test_explicit_equipment_still_wins(db, monkeypatch):
              "tools": ["should_be_ignored"]}
     spawn_id, *_ = anyio.run(lambda: spawn_service.create_from_draft(draft))
 
-    async def _caps():
-        async with db() as s:
-            rows = (await s.execute(select(SpawnCapability).where(
-                SpawnCapability.spawn_id == spawn_id))).scalars().all()
-            return {(r.kind, r.ref_key) for r in rows}
-
-    caps = anyio.run(_caps)
+    caps = _persisted_caps(db, spawn_id)
     assert ("toolset", "web_search_scraping") in caps
     assert ("toolset", "should_be_ignored") not in caps
+
+
+def test_curate_fallback_folds_mcps(db, monkeypatch):
+    # No explicit equipment AND no drafter tools/skills/mcps keys at all → fall
+    # through to curate. Curate's mcps must be folded into the toolsets bucket
+    # (persisted kind="toolset" with the mcp_ key), not dropped or kind="skill"/"mcp".
+    async def fake_assert(kind, key, **kw):
+        assert kind in ("toolset", "skill")
+        return None
+
+    monkeypatch.setattr(registry_service, "assert_assignable", fake_assert)
+
+    async def fake_curate(need):
+        return {"toolsets": ["web_search_scraping"],
+                "skills": ["statistical-analysis"],
+                "mcps": ["mcp_9"], "gaps": []}
+
+    monkeypatch.setattr(equipment_service, "curate", fake_curate)
+
+    draft = {"name": "fallback-pal", "domain": "research.general",
+             "capabilities": ["research"], "persona_role": "researcher"}
+    spawn_id, *_ = anyio.run(lambda: spawn_service.create_from_draft(draft))
+
+    caps = _persisted_caps(db, spawn_id)
+    assert ("toolset", "web_search_scraping") in caps
+    assert ("skill", "statistical-analysis") in caps
+    assert ("toolset", "mcp_9") in caps
+    assert ("skill", "mcp_9") not in caps
+    assert ("mcp", "mcp_9") not in caps

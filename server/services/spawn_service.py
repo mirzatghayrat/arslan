@@ -322,6 +322,10 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
     elif drafter_tools is not None or drafter_skills is not None or drafter_mcps is not None:
         # L2 bridge: the drafter already mapped capabilities to the real registry.
         # MCPs are toolset rows keyed mcp_<id>, so they go in the toolsets bucket.
+        # Emptiness semantics: an explicitly-empty list (e.g. tools=[]) means "the
+        # drafter curated and chose nothing — respect it", hence `is not None`
+        # (presence) not truthiness. Only a draft that OMITS all three keys falls
+        # through to curate. Do NOT "simplify" this to `if drafter_tools or ...`.
         keys = {
             "toolsets": [str(k) for k in (drafter_tools or [])]
                         + [str(k) for k in (drafter_mcps or [])],
@@ -339,8 +343,9 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
         # curate validates every key it returns internally; no re-validation here.
         keys = await equipment_service.curate(need)
         keys = {
-            "toolsets": list(keys.get("toolsets") or []) + list(keys.get("mcps") or []),
-            "skills": list(keys.get("skills") or []),
+            "toolsets": [str(k) for k in (keys.get("toolsets") or [])]
+                        + [str(k) for k in (keys.get("mcps") or [])],
+            "skills": [str(k) for k in (keys.get("skills") or [])],
         }
 
     async with db_session.AsyncSessionLocal() as db:
