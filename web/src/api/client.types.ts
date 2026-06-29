@@ -54,6 +54,7 @@ export interface SpawnSummary {
   created_at: string;
   updated_at: string;
   equipment?: Equipment;
+  has_active_chat?: boolean;
 }
 
 export interface ChatMessage {

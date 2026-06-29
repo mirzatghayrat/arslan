@@ -88,6 +88,7 @@ export function toUiSpawn(s: SpawnSummary & {
     tools: s.tools ?? s.capabilities ?? [],
     skills: s.skills ?? [],
     totalTasks: s.total_tasks ?? 0,
+    hasActiveChat: s.has_active_chat ?? false,
   };
 }
 

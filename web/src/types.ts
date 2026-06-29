@@ -86,6 +86,7 @@ export interface Spawn {
   tools: string[]; // List of Tool IDs
   skills: string[]; // List of Skill IDs
   totalTasks: number;
+  hasActiveChat?: boolean;
 }
 
 export interface UiRunStep {

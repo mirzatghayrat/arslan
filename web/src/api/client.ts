@@ -160,6 +160,7 @@ export const api = {
   confirmProposal: (proposalId: number) =>
     request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
   listMcpServers: () => request<Array<{ id: number; name: string; connected?: boolean; exposed?: boolean }>>("/mcp/servers"),
+  completeChat: (id: number) => request<{ ok: boolean; archived: number }>(`/spawns/${id}/complete-chat`, { method: "POST" }),
   extractAttachmentUrl: (url: string, compress = false) =>
     request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {
       method: "POST",

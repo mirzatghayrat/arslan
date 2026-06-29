@@ -29,6 +29,9 @@ interface SidebarProps {
   activeSection: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings';
   onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings') => void;
 
+  /** Called when the user completes (完结) a direct chat with a spawn */
+  onCompleteChat: (id: string) => void;
+
   /** Real backend reachability signal from useBackendStatus */
   backendStatus: BackendStatus;
 }
@@ -43,10 +46,12 @@ export default function Sidebar({
   onSelectSpawnChat,
   activeSection,
   onChangeSection,
+  onCompleteChat,
   backendStatus,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
+  const [picking, setPicking] = useState(false);
   
   return (
     <aside className="w-64 bg-sidebar/95 border-r border-border flex flex-col justify-between select-none h-full relative z-40">
@@ -178,23 +183,63 @@ export default function Sidebar({
               <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
                 {t('sidebar.active_spawns')}
               </span>
-              <span className="text-[9.5px] text-success font-mono bg-success/10 rounded px-2 py-0.5 select-none font-bold">
-                {t('sidebar.live_count', { count: spawns.length })}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[9.5px] text-success font-mono bg-success/10 rounded px-2 py-0.5 select-none font-bold">
+                  {t('sidebar.live_count', { count: spawns.filter(s => s.hasActiveChat).length })}
+                </span>
+                <button
+                  title={t('sidebar.new_chat')}
+                  onClick={() => setPicking((p) => !p)}
+                  className="w-5 h-5 flex items-center justify-center rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-all text-xs font-bold"
+                >
+                  ＋
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-1 pr-1">
-              {spawns.map((spawn) => {
-                const isActive = activeSection === 'spawn' && activeSpawnChatId === spawn.id;
-                return (
+            {/* Picker dropdown: all spawns to start a new direct chat */}
+            {picking && (
+              <div className="mx-2 mb-2 bg-background border border-border rounded-lg shadow-lg overflow-hidden">
+                {spawns.map((spawn) => (
                   <button
                     key={spawn.id}
+                    onClick={() => {
+                      setPicking(false);
+                      onSelectSpawnChat(spawn.id);
+                      onChangeSection('spawn');
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-sans text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all text-left"
+                  >
+                    <SpawnAvatar seed={spawn.name} size={16} />
+                    <span className="truncate">{spawn.name}</span>
+                  </button>
+                ))}
+                {spawns.length === 0 && (
+                  <p className="px-3 py-2 text-[10px] text-subtle-foreground italic font-mono">No spawns yet</p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1 pr-1">
+              {spawns.filter(s => s.hasActiveChat).map((spawn) => {
+                const isActive = activeSection === 'spawn' && activeSpawnChatId === spawn.id;
+                return (
+                  <div
+                    key={spawn.id}
                     id={`active-spawn-chat-btn-${spawn.id}`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       onSelectSpawnChat(spawn.id);
                       onChangeSection('spawn');
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all group ${
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        onSelectSpawnChat(spawn.id);
+                        onChangeSection('spawn');
+                      }
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all cursor-pointer group ${
                       isActive
                         ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
                         : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
@@ -212,8 +257,20 @@ export default function Sidebar({
                       <span className={`w-1.5 h-1.5 rounded-full ${
                         spawn.status === 'working' ? 'bg-warning animate-pulse' : 'bg-success/80'
                       }`} />
+                      <button
+                        title={t('sidebar.complete_chat')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(t('sidebar.complete_confirm'))) {
+                            onCompleteChat(spawn.id);
+                          }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-[9px] font-mono text-subtle-foreground hover:text-warning transition-all px-1 py-0.5 rounded hover:bg-warning/10"
+                      >
+                        {t('sidebar.complete_chat')}
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

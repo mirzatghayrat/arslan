@@ -431,6 +431,12 @@ export default function App() {
           setActiveSection(section);
           setPanelView('default');
         }}
+        onCompleteChat={async (id) => {
+          await api.completeChat(Number(id));
+          // Refetch spawn list so hasActiveChat reflects the completed state
+          const freshSpawns = await api.listSpawns();
+          setSpawns(freshSpawns.map(toUiSpawn));
+        }}
         backendStatus={backendStatus}
       />
 
