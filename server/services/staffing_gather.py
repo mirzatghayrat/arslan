@@ -25,10 +25,6 @@ def _get_adapter():
     return build_adapter(role="draft")
 
 
-def _empty() -> dict:
-    return {k: None for k in SLOTS}
-
-
 def merge_slots(old: dict, new: dict) -> dict:
     """Merge new slots into old, never overwriting a filled slot with null."""
     out = dict(old or {})

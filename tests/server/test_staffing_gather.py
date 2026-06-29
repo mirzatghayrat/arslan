@@ -1,5 +1,10 @@
 import anyio
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+import server.db.session as db_session
+from server.db.models import Base
+from server.services import phase_service
 from server.services import staffing_gather as sg
 
 
@@ -35,12 +40,23 @@ def test_extract_slots_returns_nullable(monkeypatch):
     assert out["first_task"] is None and out["recurrence"] is None
 
 
-# --- Phase round-trip test (uses real in-memory DB like test_phase_service.py) ---
+def test_is_ready_with_false_recurrence():
+    # recurrence=False is a filled state (user signalled NOT recurring), not missing.
+    assert sg.is_ready({"domain": "a.b", "capability": "c", "first_task": "t", "recurrence": False}) is True
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-import server.db.session as db_session
-from server.db.models import Base
-from server.services import phase_service
+
+def test_extract_slots_normalizes_false_recurrence(monkeypatch):
+    # A literal false recurrence must pass through, NOT be coerced to None.
+    class Resp:
+        content = '{"domain":"a","capability":"b","first_task":"c","recurrence":false}'
+    class A:
+        async def chat(self, *, system, user): return Resp()
+    monkeypatch.setattr(sg, "_get_adapter", lambda: A())
+    out = anyio.run(lambda: sg.extract_slots("one-off task, not recurring"))
+    assert out["recurrence"] is False
+
+
+# --- Phase round-trip tests (use real in-memory DB like test_phase_service.py) ---
 
 
 @pytest.fixture

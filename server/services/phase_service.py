@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
@@ -9,10 +10,12 @@ from sqlalchemy import delete, select
 from server.db import session as db_session
 from server.db.models import SpawnPhase
 
+logger = logging.getLogger(__name__)
 
-# Sentinel spawn_id for the "clarifying" phase: while Arslan is gathering a
-# create request there is no spawn yet. The spawn_phases.spawn_id column is
-# NOT NULL and carries no FK to spawns, so a 0 sentinel is safe (no migration).
+
+# Sentinel spawn_id for pre-spawn phases (clarifying, gathering): no spawn exists yet.
+# The spawn_phases.spawn_id column is NOT NULL and carries no FK to spawns, so a 0
+# sentinel is safe (no migration).
 _CLARIFYING_SPAWN_ID = 0
 
 
@@ -95,4 +98,5 @@ async def get_gathered_slots(conversation_id: str) -> dict:
     try:
         return json.loads(pending.get("direction") or "{}")
     except Exception:  # noqa: BLE001
+        logger.warning("gather: corrupted slot JSON for %s", conversation_id)
         return {}
