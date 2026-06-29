@@ -25,6 +25,7 @@ import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
 import InviteConfirmCard from './components/InviteConfirmCard';
+import { resolveSpawnName } from './api/resolveSpawnName';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 
@@ -507,9 +508,7 @@ export default function App() {
               <div className="suggest-create-card-overlay">
                 <InviteConfirmCard
                   spawnId={pendingInvite.spawnId}
-                  spawnName={
-                    useSpawnStore.getState().spawns.find((s) => s.id === pendingInvite.spawnId)?.name
-                  }
+                  spawnName={resolveSpawnName(useSpawnStore.getState().spawns, pendingInvite.spawnId)}
                   reason={pendingInvite.reason}
                   onConfirm={(spawnId) => {
                     wsSend({ type: 'roster_invite', spawn_id: spawnId });
