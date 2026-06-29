@@ -232,7 +232,12 @@ async def handle_user_message(
 
         # B4: while clarifying a create, suppress routing to an existing spawn —
         # keep clarifying in Arslan's voice instead of leaking spawn identity.
+        # Invariant: the clarifying phase persists ONLY while the router keeps
+        # producing an insufficient create-downgrade; clear it on every other
+        # terminal outcome. Here the user wants a DIFFERENT spawn — divert THIS
+        # turn (no bleed), but clear so the next route dispatches normally.
         if clarifying and result.action == "route":
+            await phase_service.clear_clarifying(conversation_id)
             await _handle_answer(conversation_id, user_message, emit,
                                  extra_system=_CLARIFY_ADDENDUM,
                                  attached_context=attached_context)
@@ -288,9 +293,15 @@ async def handle_user_message(
                 "overlaps": overlap if overlap is not None else result.overlaps,
             })
         elif result.action == "clarify":
+            # Router no longer sees create-intent — release any clarifying phase.
+            if clarifying:
+                await phase_service.clear_clarifying(conversation_id)
             await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
                                  attached_context=attached_context)
         else:  # answer (incl. fallback)
+            # Router no longer sees create-intent — release any clarifying phase.
+            if clarifying:
+                await phase_service.clear_clarifying(conversation_id)
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context)
 
         # 5. compact the working thread if it grew too long

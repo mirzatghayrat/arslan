@@ -157,6 +157,73 @@ async def test_sufficient_create_during_clarify_proposes_and_clears(maker, monke
 
 
 @pytest.mark.asyncio
+async def test_clarify_phase_released_when_router_returns_answer(maker, monkeypatch):
+    """Invariant: the clarifying phase persists only while the router keeps
+    producing an insufficient create-downgrade. A turn where the router returns
+    plain `answer` (no create-intent) releases the phase."""
+    from server.orchestrator import arslan, router, tool_loop
+
+    await phase_service.set_clarifying("main")
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            yield "sure, here's a thought"
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+
+    events = []
+    await arslan.handle_user_message("main", "actually, what's the weather like?", _events(events))
+    assert "stream_start" in [e["type"] for e in events]
+    # phase released — no lingering clarifying state
+    assert await phase_service.get_pending("main") is None
+
+
+@pytest.mark.asyncio
+async def test_route_dispatches_after_clarify_released(maker, monkeypatch):
+    """After the clarifying phase is released (router returned answer), a
+    subsequent legitimate route actually dispatches — no stale mis-divert."""
+    from server.orchestrator import arslan, router, tool_loop
+
+    await phase_service.set_clarifying("main")
+
+    # Turn 1: router returns answer → releases the phase.
+    async def _route_answer(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _route_answer)
+
+    class _A:
+        async def chat_stream(self, system, user, history=None):
+            yield "ok"
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+
+    await arslan.handle_user_message("main", "never mind", _events([]))
+    assert await phase_service.get_pending("main") is None
+
+    # Turn 2: a legitimate route now dispatches (no suppression).
+    async def _route_spawn(conv, msg):
+        return router.RouterResult(action="route", spawn_id=7, task_brief="audit keywords")
+
+    monkeypatch.setattr(arslan.router, "route", _route_spawn)
+
+    dispatched = []
+
+    async def _spy_dispatch(*args, **kwargs):
+        dispatched.append((args, kwargs))
+
+    monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
+
+    await arslan.handle_user_message("main", "audit my site", _events([]))
+    assert len(dispatched) == 1
+
+
+@pytest.mark.asyncio
 async def test_routing_resumes_after_clarify_cleared(maker, monkeypatch):
     """Sanity: without a clarifying phase, action=route dispatches normally
     (the suppression is scoped to the clarifying phase, not global)."""
