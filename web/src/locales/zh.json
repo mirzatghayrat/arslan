@@ -81,6 +81,11 @@
     "draft": "生成草稿",
     "drafting": "生成中…"
   },
+  "invite_card": {
+    "heading": "因为{{reason}}，把 {{name}} 拉进来？",
+    "confirm": "确认",
+    "cancel": "取消"
+  },
   "create_card": {
     "heading": "要为此创建一个 {{name}} 分身吗？",
     "reason": "原因",

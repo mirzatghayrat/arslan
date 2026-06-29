@@ -81,6 +81,11 @@
     "draft": "下書き",
     "drafting": "作成中…"
   },
+  "invite_card": {
+    "heading": "{{reason}}のため、{{name}} を呼びますか？",
+    "confirm": "確認",
+    "cancel": "キャンセル"
+  },
   "create_card": {
     "heading": "これ用に {{name}} スポーンを作成しますか？",
     "reason": "理由",

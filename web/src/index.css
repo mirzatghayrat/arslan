@@ -889,6 +889,14 @@
   box-shadow: 0 8px 32px color-mix(in srgb, var(--background) 60%, transparent);
 }
 
+/* Invite confirmation card (propose_invite) */
+.invite-confirm-card__heading {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  margin: 0;
+}
+
 /* Header */
 .suggest-create-card__head {
   display: flex;

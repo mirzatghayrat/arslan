@@ -81,6 +81,11 @@
     "draft": "Entwurf",
     "drafting": "Wird erstellt …"
   },
+  "invite_card": {
+    "heading": "{{name}} dazuholen, weil {{reason}}?",
+    "confirm": "Bestätigen",
+    "cancel": "Abbrechen"
+  },
   "create_card": {
     "heading": "Möchtest du dafür einen {{name}}-Spawn?",
     "reason": "Warum",

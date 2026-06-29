@@ -24,6 +24,7 @@ import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
+import InviteConfirmCard from './components/InviteConfirmCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 
@@ -95,6 +96,9 @@ export default function App() {
   const suggestionTaskBrief = useArslanStore((s) => s.suggestionTaskBrief);
   const suggestionOverlaps = useArslanStore((s) => s.suggestionOverlaps);
   const dismissSuggestion = useArslanStore((s) => s.dismissSuggestion);
+  // propose_invite state — confirmation card before joining a spawn
+  const pendingInvite = useArslanStore((s) => s.pendingInvite);
+  const clearPendingInvite = useArslanStore((s) => s.clearPendingInvite);
   // Returns true if a spawn (identified by its UI string id) is in the current roster
   const isRosterMember = (spawnId: string) => roster.some((m) => m.spawnId === Number(spawnId));
 
@@ -495,6 +499,23 @@ export default function App() {
                   }}
                   onRefine={() => dismissSuggestion()}
                   onDismiss={() => dismissSuggestion()}
+                />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingInvite && (
+              <div className="suggest-create-card-overlay">
+                <InviteConfirmCard
+                  spawnId={pendingInvite.spawnId}
+                  spawnName={
+                    useSpawnStore.getState().spawns.find((s) => s.id === pendingInvite.spawnId)?.name
+                  }
+                  reason={pendingInvite.reason}
+                  onConfirm={(spawnId) => {
+                    wsSend({ type: 'roster_invite', spawn_id: spawnId });
+                    clearPendingInvite();
+                  }}
+                  onCancel={() => clearPendingInvite()}
                 />
               </div>
             )}

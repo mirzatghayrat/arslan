@@ -28,6 +28,9 @@ interface ArslanState {
   pendingProposalSpawnId: number | null;
   // Active conversation roster: spawns currently joined to this conversation thread.
   roster: RosterMember[];
+  // Pending invite: set when a `propose_invite` frame arrives; cleared once the
+  // user confirms (sends roster_invite) or cancels.
+  pendingInvite: { spawnId: number; reason: string } | null;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
 
@@ -36,6 +39,7 @@ interface ArslanState {
   addUserMessage: (content: string) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
+  clearPendingInvite: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
 }
@@ -68,6 +72,7 @@ function initialData() {
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
+    pendingInvite: null as { spawnId: number; reason: string } | null,
     thinking: false,
   };
 }
@@ -89,6 +94,7 @@ function makeActions(set: SetState, get: GetState) {
       }),
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
+    clearPendingInvite: () => set({ pendingInvite: null }),
     clearError: () => set({ error: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
@@ -426,6 +432,9 @@ function makeActions(set: SetState, get: GetState) {
               status: m.status,
             })),
           });
+          break;
+        case "propose_invite":
+          set({ pendingInvite: { spawnId: frame.spawn_id, reason: frame.reason } });
           break;
         case "roster_event":
           set({
