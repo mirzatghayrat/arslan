@@ -149,6 +149,11 @@ export interface SuggestDraft {
   persona_role?: string | null;
   persona_tone?: string | null;
   reason?: string | null;
+  tools?: string[];
+  skills?: string[];
+  mcps?: string[];
+  gaps?: string[];
+  seed_refs?: string[];
 }
 
 export interface OverlapInfo {
@@ -200,6 +205,7 @@ export type ArslanServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number | null }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
+  | { type: "propose_invite"; spawn_id: number; reason: string }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "message"; message_id: number; content: string; role: string }
