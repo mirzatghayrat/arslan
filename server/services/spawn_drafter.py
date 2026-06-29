@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from server.orchestrator import memory
@@ -9,6 +10,8 @@ from server.orchestrator import router as _router  # used only for _spawn_regist
 from server.orchestrator.json_protocol import parse_json_object
 from server.services import equipment_service, persona_seed_service, spawn_service
 from server.services.llm_factory import build_adapter
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM = (
     "You design AI specialist 'spawns' from a natural-language description. "
@@ -60,13 +63,15 @@ async def draft_from_text(description: str, *, previous: dict[str, Any] | None =
     seed_query = f"{draft.get('domain', '')} {caps_text}".strip()
     try:
         seeds = await persona_seed_service.search(seed_query, k=3)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("drafter: seed search failed: %s", exc)
         seeds = []
-    draft["seed_refs"] = [s["slug"] for s in seeds]
+    draft["seed_refs"] = [s["slug"] for s in seeds if s.get("slug")]
     need = f"{draft.get('persona_role', '')} — {caps_text}".strip(" —")
     try:
         eq = await equipment_service.curate(need or seed_query or caps_text)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("drafter: equipment curate failed: %s", exc)
         eq = {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
     draft["tools"] = eq.get("toolsets") or []
     draft["skills"] = eq.get("skills") or []
