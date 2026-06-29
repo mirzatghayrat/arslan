@@ -105,6 +105,7 @@ class SpawnOut(BaseModel):
     created_at: str
     updated_at: str
     equipment: EquipmentOut = EquipmentOut()
+    has_active_chat: bool = False
 
 
 class ChatMessageOut(BaseModel):

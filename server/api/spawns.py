@@ -16,7 +16,7 @@ from server.schemas import (
     SpawnDetailOut,
     SpawnOut,
 )
-from server.services import spawn_service
+from server.services import chat_lifecycle, spawn_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -113,6 +113,12 @@ async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
     spawn.memory_facts = [f for f in (spawn.memory_facts or []) if f != body.fact]
     await session.commit()
     return PreferencesOut(preferences=list(spawn.memory_facts))
+
+
+@router.post("/spawns/{spawn_id}/complete-chat")
+async def complete_chat(spawn_id: int) -> dict:
+    n = await chat_lifecycle.complete_chat(spawn_id)
+    return {"ok": True, "archived": n}
 
 
 @router.delete("/spawns/{spawn_id}", status_code=status.HTTP_204_NO_CONTENT)

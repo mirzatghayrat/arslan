@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import delete as sa_delete, select, update as sa_update
+from sqlalchemy import delete as sa_delete, exists, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ChatMessage, Spawn
@@ -132,9 +132,21 @@ def to_detail(spawn: Spawn, messages: list[ChatMessage]) -> SpawnDetailOut:
     )
 
 
+async def _has_active_chat(session: AsyncSession, spawn_id: int) -> bool:
+    return bool((await session.execute(
+        select(exists().where(ChatMessage.spawn_id == spawn_id, ChatMessage.archived == False))  # noqa: E712
+    )).scalar())
+
+
 async def list_spawns(session: AsyncSession) -> list[SpawnOut]:
     result = await session.execute(select(Spawn).order_by(Spawn.created_at))
-    return [to_summary(s) for s in result.scalars().all()]
+    rows = result.scalars().all()
+    out_list = []
+    for s in rows:
+        out = to_summary(s)
+        out.has_active_chat = await _has_active_chat(session, s.id)
+        out_list.append(out)
+    return out_list
 
 
 async def get_spawn(session: AsyncSession, spawn_id: int) -> Spawn | None:
