@@ -114,6 +114,8 @@
     "gap_discover_mcp": "发现MCP",
     "gap_distill_skill": "蒸馏skill",
     "gap_request_grant": "请求授权",
+    "gap_request_grant_note": "将在运行时请求 — 现在不授予任何权限。",
+    "gap_working": "处理中…",
     "seed_provenance": "参考自 agency-agents：",
     "picker": {
       "tool": "选择工具",
@@ -124,6 +126,24 @@
       "empty": "这里没有可分配项。",
       "error": "无法加载注册表。"
     }
+  },
+  "gap_fill": {
+    "discover_title": "为此缺口寻找 MCP",
+    "distill_title": "为此缺口蒸馏技能",
+    "for_gap": "缺口：{{gap}}",
+    "ref_placeholder": "GitHub 仓库（owner/name）…",
+    "evaluate": "评估",
+    "generate": "生成",
+    "working": "处理中…",
+    "cancel": "取消",
+    "is_mcp": "MCP 服务器 ✓",
+    "not_mcp": "不是 MCP 服务器 ✗",
+    "add_mcp": "添加并连接",
+    "no_skill": "无法从 {{repo}} 蒸馏出技能。",
+    "skill_name": "技能名称",
+    "skill_desc": "一句话描述",
+    "skill_body": "SKILL.md 正文",
+    "create_skill": "创建技能"
   },
   "equipment": {
     "title": "装备",

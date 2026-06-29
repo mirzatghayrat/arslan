@@ -114,6 +114,8 @@
     "gap_discover_mcp": "Trouver un MCP",
     "gap_distill_skill": "Distiller une compétence",
     "gap_request_grant": "Demander l'accès",
+    "gap_request_grant_note": "Sera demandé à l'exécution — aucun accès n'est accordé maintenant.",
+    "gap_working": "En cours…",
     "seed_provenance": "Basé sur agency-agents :",
     "picker": {
       "tool": "Choisir un outil",
@@ -124,6 +126,24 @@
       "empty": "Rien à attribuer ici.",
       "error": "Impossible de charger le registre."
     }
+  },
+  "gap_fill": {
+    "discover_title": "Trouver un MCP pour ce manque",
+    "distill_title": "Distiller une compétence pour ce manque",
+    "for_gap": "Manque : {{gap}}",
+    "ref_placeholder": "Dépôt GitHub (owner/name)…",
+    "evaluate": "Évaluer",
+    "generate": "Générer",
+    "working": "En cours…",
+    "cancel": "Annuler",
+    "is_mcp": "Serveur MCP ✓",
+    "not_mcp": "Pas un serveur MCP ✗",
+    "add_mcp": "Ajouter et connecter",
+    "no_skill": "Impossible de distiller une compétence depuis {{repo}}.",
+    "skill_name": "Nom de la compétence",
+    "skill_desc": "Description en une ligne",
+    "skill_body": "Corps SKILL.md",
+    "create_skill": "Créer la compétence"
   },
   "equipment": {
     "title": "Équipement",

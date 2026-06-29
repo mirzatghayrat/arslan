@@ -114,6 +114,8 @@
     "gap_discover_mcp": "Find MCP",
     "gap_distill_skill": "Distill skill",
     "gap_request_grant": "Request grant",
+    "gap_request_grant_note": "Will be requested at run time — no access is granted now.",
+    "gap_working": "Working…",
     "seed_provenance": "Based on agency-agents:",
     "picker": {
       "tool": "Pick a tool",
@@ -124,6 +126,24 @@
       "empty": "Nothing assignable here.",
       "error": "Couldn't load the registry."
     }
+  },
+  "gap_fill": {
+    "discover_title": "Find an MCP for this gap",
+    "distill_title": "Distill a skill for this gap",
+    "for_gap": "Gap: {{gap}}",
+    "ref_placeholder": "GitHub repo (owner/name)…",
+    "evaluate": "Evaluate",
+    "generate": "Generate",
+    "working": "Working…",
+    "cancel": "Cancel",
+    "is_mcp": "MCP server ✓",
+    "not_mcp": "Not an MCP server ✗",
+    "add_mcp": "Add & connect",
+    "no_skill": "Couldn't distill a skill from {{repo}}.",
+    "skill_name": "Skill name",
+    "skill_desc": "One-line description",
+    "skill_body": "SKILL.md body",
+    "create_skill": "Create skill"
   },
   "equipment": {
     "title": "Equipment",

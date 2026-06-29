@@ -114,6 +114,8 @@
     "gap_discover_mcp": "Buscar MCP",
     "gap_distill_skill": "Destilar skill",
     "gap_request_grant": "Solicitar permiso",
+    "gap_request_grant_note": "Se solicitará en tiempo de ejecución — ahora no se concede ningún acceso.",
+    "gap_working": "Procesando…",
     "seed_provenance": "Basado en agency-agents:",
     "picker": {
       "tool": "Elegir una herramienta",
@@ -124,6 +126,24 @@
       "empty": "Nada asignable aquí.",
       "error": "No se pudo cargar el registro."
     }
+  },
+  "gap_fill": {
+    "discover_title": "Buscar un MCP para esta carencia",
+    "distill_title": "Destilar una habilidad para esta carencia",
+    "for_gap": "Carencia: {{gap}}",
+    "ref_placeholder": "Repo de GitHub (owner/name)…",
+    "evaluate": "Evaluar",
+    "generate": "Generar",
+    "working": "Procesando…",
+    "cancel": "Cancelar",
+    "is_mcp": "Servidor MCP ✓",
+    "not_mcp": "No es un servidor MCP ✗",
+    "add_mcp": "Añadir y conectar",
+    "no_skill": "No se pudo destilar una habilidad de {{repo}}.",
+    "skill_name": "Nombre de la habilidad",
+    "skill_desc": "Descripción de una línea",
+    "skill_body": "Cuerpo de SKILL.md",
+    "create_skill": "Crear habilidad"
   },
   "equipment": {
     "title": "Equipamiento",

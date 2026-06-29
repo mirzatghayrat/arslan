@@ -24,6 +24,7 @@ import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
+import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import InviteConfirmCard from './components/InviteConfirmCard';
 import { resolveSpawnName } from './api/resolveSpawnName';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
@@ -234,6 +235,30 @@ export default function App() {
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
   // New Spawn Creation modal/overlay state
+  // Gap-fill: a focused, human-confirmed acquisition modal whose result is
+  // piped back to SuggestCreateCard via a stored promise resolver (F4).
+  const [gapFill, setGapFill] = useState<{ kind: GapFillKind; gap: string } | null>(null);
+  const gapFillResolver = useRef<((r: GapFillResult | null) => void) | null>(null);
+
+  const handleFillGap = useCallback<NonNullable<React.ComponentProps<typeof SuggestCreateCard>['onFillGap']>>(
+    (kind, gap) => {
+      // request_grant is a RUN-TIME escalation, not a create-time action: keep
+      // the gap, no acquisition here (the card shows a defer note via title).
+      if (kind === 'request_grant') return Promise.resolve(null);
+      return new Promise<GapFillResult | null>((resolve) => {
+        gapFillResolver.current = resolve;
+        setGapFill({ kind, gap });
+      });
+    },
+    [],
+  );
+
+  const closeGapFill = useCallback((result: GapFillResult | null) => {
+    gapFillResolver.current?.(result);
+    gapFillResolver.current = null;
+    setGapFill(null);
+  }, []);
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -500,8 +525,17 @@ export default function App() {
                   }}
                   onRefine={() => dismissSuggestion()}
                   onDismiss={() => dismissSuggestion()}
+                  onFillGap={handleFillGap}
                 />
               </div>
+            )}
+
+            {gapFill && (gapFill.kind === 'discover_mcp' || gapFill.kind === 'distill_skill') && (
+              <GapFillModal
+                kind={gapFill.kind}
+                gap={gapFill.gap}
+                onDone={closeGapFill}
+              />
             )}
 
             {activeSection === 'arslan' && pendingInvite && (

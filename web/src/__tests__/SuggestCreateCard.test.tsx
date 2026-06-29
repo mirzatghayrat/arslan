@@ -100,8 +100,9 @@ describe("SuggestCreateCard (editable config card)", () => {
     expect(sent.equipment.toolsets).toEqual(["mcp_github"]);
   });
 
-  it("renders gaps with the three action buttons and calls onFillGap", () => {
-    const onFillGap = vi.fn();
+  it("renders gaps with the three action buttons and calls onFillGap", async () => {
+    // Buttons disable while one acquisition is in flight, so click + await each.
+    const onFillGap = vi.fn().mockResolvedValue(null);
     render(
       <SuggestCreateCard
         draft={fullDraft}
@@ -114,11 +115,91 @@ describe("SuggestCreateCard (editable config card)", () => {
     );
     expect(screen.getByText("no notion access")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("gap-discover-mcp-0"));
+    await waitFor(() => expect(onFillGap).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByTestId("gap-distill-skill-0"));
+    await waitFor(() => expect(onFillGap).toHaveBeenCalledTimes(2));
     fireEvent.click(screen.getByTestId("gap-request-grant-0"));
+    await waitFor(() => expect(onFillGap).toHaveBeenCalledTimes(3));
     expect(onFillGap).toHaveBeenCalledWith("discover_mcp", "no notion access");
     expect(onFillGap).toHaveBeenCalledWith("distill_skill", "no notion access");
     expect(onFillGap).toHaveBeenCalledWith("request_grant", "no notion access");
+  });
+
+  it("on a successful discover_mcp gap-fill, adds the MCP chip and drops the gap", async () => {
+    const onCreate = vi.fn();
+    // The gated discover/add flow resolves with the acquired toolset key.
+    const onFillGap = vi
+      .fn()
+      .mockResolvedValue({ row: "mcps", key: "mcp_7" });
+    render(
+      <SuggestCreateCard
+        draft={fullDraft}
+        taskBrief={null}
+        overlaps={null}
+        onCreate={onCreate}
+        onDismiss={vi.fn()}
+        onFillGap={onFillGap}
+      />,
+    );
+    // Before: the gap is present, no mcp_7 chip.
+    expect(screen.getByTestId("gap-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("chip-mcp-mcp_7")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("gap-discover-mcp-0"));
+
+    // After success: chip appears, gap removed.
+    await waitFor(() => screen.getByTestId("chip-mcp-mcp_7"));
+    expect(screen.queryByTestId("gap-0")).not.toBeInTheDocument();
+
+    // …and it folds into the equipment sent on create.
+    fireEvent.click(screen.getByTestId("btn-create"));
+    const sent = onCreate.mock.calls[0][0] as {
+      equipment: { toolsets: string[] };
+    };
+    expect(sent.equipment.toolsets).toContain("mcp_7");
+  });
+
+  it("on a successful distill_skill gap-fill, adds the skill chip and drops the gap", async () => {
+    const onCreate = vi.fn();
+    const onFillGap = vi
+      .fn()
+      .mockResolvedValue({ row: "skills", key: "gh-notion-helper" });
+    render(
+      <SuggestCreateCard
+        draft={fullDraft}
+        taskBrief={null}
+        overlaps={null}
+        onCreate={onCreate}
+        onDismiss={vi.fn()}
+        onFillGap={onFillGap}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("gap-distill-skill-0"));
+    await waitFor(() => screen.getByTestId("chip-skill-gh-notion-helper"));
+    expect(screen.queryByTestId("gap-0")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("btn-create"));
+    const sent = onCreate.mock.calls[0][0] as {
+      equipment: { skills: string[] };
+    };
+    expect(sent.equipment.skills).toContain("gh-notion-helper");
+  });
+
+  it("a null gap-fill result (e.g. request_grant / cancelled) leaves the gap in place", async () => {
+    const onFillGap = vi.fn().mockResolvedValue(null);
+    render(
+      <SuggestCreateCard
+        draft={fullDraft}
+        taskBrief={null}
+        overlaps={null}
+        onCreate={vi.fn()}
+        onDismiss={vi.fn()}
+        onFillGap={onFillGap}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("gap-request-grant-0"));
+    await waitFor(() => expect(onFillGap).toHaveBeenCalled());
+    // Gap stays — request_grant defers acquisition to run time.
+    expect(screen.getByTestId("gap-0")).toBeInTheDocument();
   });
 
   it("renders seed provenance with the slugs", () => {

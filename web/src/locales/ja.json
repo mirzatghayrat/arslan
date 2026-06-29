@@ -114,6 +114,8 @@
     "gap_discover_mcp": "MCPを探す",
     "gap_distill_skill": "スキルを蒸留",
     "gap_request_grant": "権限を要求",
+    "gap_request_grant_note": "実行時に要求されます — 今はアクセスは付与されません。",
+    "gap_working": "処理中…",
     "seed_provenance": "参考元 agency-agents：",
     "picker": {
       "tool": "ツールを選択",
@@ -124,6 +126,24 @@
       "empty": "割り当て可能な項目がありません。",
       "error": "レジストリを読み込めませんでした。"
     }
+  },
+  "gap_fill": {
+    "discover_title": "このギャップに合う MCP を探す",
+    "distill_title": "このギャップ向けにスキルを蒸留",
+    "for_gap": "ギャップ：{{gap}}",
+    "ref_placeholder": "GitHub リポジトリ（owner/name）…",
+    "evaluate": "評価",
+    "generate": "生成",
+    "working": "処理中…",
+    "cancel": "キャンセル",
+    "is_mcp": "MCP サーバー ✓",
+    "not_mcp": "MCP サーバーではありません ✗",
+    "add_mcp": "追加して接続",
+    "no_skill": "{{repo}} からスキルを蒸留できませんでした。",
+    "skill_name": "スキル名",
+    "skill_desc": "一行の説明",
+    "skill_body": "SKILL.md 本文",
+    "create_skill": "スキルを作成"
   },
   "equipment": {
     "title": "装備",

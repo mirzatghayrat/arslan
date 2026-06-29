@@ -114,6 +114,8 @@
     "gap_discover_mcp": "MCP finden",
     "gap_distill_skill": "Skill destillieren",
     "gap_request_grant": "Freigabe anfordern",
+    "gap_request_grant_note": "Wird zur Laufzeit angefordert — jetzt wird kein Zugriff gewährt.",
+    "gap_working": "Wird ausgeführt…",
     "seed_provenance": "Basierend auf agency-agents:",
     "picker": {
       "tool": "Werkzeug wählen",
@@ -124,6 +126,24 @@
       "empty": "Nichts Zuweisbares hier.",
       "error": "Registry konnte nicht geladen werden."
     }
+  },
+  "gap_fill": {
+    "discover_title": "Einen MCP für diese Lücke finden",
+    "distill_title": "Eine Fähigkeit für diese Lücke destillieren",
+    "for_gap": "Lücke: {{gap}}",
+    "ref_placeholder": "GitHub-Repo (owner/name)…",
+    "evaluate": "Bewerten",
+    "generate": "Generieren",
+    "working": "Wird ausgeführt…",
+    "cancel": "Abbrechen",
+    "is_mcp": "MCP-Server ✓",
+    "not_mcp": "Kein MCP-Server ✗",
+    "add_mcp": "Hinzufügen & verbinden",
+    "no_skill": "Konnte keine Fähigkeit aus {{repo}} destillieren.",
+    "skill_name": "Name der Fähigkeit",
+    "skill_desc": "Einzeilige Beschreibung",
+    "skill_body": "SKILL.md-Inhalt",
+    "create_skill": "Fähigkeit erstellen"
   },
   "equipment": {
     "title": "Ausrüstung",

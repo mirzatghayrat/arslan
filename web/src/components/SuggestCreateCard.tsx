@@ -22,8 +22,17 @@ interface Props {
   onDismiss: () => void;
   /** Keep chatting to refine (optional; wired later). */
   onRefine?: () => void;
-  /** Gap action handler (wired in F4; stub-safe). */
-  onFillGap?: (kind: GapKind, gap: string) => void;
+  /**
+   * Gap action handler. Drives an EXISTING gated, human-confirmed acquisition
+   * flow (discover→add MCP, or distill→create skill) and resolves with the
+   * acquired capability key so the card can fold it into its equipment and drop
+   * the gap. Resolves `null` when nothing was acquired (cancelled, or
+   * request_grant — which defers to run time). Never auto-acquires.
+   */
+  onFillGap?: (
+    kind: GapKind,
+    gap: string,
+  ) => Promise<{ row: "tools" | "skills" | "mcps"; key: string } | null>;
 }
 
 export default function SuggestCreateCard({
@@ -51,8 +60,27 @@ export default function SuggestCreateCard({
   // Which row's picker is open ("tool" | "mcp" | "skill" | null).
   const [picker, setPicker] = useState<PickKind | null>(null);
 
-  const gaps = draft.gaps ?? [];
+  // Gaps the user has filled (removed) locally + which gap is mid-acquisition.
+  const [filledGaps, setFilledGaps] = useState<string[]>([]);
+  const [busyGap, setBusyGap] = useState<string | null>(null);
+  const gaps = (draft.gaps ?? []).filter((g) => !filledGaps.includes(g));
   const seedRefs = draft.seed_refs ?? [];
+
+  async function handleFillGap(kind: GapKind, gap: string) {
+    if (busyGap) return;
+    setBusyGap(gap);
+    try {
+      const result = await onFillGap?.(kind, gap);
+      if (!result) return; // cancelled / request_grant → leave gap in place
+      const { row, key } = result;
+      if (row === "tools") setTools((xs) => (xs.includes(key) ? xs : [...xs, key]));
+      else if (row === "mcps") setMcps((xs) => (xs.includes(key) ? xs : [...xs, key]));
+      else setSkills((xs) => (xs.includes(key) ? xs : [...xs, key]));
+      setFilledGaps((xs) => (xs.includes(gap) ? xs : [...xs, gap]));
+    } finally {
+      setBusyGap(null);
+    }
+  }
 
   function handlePick(kind: PickKind, key: string) {
     if (kind === "tool") setTools((xs) => (xs.includes(key) ? xs : [...xs, key]));
@@ -182,15 +210,17 @@ export default function SuggestCreateCard({
                 <button
                   type="button"
                   className="suggest-create-card__gap-btn"
-                  onClick={() => onFillGap?.("discover_mcp", gap)}
+                  onClick={() => handleFillGap("discover_mcp", gap)}
+                  disabled={busyGap !== null}
                   data-testid={`gap-discover-mcp-${i}`}
                 >
-                  {t("create_card.gap_discover_mcp")}
+                  {busyGap === gap ? t("create_card.gap_working") : t("create_card.gap_discover_mcp")}
                 </button>
                 <button
                   type="button"
                   className="suggest-create-card__gap-btn"
-                  onClick={() => onFillGap?.("distill_skill", gap)}
+                  onClick={() => handleFillGap("distill_skill", gap)}
+                  disabled={busyGap !== null}
                   data-testid={`gap-distill-skill-${i}`}
                 >
                   {t("create_card.gap_distill_skill")}
@@ -198,7 +228,9 @@ export default function SuggestCreateCard({
                 <button
                   type="button"
                   className="suggest-create-card__gap-btn"
-                  onClick={() => onFillGap?.("request_grant", gap)}
+                  onClick={() => handleFillGap("request_grant", gap)}
+                  disabled={busyGap !== null}
+                  title={t("create_card.gap_request_grant_note")}
                   data-testid={`gap-request-grant-${i}`}
                 >
                   {t("create_card.gap_request_grant")}
