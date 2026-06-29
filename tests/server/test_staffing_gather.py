@@ -1,0 +1,79 @@
+import anyio
+import pytest
+from server.services import staffing_gather as sg
+
+
+def test_merge_does_not_overwrite_with_null():
+    old = {"domain": "game-design.numerical", "capability": None, "first_task": None, "recurrence": None}
+    new = {"domain": None, "capability": "概率建模", "first_task": None, "recurrence": None}
+    assert sg.merge_slots(old, new) == {
+        "domain": "game-design.numerical", "capability": "概率建模",
+        "first_task": None, "recurrence": None}
+
+
+def test_is_ready_requires_all_four():
+    assert sg.is_ready({"domain": "a.b", "capability": "c", "first_task": "t", "recurrence": True}) is True
+    assert sg.is_ready({"domain": "a.b", "capability": "c", "first_task": "t", "recurrence": None}) is False
+    assert sg.is_ready({"domain": None, "capability": "c", "first_task": "t", "recurrence": True}) is False
+
+
+def test_missing_slots_lists_nulls():
+    assert sg.missing_slots({"domain": "a.b", "capability": None,
+                             "first_task": None, "recurrence": True}) == ["capability", "first_task"]
+
+
+def test_extract_slots_returns_nullable(monkeypatch):
+    class Resp:
+        content = ('{"domain":"game-design.numerical","capability":"概率建模",'
+                   '"first_task":null,"recurrence":null}')
+    class A:
+        async def chat(self, *, system, user): return Resp()
+    monkeypatch.setattr(sg, "_get_adapter", lambda: A())
+    out = anyio.run(lambda: sg.extract_slots("做个手游数值的分身，要做概率建模"))
+    assert out["domain"] == "game-design.numerical"
+    assert out["capability"] == "概率建模"
+    assert out["first_task"] is None and out["recurrence"] is None
+
+
+# --- Phase round-trip test (uses real in-memory DB like test_phase_service.py) ---
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+import server.db.session as db_session
+from server.db.models import Base
+from server.services import phase_service
+
+
+@pytest.fixture
+def temp_db(tmp_path, monkeypatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'p.db'}")
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _seed():
+        async with engine.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+
+    anyio.run(_seed)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+    return maker
+
+
+@pytest.mark.asyncio
+async def test_set_get_gathering_round_trip(temp_db):
+    slots = {"domain": "game-design.numerical", "capability": "概率建模",
+             "first_task": None, "recurrence": None}
+    await phase_service.set_gathering("conv-gather", slots)
+    got = await phase_service.get_gathered_slots("conv-gather")
+    assert got == slots
+
+
+@pytest.mark.asyncio
+async def test_get_gathered_slots_returns_empty_when_no_phase(temp_db):
+    result = await phase_service.get_gathered_slots("conv-nonexistent")
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_get_gathered_slots_returns_empty_when_wrong_phase(temp_db):
+    await phase_service.set_proposing("conv-proposing", 5, "some direction")
+    result = await phase_service.get_gathered_slots("conv-proposing")
+    assert result == {}

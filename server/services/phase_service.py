@@ -1,6 +1,7 @@
 """Staged-orchestration phase state per conversation (one pending proposal at a time)."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
@@ -71,3 +72,27 @@ async def clear(conversation_id: str, spawn_id: int | None = None) -> None:
             delete(SpawnPhase).where(SpawnPhase.conversation_id == conversation_id)
         )
         await db.commit()
+
+
+async def set_gathering(conversation_id: str, slots: dict) -> None:
+    """Persist accumulating gather slots as JSON in the direction column.
+
+    Uses the sentinel spawn_id=0 (same as set_clarifying) — no new column needed.
+    """
+    await _upsert_phase(
+        conversation_id,
+        spawn_id=_CLARIFYING_SPAWN_ID,
+        phase="gathering",
+        direction=json.dumps(slots, ensure_ascii=False),
+    )
+
+
+async def get_gathered_slots(conversation_id: str) -> dict:
+    """Return the accumulated slots for a gathering phase, or {} if none / wrong phase."""
+    pending = await get_pending(conversation_id)
+    if not pending or pending.get("phase") != "gathering":
+        return {}
+    try:
+        return json.loads(pending.get("direction") or "{}")
+    except Exception:  # noqa: BLE001
+        return {}
