@@ -14,7 +14,14 @@ from server.orchestrator import dispatcher, memory, router, tool_loop
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from arslan.llm import usage_sink
-from server.services import evolution_service, phase_service, roster_service, run_recorder, spawn_service
+from server.services import (
+    equipment_service,
+    evolution_service,
+    phase_service,
+    roster_service,
+    run_recorder,
+    spawn_service,
+)
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -210,6 +217,22 @@ async def handle_user_message(
                                 route_ms=route_ms, attached_context=attached_context)
         elif result.action == "suggest_create":
             draft = result.suggested_spawn or {}
+            # Enrich the draft with real equipment via the same L1 mapping (curate),
+            # best-effort: a failure must never block the suggestion. setdefault keeps
+            # any equipment a future drafter path may already have supplied.
+            need = " ".join(filter(None, [
+                draft.get("name"), draft.get("domain"), draft.get("persona_role"),
+                ", ".join(draft.get("capabilities") or []),
+            ]))
+            try:
+                eq = await equipment_service.curate(need) if need.strip() else {}
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("suggest_create equipment enrichment failed: %s", exc)
+                eq = {}
+            draft.setdefault("tools", eq.get("toolsets") or [])
+            draft.setdefault("skills", eq.get("skills") or [])
+            draft.setdefault("mcps", eq.get("mcps") or [])
+            draft.setdefault("gaps", eq.get("gaps") or [])
             overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
             if overlap is not None:
                 # deterministic detection wins; keep the LLM's differentiation axes if it supplied any
