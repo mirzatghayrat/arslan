@@ -41,6 +41,11 @@ async def _fake_noop(): pass
 async def _fake_list(): return []
 
 
+async def _fake_curate(need):
+    """Hermetic stub for equipment_service.curate (no outbound LLM call)."""
+    return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
+
+
 @pytest.mark.asyncio
 async def test_answer_path_streams_and_persists(maker, monkeypatch):
     from server.orchestrator import arslan, router
@@ -251,6 +256,7 @@ async def test_suggest_create_emits_card(maker, monkeypatch):
         return router.RouterResult(action="suggest_create", suggested_spawn=draft)
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     events = []
     await arslan.handle_user_message("main", "translate things often", _events(events))
@@ -273,6 +279,7 @@ async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     events = []
     await arslan.handle_user_message("main", "look at TSLA", _events(events))
@@ -310,6 +317,7 @@ async def test_suggest_create_injects_overlap_for_existing_same_name_spawn(maker
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     events = []
     await arslan.handle_user_message("main", "research internet data", _events(events))
@@ -334,6 +342,7 @@ async def test_suggest_create_leaves_overlaps_when_no_existing_match(maker, monk
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
     events = []
     await arslan.handle_user_message("main", "translate things", _events(events))
