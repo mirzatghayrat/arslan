@@ -109,6 +109,15 @@ async def _team_roster() -> str:
         lines.append(f"- {s.name} ({domain})" + (f" — {role}" if role else ""))
     return "\n".join(lines)
 
+def _draft_is_sufficient(draft: dict, task_brief: str | None) -> bool:
+    """A proposal needs enough to draft a capable spawn: a domain, at least one
+    capability, and a concrete task to run. Otherwise Arslan clarifies first."""
+    has_domain = bool((draft.get("domain") or "").strip())
+    has_caps = bool(draft.get("capabilities"))
+    has_task = bool((task_brief or "").strip())
+    return has_domain and has_caps and has_task
+
+
 _CLARIFY_ADDENDUM = (
     "\n\nThe user's request is under-specified. Ask 2-4 short, specific clarifying questions "
     "(topic, angle, format/output, and the data source if relevant), then propose a concrete "
@@ -217,6 +226,15 @@ async def handle_user_message(
                                 route_ms=route_ms, attached_context=attached_context)
         elif result.action == "suggest_create":
             draft = result.suggested_spawn or {}
+            if not _draft_is_sufficient(draft, result.task_brief):
+                # Gather first — Arslan asks for the missing piece in its own voice,
+                # rather than proposing a thin/premature spawn. (B4 will also pin the
+                # clarify phase so the follow-up keeps gathering, not routes.)
+                await _handle_answer(conversation_id, user_message, emit,
+                                     extra_system=_CLARIFY_ADDENDUM,
+                                     attached_context=attached_context)
+                await memory.maybe_compact(conversation_id)
+                return
             # Enrich the draft with real equipment via the same L1 mapping (curate),
             # best-effort: a failure must never block the suggestion. setdefault keeps
             # any equipment a future drafter path may already have supplied.

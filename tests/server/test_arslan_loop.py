@@ -250,10 +250,16 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
 async def test_suggest_create_emits_card(maker, monkeypatch):
     from server.orchestrator import arslan, router
 
-    draft = {"name": "translator", "domain": "personal-assistant.translator"}
+    draft = {
+        "name": "translator",
+        "domain": "personal-assistant.translator",
+        "capabilities": ["translation"],
+    }
 
     async def _fake_route(conv, msg):
-        return router.RouterResult(action="suggest_create", suggested_spawn=draft)
+        return router.RouterResult(
+            action="suggest_create", suggested_spawn=draft, task_brief="translate this doc"
+        )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
@@ -267,7 +273,7 @@ async def test_suggest_create_emits_card(maker, monkeypatch):
 async def test_suggest_create_carries_task_brief_and_overlaps(maker, monkeypatch):
     from server.orchestrator import arslan, router
 
-    draft = {"name": "stock-helper", "domain": "finance.equities"}
+    draft = {"name": "stock-helper", "domain": "finance.equities", "capabilities": ["equity-research"]}
     overlaps = {"spawn_id": 3, "name": "股小助", "axes": ["a"]}
 
     async def _fake_route(conv, msg):
@@ -306,7 +312,7 @@ async def test_suggest_create_injects_overlap_for_existing_same_name_spawn(maker
         await s.commit()
         seeded_id = sp.id
 
-    draft = {"name": "数据研究", "domain": "data-analysis.report", "capabilities": []}
+    draft = {"name": "数据研究", "domain": "data-analysis.report", "capabilities": ["research"]}
 
     async def _fake_route(conv, msg):
         return router.RouterResult(
@@ -331,7 +337,7 @@ async def test_suggest_create_leaves_overlaps_when_no_existing_match(maker, monk
     from server.orchestrator import arslan, router
 
     # seeded spawn (id=7, beauty-guru) does not match this draft by name or full domain
-    draft = {"name": "translator", "domain": "personal-assistant.translator", "capabilities": []}
+    draft = {"name": "translator", "domain": "personal-assistant.translator", "capabilities": ["translation"]}
 
     async def _fake_route(conv, msg):
         return router.RouterResult(

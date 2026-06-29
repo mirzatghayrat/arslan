@@ -73,10 +73,16 @@ async def test_suggest_create_enrichment_best_effort_on_curate_failure(maker, mo
     """If curate raises, the suggestion still emits with empty equipment lists."""
     from server.orchestrator import arslan, router
 
-    draft = {"name": "translator", "domain": "personal-assistant.translator"}
+    draft = {
+        "name": "translator",
+        "domain": "personal-assistant.translator",
+        "capabilities": ["translation"],
+    }
 
     async def _fake_route(conv, msg):
-        return router.RouterResult(action="suggest_create", suggested_spawn=draft)
+        return router.RouterResult(
+            action="suggest_create", suggested_spawn=draft, task_brief="translate this doc"
+        )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
