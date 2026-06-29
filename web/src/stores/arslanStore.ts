@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember } from "../api/client.types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate } from "../api/client.types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -31,6 +31,9 @@ interface ArslanState {
   // Pending invite: set when a `propose_invite` frame arrives; cleared once the
   // user confirms (sends roster_invite) or cancels.
   pendingInvite: { spawnId: number; reason: string } | null;
+  // Pending staffing decision: set when a `propose_staffing` frame arrives.
+  // Candidates are mapped snake→camel. Cleared once the user picks or dismisses.
+  pendingStaffing: { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
 
@@ -40,6 +43,7 @@ interface ArslanState {
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
   clearPendingInvite: () => void;
+  clearPendingStaffing: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
 }
@@ -73,6 +77,7 @@ function initialData() {
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
+    pendingStaffing: null as { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null,
     thinking: false,
   };
 }
@@ -95,6 +100,7 @@ function makeActions(set: SetState, get: GetState) {
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
     clearPendingInvite: () => set({ pendingInvite: null }),
+    clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
@@ -435,6 +441,19 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_invite":
           set({ pendingInvite: { spawnId: frame.spawn_id, reason: frame.reason } });
+          break;
+        case "propose_staffing":
+          set({
+            pendingStaffing: {
+              candidates: frame.candidates.map((c: StaffingCandidate) => ({
+                spawnId: c.spawn_id,
+                name: c.name,
+                score: c.score,
+                why: c.why,
+              })),
+              createDraft: frame.create_draft,
+            },
+          });
           break;
         case "roster_event":
           set({

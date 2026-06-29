@@ -162,6 +162,14 @@ export interface OverlapInfo {
   axes: string[];
 }
 
+/** One candidate from a `propose_staffing` frame (wire shape: snake_case). */
+export interface StaffingCandidate {
+  spawn_id: number;
+  name: string | null;
+  score: number;
+  why: string;
+}
+
 /** A renderable item in the unified Arslan thread. */
 export interface ArslanThreadItem {
   id: number;
@@ -220,7 +228,8 @@ export type ArslanServerMessage =
   | { type: "deliverable_finalized"; spawn_id: number; message_id: number; content: string; refined_from: number | null; spawn_name?: string }
   | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
   | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null }
-| { type: "attachment_stored"; spawn_name: string | null; chunks: number };
+| { type: "attachment_stored"; spawn_name: string | null; chunks: number }
+  | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null };
 
 export interface RosterMember {
   spawnId: number;
