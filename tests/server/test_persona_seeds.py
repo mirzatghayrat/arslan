@@ -70,3 +70,35 @@ def test_search_empty_query_returns_empty(seeded):
 def test_count_returns_seed_total(seeded):
     from server.services import persona_seed_service
     assert anyio.run(persona_seed_service.count) == 2
+
+
+def test_import_parses_and_upserts(tmp_path, monkeypatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'imp.db'}")
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async def _prep():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
+            await conn.run_sync(upgrade_sync)
+    anyio.run(_prep)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+
+    from server.services import persona_seed_service
+    # Stub the repo file listing + content fetch.
+    async def fake_list_md(owner, repo):
+        return ["engineering/backend-architect.md"]
+    sample = ("# Backend Architect\n\n## Identity\nYou are a backend architect.\n\n"
+              "## Mission\nDesign robust services.\n\n## Deliverables\nAPI specs, schemas.\n\n"
+              "## Success Metrics\np99 latency, uptime.\n")
+    async def fake_fetch_md(owner, repo, path):
+        return sample
+    monkeypatch.setattr(persona_seed_service, "_list_md_paths", fake_list_md)
+    monkeypatch.setattr(persona_seed_service, "_fetch_md", fake_fetch_md)
+
+    n = anyio.run(lambda: persona_seed_service.import_from_repo("msitarzewski", "agency-agents"))
+    assert n == 1
+    hits = anyio.run(lambda: persona_seed_service.search("backend architect services", k=3))
+    assert hits and hits[0]["slug"] == "backend-architect"
+    # idempotent: re-import doesn't duplicate
+    anyio.run(lambda: persona_seed_service.import_from_repo("msitarzewski", "agency-agents"))
+    assert anyio.run(persona_seed_service.count) == 1
