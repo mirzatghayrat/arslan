@@ -87,6 +87,7 @@ async def _fetch_md(owner: str, repo: str, path: str) -> str:
     token = await github_eval._token()
     url = f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}"
     async with httpx.AsyncClient(timeout=30) as c:
+        # Token intentionally forwarded so private-repo raw fetches work — do not strip.
         r = await c.get(url, headers=github_eval._headers(token))
         r.raise_for_status()
         return r.text
@@ -94,7 +95,11 @@ async def _fetch_md(owner: str, repo: str, path: str) -> str:
 
 async def import_from_repo(owner: str = "msitarzewski", repo: str = "agency-agents") -> int:
     """Fetch + parse persona markdowns, upsert by slug, (re)build FTS rows. Returns count imported.
-    Curation-only: writes persona_seeds + FTS, never creates spawns. Fixed GitHub host (non-SSRF)."""
+    Curation-only: writes persona_seeds + FTS, never creates spawns. Fixed GitHub host (non-SSRF).
+
+    Failure handling is intentionally asymmetric: a listing failure (auth/rate-limit/network)
+    propagates so a total import failure surfaces loudly, while a single file's fetch failure is
+    logged and skipped best-effort so one bad file doesn't abort the batch."""
     paths = await _list_md_paths(owner, repo)
     n = 0
     for path in paths:
@@ -104,22 +109,22 @@ async def import_from_repo(owner: str = "msitarzewski", repo: str = "agency-agen
             logger.warning("persona import: fetch failed for %s: %s", path, exc)
             continue
         seed = _parse_persona(path, md)
+        # rules/success_metrics intentionally excluded: too boilerplate-y, dilute match relevance.
         fts_text = " ".join(filter(None, [seed["name"], seed["division"], seed["identity"],
                                           seed["mission"], seed["deliverables"], seed["workflow"]]))
         async with db_session.AsyncSessionLocal() as db:
             existing = (await db.execute(select(PersonaSeed).where(
                 PersonaSeed.slug == seed["slug"]))).scalar_one_or_none()
             if existing is None:
-                row = PersonaSeed(source=f"{owner}/{repo}", **seed)
-                db.add(row); await db.flush()
-                await db.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r,:t)"),
-                                 {"r": row.id, "t": fts_text})
+                existing = PersonaSeed(source=f"{owner}/{repo}", **seed)
+                db.add(existing)
+                await db.flush()
             else:
                 for k, v in seed.items():
                     setattr(existing, k, v)
                 await db.execute(sa_text("DELETE FROM persona_seeds_fts WHERE rowid = :r"), {"r": existing.id})
-                await db.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r,:t)"),
-                                 {"r": existing.id, "t": fts_text})
+            await db.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r,:t)"),
+                             {"r": existing.id, "t": fts_text})
             await db.commit()
         n += 1
     return n
