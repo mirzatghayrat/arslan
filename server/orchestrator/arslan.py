@@ -202,6 +202,16 @@ async def handle_user_message(
             # kind == "new" → clear the stale pending phase and fall through to normal routing
             await phase_service.clear(conversation_id, pending["spawn_id"])
 
+        # 1c. clarifying-create phase (B4): while Arslan is gathering an under-specified
+        # create request, the follow-up answer must keep clarifying (Arslan's voice) — it
+        # must NOT be routed/dispatched to an existing spawn (routing leaks "请以X的身份"
+        # identity-bleed into the answer layer). We still route() below, but if the router
+        # wants to route to an existing spawn we OVERRIDE it to the clarify path. A
+        # sufficient suggest_create (the user finally gave enough) is allowed and clears
+        # the phase; answer/clarify proceed normally. Proposing takes precedence (handled
+        # above and returns), so the two phases are never both live here.
+        clarifying = bool(pending and pending["phase"] == "clarifying")
+
         # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
         # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
         # frame instead of propagating out of run_with_live_frames and closing the WS.
@@ -220,6 +230,15 @@ async def handle_user_message(
             for fact in created:
                 emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
 
+        # B4: while clarifying a create, suppress routing to an existing spawn —
+        # keep clarifying in Arslan's voice instead of leaking spawn identity.
+        if clarifying and result.action == "route":
+            await _handle_answer(conversation_id, user_message, emit,
+                                 extra_system=_CLARIFY_ADDENDUM,
+                                 attached_context=attached_context)
+            await memory.maybe_compact(conversation_id)
+            return
+
         # 4. handle the action
         if result.action == "route" and result.spawn_id is not None:
             await _handle_route(conversation_id, result, emit, user_message=user_message,
@@ -228,13 +247,19 @@ async def handle_user_message(
             draft = result.suggested_spawn or {}
             if not _draft_is_sufficient(draft, result.task_brief):
                 # Gather first — Arslan asks for the missing piece in its own voice,
-                # rather than proposing a thin/premature spawn. (B4 will also pin the
-                # clarify phase so the follow-up keeps gathering, not routes.)
+                # rather than proposing a thin/premature spawn. B4 pins a "clarifying"
+                # phase here so the follow-up keeps gathering (not routes to an existing
+                # spawn) until the user supplies enough or changes subject.
+                await phase_service.set_clarifying(conversation_id)
                 await _handle_answer(conversation_id, user_message, emit,
                                      extra_system=_CLARIFY_ADDENDUM,
                                      attached_context=attached_context)
                 await memory.maybe_compact(conversation_id)
                 return
+            # Sufficient draft: the user gave enough — clear any clarifying phase and
+            # proceed to the proposal (routing/proposing resumes normally).
+            if clarifying:
+                await phase_service.clear_clarifying(conversation_id)
             # Enrich the draft with real equipment via the same L1 mapping (curate),
             # best-effort: a failure must never block the suggestion. setdefault keeps
             # any equipment a future drafter path may already have supplied.
