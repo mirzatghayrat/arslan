@@ -370,7 +370,9 @@
     "no_specialists": "此线程组中未邀请专家",
     "invite_spawns": "邀请分身",
     "verify_diagnostics": "验证管道诊断",
-    "level_progress": "等级进度"
+    "level_progress": "等级进度",
+    "mcp_none": "未连接 MCP",
+    "roster_count": "本会话分身"
   },
   "modal": {
     "create_spawn_title": "合成新专家分身",

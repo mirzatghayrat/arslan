@@ -24,6 +24,7 @@ import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
+import RailMcpList from './components/RailMcpList';
 
 interface ArslanThread {
   id: string;
@@ -219,6 +220,11 @@ export default function App() {
     // Load multi-model provider configs
     listProviderConfigs().then(setProviderConfigs).catch(() => {});
   }, []);
+
+  // MCP servers state — fetched once on mount, used in the diagnostics rail
+  const [mcpServers, setMcpServers] = useState<Array<{ id: number; name: string; connected?: boolean; exposed?: boolean }>>([]);
+  useEffect(() => { api.listMcpServers().then(setMcpServers).catch(() => setMcpServers([])); }, []);
+
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
   // New Spawn Creation modal/overlay state
@@ -604,8 +610,8 @@ export default function App() {
                   <span className="text-primary">Arslan Primary</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-subtle-foreground">{t('rail.active_slots')}</span>
-                  <span className="text-foreground">{t('rail.slots_loaded', { count: spawns.length })}</span>
+                  <span className="text-subtle-foreground">{t('rail.roster_count')}</span>
+                  <span className="text-foreground">{currentCaps.members.length}</span>
                 </div>
               </div>
             </div>
@@ -629,16 +635,8 @@ export default function App() {
                   <span className="font-bold text-primary block truncate">≫ {currentCaps.title}</span>
                 </div>
 
-                {/* 1. MCP (Model Context Protocol) Registry — no MCP backend yet */}
-                <div className="space-y-1.5 opacity-50">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-mono text-subtle-foreground uppercase tracking-wider font-bold flex items-center gap-1"><Satellite className="w-3 h-3" /> {t('rail.mcp_servers')}</span>
-                    <span className="text-[8px] font-mono bg-surface/80 text-subtle-foreground px-1.5 py-0.5 rounded uppercase tracking-wider">{t('rail.mcp_coming_soon')}</span>
-                  </div>
-                  <div className="bg-background/60 border border-dashed border-border/60 rounded-lg px-3 py-2.5 text-[10px] font-mono text-subtle-foreground italic">
-                    {t('rail.mcp_unavailable')}
-                  </div>
-                </div>
+                {/* 1. MCP (Model Context Protocol) Registry — real data from /mcp/servers */}
+                <RailMcpList servers={mcpServers} />
 
                 {/* 2. Equipped Agent Tools — only web-search is wired in backend; others coming soon */}
                 <div className="space-y-1.5">
@@ -649,7 +647,7 @@ export default function App() {
                     <div className="flex flex-wrap gap-1">
                       {currentCaps.tools.map((tId) => {
                         const details = toolDetails[tId] || { name: tId, emoji: '🔧' };
-                        const isWired = tId === 'web-search';
+                        const isWired = ['web-search', 'render_chart', 'render-chart'].includes(tId);
                         return (
                           <div
                             key={tId}
@@ -683,11 +681,10 @@ export default function App() {
                           <div
                             key={sId}
                             className="bg-warning/10 text-warning px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
-                            title={`${sId} — 即将推出 / Coming soon (per-conversation skill tracking not yet available)`}
+                            title={details.name}
                           >
                             {getIcon(sId, 'w-3 h-3')}
                             <span className="text-[10px] font-medium">{details.name}</span>
-                            <span className="text-[7px] text-warning/70 font-mono ml-0.5">soon</span>
                           </div>
                         );
                       })}
@@ -786,36 +783,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Quick Actions diagnostic utilities footer */}
-            <div className="p-4 bg-background border-t border-border/60 space-y-2">
-              <button
-                onClick={() => {
-                  const diagnosticMsg: Message = {
-                    id: `manual-audit-${Date.now()}`,
-                    sender: 'arslan',
-                    senderName: 'Arslan Core',
-                    senderAvatar: '🦁',
-                    text: `⚙️ **Manual Diagnostics Check completed:** All spawned memory registers are in high state capacity. Pipeline throughput clocks: **18 ms latency**. Style templates match: **${currentChatStyle}** (Chat) | **${currentCardStyle}** (Cards).`,
-                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  };
-
-                  // Append to active Arslan thread history
-                  setThreads(prevThreads => prevThreads.map(t => {
-                    if (t.id === activeThreadId) {
-                      return {
-                        ...t,
-                        history: [...t.history, diagnosticMsg]
-                      };
-                    }
-                    return t;
-                  }));
-                }}
-                className="w-full py-2 bg-transparent hover:bg-foreground/[0.03] border border-border rounded-lg text-[10px] font-mono text-muted-foreground hover:text-foreground transition-all flex items-center justify-center gap-1.5 uppercase font-bold"
-              >
-                <RefreshCcw className="w-3 h-3 text-primary/70" />
-                <span>{t('rail.verify_diagnostics')}</span>
-              </button>
-            </div>
           </aside>
         )}
       </div>

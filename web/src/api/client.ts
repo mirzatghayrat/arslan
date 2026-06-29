@@ -159,6 +159,7 @@ export const api = {
     request<EvolveProposal>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
   confirmProposal: (proposalId: number) =>
     request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
+  listMcpServers: () => request<Array<{ id: number; name: string; connected?: boolean; exposed?: boolean }>>("/mcp/servers"),
   extractAttachmentUrl: (url: string, compress = false) =>
     request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {
       method: "POST",

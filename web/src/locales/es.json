@@ -370,7 +370,9 @@
     "no_specialists": "No specialists invited to this thread group",
     "invite_spawns": "Invite Spawns",
     "verify_diagnostics": "Verify Pipe Diagnostics",
-    "level_progress": "Level Progress"
+    "level_progress": "Level Progress",
+    "mcp_none": "No MCP servers connected",
+    "roster_count": "Conversation spawns"
   },
   "modal": {
     "create_spawn_title": "Synthesize New Spawn specialist",
