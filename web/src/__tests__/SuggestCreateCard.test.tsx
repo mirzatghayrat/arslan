@@ -200,6 +200,12 @@ describe("SuggestCreateCard (editable config card)", () => {
     await waitFor(() => expect(onFillGap).toHaveBeenCalled());
     // Gap stays — request_grant defers acquisition to run time.
     expect(screen.getByTestId("gap-0")).toBeInTheDocument();
+    // …and the gap buttons are re-enabled (busyGap reset → nothing stuck).
+    await waitFor(() =>
+      expect(screen.getByTestId("gap-discover-mcp-0")).not.toBeDisabled(),
+    );
+    expect(screen.getByTestId("gap-distill-skill-0")).not.toBeDisabled();
+    expect(screen.getByTestId("gap-request-grant-0")).not.toBeDisabled();
   });
 
   it("renders seed provenance with the slugs", () => {

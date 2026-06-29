@@ -259,6 +259,16 @@ export default function App() {
     setGapFill(null);
   }, []);
 
+  // If the suggestion card goes away (create/dismiss/refine or any external
+  // dismissSuggestion) while a gap-fill modal is open, the card unmounts — so
+  // resolve the pending promise null and close the modal too. Prevents an
+  // orphaned modal resolving into a dead component / a stuck resolver.
+  useEffect(() => {
+    if ((!suggestion || activeSection !== 'arslan') && (gapFill || gapFillResolver.current)) {
+      closeGapFill(null);
+    }
+  }, [suggestion, activeSection, gapFill, closeGapFill]);
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -530,7 +540,8 @@ export default function App() {
               </div>
             )}
 
-            {gapFill && (gapFill.kind === 'discover_mcp' || gapFill.kind === 'distill_skill') && (
+            {activeSection === 'arslan' && suggestion && gapFill &&
+              (gapFill.kind === 'discover_mcp' || gapFill.kind === 'distill_skill') && (
               <GapFillModal
                 kind={gapFill.kind}
                 gap={gapFill.gap}

@@ -66,6 +66,8 @@ export default function GapFillModal({ kind, gap, onDone }: Props) {
         label: evalRes.repo.full_name.split("/").pop()!,
         transport: mcpDraft.transport,
         command: mcpDraft.command,
+        // Naive whitespace split — does NOT handle quoted args. Acceptable here:
+        // the user reviews/edits the launch command before clicking Add.
         args: mcpDraft.args.split(/\s+/).filter(Boolean),
         url: mcpDraft.url || undefined,
         env: {},
