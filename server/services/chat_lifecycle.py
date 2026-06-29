@@ -20,6 +20,10 @@ async def complete_chat(spawn_id: int) -> int:
         )).scalars().all()
         if not rows:
             return 0
+        # Snapshot the exact ids we distill, and archive ONLY those. If the user keeps
+        # chatting during the (slow, async) distill, those newer rows stay active — they
+        # are neither archived-without-being-distilled (data loss) nor double-counted.
+        ids = [m.id for m in rows]
         users = "\n".join(m.content for m in rows if m.role == "user" and m.content)
         outs = "\n".join(m.content for m in rows if m.role == "assistant" and m.content)
         signals = f"用户消息:\n{users}\n\n分身产出:\n{outs}"
@@ -28,9 +32,7 @@ async def complete_chat(spawn_id: int) -> int:
 
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(
-            select(ChatMessage).where(
-                ChatMessage.spawn_id == spawn_id, ChatMessage.archived == False  # noqa: E712
-            )
+            select(ChatMessage).where(ChatMessage.id.in_(ids))
         )).scalars().all()
         for m in rows:
             m.archived = True

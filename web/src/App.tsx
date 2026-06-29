@@ -18,13 +18,13 @@ import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnEditor from './components/SpawnEditor';
 import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
-import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, RefreshCcw, LayoutGrid, Paintbrush, Satellite, Wrench, Brain } from 'lucide-react';
+import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, LayoutGrid, Paintbrush, Wrench, Brain } from 'lucide-react';
 import { getIcon } from './components/iconMap';
 import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
-import RailMcpList from './components/RailMcpList';
+import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 
 interface ArslanThread {
@@ -223,7 +223,7 @@ export default function App() {
   }, []);
 
   // MCP servers state — fetched once on mount, used in the diagnostics rail
-  const [mcpServers, setMcpServers] = useState<Array<{ id: number; name: string; connected?: boolean; exposed?: boolean }>>([]);
+  const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([]);
   useEffect(() => { api.listMcpServers().then(setMcpServers).catch(() => setMcpServers([])); }, []);
 
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);

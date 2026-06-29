@@ -72,6 +72,11 @@ export default function OrchestratorChat({
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   // Optimistic verdicts: filled immediately on click, before the backend verdict_recorded
   // frame round-trips (which sets msg.verdict via the store). Keyed by messageId.
+  // KNOWN LIMITATION: verdict_recorded carries no messageId, so the store marks the spawn's
+  // MOST-RECENT deliverable. On a spawn with multiple un-voted deliverables, voting an older
+  // one fills it optimistically here while the real verdict lands on the newest — they can
+  // disagree (no rollback by design). The common single-deliverable case is exact. A proper
+  // fix needs the backend to echo the messageId on verdict_recorded.
   const [optimisticVerdicts, setOptimisticVerdicts] = useState<Record<number, 'accept' | 'discard'>>({});
   const castVerdict = (action: 'accept' | 'discard', spawnId: number, messageId?: number) => {
     if (messageId != null) setOptimisticVerdicts((p) => ({ ...p, [messageId]: action }));
