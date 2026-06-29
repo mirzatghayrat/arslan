@@ -462,8 +462,10 @@ async def _staffing_match_and_propose(  # noqa: ANN001
         emit(protocol.propose_staffing(candidates, create_draft))
         return
 
-    # band == "create": fuse a draft (seed from any near-matches that scored at all),
-    # then run the existing L2-B2 overlap detection and emit suggest_create.
+    # band == "create": there are no >=LOW matches by definition (else classify_band
+    # would have returned invite_one/picker), so seed equipment from the full ranked
+    # list as a weak domain-adjacency prior, then run the existing L2-B2 overlap
+    # detection and emit suggest_create.
     near_ids = [r["spawn_id"] for r in ranked if r.get("spawn_id") is not None]
     draft = await _fused_create_draft(slots, result, near_ids)
     overlap = spawn_service.find_overlap(draft, spawns)
