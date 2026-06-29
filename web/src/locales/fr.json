@@ -474,5 +474,12 @@
     "finalize_to_main": "Finalize to main",
     "learned_prefs": "Learned preferences",
     "no_prefs": "None yet"
+  },
+  "staffing_card": {
+    "heading": "Qui devrait gérer ça ? ({{count}})",
+    "invite": "Inviter",
+    "buildNew": "Aucun ne convient — en créer un",
+    "dismiss": "Ignorer",
+    "why": "Pourquoi :"
   }
 }

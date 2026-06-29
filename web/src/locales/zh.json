@@ -474,5 +474,12 @@
     "finalize_to_main": "定稿回主框",
     "learned_prefs": "学到的偏好",
     "no_prefs": "暂无"
+  },
+  "staffing_card": {
+    "heading": "谁来处理？({{count}})",
+    "invite": "邀请它",
+    "buildNew": "都不对，融合建新的",
+    "dismiss": "忽略",
+    "why": "原因："
   }
 }

@@ -474,5 +474,12 @@
     "finalize_to_main": "Finalize to main",
     "learned_prefs": "Learned preferences",
     "no_prefs": "None yet"
+  },
+  "staffing_card": {
+    "heading": "誰が担当しますか？({{count}})",
+    "invite": "招待する",
+    "buildNew": "どれも合わない — 新規作成",
+    "dismiss": "却下",
+    "why": "理由："
   }
 }

@@ -26,6 +26,7 @@ import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import InviteConfirmCard from './components/InviteConfirmCard';
+import StaffingPickerCard from './components/StaffingPickerCard';
 import { resolveSpawnName } from './api/resolveSpawnName';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
@@ -101,6 +102,9 @@ export default function App() {
   // propose_invite state — confirmation card before joining a spawn
   const pendingInvite = useArslanStore((s) => s.pendingInvite);
   const clearPendingInvite = useArslanStore((s) => s.clearPendingInvite);
+  // propose_staffing state — candidate picker card
+  const pendingStaffing = useArslanStore((s) => s.pendingStaffing);
+  const clearPendingStaffing = useArslanStore((s) => s.clearPendingStaffing);
   // Returns true if a spawn (identified by its UI string id) is in the current roster
   const isRosterMember = (spawnId: string) => roster.some((m) => m.spawnId === Number(spawnId));
 
@@ -560,6 +564,31 @@ export default function App() {
                     clearPendingInvite();
                   }}
                   onCancel={() => clearPendingInvite()}
+                />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingStaffing && (
+              <div className="suggest-create-card-overlay">
+                <StaffingPickerCard
+                  candidates={pendingStaffing.candidates}
+                  createDraft={pendingStaffing.createDraft}
+                  onInvite={(spawnId) => {
+                    wsSend({ type: 'roster_invite', spawn_id: spawnId });
+                    clearPendingStaffing();
+                  }}
+                  onCreateNew={(draft) => {
+                    // Open the existing editable SuggestCreateCard with this draft.
+                    // Setting suggestion state causes App to render SuggestCreateCard,
+                    // whose onCreate sends confirm_create — the existing flow is reused.
+                    useArslanStore.setState({
+                      suggestion: draft,
+                      suggestionTaskBrief: null,
+                      suggestionOverlaps: null,
+                    });
+                    clearPendingStaffing();
+                  }}
+                  onDismiss={() => clearPendingStaffing()}
                 />
               </div>
             )}
