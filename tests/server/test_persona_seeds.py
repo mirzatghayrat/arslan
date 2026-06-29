@@ -65,3 +65,8 @@ def test_search_returns_relevant_seed(seeded):
 def test_search_empty_query_returns_empty(seeded):
     from server.services import persona_seed_service
     assert anyio.run(lambda: persona_seed_service.search("", k=3)) == []
+
+
+def test_count_returns_seed_total(seeded):
+    from server.services import persona_seed_service
+    assert anyio.run(persona_seed_service.count) == 2
