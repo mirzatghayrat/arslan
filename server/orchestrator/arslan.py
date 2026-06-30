@@ -685,6 +685,15 @@ async def _dispatch_spawn(  # noqa: ANN001
 ) -> None:
     """Run one spawn turn, recording it as a Run for replay + evaluation."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    if spawn_name is None:
+        # The spawn no longer exists (deleted mid-conversation, or a stale id from any
+        # entry point). Bail BEFORE RunRecorder.start() — recording a Run with a
+        # dangling spawn_id would raise sqlite3.IntegrityError (FK constraint) and
+        # crash the turn. Surface a recoverable in-chat error instead.
+        logger.warning("_dispatch_spawn: spawn_id=%s not found — skipping dispatch", spawn_id)
+        emit({"type": "error", "code": "SPAWN_NOT_FOUND",
+              "message": "That assistant is no longer available.", "recoverable": True})
+        return
     recorder = await run_recorder.RunRecorder.start(
         conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
         user_message=user_message or task_brief, route_ms=route_ms,

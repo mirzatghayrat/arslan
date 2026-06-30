@@ -253,6 +253,34 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_to_missing_spawn_emits_error_not_crash(maker, monkeypatch):
+    """Defense-in-depth at the dispatch chokepoint: if a spawn_id reaches
+    _dispatch_spawn but no longer exists (e.g. deleted mid-conversation, or a stale
+    id from any non-route entry point), dispatch must emit a recoverable error frame
+    and return — NEVER call RunRecorder.start() with a dangling FK (IntegrityError)."""
+    from server.orchestrator import arslan
+    from server.services import run_recorder
+    from server.db.models import Run
+
+    # Guard against a regression where the recorder is reached anyway.
+    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda rid: None)
+
+    events = []
+    # spawn 999 does not exist (only id=7 is seeded)
+    await arslan._dispatch_spawn("main", 999, "do x", _events(events), user_message="do x")
+
+    types = [e["type"] for e in events]
+    assert "error" in types, f"expected an error frame, got {types}"
+    err = next(e for e in events if e["type"] == "error")
+    assert err.get("recoverable") is True
+    # crucially: no routing/stream frames and no Run row was written
+    assert "routing" not in types
+    async with db_session.AsyncSessionLocal() as s:
+        runs = (await s.execute(select(Run))).scalars().all()
+    assert runs == []
+
+
+@pytest.mark.asyncio
 async def test_suggest_create_emits_card(maker, monkeypatch):
     from server.orchestrator import arslan, router
 

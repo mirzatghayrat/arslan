@@ -128,6 +128,38 @@ async def test_router_route_without_spawn_id_downgrades(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_router_route_to_nonexistent_spawn_downgrades(maker, monkeypatch):
+    """The LLM may emit a route to a spawn_id that does not exist (hallucinated or
+    stale). The router's documented contract is that such a route must not propagate;
+    it is downgraded to 'answer' so dispatch never inserts a Run with a dangling FK."""
+    from server.orchestrator import router
+
+    # seeded spawn is id=7; the LLM routes to a non-existent id=999
+    raw = '{"action":"route","spawn_id":999,"task_brief":"do x","reason":"x"}'
+    monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter(raw))
+
+    result = await router.route("main", "do x")
+    assert result.action == "answer"  # downgraded — spawn 999 does not exist
+    assert result.spawn_id is None
+
+    async with db_session.AsyncSessionLocal() as s:
+        dec = (await s.execute(select(RouterDecision))).scalar_one()
+    assert dec.action == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_router_route_to_existing_spawn_is_kept(maker, monkeypatch):
+    """Sanity guard for the existence check: a route to a real spawn still routes."""
+    from server.orchestrator import router
+
+    raw = '{"action":"route","spawn_id":7,"task_brief":"draft posts","reason":"x"}'
+    monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter(raw))
+    result = await router.route("main", "make me posts")
+    assert result.action == "route"
+    assert result.spawn_id == 7
+
+
+@pytest.mark.asyncio
 async def test_router_fallback_stores_raw(maker, monkeypatch):
     from server.orchestrator import router
     from sqlalchemy import select

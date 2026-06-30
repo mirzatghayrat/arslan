@@ -19,12 +19,17 @@ async def _async_str(s):
     return s
 
 
+async def _async_true(_spawn_id):
+    return True
+
+
 @pytest.mark.asyncio
 async def test_route_carries_needs_proposal(monkeypatch):
     monkeypatch.setattr(router, "_get_adapter", lambda: _StubAdapter(
         '{"action":"route","spawn_id":4,"task_brief":"optimize headline","needs_proposal":true,"reason":"open"}'
     ))
     monkeypatch.setattr(router, "_spawn_registry", lambda: _async_str("- id=4 name=x domain=finance"))
+    monkeypatch.setattr(router, "_spawn_exists", _async_true)
     monkeypatch.setattr(
         router.memory, "assemble_working_context", lambda conv_id: _async_str({"summary": "", "history": []})
     )
@@ -41,6 +46,7 @@ async def test_route_needs_proposal_false_by_default(monkeypatch):
         '{"action":"route","spawn_id":4,"task_brief":"summarize this article: X","reason":"crisp"}'
     ))
     monkeypatch.setattr(router, "_spawn_registry", lambda: _async_str("- id=4 name=x domain=content"))
+    monkeypatch.setattr(router, "_spawn_exists", _async_true)
     monkeypatch.setattr(
         router.memory, "assemble_working_context", lambda conv_id: _async_str({"summary": "", "history": []})
     )

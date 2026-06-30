@@ -89,6 +89,14 @@ async def _spawn_registry() -> str:
     return "\n".join(lines)
 
 
+async def _spawn_exists(spawn_id: int) -> bool:
+    """Whether a spawn id is real. The router LLM picks spawn_id from the registry
+    text and can return a hallucinated or stale id; we must verify it before routing
+    so dispatch never inserts a Run with a dangling FK (FOREIGN KEY constraint failed)."""
+    async with db_session.AsyncSessionLocal() as db:
+        return await db.get(Spawn, spawn_id) is not None
+
+
 def _parse(content: str) -> dict[str, Any] | None:
     return parse_json_object(content)
 
@@ -132,6 +140,13 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
 
     if action == "route" and not isinstance(parsed.get("spawn_id"), int):
         result = RouterResult(action="answer", reason="route missing valid spawn_id")
+        await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
+        return result
+
+    if action == "route" and not await _spawn_exists(parsed["spawn_id"]):
+        # The LLM routed to a non-existent spawn (hallucinated/stale id). Downgrade to
+        # answer rather than dispatch to a dangling id (would crash with a FK error).
+        result = RouterResult(action="answer", reason="route to non-existent spawn")
         await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
         return result
 
