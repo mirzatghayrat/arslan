@@ -50,6 +50,8 @@ async def test_crisp_task_executes_directly(monkeypatch):
     monkeypatch.setattr(dispatcher, "get_spawn_name", lambda i: _aw("x"))
     monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _aw(None))
     monkeypatch.setattr(roster_service, "list_roster", lambda c: _aw([]))
+    # Already a roster member → direct execute (no invite card gate).
+    monkeypatch.setattr(roster_service, "is_member", lambda c, s: _aw(True))
     r = router.RouterResult(action="route", spawn_id=4, task_brief="summarize this", needs_proposal=False)
     await arslan._handle_route("conv-y", r, events.append)
     assert ("dispatch","execute") in events

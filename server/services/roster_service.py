@@ -27,6 +27,18 @@ async def join(conversation_id: str, spawn_id: int, *, via: str) -> bool:
         return True
 
 
+async def is_member(conversation_id: str, spawn_id: int) -> bool:
+    """Whether `spawn_id` is currently in the conversation's roster."""
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.execute(
+            select(ConversationSpawn).where(
+                ConversationSpawn.conversation_id == conversation_id,
+                ConversationSpawn.spawn_id == spawn_id,
+            )
+        )
+        return row.scalar_one_or_none() is not None
+
+
 async def kick(conversation_id: str, spawn_id: int) -> bool:
     """Remove a spawn from the roster. Returns True if a row was removed. History is untouched."""
     async with db_session.AsyncSessionLocal() as db:

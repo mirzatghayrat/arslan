@@ -237,6 +237,10 @@ async def test_route_dispatches_after_clarify_released(maker, monkeypatch):
 
     monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
 
+    # Spawn 7 is already in the roster → route dispatches directly (no invite card).
+    from server.services import roster_service
+    await roster_service.join("main", 7, via="invited")
+
     await arslan.handle_user_message("main", "audit my site", _events([]))
     assert len(dispatched) == 1
 
@@ -258,6 +262,10 @@ async def test_routing_resumes_after_clarify_cleared(maker, monkeypatch):
         dispatched.append((args, kwargs))
 
     monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
+
+    # Spawn 7 is already in the roster → route dispatches directly (no invite card).
+    from server.services import roster_service
+    await roster_service.join("main", 7, via="invited")
 
     events = []
     await arslan.handle_user_message("main", "audit my site", _events(events))

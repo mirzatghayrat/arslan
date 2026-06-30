@@ -50,6 +50,9 @@ async def test_routed_turn_creates_run_with_steps(memdb, monkeypatch):
                 "summary_message_id": sid, "assistant_message_id": 1, "escalation": None}
     monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
 
+    # Spawn already in roster → route dispatches directly (no invite card).
+    await roster_service.join("c1", spawn_id, via="invited")
+
     events = []
     await arslan.handle_user_message("c1", "查一下", events.append)
 

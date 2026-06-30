@@ -45,6 +45,10 @@ async def test_route_turn_end_to_end(maker, monkeypatch):
 
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
 
+    # Spawn 7 already in roster → route dispatches directly (no invite card).
+    from server.services import roster_service
+    await roster_service.join("main", 7, via="invited")
+
     events = []
     await arslan.handle_user_message("main", "make posts", lambda e: events.append(e))
 

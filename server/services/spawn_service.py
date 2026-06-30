@@ -227,6 +227,18 @@ async def load_all_spawns() -> list[Spawn]:
         return list(rows.scalars().all())
 
 
+async def load_one_spawn(spawn_id: int) -> Spawn | None:
+    """Load a single Spawn by id, managing its own session (session-less callers).
+
+    Mirrors `load_all_spawns` for call-sites that don't already hold a session —
+    e.g. the orchestrator building an invite-card capability summary.
+    """
+    from server.db import session as db_session
+
+    async with db_session.AsyncSessionLocal() as db:
+        return await db.get(Spawn, spawn_id)
+
+
 async def create_spawn(session: AsyncSession, **fields) -> Spawn:
     """Insert a spawn row. Used by the build WebSocket and test seeding."""
     spawn = Spawn(**fields)

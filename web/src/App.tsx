@@ -26,9 +26,7 @@ import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
-import InviteConfirmCard from './components/InviteConfirmCard';
 import StaffingPickerCard from './components/StaffingPickerCard';
-import { resolveSpawnName } from './api/resolveSpawnName';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 
@@ -556,21 +554,6 @@ export default function App() {
               />
             )}
 
-            {activeSection === 'arslan' && pendingInvite && (
-              <div className="suggest-create-card-overlay">
-                <InviteConfirmCard
-                  spawnId={pendingInvite.spawnId}
-                  spawnName={resolveSpawnName(useSpawnStore.getState().spawns, pendingInvite.spawnId)}
-                  reason={pendingInvite.reason}
-                  onConfirm={(spawnId) => {
-                    wsSend({ type: 'roster_invite', spawn_id: spawnId });
-                    clearPendingInvite();
-                  }}
-                  onCancel={() => clearPendingInvite()}
-                />
-              </div>
-            )}
-
             {activeSection === 'arslan' && pendingStaffing && (
               <div className="suggest-create-card-overlay">
                 <StaffingPickerCard
@@ -623,6 +606,15 @@ export default function App() {
                   }
                 }}
                 conversationId={activeThreadId}
+                pendingInvite={pendingInvite}
+                onAcceptInvite={(spawnId) => {
+                  wsSend({ type: 'roster_invite', spawn_id: spawnId });
+                  clearPendingInvite();
+                }}
+                onDismissInvite={() => {
+                  wsSend({ type: 'dismiss_invite' });
+                  clearPendingInvite();
+                }}
               />
             )}
 

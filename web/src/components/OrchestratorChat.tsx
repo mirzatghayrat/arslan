@@ -21,6 +21,8 @@ import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import EvalSummary from './EvalSummary';
 import AttachBar, { type Attachment } from './AttachBar';
+import InviteConfirmCard from './InviteConfirmCard';
+import { resolveSpawnName } from '../api/resolveSpawnName';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -43,6 +45,12 @@ interface OrchestratorChatProps {
   onOpenSettings?: () => void;
   /** The active conversation id — consumed by SandboxPanel (later task). */
   conversationId?: string;
+  /** Pending inline roster invite (from a backend `propose_invite` frame). */
+  pendingInvite?: { spawnId: number; reason: string } | null;
+  /** Accept the pending invite → join + dispatch the parked task. */
+  onAcceptInvite?: (spawnId: number) => void;
+  /** Dismiss the pending invite → clear it (no dispatch). */
+  onDismissInvite?: () => void;
 }
 
 export default function OrchestratorChat({
@@ -59,6 +67,9 @@ export default function OrchestratorChat({
   hasModel = true,
   onOpenSettings,
   conversationId,
+  pendingInvite,
+  onAcceptInvite,
+  onDismissInvite,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -1100,6 +1111,20 @@ export default function OrchestratorChat({
               </span>
             </div>
           </div>
+        )}
+
+        {/* Inline roster-invite card: rendered as the last item in the chat flow when
+            Arslan proposes pulling a not-yet-in-roster spawn in. Accept → join + dispatch
+            the parked task; Dismiss → clear. Not an overlay — it reads inline below the
+            last message. */}
+        {pendingInvite && (
+          <InviteConfirmCard
+            spawnId={pendingInvite.spawnId}
+            spawnName={resolveSpawnName(spawns, pendingInvite.spawnId)}
+            reason={pendingInvite.reason}
+            onConfirm={(spawnId) => onAcceptInvite?.(spawnId)}
+            onCancel={() => onDismissInvite?.()}
+          />
         )}
       </div>
 

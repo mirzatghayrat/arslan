@@ -518,6 +518,21 @@ async def _handle_answer(
     emit({"type": "stream_end", "message_id": msg_id})
 
 
+async def _invite_capability_summary(spawn_id: int) -> str:
+    """A short, one-line capability summary for the invite card (the spawn's
+    persona_role, falling back to its first capability, then a generic line)."""
+    spawn = await spawn_service.load_one_spawn(spawn_id)
+    if spawn is None:
+        return "can help with this task"
+    role = (getattr(spawn, "persona_role", None) or "").strip()
+    if role:
+        return role
+    caps = getattr(spawn, "capabilities", None) or []
+    if caps:
+        return str(caps[0])
+    return "can help with this task"
+
+
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
                         user_message: str = "", route_ms: int | None = None,
                         attached_context: str | None = None) -> None:
@@ -528,10 +543,26 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
                               mode="propose", user_message=user_message, route_ms=route_ms,
                               attached_context=attached_context)
-    else:
-        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
-                              user_message=user_message, route_ms=route_ms,
-                              attached_context=attached_context)
+        return
+
+    # Inline roster invite: if the router wants to route to a spawn that is NOT yet a
+    # member of this conversation, do NOT silently auto-join + dispatch. Instead propose
+    # an inline Accept/Dismiss card (`propose_invite`) and park the task in an `inviting`
+    # phase. On Accept the WS `roster_invite` handler joins + dispatches the stored task;
+    # on Dismiss `dismiss_invite` clears it. A spawn already in the roster dispatches
+    # directly (unchanged).
+    if not await roster_service.is_member(conversation_id, result.spawn_id):
+        summary = await _invite_capability_summary(result.spawn_id)
+        await phase_service.set_inviting(
+            conversation_id, result.spawn_id,
+            task_brief=result.task_brief or "", user_message=user_message,
+        )
+        emit(protocol.propose_invite(result.spawn_id, summary))
+        return
+
+    await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
+                          user_message=user_message, route_ms=route_ms,
+                          attached_context=attached_context)
 
 
 async def propose_invite(

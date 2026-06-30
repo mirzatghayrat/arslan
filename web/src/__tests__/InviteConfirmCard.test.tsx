@@ -13,6 +13,8 @@ vi.mock("react-i18next", () => ({
       }
       if (k === "invite_card.confirm") return "Confirm";
       if (k === "invite_card.cancel") return "Cancel";
+      if (k === "invite_card.accept") return "Accept";
+      if (k === "invite_card.dismiss") return "Dismiss";
       return k;
     },
   }),
@@ -74,6 +76,21 @@ describe("InviteConfirmCard", () => {
     );
     fireEvent.click(screen.getByTestId("invite-cancel"));
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("renders Accept / Dismiss labels and the inline card test id", () => {
+    render(
+      <InviteConfirmCard
+        spawnId={7}
+        spawnName="Mermer"
+        reason="needs a translator"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("invite-confirm-card")).toBeTruthy();
+    expect(screen.getByText("Accept")).toBeTruthy();
+    expect(screen.getByText("Dismiss")).toBeTruthy();
   });
 });
 

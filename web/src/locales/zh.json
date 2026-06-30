@@ -84,7 +84,9 @@
   "invite_card": {
     "heading": "因为{{reason}}，把 {{name}} 拉进来？",
     "confirm": "确认",
-    "cancel": "取消"
+    "cancel": "取消",
+    "accept": "接受",
+    "dismiss": "忽略"
   },
   "create_card": {
     "heading": "要为此创建一个 {{name}} 分身吗？",

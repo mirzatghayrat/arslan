@@ -16,6 +16,7 @@ from server.orchestrator import arslan, dispatcher, memory
 from server.services import (
     distill_service,
     ingest,
+    phase_service,
     roster_service,
     settings_service,
     spawn_service,
@@ -280,11 +281,31 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 except (TypeError, ValueError):
                     await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
                     continue
+                # A pending inline invite (`inviting` phase) means the user just Accepted
+                # an Arslan-proposed invite. Joining + dispatching the parked task is done
+                # by `_dispatch_spawn` (which emits the join notice + streams the response).
+                # A manual invite from the Ledger has no pending phase → just join.
+                pending_invite = await phase_service.get_pending_invite(conversation_id)
+                if pending_invite is not None and pending_invite.get("spawn_id") == spawn_id:
+                    await phase_service.clear(conversation_id)
+                    await run_spawn(
+                        spawn_id,
+                        pending_invite.get("task_brief") or "",
+                        user_message=pending_invite.get("user_message") or "",
+                    )
+                    continue
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")
                 if newly_joined:
                     spawn_name = await dispatcher.get_spawn_name(spawn_id)
                     await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
+                continue
+
+            if msg_type == "dismiss_invite":
+                # The user Dismissed an Arslan-proposed inline invite card. Clear the
+                # parked `inviting` phase so no dispatch happens; Arslan can answer
+                # directly on the next turn.
+                await phase_service.clear(conversation_id)
                 continue
 
             if msg_type == "roster_kick":

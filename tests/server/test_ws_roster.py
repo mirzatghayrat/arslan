@@ -172,3 +172,94 @@ def test_roster_kick_emits_roster_event(staged_client):
         roster = ws.receive_json()
         assert roster["type"] == "roster_update"
         assert roster["members"] == []
+
+
+# ---------------------------------------------------------------------------
+# Inline invite Accept / Dismiss: roster_invite with a pending `inviting` phase
+# dispatches the parked task; dismiss_invite clears it (no dispatch).
+# ---------------------------------------------------------------------------
+
+def test_roster_invite_with_pending_dispatches_parked_task(staged_client, monkeypatch):
+    """Accept: a pending `inviting` phase whose spawn_id matches the invite → the
+    parked task is dispatched (via arslan.dispatch_spawn), not just a bare join."""
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import phase_service
+
+    dispatched = []
+
+    async def _fake_dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw):
+        dispatched.append({"conversation_id": conversation_id, "spawn_id": spawn_id,
+                           "task_brief": task_brief, "user_message": kw.get("user_message")})
+        emit({"type": "stream_end", "message_id": 0})
+
+    monkeypatch.setattr(arslan_mod, "dispatch_spawn", _fake_dispatch_spawn)
+
+    # Park a pending invite for spawn 4.
+    async def _park():
+        await phase_service.set_inviting(
+            "main", 4, task_brief="draft a post", user_message="help me on linkedin")
+    anyio.run(_park)
+
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        for _ in range(10):
+            f = ws.receive_json()
+            if f.get("type") == "stream_end":
+                break
+
+    assert len(dispatched) == 1
+    assert dispatched[0]["spawn_id"] == 4
+    assert dispatched[0]["task_brief"] == "draft a post"
+    assert dispatched[0]["user_message"] == "help me on linkedin"
+    # The inviting phase is cleared on accept.
+    assert anyio.run(phase_service.get_pending_invite, "main") is None
+
+
+def test_roster_invite_without_pending_just_joins(staged_client, monkeypatch):
+    """A manual Ledger invite (no pending `inviting` phase) must NOT dispatch — only join."""
+    from server.orchestrator import arslan as arslan_mod
+
+    dispatched = []
+
+    async def _fake_dispatch_spawn(*args, **kw):  # pragma: no cover - asserts NOT called
+        dispatched.append(args)
+
+    monkeypatch.setattr(arslan_mod, "dispatch_spawn", _fake_dispatch_spawn)
+
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        event = ws.receive_json()
+        assert event["type"] == "roster_event"
+        assert event["action"] == "joined"
+        roster = ws.receive_json()
+        assert roster["type"] == "roster_update"
+        assert len(roster["members"]) == 1
+
+    assert dispatched == [], "a manual invite must not dispatch"
+
+
+def test_dismiss_invite_clears_pending(staged_client):
+    """dismiss_invite clears a pending `inviting` phase so no dispatch happens."""
+    from server.services import phase_service
+
+    async def _park():
+        await phase_service.set_inviting(
+            "main", 4, task_brief="draft a post", user_message="help")
+    anyio.run(_park)
+    assert anyio.run(phase_service.get_pending_invite, "main") is not None
+
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "dismiss_invite"})
+        # No frame is sent back for dismiss; confirm the socket is still alive
+        # by following with a valid invite.
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        ws.receive_json()  # roster_event "joined"
+        ws.receive_json()  # roster_update
+
+    assert anyio.run(phase_service.get_pending_invite, "main") is None

@@ -238,6 +238,10 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
             "escalation": None,
         }
 
+    # Spawn 7 is already in the roster → route dispatches directly (no invite card).
+    # Insert membership via the REAL join before stubbing it below.
+    await roster_service.join("main", 7, via="invited")
+
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
     monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _fake_noop())
     monkeypatch.setattr(roster_service, "list_roster", lambda c: _fake_list())
@@ -419,6 +423,7 @@ async def test_suggest_create_leaves_overlaps_when_no_existing_match(maker, monk
 @pytest.mark.asyncio
 async def test_route_path_emits_spawn_meta(maker, monkeypatch):
     from server.orchestrator import arslan, router
+    from server.services import roster_service
 
     async def _fake_route(conv, msg):
         return router.RouterResult(action="route", spawn_id=7, task_brief="do X")
@@ -437,6 +442,8 @@ async def test_route_path_emits_spawn_meta(maker, monkeypatch):
         }
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
+    # Spawn 7 is already in the roster → route dispatches directly (no invite card).
+    await roster_service.join("main", 7, via="invited")
 
     events = []
     await arslan.handle_user_message("main", "make posts", _events(events))

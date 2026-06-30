@@ -82,6 +82,40 @@ async def clear(conversation_id: str, spawn_id: int | None = None) -> None:
         await db.commit()
 
 
+async def set_inviting(
+    conversation_id: str, spawn_id: int, *, task_brief: str, user_message: str
+) -> None:
+    """Persist a pending roster invite for the conversation.
+
+    The router wanted to route to `spawn_id`, but that spawn is NOT yet in the
+    roster — so instead of auto-joining we proposed an invite card and parked the
+    task here. On Accept the WS handler reads this back (via `get_pending_invite`),
+    joins the spawn, and dispatches the stored task. Uses the sentinel spawn_id=0
+    row (same as clarifying/gathering) and stows the real payload in `direction`
+    as JSON, so no new column is needed.
+    """
+    payload = {"spawn_id": spawn_id, "task_brief": task_brief, "user_message": user_message}
+    await _upsert_phase(
+        conversation_id,
+        spawn_id=_CLARIFYING_SPAWN_ID,
+        phase="inviting",
+        direction=json.dumps(payload, ensure_ascii=False),
+    )
+
+
+async def get_pending_invite(conversation_id: str) -> dict | None:
+    """Return the pending invite payload `{spawn_id, task_brief, user_message}`,
+    or None if there is no active `inviting` phase / the JSON is corrupt."""
+    pending = await get_pending(conversation_id)
+    if not pending or pending.get("phase") != "inviting":
+        return None
+    try:
+        return json.loads(pending.get("direction") or "{}")
+    except Exception:  # noqa: BLE001
+        logger.warning("invite: corrupted invite JSON for %s", conversation_id)
+        return None
+
+
 async def set_gathering(conversation_id: str, slots: dict) -> None:
     """Persist accumulating gather slots as JSON in the direction column.
 

@@ -84,7 +84,9 @@
   "invite_card": {
     "heading": "{{reason}}のため、{{name}} を呼びますか？",
     "confirm": "確認",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "accept": "承認",
+    "dismiss": "閉じる"
   },
   "create_card": {
     "heading": "これ用に {{name}} スポーンを作成しますか？",

@@ -8,9 +8,39 @@ emit `propose_invite{spawn_id, reason}` and join NOTHING.
 """
 import anyio
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import server.db.session as db_session
+from server.db.models import Base, Spawn
 from server.orchestrator import arslan
 from server.ws import protocol
+
+
+@pytest.fixture
+def maker(tmp_path, monkeypatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'invite.db'}")
+    m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _seed():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with m() as s:
+            s.add(
+                Spawn(
+                    id=7,
+                    name="seo-auditor",
+                    domain_category="marketing",
+                    domain_subcategory="seo",
+                    capabilities=["seo-audit"],
+                    persona_role="audits sites for SEO issues",
+                    system_prompt="You are an SEO analyst.",
+                )
+            )
+            await s.commit()
+
+    anyio.run(_seed)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    return m
 
 
 def test_propose_invite_frame_shape():
@@ -43,3 +73,97 @@ def test_propose_invite_helper_emits_and_does_not_join(monkeypatch):
 
     assert {"type": "propose_invite", "spawn_id": 7, "reason": "best fit for the SEO subtask"} in frames
     assert joined == [], "propose step must NOT join the roster"
+
+
+# ---------------------------------------------------------------------------
+# Inline roster-invite flow: route → propose (no dispatch) when spawn not in roster
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_route_to_non_roster_spawn_proposes_invite_no_dispatch(maker, monkeypatch):
+    """Router routes to a spawn that is NOT in the conversation roster → emit
+    propose_invite + persist a pending `inviting` phase, and DO NOT dispatch."""
+    from server.orchestrator import router
+    from server.services import phase_service
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="route", spawn_id=7, task_brief="audit keywords")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    dispatched = []
+
+    async def _spy_dispatch(*args, **kwargs):
+        dispatched.append((args, kwargs))
+
+    monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
+
+    events = []
+    await arslan.handle_user_message("main", "audit my site", events.append)
+
+    invite = next((e for e in events if e.get("type") == "propose_invite"), None)
+    assert invite is not None, "expected a propose_invite frame"
+    assert invite["spawn_id"] == 7
+    # capability summary comes from the spawn's persona_role
+    assert invite["reason"] == "audits sites for SEO issues"
+    assert dispatched == [], "must NOT dispatch — the invite awaits user confirmation"
+
+    pending = await phase_service.get_pending_invite("main")
+    assert pending == {"spawn_id": 7, "task_brief": "audit keywords", "user_message": "audit my site"}
+
+
+@pytest.mark.asyncio
+async def test_route_to_roster_member_dispatches_directly_no_invite(maker, monkeypatch):
+    """Router routes to a spawn ALREADY in the roster → dispatch directly, no card."""
+    from server.orchestrator import router
+    from server.services import roster_service
+
+    await roster_service.join("main", 7, via="invited")
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="route", spawn_id=7, task_brief="audit keywords")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    dispatched = []
+
+    async def _spy_dispatch(*args, **kwargs):
+        dispatched.append((args, kwargs))
+
+    monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
+
+    events = []
+    await arslan.handle_user_message("main", "audit my site", events.append)
+
+    assert not any(e.get("type") == "propose_invite" for e in events), "no card for a roster member"
+    assert len(dispatched) == 1, "a roster member dispatches directly"
+
+
+@pytest.mark.asyncio
+async def test_invite_capability_summary_falls_back_to_capability(maker, monkeypatch):
+    """When a spawn has no persona_role, the invite summary falls back to its
+    first capability."""
+    from server.orchestrator import router
+    from server.services import spawn_service
+
+    # Drop persona_role so the fallback path is exercised.
+    async with maker() as s:
+        spawn = await s.get(Spawn, 7)
+        spawn.persona_role = None
+        await s.commit()
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="route", spawn_id=7, task_brief="x")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan, "_dispatch_spawn", lambda *a, **k: _noop())
+
+    events = []
+    await arslan.handle_user_message("main", "audit my site", events.append)
+    invite = next(e for e in events if e.get("type") == "propose_invite")
+    assert invite["reason"] == "seo-audit"
+
+
+async def _noop():
+    return None

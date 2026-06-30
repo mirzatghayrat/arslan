@@ -84,7 +84,9 @@
   "invite_card": {
     "heading": "¿Traer a {{name}} porque {{reason}}?",
     "confirm": "Confirmar",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "accept": "Aceptar",
+    "dismiss": "Descartar"
   },
   "create_card": {
     "heading": "¿Quieres un spawn de {{name}} para esto?",

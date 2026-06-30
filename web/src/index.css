@@ -1421,6 +1421,76 @@
   background: var(--surface-raised);
 }
 
+/* ── Inline roster-invite card ────────────────────────────────────────────────────
+   Rendered as the last item in the chat flow (NOT an overlay): a compact row with
+   the proposed spawn's avatar + name + one-line capability + Accept / Dismiss. */
+.invite-inline-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.875rem;
+  background: var(--surface);
+  max-width: 32rem;
+}
+.invite-inline-card__avatar {
+  flex-shrink: 0;
+}
+.invite-inline-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+.invite-inline-card__name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.invite-inline-card__reason {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.invite-inline-card__actions {
+  display: flex;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+.invite-inline-card__btn {
+  padding: 0.3125rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.6875rem;
+  font-family: monospace;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.invite-inline-card__btn--primary {
+  background: var(--primary);
+  border: 1px solid transparent;
+  color: var(--primary-foreground);
+}
+.invite-inline-card__btn--primary:hover {
+  opacity: 0.88;
+}
+.invite-inline-card__btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--muted-foreground);
+}
+.invite-inline-card__btn--ghost:hover {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
 /* ── EvalSummary overlay ──────────────────────────────────────────────────────── */
 
 /* Entry button — mirrors .spawn-detail-open-btn */

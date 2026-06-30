@@ -84,7 +84,9 @@
   "invite_card": {
     "heading": "{{name}} dazuholen, weil {{reason}}?",
     "confirm": "Bestätigen",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "accept": "Annehmen",
+    "dismiss": "Verwerfen"
   },
   "create_card": {
     "heading": "Möchtest du dafür einen {{name}}-Spawn?",
