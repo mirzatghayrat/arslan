@@ -69,6 +69,37 @@ def _claims_search(text: str) -> bool:
     return bool(_CLAIMS_SEARCH_RE.search(text or ""))
 
 
+# Forward-promise patterns: the model ends its turn PROMISING a future tool action instead of
+# emitting the tool JSON ("数据正在路上", "马上为您绘制…", "我这就去搜索", "STEP 2: 调用 web_extract",
+# "let me search"). Distinct from the _CLAIMS_* regexes above, which catch the inverse — claiming
+# a result already produced. Tight on purpose (anchored on first-person / imperative + a tool-action
+# verb) so a complete answer that merely mentions next steps doesn't trip it.
+_PROMISES_ACTION_RE = re.compile(
+    r"正在(为您|帮您|努力)?\s*(路上|搜索|查询|抓取|获取|拉取|加载|生成|绘制|出图|制作)"
+    r"|数据\s*(正在|马上|即将|这就)\s*(路上|赶来|送达|生成|呈现)"
+    r"|(马上|这就|现在就|立刻|立即|即将)\s*(去|来)?\s*(为您|帮您|给您)?\s*(搜索|查询|查一下|抓取|获取|拉取|生成|绘制|出图|画|制作|呈现|调用)"
+    # first-person promise: 我来/让我/现在让我(继续) + a tool-action verb. Anchored on 我/让我 so a
+    # completed answer that says "接下来你可以自行搜索" (second-person) never trips it.
+    r"|(现在)?\s*(我|让我)\s*(来|去|先|这就|马上|现在就|继续)?\s*(为您|帮您)?\s*"
+    r"(搜索|查|查询|抓取|获取|拉取|绘制|生成|画|制作|调用)"
+    # promising a chart/figure: 生成/绘制/画/制作 … 图/图表/趋势图/全景图 (+ optional 以便/接着 lead-in)
+    r"|(以便|接着|然后)?\s*(生成|绘制|画|制作|输出)\s*[^。\n]{0,8}(图表|趋势图|全景图|示意图|图$|图[，,。\s])"
+    # STEP narration: 'STEP <anything-short> 调取/搜索/获取/生成…' — the icon/number between STEP and
+    # the verb is arbitrary (we saw 'STEP <icon> 调取各项目详情'), so match loosely.
+    r"|STEP\s*\S{0,4}\s*(调用|调取|搜索|抓取|获取|查询|绘制|生成|call|search|fetch|generate)"
+    r"|第\s*[一二三四五六七八九十\d]+\s*步\s*[:：]?\s*(调用|调取|搜索|抓取|获取)"
+    r"|(下一步|接下来)\s*[，,：:]?\s*(我|让我)\s*(会|要|将|就|继续)?\s*(搜索|查询|抓取|获取|绘制|生成|调用)"
+    r"|调用\s*(web_search|web_extract|render_chart)"
+    r"|let me (search|look this up|fetch|pull|grab|draw|generate|chart|get the data)"
+    r"|i(?:'ll| will| am going to|'m going to)\s+(?:now\s+|quickly\s+|go\s+)?"
+    r"(search|fetch|pull|retrieve|draw|generate|chart|look up|gather)",
+    re.IGNORECASE)
+
+
+def _promises_action(text: str) -> bool:
+    return bool(_PROMISES_ACTION_RE.search(text or ""))
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
@@ -127,6 +158,7 @@ async def run(
     tool_trace: list[dict] = []
     fired: set[str] = set()          # tool keys actually executed this run
     forced_retry: set[str] = set()   # tools we've already forced a retry for (bound the loop)
+    promise_retries = 0              # forward-promise nudges issued this run (bounded below)
     wired_keys = {t["key"] for t in wired}
 
     # Proactive deterministic forcing (spawn path only): when force_tools=True and the
@@ -211,6 +243,22 @@ async def run(
                     f"actually call it this turn — so there is no result and no chart. Emit ONLY the "
                     f"{claimed} tool JSON now, or answer honestly WITHOUT claiming you used a tool or made a chart."})
                 continue
+
+        # Forward-promise guard: the model ended its turn PROMISING a tool action ("数据正在路上",
+        # "马上为您绘制", "现在让我获取…", "STEP 2: 调取…", "let me search") but emitted NO tool call —
+        # so nothing ran and the user is left waiting on a promise. Only nag when a wired tool is still
+        # unused (pure-chat spawns are never pushed to use tools), and at most twice per run (a single
+        # nudge isn't enough for a model that narrates step-by-step before acting).
+        if (not forced and promise_retries < 2
+                and (wired_keys - fired) and _promises_action(content)):
+            promise_retries += 1
+            convo.append({"role": "assistant", "content": content})
+            convo.append({"role": "user", "content":
+                "You ended your turn PROMISING to do something ('正在路上' / '马上为您…' / 'STEP N: 调用…' "
+                "/ 'let me search') but emitted NO tool call — so nothing actually ran and the user is left "
+                "waiting on a promise. Do it NOW: emit ONLY the tool JSON to run it this turn, OR give your "
+                "COMPLETE final answer with no promise of future action."})
+            continue
 
         # plain text = final answer (parsed was not a dispatchable tool/escalate)
         if isinstance(parsed, dict):

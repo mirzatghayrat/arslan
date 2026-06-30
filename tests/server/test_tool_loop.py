@@ -319,6 +319,89 @@ async def test_retry_at_most_once_per_tool(monkeypatch):
     assert out["final"] == "我又搜索了…"   # retried once, then accepted (no infinite loop)
 
 
+async def test_forward_promise_retry_triggers_action(monkeypatch):
+    # The model PROMISES a chart instead of calling render_chart ("数据正在路上"). The forward-promise
+    # guard must re-prompt → real render_chart fires → final answer. (The user's exact complaint.)
+    from server.registry import executors
+    adapter = _ScriptedAdapter([
+        "马上为您绘制今日 GitHub 趋势全景图！数据正在路上 🚀",                       # promise, no tool
+        '{"tool": "render_chart", "args": {"type": "bar", "x": ["a"], "series": [{"name": "s", "values": [1]}]}}',
+        "图表如下，已完成。",
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _C:
+        async def execute(self, args):
+            return {"ok": True, "external": False, "summary": "chart",
+                    "artifact": {"kind": "svg", "content": "<svg/>"}}
+    monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
+    events = []
+    out = await tool_loop.run(system="S", user_content="今天的热门 GitHub 项目画个图", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("render_chart"))
+    assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
+    assert out["final"] == "图表如下，已完成。"
+
+
+async def test_forward_promise_skipped_when_no_tools_wired(monkeypatch):
+    # A promise with NO tool wired (pure-chat spawn) must NOT be nagged — returned as the final.
+    adapter = _ScriptedAdapter(["我这就为您搜索一下最新消息。"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools())                    # no tools
+    assert out["final"] == "我这就为您搜索一下最新消息。"
+    assert len(adapter.calls) == 1                                       # no re-prompt
+
+
+async def test_forward_promise_retry_at_most_twice(monkeypatch):
+    # Three promises in a row → re-prompted at most twice, then the third is accepted (no loop).
+    adapter = _ScriptedAdapter(["马上为您搜索…", "这就去查询数据…", "现在让我抓取数据…"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert out["final"] == "现在让我抓取数据…"
+    assert len(adapter.calls) == 3                                       # exactly two retries
+
+
+def test_promises_action_matches_real_world_phrasings():
+    # Phrasings observed live from a narrating spawn — these MUST trip the guard.
+    for s in [
+        "好的，拿到了 GitHub Trending 的列表！现在让我获取每个项目的具体 star 数据，以便生成趋势图。",
+        "STEP ① 调取各项目详情 → 获取 STAR 数",
+        "STEP 🔍 搜索其他热门项目的 STAR 数",
+        "现在让我继续获取其他项目的 star 数据。",
+        "马上为您绘制今日 GitHub 趋势全景图！数据正在路上",
+        "let me search for the latest data",
+    ]:
+        assert tool_loop._promises_action(s), s
+
+
+def test_promises_action_ignores_complete_answers():
+    # Completed answers / second-person suggestions must NOT trip the guard.
+    for s in [
+        "分析完成。接下来你可以根据需要自行搜索更多细节。",
+        "这是最终结论，图表已经在上方呈现。",
+        "我认为这个项目很有潜力，值得关注。",
+        "Here's a summary of what I found.",
+        "总共有三个要点需要你考虑。",
+    ]:
+        assert not tool_loop._promises_action(s), s
+
+
+async def test_forward_promise_no_false_positive_on_complete_answer(monkeypatch):
+    # A complete answer that merely mentions a future step ("接下来你可以自行搜索") must NOT trigger —
+    # the regex is anchored on first-person/imperative intent, not any mention of searching.
+    adapter = _ScriptedAdapter(["分析完成。接下来你可以根据需要自行搜索更多细节。"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="x", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert out["final"] == "分析完成。接下来你可以根据需要自行搜索更多细节。"
+    assert len(adapter.calls) == 1                                       # no re-prompt
+
+
 async def test_force_tools_runs_web_search_first(monkeypatch):
     from server.registry import executors
     from server.services import tool_intent
