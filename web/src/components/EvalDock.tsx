@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
@@ -29,17 +29,29 @@ export default function EvalDock({ spawnId }: Props) {
 
   // Lightweight stat fetch for the collapsed bar. EvalSummary fetches its own
   // copy when the slide-up mounts; this is just the at-a-glance summary.
-  const fetchedFor = useRef<number | string>("__none__");
+  // NOTE: no ref-based "already fetched" guard — under React StrictMode the ref
+  // persists across the mount→cleanup→remount cycle, which would cancel the first
+  // fetch and skip the second, leaving the bar permanently at "0 runs". The
+  // [spawnId] dependency + the `cancelled` flag are the correct refetch control.
   useEffect(() => {
-    const key = spawnId ?? "__all__";
-    if (fetchedFor.current === key) return;
-    fetchedFor.current = key;
     let cancelled = false;
     api.getRuns(spawnId)
       .then((r) => { if (!cancelled) setRuns(r); })
       .catch(() => { /* bar stat is best-effort */ });
     return () => { cancelled = true; };
   }, [spawnId]);
+
+  // Esc closes the open disclosure level (detail first, then summary).
+  useEffect(() => {
+    if (detailRunId == null && !open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (detailRunId != null) setDetailRunId(null);
+      else setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailRunId, open]);
 
   const scored = runs.filter((r) => r.status === "scored" && r.overall_score != null);
   const avg = scored.length
