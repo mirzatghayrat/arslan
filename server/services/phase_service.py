@@ -83,18 +83,25 @@ async def clear(conversation_id: str, spawn_id: int | None = None) -> None:
 
 
 async def set_inviting(
-    conversation_id: str, spawn_id: int, *, task_brief: str, user_message: str
+    conversation_id: str, spawn_id: int, *, task_brief: str, user_message: str,
+    needs_proposal: bool = False,
 ) -> None:
     """Persist a pending roster invite for the conversation.
 
     The router wanted to route to `spawn_id`, but that spawn is NOT yet in the
     roster — so instead of auto-joining we proposed an invite card and parked the
     task here. On Accept the WS handler reads this back (via `get_pending_invite`),
-    joins the spawn, and dispatches the stored task. Uses the sentinel spawn_id=0
+    joins the spawn, and dispatches the stored task — in the SAME mode a roster-member
+    route would have used (propose-mode when `needs_proposal`, else execute). The
+    `needs_proposal` flag captured at route time is carried so the accept handler
+    re-makes the exact same propose-vs-execute decision. Uses the sentinel spawn_id=0
     row (same as clarifying/gathering) and stows the real payload in `direction`
     as JSON, so no new column is needed.
     """
-    payload = {"spawn_id": spawn_id, "task_brief": task_brief, "user_message": user_message}
+    payload = {
+        "spawn_id": spawn_id, "task_brief": task_brief, "user_message": user_message,
+        "needs_proposal": bool(needs_proposal),
+    }
     await _upsert_phase(
         conversation_id,
         spawn_id=_CLARIFYING_SPAWN_ID,
@@ -104,8 +111,8 @@ async def set_inviting(
 
 
 async def get_pending_invite(conversation_id: str) -> dict | None:
-    """Return the pending invite payload `{spawn_id, task_brief, user_message}`,
-    or None if there is no active `inviting` phase / the JSON is corrupt."""
+    """Return the pending invite payload `{spawn_id, task_brief, user_message,
+    needs_proposal}`, or None if there is no active `inviting` phase / corrupt JSON."""
     pending = await get_pending(conversation_id)
     if not pending or pending.get("phase") != "inviting":
         return None

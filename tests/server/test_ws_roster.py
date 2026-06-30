@@ -180,21 +180,23 @@ def test_roster_kick_emits_roster_event(staged_client):
 # ---------------------------------------------------------------------------
 
 def test_roster_invite_with_pending_dispatches_parked_task(staged_client, monkeypatch):
-    """Accept: a pending `inviting` phase whose spawn_id matches the invite → the
-    parked task is dispatched (via arslan.dispatch_spawn), not just a bare join."""
+    """Accept (execute-mode task): a pending `inviting` phase whose spawn_id matches the
+    invite → the parked task is dispatched via the shared `dispatch_routed` path with
+    needs_proposal=False, not just a bare join."""
     from server.orchestrator import arslan as arslan_mod
     from server.services import phase_service
 
     dispatched = []
 
-    async def _fake_dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw):
+    async def _fake_dispatch_routed(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw):
         dispatched.append({"conversation_id": conversation_id, "spawn_id": spawn_id,
-                           "task_brief": task_brief, "user_message": kw.get("user_message")})
+                           "task_brief": task_brief, "needs_proposal": needs_proposal,
+                           "user_message": kw.get("user_message")})
         emit({"type": "stream_end", "message_id": 0})
 
-    monkeypatch.setattr(arslan_mod, "dispatch_spawn", _fake_dispatch_spawn)
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _fake_dispatch_routed)
 
-    # Park a pending invite for spawn 4.
+    # Park a pending invite for spawn 4 (execute-mode: needs_proposal not set).
     async def _park():
         await phase_service.set_inviting(
             "main", 4, task_brief="draft a post", user_message="help me on linkedin")
@@ -213,8 +215,44 @@ def test_roster_invite_with_pending_dispatches_parked_task(staged_client, monkey
     assert dispatched[0]["spawn_id"] == 4
     assert dispatched[0]["task_brief"] == "draft a post"
     assert dispatched[0]["user_message"] == "help me on linkedin"
+    assert dispatched[0]["needs_proposal"] is False
     # The inviting phase is cleared on accept.
     assert anyio.run(phase_service.get_pending_invite, "main") is None
+
+
+def test_roster_invite_accept_propose_mode_dispatches_in_propose_mode(staged_client, monkeypatch):
+    """Accept (propose-mode task): a parked invite carrying needs_proposal=True dispatches
+    via `dispatch_routed` with needs_proposal=True, so the spawn responds in propose mode
+    (proposing phase) exactly as a roster-member route would have."""
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import phase_service
+
+    dispatched = []
+
+    async def _fake_dispatch_routed(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw):
+        dispatched.append({"spawn_id": spawn_id, "needs_proposal": needs_proposal})
+        emit({"type": "stream_end", "message_id": 0})
+
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _fake_dispatch_routed)
+
+    async def _park():
+        await phase_service.set_inviting(
+            "main", 4, task_brief="optimize linkedin", user_message="帮我优化",
+            needs_proposal=True)
+    anyio.run(_park)
+
+    with staged_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        for _ in range(10):
+            f = ws.receive_json()
+            if f.get("type") == "stream_end":
+                break
+
+    assert len(dispatched) == 1
+    assert dispatched[0]["spawn_id"] == 4
+    assert dispatched[0]["needs_proposal"] is True
 
 
 def test_roster_invite_without_pending_just_joins(staged_client, monkeypatch):
@@ -223,10 +261,10 @@ def test_roster_invite_without_pending_just_joins(staged_client, monkeypatch):
 
     dispatched = []
 
-    async def _fake_dispatch_spawn(*args, **kw):  # pragma: no cover - asserts NOT called
+    async def _fake_dispatch_routed(*args, **kw):  # pragma: no cover - asserts NOT called
         dispatched.append(args)
 
-    monkeypatch.setattr(arslan_mod, "dispatch_spawn", _fake_dispatch_spawn)
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _fake_dispatch_routed)
 
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history

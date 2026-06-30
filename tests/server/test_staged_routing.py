@@ -35,6 +35,9 @@ async def test_open_task_proposes_and_sets_phase(monkeypatch):
     monkeypatch.setattr(phase_service, "set_proposing", lambda c,s,d: _aw(None))
     monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _aw(None))
     monkeypatch.setattr(roster_service, "list_roster", lambda c: _aw([]))
+    # Already a roster member → the invite gate is skipped; the propose-vs-execute
+    # decision (needs_proposal=True → propose mode) runs as before.
+    monkeypatch.setattr(roster_service, "is_member", lambda c, s: _aw(True))
     r = router.RouterResult(action="route", spawn_id=4, task_brief="help linkedin", needs_proposal=True)
     await arslan._handle_route("conv-x", r, events.append)
     assert ("dispatch","propose") in events

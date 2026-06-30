@@ -110,7 +110,48 @@ async def test_route_to_non_roster_spawn_proposes_invite_no_dispatch(maker, monk
     assert dispatched == [], "must NOT dispatch — the invite awaits user confirmation"
 
     pending = await phase_service.get_pending_invite("main")
-    assert pending == {"spawn_id": 7, "task_brief": "audit keywords", "user_message": "audit my site"}
+    assert pending == {
+        "spawn_id": 7, "task_brief": "audit keywords", "user_message": "audit my site",
+        "needs_proposal": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_route_to_non_roster_spawn_propose_mode_still_proposes_invite(maker, monkeypatch):
+    """Regression (ordering bug): a route to a non-roster spawn whose task triggers
+    the staged `needs_proposal` (propose-before-execute) branch must STILL emit
+    propose_invite + NOT dispatch. The invite gates first contact regardless of the
+    eventual dispatch mode; `needs_proposal` is parked for the accept handler."""
+    from server.orchestrator import router
+    from server.services import phase_service
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(
+            action="route", spawn_id=7, task_brief="optimize linkedin", needs_proposal=True
+        )
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    dispatched = []
+
+    async def _spy_dispatch(*args, **kwargs):
+        dispatched.append((args, kwargs))
+
+    monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
+
+    events = []
+    await arslan.handle_user_message("main", "帮我优化我的 LinkedIn", events.append)
+
+    assert any(e.get("type") == "propose_invite" for e in events), "expected a propose_invite frame"
+    # The propose-mode 'proposal' frame must NOT fire before acceptance.
+    assert not any(e.get("type") == "proposal" for e in events), "no proposal frame before accept"
+    assert dispatched == [], "must NOT dispatch in propose-mode before the invite is accepted"
+
+    pending = await phase_service.get_pending_invite("main")
+    assert pending == {
+        "spawn_id": 7, "task_brief": "optimize linkedin",
+        "user_message": "帮我优化我的 LinkedIn", "needs_proposal": True,
+    }
 
 
 @pytest.mark.asyncio

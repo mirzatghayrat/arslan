@@ -533,36 +533,60 @@ async def _invite_capability_summary(spawn_id: int) -> str:
     return "can help with this task"
 
 
-async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
-                        user_message: str = "", route_ms: int | None = None,
-                        attached_context: str | None = None) -> None:
-    if getattr(result, "needs_proposal", False):
-        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-        await phase_service.set_proposing(conversation_id, result.spawn_id, result.task_brief or "")
-        emit({"type": "proposal", "spawn_id": result.spawn_id, "spawn_name": spawn_name})
-        await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
+async def dispatch_routed(  # noqa: ANN001
+    conversation_id, spawn_id, task_brief, needs_proposal, emit: EventSink, *,
+    user_message: str = "", route_ms: int | None = None,
+    attached_context: str | None = None,
+) -> None:
+    """The propose-vs-execute dispatch a roster-member route gets.
+
+    This is the SHARED first-response path: when `needs_proposal` is True the spawn
+    runs in propose-mode (set the proposing phase + emit a `proposal` frame), otherwise
+    it executes directly. Used by both `_handle_route` (target already a roster member)
+    AND the `roster_invite` accept handler (after the user accepted an inline invite),
+    so accepting an invite produces exactly the same first response the user would have
+    seen if the spawn had already been in the roster.
+    """
+    if needs_proposal:
+        spawn_name = await dispatcher.get_spawn_name(spawn_id)
+        await phase_service.set_proposing(conversation_id, spawn_id, task_brief or "")
+        emit({"type": "proposal", "spawn_id": spawn_id, "spawn_name": spawn_name})
+        await _dispatch_spawn(conversation_id, spawn_id, task_brief or "", emit,
                               mode="propose", user_message=user_message, route_ms=route_ms,
                               attached_context=attached_context)
         return
+    await _dispatch_spawn(conversation_id, spawn_id, task_brief or "", emit,
+                          user_message=user_message, route_ms=route_ms,
+                          attached_context=attached_context)
 
-    # Inline roster invite: if the router wants to route to a spawn that is NOT yet a
-    # member of this conversation, do NOT silently auto-join + dispatch. Instead propose
-    # an inline Accept/Dismiss card (`propose_invite`) and park the task in an `inviting`
-    # phase. On Accept the WS `roster_invite` handler joins + dispatches the stored task;
-    # on Dismiss `dismiss_invite` clears it. A spawn already in the roster dispatches
-    # directly (unchanged).
+
+async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
+                        user_message: str = "", route_ms: int | None = None,
+                        attached_context: str | None = None) -> None:
+    # Inline roster invite gates FIRST CONTACT — before the propose-vs-execute decision.
+    # If the router wants to route to a spawn that is NOT yet a member of this
+    # conversation, do NOT silently auto-join + dispatch (in EITHER propose or execute
+    # mode). Instead propose an inline Accept/Dismiss card (`propose_invite`) and park
+    # the task — carrying `needs_proposal` so the accept handler re-makes the same
+    # propose-vs-execute decision. On Accept the WS `roster_invite` handler joins and
+    # dispatches via `dispatch_routed` (the same shared path used below); on Dismiss
+    # `dismiss_invite` clears it. A spawn already in the roster dispatches directly.
     if not await roster_service.is_member(conversation_id, result.spawn_id):
         summary = await _invite_capability_summary(result.spawn_id)
         await phase_service.set_inviting(
             conversation_id, result.spawn_id,
             task_brief=result.task_brief or "", user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)),
         )
         emit(protocol.propose_invite(result.spawn_id, summary))
         return
 
-    await _dispatch_spawn(conversation_id, result.spawn_id, result.task_brief or "", emit,
-                          user_message=user_message, route_ms=route_ms,
-                          attached_context=attached_context)
+    # Already a roster member → dispatch directly via the shared propose-vs-execute path.
+    await dispatch_routed(
+        conversation_id, result.spawn_id, result.task_brief or "",
+        bool(getattr(result, "needs_proposal", False)), emit,
+        user_message=user_message, route_ms=route_ms, attached_context=attached_context,
+    )
 
 
 async def propose_invite(

@@ -110,6 +110,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
         )
 
+    async def run_routed(spawn_id: int, task_brief: str, needs_proposal: bool, **kw) -> None:
+        """Dispatch via the shared propose-vs-execute path (same first response a
+        roster-member route gives). Used when accepting an inline invite."""
+        await run_with_live_frames(
+            arslan.dispatch_routed(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw)
+        )
+
     # Connection-level state for in-chat attach + storage intent (Task 4).
     recent_material = ""
     recent_names: list[str] = []
@@ -282,15 +289,18 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
                     continue
                 # A pending inline invite (`inviting` phase) means the user just Accepted
-                # an Arslan-proposed invite. Joining + dispatching the parked task is done
-                # by `_dispatch_spawn` (which emits the join notice + streams the response).
+                # an Arslan-proposed invite. Dispatch via the SHARED propose-vs-execute path
+                # (`dispatch_routed`), re-making the same decision a roster-member route would
+                # have — propose-mode when the parked `needs_proposal` is set, else execute.
+                # The join notice + response stream come from `_dispatch_spawn` underneath.
                 # A manual invite from the Ledger has no pending phase → just join.
                 pending_invite = await phase_service.get_pending_invite(conversation_id)
                 if pending_invite is not None and pending_invite.get("spawn_id") == spawn_id:
                     await phase_service.clear(conversation_id)
-                    await run_spawn(
+                    await run_routed(
                         spawn_id,
                         pending_invite.get("task_brief") or "",
+                        bool(pending_invite.get("needs_proposal")),
                         user_message=pending_invite.get("user_message") or "",
                     )
                     continue
