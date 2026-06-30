@@ -12,6 +12,7 @@ import type {
   RegistryCatalog,
   RunDetailDto,
   RunListItem,
+  SeedsResponse,
   SpawnDetail,
   SpawnSummary,
   SuggestDraft,
@@ -66,8 +67,24 @@ export const api = {
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
   draftSpawn: (description: string) =>
     request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
-  createSpawn: (body: { name: string; domain: string; capabilities: string[]; persona_role?: string | null; persona_tone?: string | null }) =>
+  createSpawn: (body: {
+    name: string;
+    domain: string;
+    capabilities: string[];
+    persona_role?: string | null;
+    persona_tone?: string | null;
+    seed_refs?: string[];
+    equipment?: { toolsets: string[]; skills: string[] };
+  }) =>
     request<SpawnDetail>("/spawns", { method: "POST", body: JSON.stringify(body) }),
+  /** Browse / search the 249 persona seed identities. */
+  getSeeds: (query?: string, limit = 40, offset = 0) => {
+    const qs = new URLSearchParams();
+    if (query) qs.set("query", query);
+    qs.set("limit", String(limit));
+    qs.set("offset", String(offset));
+    return request<SeedsResponse>(`/seeds?${qs.toString()}`);
+  },
   getSpawn: (id: number) => request<SpawnDetail>(`/spawns/${id}`),
   deleteSpawn: (id: number) => request<void>(`/spawns/${id}`, { method: "DELETE" }),
   updateConfig: (id: number, body: Partial<SpawnDetail>) =>

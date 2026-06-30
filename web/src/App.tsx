@@ -17,7 +17,7 @@ import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import SpawnDirectChat from './components/SpawnDirectChat';
 import SpawnsDashboard from './components/SpawnsDashboard';
-import SpawnEditor from './components/SpawnEditor';
+import SpawnStudio from './components/SpawnStudio';
 import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
 import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, LayoutGrid, Paintbrush, Wrench, Brain } from 'lucide-react';
@@ -31,7 +31,6 @@ import StaffingPickerCard from './components/StaffingPickerCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
-import SpawnEditPopup from './components/SpawnEditPopup';
 
 interface ArslanThread {
   id: string;
@@ -276,9 +275,18 @@ export default function App() {
 
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
-  // Right-rail "Spawns Pipeline" inline edit popup (Feature E/F): opens in place
-  // over the chat view instead of navigating to the full-screen Ledger editor.
-  const [spawnEditPopupId, setSpawnEditPopupId] = useState<string | null>(null);
+  // Spawn Studio — the roomy create/configure panel (replaces SpawnEditPopup +
+  // the old full-screen SpawnEditor). `edit` carries a numeric spawn id.
+  const [studio, setStudio] = useState<{ mode: 'edit' | 'create'; spawnId?: number } | null>(null);
+
+  // Refresh the spawn list/roster after a studio save/create/delete so the rail
+  // and ledger reflect the change.
+  const refreshSpawnsList = useCallback(async () => {
+    try {
+      const fresh = await api.listSpawns();
+      setSpawns(fresh.map(toUiSpawn));
+    } catch { /* best-effort refresh */ }
+  }, []);
 
   // New Spawn Creation modal/overlay state
   // Gap-fill: a focused, human-confirmed acquisition modal whose result is
@@ -376,11 +384,9 @@ export default function App() {
     });
   };
 
-  // Handle opening Editor for a specific spawn
+  // Handle opening the Spawn Studio (edit mode) for a specific spawn.
   const handleEditSpawnEquipment = (spawnId: string) => {
-    setSelectedSpawnId(spawnId);
-    setPanelView('editor');
-    setActiveSection('ledger');
+    setStudio({ mode: 'edit', spawnId: Number(spawnId) });
   };
 
   // Handle raw creation sequence
@@ -679,7 +685,7 @@ export default function App() {
                 selectedSpawnId={selectedSpawnId}
                 setSelectedSpawnId={setSelectedSpawnId}
                 onEditEquipment={handleEditSpawnEquipment}
-                onCreateSpawnClick={() => setShowCreateModal(true)}
+                onCreateSpawnClick={() => setStudio({ mode: 'create' })}
                 onOpenDirectChat={(spawnId) => {
                   setActiveSpawnChatId(spawnId);
                   setActiveSection('spawn');
@@ -689,19 +695,6 @@ export default function App() {
                 setThreads={setThreads}
                 activeThreadId={activeThreadId}
                 backendStatus={backendStatus}
-              />
-            )}
-
-            {/* Dynamic Spawn Equipment Editor view */}
-            {activeSection === 'ledger' && panelView === 'editor' && selectedSpawnId && (
-              <SpawnEditor
-                spawnId={selectedSpawnId}
-                spawns={spawns}
-                setSpawns={setSpawns}
-                onBack={() => {
-                  setPanelView('default');
-                  setActiveSection('ledger');
-                }}
               />
             )}
 
@@ -875,7 +868,7 @@ export default function App() {
                     return (
                       <div
                         key={spawn.id}
-                        onClick={() => setSpawnEditPopupId(spawn.id)}
+                        onClick={() => setStudio({ mode: 'edit', spawnId: Number(spawn.id) })}
                         className="p-2.5 bg-background/80 border border-border/50 hover:border-primary/30 rounded-xl transition-all cursor-pointer flex flex-col gap-2 group animate-fade-in"
                       >
                         <div className="flex items-center justify-between">
@@ -936,26 +929,15 @@ export default function App() {
       </div>
       </main>
 
-      {/* Right-rail Spawns Pipeline → inline equipment edit popup (Feature E/F) */}
-      {spawnEditPopupId && (() => {
-        const s = spawns.find((sp) => sp.id === spawnEditPopupId);
-        if (!s) return null;
-        return (
-          <SpawnEditPopup
-            spawnId={Number(s.id)}
-            spawnName={s.name}
-            spawnDomain={s.domain}
-            onClose={() => setSpawnEditPopupId(null)}
-            onSaved={async () => {
-              // Refresh the spawn list/roster so the rail reflects the new equipment.
-              try {
-                const freshSpawns = await api.listSpawns();
-                setSpawns(freshSpawns.map(toUiSpawn));
-              } catch { /* best-effort refresh */ }
-            }}
-          />
-        );
-      })()}
+      {/* Spawn Studio — roomy create/configure panel (Ledger + right-rail entry). */}
+      {studio && (
+        <SpawnStudio
+          mode={studio.mode}
+          spawnId={studio.spawnId}
+          onClose={() => setStudio(null)}
+          onSaved={refreshSpawnsList}
+        />
+      )}
 
       {/* Dynamic Spawn Creator Dialog Box overlay */}
       {showCreateModal && (
@@ -1168,7 +1150,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setShowLedgerModal(false);
-                  setShowCreateModal(true);
+                  setStudio({ mode: 'create' });
                 }}
                 className="text-[10px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1.5 uppercase tracking-wider px-3 py-1.5 bg-foreground/[0.01] border border-border/80 rounded-lg hover:bg-foreground/[0.03] transition-all"
               >

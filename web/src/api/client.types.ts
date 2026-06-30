@@ -66,11 +66,26 @@ export interface ChatMessage {
   timestamp?: string;
 }
 
+/** A persona "seed identity" reference (one of the 249), resolved for display. */
+export interface SeedRef {
+  slug: string;
+  name: string;
+  division: string;
+  summary: string;
+}
+
+export interface SeedsResponse {
+  seeds: SeedRef[];
+  total: number;
+}
+
 export interface SpawnDetail extends SpawnSummary {
   persona_role: string | null;
   persona_tone: string | null;
   system_prompt: string;
   messages: ChatMessage[];
+  /** The composed persona seed identities (resolved). */
+  seeds?: SeedRef[];
 }
 
 export interface AppSettings {
