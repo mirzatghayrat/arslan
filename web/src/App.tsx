@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
+import { useSettingsStore } from './stores/settingsStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
@@ -218,6 +219,8 @@ export default function App() {
     api.getSettings().then((backendSettings) => {
       const mapped = toUiSettings(backendSettings);
       setSettings((prev) => ({ ...prev, ...mapped }));
+      // Also push into settingsStore so child components can read live settings
+      useSettingsStore.getState().setSettings(backendSettings);
     }).catch(() => {
       // backend unavailable — keep DEFAULT_SETTINGS
     });
@@ -714,7 +717,7 @@ export default function App() {
               <div className="bg-background/50 border border-border/80 rounded-xl p-3.5 space-y-2 text-[11px] font-mono">
                 <div className="flex justify-between">
                   <span className="text-subtle-foreground">{t('rail.routing_agent')}</span>
-                  <span className="text-primary">Arslan Primary</span>
+                  <span className="text-primary">{settings?.llmStrategy ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-subtle-foreground">{t('rail.roster_count')}</span>

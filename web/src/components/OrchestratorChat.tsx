@@ -3,8 +3,8 @@ import {
   ArrowRight, Terminal, Wrench,
   AlertTriangle, CheckCircle2, XOctagon, Clock,
   Layers, CornerDownRight,
-  Cpu, X, Send, ChevronDown,
-  Plus, RefreshCcw,
+  Cpu, X,
+  RefreshCcw,
   ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import Markdown from './Markdown';
 import { useArslanStore } from '../stores/arslanStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
@@ -60,6 +61,7 @@ export default function OrchestratorChat({
   conversationId,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
+  const settings = useSettingsStore((s) => s.settings);
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
@@ -125,12 +127,6 @@ export default function OrchestratorChat({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
-  // Tool-Hub evaluation is disabled — no MCP/discovery backend exists yet.
-  // Tool-Hub evaluation handlers are disabled — no MCP/discovery backend exists yet.
-  const handleEvaluateRepository = (_urlOrQuery: string) => { /* coming soon */ };
-  const handleAddToMCP = () => { /* coming soon */ };
-  const handleAddToSkill = () => { /* coming soon */ };
-  const handleSynthesizeSpawn = () => { /* coming soon */ };
 
   const toggleToolCollapse = (id: string) => {
     setCollapsedToolActivities(prev => ({
@@ -309,51 +305,24 @@ export default function OrchestratorChat({
 
               {/* Action options row */}
               <div className="flex items-center justify-between pt-2 border-t border-border/50 select-none">
-                <button 
-                  type="button" 
-                  onClick={() => alert("Local datasets & specialized credentials mounted securely inside workspace.")} 
-                  className="p-1.5 text-subtle-foreground hover:text-muted-foreground hover:bg-foreground/[0.03] rounded-lg transition-all"
-                  title="Attach workspace documents or source context"
-                >
-                  <Plus className="w-4.5 h-4.5 text-subtle-foreground" />
-                </button>
-
-                <div className="flex items-center gap-2">
-                  {/* Model Choice indicator */}
-                  <div className="flex items-center gap-1 bg-background/40 hover:bg-background/60 px-2.5 py-1 rounded-full border border-border text-[10px] font-mono text-muted-foreground hover:text-foreground cursor-pointer transition-colors max-w-[130px] sm:max-w-none truncate">
-                    <Cpu className="w-3 h-3 text-primary" />
-                    <span className="ml-0.5">Arslan v4.8 High</span>
-                    <ChevronDown className="w-3 h-3 text-subtle-foreground" />
-                  </div>
-
-                  {/* Micro icon */}
-                  <button type="button" className="p-1 text-subtle-foreground hover:text-muted-foreground" title="Audio transcription input">
-                    <svg className="w-4 h-4 text-subtle-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                      <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 19v4M8 23h8" />
-                    </svg>
-                  </button>
-
-                  {/* Wave icon */}
-                  <button type="button" className="p-1 text-subtle-foreground hover:text-muted-foreground" title="Simulated audio feedback channel">
-                    <svg className="w-4 h-4 text-subtle-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 10v4M6 6v12M9 11v2M12 4v16M15 8v8M18 11v2M21 10v4" />
-                    </svg>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={!inputValue.trim()}
-                    onClick={(e) => {
-                      if (inputValue.trim()) {
-                        handleSendMessage(e);
-                      }
-                    }}
-                    className="p-1.5 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised/80 disabled:text-subtle-foreground rounded-lg transition-all flex items-center justify-center ml-1"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                {/* Model indicator — static chip showing real configured model */}
+                <div className="flex items-center gap-1 bg-background/40 px-2.5 py-1 rounded-full border border-border text-[10px] font-mono text-muted-foreground max-w-[160px] sm:max-w-none truncate">
+                  <Cpu className="w-3 h-3 text-primary flex-shrink-0" />
+                  <span className="ml-0.5 truncate">{settings ? `${settings.llm_provider} · ${settings.llm_model}` : '—'}</span>
                 </div>
+
+                <button
+                  type="button"
+                  disabled={!inputValue.trim()}
+                  onClick={(e) => {
+                    if (inputValue.trim()) {
+                      handleSendMessage(e);
+                    }
+                  }}
+                  className="p-1.5 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised/80 disabled:text-subtle-foreground rounded-lg transition-all flex items-center justify-center ml-1"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
