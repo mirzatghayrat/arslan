@@ -1,17 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
+import type { CatalogEntry, ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
 import {
   addProviderConfig,
   updateProviderConfig,
   setPrimaryProviderConfig,
   deleteProviderConfig,
   suggestPrimary,
+  getCatalog,
   testLlm,
   testProviderConfig,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Plus, Star, Trash2, Loader2, FlaskConical } from 'lucide-react';
+import { Plus, Star, Trash2, Loader2, FlaskConical, ChevronDown } from 'lucide-react';
 import Select from './Select';
 import type { SelectOption } from './Select';
 
@@ -56,9 +57,15 @@ export default function ProviderConfigList({
   const [busy, setBusy] = useState<number | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestPrimaryResult | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
   const [testAllBusy, setTestAllBusy] = useState(false);
+
+  useEffect(() => {
+    getCatalog().then(setCatalog).catch(() => setCatalog([]));
+  }, []);
 
   // --- helpers ---
 
@@ -548,6 +555,57 @@ export default function ProviderConfigList({
           </p>
         )}
       </div>
+
+      {/* ── Provider capability comparison table ── */}
+      {catalog.length > 0 && (
+        <div className="pt-2 border-t border-border/40">
+          <button
+            type="button"
+            data-testid="capability-table-toggle"
+            onClick={() => setCatalogOpen((o) => !o)}
+            className="flex items-center gap-2 w-full cursor-pointer group"
+          >
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-subtle-foreground group-hover:text-foreground transition-transform duration-200 ${catalogOpen ? 'rotate-0' : '-rotate-90'}`}
+            />
+            <span className="text-[10.5px] font-mono font-medium text-subtle-foreground group-hover:text-foreground uppercase tracking-wide transition-colors">
+              {t('settings.capabilityTable')}
+              {' '}
+              <span className="normal-case text-[10px] font-normal opacity-70">
+                · {t('settings.capabilityTableCount', { count: catalog.length })}
+              </span>
+            </span>
+          </button>
+          {catalogOpen && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[10px] font-mono border-collapse">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-1.5 pr-3 text-subtle-foreground font-medium">{t('settings.capColProvider')}</th>
+                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColCost')}</th>
+                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColSpeed')}</th>
+                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColTools')}</th>
+                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColReasoning')}</th>
+                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColContext')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catalog.map((entry) => (
+                    <tr key={entry.provider} className="border-b border-border/50 hover:bg-surface">
+                      <td className="py-1.5 pr-3 text-foreground">{entry.provider}</td>
+                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.cost}</td>
+                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.speed}</td>
+                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.tool_calling}</td>
+                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.reasoning}</td>
+                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.long_context}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
     </div>
   );

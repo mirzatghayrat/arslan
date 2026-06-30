@@ -1,5 +1,5 @@
 /**
- * B5 frontend tests: suggest-primary button in ProviderConfigList.
+ * B5 frontend tests: suggest-primary button + capability table in ProviderConfigList.
  */
 
 import React from "react";
@@ -20,10 +20,12 @@ vi.mock("../stores/authStore", () => ({
 
 const mockSuggestPrimary = vi.fn();
 const mockSetPrimaryProviderConfig = vi.fn();
+const mockGetCatalog = vi.fn();
 
 vi.mock("../api/client", () => ({
   suggestPrimary: (...args: unknown[]) => mockSuggestPrimary(...args),
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
+  getCatalog: (...args: unknown[]) => mockGetCatalog(...args),
   addProviderConfig: vi.fn().mockResolvedValue({}),
   updateProviderConfig: vi.fn().mockResolvedValue({}),
   deleteProviderConfig: vi.fn().mockResolvedValue({}),
@@ -74,6 +76,9 @@ describe("B5: suggest-primary button", () => {
   beforeEach(() => {
     mockSuggestPrimary.mockReset();
     mockSetPrimaryProviderConfig.mockReset();
+    mockGetCatalog.mockReset();
+    // default: catalog returns empty (to avoid unrelated rendering issues)
+    mockGetCatalog.mockResolvedValue([]);
   });
 
   it("renders a suggest-primary button", () => {
@@ -116,6 +121,50 @@ describe("B5: suggest-primary button", () => {
 
     await waitFor(() => {
       expect(mockSetPrimaryProviderConfig).toHaveBeenCalledWith(2);
+    });
+  });
+});
+
+describe("B5: capability table", () => {
+  beforeEach(() => {
+    mockSuggestPrimary.mockReset();
+    mockGetCatalog.mockReset();
+  });
+
+  it("renders a collapsible capability table toggle", async () => {
+    mockGetCatalog.mockResolvedValue([
+      {
+        provider: "anthropic",
+        capabilities: { cost: 3, speed: 6, tool_calling: 9, reasoning: 10, long_context: 9 },
+        languages: { en: 10, zh: 8 },
+      },
+    ]);
+    renderComponent();
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("capability-table-toggle"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("shows provider capability data inside the table after clicking the toggle", async () => {
+    mockGetCatalog.mockResolvedValue([
+      {
+        provider: "anthropic",
+        capabilities: { cost: 3, speed: 6, tool_calling: 9, reasoning: 10, long_context: 9 },
+        languages: { en: 10, zh: 8 },
+      },
+    ]);
+    renderComponent();
+
+    // Wait for the toggle button to appear (catalog loaded)
+    await waitFor(() => screen.getByTestId("capability-table-toggle"));
+    const toggle = screen.getByTestId("capability-table-toggle");
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(screen.getByText("anthropic")).toBeInTheDocument();
     });
   });
 });
