@@ -68,7 +68,12 @@ _ANTI_FABRICATION = (
     "- If asked what you can do, lead with the real specialists under \"Your team\" (by their "
     "domain). You may add that you can also help directly for general questions, but do NOT turn "
     "the user's listed interests into a menu of named services. If the team is empty, say you can "
-    "help directly and invite the user to describe their need — do not make up a roster."
+    "help directly and invite the user to describe their need — do not make up a roster.\n"
+    "- If asked HOW the app/system works or WHY something happened in the product (e.g. 'why did "
+    "these spawns join?', 'what made X happen?'), do NOT invent an explanation of internal mechanics "
+    "or narrate the system's 'thinking'. You do not have visibility into the app's implementation. "
+    "Answer only from what you can actually see (e.g. who is currently on the team), and otherwise "
+    "say plainly that you can't speak to the internal behavior — never fabricate a mechanism."
 )
 
 # Binds "unsure about something current" → "search", NOT → "ask / fabricate". Without this,

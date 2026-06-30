@@ -43,6 +43,19 @@ async def test_kick_and_readd(maker):
     assert len(await roster_service.list_roster("c1")) == 1
 
 @pytest.mark.asyncio
+async def test_clear_removes_all_members_of_one_conversation(maker):
+    from server.services import roster_service
+    await roster_service.join("c1", 4, via="routed")
+    await roster_service.join("c1", 7, via="invited")
+    await roster_service.join("c2", 4, via="routed")          # a different conversation
+    removed = await roster_service.clear("c1")
+    assert removed == 2
+    assert await roster_service.list_roster("c1") == []        # c1 emptied
+    assert len(await roster_service.list_roster("c2")) == 1    # c2 untouched
+    assert await roster_service.clear("c1") == 0               # idempotent on an empty roster
+
+
+@pytest.mark.asyncio
 async def test_status_awaiting_confirm_from_phase(maker, monkeypatch):
     from server.services import roster_service, phase_service
     await roster_service.join("c1", 4, via="routed")

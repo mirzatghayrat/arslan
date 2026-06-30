@@ -333,6 +333,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 continue
 
+            if msg_type == "roster_reset":
+                # A fresh app session resumed this conversation: the roster is session
+                # context, so clear it (the conversation's message history persists; spawn
+                # personas live in the Ledger). The user re-pulls whoever they want this session.
+                await roster_service.clear(conversation_id)
+                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
+                continue
+
             if msg_type == "session_ended":
                 old_cid = data.get("conversation_id")
                 if old_cid:
@@ -344,6 +352,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             asyncio.create_task(distill_service.distill_session(str(old_cid)))
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("session_ended distill trigger failed (non-fatal): %s", exc)
+                    # Roster is session-ephemeral: end of session clears membership (after the
+                    # distill above captures anything worth keeping). Resuming later starts empty.
+                    try:
+                        await roster_service.clear(str(old_cid))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("session_ended roster clear failed (non-fatal): %s", exc)
                 await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
                 continue
 

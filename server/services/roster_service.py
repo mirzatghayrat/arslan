@@ -39,6 +39,24 @@ async def is_member(conversation_id: str, spawn_id: int) -> bool:
         return row.scalar_one_or_none() is not None
 
 
+async def clear(conversation_id: str) -> int:
+    """Remove ALL spawns from a conversation's roster (session-ephemeral reset).
+
+    Roster membership is session context, not durable: it is cleared when a new app
+    session resumes a conversation (and on session end). Spawn personas live in the
+    Ledger and are untouched; only the per-conversation membership rows are removed.
+    Returns the number of rows removed."""
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.execute(
+            select(ConversationSpawn).where(ConversationSpawn.conversation_id == conversation_id)
+        )
+        members = rows.scalars().all()
+        for m in members:
+            await db.delete(m)
+        await db.commit()
+        return len(members)
+
+
 async def kick(conversation_id: str, spawn_id: int) -> bool:
     """Remove a spawn from the roster. Returns True if a row was removed. History is untouched."""
     async with db_session.AsyncSessionLocal() as db:
