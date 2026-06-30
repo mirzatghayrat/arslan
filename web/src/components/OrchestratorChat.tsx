@@ -14,6 +14,7 @@ import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody from './MessageBody';
+import EChart from './EChart';
 import { useArslanStore } from '../stores/arslanStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
@@ -581,6 +582,9 @@ export default function OrchestratorChat({
                             </div>
                             {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
                                 frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
+                            {msg.toolActivity?.artifactChart && (
+                              <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
+                            )}
                             {msg.toolActivity?.artifactSvg && (
                               <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                             )}
@@ -795,6 +799,9 @@ export default function OrchestratorChat({
                       </div>
                       {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
                           frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
+                      {msg.toolActivity?.artifactChart && (
+                        <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
+                      )}
                       {msg.toolActivity?.artifactSvg && (
                         <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                       )}
@@ -982,6 +989,9 @@ export default function OrchestratorChat({
                         </div>
                         {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
                             frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
+                        {msg.toolActivity?.artifactChart && (
+                          <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
+                        )}
                         {msg.toolActivity?.artifactSvg && (
                           <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                         )}

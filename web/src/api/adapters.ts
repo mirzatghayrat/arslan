@@ -238,6 +238,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             // Surface the artifact from whichever step produced one (a chart is often
             // not the first tool, e.g. search-then-chart), not just toolSteps[0].
             artifactSvg: item.toolSteps?.find((s) => s.artifactSvg)?.artifactSvg,
+            artifactChart: item.toolSteps?.find((s) => s.artifactChart)?.artifactChart,
           }
         : undefined;
       return {

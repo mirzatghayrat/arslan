@@ -281,9 +281,10 @@ function makeActions(set: SetState, get: GetState) {
                 ...steps[i],
                 status: frame.ok ? "ok" : "error",
                 resultSummary: frame.summary,
-                // 🔒 SECURITY: artifactSvg comes ONLY from the backend render_chart
-                // tool_result frame's artifact, NEVER from LLM message text.
+                // 🔒 SECURITY: artifactSvg / artifactChart come ONLY from the backend
+                // render_chart tool_result frame's artifact, NEVER from LLM message text.
                 ...(frame.artifact?.kind === "svg" ? { artifactSvg: frame.artifact.content } : {}),
+                ...(frame.artifact?.kind === "echarts" ? { artifactChart: frame.artifact.spec } : {}),
               };
               break;
             }

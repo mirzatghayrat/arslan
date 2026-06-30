@@ -25,6 +25,8 @@ export interface ToolActivity {
   collapsed: boolean;
   /** SVG markup from a backend render_chart tool_result artifact. NEVER from LLM message text. */
   artifactSvg?: string;
+  /** ECharts option object from a backend render_chart tool_result artifact (kind: "echarts"). NEVER from LLM message text. */
+  artifactChart?: Record<string, unknown>;
 }
 
 export interface Escalation {
