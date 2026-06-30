@@ -496,5 +496,17 @@
     "buildNew": "Ninguno encaja — crear uno nuevo",
     "dismiss": "Ignorar",
     "why": "Por qué:"
+  },
+  "msg": {
+    "expand": "Mostrar más",
+    "collapse": "Mostrar menos",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "download_md": "Descargar .md",
+    "download_html": "Descargar .html",
+    "html_doc": "Documento HTML · {{kb}} KB",
+    "html_preview": "Vista previa HTML",
+    "preview": "Vista previa",
+    "close": "Cerrar"
   }
 }

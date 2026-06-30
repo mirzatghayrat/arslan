@@ -13,7 +13,7 @@ import { Message, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
-import Markdown from './Markdown';
+import MessageBody from './MessageBody';
 import { useArslanStore } from '../stores/arslanStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
@@ -478,7 +478,7 @@ export default function OrchestratorChat({
                       {/* Message Content */}
                       {isUser
                         ? <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
-                        : <Markdown className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
 
                       {/* Routed Indicator - specifically asked in prompt */}
@@ -742,7 +742,7 @@ export default function OrchestratorChat({
 
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
-                    : <Markdown className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
 
                   {/* Routed branch block */}
@@ -929,7 +929,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
-                  <Markdown className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (

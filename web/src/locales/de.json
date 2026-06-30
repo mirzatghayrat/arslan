@@ -496,5 +496,17 @@
     "buildNew": "Keiner passt — neuen erstellen",
     "dismiss": "Verwerfen",
     "why": "Warum:"
+  },
+  "msg": {
+    "expand": "Mehr anzeigen",
+    "collapse": "Weniger anzeigen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "download_md": "Als .md",
+    "download_html": "Als .html",
+    "html_doc": "HTML-Dokument · {{kb}} KB",
+    "html_preview": "HTML-Vorschau",
+    "preview": "Vorschau",
+    "close": "Schließen"
   }
 }

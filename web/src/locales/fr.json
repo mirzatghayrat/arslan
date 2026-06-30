@@ -496,5 +496,17 @@
     "buildNew": "Aucun ne convient — en créer un",
     "dismiss": "Ignorer",
     "why": "Pourquoi :"
+  },
+  "msg": {
+    "expand": "Afficher plus",
+    "collapse": "Afficher moins",
+    "copy": "Copier",
+    "copied": "Copié",
+    "download_md": "Télécharger .md",
+    "download_html": "Télécharger .html",
+    "html_doc": "Document HTML · {{kb}} KB",
+    "html_preview": "Aperçu HTML",
+    "preview": "Aperçu",
+    "close": "Fermer"
   }
 }

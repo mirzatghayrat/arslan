@@ -496,5 +496,17 @@
     "buildNew": "どれも合わない — 新規作成",
     "dismiss": "却下",
     "why": "理由："
+  },
+  "msg": {
+    "expand": "続きを表示",
+    "collapse": "折りたたむ",
+    "copy": "コピー",
+    "copied": "コピー済み",
+    "download_md": ".md をダウンロード",
+    "download_html": ".html をダウンロード",
+    "html_doc": "HTML ドキュメント · {{kb}} KB",
+    "html_preview": "HTML プレビュー",
+    "preview": "プレビュー",
+    "close": "閉じる"
   }
 }

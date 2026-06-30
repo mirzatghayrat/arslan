@@ -496,5 +496,17 @@
     "buildNew": "None fit — build a new one",
     "dismiss": "Dismiss",
     "why": "Why:"
+  },
+  "msg": {
+    "expand": "Show more",
+    "collapse": "Show less",
+    "copy": "Copy",
+    "copied": "Copied",
+    "download_md": "Download .md",
+    "download_html": "Download .html",
+    "html_doc": "HTML document · {{kb}} KB",
+    "html_preview": "HTML preview",
+    "preview": "Preview",
+    "close": "Close"
   }
 }

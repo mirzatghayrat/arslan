@@ -496,5 +496,17 @@
     "buildNew": "都不对，融合建新的",
     "dismiss": "忽略",
     "why": "原因："
+  },
+  "msg": {
+    "expand": "展开全文",
+    "collapse": "收起",
+    "copy": "复制",
+    "copied": "已复制",
+    "download_md": "下载 .md",
+    "download_html": "下载 .html",
+    "html_doc": "HTML 文档 · {{kb}} KB",
+    "html_preview": "HTML 预览",
+    "preview": "预览",
+    "close": "关闭"
   }
 }
