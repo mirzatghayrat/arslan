@@ -109,12 +109,18 @@ function makeActions(set: SetState, get: GetState) {
 
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
-      // Clear thinking on the first frame that signals Arslan is responding.
+      // Clear thinking on the first frame that signals Arslan is responding with
+      // real content or a card. Intermediate dispatch frames ("routing",
+      // "roster_event", "spawn_meta") are NOT included here — they fire during
+      // the Arslan→spawn handoff before the spawn has streamed anything, so
+      // clearing thinking on them creates a dead-air gap. Instead, thinking
+      // persists through routing/dispatch and clears in stream_chunk (first real
+      // token) or on card frames below.
       // NOTE: "stream_start" is intentionally excluded — it starts streaming but
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["routing", "suggest_create", "message", "error", "fact_saved", "proposal", "roster_event", "spawn_meta", "propose_invite", "propose_staffing"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "proposal", "propose_invite", "propose_staffing"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }

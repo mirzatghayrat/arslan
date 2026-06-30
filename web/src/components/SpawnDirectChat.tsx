@@ -227,7 +227,7 @@ export default function SpawnDirectChat({
   };
 
   return (
-    <div className="flex-grow flex flex-col h-full overflow-hidden bg-background select-none relative font-sans">
+    <div className="flex-grow flex flex-col h-full overflow-hidden bg-background relative font-sans">
 
       {/* Spawn Header details */}
       <div className={`px-6 py-4 flex items-center justify-between border-b border-border/80 relative z-10 bg-background/80 backdrop-blur`}>

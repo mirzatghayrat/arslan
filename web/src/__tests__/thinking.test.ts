@@ -28,11 +28,13 @@ it("stream_chunk clears thinking and accumulates text", () => {
   expect(s.streamingText).toBe("Hello");
 });
 
-// routing frame still clears thinking (unchanged behavior)
-it("routing frame also clears thinking", () => {
+// routing frame does NOT clear thinking — it is an intermediate dispatch frame
+// during the Arslan→spawn handoff. Thinking should persist through routing and
+// only clear on stream_chunk (first real token) to avoid a dead-air gap.
+it("routing frame does NOT clear thinking (thinking persists through dispatch)", () => {
   (useArslanStore.getState() as any).setThinking(true);
   useArslanStore.getState().handleFrame({ type: "routing", spawn_id: 4, spawn_name: "x" } as any);
-  expect((useArslanStore.getState() as any).thinking).toBe(false);
+  expect((useArslanStore.getState() as any).thinking).toBe(true);
 });
 
 // stream_end clears thinking (safety: no chunk ever arrived)

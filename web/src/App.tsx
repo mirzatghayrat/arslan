@@ -446,7 +446,7 @@ export default function App() {
   const isThreadEmpty = activeSection === 'arslan' && orchestratorChatHistory.length === 0;
 
   return (
-    <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased select-none">
+    <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">
       <ThemeApplier />
 
       {/* Sidebar with macOS window decorations */}
@@ -748,7 +748,7 @@ export default function App() {
                 {/* 1. MCP (Model Context Protocol) Registry — real data from /mcp/servers */}
                 <RailMcpList servers={mcpServers} />
 
-                {/* 2. Equipped Agent Tools — only web-search is wired in backend; others coming soon */}
+                {/* 2. Equipped Agent Tools — shows the active roster's real equipped tools */}
                 <div className="space-y-1.5">
                   <span className="text-[9px] font-mono text-subtle-foreground uppercase tracking-wider font-bold block flex items-center gap-1"><Wrench className="w-3 h-3" /> {t('rail.dialogue_tools')}</span>
                   {currentCaps.tools.length === 0 ? (
@@ -757,20 +757,14 @@ export default function App() {
                     <div className="flex flex-wrap gap-1">
                       {currentCaps.tools.map((tId) => {
                         const details = toolDetails[tId] || { name: tId, emoji: '🔧' };
-                        const isWired = ['web-search', 'render_chart', 'render-chart'].includes(tId);
                         return (
                           <div
                             key={tId}
-                            className={`px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none ${
-                              isWired
-                                ? 'bg-surface text-info'
-                                : 'bg-surface text-muted-foreground'
-                            }`}
-                            title={isWired ? `Tool: ${tId}` : `${tId} — 即将推出 / Coming soon`}
+                            className="px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none bg-surface text-info"
+                            title={`Tool: ${tId}`}
                           >
                             {getIcon(tId, 'w-3 h-3')}
                             <span className="text-[10px] font-medium">{details.name}</span>
-                            {!isWired && <span className="text-[7px] text-subtle-foreground font-mono ml-0.5">soon</span>}
                           </div>
                         );
                       })}
