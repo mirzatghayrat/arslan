@@ -28,6 +28,7 @@ async def create_spawn(
         "name": body.name,
         "domain": body.domain,
         "capabilities": body.capabilities,
+        "seed_refs": body.seed_refs,
         "persona_role": body.persona_role,
         "persona_tone": body.persona_tone,
     }

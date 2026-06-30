@@ -109,6 +109,10 @@ def create_app() -> FastAPI:
 
     app.include_router(orchestrator_api.router, prefix="/api/v1")
 
+    from server.api import seeds as seeds_api
+
+    app.include_router(seeds_api.router, prefix="/api/v1")
+
     from server.api import runs as runs_api
 
     app.include_router(runs_api.router, prefix="/api/v1")

@@ -72,6 +72,57 @@ def test_count_returns_seed_total(seeded):
     assert anyio.run(persona_seed_service.count) == 2
 
 
+def test_list_seeds_browse_returns_all_with_fields(seeded):
+    from server.services import persona_seed_service
+    seeds = anyio.run(lambda: persona_seed_service.list_seeds())
+    assert len(seeds) == 2
+    assert {s["slug"] for s in seeds} == {"game-economy-designer", "seo-copywriter"}
+    assert all(set(s.keys()) == {"slug", "name", "division", "summary"} for s in seeds)
+
+
+def test_list_seeds_query_filters(seeded):
+    from server.services import persona_seed_service
+    hits = anyio.run(lambda: persona_seed_service.list_seeds("game balance"))
+    assert [h["slug"] for h in hits] == ["game-economy-designer"]
+
+
+def test_get_by_slugs_resolves_in_order_dropping_unknown(seeded):
+    from server.services import persona_seed_service
+    out = anyio.run(lambda: persona_seed_service.get_by_slugs(
+        ["seo-copywriter", "ghost-slug", "game-economy-designer"]))
+    assert [o["slug"] for o in out] == ["seo-copywriter", "game-economy-designer"]
+    assert anyio.run(lambda: persona_seed_service.get_by_slugs([])) == []
+
+
+def test_get_detail_resolves_composed_seeds_from_config(seeded):
+    # config.seed_refs persisted at create → SpawnDetailOut.seeds resolved (unknown dropped).
+    from server.services import spawn_service
+    from server.db.models import Spawn
+    async def _run():
+        async with seeded() as s:
+            spawn = Spawn(name="econ-bot", domain_category="game", capabilities=[],
+                          system_prompt="x", config={"seed_refs": ["game-economy-designer", "ghost"]})
+            s.add(spawn)
+            await s.commit()
+            await s.refresh(spawn)
+            return await spawn_service.get_detail(s, spawn.id)
+    detail = anyio.run(_run)
+    assert [sd.slug for sd in detail.seeds] == ["game-economy-designer"]
+
+
+def test_get_detail_no_seeds_when_config_empty(seeded):
+    from server.services import spawn_service
+    from server.db.models import Spawn
+    async def _run():
+        async with seeded() as s:
+            spawn = Spawn(name="plain", domain_category="x", capabilities=[], system_prompt="x")
+            s.add(spawn)
+            await s.commit()
+            await s.refresh(spawn)
+            return await spawn_service.get_detail(s, spawn.id)
+    assert anyio.run(_run).seeds == []
+
+
 def test_is_persona_path_filters():
     from server.services.persona_seed_service import _is_persona_path
     included = [

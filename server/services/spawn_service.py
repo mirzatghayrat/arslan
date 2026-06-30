@@ -162,7 +162,15 @@ async def get_detail(session: AsyncSession, spawn_id: int) -> SpawnDetailOut | N
         .where(ChatMessage.spawn_id == spawn_id)
         .order_by(ChatMessage.id)
     )
-    return to_detail(spawn, list(msgs.scalars().all()))
+    detail = to_detail(spawn, list(msgs.scalars().all()))
+    # Resolve the seeds this spawn was composed from (config.seed_refs) for display.
+    seed_refs = (spawn.config or {}).get("seed_refs") if isinstance(spawn.config, dict) else None
+    if seed_refs:
+        from server.schemas import SeedRefOut
+        from server.services import persona_seed_service
+        resolved = await persona_seed_service.get_by_slugs([str(s) for s in seed_refs])
+        detail.seeds = [SeedRefOut(**r) for r in resolved]
+    return detail
 
 
 async def update_config(
@@ -371,6 +379,8 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
             persona_tone=draft.get("persona_tone"),
             system_prompt=system_prompt,
             generation_level=1,
+            # Remember which persona seeds composed this spawn so the detail panel can show them.
+            config={"seed_refs": [str(s) for s in (draft.get("seed_refs") or [])]},
         )
         for k in keys["toolsets"]:
             db.add(SpawnCapability(spawn_id=spawn.id, kind="toolset", ref_key=k))
