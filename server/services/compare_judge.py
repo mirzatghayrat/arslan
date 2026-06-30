@@ -69,7 +69,7 @@ def _to_ab(pass_: dict, *, slot1: str, slot2: str) -> tuple[dict, str, float]:
     return dims, overall, margin
 
 
-async def compare(*, task: str, persona: str, output_a: str, output_b: str) -> dict:
+async def compare(*, task: str, persona: str, output_a: str, output_b: str, item=None) -> dict:
     """Compare output_a vs output_b. Returns:
       {"dimensions": {dim: "a"|"b"|"tie"}, "overall": "a"|"b"|"tie",
        "margin": float, "position_sensitive": bool, "reason": str}
