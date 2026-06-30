@@ -545,5 +545,18 @@
     "html_preview": "Vista previa HTML",
     "preview": "Vista previa",
     "close": "Cerrar"
+  },
+  "attach": {
+    "add": "Adjuntar archivos o fotos",
+    "url": "Adjuntar un enlace web",
+    "url_placeholder": "Pega una URL (https://…)",
+    "read": "Leer",
+    "chars": "{{n}} caracteres",
+    "truncated": " (truncado)",
+    "image_no_parse": "imagen (solo vista previa)",
+    "drop_hint": "Suelta archivos para adjuntar",
+    "too_many": "Hasta {{max}} adjuntos",
+    "too_large": "{{name}} es demasiado grande (máx. 30 MB)",
+    "unsupported": "{{name}}: tipo no compatible"
   }
 }

@@ -11,7 +11,7 @@ import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
 import { useWebSocket } from '../hooks/useWebSocket';
-import AttachBar, { type Attachment } from './AttachBar';
+import { useComposerAttach, AttachChips, AttachControl, type Attachment } from './ComposerAttach';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -46,7 +46,7 @@ export default function SpawnDirectChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [attachKey, setAttachKey] = useState(0);
+  const attach = useComposerAttach(setAttachments);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   // Per-stream tool steps accumulated from tool_call/tool_result frames, attached on stream_end.
@@ -236,14 +236,16 @@ export default function SpawnDirectChat({
 
     // In refine mode, the deliverable being refined must reach the spawn reliably
     // via attached_context — independent of the (user-mutable) attachments array.
-    const parts = attachments.map((a) => a.text);
+    // Image chips are preview-only (empty text) — they contribute no context.
+    const textAttachments = attachments.filter((a) => a.text);
+    const parts = textAttachments.map((a) => a.text);
     if (refineDeliverable && !parts.includes(refineDeliverable)) parts.unshift(refineDeliverable);
     const attached_context = parts.join('\n\n---\n\n');
     const attached_names = [
-      ...(refineDeliverable && !attachments.some((a) => a.name === refineAttachName)
+      ...(refineDeliverable && !textAttachments.some((a) => a.name === refineAttachName)
         ? [refineAttachName]
         : []),
-      ...attachments.map((a) => a.name),
+      ...textAttachments.map((a) => a.name),
     ];
 
     setMessages(prev => [...prev, userMsg]);
@@ -253,8 +255,7 @@ export default function SpawnDirectChat({
       ...(attached_context ? { attached_context, attached_names } : {}),
     });
     setInputValue('');
-    setAttachments([]);
-    setAttachKey((k) => k + 1);
+    attach.clear();
     setStreaming(true);
   };
 
@@ -488,29 +489,38 @@ export default function SpawnDirectChat({
 
       {/* Message input bar */}
       <div className="p-4 border-t border-border/80 relative z-10 bg-background/40 backdrop-blur">
-        <div className="max-w-3xl mx-auto">
-          <AttachBar key={attachKey} onChange={setAttachments} />
-        </div>
-        <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto relative select-none">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={streaming}
-            placeholder={streaming ? t('spawn_chat.placeholder_working', { name: spawn.name }) : t('spawn_chat.placeholder_input')}
-            className="w-full bg-background border border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring rounded-xl pl-4 pr-12 py-3.5 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
-          />
-          <button
-            type="submit"
-            disabled={streaming || !inputValue.trim()}
-            className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${
-              inputValue.trim() && !streaming
-                ? 'bg-primary text-primary-foreground hover:bg-primary-hover'
-                : 'bg-foreground/[0.02] text-subtle-foreground'
-            }`}
+        <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto select-none">
+          <div
+            className={`composer-box${attach.dragActive ? ' composer-box--drop' : ''}`}
+            {...attach.dndHandlers}
           >
-            <Send className="w-4 h-4" />
-          </button>
+            <AttachChips attachments={attachments} onRemove={attach.removeAt} />
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onPaste={attach.onPaste}
+              disabled={streaming}
+              placeholder={streaming ? t('spawn_chat.placeholder_working', { name: spawn.name }) : t('spawn_chat.placeholder_input')}
+              className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5 disabled:opacity-60"
+            />
+            <div className="composer-row">
+              <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} onAddUrl={attach.addUrl} />
+              <button
+                type="submit"
+                disabled={streaming || !inputValue.trim()}
+                className={`p-2 rounded-lg transition-all ${
+                  inputValue.trim() && !streaming
+                    ? 'bg-primary text-primary-foreground hover:bg-primary-hover'
+                    : 'bg-foreground/[0.02] text-subtle-foreground'
+                }`}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+            {attach.dragActive && <div className="composer-drop-hint">{t('attach.drop_hint')}</div>}
+          </div>
+          {attach.error && <div className="attach-error mt-1.5" role="alert">{attach.error}</div>}
         </form>
       </div>
 

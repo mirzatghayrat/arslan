@@ -545,5 +545,18 @@
     "html_preview": "HTML プレビュー",
     "preview": "プレビュー",
     "close": "閉じる"
+  },
+  "attach": {
+    "add": "ファイルや写真を添付",
+    "url": "ウェブリンクを添付",
+    "url_placeholder": "URLを貼り付け (https://…)",
+    "read": "読み込む",
+    "chars": "{{n}}文字",
+    "truncated": "(省略)",
+    "image_no_parse": "画像(プレビューのみ)",
+    "drop_hint": "ファイルをドロップして添付",
+    "too_many": "添付は最大 {{max}} 件まで",
+    "too_large": "{{name}} は大きすぎます(最大 30 MB)",
+    "unsupported": "{{name}}:サポートされていない形式"
   }
 }

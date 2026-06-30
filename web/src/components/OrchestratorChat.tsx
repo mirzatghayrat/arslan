@@ -20,7 +20,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
-import AttachBar, { type Attachment } from './AttachBar';
+import { useComposerAttach, AttachChips, AttachControl, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 
@@ -81,7 +81,7 @@ export default function OrchestratorChat({
   const clearLlmError = useArslanStore((s) => s.clearError);
   const [inputValue, setInputValue] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [attachKey, setAttachKey] = useState(0);
+  const attach = useComposerAttach(setAttachments);
   const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   // Optimistic verdicts: filled immediately on click, before the backend verdict_recorded
   // frame round-trips (which sets msg.verdict via the store). Keyed by messageId.
@@ -186,12 +186,10 @@ export default function OrchestratorChat({
     const text = inputValue.trim();
     setInputValue('');
 
-    const context = attachments.map((a) => a.text).join("\n\n---\n\n");
-    const names = attachments.map((a) => a.name);
-    const clearAttachments = () => {
-      setAttachments([]);
-      setAttachKey((k) => k + 1);
-    };
+    // Only doc/url attachments carry text; image chips are preview-only (empty text).
+    const context = attachments.map((a) => a.text).filter(Boolean).join("\n\n---\n\n");
+    const names = attachments.filter((a) => a.text).map((a) => a.name);
+    const clearAttachments = () => attach.clear();
 
     if (onSendMessage) {
       // Live WS path: delegate to parent's onSendMessage (store + WS send)
@@ -1138,30 +1136,39 @@ export default function OrchestratorChat({
       {/* Input Message Form Panel */}
       {chatHistory.length > 0 && (
         <footer className="p-4 border-t border-border bg-background/80 backdrop-blur shrink-0 z-10 select-none">
-          <div className="max-w-4xl mx-auto">
-            <AttachBar key={attachKey} onChange={setAttachments} />
-          </div>
-          <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex items-center gap-2 relative">
-            <input
-              id="chat-message-input"
-              type="text"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder={t('orchestrator.placeholder_chat')}
-              className="w-full bg-surface border border-border hover:border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring/30 rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-sans"
-            />
-            <button
-              id="chat-send-submit"
-              type="submit"
-              disabled={!inputValue.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
+          <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto">
+            <div
+              className={`composer-box${attach.dragActive ? ' composer-box--drop' : ''}`}
+              {...attach.dndHandlers}
             >
-              <ArrowRight className="w-4 h-4" />
-            </button>
+              <AttachChips attachments={attachments} onRemove={attach.removeAt} />
+              <input
+                id="chat-message-input"
+                type="text"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onPaste={attach.onPaste}
+                placeholder={t('orchestrator.placeholder_chat')}
+                className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
+              />
+              <div className="composer-row">
+                <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} onAddUrl={attach.addUrl} />
+                <button
+                  id="chat-send-submit"
+                  type="submit"
+                  disabled={!inputValue.trim()}
+                  className="p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+              {attach.dragActive && <div className="composer-drop-hint">{t('attach.drop_hint')}</div>}
+            </div>
+            {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
           <div className="flex items-center justify-center gap-6 mt-2 text-[10px] text-subtle-foreground font-mono">
             <span>{t('orchestrator.footer_hint')}</span>

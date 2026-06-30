@@ -545,5 +545,18 @@
     "html_preview": "Aperçu HTML",
     "preview": "Aperçu",
     "close": "Fermer"
+  },
+  "attach": {
+    "add": "Joindre des fichiers ou des photos",
+    "url": "Joindre un lien web",
+    "url_placeholder": "Collez une URL (https://…)",
+    "read": "Lire",
+    "chars": "{{n}} caractères",
+    "truncated": " (tronqué)",
+    "image_no_parse": "image (aperçu seulement)",
+    "drop_hint": "Déposez des fichiers pour les joindre",
+    "too_many": "Jusqu'à {{max}} pièces jointes",
+    "too_large": "{{name}} est trop volumineux (max. 30 Mo)",
+    "unsupported": "{{name}} : type non pris en charge"
   }
 }

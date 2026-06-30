@@ -545,5 +545,18 @@
     "html_preview": "HTML 预览",
     "preview": "预览",
     "close": "关闭"
+  },
+  "attach": {
+    "add": "添加文件或图片",
+    "url": "添加网页链接",
+    "url_placeholder": "粘贴网址 (https://…)",
+    "read": "读取",
+    "chars": "{{n}}字",
+    "truncated": "(截断)",
+    "image_no_parse": "图片(暂不解析)",
+    "drop_hint": "拖入文件以添加",
+    "too_many": "最多 {{max}} 个附件",
+    "too_large": "{{name}} 太大(上限 30 MB)",
+    "unsupported": "{{name}}:不支持的类型"
   }
 }

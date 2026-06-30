@@ -37,9 +37,10 @@ describe('OrchestratorChat attach', () => {
         activeThread={null}
       />,
     );
-    // Add attachment via AttachBar URL input
-    fireEvent.change(screen.getByPlaceholderText(/网址|http/i), { target: { value: 'https://x.com' } });
-    fireEvent.click(screen.getByText('读取'));
+    // Reveal the URL field from the "+" menu, then extract via the SSRF-hardened path
+    fireEvent.click(screen.getByLabelText('attach.url'));
+    fireEvent.change(screen.getByPlaceholderText('attach.url_placeholder'), { target: { value: 'https://x.com' } });
+    fireEvent.click(screen.getByText('attach.read'));
     await screen.findByLabelText('remove-attachment');
     // Type into the chat message input (the footer input)
     const msgInput = screen.getByPlaceholderText(/placeholder_chat/i);

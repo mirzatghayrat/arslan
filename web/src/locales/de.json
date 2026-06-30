@@ -545,5 +545,18 @@
     "html_preview": "HTML-Vorschau",
     "preview": "Vorschau",
     "close": "Schließen"
+  },
+  "attach": {
+    "add": "Dateien oder Fotos anhängen",
+    "url": "Weblink anhängen",
+    "url_placeholder": "URL einfügen (https://…)",
+    "read": "Lesen",
+    "chars": "{{n}} Zeichen",
+    "truncated": " (gekürzt)",
+    "image_no_parse": "Bild (nur Vorschau)",
+    "drop_hint": "Dateien zum Anhängen ablegen",
+    "too_many": "Bis zu {{max}} Anhänge",
+    "too_large": "{{name}} ist zu groß (max. 30 MB)",
+    "unsupported": "{{name}}: nicht unterstützter Typ"
   }
 }

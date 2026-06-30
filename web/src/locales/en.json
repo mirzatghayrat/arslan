@@ -545,5 +545,18 @@
     "html_preview": "HTML preview",
     "preview": "Preview",
     "close": "Close"
+  },
+  "attach": {
+    "add": "Attach files or photos",
+    "url": "Attach a web link",
+    "url_placeholder": "Paste a URL (https://…)",
+    "read": "Read",
+    "chars": "{{n}} chars",
+    "truncated": " (truncated)",
+    "image_no_parse": "image (preview only)",
+    "drop_hint": "Drop files to attach",
+    "too_many": "Up to {{max}} attachments",
+    "too_large": "{{name}} is too large (max 30 MB)",
+    "unsupported": "{{name}}: unsupported type"
   }
 }
