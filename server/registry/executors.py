@@ -17,7 +17,7 @@ import trafilatura
 
 from server.db.session import AsyncSessionLocal
 from server.registry.search_providers import get_provider
-from server.services import chart_svg, settings_service
+from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -139,44 +139,72 @@ class WebExtractExecutor:
         return {"ok": True, "url": url, "text": text[:_EXTRACT_CHAR_LIMIT]}
 
 
-_CHART_TYPES = {"line", "bar", "pie"}
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
 
 class ChartExecutor:
+    """Validates a normalized chart intent (type + labels + numeric series + flags) and
+    builds a plain-data ECharts option backend-side. The model never authors render config;
+    the frontend renders the option with the trusted echarts library + the Arslan theme."""
+
     key = "render_chart"
 
     async def execute(self, args: dict) -> dict:
         ctype = args.get("type")
-        if ctype not in _CHART_TYPES:
-            return {"ok": False, "error": f"invalid chart type {ctype!r}; use line|bar|pie"}
-        x = args.get("x")
+        if ctype not in chart_echarts.CHART_TYPES:
+            return {"ok": False, "error": f"invalid chart type {ctype!r}; use one of: "
+                    f"{', '.join(sorted(chart_echarts.CHART_TYPES))}"}
+
         series = args.get("series")
-        if not isinstance(x, list) or not x or len(x) > _CHART_MAX_POINTS:
-            return {"ok": False, "error": f"'x' must be a non-empty list of <= {_CHART_MAX_POINTS} labels"}
         if not isinstance(series, list) or not series or len(series) > _CHART_MAX_SERIES:
             return {"ok": False, "error": f"'series' must be a non-empty list of <= {_CHART_MAX_SERIES} series"}
         for s in series:
             vals = s.get("values") if isinstance(s, dict) else None
-            if not isinstance(vals, list) or not all(
+            if not isinstance(vals, list) or not vals or not all(
                 isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals
             ):
-                return {"ok": False, "error": "each series needs numeric 'values'"}
+                return {"ok": False, "error": "each series needs a non-empty numeric 'values' list"}
             if len(vals) > _CHART_MAX_POINTS:
-                return {"ok": False, "error": f"series has more than {_CHART_MAX_POINTS} values"}
+                return {"ok": False, "error": f"a series has more than {_CHART_MAX_POINTS} values"}
+
+        # gauge reads a single value and needs no category axis; every other type needs x.
+        x = args.get("x")
+        if ctype != "gauge":
+            if not isinstance(x, list) or not x or len(x) > _CHART_MAX_POINTS:
+                return {"ok": False, "error": f"'x' must be a non-empty list of <= {_CHART_MAX_POINTS} labels"}
+
+        # per-type shape checks (the option builder assumes these hold).
+        if ctype in ("pie", "funnel") and len(series[0]["values"]) != len(x):
+            return {"ok": False, "error": f"{ctype} needs series[0].values aligned 1:1 with 'x' ({len(x)} labels)"}
+        if ctype == "radar" and any(len(s["values"]) != len(x) for s in series):
+            return {"ok": False, "error": "radar needs each series' values aligned 1:1 with 'x' (the indicators)"}
+        if ctype == "heatmap":
+            y = args.get("y")
+            if not isinstance(y, list) or not y or len(y) > _CHART_MAX_SERIES:
+                return {"ok": False, "error": f"heatmap needs a non-empty 'y' list of <= {_CHART_MAX_SERIES} row labels"}
+            if len(series) != len(y):
+                return {"ok": False, "error": "heatmap needs exactly one series per 'y' row label"}
+            if any(len(s["values"]) != len(x) for s in series):
+                return {"ok": False, "error": "heatmap rows (series.values) must align 1:1 with 'x' columns"}
+
+        spec = {"type": ctype, "title": str(args.get("title") or ""),
+                "x": [str(v) for v in (x or [])], "series": series, "y": args.get("y"),
+                "stacked": bool(args.get("stacked")), "horizontal": bool(args.get("horizontal")),
+                "smooth": bool(args.get("smooth"))}
         try:
-            svg = chart_svg.render({"type": ctype, "title": str(args.get("title") or ""),
-                                    "x": [str(v) for v in x], "series": series})
-        except Exception as exc:  # noqa: BLE001 — defensive; render on a validated spec shouldn't raise
+            option = chart_echarts.build_option(spec)
+        except Exception as exc:  # noqa: BLE001 — defensive; build on a validated spec shouldn't raise
             return {"ok": False, "error": f"render failed: {exc}"}
+
         title = str(args.get("title") or "").strip()
+        npts = len(x) if x else len(series[0]["values"])
         return {
             "ok": True,
             "external": False,
             "summary": f"已渲染 {ctype} 图" + (f"「{title}」" if title else "") +
-                       f":{len(x)} 个数据点、{len(series)} 条系列",
-            "artifact": {"kind": "svg", "content": svg},
+                       f":{npts} 个数据点、{len(series)} 条系列",
+            "artifact": {"kind": "echarts", "spec": option},
         }
 
 

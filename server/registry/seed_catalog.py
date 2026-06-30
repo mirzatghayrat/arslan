@@ -259,11 +259,15 @@ TOOLSETS: list[dict] = [
     {
         "key": "charting",
         "name": "Charting",
-        "description": "render_chart — turn structured data into a line/bar/pie chart (SVG).",
+        "description": "render_chart — turn structured data into a rich interactive chart "
+                       "(line, bar, area, pie, scatter, radar, funnel, gauge, heatmap).",
         "tier": "safe",
         "status": "wired",
         "tools": [
-            ("render_chart", "Render a line/bar/pie chart from structured data; returns an SVG shown to the user.", "safe", "wired"),
+            ("render_chart", "Render an interactive chart from structured data. type=one of "
+             "line|bar|area|pie|scatter|radar|funnel|gauge|heatmap; x=labels, "
+             "series=[{name,values}]; optional stacked/horizontal/smooth, y=row labels for heatmap. "
+             "Shown to the user.", "safe", "wired"),
         ],
     },
     {
