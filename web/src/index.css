@@ -1494,27 +1494,6 @@
 /* ── EvalSummary overlay ──────────────────────────────────────────────────────── */
 
 /* Entry button — mirrors .spawn-detail-open-btn */
-.eval-open-btn {
-  padding: 0.3125rem 0.75rem;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: 0.375rem;
-  color: var(--muted-foreground);
-  font-size: 0.625rem;
-  font-family: monospace;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  flex-shrink: 0;
-}
-.eval-open-btn:hover {
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
-  background: color-mix(in srgb, var(--primary) 8%, transparent);
-}
-
 /* Panel root — fills the run-replay-overlay__panel */
 .eval-summary {
   display: flex;
@@ -1831,4 +1810,122 @@
 .tool-chart svg {
   max-width: 100%;
   height: auto;
+}
+
+/* ============================================================
+   EvalDock — bottom-of-rail evaluation, three disclosure levels:
+   L1 bar (collapsed) → L2 summary (slides up) → L3 detail (expands left)
+   ============================================================ */
+
+/* Dock root: pinned to the bottom of the (scrollable) rail. */
+.eval-dock {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  z-index: 5;
+  flex-shrink: 0;
+  background: var(--sidebar, var(--surface));
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* L1 — collapsed bar, mirrors the Settings save-bar geometry. */
+.eval-dock__bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.eval-dock__bar:hover {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+.eval-dock__bar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.eval-dock__bar-label {
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--foreground);
+}
+.eval-dock__bar-stat {
+  font-size: 0.5625rem;
+  font-family: monospace;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eval-dock__bar-chevron {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+  transition: transform 0.25s ease, color 0.15s;
+}
+.eval-dock__bar:hover .eval-dock__bar-chevron {
+  color: var(--primary);
+}
+.eval-dock__bar-chevron--open {
+  transform: rotate(180deg);
+}
+
+/* L2 — summary slides UP from the bar (max-height transition). */
+.eval-dock__summary {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  border-bottom: 1px solid transparent;
+}
+.eval-dock__summary--open {
+  max-height: 60vh;
+  border-bottom-color: color-mix(in srgb, var(--border) 50%, transparent);
+}
+.eval-dock__summary-inner {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* EvalSummary rendered inline inside the dock: strip its panel chrome. */
+.eval-summary--inline {
+  background: transparent;
+  max-height: none;
+  padding: 1rem 1.25rem;
+  gap: 0.75rem;
+}
+
+/* L3 — run detail expands LEFT from the rail edge toward the chat. */
+.eval-dock__detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+  backdrop-filter: blur(4px);
+}
+.eval-dock__detail-panel {
+  width: min(640px, 92vw);
+  max-height: 100vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -24px 0 64px color-mix(in srgb, var(--background) 45%, transparent);
+  transform-origin: right center;
+  animation: eval-dock-expand-left 0.28s ease;
+}
+@keyframes eval-dock-expand-left {
+  from { transform: translateX(40px) scaleX(0.96); opacity: 0; }
+  to   { transform: translateX(0) scaleX(1); opacity: 1; }
 }

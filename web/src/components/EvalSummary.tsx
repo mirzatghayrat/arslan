@@ -6,9 +6,19 @@ import RunReplay from "./RunReplay";
 interface Props {
   onClose: () => void;
   spawnId?: number;
+  /**
+   * When `inline` is set, EvalSummary renders bare (no internal full-screen
+   * RunReplay swap, no close button) so it can be embedded in the EvalDock
+   * slide-up region. Clicking a run is reported via `onSelectRun` instead of
+   * opening RunReplay internally. Omitting `inline` keeps the original
+   * overlay behaviour intact for any other caller.
+   */
+  inline?: boolean;
+  /** Notified with a run id when a run row is clicked (inline mode). */
+  onSelectRun?: (runId: number) => void;
 }
 
-export default function EvalSummary({ onClose, spawnId }: Props) {
+export default function EvalSummary({ onClose, spawnId, inline = false, onSelectRun }: Props) {
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [viewRunId, setViewRunId] = useState<number | null>(null);
@@ -21,7 +31,12 @@ export default function EvalSummary({ onClose, spawnId }: Props) {
     return () => { cancelled = true; };
   }, [spawnId]);
 
-  if (viewRunId != null) {
+  const handleRowClick = (runId: number) => {
+    if (inline) onSelectRun?.(runId);
+    else setViewRunId(runId);
+  };
+
+  if (!inline && viewRunId != null) {
     return <RunReplay runId={viewRunId} onClose={() => setViewRunId(null)} />;
   }
 
@@ -34,11 +49,13 @@ export default function EvalSummary({ onClose, spawnId }: Props) {
     : null;
 
   return (
-    <div className="eval-summary" data-testid="eval-summary">
-      <header className="eval-summary__head">
-        <span className="eval-summary__title">评估摘要</span>
-        <button className="eval-summary__close" onClick={onClose} aria-label="close">✕</button>
-      </header>
+    <div className={`eval-summary${inline ? " eval-summary--inline" : ""}`} data-testid="eval-summary">
+      {!inline && (
+        <header className="eval-summary__head">
+          <span className="eval-summary__title">评估摘要</span>
+          <button className="eval-summary__close" onClick={onClose} aria-label="close">✕</button>
+        </header>
+      )}
 
       {error && <div className="eval-summary__error" role="alert">{error}</div>}
 
@@ -53,7 +70,7 @@ export default function EvalSummary({ onClose, spawnId }: Props) {
       ) : (
         <ul className="eval-list">
           {runs.map((r) => (
-            <li key={r.id} className="eval-list__row" onClick={() => setViewRunId(r.id)}>
+            <li key={r.id} className="eval-list__row" onClick={() => handleRowClick(r.id)}>
               <span className="eval-list__spawn">{r.spawn_name ?? "—"}</span>
               <span className={`eval-list__badge eval-list__badge--${r.overall_badge ?? "none"}`}>
                 {r.overall_badge ?? ""}

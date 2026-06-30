@@ -439,7 +439,10 @@
     "verify_diagnostics": "验证管道诊断",
     "level_progress": "等级进度",
     "mcp_none": "未连接 MCP",
-    "roster_count": "本会话分身"
+    "roster_count": "本会话分身",
+    "eval_label": "评估",
+    "eval_runs": "{{count}} 次运行",
+    "eval_avg": "均分"
   },
   "modal": {
     "create_spawn_title": "合成新专家分身",

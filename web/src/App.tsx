@@ -29,6 +29,7 @@ import GapFillModal, { type GapFillKind, type GapFillResult } from './components
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
+import EvalDock from './components/EvalDock';
 import SpawnEditPopup from './components/SpawnEditPopup';
 
 interface ArslanThread {
@@ -882,6 +883,18 @@ export default function App() {
             </div>
             )}
 
+            {/* Bottom-anchored evaluation dock (bar → slide-up summary → expand-left detail).
+                On a spawn direct-chat, scope runs to that spawn; on the orchestrator, show all. */}
+            <EvalDock
+              spawnId={
+                activeSection === 'spawn'
+                  ? (() => {
+                      const s = spawns.find((sp) => sp.id === activeSpawnChatId);
+                      return s ? Number(s.id) : undefined;
+                    })()
+                  : undefined
+              }
+            />
           </aside>
         )}
       </div>

@@ -19,7 +19,6 @@ import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
-import EvalSummary from './EvalSummary';
 import AttachBar, { type Attachment } from './AttachBar';
 import InviteConfirmCard from './InviteConfirmCard';
 import { resolveSpawnName } from '../api/resolveSpawnName';
@@ -96,8 +95,7 @@ export default function OrchestratorChat({
     onDeliverableVerdict?.(action, spawnId, messageId);
   };
   const [replayRunId, setReplayRunId] = useState<number | null>(null);
-  const [showEvalSummary, setShowEvalSummary] = useState(false);
-  
+
   // Open sandbox sessions: { spawnId, sessionId, seed? }. Multiple stay alive at once
   // (each SandboxPanel keeps its own socket); the 45% pane shows the active one, the
   // rest are mounted-but-hidden. seed = a deliverable to tune (refine entry).
@@ -235,7 +233,6 @@ export default function OrchestratorChat({
         <div className="flex items-center gap-2 shrink-0">
           <Terminal className="w-4 h-4 text-primary" />
           <span className="text-muted-foreground font-mono font-bold uppercase tracking-wider">{t('orchestrator.sandbox_label')}</span>
-          <button type="button" className="eval-open-btn" onClick={() => setShowEvalSummary(true)}>评估</button>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -1203,14 +1200,6 @@ export default function OrchestratorChat({
     <div className="run-replay-overlay" onClick={() => setReplayRunId(null)}>
       <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
         <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
-      </div>
-    </div>
-  )}
-
-  {showEvalSummary && (
-    <div className="run-replay-overlay" onClick={() => setShowEvalSummary(false)}>
-      <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
-        <EvalSummary onClose={() => setShowEvalSummary(false)} />
       </div>
     </div>
   )}

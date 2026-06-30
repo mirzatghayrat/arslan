@@ -439,7 +439,10 @@
     "verify_diagnostics": "Verify Pipe Diagnostics",
     "level_progress": "Level Progress",
     "mcp_none": "No MCP servers connected",
-    "roster_count": "Conversation spawns"
+    "roster_count": "Conversation spawns",
+    "eval_label": "Evaluación",
+    "eval_runs": "{{count}} ejecuciones",
+    "eval_avg": "prom"
   },
   "modal": {
     "create_spawn_title": "Synthesize New Spawn specialist",
