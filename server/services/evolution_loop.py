@@ -55,7 +55,12 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
                 "gate": {"passed": False, "reason": "spawn not found", "aggregate": None},
                 "evidence": None}
 
-    original = spawn.system_prompt or ""
+    # `spawn` is detached after the session closes above; below we only read eagerly-loaded
+    # columns (system_prompt / persona_role / persona_tone / name) — never a lazy relationship.
+    # Canonicalize the doc to its sectioned form up front (a headerless prompt becomes one
+    # `## Instructions` section) so the no-op-edit guard below (`cand_doc == doc`) fires even
+    # on the common headerless-prompt case.
+    original = skill_doc.apply_edits(spawn.system_prompt or "", [])
     doc = original
     persona = _persona(spawn)
     rejected: list[dict] = []
