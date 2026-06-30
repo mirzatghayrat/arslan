@@ -119,6 +119,21 @@ def test_loop_final_guard_vs_original(monkeypatch, memdb):
     assert res["proposal_id"] is None   # accepted vs running-best, but no net gain over original
 
 
+def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
+    async def fake_split(spawn_id, **k): return _split()
+    monkeypatch.setattr(replay_set, "build_split", fake_split)
+    async def boom(spawn_id, doc, val): raise RuntimeError("dispatch down")
+    monkeypatch.setattr(evolution_loop, "_val_outputs", boom)
+    async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
+        o = {"better": 0, "worse": 0, "tie": 1}
+        return {"items": [], "aggregate": {"overall": o, "dims": {}},
+                "gate": {"passed": False, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
+    monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+    _seed_spawn(memdb, _Spawn)
+    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))  # must not raise
+    assert res["proposal_id"] is None
+
+
 # ── confirm_proposal tests (unchanged behavior) ──────────────────────────────
 
 

@@ -9,6 +9,7 @@ from datetime import datetime
 from arslan.core.param_registry import DEFAULT_REGISTRY
 from server.db import session as db_session
 from server.db.models import EvolutionProposal, Spawn
+from server.orchestrator import dispatcher
 from server.services import evaluator, optimizer, replay_set, skill_doc
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,6 @@ def _persona(spawn: Spawn) -> str:
 
 async def _val_outputs(spawn_id: int, doc: str, val: list[dict]) -> dict:
     """Run `doc` over val, return {run_id: output} for the running-best baseline."""
-    from server.orchestrator import dispatcher
     out = {}
     for it in val:
         gen = await dispatcher.dispatch("evolution-eval", spawn_id=spawn_id,
@@ -38,7 +38,10 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
     ones), and accept any edit that beats the running best. Rejected edits buffer into
     later epochs; converge when an epoch accepts nothing. A final guard requires the
     accumulated doc to beat the ORIGINAL on held-out val before a proposal is persisted.
-    Returns {proposal_id, candidate_prompt, gate, evidence}."""
+    Returns {proposal_id, candidate_prompt, gate, evidence}.
+
+    Cost ≈ epochs × (val_cap running-best dispatches + accepted-candidates × val_cap eval
+    dispatches); the API caller uses all defaults."""
     split = await replay_set.build_split(spawn_id, train_cap=train_cap, val_cap=val_cap)
     if not split["val"]:
         return {"proposal_id": None, "candidate_prompt": None,
@@ -58,18 +61,33 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
     rejected: list[dict] = []
     accepted: list[dict] = []
     per_epoch: list[dict] = []
+    last_best_doc = None
+    running_best: dict = {}
 
     for _ in range(epochs):
-        running_best = await _val_outputs(spawn_id, doc, split["val"])
-        candidates = await optimizer.propose_edits(spawn, split["train"],
-                                                   lr_budget=lr_budget, avoid=rejected)
+        try:
+            if doc != last_best_doc:                       # M1: skip recompute if doc unchanged
+                running_best = await _val_outputs(spawn_id, doc, split["val"])
+                last_best_doc = doc
+            candidates = await optimizer.propose_edits(
+                spawn, split["train"], lr_budget=lr_budget, avoid=rejected)
+        except Exception as exc:  # noqa: BLE001  -- I1: finalize accumulated work, don't crash
+            logger.warning("evolution epoch aborted, finalizing early: %s", exc)
+            break
         if not candidates:
             break  # optimizer is out of ideas (converged / plateau)
         for edit in candidates:
             cand_doc = skill_doc.apply_edits(doc, [edit])
-            res = await evaluator.evaluate(spawn_id=spawn_id, persona=persona,
-                                           candidate_prompt=cand_doc, replay_items=split["val"],
-                                           baseline_outputs=running_best)
+            if cand_doc == doc:                            # M2: no-op edit -> auto-reject, no dispatch
+                rejected.append(edit)
+                continue
+            try:
+                res = await evaluator.evaluate(
+                    spawn_id=spawn_id, persona=persona, candidate_prompt=cand_doc,
+                    replay_items=split["val"], baseline_outputs=running_best)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("evolution candidate eval failed, skipping: %s", exc)
+                continue
             if res["gate"]["passed"]:
                 doc = cand_doc
                 accepted.append(edit)
@@ -78,8 +96,14 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
                 rejected.append(edit)
 
     # final guard: must beat the ORIGINAL on held-out val
-    final = await evaluator.evaluate(spawn_id=spawn_id, persona=persona, candidate_prompt=doc,
-                                     replay_items=split["val"])
+    try:
+        final = await evaluator.evaluate(spawn_id=spawn_id, persona=persona, candidate_prompt=doc,
+                                         replay_items=split["val"])
+    except Exception as exc:  # noqa: BLE001  -- I1: degrade to no-op, keep accumulated evidence
+        logger.warning("evolution final guard eval failed: %s", exc)
+        return {"proposal_id": None, "candidate_prompt": doc,
+                "gate": {"passed": False, "reason": f"final eval failed: {exc}", "aggregate": None},
+                "evidence": {"diff": accepted, "per_epoch": per_epoch}}
     gate = final["gate"]
     if not accepted or not gate["passed"]:
         return {"proposal_id": None, "candidate_prompt": doc,
