@@ -14,19 +14,25 @@ interface UseWebSocketResult {
 export function useWebSocket(
   path: string,
   onMessage: (msg: unknown) => void,
-  opts: { onAuthFail?: () => void; enabled?: boolean } = {},
+  opts: { onAuthFail?: () => void; enabled?: boolean; onOpen?: (path: string) => void } = {},
 ): UseWebSocketResult {
   const [reconnecting, setReconnecting] = useState(false);
   const socketRef = useRef<ReconnectingSocket | null>(null);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
+  // Keep onOpen in a ref so changing it doesn't tear down/reconnect the socket.
+  const onOpenRef = useRef(opts.onOpen);
+  onOpenRef.current = opts.onOpen;
 
   useEffect(() => {
     if (opts.enabled === false) return;
     const handlers: SocketHandlers = {
       onMessage: (m) => onMessageRef.current(m),
       onReconnecting: () => setReconnecting(true),
-      onOpen: () => setReconnecting(false),
+      onOpen: () => {
+        setReconnecting(false);
+        onOpenRef.current?.(path);
+      },
       onAuthFail: opts.onAuthFail,
     };
     const socket = new ReconnectingSocket(path, handlers);

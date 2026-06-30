@@ -7,6 +7,7 @@ import { useArslanStore } from './stores/arslanStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
+import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/sessionPersistence';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
 import { listProviderConfigs } from './api/client';
@@ -73,19 +74,34 @@ export default function App() {
 
   // ── Orchestrator threads — declared early so activeThreadId is available for
   // the WS hook below (hooks must be called in a consistent order).
-  const [threads, setThreads] = useState<ArslanThread[]>([
-    {
-      id: "thread-default",
-      title: "New Session",
-      memberSpawnIds: [],
-      history: []
-    }
-  ]);
-  const [activeThreadId, setActiveThreadId] = useState<string>("thread-default");
+  // Restore the persisted thread list + active id on init (resume last
+  // conversation, Claude/Gemini-style). Never reintroduce a literal
+  // "thread-default"; on first run / post-wipe we get one fresh "New Session".
+  const restoredInit = useRef(restoreThreads()).current;
+  const [threads, setThreads] = useState<ArslanThread[]>(restoredInit.threads);
+  const [activeThreadId, setActiveThreadId] = useState<string>(restoredInit.activeThreadId);
+
+  // ── Session-ephemeral roster: detect a FRESH app session (absent on a brand-new
+  // tab/app launch, present across same-tab reloads). Computed exactly once.
+  const freshSession = useRef(consumeFreshSessionFlag()).current;
+  // The thread id that was resumed on this fresh load — the ONLY thread whose
+  // roster we reset (not threads the user later switches to or creates).
+  const resumedThreadId = useRef(restoredInit.activeThreadId);
+  // Guard so the one-shot roster_reset fires once per fresh session.
+  const rosterResetSent = useRef(false);
 
   // ── Auto-title: track which threads have already received a generated title
-  // so we never regenerate on re-renders or subsequent messages.
-  const titledThreadIds = useRef<Set<string>>(new Set());
+  // so we never regenerate on re-renders or subsequent messages. Restored
+  // threads already have real titles → seed them so the auto-title effect
+  // doesn't re-title them.
+  const titledThreadIds = useRef<Set<string>>(
+    new Set(restoredInit.threads.map((t) => t.id)),
+  );
+
+  // Persist threads + active id whenever either changes (history is dropped).
+  useEffect(() => {
+    persistThreads(threads, activeThreadId);
+  }, [threads, activeThreadId]);
 
   // ── Stage B: Orchestrator chat live WS ─────────────────────────────────────
   // The store holds all thread items; we derive UI messages from it.
@@ -113,10 +129,30 @@ export default function App() {
     useArslanStore.getState().handleFrame(raw as ArslanServerMessage);
   }, []);
 
+  // Stable ref to wsSend so handleWsOpen (fired from inside the socket's onOpen)
+  // can send without re-subscribing the socket on every render. Assigned after
+  // the hook below; read only at call time inside the open handler.
+  const wsSendRef = useRef<((obj: unknown) => void) | null>(null);
+
+  // One-shot roster reset on a fresh app session: when the resumed thread's WS
+  // connection opens, clear that conversation's (stale, accumulated) roster so it
+  // starts empty. Guarded to fire exactly once, and ONLY for the initially
+  // resumed thread — NOT when the user later switches threads or starts a new
+  // session within the same tab session. A normal same-tab reload (freshSession
+  // === false) never resets.
+  const handleWsOpen = useCallback((openedPath: string) => {
+    if (!freshSession || rosterResetSent.current) return;
+    const expectedPath = `/ws/arslan/${resumedThreadId.current}`;
+    if (openedPath !== expectedPath) return;
+    rosterResetSent.current = true;
+    wsSendRef.current?.({ type: 'roster_reset', conversation_id: resumedThreadId.current });
+  }, [freshSession]);
+
   // Connect to the live orchestrator WebSocket using the active thread's id as
   // the conversation_id. useWebSocket reconnects automatically when the URL
   // changes (path is in its effect dep array), so switching threads reconnects.
-  const { send: wsSend } = useWebSocket(`/ws/arslan/${activeThreadId}`, handleArslanFrame);
+  const { send: wsSend } = useWebSocket(`/ws/arslan/${activeThreadId}`, handleArslanFrame, { onOpen: handleWsOpen });
+  wsSendRef.current = wsSend;
 
   // Derived UI messages from the live store
   const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
@@ -290,7 +326,7 @@ export default function App() {
   // Handle addition of a brand new Orchestrator thread context
   const handleAddArslanThread = () => {
     const threadId = `thread-${Date.now()}`;
-    const nextThreadNumber = threads.filter(t => t.id !== 'thread-default' && !t.title.includes('New Session')).length + 1;
+    const nextThreadNumber = threads.filter(t => !t.title.includes('New Session')).length + 1;
     const newThread: ArslanThread = {
       id: threadId,
       title: `Orchestration thread #${nextThreadNumber}`,
