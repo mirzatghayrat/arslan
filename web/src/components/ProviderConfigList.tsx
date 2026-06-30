@@ -1,13 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CatalogEntry, ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
+import type { ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
 import {
   addProviderConfig,
   updateProviderConfig,
   setPrimaryProviderConfig,
   deleteProviderConfig,
   suggestPrimary,
-  getCatalog,
   testLlm,
   testProviderConfig,
 } from '../api/client';
@@ -57,14 +56,9 @@ export default function ProviderConfigList({
   const [busy, setBusy] = useState<number | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestPrimaryResult | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
   const [testAllBusy, setTestAllBusy] = useState(false);
-
-  useEffect(() => {
-    getCatalog().then(setCatalog).catch(() => setCatalog([]));
-  }, []);
 
   // --- helpers ---
 
@@ -555,40 +549,6 @@ export default function ProviderConfigList({
         )}
       </div>
 
-      {/* Read-only capability table */}
-      {catalog.length > 0 && (
-        <details className="group">
-          <summary className="cursor-pointer list-none text-[10.5px] font-mono font-medium text-subtle-foreground hover:text-foreground uppercase tracking-wide transition-colors">
-            {t('settings.capabilityTable')}
-          </summary>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-[10px] font-mono border-collapse">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-1.5 pr-3 text-subtle-foreground font-medium">{t('settings.capColProvider')}</th>
-                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColCost')}</th>
-                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColSpeed')}</th>
-                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColTools')}</th>
-                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColReasoning')}</th>
-                  <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColContext')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {catalog.map((entry) => (
-                  <tr key={entry.provider} className="border-b border-border/50 hover:bg-surface">
-                    <td className="py-1.5 pr-3 text-foreground">{entry.provider}</td>
-                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.cost}</td>
-                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.speed}</td>
-                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.tool_calling}</td>
-                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.reasoning}</td>
-                    <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.long_context}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
     </div>
   );
 }

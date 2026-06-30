@@ -376,10 +376,10 @@ export default function OrchestratorChat({
               <span className="text-[10px] font-mono text-subtle-foreground uppercase tracking-widest block">{t('orchestrator.presets_label')}</span>
               <div className="flex flex-wrap gap-1.5 justify-center">
                 {[
-                  { icon: 'vuln-test', label: t('orchestrator.preset_code_audit'), prompt: "Conduct automatic code analysis on sandbox files to discover vulnerability patterns." },
-                  { icon: 'financial-res', label: t('orchestrator.preset_financial'), prompt: "Summarize Q1 market ratings and consensus predictions for Blackwell chipsets output." },
-                  { icon: 'seo-opt', label: t('orchestrator.preset_slogan'), prompt: "Draft optimized copywriting hooks for key promotional tech campaigns with emojis." },
-                  { icon: 'web-search', label: t('orchestrator.preset_drive'), prompt: "Use Brave registry crawler tool to catalog recent AI deployment metrics." }
+                  { icon: 'vuln-test', label: t('orchestrator.preset_code_audit'), prompt: "Research and summarize the latest developments in AI agent frameworks — compare key architectures, use cases, and tradeoffs." },
+                  { icon: 'financial-res', label: t('orchestrator.preset_financial'), prompt: "Analyze publicly available data on a company or market sector and produce a structured research report with key metrics and outlook." },
+                  { icon: 'seo-opt', label: t('orchestrator.preset_slogan'), prompt: "Write polished, on-brand copy for a product launch: tagline, three feature bullet points, and a call-to-action paragraph." },
+                  { icon: 'web-search', label: t('orchestrator.preset_drive'), prompt: "Find the top trending AI and developer tool repositories on GitHub this week and summarize what each one does." }
                 ].map((item, idx) => (
                   <button
                     key={idx}
@@ -929,7 +929,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
-                  <Markdown className="text-muted-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  <Markdown className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (

@@ -65,7 +65,6 @@ export default function App() {
 
   // Custom states for style variations (specifically asked in prompt)
   const [currentChatStyle, setCurrentChatStyle] = useState<'quartz' | 'brutalist' | 'linear'>('linear');
-  const [currentCardStyle, setCurrentCardStyle] = useState<'isometric' | 'blueprint' | 'compact'>('compact');
 
   // Control Center Right Drawer Toggle state for redesigned grand layout frame
   const [showControlPanel, setShowControlPanel] = useState<boolean>(true);
@@ -637,8 +636,6 @@ export default function App() {
                 spawns={spawns}
                 selectedSpawnId={selectedSpawnId}
                 setSelectedSpawnId={setSelectedSpawnId}
-                cardStyle={currentCardStyle}
-                setCardStyle={setCurrentCardStyle}
                 onEditEquipment={handleEditSpawnEquipment}
                 onCreateSpawnClick={() => setShowCreateModal(true)}
                 onOpenDirectChat={(spawnId) => {
