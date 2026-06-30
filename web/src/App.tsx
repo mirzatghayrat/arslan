@@ -449,7 +449,7 @@ export default function App() {
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased select-none">
       <ThemeApplier />
 
-      {/* Sidebar with macOS window decorations & CPU load monitors */}
+      {/* Sidebar with macOS window decorations */}
       <Sidebar
         threads={threads}
         activeThreadId={activeThreadId}
