@@ -147,6 +147,21 @@
     "skill_body": "Corps SKILL.md",
     "create_skill": "Créer la compétence"
   },
+  "spawn_edit": {
+    "close": "Fermer",
+    "loading": "Chargement du registre…",
+    "empty": "Rien d'assignable ici.",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré",
+    "selected_count": "{{count}} activé(s)",
+    "panel": {
+      "skill": "Compétences",
+      "tool": "Outils",
+      "mcp": "MCPs"
+    }
+  },
   "equipment": {
     "title": "Équipement",
     "edit": "Modifier l'équipement",

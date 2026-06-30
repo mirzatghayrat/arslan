@@ -147,6 +147,21 @@
     "skill_body": "SKILL.md body",
     "create_skill": "Create skill"
   },
+  "spawn_edit": {
+    "close": "Close",
+    "loading": "Loading registry…",
+    "empty": "Nothing assignable here.",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "selected_count": "{{count}} on",
+    "panel": {
+      "skill": "Skills",
+      "tool": "Tools",
+      "mcp": "MCPs"
+    }
+  },
   "equipment": {
     "title": "Equipment",
     "edit": "Edit equipment",

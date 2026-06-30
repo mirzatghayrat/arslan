@@ -29,6 +29,7 @@ import GapFillModal, { type GapFillKind, type GapFillResult } from './components
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
+import SpawnEditPopup from './components/SpawnEditPopup';
 
 interface ArslanThread {
   id: string;
@@ -237,6 +238,10 @@ export default function App() {
   useEffect(() => { api.listMcpServers().then(setMcpServers).catch(() => setMcpServers([])); }, []);
 
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
+
+  // Right-rail "Spawns Pipeline" inline edit popup (Feature E/F): opens in place
+  // over the chat view instead of navigating to the full-screen Ledger editor.
+  const [spawnEditPopupId, setSpawnEditPopupId] = useState<string | null>(null);
 
   // New Spawn Creation modal/overlay state
   // Gap-fill: a focused, human-confirmed acquisition modal whose result is
@@ -833,11 +838,7 @@ export default function App() {
                     return (
                       <div
                         key={spawn.id}
-                        onClick={() => {
-                          setSelectedSpawnId(spawn.id);
-                          setPanelView('editor');
-                          setActiveSection('ledger');
-                        }}
+                        onClick={() => setSpawnEditPopupId(spawn.id)}
                         className="p-2.5 bg-background/80 border border-border/50 hover:border-primary/30 rounded-xl transition-all cursor-pointer flex flex-col gap-2 group animate-fade-in"
                       >
                         <div className="flex items-center justify-between">
@@ -885,6 +886,27 @@ export default function App() {
         )}
       </div>
       </main>
+
+      {/* Right-rail Spawns Pipeline → inline equipment edit popup (Feature E/F) */}
+      {spawnEditPopupId && (() => {
+        const s = spawns.find((sp) => sp.id === spawnEditPopupId);
+        if (!s) return null;
+        return (
+          <SpawnEditPopup
+            spawnId={Number(s.id)}
+            spawnName={s.name}
+            spawnDomain={s.domain}
+            onClose={() => setSpawnEditPopupId(null)}
+            onSaved={async () => {
+              // Refresh the spawn list/roster so the rail reflects the new equipment.
+              try {
+                const freshSpawns = await api.listSpawns();
+                setSpawns(freshSpawns.map(toUiSpawn));
+              } catch { /* best-effort refresh */ }
+            }}
+          />
+        );
+      })()}
 
       {/* Dynamic Spawn Creator Dialog Box overlay */}
       {showCreateModal && (

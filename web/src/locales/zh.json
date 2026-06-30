@@ -147,6 +147,21 @@
     "skill_body": "SKILL.md 正文",
     "create_skill": "创建技能"
   },
+  "spawn_edit": {
+    "close": "关闭",
+    "loading": "加载注册表…",
+    "empty": "这里没有可装备的项。",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "已保存",
+    "selected_count": "已选 {{count}}",
+    "panel": {
+      "skill": "技能",
+      "tool": "工具",
+      "mcp": "MCP"
+    }
+  },
   "equipment": {
     "title": "装备",
     "edit": "编辑装备",

@@ -147,6 +147,21 @@
     "skill_body": "SKILL.md-Inhalt",
     "create_skill": "Fähigkeit erstellen"
   },
+  "spawn_edit": {
+    "close": "Schließen",
+    "loading": "Registry wird geladen…",
+    "empty": "Hier ist nichts zuweisbar.",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "saving": "Speichern…",
+    "saved": "Gespeichert",
+    "selected_count": "{{count}} aktiv",
+    "panel": {
+      "skill": "Fähigkeiten",
+      "tool": "Werkzeuge",
+      "mcp": "MCPs"
+    }
+  },
   "equipment": {
     "title": "Ausrüstung",
     "edit": "Ausrüstung bearbeiten",

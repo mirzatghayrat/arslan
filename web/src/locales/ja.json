@@ -147,6 +147,21 @@
     "skill_body": "SKILL.md 本文",
     "create_skill": "スキルを作成"
   },
+  "spawn_edit": {
+    "close": "閉じる",
+    "loading": "レジストリを読み込み中…",
+    "empty": "割り当て可能な項目がありません。",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "保存しました",
+    "selected_count": "{{count}} 件選択",
+    "panel": {
+      "skill": "スキル",
+      "tool": "ツール",
+      "mcp": "MCP"
+    }
+  },
   "equipment": {
     "title": "装備",
     "edit": "装備を編集",

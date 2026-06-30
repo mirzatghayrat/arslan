@@ -147,6 +147,21 @@
     "skill_body": "Cuerpo de SKILL.md",
     "create_skill": "Crear habilidad"
   },
+  "spawn_edit": {
+    "close": "Cerrar",
+    "loading": "Cargando registro…",
+    "empty": "Nada asignable aquí.",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "saved": "Guardado",
+    "selected_count": "{{count}} activos",
+    "panel": {
+      "skill": "Habilidades",
+      "tool": "Herramientas",
+      "mcp": "MCPs"
+    }
+  },
   "equipment": {
     "title": "Equipamiento",
     "edit": "Editar equipamiento",
