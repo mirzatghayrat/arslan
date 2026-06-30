@@ -47,12 +47,44 @@ export default function SpawnDirectChat({
   const [streaming, setStreaming] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachKey, setAttachKey] = useState(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   // Per-stream tool steps accumulated from tool_call/tool_result frames, attached on stream_end.
   const toolStepsRef = useRef<ToolStep[]>([]);
 
+  // When user scrolls up, release the stick. When they scroll back near the bottom, re-engage.
+  const handleScrollContainerScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
+
+  const scrollToBottom = () => {
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  // Observe content size so streaming tokens trigger instant scroll.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scrollToBottom();
+    });
+    const target = el.firstElementChild ?? el;
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, []);
+
+  // When messages gain a new user message (just sent), force stick to bottom.
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last?.sender === 'user') {
+      stickToBottomRef.current = true;
+      scrollToBottom();
+    } else if (stickToBottomRef.current) {
+      scrollToBottom();
+    }
   }, [messages]);
 
   // Reset messages when spawn changes (before new history frame arrives)
@@ -270,7 +302,7 @@ export default function SpawnDirectChat({
       )}
 
       {/* Messages Thread Container */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 relative z-10">
+      <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto p-6 space-y-6 relative z-10">
 
         {/* Header Hero card for direct chat — prism halo behind it in the empty state */}
         <div className="relative max-w-3xl mx-auto mb-8">
@@ -452,7 +484,6 @@ export default function SpawnDirectChat({
           })}
         </div>
 
-        <div ref={bottomRef} className="h-4"></div>
       </div>
 
       {/* Message input bar */}

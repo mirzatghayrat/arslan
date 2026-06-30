@@ -127,6 +127,16 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
         <div ref={bottomRef} />
       </div>
 
+      <form onSubmit={submit} className="p-3 border-t border-border/80 relative">
+        <input value={input} onChange={(e) => setInput(e.target.value)} disabled={streaming}
+          placeholder={t('orchestrator.sandbox_input_placeholder', { name: spawn.name })}
+          className="w-full bg-background border border-border-strong focus:border-primary/60 rounded-xl pl-3 pr-10 py-2.5 text-xs text-foreground focus:outline-none" />
+        <button type="submit" disabled={streaming || !input.trim()}
+          className="absolute right-5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-primary text-primary-foreground disabled:bg-foreground/[0.02] disabled:text-subtle-foreground">
+          {streaming ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+        </button>
+      </form>
+
       <div className="flex gap-2 px-4 py-2 border-t border-border/80">
         <button onClick={confirm} disabled={!hasContent || streaming}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed">
@@ -137,16 +147,6 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
           {t('orchestrator.sandbox_discard')}
         </button>
       </div>
-
-      <form onSubmit={submit} className="p-3 border-t border-border/80 relative">
-        <input value={input} onChange={(e) => setInput(e.target.value)} disabled={streaming}
-          placeholder={t('orchestrator.sandbox_input_placeholder', { name: spawn.name })}
-          className="w-full bg-background border border-border-strong focus:border-primary/60 rounded-xl pl-3 pr-10 py-2.5 text-xs text-foreground focus:outline-none" />
-        <button type="submit" disabled={streaming || !input.trim()}
-          className="absolute right-5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-primary text-primary-foreground disabled:bg-foreground/[0.02] disabled:text-subtle-foreground">
-          {streaming ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-        </button>
-      </form>
     </div>
   );
 }

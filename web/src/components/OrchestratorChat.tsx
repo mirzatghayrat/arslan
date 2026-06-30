@@ -121,10 +121,44 @@ export default function OrchestratorChat({
   const [skillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([]);
   const evaluationResult = null;
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
+  // When user scrolls up, release the stick. When they scroll back near the bottom, re-engage.
+  const handleScrollContainerScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
+
+  // Scroll container to bottom instantly (reliable during streaming).
+  const scrollToBottom = () => {
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  // Observe the size of the scroll container's content so streaming tokens trigger scroll.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scrollToBottom();
+    });
+    // Observe the first child (the inner content wrapper) if present, else the container itself.
+    const target = el.firstElementChild ?? el;
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, []);
+
+  // When chatHistory gains a new user message (just sent), force stick to bottom.
+  useEffect(() => {
+    const last = chatHistory[chatHistory.length - 1];
+    if (last?.sender === 'user') {
+      stickToBottomRef.current = true;
+      scrollToBottom();
+    } else if (stickToBottomRef.current) {
+      scrollToBottom();
+    }
   }, [chatHistory]);
 
 
@@ -260,7 +294,7 @@ export default function OrchestratorChat({
           splitSpawnId ? 'w-[55%] border-r border-border' : 'w-full'
         }`}>
           {/* Scrollable Chat Area */}
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {chatHistory.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto py-10 px-4 space-y-8 select-none">
             {/* Greeting Header inspired by Claude's elegant style */}
@@ -1067,7 +1101,6 @@ export default function OrchestratorChat({
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       {/* Input Message Form Panel */}
