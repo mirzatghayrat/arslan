@@ -37,6 +37,24 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
     if transport == "stdio" and not (command or "").strip():
         raise ValueError("stdio transport requires a command")
     async with db_session.AsyncSessionLocal() as db:
+        # Dedup guard: return existing row if (label, url) or (label, command, args) already present
+        existing = None
+        if transport == "http":
+            result = await db.execute(
+                select(MCPServer).where(MCPServer.label == label, MCPServer.url == url)
+            )
+            existing = result.scalars().first()
+        else:
+            canon_args = json.dumps(sorted(args or []))
+            all_stdio = (await db.execute(
+                select(MCPServer).where(MCPServer.label == label, MCPServer.command == (command or ""))
+            )).scalars().all()
+            for row in all_stdio:
+                if json.dumps(sorted(row.args or [])) == canon_args:
+                    existing = row
+                    break
+        if existing is not None:
+            return _to_dict(existing)
         srv = MCPServer(label=label, command=command or "", args=args or [], transport=transport, url=url,
                         env=crypto.encrypt(json.dumps(env or {})), status="registered")
         db.add(srv)

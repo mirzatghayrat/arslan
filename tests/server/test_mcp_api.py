@@ -134,3 +134,44 @@ async def test_add_server_rejects_malformed_transport(client):
         await mcp_service.add_server("l", "", [], {}, transport="http", url="")  # http needs url
     with _pytest.raises(ValueError):
         await mcp_service.add_server("l", "", [], {}, transport="stdio")         # stdio needs command
+
+
+async def test_add_server_dedup_stdio(client):
+    """Adding the same stdio server (label+command+args) twice yields exactly one row."""
+    c, m = client
+    from server.services import mcp_service
+    async with c:
+        first = await mcp_service.add_server("myserver", "npx", ["-y", "tool"], {}, transport="stdio")
+        second = await mcp_service.add_server("myserver", "npx", ["-y", "tool"], {}, transport="stdio")
+    assert first["id"] == second["id"], "dedup guard must return the existing row, not insert a new one"
+    # Verify only one row in DB
+    from sqlalchemy import select
+    from server.db.models import MCPServer
+    async with m() as s:
+        rows = (await s.execute(select(MCPServer).where(MCPServer.label == "myserver"))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_add_server_dedup_http(client):
+    """Adding the same http server (label+url) twice yields exactly one row."""
+    c, m = client
+    from server.services import mcp_service
+    async with c:
+        first = await mcp_service.add_server("remote", "", [], {}, transport="http", url="https://mcp.example/api")
+        second = await mcp_service.add_server("remote", "", [], {}, transport="http", url="https://mcp.example/api")
+    assert first["id"] == second["id"], "dedup guard must return the existing row, not insert a new one"
+    from sqlalchemy import select
+    from server.db.models import MCPServer
+    async with m() as s:
+        rows = (await s.execute(select(MCPServer).where(MCPServer.label == "remote"))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_add_server_different_args_not_deduped(client):
+    """Same label+command but different args are treated as distinct servers."""
+    c, m = client
+    from server.services import mcp_service
+    async with c:
+        first = await mcp_service.add_server("tool", "npx", ["-y", "toolA"], {}, transport="stdio")
+        second = await mcp_service.add_server("tool", "npx", ["-y", "toolB"], {}, transport="stdio")
+    assert first["id"] != second["id"], "different args must produce separate server entries"
