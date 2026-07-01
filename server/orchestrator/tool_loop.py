@@ -107,7 +107,8 @@ _PROMISES_ACTION_RE = re.compile(
     r"|STEP\s*\S{0,4}\s*(调用|调取|搜索|抓取|获取|查询|绘制|生成|call|search|fetch|generate)"
     r"|第\s*[一二三四五六七八九十\d]+\s*步\s*[:：]?\s*(调用|调取|搜索|抓取|获取)"
     r"|(下一步|接下来)\s*[，,：:]?\s*(我|让我)\s*(会|要|将|就|继续)?\s*(搜索|查询|抓取|获取|绘制|生成|调用)"
-    r"|调用\s*(web_search|web_extract|render_chart)"
+    r"|调用\s*(web_search|web_extract|render_chart|render_deck)"
+    r"|(生成|制作|输出|导出)\s*[^。\n]{0,6}(deck|pptx|\.pptx|幻灯|演示|ppt)"
     r"|let me (search|look this up|fetch|pull|grab|draw|generate|chart|get the data)"
     r"|i(?:'ll| will| am going to|'m going to)\s+(?:now\s+|quickly\s+|go\s+)?"
     r"(search|fetch|pull|retrieve|draw|generate|chart|look up|gather)",

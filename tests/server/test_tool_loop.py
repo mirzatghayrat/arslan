@@ -432,6 +432,9 @@ def test_promises_action_matches_real_world_phrasings():
         "现在让我继续获取其他项目的 star 数据。",
         "马上为您绘制今日 GitHub 趋势全景图！数据正在路上",
         "let me search for the latest data",
+        # render_deck promise (observed live) — a new tool must be in the guard's vocabulary
+        "以上是完整结构。现在调用 render_deck 生成 .pptx。",
+        "我这就为您制作演示 deck",
     ]:
         assert tool_loop._promises_action(s), s
 
