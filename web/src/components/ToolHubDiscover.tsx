@@ -10,15 +10,20 @@ import {
   type EvalResult, type SearchItem, type SkillDraft,
 } from '../api/discovery';
 import { addMcpServer } from '../api/mcp';
-import { MCP_PRESETS } from '../data/mcpPresets';
+import RecommendedMcp from './RecommendedMcp';
+import type { McpPrefill } from '../data/mcpPresets';
 
-// Prefill payload handed to the MCP add-form (wired by Task 5's presets row).
-export type McpPrefill = { label: string; command: string; args: string[]; transport: string; url?: string; envKeys?: string[]; note?: string };
+// The type + isOneClick now live in the data module (breaks the RecommendedMcp import cycle);
+// re-export McpPrefill so existing importers (Capabilities, SavedCandidates) keep their path.
+export type { McpPrefill };
 
 // Global Integration Discovery & Repository Engine (Tool-Hub) — LIVE.
 // Read-only discovery: paste a GitHub repo → backend evaluates trust + classifies MCP.
 // "Add" promotes the candidate into the live MCP registry via the existing P2b addMcpServer (locked).
-export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: McpPrefill) => void } = {}) {
+export default function ToolHubDiscover({ onPrefillMcp, onMcpConnected }: {
+  onPrefillMcp?: (d: McpPrefill) => void;
+  onMcpConnected?: () => void;
+} = {}) {
   const { t } = useTranslation();
 
   const [showSandboxSearch, setShowSandboxSearch] = useState(true);
@@ -255,20 +260,11 @@ export default function ToolHubDiscover({ onPrefillMcp }: { onPrefillMcp?: (d: M
             </button>
           </div>
 
-          {/* Curated MCP presets — clicking pre-fills the MCP add form (review + connect, not auto-installed) */}
-          <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-mono text-subtle-foreground select-none">
-            <span>{t('ledger.tool_hub_presets_label')}</span>
-            {MCP_PRESETS.map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                title={preset.note}
-                onClick={() => onPrefillMcp?.(preset)}
-                className="px-2 py-0.5 rounded bg-foreground/[0.05] hover:bg-primary/10 hover:text-primary text-subtle-foreground transition-colors cursor-pointer"
-              >
-                {preset.label}
-              </button>
-            ))}
+          {/* Recommended MCP servers — credential-free ones connect in one click; keyed ones
+              prefill the add form. Replaces the old prefill-only preset chips. */}
+          <div className="space-y-2">
+            <span className="text-[10.5px] font-mono text-subtle-foreground select-none">{t('ledger.tool_hub_presets_label')}</span>
+            <RecommendedMcp onPrefillMcp={onPrefillMcp} onChanged={onMcpConnected} />
           </div>
 
           {evalError && (

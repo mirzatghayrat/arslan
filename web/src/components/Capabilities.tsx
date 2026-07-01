@@ -13,6 +13,9 @@ export default function Capabilities() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<CapTab>("mcps");
   const [mcpPrefill, setMcpPrefill] = useState<McpPrefill | null>(null);
+  // Bumped when a recommended MCP is one-click connected, to remount McpServers so its
+  // server list picks the new one up ("manage below" then actually shows it).
+  const [mcpRefreshKey, setMcpRefreshKey] = useState(0);
   return (
     <div className="p-6 max-w-5xl mx-auto w-full overflow-y-auto">
       <h2 className="text-sm font-bold font-mono uppercase tracking-widest text-foreground mb-1">
@@ -20,7 +23,10 @@ export default function Capabilities() {
       </h2>
       <p className="text-[11px] text-subtle-foreground font-sans mb-6">{t("capabilities.subtitle")}</p>
       {/* Shared Discover area (Tool-Hub) — stays fixed above the scrollable tab content. */}
-      <ToolHubDiscover onPrefillMcp={(p) => { setMcpPrefill(p); setTab("mcps"); }} />
+      <ToolHubDiscover
+        onPrefillMcp={(p) => { setMcpPrefill(p); setTab("mcps"); }}
+        onMcpConnected={() => { setMcpRefreshKey((k) => k + 1); setTab("mcps"); }}
+      />
       <CapabilityTabs
         active={tab}
         onChange={(id) => setTab(id as CapTab)}
@@ -37,7 +43,7 @@ export default function Capabilities() {
         {tab === "tools" && <CapabilityCatalog kind="tools" />}
         {tab === "skills" && <CapabilityCatalog kind="skills" />}
         {tab === "forge" && <SkillForge />}
-        {tab === "mcps" && <McpServers prefill={mcpPrefill ?? undefined} />}
+        {tab === "mcps" && <McpServers key={mcpRefreshKey} prefill={mcpPrefill ?? undefined} />}
         {tab === "saved" && <SavedCandidates onPrefillMcp={(p) => { setMcpPrefill(p); setTab("mcps"); }} />}
       </div>
     </div>
