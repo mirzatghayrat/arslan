@@ -295,6 +295,28 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
     # META (self-authoring — ingested/adapted from anthropics/skills, Apache-2.0; see THIRD_PARTY_NOTICES.md)
     ("skill-creator", "skill-creator", "meta",
      "Package a reusable method into a high-quality SKILL.md; lets users/Arslan self-author skills.", _S, _REG),
+    ("writing-skills", "writing-skills", "meta",
+     "TDD-for-skills: baseline-test → write → close loopholes; how to author/verify a SKILL.md.", _S, _REG),
+    # COLLABORATION (methodology — adapted from obra/superpowers, MIT; see THIRD_PARTY_NOTICES.md)
+    ("brainstorming", "brainstorming", "collaboration",
+     "Explore an idea into a design before any implementation: one question at a time, approval-gated.", _S, _REG),
+    ("receiving-code-review", "receiving-code-review", "collaboration",
+     "Evaluate review feedback technically: verify before implementing, no performative agreement.", _S, _REG),
+    # WRITING (adapted from anthropics/skills, Apache-2.0)
+    ("internal-comms", "internal-comms", "writing",
+     "Write internal comms in company formats: 3P updates, newsletters, FAQs, status/incident reports.", _S, _REG),
+    # MARKETING (adapted from anthropics/skills, Apache-2.0)
+    ("brand-guidelines", "brand-guidelines", "marketing",
+     "Apply a consistent brand palette + typography to any artifact (Anthropic brand as reference).", _S, _REG),
+    # CREATIVE (adapted from anthropics/skills, Apache-2.0)
+    ("frontend-design", "frontend-design", "creative",
+     "Distinctive, opinionated UI visual design: palette, typography, layout, one justified risk.", _S, _REG),
+    ("theme-factory", "theme-factory", "creative",
+     "Apply a consistent color+font theme to artifacts from presets, or generate one on the fly.", _S, _REG),
+    ("canvas-design", "canvas-design", "creative",
+     "Design-philosophy method for original static visual art (poster/artwork): 90% visual, 10% text.", _S, _REG),
+    ("algorithmic-art", "algorithmic-art", "creative",
+     "Algorithmic-philosophy method for p5.js generative art with seeded, reproducible randomness.", _S, _REG),
     # APPLE
     ("apple-notes", "apple-notes", "apple", "Manage Apple Notes via memo CLI.", _S, _REG),
     ("apple-reminders", "apple-reminders", "apple", "Apple Reminders via remindctl.", _S, _REG),
@@ -371,6 +393,14 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
     # SOCIAL-MEDIA
     ("xurl", "xurl", "social-media", "X/Twitter — read/search for spawns; posts/DMs Arslan-mediated.", _S, _REG),
     # SOFTWARE-DEVELOPMENT
+    ("verification-before-completion", "verification-before-completion", "software-development",
+     "Run verification and read output before claiming done/fixed/passing (analysis discipline).", _S, _REG),
+    ("finishing-a-development-branch", "finishing-a-development-branch", "software-development",
+     "Verify tests, then present 4 options (merge/PR/keep/discard) and execute + worktree cleanup.", _O, _REG),
+    ("mcp-builder", "mcp-builder", "software-development",
+     "Design high-quality MCP servers: tool design, naming, error messages, evaluations.", _S, _REG),
+    ("webapp-testing", "webapp-testing", "software-development",
+     "Playwright web-app testing methodology: reconnaissance-then-action, wait-for-networkidle.", _S, _REG),
     ("codebase-audit", "codebase-audit", "software-development", "Audit + risk classify (read/plan only).", _S, _REG),
     ("node-inspect-debugger", "node-inspect-debugger", "software-development", "Debug Node via CDP (attaches/executes).", _O, _REG),
     ("plan", "plan", "software-development", "Plan mode: markdown plan, no execution.", _S, _REG),
