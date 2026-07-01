@@ -569,6 +569,18 @@
     },
     "reject": {
       "button": "Rejeter"
+    },
+    "curator": {
+      "usage": "{{usage}} runs since promotion",
+      "score": "avg {{score}}/10",
+      "noScore": "no scored runs yet",
+      "flagUnused": "⚠ unused",
+      "flagUnderperforming": "⚠ underperforming",
+      "retire": "Retire",
+      "retireConfirm": "Retire — unassign everywhere",
+      "cancel": "Cancel",
+      "retireHint": "flagged for review — retire unassigns it everywhere and makes it non-assignable",
+      "retired": "Retired \"{{key}}\" — unassigned from {{count}} spawn(s)."
     }
   },
   "spawn": {

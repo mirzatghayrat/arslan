@@ -6,8 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from server.auth import require_auth
 from server.db.models import SkillCandidate
+from pydantic import BaseModel
+
 from server.schemas import SkillCandidateOut, SkillEvaluateIn, SkillForgeIn
-from server.services import skill_forge
+from server.services import curator, skill_forge
+
+
+class SkillRetireIn(BaseModel):
+    key: str
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -58,3 +64,19 @@ async def promote_skill_candidate(candidate_id: int) -> dict:
 @router.post("/skills/candidates/{candidate_id}/reject")
 async def reject_skill_candidate(candidate_id: int) -> dict:
     return await skill_forge.reject_candidate(candidate_id)
+
+
+# ── Curator (Slice 3): post-promotion hygiene for promoted self-authored skills ──
+@router.get("/skills/curator/review")
+async def curator_review() -> list[dict]:
+    """Usage/quality signals per promoted self-authored skill (flags for human review)."""
+    return await curator.review_promoted_skills()
+
+
+@router.post("/skills/curator/retire")
+async def curator_retire(body: SkillRetireIn) -> dict:
+    """Human-confirmed retire: unassign a promoted skill everywhere + make it non-assignable."""
+    result = await curator.retire_skill(body.key)
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("reason", "cannot retire"))
+    return result

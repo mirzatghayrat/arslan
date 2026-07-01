@@ -398,6 +398,17 @@ export interface SkillPromoteResult {
   reason?: string;
 }
 
+/** Curator (Slice 3) usage/quality signal for one promoted self-authored skill. */
+export interface CuratorFlag {
+  key: string;
+  name: string;
+  equipped_spawns: number;
+  usage: number;
+  avg_score: number | null;
+  flag: "unused" | "underperforming" | null;
+  reason: string | null;
+}
+
 export interface McpTool {
   key: string;
   name: string;

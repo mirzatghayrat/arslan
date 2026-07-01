@@ -569,6 +569,18 @@
     },
     "reject": {
       "button": "拒绝"
+    },
+    "curator": {
+      "usage": "晋升后 {{usage}} 次运行",
+      "score": "均分 {{score}}/10",
+      "noScore": "暂无评分运行",
+      "flagUnused": "⚠ 未使用",
+      "flagUnderperforming": "⚠ 表现不佳",
+      "retire": "退役",
+      "retireConfirm": "退役 — 全部解绑",
+      "cancel": "取消",
+      "retireHint": "已标记待审 — 退役会从所有分身解绑并使其不可装备",
+      "retired": "已退役 \"{{key}}\" — 从 {{count}} 个分身解绑。"
     }
   },
   "spawn": {

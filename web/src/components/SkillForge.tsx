@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Hammer, RefreshCcw, Plus, X, Check, Rocket, FlaskConical } from "lucide-react";
+import { Hammer, RefreshCcw, Plus, X, Check, Rocket, FlaskConical, Archive, AlertTriangle } from "lucide-react";
 import { api, ApiError } from "../api/client";
-import type { SkillCandidate, SpawnSummary } from "../api/client.types";
+import type { CuratorFlag, SkillCandidate, SpawnSummary } from "../api/client.types";
 
 // Skill Forge — the self-authored end of the skills library.
 // A human (or Arslan) packages a method into a SKILL.md → candidate (observing) →
@@ -45,9 +45,23 @@ export default function SkillForge() {
   const [rowNotice, setRowNotice] = useState<Record<number, Notice>>({});
   const [confirmPromote, setConfirmPromote] = useState<number | null>(null);
 
+  // Curator (Slice 3): usage/quality signals per promoted skill, keyed by skill key.
+  const [curator, setCurator] = useState<Record<string, CuratorFlag>>({});
+  const [confirmRetire, setConfirmRetire] = useState<number | null>(null);
+
+  const reloadCurator = async () => {
+    try {
+      const rows = await api.getCuratorReview();
+      setCurator(Object.fromEntries(rows.map((r) => [r.key, r])));
+    } catch {
+      setCurator({});
+    }
+  };
+
   const reload = async () => {
     try {
       setCandidates(await api.listSkillCandidates());
+      void reloadCurator();
     } catch (e) {
       setListError(e instanceof Error ? e.message : String(e));
     }
@@ -141,6 +155,27 @@ export default function SkillForge() {
       await reload();
     } catch (e) {
       setRow(id, { kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRetire = async (id: number, key: string) => {
+    setBusyId(id);
+    setRow(id, null);
+    setConfirmRetire(null);
+    try {
+      const res = await api.retireSkill(key);
+      if (res.ok) {
+        setRow(id, { kind: "ok", text: t("forge.curator.retired", { key: res.key ?? key, count: res.unassigned ?? 0 }) });
+      } else {
+        setRow(id, { kind: "err", text: res.reason ?? "" });
+      }
+      await reload();
+    } catch (e) {
+      // 409 lands here — surface its reason honestly.
+      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+      setRow(id, { kind: "err", text: msg });
     } finally {
       setBusyId(null);
     }
@@ -312,6 +347,69 @@ export default function SkillForge() {
                     </span>
                   )}
                 </div>
+
+                {promoted && (() => {
+                  const cf = curator[c.key];
+                  if (!cf) return null;
+                  const flagged = cf.flag != null;
+                  return (
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      <span className="text-[9.5px] font-mono text-subtle-foreground">
+                        {t("forge.curator.usage", { usage: cf.usage })} ·{" "}
+                        {cf.avg_score != null ? t("forge.curator.score", { score: cf.avg_score }) : t("forge.curator.noScore")}
+                      </span>
+                      {flagged && (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono uppercase tracking-wider border bg-warning/15 text-warning border-warning/30"
+                          title={cf.reason ?? ""}
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          {cf.flag === "unused" ? t("forge.curator.flagUnused") : t("forge.curator.flagUnderperforming")}
+                        </span>
+                      )}
+                      {flagged && cf.reason && (
+                        <span className="text-[9px] font-mono text-subtle-foreground">{cf.reason}</span>
+                      )}
+                      {flagged && (
+                        confirmRetire === c.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleRetire(c.id, c.key)}
+                              disabled={busy}
+                              className="px-3 py-1.5 bg-danger hover:opacity-90 text-background text-[10px] font-bold font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50"
+                            >
+                              <Archive className="w-3 h-3" />
+                              <span>{t("forge.curator.retireConfirm")}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRetire(null)}
+                              className="px-2 py-1.5 text-subtle-foreground hover:text-foreground text-[10px] font-mono uppercase transition-colors"
+                            >
+                              {t("forge.curator.cancel")}
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRetire(c.id)}
+                            disabled={busy}
+                            className="px-3 py-1.5 bg-danger/10 hover:bg-danger/20 border border-danger/30 text-danger text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={t("forge.curator.retireHint")}
+                          >
+                            <Archive className="w-3 h-3" />
+                            <span>{t("forge.curator.retire")}</span>
+                          </button>
+                        )
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {promoted && confirmRetire === c.id && (
+                  <p className="text-[9.5px] text-subtle-foreground font-sans">{t("forge.curator.retireHint")}</p>
+                )}
 
                 {canAct && (
                   <div className="flex items-center gap-2 flex-wrap pt-1">
