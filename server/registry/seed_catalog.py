@@ -314,6 +314,11 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
      "Explore an idea into a design before any implementation: one question at a time, approval-gated.", _S, _REG),
     ("receiving-code-review", "receiving-code-review", "collaboration",
      "Evaluate review feedback technically: verify before implementing, no performative agreement.", _S, _REG),
+    # COLLABORATION (methodology — adapted from mattpocock/skills, MIT; see THIRD_PARTY_NOTICES.md)
+    ("resolving-merge-conflicts", "resolving-merge-conflicts", "collaboration",
+     "Resolve a git merge/rebase conflict by intent: trace each side's original purpose, reconcile, verify, finish.", _S, _REG),
+    ("domain-modeling", "domain-modeling", "collaboration",
+     "Actively sharpen a project's domain model: ubiquitous-language glossary (CONTEXT.md) + sparing ADRs.", _S, _REG),
     # FINANCE (migrated from anthropics/financial-services · market-researcher, Apache-2.0; see THIRD_PARTY_NOTICES.md)
     ("sector-overview", "sector-overview", "finance",
      "Board a sector/theme primer: market size & growth, structure, value chain, drivers, landscape, valuation.", _S, _REG),

@@ -83,6 +83,41 @@ bundled until its license is verified and permits redistribution.**
   - `writing-skills` — **adapted** (TDD-for-skills authoring/verification method).
   - `finishing-a-development-branch` — **adapted** (verify tests → 4 options → execute + cleanup).
 
+### mattpocock/skills — MIT License (verified 2026-07-02)
+- Copyright (c) Matt Pocock. <https://github.com/mattpocock/skills>
+- MIT requires retaining the copyright + permission notice (the MIT text below covers it).
+- Used/adapted from this source (methodology ported to Arslan's `## Trigger` + `## 决策规则`
+  structure; personal branding and Matt-Pocock-specific setup references removed — all **adapted**):
+  - `resolving-merge-conflicts` — **adapted** (the 5-step by-intent conflict-resolution method; no
+    bundled scripts in the source, no personalization to strip).
+  - `domain-modeling` — **adapted** (ubiquitous-language glossary + sparing-ADR discipline; the
+    source's external `ADR-FORMAT.md` / `CONTEXT-FORMAT.md` references were inlined as concise
+    formats so the skill is self-contained).
+
+```
+MIT License
+
+Copyright (c) Matt Pocock (mattpocock/skills)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ```
 MIT License
 
