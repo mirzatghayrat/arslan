@@ -292,6 +292,9 @@ _O = "orchestrator"
 _REG = "registered"
 _INF = "infeasible"
 SKILLS: list[tuple[str, str, str, str, str, str]] = [
+    # META (self-authoring — ingested/adapted from anthropics/skills, Apache-2.0; see THIRD_PARTY_NOTICES.md)
+    ("skill-creator", "skill-creator", "meta",
+     "Package a reusable method into a high-quality SKILL.md; lets users/Arslan self-author skills.", _S, _REG),
     # APPLE
     ("apple-notes", "apple-notes", "apple", "Manage Apple Notes via memo CLI.", _S, _REG),
     ("apple-reminders", "apple-reminders", "apple", "Apple Reminders via remindctl.", _S, _REG),
