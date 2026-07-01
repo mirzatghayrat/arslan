@@ -57,6 +57,8 @@ export interface SpawnSummary {
   updated_at: string;
   equipment?: Equipment;
   has_active_chat?: boolean;
+  /** Built-in agent shipped with the app — cannot be deleted. */
+  is_default?: boolean;
 }
 
 export interface ChatMessage {

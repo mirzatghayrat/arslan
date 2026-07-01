@@ -52,10 +52,16 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_chat_archived_upgrade)
         from server.db.migrations.versions._0015_persona_seeds import upgrade_sync as _persona_fts_upgrade
         await conn.run_sync(_persona_fts_upgrade)
+        from server.db.migrations.versions._0016_spawn_is_default import upgrade_sync as _spawn_default_upgrade
+        await conn.run_sync(_spawn_default_upgrade)
 
     from server.registry.seeder import seed_registry
 
     await seed_registry()
+
+    from server.services.default_spawns import seed_default_spawns
+
+    await seed_default_spawns()
 
     cutoff = datetime.utcnow() - timedelta(hours=24)
     async with AsyncSessionLocal() as db:

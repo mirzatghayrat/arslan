@@ -179,7 +179,8 @@
     "created": "已创建",
     "delete": "删除",
     "delete_confirm": "确认删除该分身？",
-    "delete_yes": "删除"
+    "delete_yes": "删除",
+    "builtin": "内置 · 不可删除"
   },
   "spawn_edit": {
     "close": "关闭",

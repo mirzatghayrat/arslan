@@ -125,7 +125,10 @@ async def complete_chat(spawn_id: int) -> dict:
 async def delete_spawn(
     spawn_id: int, session: AsyncSession = Depends(get_session)
 ) -> Response:
-    ok = await spawn_service.delete_spawn(session, spawn_id)
+    try:
+        ok = await spawn_service.delete_spawn(session, spawn_id)
+    except spawn_service.BuiltInSpawnError:
+        raise HTTPException(status_code=403, detail="Built-in agents cannot be deleted")
     if not ok:
         raise HTTPException(status_code=404, detail="Spawn not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

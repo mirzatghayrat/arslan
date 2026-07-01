@@ -179,7 +179,8 @@
     "created": "作成しました",
     "delete": "削除",
     "delete_confirm": "このスポーンを削除しますか？",
-    "delete_yes": "削除"
+    "delete_yes": "削除",
+    "builtin": "組み込み · 削除不可"
   },
   "spawn_edit": {
     "close": "閉じる",

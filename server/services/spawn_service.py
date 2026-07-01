@@ -111,6 +111,7 @@ def to_summary(spawn: Spawn) -> SpawnOut:
         generation_level=spawn.generation_level or 1,
         created_at=spawn.created_at.isoformat() if spawn.created_at else "",
         updated_at=spawn.updated_at.isoformat() if spawn.updated_at else "",
+        is_default=bool(getattr(spawn, "is_default", False)),
     )
 
 
@@ -198,10 +199,16 @@ async def update_config(
     return spawn
 
 
+class BuiltInSpawnError(Exception):
+    """Raised when a delete targets a built-in (is_default) spawn."""
+
+
 async def delete_spawn(session: AsyncSession, spawn_id: int) -> bool:
     spawn = await session.get(Spawn, spawn_id)
     if spawn is None:
         return False
+    if bool(getattr(spawn, "is_default", False)):
+        raise BuiltInSpawnError("built-in agents cannot be deleted")
     # Deterministic cleanup, independent of SQLite FK pragma state:
     # the orchestrator thread keeps its rows (display history) but unlinks them;
     # spawn-scoped rows go with the spawn.
@@ -301,7 +308,7 @@ def reflect_equipment(spawns_dir, spawn_name: str, equipment: dict) -> bool:
     return apply_tier2_capabilities(Path(spawns_dir) / spawn_name, caps)
 
 
-async def create_from_draft(draft: dict, differentiation: str | None = None):
+async def create_from_draft(draft: dict, differentiation: str | None = None, *, is_default: bool = False):
     """Create the spawn + equipment rows + persisted intro.
 
     Returns (spawn_id, spawn_name, equipment, intro). Equipment comes from the
@@ -379,6 +386,7 @@ async def create_from_draft(draft: dict, differentiation: str | None = None):
             persona_tone=draft.get("persona_tone"),
             system_prompt=system_prompt,
             generation_level=1,
+            is_default=is_default,
             # Remember which persona seeds composed this spawn so the detail panel can show them.
             config={"seed_refs": [str(s) for s in (draft.get("seed_refs") or [])]},
         )

@@ -72,8 +72,8 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
   const [seedResults, setSeedResults] = useState<SeedRef[]>([]);
   const [selectedSeeds, setSelectedSeeds] = useState<Map<string, SeedRef>>(new Map());
 
-  // Delete affordance — a future "system default" spawn will set deletable=false.
-  const deletable = true;
+  // Delete affordance — built-in (system default) spawns are undeletable.
+  const deletable = !detail?.is_default;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Esc to close.
@@ -614,6 +614,14 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
                   <Trash2 className="w-3.5 h-3.5" /> {t("spawn_studio.delete")}
                 </button>
               )
+            )}
+            {mode === "edit" && !deletable && (
+              <span
+                className="text-[10.5px] font-mono text-subtle-foreground flex items-center gap-1.5"
+                data-testid="spawn-studio-builtin"
+              >
+                <Lock className="w-3 h-3" /> {t("spawn_studio.builtin")}
+              </span>
             )}
           </div>
 

@@ -179,7 +179,8 @@
     "created": "Created",
     "delete": "Delete",
     "delete_confirm": "Delete this spawn?",
-    "delete_yes": "Delete"
+    "delete_yes": "Delete",
+    "builtin": "Built-in · can't be deleted"
   },
   "spawn_edit": {
     "close": "Close",

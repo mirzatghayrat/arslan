@@ -25,6 +25,7 @@ class Spawn(Base):
     template_used = Column(String(100), nullable=True)
     generation_level = Column(Integer, default=1)
     config = Column(JSON, default=dict)
+    is_default = Column(Boolean, nullable=False, default=False, server_default="0")  # built-in agent: shipped + undeletable
     level = Column(Integer, default=1)            # 1-10; reserved for future leveling (stays 1 in v2)
     memory_facts = Column(JSON, default=list)     # per-spawn learned preferences (reserved)
     created_at = Column(DateTime, default=datetime.utcnow)

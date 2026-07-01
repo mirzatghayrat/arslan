@@ -106,6 +106,7 @@ class SpawnOut(BaseModel):
     updated_at: str
     equipment: EquipmentOut = EquipmentOut()
     has_active_chat: bool = False
+    is_default: bool = False   # built-in agent: shipped with the app, cannot be deleted
 
 
 class ChatMessageOut(BaseModel):
