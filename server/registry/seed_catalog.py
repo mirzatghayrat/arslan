@@ -314,6 +314,15 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
      "Explore an idea into a design before any implementation: one question at a time, approval-gated.", _S, _REG),
     ("receiving-code-review", "receiving-code-review", "collaboration",
      "Evaluate review feedback technically: verify before implementing, no performative agreement.", _S, _REG),
+    # FINANCE (migrated from anthropics/financial-services · market-researcher, Apache-2.0; see THIRD_PARTY_NOTICES.md)
+    ("sector-overview", "sector-overview", "finance",
+     "Board a sector/theme primer: market size & growth, structure, value chain, drivers, landscape, valuation.", _S, _REG),
+    ("competitive-analysis", "competitive-analysis", "finance",
+     "Map a competitive landscape: industry metrics, peer deep-dives, positioning, moats, strategic synthesis.", _S, _REG),
+    ("comps-analysis", "comps-analysis", "finance",
+     "Build a trading-comps spread: pick peers, per-industry multiples, consistent definitions, outlier flags.", _S, _REG),
+    ("idea-generation", "idea-generation", "finance",
+     "Source investment ideas: quant screens by style, thematic sweep, shortlist with thesis hooks and risks.", _S, _REG),
     # WRITING (adapted from anthropics/skills, Apache-2.0)
     ("internal-comms", "internal-comms", "writing",
      "Write internal comms in company formats: 3P updates, newsletters, FAQs, status/incident reports.", _S, _REG),

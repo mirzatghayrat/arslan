@@ -46,6 +46,27 @@ bundled until its license is verified and permits redistribution.**
     removed; the reconnaissance-then-action Playwright methodology kept — methodology only,
     since Arslan spawns do not execute scripts).
 
+### anthropics/financial-services — Apache License 2.0 (verified 2026-07-01)
+- Copyright 2025 Anthropic, PBC. <https://github.com/anthropics/financial-services>
+- The repository **has a top-level `LICENSE` (Apache-2.0)** covering Anthropic-built plugins
+  (partner-built vertical plugins, e.g. LSEG/S&P, carry their own separate attribution and are
+  NOT used here). Apache-2.0 requires: retain this notice; state significant changes (done
+  per-file via `source:` frontmatter).
+- Migrated the **`market-researcher`** agent-plugin into Arslan's `Financial Research Analyst`
+  default spawn, with its methodology skills (each **adapted** — the agent's CapIQ/FactSet MCP
+  data connectors, PowerPoint/Excel authoring mechanics, and Claude-Code-specific bits do not
+  exist in Arslan and were replaced with `web_search` public sourcing + `[UNSOURCED]` discipline
+  + `render_chart` output; methodology preserved):
+  - `sector-overview` — **adapted** (Word/PPT/Excel output → markdown note + charts; sourcing hierarchy kept).
+  - `competitive-analysis` — **adapted** (PowerPoint add-in/`.pptx`/slide-typography/`references/*`
+    mechanics removed; the Step 0–9 analysis framework + moat synthesis kept).
+  - `comps-analysis` — **adapted & condensed** (CapIQ/FactSet terminal data-pull + Excel spread
+    mechanics removed; peer-selection, per-industry multiple choice, EV-definition normalization,
+    outlier flagging kept, re-sourced from public filings with `[UNSOURCED]` discipline).
+  - `idea-generation` — **adapted** (screen data re-sourced via public web research; methodology kept).
+  - **`pptx-author` was NOT migrated**: it is a document/PowerPoint skill (Anthropic's `pptx`
+    family is source-available/proprietary, not open source) and Arslan does not author `.pptx`.
+
 ### obra/superpowers — MIT License (verified 2026-07-01)
 - Copyright (c) 2025 Jesse Vincent. <https://github.com/obra/superpowers>
 - MIT requires retaining the copyright + permission notice (reproduced below).
@@ -88,9 +109,11 @@ SOFTWARE.
 
 ---
 
-## Persona seeds — `arslan/spawn/seeds/<persona>` (the 249-persona library)
+## Persona seeds — the 249-persona library
 
-- Source recorded in the DB as `agency-agents@<commit>`.
-- **⚠️ LICENSE VERIFICATION PENDING** — the persona-seed library must have its source
-  repo's license verified (permits redistribution + attribution terms) before public
-  release, exactly as was done for the skills above. Tracked as an open pre-open-source item.
+### msitarzewski/agency-agents — MIT License (verified 2026-07-01)
+- Copyright (c) msitarzewski. <https://github.com/msitarzewski/agency-agents>
+- Source recorded in the DB as `agency-agents@<commit>`. MIT requires retaining the copyright +
+  permission notice — the same MIT text reproduced above (obra/superpowers) applies.
+- Used as the persona-seed library (identity references composed into spawns; curation-only —
+  imported into the `persona_seeds` table, never redistributed as standalone files).

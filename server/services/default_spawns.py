@@ -21,8 +21,9 @@ from server.services import spawn_service
 
 logger = logging.getLogger(__name__)
 
-# The first shipped default. More (Data/Chart Analyst, Content & Copywriter, Coding assistant)
-# are added after this one's quality bar is confirmed.
+# Shipped defaults: a general Research Analyst, a general Data & Chart Analyst, a Content &
+# Copywriter, a Coding Assistant, and a Financial Research Analyst (migrated from Anthropic's
+# open-source market-researcher). Each is a worked example of a well-composed spawn.
 DEFAULT_SPAWNS: list[dict] = [
     {
         "name": "Research Analyst",
@@ -38,6 +39,8 @@ DEFAULT_SPAWNS: list[dict] = [
         "equipment": {"toolsets": ["web_search_scraping"], "skills": ["plan", "research-paper-writing"]},
     },
     {
+        # General-purpose analyst (not finance-leaning — the dedicated finance combo is the
+        # Financial Research Analyst below). Seeds are cross-domain data roles.
         "name": "Data & Chart Analyst",
         "domain": "analytics.data-visualization",
         "persona_role": (
@@ -46,8 +49,29 @@ DEFAULT_SPAWNS: list[dict] = [
         ),
         "persona_tone": "precise, quantitative, visual",
         "capabilities": ["data analysis", "market & metric research", "data visualization"],
-        "seed_refs": ["finance-financial-analyst", "finance-fpa-analyst", "product-trend-researcher"],
+        "seed_refs": ["data-consolidation-agent", "sales-pipeline-analyst", "product-trend-researcher"],
         "equipment": {"toolsets": ["web_search_scraping", "charting"], "skills": ["plan"]},
+    },
+    {
+        # Migrated from anthropics/financial-services · market-researcher (Apache-2.0). A proper
+        # top-tier finance combo: sector/thematic primers with a peer comps spread and idea
+        # shortlist. CapIQ/FactSet data connectors are replaced by web research + [UNSOURCED]
+        # discipline (see the migrated skills). No pptx-author (proprietary) — output is a note + charts.
+        "name": "Financial Research Analyst",
+        "domain": "finance.market-research",
+        "persona_role": (
+            "a senior research associate who owns the first draft of a sector or thematic primer — "
+            "sizing the market, mapping the competitive landscape, spreading peer trading comps with "
+            "consistent definitions, and shortlisting the names that best express the theme; sources "
+            "every number and marks it [UNSOURCED] rather than estimating, and stops for review at each artifact"
+        ),
+        "persona_tone": "senior, evidence-first, sourced — never estimates a figure",
+        "capabilities": ["sector & thematic research", "competitive landscape", "trading comps", "idea generation"],
+        "seed_refs": ["finance-investment-researcher", "finance-financial-analyst", "finance-fpa-analyst"],
+        "equipment": {
+            "toolsets": ["web_search_scraping", "charting"],
+            "skills": ["sector-overview", "competitive-analysis", "comps-analysis", "idea-generation"],
+        },
     },
     {
         "name": "Content & Copywriter",
