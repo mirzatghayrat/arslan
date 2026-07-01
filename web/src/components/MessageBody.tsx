@@ -68,7 +68,7 @@ function ActionButton({ onClick, title, children }: { onClick: () => void; title
   );
 }
 
-function HtmlDocCard({ html, indent }: { html: string; indent: boolean }) {
+function HtmlDocCard({ html, indent, hasMessageActions }: { html: string; indent: boolean; hasMessageActions: boolean }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -92,9 +92,14 @@ function HtmlDocCard({ html, indent }: { html: string; indent: boolean }) {
           <ActionButton onClick={() => setPreview(true)} title={t('msg.preview')}>
             <Eye className="w-3 h-3" /> {t('msg.preview')}
           </ActionButton>
-          <ActionButton onClick={copy} title={t('msg.copy')}>
-            {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
-          </ActionButton>
+          {/* For an HTML-doc deliverable the card IS the whole message, so a card-copy would
+              duplicate the message row's copy (identical string). Defer to the row when it exists;
+              keep card-copy for non-deliverable HTML (no message row). preview/download always stay. */}
+          {!hasMessageActions && (
+            <ActionButton onClick={copy} title={t('msg.copy')}>
+              {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+            </ActionButton>
+          )}
           <ActionButton
             onClick={() => triggerDownload(`document-${Date.now()}.html`, html, 'text/html;charset=utf-8')}
             title={t('msg.download_html')}
@@ -235,7 +240,7 @@ interface Props {
 
 export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false }: Props) {
   if (!streaming && isFullHtmlDoc(text)) {
-    return <HtmlDocCard html={text} indent={indent} />;
+    return <HtmlDocCard html={text} indent={indent} hasMessageActions={hasMessageActions} />;
   }
   return <ProseBody text={text} className={className} indent={indent} streaming={streaming} hasMessageActions={hasMessageActions} />;
 }

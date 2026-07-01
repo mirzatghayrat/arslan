@@ -659,9 +659,16 @@ export default function OrchestratorChat({
                       if (verdict) {
                         return (
                           <div data-testid="verdict-voted" data-verdict={verdict}
-                            className="flex items-center gap-2 px-2 py-1 select-none">
+                            className="flex flex-wrap items-center gap-2 px-2 py-1">
                             <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
                             <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                            <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
+                            <button title={t('orchestrator.refine')}
+                              onClick={() => openSandbox(String(msg.spawnId), msg.text)}
+                              className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
+                              <Wand2 className="w-3.5 h-3.5" />
+                              <span>{t('orchestrator.refine')}</span>
+                            </button>
                           </div>
                         );
                       }
@@ -843,9 +850,16 @@ export default function OrchestratorChat({
                     if (verdict) {
                       return (
                         <div data-testid="verdict-voted" data-verdict={verdict}
-                          className="mt-4 flex items-center gap-2 px-2 py-1 select-none">
+                          className="mt-4 flex flex-wrap items-center gap-2 px-2 py-1">
                           <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
                           <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                          <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] transition-all select-none" />
+                          <button title={t('orchestrator.refine')}
+                            onClick={() => openSandbox(String(msg.spawnId), msg.text)}
+                            className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none">
+                            <Wand2 className="w-3.5 h-3.5" />
+                            <span>{t('orchestrator.refine')}</span>
+                          </button>
                         </div>
                       );
                     }
@@ -1035,9 +1049,16 @@ export default function OrchestratorChat({
                     if (verdict) {
                       return (
                         <div data-testid="verdict-voted" data-verdict={verdict}
-                          className="pl-5 pt-2 flex items-center gap-2 px-2 py-1 select-none">
+                          className="pl-5 pt-2 flex flex-wrap items-center gap-2 px-2 py-1">
                           <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
                           <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
+                          <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
+                          <button title={t('orchestrator.refine')}
+                            onClick={() => openSandbox(String(msg.spawnId), msg.text)}
+                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
+                            <Wand2 className="w-3.5 h-3.5" />
+                            <span>{t('orchestrator.refine')}</span>
+                          </button>
                         </div>
                       );
                     }

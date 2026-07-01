@@ -24,12 +24,20 @@ describe('MessageBody action layers', () => {
     expect(screen.getByTitle('msg.download_html')).toBeTruthy();
   });
 
-  it('HTML-doc card keeps its own header buttons regardless of the message action row', () => {
-    const html = '<!doctype html><html><body><h1>Hello</h1></body></html>';
+  const html = '<!doctype html><html><body><h1>Hello</h1></body></html>';
+
+  it('HTML-doc card defers copy to the message row (no duplicate) but keeps preview + download', () => {
     render(<MessageBody text={html} hasMessageActions={true} />);
-    // the card is its own layer (like a code block's copy) — preview + copy + download all present
+    // the card IS the whole message, so a card-copy would duplicate the row copy → dropped…
+    expect(screen.queryByTitle('msg.copy')).toBeNull();
+    // …preview + download are the card's own distinct artifact ops, always present.
     expect(screen.getByTitle('msg.preview')).toBeTruthy();
-    expect(screen.getByTitle('msg.copy')).toBeTruthy();
     expect(screen.getByTitle('msg.download_html')).toBeTruthy();
+  });
+
+  it('HTML-doc card keeps its own copy when there is NO message row (non-deliverable)', () => {
+    render(<MessageBody text={html} hasMessageActions={false} />);
+    expect(screen.getByTitle('msg.copy')).toBeTruthy();
+    expect(screen.getByTitle('msg.preview')).toBeTruthy();
   });
 });
