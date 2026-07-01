@@ -512,6 +512,7 @@
     "tabs": {
       "tools": "工具",
       "skills": "技能",
+      "forge": "技能锻造",
       "mcps": "MCP",
       "saved": "已存"
     },
@@ -521,6 +522,53 @@
       "equip_hint": "从分身的菜单中装配这些能力。",
       "assignable_group": "可装备",
       "locked_group": "主机级 / 未启用"
+    }
+  },
+  "forge": {
+    "intro": "把你自己的方法打包成技能。候选先观察，再对着某个分身的真实评分回放过闸，然后由你晋升上线——你就是让它上线的那道闸。这些自撰技能会加入技能库。",
+    "create": {
+      "title": "创建技能",
+      "submit": "锻造候选",
+      "ok": "已锻造「{{name}}」——现于下方观察中。"
+    },
+    "fields": {
+      "key": "键名",
+      "name": "名称",
+      "category": "分类",
+      "description": "描述",
+      "descriptionHint": "一行描述",
+      "body": "SKILL.md 正文",
+      "bodyHint": "需含 frontmatter + ## Trigger + 决策规则。上限 15 KB。"
+    },
+    "list": {
+      "title": "候选（{{count}}）",
+      "refresh": "刷新",
+      "empty": "还没有候选——在上方锻造一个。"
+    },
+    "status": {
+      "observing": "观察中",
+      "proposed": "已提案",
+      "promoted": "已上线",
+      "rejected": "已拒绝",
+      "liveLabel": "在线技能"
+    },
+    "eval": {
+      "target": "评估目标分身…",
+      "button": "评估",
+      "pickTarget": "请选择一个要评估的目标分身。",
+      "passed": "过闸：{{reason}}",
+      "failed": "未过闸：{{reason}}"
+    },
+    "promote": {
+      "button": "晋升",
+      "confirm": "确认——上线",
+      "cancel": "取消",
+      "hint": "晋升是人工闸门：它把该候选注册为技能库中可装配的在线技能。",
+      "ok": "已晋升——以「{{key}}」上线。",
+      "blocked": "晋升被拦截。"
+    },
+    "reject": {
+      "button": "拒绝"
     }
   },
   "spawn": {

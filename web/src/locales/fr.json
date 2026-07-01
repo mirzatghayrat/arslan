@@ -512,6 +512,7 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
+      "forge": "Forge de compétences",
       "mcps": "MCPs",
       "saved": "Saved"
     },
@@ -521,6 +522,53 @@
       "equip_hint": "Equip these from a spawn's menu.",
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
+    }
+  },
+  "forge": {
+    "intro": "Empaquetez vos propres méthodes en compétences. Un candidat est observé, testé face aux exécutions notées d'un spawn réel, puis promu par vous — vous êtes le point de contrôle qui le met en service. Ces compétences que vous créez rejoignent la bibliothèque.",
+    "create": {
+      "title": "Créer une compétence",
+      "submit": "Forger le candidat",
+      "ok": "« {{name}} » forgé — en observation ci-dessous."
+    },
+    "fields": {
+      "key": "Clé",
+      "name": "Nom",
+      "category": "Catégorie",
+      "description": "Description",
+      "descriptionHint": "description en une ligne",
+      "body": "Corps SKILL.md",
+      "bodyHint": "Nécessite un frontmatter + ## Trigger + règles de décision. Max 15 Ko."
+    },
+    "list": {
+      "title": "Candidats ({{count}})",
+      "refresh": "Actualiser",
+      "empty": "Aucun candidat pour l'instant — forgez-en un ci-dessus."
+    },
+    "status": {
+      "observing": "en observation",
+      "proposed": "proposé",
+      "promoted": "promu",
+      "rejected": "rejeté",
+      "liveLabel": "Compétence en service"
+    },
+    "eval": {
+      "target": "Spawn cible d'évaluation…",
+      "button": "Évaluer",
+      "pickTarget": "Choisissez un spawn cible pour l'évaluation.",
+      "passed": "Contrôle réussi : {{reason}}",
+      "failed": "Contrôle non réussi : {{reason}}"
+    },
+    "promote": {
+      "button": "Promouvoir",
+      "confirm": "Confirmer — mettre en service",
+      "cancel": "Annuler",
+      "hint": "La promotion est le point de contrôle humain : elle enregistre ce candidat comme compétence assignable en service dans la bibliothèque.",
+      "ok": "Promu — en service sous « {{key}} ».",
+      "blocked": "Promotion bloquée."
+    },
+    "reject": {
+      "button": "Rejeter"
     }
   },
   "spawn": {

@@ -512,6 +512,7 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
+      "forge": "Skill Forge",
       "mcps": "MCPs",
       "saved": "Saved"
     },
@@ -521,6 +522,53 @@
       "equip_hint": "Equip these from a spawn's menu.",
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
+    }
+  },
+  "forge": {
+    "intro": "Package your own methods into skills. A candidate is observed, gated against a real spawn's scored runs, then promoted — you are the gate that makes it live. These self-authored skills join the library.",
+    "create": {
+      "title": "Create skill",
+      "submit": "Forge candidate",
+      "ok": "Forged \"{{name}}\" — now observing below."
+    },
+    "fields": {
+      "key": "Key",
+      "name": "Name",
+      "category": "Category",
+      "description": "Description",
+      "descriptionHint": "one-line description",
+      "body": "SKILL.md body",
+      "bodyHint": "Needs frontmatter + ## Trigger + decision rules. Max 15 KB."
+    },
+    "list": {
+      "title": "Candidates ({{count}})",
+      "refresh": "Refresh",
+      "empty": "No candidates yet — forge one above."
+    },
+    "status": {
+      "observing": "observing",
+      "proposed": "proposed",
+      "promoted": "promoted",
+      "rejected": "rejected",
+      "liveLabel": "Live skill"
+    },
+    "eval": {
+      "target": "Eval target spawn…",
+      "button": "Evaluate",
+      "pickTarget": "Pick a target spawn to evaluate against.",
+      "passed": "Gate passed: {{reason}}",
+      "failed": "Gate not passed: {{reason}}"
+    },
+    "promote": {
+      "button": "Promote",
+      "confirm": "Confirm — go live",
+      "cancel": "Cancel",
+      "hint": "Promote is the human gate: it registers this candidate as a live, assignable skill in the library.",
+      "ok": "Promoted — live as \"{{key}}\".",
+      "blocked": "Promote blocked."
+    },
+    "reject": {
+      "button": "Reject"
     }
   },
   "spawn": {

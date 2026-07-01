@@ -13,6 +13,9 @@ import type {
   RunDetailDto,
   RunListItem,
   SeedsResponse,
+  SkillCandidate,
+  SkillEvaluateResult,
+  SkillPromoteResult,
   SpawnDetail,
   SpawnSummary,
   SuggestDraft,
@@ -53,7 +56,9 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     let detail = `HTTP ${resp.status}`;
     try {
       const body = await resp.json();
-      detail = body.detail ?? detail;
+      // Prefer FastAPI's { detail }, but fall back to a plain-string error body.
+      if (typeof body === "string") detail = body;
+      else detail = body.detail ?? detail;
     } catch {
       // keep default
     }
@@ -177,6 +182,31 @@ export const api = {
   confirmProposal: (proposalId: number) =>
     request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
   listMcpServers: () => request<Array<{ id: number; label: string; status?: string }>>("/mcp/servers"),
+  // ── Skill Forge: self-authored skills → observe → gate → promote ──────────────
+  /** Package a SKILL.md into a candidate. 400 (surfaced as ApiError.message) on invalid. */
+  forgeSkill: (body: {
+    key: string;
+    name: string;
+    category: string;
+    description: string;
+    body: string;
+    source?: string;
+  }) => request<SkillCandidate>("/skills/forge", { method: "POST", body: JSON.stringify(body) }),
+  listSkillCandidates: (status?: string) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set("status", status);
+    const q = qs.toString();
+    return request<SkillCandidate[]>(`/skills/candidates${q ? `?${q}` : ""}`);
+  },
+  evaluateSkillCandidate: (id: number, body: { target_spawn_id: number; min_samples?: number }) =>
+    request<SkillEvaluateResult>(`/skills/candidates/${id}/evaluate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  promoteSkillCandidate: (id: number) =>
+    request<SkillPromoteResult>(`/skills/candidates/${id}/promote`, { method: "POST" }),
+  rejectSkillCandidate: (id: number) =>
+    request<{ ok: boolean }>(`/skills/candidates/${id}/reject`, { method: "POST" }),
   completeChat: (id: number) => request<{ ok: boolean; archived: number }>(`/spawns/${id}/complete-chat`, { method: "POST" }),
   extractAttachmentUrl: (url: string, compress = false) =>
     request<{ text: string; chars: number; truncated: boolean }>(`/extract`, {

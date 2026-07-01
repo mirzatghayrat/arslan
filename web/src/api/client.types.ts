@@ -363,6 +363,41 @@ export interface McpServer {
   url?: string | null; // streamable-HTTP endpoint (transport === "http")
 }
 
+/** A self-authored skill candidate in the skill-forge loop. */
+export interface SkillCandidate {
+  id: number;
+  key: string;
+  name: string;
+  category: string;
+  description: string;
+  status: "observing" | "proposed" | "promoted" | "rejected" | string;
+  source: string;
+  created_at: string;
+  promoted_at: string | null;
+}
+
+/** Gate result from evaluating a skill candidate against a target spawn. */
+export interface SkillGate {
+  passed: boolean;
+  reason: string;
+  aggregate: Record<string, unknown> | null;
+}
+
+/** Result of POST /skills/candidates/{id}/evaluate. */
+export interface SkillEvaluateResult {
+  ok: boolean;
+  status: string;
+  gate: SkillGate;
+  [key: string]: unknown;
+}
+
+/** Result of POST /skills/candidates/{id}/promote. */
+export interface SkillPromoteResult {
+  ok: boolean;
+  key?: string;
+  reason?: string;
+}
+
 export interface McpTool {
   key: string;
   name: string;

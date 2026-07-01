@@ -512,6 +512,7 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
+      "forge": "スキル鍛造",
       "mcps": "MCPs",
       "saved": "Saved"
     },
@@ -521,6 +522,53 @@
       "equip_hint": "Equip these from a spawn's menu.",
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
+    }
+  },
+  "forge": {
+    "intro": "自分の手法をスキルとしてパッケージ化します。候補はまず観察され、実在のスパーンの採点済み実行に対してゲートを通過し、その後あなたが昇格させます——ライブにするゲートはあなた自身です。こうして自作したスキルはライブラリに加わります。",
+    "create": {
+      "title": "スキルを作成",
+      "submit": "候補を鍛造",
+      "ok": "「{{name}}」を鍛造しました——下で観察中です。"
+    },
+    "fields": {
+      "key": "キー",
+      "name": "名前",
+      "category": "カテゴリ",
+      "description": "説明",
+      "descriptionHint": "1行の説明",
+      "body": "SKILL.md 本文",
+      "bodyHint": "frontmatter + ## Trigger + 決定ルールが必要。最大 15 KB。"
+    },
+    "list": {
+      "title": "候補（{{count}}）",
+      "refresh": "更新",
+      "empty": "候補はまだありません——上で鍛造してください。"
+    },
+    "status": {
+      "observing": "観察中",
+      "proposed": "提案済み",
+      "promoted": "昇格済み",
+      "rejected": "却下",
+      "liveLabel": "ライブスキル"
+    },
+    "eval": {
+      "target": "評価対象のスパーン…",
+      "button": "評価",
+      "pickTarget": "評価する対象のスパーンを選んでください。",
+      "passed": "ゲート通過：{{reason}}",
+      "failed": "ゲート未通過：{{reason}}"
+    },
+    "promote": {
+      "button": "昇格",
+      "confirm": "確認——ライブにする",
+      "cancel": "キャンセル",
+      "hint": "昇格は人間によるゲートです：この候補をライブで割り当て可能なスキルとしてライブラリに登録します。",
+      "ok": "昇格しました——「{{key}}」としてライブです。",
+      "blocked": "昇格がブロックされました。"
+    },
+    "reject": {
+      "button": "却下"
     }
   },
   "spawn": {

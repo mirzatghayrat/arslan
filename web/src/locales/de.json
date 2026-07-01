@@ -512,6 +512,7 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
+      "forge": "Skill-Schmiede",
       "mcps": "MCPs",
       "saved": "Saved"
     },
@@ -521,6 +522,53 @@
       "equip_hint": "Equip these from a spawn's menu.",
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
+    }
+  },
+  "forge": {
+    "intro": "Verpacke deine eigenen Methoden in Skills. Ein Kandidat wird beobachtet, gegen die bewerteten Läufe eines echten Spawns geprüft und dann von dir freigegeben – du bist das Tor, das ihn live schaltet. Diese selbst verfassten Skills gehören zur Bibliothek.",
+    "create": {
+      "title": "Skill erstellen",
+      "submit": "Kandidat schmieden",
+      "ok": "\"{{name}}\" geschmiedet – wird unten beobachtet."
+    },
+    "fields": {
+      "key": "Schlüssel",
+      "name": "Name",
+      "category": "Kategorie",
+      "description": "Beschreibung",
+      "descriptionHint": "einzeilige Beschreibung",
+      "body": "SKILL.md-Inhalt",
+      "bodyHint": "Braucht Frontmatter + ## Trigger + Entscheidungsregeln. Max. 15 KB."
+    },
+    "list": {
+      "title": "Kandidaten ({{count}})",
+      "refresh": "Aktualisieren",
+      "empty": "Noch keine Kandidaten – schmiede oben einen."
+    },
+    "status": {
+      "observing": "wird beobachtet",
+      "proposed": "vorgeschlagen",
+      "promoted": "freigegeben",
+      "rejected": "abgelehnt",
+      "liveLabel": "Live-Skill"
+    },
+    "eval": {
+      "target": "Ziel-Spawn zur Prüfung…",
+      "button": "Prüfen",
+      "pickTarget": "Wähle einen Ziel-Spawn für die Prüfung.",
+      "passed": "Tor bestanden: {{reason}}",
+      "failed": "Tor nicht bestanden: {{reason}}"
+    },
+    "promote": {
+      "button": "Freigeben",
+      "confirm": "Bestätigen – live schalten",
+      "cancel": "Abbrechen",
+      "hint": "Freigabe ist das menschliche Tor: Es registriert diesen Kandidaten als live, zuweisbaren Skill in der Bibliothek.",
+      "ok": "Freigegeben – live als \"{{key}}\".",
+      "blocked": "Freigabe blockiert."
+    },
+    "reject": {
+      "button": "Ablehnen"
     }
   },
   "spawn": {

@@ -5,10 +5,13 @@ import CapabilityCatalog from "./CapabilityCatalog";
 import ToolHubDiscover, { type McpPrefill } from "./ToolHubDiscover";
 import McpServers from "./McpServers";
 import SavedCandidates from "./SavedCandidates";
+import SkillForge from "./SkillForge";
+
+type CapTab = "tools" | "skills" | "forge" | "mcps" | "saved";
 
 export default function Capabilities() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"tools" | "skills" | "mcps" | "saved">("mcps");
+  const [tab, setTab] = useState<CapTab>("mcps");
   const [mcpPrefill, setMcpPrefill] = useState<McpPrefill | null>(null);
   return (
     <div className="p-6 max-w-5xl mx-auto w-full overflow-y-auto">
@@ -20,10 +23,11 @@ export default function Capabilities() {
       <ToolHubDiscover onPrefillMcp={(p) => { setMcpPrefill(p); setTab("mcps"); }} />
       <CapabilityTabs
         active={tab}
-        onChange={(id) => setTab(id as "tools" | "skills" | "mcps" | "saved")}
+        onChange={(id) => setTab(id as CapTab)}
         tabs={[
           { id: "tools", label: t("capabilities.tabs.tools") },
           { id: "skills", label: t("capabilities.tabs.skills") },
+          { id: "forge", label: t("capabilities.tabs.forge") },
           { id: "mcps", label: t("capabilities.tabs.mcps") },
           { id: "saved", label: t("capabilities.tabs.saved") },
         ]}
@@ -32,6 +36,7 @@ export default function Capabilities() {
       <div className="max-h-[62vh] overflow-y-auto pr-1">
         {tab === "tools" && <CapabilityCatalog kind="tools" />}
         {tab === "skills" && <CapabilityCatalog kind="skills" />}
+        {tab === "forge" && <SkillForge />}
         {tab === "mcps" && <McpServers prefill={mcpPrefill ?? undefined} />}
         {tab === "saved" && <SavedCandidates onPrefillMcp={(p) => { setMcpPrefill(p); setTab("mcps"); }} />}
       </div>

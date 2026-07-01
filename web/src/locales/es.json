@@ -512,6 +512,7 @@
     "tabs": {
       "tools": "Tools",
       "skills": "Skills",
+      "forge": "Forja de habilidades",
       "mcps": "MCPs",
       "saved": "Saved"
     },
@@ -521,6 +522,53 @@
       "equip_hint": "Equip these from a spawn's menu.",
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
+    }
+  },
+  "forge": {
+    "intro": "Empaqueta tus propios métodos como habilidades. Un candidato se observa, se somete a la puerta frente a las ejecuciones puntuadas de un spawn real y luego lo promueves tú — eres la puerta que lo pone en vivo. Estas habilidades de autoría propia se unen a la biblioteca.",
+    "create": {
+      "title": "Crear habilidad",
+      "submit": "Forjar candidato",
+      "ok": "«{{name}}» forjado — en observación abajo."
+    },
+    "fields": {
+      "key": "Clave",
+      "name": "Nombre",
+      "category": "Categoría",
+      "description": "Descripción",
+      "descriptionHint": "descripción de una línea",
+      "body": "Cuerpo SKILL.md",
+      "bodyHint": "Necesita frontmatter + ## Trigger + reglas de decisión. Máx. 15 KB."
+    },
+    "list": {
+      "title": "Candidatos ({{count}})",
+      "refresh": "Actualizar",
+      "empty": "Aún no hay candidatos — forja uno arriba."
+    },
+    "status": {
+      "observing": "en observación",
+      "proposed": "propuesto",
+      "promoted": "promovido",
+      "rejected": "rechazado",
+      "liveLabel": "Habilidad en vivo"
+    },
+    "eval": {
+      "target": "Spawn objetivo de evaluación…",
+      "button": "Evaluar",
+      "pickTarget": "Elige un spawn objetivo para evaluar.",
+      "passed": "Puerta superada: {{reason}}",
+      "failed": "Puerta no superada: {{reason}}"
+    },
+    "promote": {
+      "button": "Promover",
+      "confirm": "Confirmar — poner en vivo",
+      "cancel": "Cancelar",
+      "hint": "Promover es la puerta humana: registra este candidato como una habilidad asignable en vivo en la biblioteca.",
+      "ok": "Promovido — en vivo como «{{key}}».",
+      "blocked": "Promoción bloqueada."
+    },
+    "reject": {
+      "button": "Rechazar"
     }
   },
   "spawn": {
