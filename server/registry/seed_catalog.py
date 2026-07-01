@@ -271,6 +271,18 @@ TOOLSETS: list[dict] = [
         ],
     },
     {
+        "key": "skill_authoring",
+        "name": "Skill Authoring",
+        "description": "create_skill — package a reusable method into a skill candidate "
+                       "(human-gated before it goes live).",
+        "tier": "safe",
+        "status": "wired",
+        "tools": [
+            ("create_skill", "Forge a new skill candidate from a SKILL.md body; enters "
+             "observation/eval, never auto-installed.", "safe", "wired"),
+        ],
+    },
+    {
         "key": "yuanbao",
         "name": "Yuanbao",
         "description": "Group info, member queries, DM.",
