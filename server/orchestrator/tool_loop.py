@@ -100,6 +100,42 @@ def _promises_action(text: str) -> bool:
     return bool(_PROMISES_ACTION_RE.search(text or ""))
 
 
+def _is_protocol_json(text: str) -> bool:
+    """True if `text` IS a tool/escalate protocol object (a whole-message tool call/escalation),
+    rather than prose. INVARIANT: such JSON must never be surfaced to the user as an answer —
+    it means the model emitted a tool call where prose was required (typically the forced
+    'answer now' step, or a malformed/truncated tool call the parser couldn't dispatch)."""
+    s = (text or "").lstrip()
+    if not s.startswith("{"):
+        return False
+    obj = first_json_object(s) or parse_json_object(s)
+    if isinstance(obj, dict) and (obj.get("tool") or isinstance(obj.get("escalate"), dict)):
+        return True
+    # unparseable but clearly a protocol fragment (e.g. a stream cut off mid tool call)
+    head = s[:160]
+    return '"tool"' in head or '"escalate"' in head
+
+
+# Appended to the system prompt for the one text-only salvage attempt (below). The model has
+# already ignored 'answer now, text only' at least once, so this is maximally explicit.
+_SALVAGE_SYS = (
+    "\n\nYou have NO tools left and cannot call any tool. Reply with your FINAL answer as plain "
+    "text ONLY. Do NOT output JSON, a tool call, or an escalation of any kind. Use the TOOL "
+    "RESULTs already in this conversation; if the data is incomplete, say so briefly and give "
+    "your best answer with what you have."
+)
+
+
+def _fallback_message(user_content: str) -> str:
+    """Honest last-resort answer when even the salvage attempt won't produce prose. Language
+    inferred from the request so a Chinese user doesn't get an English apology (or vice-versa)."""
+    cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
+    if cjk:
+        return ("抱歉,我在收集资料时用尽了工具额度,没能整理出完整结论。请把问题缩小或换个问法,我再试一次。")
+    return ("Sorry — I ran out of tool budget while gathering data and couldn't finish a complete "
+            "answer. Please narrow or restate the request and I'll try again.")
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
@@ -259,6 +295,25 @@ async def run(
                 "waiting on a promise. Do it NOW: emit ONLY the tool JSON to run it this turn, OR give your "
                 "COMPLETE final answer with no promise of future action."})
             continue
+
+        # INVARIANT (root-cause guard): the model may end its turn — especially the forced
+        # 'answer now' step — emitting a tool/escalate JSON instead of prose (deepseek does this
+        # after a web_extract timeout). The stream loop above withheld everything from the first
+        # '{', so nothing has been shown yet. NEVER surface raw protocol JSON as the answer: make
+        # ONE text-only salvage attempt, then fall back to an honest message. Covers web_extract
+        # and every other tool, on any step, incl. malformed/truncated tool calls the parser
+        # couldn't dispatch. (Prose-then-JSON never trips this: _is_protocol_json needs the
+        # message to START with the object, and such prose already streamed via `shown`.)
+        if _is_protocol_json(content):
+            salvage = ""
+            async for piece in a.chat_stream(sys_now + _SALVAGE_SYS, convo[-1]["content"],
+                                             history=convo[:-1]):
+                salvage += piece
+            salvage = salvage.strip()
+            final_text = (salvage if salvage and not _is_protocol_json(salvage)
+                          else _fallback_message(user_content))
+            on_chunk(final_text)
+            return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
 
         # plain text = final answer (parsed was not a dispatchable tool/escalate)
         if isinstance(parsed, dict):

@@ -22,7 +22,10 @@ from server.services import chart_echarts, settings_service
 logger = logging.getLogger(__name__)
 
 _EXTRACT_CHAR_LIMIT = 12_000
-_FETCH_TIMEOUT = 20.0
+# Fail fast on a slow page: the mini agent-loop has a small tool budget, so a page that hangs
+# should surrender quickly (leaving budget + wall-clock for synthesis) rather than consuming the
+# full loop timeout. 12s is generous for a real page while well under the loop's per-tool cap.
+_FETCH_TIMEOUT = 12.0
 
 
 def _is_private_host(url: str) -> bool:
@@ -128,14 +131,17 @@ class WebExtractExecutor:
             return {"ok": False, "error": "missing or invalid 'url'"}
         if _is_private_host(url):
             return {"ok": False, "error": "url resolves to a private or internal address"}
+        # A page that won't fetch/parse must not send the model into a retry spiral on the same
+        # URL — steer it back to the web_search result snippets it already has (or to answering).
+        _STEER = " — do not retry this URL; use your web_search result snippets or answer with what you have"
         try:
             text = await _fetch_text(url)
         except Exception as exc:  # noqa: BLE001
             category = _categorize_exc(exc)
             logger.warning("web_extract failed for %s: %s", url, exc, exc_info=True)
-            return {"ok": False, "error": f"fetch failed: {category}"}
+            return {"ok": False, "error": f"fetch failed: {category}{_STEER}"}
         if not text:
-            return {"ok": False, "error": "no extractable text"}
+            return {"ok": False, "error": f"no extractable text{_STEER}"}
         return {"ok": True, "url": url, "text": text[:_EXTRACT_CHAR_LIMIT]}
 
 

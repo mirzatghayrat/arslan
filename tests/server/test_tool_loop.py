@@ -234,6 +234,64 @@ async def test_non_tool_json_blob_final_not_leaked(monkeypatch):
     assert out["final"] == "这是结论。"                     # and from the persisted final
 
 
+async def test_forced_step_protocol_json_salvaged_not_leaked(monkeypatch):
+    # Root cause: on the forced (budget-exhausted) step the model may emit ANOTHER tool call
+    # instead of prose (deepseek did exactly this after a web_extract timeout). The raw
+    # {"tool":...} JSON must NEVER surface as the answer — the loop makes one text-only salvage
+    # attempt and returns that. Covers web_extract (and any tool) leaking as the final answer.
+    from server.registry import executors
+    adapter = _ScriptedAdapter([
+        '{"tool": "web_search", "args": {"query": "q"}}',        # step 0: dispatched
+        '{"tool": "web_extract", "args": {"url": "http://x"}}',  # step 1 (forced): would leak
+        '综合已有搜索结果,答案是 42。',                             # salvage: plain text
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _Stub:
+        async def execute(self, args): return {"ok": True, "results": []}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="go", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools("web_search", "web_extract"),
+                              max_tool_calls=1)
+    assert out["final"] == "综合已有搜索结果,答案是 42。"
+    assert "web_extract" not in out["final"] and "{" not in out["final"]
+    assert "{" not in "".join(chunks)                     # raw JSON never streamed to the user
+
+
+async def test_forced_step_salvage_still_json_falls_back(monkeypatch):
+    # If even the salvage attempt returns protocol JSON, return an honest fallback — never raw JSON.
+    adapter = _ScriptedAdapter([
+        '{"tool": "web_extract", "args": {"url": "http://x"}}',  # step 0 (forced, max=0): would leak
+        '{"tool": "web_extract", "args": {"url": "http://y"}}',  # salvage: still JSON
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    out = await tool_loop.run(system="S", user_content="go", history=[],
+                              emit=lambda e: None, on_chunk=chunks.append,
+                              resolve_tools=_tools("web_extract"), max_tool_calls=0)
+    assert out["final"] and not out["final"].lstrip().startswith("{")
+    assert "web_extract" not in out["final"]
+    assert "{" not in "".join(chunks)
+
+
+async def test_web_extract_failure_steers_to_search_snippets(monkeypatch):
+    # Fix 2: a failed/timed-out web_extract must steer the model back to the web_search snippets
+    # it already has (instead of re-extracting the same slow URL and burning tool budget).
+    import httpx
+
+    from server.registry import executors
+    monkeypatch.setattr(executors, "_is_private_host", lambda url: False)
+
+    async def _timeout(url): raise httpx.TimeoutException("slow")
+    monkeypatch.setattr(executors, "_fetch_text", _timeout)
+    out = await executors.WebExtractExecutor().execute({"url": "https://example.com/x"})
+    assert out["ok"] is False
+    assert "timeout" in out["error"]
+    assert "web_search" in out["error"]                   # fallback steers to existing snippets
+
+
 async def test_artifact_flows_to_frame_not_to_llm(monkeypatch):
     from server.registry import executors
     adapter = _ScriptedAdapter(['{"tool": "render_chart", "args": {"type": "bar"}}', "here is your chart"])
