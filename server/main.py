@@ -54,6 +54,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_persona_fts_upgrade)
         from server.db.migrations.versions._0016_spawn_is_default import upgrade_sync as _spawn_default_upgrade
         await conn.run_sync(_spawn_default_upgrade)
+        from server.db.migrations.versions._0017_skill_candidates import upgrade_sync as _skill_candidates_upgrade
+        await conn.run_sync(_skill_candidates_upgrade)
 
     from server.registry.seeder import seed_registry
 
@@ -138,6 +140,10 @@ def create_app() -> FastAPI:
     from server.api import discovery as discovery_api
 
     app.include_router(discovery_api.router, prefix="/api/v1")
+
+    from server.api import skills as skills_api
+
+    app.include_router(skills_api.router, prefix="/api/v1")
 
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:

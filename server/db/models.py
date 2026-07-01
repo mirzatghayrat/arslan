@@ -199,6 +199,32 @@ class SkillPack(Base):
     body = Column(Text, nullable=True)
 
 
+class SkillCandidate(Base):
+    """An authored-but-not-yet-live skill draft awaiting human confirm.
+
+    Slice 1 lifecycle: observing -> promoted | rejected (Slice 2 adds an eval
+    gate before "proposed"; observing -> proposed -> promoted/rejected/retired).
+    On promote we INSERT a live SkillPack row (tier=safe, status=registered) which
+    is what makes the skill listed + equippable via the registry choke point.
+    """
+
+    __tablename__ = "skill_candidates"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(60), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    category = Column(String(40), nullable=False)
+    description = Column(Text, nullable=False)
+    body = Column(Text, nullable=False)
+    source = Column(String(20), nullable=False, default="skill_creator")  # "skill_creator" | "user"
+    status = Column(String(20), nullable=False, default="observing")
+    # "observing" | "proposed" | "promoted" | "rejected" | "retired"
+    samples = Column(JSON, default=list)   # reserved: Slice-2 observation refs
+    evidence = Column(JSON, default=dict)  # reserved: Slice-2 eval evidence
+    created_at = Column(DateTime, default=datetime.utcnow)
+    promoted_at = Column(DateTime, nullable=True)
+
+
 class SpawnCapability(Base):
     """Per-spawn equipment row (toolset or skill grant)."""
 

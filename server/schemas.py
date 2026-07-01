@@ -365,6 +365,27 @@ class RunListItemOut(BaseModel):
     created_at: str | None = None
 
 
+class SkillForgeIn(BaseModel):
+    key: str
+    name: str
+    category: str = "meta"
+    description: str
+    body: str
+    source: str = "skill_creator"
+
+
+class SkillCandidateOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    category: str
+    description: str
+    status: str
+    source: str
+    created_at: str | None = None
+    promoted_at: str | None = None
+
+
 class PreferencesOut(BaseModel):
     preferences: list[str] = []
 
