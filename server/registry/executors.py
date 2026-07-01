@@ -7,6 +7,7 @@ Server executors return {ok, ...} dicts — distinct from the CLI package's Arsl
 """
 from __future__ import annotations
 
+import base64
 import ipaddress
 import logging
 import socket
@@ -246,8 +247,64 @@ class CreateSkillExecutor:
         }
 
 
+_DECK_MAX_SLIDES = 40
+_DECK_MAX_BULLETS = 10
+
+
+class DeckExecutor:
+    """Validates a normalized deck spec and builds a native, editable .pptx backend-side
+    (python-pptx). Safe by construction — the model supplies content/structure DATA (slides +
+    a closed set of layouts), never code; we build the file. Mirrors ChartExecutor. Returns the
+    .pptx as a base64 artifact the frontend offers for download (a binary file, not inline)."""
+
+    key = "render_deck"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import deck_pptx  # lazy: keeps python-pptx off the import hot path
+
+        slides = args.get("slides")
+        if not isinstance(slides, list) or not slides:
+            return {"ok": False, "error": "'slides' must be a non-empty list"}
+        if len(slides) > _DECK_MAX_SLIDES:
+            return {"ok": False, "error": f"too many slides (max {_DECK_MAX_SLIDES})"}
+        for i, s in enumerate(slides):
+            if not isinstance(s, dict):
+                return {"ok": False, "error": f"slide {i} must be an object"}
+            if s.get("layout") not in deck_pptx.LAYOUTS:
+                return {"ok": False, "error": f"slide {i}: invalid layout {s.get('layout')!r}; use one "
+                        f"of: {', '.join(sorted(deck_pptx.LAYOUTS))}"}
+            for field in ("bullets", "left", "right"):
+                v = s.get(field)
+                if v is not None and (not isinstance(v, list) or len(v) > _DECK_MAX_BULLETS
+                                      or not all(isinstance(x, str) for x in v)):
+                    return {"ok": False,
+                            "error": f"slide {i}: '{field}' must be a list of <= {_DECK_MAX_BULLETS} strings"}
+
+        theme = args.get("theme") if isinstance(args.get("theme"), dict) else None
+        spec = {"title": str(args.get("title") or ""), "theme": theme, "slides": slides}
+        try:
+            data = deck_pptx.build_deck(spec)
+        except Exception as exc:  # noqa: BLE001 — defensive; a validated spec shouldn't raise
+            return {"ok": False, "error": f"deck render failed: {exc}"}
+
+        title = str(args.get("title") or "").strip() or "deck"
+        safe = "".join(c for c in title if c.isalnum() or c in " -_（）()").strip()[:60] or "deck"
+        return {
+            "ok": True,
+            "external": False,
+            "summary": f"已生成 PPTX「{title}」:{len(slides)} 页(原生可编辑)",
+            "artifact": {
+                "kind": "pptx",
+                "filename": f"{safe}.pptx",
+                "bytes_b64": base64.b64encode(data).decode("ascii"),
+                "slides": len(slides),
+            },
+        }
+
+
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
+    DeckExecutor(),
 )}
 
 

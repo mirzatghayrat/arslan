@@ -16,6 +16,7 @@ import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody from './MessageBody';
 import CopyButton from './CopyButton';
 import EChart from './EChart';
+import DeckDownloadCard from './DeckDownloadCard';
 import { useArslanStore } from '../stores/arslanStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
@@ -587,6 +588,9 @@ export default function OrchestratorChat({
                             {msg.toolActivity?.artifactSvg && (
                               <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                             )}
+                            {msg.toolActivity?.artifactPptx && (
+                              <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
+                            )}
                             <div className="flex items-center gap-1 text-[10px] text-primary/70">
                               <CheckCircle2 className="w-3.5 h-3.5 text-success inline mr-0.5" />
                               <span>{t('orchestrator.exec_validated')}</span>
@@ -812,6 +816,9 @@ export default function OrchestratorChat({
                       {msg.toolActivity?.artifactSvg && (
                         <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                       )}
+                      {msg.toolActivity?.artifactPptx && (
+                        <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
+                      )}
                     </div>
                   )}
 
@@ -1009,6 +1016,9 @@ export default function OrchestratorChat({
                         )}
                         {msg.toolActivity?.artifactSvg && (
                           <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                        )}
+                        {msg.toolActivity?.artifactPptx && (
+                          <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
                         )}
                       </div>
                     </div>

@@ -33,6 +33,8 @@ export interface ToolStep {
   artifactSvg?: string;
   /** ECharts option object from a backend render_chart tool_result artifact (kind: "echarts"). NEVER from LLM message text. */
   artifactChart?: Record<string, unknown>;
+  /** Downloadable .pptx from a backend render_deck tool_result artifact (kind: "pptx"). NEVER from LLM message text. */
+  artifactPptx?: { filename: string; bytesB64: string; slides: number };
 }
 
 export interface EscalationInfo {
@@ -245,8 +247,10 @@ export type ArslanServerMessage =
       ok: boolean;
       summary: string;
       // Legacy SVG artifact carries `content`; the ECharts artifact carries `spec`
-      // (a plain-JSON ECharts option object). Both come ONLY from the backend.
-      artifact?: { kind: string; content?: string; spec?: Record<string, unknown> };
+      // (a plain-JSON ECharts option object); the pptx artifact carries base64 file bytes.
+      // All come ONLY from the backend.
+      artifact?: { kind: string; content?: string; spec?: Record<string, unknown>;
+                   filename?: string; bytes_b64?: string; slides?: number };
     }
   | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
   | { type: "escalation_refused"; spawn_id: number; why: string }

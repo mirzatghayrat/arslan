@@ -8,6 +8,7 @@ import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import MessageBody from './MessageBody';
 import EChart from './EChart';
+import DeckDownloadCard from './DeckDownloadCard';
 import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
@@ -34,6 +35,7 @@ interface ToolStep {
   resultSummary?: string;
   artifactSvg?: string;
   artifactChart?: Record<string, unknown>;
+  artifactPptx?: { filename: string; bytesB64: string; slides: number };
 }
 
 export default function SpawnDirectChat({
@@ -165,6 +167,12 @@ export default function SpawnDirectChat({
               m.artifact?.kind === 'svg' ? (m.artifact.content as string) : undefined;
             steps[i].artifactChart =
               m.artifact?.kind === 'echarts' ? (m.artifact.spec as Record<string, unknown>) : undefined;
+            steps[i].artifactPptx =
+              m.artifact?.kind === 'pptx'
+                ? { filename: (m.artifact.filename as string) ?? 'deck.pptx',
+                    bytesB64: (m.artifact.bytes_b64 as string) ?? '',
+                    slides: (m.artifact.slides as number) ?? 0 }
+                : undefined;
             break;
           }
         }
@@ -182,6 +190,7 @@ export default function SpawnDirectChat({
           collapsed: false,
           artifactSvg: steps.find(s => s.artifactSvg)?.artifactSvg,
           artifactChart: steps.find(s => s.artifactChart)?.artifactChart,
+          artifactPptx: steps.find(s => s.artifactPptx)?.artifactPptx,
         } : undefined;
         setMessages(prev => prev.map(p =>
           p.id === '__streaming__'
@@ -422,6 +431,9 @@ export default function SpawnDirectChat({
                         {msg.toolActivity?.artifactSvg && (
                           <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                         )}
+                        {msg.toolActivity?.artifactPptx && (
+                          <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -458,6 +470,9 @@ export default function SpawnDirectChat({
                         {msg.toolActivity?.artifactSvg && (
                           <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                         )}
+                        {msg.toolActivity?.artifactPptx && (
+                          <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -491,6 +506,9 @@ export default function SpawnDirectChat({
                     )}
                     {msg.toolActivity?.artifactSvg && (
                       <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
+                    )}
+                    {msg.toolActivity?.artifactPptx && (
+                      <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
                     )}
                   </div>
                 )}

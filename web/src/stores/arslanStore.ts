@@ -281,10 +281,15 @@ function makeActions(set: SetState, get: GetState) {
                 ...steps[i],
                 status: frame.ok ? "ok" : "error",
                 resultSummary: frame.summary,
-                // 🔒 SECURITY: artifactSvg / artifactChart come ONLY from the backend
-                // render_chart tool_result frame's artifact, NEVER from LLM message text.
+                // 🔒 SECURITY: artifactSvg / artifactChart / artifactPptx come ONLY from the backend
+                // render_chart/render_deck tool_result frame's artifact, NEVER from LLM message text.
                 ...(frame.artifact?.kind === "svg" ? { artifactSvg: frame.artifact.content } : {}),
                 ...(frame.artifact?.kind === "echarts" ? { artifactChart: frame.artifact.spec } : {}),
+                ...(frame.artifact?.kind === "pptx" ? { artifactPptx: {
+                  filename: frame.artifact.filename ?? "deck.pptx",
+                  bytesB64: frame.artifact.bytes_b64 ?? "",
+                  slides: frame.artifact.slides ?? 0,
+                } } : {}),
               };
               break;
             }

@@ -67,6 +67,13 @@ bundled until its license is verified and permits redistribution.**
   - **`pptx-author` was NOT migrated**: it is a document/PowerPoint skill (Anthropic's `pptx`
     family is source-available/proprietary, not open source) and Arslan does not author `.pptx`.
 
+### hugohe3/ppt-master — MIT License (verified 2026-07-02, inspiration only)
+- Copyright (c) Hugo He. <https://github.com/hugohe3/ppt-master>
+- **No code was vendored.** Arslan's `render_deck` capability (`server/services/deck_pptx.py`) is an
+  original, thin renderer written directly on `python-pptx`. ppt-master (MIT) is credited as the
+  inspiration for the "native, editable shapes — not slide images" approach. This notice is courtesy
+  attribution; if any specific ppt-master code is ported later, it will be marked here as adapted.
+
 ### obra/superpowers — MIT License (verified 2026-07-01)
 - Copyright (c) 2025 Jesse Vincent. <https://github.com/obra/superpowers>
 - MIT requires retaining the copyright + permission notice (reproduced below).

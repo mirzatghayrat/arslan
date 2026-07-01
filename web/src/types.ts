@@ -27,6 +27,8 @@ export interface ToolActivity {
   artifactSvg?: string;
   /** ECharts option object from a backend render_chart tool_result artifact (kind: "echarts"). NEVER from LLM message text. */
   artifactChart?: Record<string, unknown>;
+  /** Downloadable .pptx from a backend render_deck tool_result artifact (kind: "pptx"). NEVER from LLM message text. */
+  artifactPptx?: { filename: string; bytesB64: string; slides: number };
 }
 
 export interface Escalation {

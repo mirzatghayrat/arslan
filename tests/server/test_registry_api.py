@@ -30,4 +30,4 @@ async def test_registry_is_idempotent(client):
     body1 = resp1.json()
     body2 = resp2.json()
     assert body1 == body2
-    assert len(body1["toolsets"]) == 29
+    assert len(body1["toolsets"]) == 30

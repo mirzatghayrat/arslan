@@ -271,6 +271,20 @@ TOOLSETS: list[dict] = [
         ],
     },
     {
+        "key": "deck",
+        "name": "Deck / PPTX",
+        "description": "render_deck — turn a structured deck spec into a native, editable PowerPoint (.pptx).",
+        "tier": "safe",
+        "status": "wired",
+        "tools": [
+            ("render_deck", "Generate a native, editable PowerPoint (.pptx) from a deck spec. "
+             "slides=[{layout, ...}] where layout=one of title|section|bullets|two-column|quote|big-number "
+             "(title/subtitle, bullets, left/right, text/attribution, value/label per layout); each slide "
+             "may carry notes (speaker notes). Optional theme={accent:'#hex'}. The user gets a downloadable "
+             ".pptx — real shapes/text, not images.", "safe", "wired"),
+        ],
+    },
+    {
         "key": "skill_authoring",
         "name": "Skill Authoring",
         "description": "create_skill — package a reusable method into a skill candidate "
@@ -328,6 +342,9 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
      "Build a trading-comps spread: pick peers, per-industry multiples, consistent definitions, outlier flags.", _S, _REG),
     ("idea-generation", "idea-generation", "finance",
      "Source investment ideas: quant screens by style, thematic sweep, shortlist with thesis hooks and risks.", _S, _REG),
+    # CREATIVE — presentation storytelling (pairs with the render_deck tool)
+    ("deck-authoring", "deck-authoring", "creative",
+     "Turn content into a storytelling deck: one idea per slide, assertion-evidence titles, narrative arc; renders to native .pptx.", _S, _REG),
     # WRITING (adapted from anthropics/skills, Apache-2.0)
     ("internal-comms", "internal-comms", "writing",
      "Write internal comms in company formats: 3P updates, newsletters, FAQs, status/incident reports.", _S, _REG),
