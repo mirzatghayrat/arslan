@@ -405,7 +405,7 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
     ("node-inspect-debugger", "node-inspect-debugger", "software-development", "Debug Node via CDP (attaches/executes).", _O, _REG),
     ("plan", "plan", "software-development", "Plan mode: markdown plan, no execution.", _S, _REG),
     ("python-debugpy", "python-debugpy", "software-development", "Debug Python (executes/attaches).", _O, _REG),
-    ("requesting-code-review", "requesting-code-review", "software-development", "Pre-commit review w/ auto-fix (mutates code).", _O, _REG),
+    ("requesting-code-review", "requesting-code-review", "software-development", "Request a code review with clean work-product context; severity-based action (methodology).", _S, _REG),
     ("simplify-code", "simplify-code", "software-development", "3-agent cleanup (mutates code).", _O, _REG),
     ("spike", "spike", "software-development", "Throwaway experiments (runs code).", _O, _REG),
     ("systematic-debugging", "systematic-debugging", "software-development", "4-phase root-cause analysis (analysis-only).", _S, _REG),
