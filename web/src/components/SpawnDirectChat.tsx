@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Message, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
-import Markdown from './Markdown';
+import MessageBody from './MessageBody';
 import EChart from './EChart';
 import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
@@ -399,7 +399,7 @@ export default function SpawnDirectChat({
                       <span className="text-[9px] text-subtle-foreground font-mono">{msg.timestamp}</span>
                     </div>
                     <div className="text-xs text-foreground leading-relaxed font-sans">
-                      <Markdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                      <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                     </div>
 
                     {/* Tool execution logs inside direct messages */}
@@ -439,7 +439,7 @@ export default function SpawnDirectChat({
                       <span className="text-[10px] font-bold font-mono tracking-widest uppercase">{msg.senderName}</span>
                       <span className="text-[9px] font-mono">{msg.timestamp}</span>
                     </div>
-                    <Markdown className="text-xs text-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                    <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-xs text-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
 
                     {/* Tool Activities */}
                     {msg.toolActivity && (
@@ -478,7 +478,7 @@ export default function SpawnDirectChat({
                   <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                 </div>
                 <div className="leading-relaxed">
-                  <Markdown className="text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{msg.text}</Markdown>
+                  <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                 </div>
 
                 {msg.toolActivity && (
