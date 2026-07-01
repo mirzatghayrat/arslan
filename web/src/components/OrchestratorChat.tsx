@@ -14,6 +14,7 @@ import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody from './MessageBody';
+import CopyButton from './CopyButton';
 import EChart from './EChart';
 import { useArslanStore } from '../stores/arslanStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -474,7 +475,7 @@ export default function OrchestratorChat({
                       {/* Message Content */}
                       {isUser
                         ? <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
-                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
 
                       {/* Routed Indicator - specifically asked in prompt */}
@@ -676,6 +677,7 @@ export default function OrchestratorChat({
                             className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none">
                             <ThumbsDown className="w-3.5 h-3.5" />
                           </button>
+                          <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
                           <button title={t('orchestrator.refine')}
                             onClick={() => openSandbox(String(msg.spawnId), msg.text)}
                             className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
@@ -741,7 +743,7 @@ export default function OrchestratorChat({
 
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
-                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
 
                   {/* Routed branch block */}
@@ -859,6 +861,7 @@ export default function OrchestratorChat({
                           className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-danger text-subtle-foreground hover:text-danger text-[11px] transition-all select-none">
                           <ThumbsDown className="w-3.5 h-3.5" />
                         </button>
+                        <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] transition-all select-none" />
                         <button title={t('orchestrator.refine')}
                           onClick={() => openSandbox(String(msg.spawnId), msg.text)}
                           className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none">
@@ -931,7 +934,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
-                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (
@@ -1050,6 +1053,7 @@ export default function OrchestratorChat({
                           className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none">
                           <ThumbsDown className="w-3.5 h-3.5" />
                         </button>
+                        <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
                         <button title={t('orchestrator.refine')}
                           onClick={() => openSandbox(String(msg.spawnId), msg.text)}
                           className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">

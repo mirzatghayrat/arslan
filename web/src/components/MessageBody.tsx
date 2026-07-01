@@ -142,7 +142,7 @@ function HtmlDocCard({ html, indent }: { html: string; indent: boolean }) {
   );
 }
 
-function ProseBody({ text, className, indent, streaming }: { text: string; className?: string; indent: boolean; streaming: boolean }) {
+function ProseBody({ text, className, indent, streaming, hasMessageActions }: { text: string; className?: string; indent: boolean; streaming: boolean; hasMessageActions: boolean }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -197,10 +197,15 @@ function ProseBody({ text, className, indent, streaming }: { text: string; class
 
       {showExport && (
         <div className={`${ind} mt-1.5 flex items-center gap-0.5 text-[10px] font-mono opacity-70 hover:opacity-100 transition-opacity`}>
-          <ActionButton onClick={copy} title={t('msg.copy')}>
-            {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
-            {copied ? t('msg.copied') : t('msg.copy')}
-          </ActionButton>
+          {/* Copy lives in the persistent message action row (👍 👎 copy 重新生成) when the parent
+              renders one (spawn deliverables); here we keep only the export buttons to avoid a
+              duplicate copy. Non-deliverable messages have no message row, so copy stays. */}
+          {!hasMessageActions && (
+            <ActionButton onClick={copy} title={t('msg.copy')}>
+              {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+              {copied ? t('msg.copied') : t('msg.copy')}
+            </ActionButton>
+          )}
           <ActionButton
             onClick={() => triggerDownload(`message-${Date.now()}.md`, text, 'text/markdown;charset=utf-8')}
             title={t('msg.download_md')}
@@ -223,11 +228,14 @@ interface Props {
   indent?: boolean;
   /** True while the message is still streaming — suppresses collapse/export/HTML-card until done. */
   streaming?: boolean;
+  /** True when the parent renders a persistent message action row (👍 👎 copy 重新生成) below this
+   *  message — the prose export row then omits its own copy button to avoid a duplicate. */
+  hasMessageActions?: boolean;
 }
 
-export default function MessageBody({ text, className, indent = false, streaming = false }: Props) {
+export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false }: Props) {
   if (!streaming && isFullHtmlDoc(text)) {
     return <HtmlDocCard html={text} indent={indent} />;
   }
-  return <ProseBody text={text} className={className} indent={indent} streaming={streaming} />;
+  return <ProseBody text={text} className={className} indent={indent} streaming={streaming} hasMessageActions={hasMessageActions} />;
 }
