@@ -69,6 +69,24 @@ def _claims_search(text: str) -> bool:
     return bool(_CLAIMS_SEARCH_RE.search(text or ""))
 
 
+# Chart-as-code-fence: instead of calling render_chart, the model draws a DATA chart by writing a
+# Markdown code block (```mermaid xychart-beta / ```mermaid pie / ```chart / bare ```xychart-beta).
+# The UI shows a raw code block with a "Copy" button, not a real ECharts chart. Distinct from
+# _claims_chart (which catches "上图已生成" claims): here the model neither claims nor promises — it
+# literally hands over chart source. Matches ONLY data charts render_chart can produce; a mermaid
+# flowchart / sequenceDiagram is a legit diagram render_chart CANNOT draw, so it must not trip this.
+_DRAWS_CHART_FENCE_RE = re.compile(
+    r"```\s*chart\b"                                       # ```chart generic fence
+    r"|```\s*(?:mermaid\s+)?xychart[\w-]*"                 # ```xychart-beta or ```mermaid xychart...
+    r"|```\s*mermaid\b[\s\S]{0,80}?"                       # ```mermaid then, in the block head,
+    r"(?:xychart-beta|\bpie\s+(?:title|showData))",        #   an xychart/pie declaration
+    re.IGNORECASE)
+
+
+def _draws_chart_fence(text: str) -> bool:
+    return bool(_DRAWS_CHART_FENCE_RE.search(text or ""))
+
+
 # Forward-promise patterns: the model ends its turn PROMISING a future tool action instead of
 # emitting the tool JSON ("数据正在路上", "马上为您绘制…", "我这就去搜索", "STEP 2: 调用 web_extract",
 # "let me search"). Distinct from the _CLAIMS_* regexes above, which catch the inverse — claiming
@@ -262,22 +280,37 @@ async def run(
             fired.add(tool_key)
             continue
 
-        # Reactive hallucination guard: the model claims a tool result it never produced this run.
+        # Reactive hallucination guard: the model claims a tool result it never produced this run,
+        # or draws a chart as Markdown code instead of calling render_chart.
         if not forced:
             claimed = None
-            if (_claims_chart(content) and "render_chart" in wired_keys
-                    and "render_chart" not in fired and "render_chart" not in forced_retry):
+            reprompt = None
+            chart_free = ("render_chart" in wired_keys and "render_chart" not in fired
+                          and "render_chart" not in forced_retry)
+            if _claims_chart(content) and chart_free:
                 claimed = "render_chart"
+                reprompt = (
+                    "You claimed to have produced a chart, but you did NOT actually call render_chart "
+                    "this turn — so there is no chart. Emit ONLY the render_chart tool JSON now, or "
+                    "answer honestly WITHOUT claiming you made a chart.")
+            elif _draws_chart_fence(content) and chart_free:
+                claimed = "render_chart"
+                reprompt = (
+                    "You drew a chart as a Markdown code block (```mermaid xychart/pie or ```chart). "
+                    "The user CANNOT see that as a real chart — it shows as raw code. Emit ONLY the "
+                    "render_chart tool JSON now with this SAME data (args: {type, x:[labels], "
+                    "series:[{name, values:[numbers]}]}); do NOT draw charts in markdown/mermaid.")
             elif (_claims_search(content) and "web_search" in wired_keys
                     and "web_search" not in fired and "web_search" not in forced_retry):
                 claimed = "web_search"
+                reprompt = (
+                    "You claimed to have searched, but you did NOT actually call web_search this turn "
+                    "— so there is no result. Emit ONLY the web_search tool JSON now, or answer "
+                    "honestly WITHOUT claiming you used a tool.")
             if claimed:
                 forced_retry.add(claimed)
                 convo.append({"role": "assistant", "content": content})
-                convo.append({"role": "user", "content":
-                    f"You claimed to have used {claimed} (searched / produced a chart), but you did NOT "
-                    f"actually call it this turn — so there is no result and no chart. Emit ONLY the "
-                    f"{claimed} tool JSON now, or answer honestly WITHOUT claiming you used a tool or made a chart."})
+                convo.append({"role": "user", "content": reprompt})
                 continue
 
         # Forward-promise guard: the model ended its turn PROMISING a tool action ("数据正在路上",

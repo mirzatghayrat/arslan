@@ -7,6 +7,7 @@ import { Message, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import Markdown from './Markdown';
+import EChart from './EChart';
 import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
@@ -32,6 +33,7 @@ interface ToolStep {
   status: 'running' | 'ok' | 'error';
   resultSummary?: string;
   artifactSvg?: string;
+  artifactChart?: Record<string, unknown>;
 }
 
 export default function SpawnDirectChat({
@@ -161,6 +163,8 @@ export default function SpawnDirectChat({
             steps[i].resultSummary = (m.summary as string) ?? '';
             steps[i].artifactSvg =
               m.artifact?.kind === 'svg' ? (m.artifact.content as string) : undefined;
+            steps[i].artifactChart =
+              m.artifact?.kind === 'echarts' ? (m.artifact.spec as Record<string, unknown>) : undefined;
             break;
           }
         }
@@ -177,6 +181,7 @@ export default function SpawnDirectChat({
           outputSummary: steps.map(s => s.resultSummary).filter(Boolean).join('\n'),
           collapsed: false,
           artifactSvg: steps.find(s => s.artifactSvg)?.artifactSvg,
+          artifactChart: steps.find(s => s.artifactChart)?.artifactChart,
         } : undefined;
         setMessages(prev => prev.map(p =>
           p.id === '__streaming__'
@@ -410,7 +415,10 @@ export default function SpawnDirectChat({
                         <p className="text-foreground text-[10.5px] whitespace-pre-line border-l-2 border-primary pl-3 py-1 bg-foreground/[0.01]">
                           {msg.toolActivity.outputSummary}
                         </p>
-                        {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                        {/* 🔒 SECURITY: artifactChart/artifactSvg are populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                        {msg.toolActivity?.artifactChart && (
+                          <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
+                        )}
                         {msg.toolActivity?.artifactSvg && (
                           <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                         )}
@@ -443,7 +451,10 @@ export default function SpawnDirectChat({
                         <div className="p-3 text-foreground whitespace-pre-line leading-relaxed">
                           {msg.toolActivity.outputSummary}
                         </div>
-                        {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                        {/* 🔒 SECURITY: artifactChart/artifactSvg are populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                        {msg.toolActivity?.artifactChart && (
+                          <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
+                        )}
                         {msg.toolActivity?.artifactSvg && (
                           <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                         )}
@@ -474,7 +485,10 @@ export default function SpawnDirectChat({
                   <div className="mt-3 border border-primary/40 p-2 text-[11px] bg-background">
                     <div className="text-warning mb-1">STDOUT RESULT &gt; {msg.toolActivity.toolName}</div>
                     <p className="text-foreground">{msg.toolActivity.outputSummary}</p>
-                    {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                    {/* 🔒 SECURITY: artifactChart/artifactSvg are populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
+                    {msg.toolActivity?.artifactChart && (
+                      <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
+                    )}
                     {msg.toolActivity?.artifactSvg && (
                       <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
                     )}

@@ -566,3 +566,88 @@ async def test_tool_loop_unresolvable_tool_errors(monkeypatch):
                               resolve_tools=_tools("ghost_tool"))
     assert any(e["type"] == "tool_result" and e["tool"] == "ghost_tool" and e["ok"] is False for e in events)
     assert out["final"] == "ok anyway"
+
+
+# --- chart-as-code-fence guard: model draws a chart in Markdown instead of calling render_chart ---
+
+def test_draws_chart_fence_matches_data_charts_only():
+    d = tool_loop._draws_chart_fence
+    assert d("```mermaid\nxychart-beta\n  title \"x\"\n```")          # mermaid xychart
+    assert d("```mermaid\npie title EV share\n  \"A\" : 40\n```")      # mermaid pie
+    assert d("```chart\n{type: bar}\n```")                             # generic chart fence
+    assert d("Here you go:\n```xychart-beta\n  bar [1,2,3]\n```")      # bare xychart fence
+    # NOT data charts render_chart can produce, and NOT prose:
+    assert not d("```mermaid\ngraph TD\n  A-->B\n```")                 # flowchart
+    assert not d("```mermaid\nsequenceDiagram\n  A->>B: hi\n```")      # sequence diagram
+    assert not d("I baked a pie chart earlier, it was tasty.")         # prose mentions
+    assert not d("```python\nplt.pie([1,2])\n```")                     # python code block
+
+
+async def test_reactive_retry_on_markdown_mermaid_chart(monkeypatch):
+    # Model draws a chart as a ```mermaid xychart-beta``` block WITHOUT calling render_chart.
+    # The UI would show a raw code block, not a real chart → guard must re-prompt → render_chart fires.
+    from server.registry import executors
+    adapter = _ScriptedAdapter([
+        "EV maker share:\n```mermaid\nxychart-beta\n  title \"EV share\"\n  bar [40, 30, 30]\n```",
+        '{"tool": "render_chart", "args": {"type": "bar", "x": ["BYD", "Tesla", "Other"], "series": [{"name": "share", "values": [40, 30, 30]}]}}',
+        "图表如下。",
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _C:
+        async def execute(self, args):
+            return {"ok": True, "external": False, "summary": "chart",
+                    "artifact": {"kind": "svg", "content": "<svg/>"}}
+    monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
+    events = []
+    out = await tool_loop.run(system="S", user_content="bar chart of EV maker share", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("render_chart"))
+    assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
+    assert out["final"] == "图表如下。"
+
+
+async def test_reactive_retry_on_chart_fence(monkeypatch):
+    from server.registry import executors
+    adapter = _ScriptedAdapter([
+        "```chart\ntype: pie\nBYD: 40\nTesla: 30\n```",
+        '{"tool": "render_chart", "args": {"type": "pie", "x": ["BYD", "Tesla"], "series": [{"name": "share", "values": [40, 30]}]}}',
+        "done",
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _C:
+        async def execute(self, args):
+            return {"ok": True, "external": False, "summary": "chart",
+                    "artifact": {"kind": "svg", "content": "<svg/>"}}
+    monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
+    events = []
+    out = await tool_loop.run(system="S", user_content="pie of share", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("render_chart"))
+    assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
+    assert out["final"] == "done"
+
+
+async def test_no_retry_on_mermaid_flowchart(monkeypatch):
+    # A mermaid flowchart is a legit diagram render_chart CANNOT produce → must NOT be nagged.
+    adapter = _ScriptedAdapter(["Here is the flow:\n```mermaid\ngraph TD\n  A-->B\n```"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    events = []
+    out = await tool_loop.run(system="S", user_content="draw the flow", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("render_chart"))
+    assert not any(e["type"] == "tool_call" for e in events)
+    assert out["final"] == "Here is the flow:\n```mermaid\ngraph TD\n  A-->B\n```"
+
+
+async def test_no_chart_fence_retry_when_render_chart_not_wired(monkeypatch):
+    # Pure-chat spawn without render_chart wired: a mermaid chart block is returned as-is, no nag.
+    adapter = _ScriptedAdapter(["```mermaid\nxychart-beta\n  bar [1,2]\n```"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    events = []
+    out = await tool_loop.run(system="S", user_content="chart it", history=[],
+                              emit=events.append, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))
+    assert not any(e["type"] == "tool_call" for e in events)
+    assert out["final"] == "```mermaid\nxychart-beta\n  bar [1,2]\n```"
