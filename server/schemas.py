@@ -374,6 +374,11 @@ class SkillForgeIn(BaseModel):
     source: str = "skill_creator"
 
 
+class SkillEvaluateIn(BaseModel):
+    target_spawn_id: int
+    min_samples: int = 8
+
+
 class SkillCandidateOut(BaseModel):
     id: int
     key: str

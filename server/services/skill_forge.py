@@ -16,13 +16,18 @@ Self-manages its own AsyncSessionLocal sessions, like evolution_loop.
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import SkillCandidate, SkillPack
+from server.db.models import SkillCandidate, Spawn, SkillPack
+from server.orchestrator import dispatcher
+from server.services import evaluator, replay_set
+
+logger = logging.getLogger(__name__)
 
 MAX_SKILL_BYTES = 15 * 1024  # Hermes hygiene: skills stay <=15 KB
 _MIN_BODY_CHARS = 80
@@ -90,8 +95,133 @@ async def create_candidate(
     return cand
 
 
+# Skill-body limit + framing mirror server/orchestrator/dispatcher.py:_equipment_block_from
+# (the `### {name}\n{body[:1500]}` technique block under a "Your techniques:" header).
+# We inject the CANDIDATE body the SAME way an equipped skill's body reaches a spawn's
+# system prompt, so evaluate_candidate is a true equip-this-skill vs not counterfactual.
+_SKILL_BODY_LIMIT = dispatcher._SKILL_BODY_LIMIT
+
+
+def _persona(spawn: Spawn) -> str:
+    """Persona string for the compare-judge, mirroring evolution_loop._persona."""
+    return (f"role: {spawn.persona_role or ''}\ntone: {spawn.persona_tone or ''}\n"
+            f"{spawn.system_prompt or ''}")
+
+
+def _inject_skill_body(base_prompt: str, name: str, body: str) -> str:
+    """Append `body` to `base_prompt` exactly as an equipped skill reaches the system
+    prompt in dispatcher._equipment_block_from: as a `### {name}\\n{body[:LIMIT]}`
+    block under a "Your techniques:" header. Mirroring the real injection makes the
+    skill-on eval a faithful counterfactual of really equipping this skill."""
+    body = (body or "").strip()
+    if not body:
+        return base_prompt
+    return f"{base_prompt}\n\nYour techniques:\n### {name}\n{body[:_SKILL_BODY_LIMIT]}"
+
+
+async def _val_outputs(spawn_id: int, system_prompt_override: str, val: list[dict]) -> dict:
+    """Run `system_prompt_override` over val, return {run_id: output}. Mirrors
+    evolution_loop._val_outputs (skill-off baseline outputs on held-out val)."""
+    out: dict = {}
+    for it in val:
+        gen = await dispatcher.dispatch(
+            "skill-eval", spawn_id=spawn_id, task_brief=it["task"],
+            system_prompt_override=system_prompt_override, persist=False,
+        )
+        out[it["run_id"]] = gen.get("full_output", "")
+    return out
+
+
+async def evaluate_candidate(candidate_id: int, target_spawn_id: int, *,
+                             min_samples: int = 8) -> dict:
+    """Real-data eval gate: move an `observing` candidate to `proposed` only if
+    equipping its body clears the performance-not-decreased gate on the target
+    spawn's REAL scored runs.
+
+    The observation period IS the spawn accumulating real scored runs: we replay
+    them at eval time (no shadow live-testing). Until `min_samples` real val samples
+    exist, we stay `observing` and record the shortfall. Once enough exist, we run a
+    true equip-this-skill (skill-on) vs normal-prompt (skill-off) counterfactual over
+    the held-out val set and gate on it. Passing → `proposed` (human-confirmable);
+    the human confirm (promote_candidate) is still the ultimate gate — this INFORMS it.
+
+    Self-manages DB sessions like evolution_loop. Never crashes: dispatch/eval
+    failures degrade to a not-passed gate (mirrors evolution_loop's I1 handling).
+    """
+    async with db_session.AsyncSessionLocal() as db:
+        cand = await db.get(SkillCandidate, candidate_id)
+        if cand is None:
+            return {"ok": False, "reason": "candidate not found"}
+        if cand.status != "observing":
+            return {"ok": False, "reason": f"candidate is {cand.status}"}
+        cand_key, cand_name, cand_body = cand.key, cand.name, cand.body
+
+        spawn = await db.get(Spawn, target_spawn_id)
+        if spawn is None:
+            return {"ok": False, "reason": "spawn not found"}
+        # Read eagerly-loaded columns only (spawn is used after this session closes).
+        skill_off_prompt = spawn.system_prompt or "You are a helpful assistant."
+        persona = _persona(spawn)
+
+    split = await replay_set.build_split(target_spawn_id)
+    val = split["val"]
+
+    # Observation gate: the spawn's real scored runs ARE the samples. Not enough yet →
+    # do NOT evaluate; record the shortfall and stay observing.
+    if len(val) < min_samples:
+        shortfall = {"observed": len(val), "need": min_samples}
+        async with db_session.AsyncSessionLocal() as db:
+            cand = await db.get(SkillCandidate, candidate_id)
+            if cand is not None:
+                cand.samples = shortfall
+                cand.evidence = {"gate": {"passed": False, "reason": "insufficient", **shortfall}}
+                await db.commit()
+        return {"ok": True, "status": "observing",
+                "gate": {"passed": False,
+                         "reason": f"insufficient real samples (have {len(val)}, need {min_samples})",
+                         "aggregate": None}}
+
+    skill_on_prompt = _inject_skill_body(skill_off_prompt, cand_name, cand_body)
+
+    # Faithful counterfactual: skill-off baseline outputs vs skill-on candidate, over the
+    # SAME held-out val runs. Degrade to a not-passed gate on any dispatch/eval failure.
+    try:
+        baseline_outputs = await _val_outputs(target_spawn_id, skill_off_prompt, val)
+        res = await evaluator.evaluate(
+            spawn_id=target_spawn_id, persona=persona,
+            candidate_prompt=skill_on_prompt, replay_items=val,
+            baseline_outputs=baseline_outputs,
+        )
+    except Exception as exc:  # noqa: BLE001  -- I1: never crash; degrade to not-passed
+        logger.warning("skill candidate eval failed, degrading to no-pass: %s", exc)
+        res = {"items": [], "aggregate": None,
+               "gate": {"passed": False, "reason": f"eval failed: {exc}", "aggregate": None}}
+
+    gate = res["gate"]
+    val_run_ids = [it["run_id"] for it in val]
+    async with db_session.AsyncSessionLocal() as db:
+        cand = await db.get(SkillCandidate, candidate_id)
+        if cand is None:
+            return {"ok": False, "reason": "candidate not found"}
+        cand.evidence = res
+        cand.samples = val_run_ids
+        if gate["passed"]:
+            cand.status = "proposed"
+        new_status = cand.status
+        await db.commit()
+
+    agg = res.get("aggregate") or {}
+    return {"ok": True, "status": new_status, "gate": gate,
+            "evidence_summary": {"key": cand_key, "samples": val_run_ids,
+                                 "aggregate": agg.get("overall") if isinstance(agg, dict) else None}}
+
+
 async def promote_candidate(candidate_id: int) -> dict:
     """Human-gated register: turn a candidate into a real live SkillPack.
+
+    Normal path is observe -> evaluate_candidate -> proposed -> promote, but promote
+    still accepts BOTH observing|proposed: the human confirm is the ultimate gate; the
+    eval only INFORMS it.
 
     INSERTs SkillPack(tier='safe', status='registered', body=...) — which is what
     makes it listed + equippable — then marks the candidate 'promoted'.
