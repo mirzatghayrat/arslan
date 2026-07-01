@@ -37,13 +37,10 @@ describe('OrchestratorChat attach', () => {
         activeThread={null}
       />,
     );
-    // Reveal the URL field from the "+" menu, then extract via the SSRF-hardened path
-    fireEvent.click(screen.getByLabelText('attach.url'));
-    fireEvent.change(screen.getByPlaceholderText('attach.url_placeholder'), { target: { value: 'https://x.com' } });
-    fireEvent.click(screen.getByText('attach.read'));
-    await screen.findByLabelText('remove-attachment');
-    // Type into the chat message input (the footer input)
+    // Paste a URL straight into the composer → auto-extract via the SSRF-hardened path (no button)
     const msgInput = screen.getByPlaceholderText(/placeholder_chat/i);
+    fireEvent.paste(msgInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
+    await screen.findByLabelText('remove-attachment');
     fireEvent.change(msgInput, { target: { value: 'summarise' } });
     const form = msgInput.closest('form');
     if (form) fireEvent.submit(form);

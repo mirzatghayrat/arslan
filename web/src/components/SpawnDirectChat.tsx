@@ -498,14 +498,14 @@ export default function SpawnDirectChat({
             <input
               type="text"
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
               onPaste={attach.onPaste}
               disabled={streaming}
               placeholder={streaming ? t('spawn_chat.placeholder_working', { name: spawn.name }) : t('spawn_chat.placeholder_input')}
               className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5 disabled:opacity-60"
             />
             <div className="composer-row">
-              <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} onAddUrl={attach.addUrl} />
+              <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
               <button
                 type="submit"
                 disabled={streaming || !inputValue.trim()}

@@ -1150,13 +1150,13 @@ export default function OrchestratorChat({
                 autoCapitalize="off"
                 spellCheck={false}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
                 placeholder={t('orchestrator.placeholder_chat')}
                 className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
               />
               <div className="composer-row">
-                <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} onAddUrl={attach.addUrl} />
+                <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
                 <button
                   id="chat-send-submit"
                   type="submit"

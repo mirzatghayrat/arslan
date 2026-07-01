@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback } from "react";
-import { Plus, Link as LinkIcon, X, Loader2, FileText } from "lucide-react";
+import { Plus, X, Loader2, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 
@@ -9,12 +9,14 @@ import { api } from "../api/client";
  * Architecture:
  *  - `useComposerAttach()` owns the state + the SSRF-hardened extract logic
  *    (file → extractAttachmentFile, url → extractAttachmentUrl). It returns
- *    handlers a composer wires onto its existing input box (drag-drop + paste)
- *    plus the data needed to render chips and the "+" control.
- *  - `<AttachChips>` renders the file/image pills (image = honest preview-only
+ *    handlers a composer wires onto its existing input box (drag-drop + paste +
+ *    onInputChange) plus the data needed to render chips and the "+" control.
+ *  - URLs are AUTO-DETECTED: when the user types a URL (followed by a space) or
+ *    pastes one, it's extracted inline as a source — no button, the way
+ *    ChatGPT/Gemini/Perplexity work. The only visible control is "+" for files.
+ *  - `<AttachChips>` renders the file/image/url pills (image = honest preview-only
  *    thumbnail, since the doc-ingest backend can't read images).
- *  - `<AttachControl>` is the lower-left "+" button → file picker + a URL field
- *    revealed on demand.
+ *  - `<AttachControl>` is the lower-left "+" button → native file/image picker.
  *
  * 🔒 SECURITY: URL extraction goes ONLY through api.extractAttachmentUrl, which
  * hits the SSRF-hardened backend /extract endpoint. No new fetch path is built.
@@ -38,6 +40,16 @@ const DOC_EXT = /\.(pdf|docx|txt|md)$/i;
 export const MAX_ATTACHMENTS = 9;
 /** 30 MB/file, matching the Claude reference in the design doc. */
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
+/** Explicit-scheme URLs with a TLD-like dot. Bare domains are intentionally NOT
+ *  auto-detected (too ambiguous with filenames/prose). */
+const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+\.[a-z][^\s<>"'`]*/gi;
+/** Detection debounce so we extract a settled URL, not each keystroke. */
+const DETECT_DEBOUNCE_MS = 700;
+
+/** Pull settled URLs out of text, trimming trailing sentence punctuation. */
+function extractUrls(text: string): string[] {
+  return Array.from(text.matchAll(URL_RE)).map((m) => m[0].replace(/[.,;:!?)\]}]+$/, ""));
+}
 
 export interface UseComposerAttach {
   attachments: Attachment[];
@@ -46,16 +58,17 @@ export interface UseComposerAttach {
   setError: (e: string | null) => void;
   dragActive: boolean;
   addFiles: (files: FileList | File[]) => Promise<void>;
-  addUrl: (url: string) => Promise<boolean>;
   removeAt: (i: number) => void;
   clear: () => void;
+  /** Feed the composer's current input text so typed URLs auto-extract (debounced). */
+  onInputChange: (text: string) => void;
   /** Spread onto the composer's input wrapper to enable drag-and-drop. */
   dndHandlers: {
     onDragOver: (e: React.DragEvent) => void;
     onDragLeave: (e: React.DragEvent) => void;
     onDrop: (e: React.DragEvent) => void;
   };
-  /** Attach to the textarea/input to enable paste-to-attach (returns true if it consumed files). */
+  /** Attach to the textarea/input: pastes files, and auto-detects pasted URLs. */
   onPaste: (e: React.ClipboardEvent) => void;
 }
 
@@ -69,6 +82,8 @@ export function useComposerAttach(
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const dragDepth = useRef(0);
+  // URLs already handled (extracted or in flight), so re-scans don't re-extract.
+  const handledUrls = useRef<Set<string>>(new Set());
 
   const commit = useCallback(
     (next: Attachment[]) => {
@@ -137,30 +152,55 @@ export function useComposerAttach(
     [attachments, commit, compress, t],
   );
 
-  const addUrl = useCallback(
-    async (url: string): Promise<boolean> => {
-      const u = url.trim();
-      if (!u || busy) return false;
-      if (attachments.length >= MAX_ATTACHMENTS) {
-        setError(t("attach.too_many", { max: MAX_ATTACHMENTS }));
-        return false;
-      }
-      setBusy(true);
-      setError(null);
-      try {
-        // 🔒 SSRF-hardened backend path — do NOT replace with a direct fetch.
-        const r = await api.extractAttachmentUrl(u, compress);
-        commit([...attachments, { name: u, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" }]);
-        return true;
-      } catch (e) {
-        setError(String((e as Error).message ?? e));
-        return false;
-      } finally {
-        setBusy(false);
+  /** Extract one or more detected URLs into source chips (sequential; deduped; capped). */
+  const addUrls = useCallback(
+    async (urls: string[]) => {
+      let current = attachments;
+      for (const raw of urls) {
+        const u = raw.trim();
+        if (!u || current.some((a) => a.name === u)) continue;
+        if (current.length >= MAX_ATTACHMENTS) {
+          setError(t("attach.too_many", { max: MAX_ATTACHMENTS }));
+          break;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+          // 🔒 SSRF-hardened backend path — do NOT replace with a direct fetch.
+          const r = await api.extractAttachmentUrl(u, compress);
+          const next = [
+            ...current,
+            { name: u, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const },
+          ];
+          current = next;
+          commit(next);
+        } catch (e) {
+          setError(String((e as Error).message ?? e));
+        } finally {
+          setBusy(false);
+        }
       }
     },
-    [attachments, busy, commit, compress, t],
+    [attachments, commit, compress, t],
   );
+
+  // scanRef always points at a closure over the LATEST attachments/addUrls, so the
+  // debounced timer never fires against stale state (useEventCallback pattern).
+  const scanRef = useRef<(text: string) => void>(() => {});
+  scanRef.current = (text: string) => {
+    const fresh = extractUrls(text).filter(
+      (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),
+    );
+    if (fresh.length === 0) return;
+    fresh.forEach((u) => handledUrls.current.add(u));
+    void addUrls(fresh);
+  };
+
+  const detectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onInputChange = useCallback((text: string) => {
+    if (detectTimer.current) clearTimeout(detectTimer.current);
+    detectTimer.current = setTimeout(() => scanRef.current(text), DETECT_DEBOUNCE_MS);
+  }, []);
 
   const removeAt = useCallback(
     (i: number) => {
@@ -173,6 +213,7 @@ export function useComposerAttach(
 
   const clear = useCallback(() => {
     for (const a of attachments) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+    handledUrls.current.clear();
     setAttachments([]);
     setError(null);
     onChange([]);
@@ -206,10 +247,20 @@ export function useComposerAttach(
     if (files && files.length > 0) {
       e.preventDefault();
       void addFiles(files);
+      return;
+    }
+    // Pasted text: auto-extract any URL(s) immediately (the text still lands in the box).
+    const text = e.clipboardData?.getData("text") ?? "";
+    const fresh = extractUrls(text).filter(
+      (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),
+    );
+    if (fresh.length > 0) {
+      fresh.forEach((u) => handledUrls.current.add(u));
+      void addUrls(fresh);
     }
   };
 
-  return { attachments, busy, error, setError, dragActive, addFiles, addUrl, removeAt, clear, dndHandlers, onPaste };
+  return { attachments, busy, error, setError, dragActive, addFiles, removeAt, clear, onInputChange, dndHandlers, onPaste };
 }
 
 /** Chips/pills rendered inside the composer (below the input). */
@@ -250,29 +301,16 @@ export function AttachChips({
   );
 }
 
-/** The lower-left "+" control: native picker + on-demand URL field. */
+/** The lower-left "+" control: native file/image picker. URLs auto-detect from the input. */
 export function AttachControl({
   busy,
   onPickFiles,
-  onAddUrl,
 }: {
   busy: boolean;
   onPickFiles: (files: FileList) => void;
-  onAddUrl: (url: string) => Promise<boolean> | void;
 }) {
   const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [showUrl, setShowUrl] = useState(false);
-  const [url, setUrl] = useState("");
-
-  const submitUrl = async () => {
-    if (!url.trim()) return;
-    const ok = await onAddUrl(url.trim());
-    if (ok) {
-      setUrl("");
-      setShowUrl(false);
-    }
-  };
 
   return (
     <div className="attach-control">
@@ -297,38 +335,6 @@ export function AttachControl({
           e.target.value = "";
         }}
       />
-      <button
-        type="button"
-        className={`attach-url-toggle${showUrl ? " attach-url-toggle--on" : ""}`}
-        title={t("attach.url")}
-        aria-label={t("attach.url")}
-        onClick={() => setShowUrl((v) => !v)}
-      >
-        <LinkIcon className="w-3.5 h-3.5" />
-      </button>
-      {showUrl && (
-        <input
-          className="attach-url"
-          autoFocus
-          placeholder={t("attach.url_placeholder")}
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void submitUrl();
-            } else if (e.key === "Escape") {
-              setShowUrl(false);
-              setUrl("");
-            }
-          }}
-        />
-      )}
-      {showUrl && (
-        <button type="button" className="attach-read" disabled={busy} onClick={() => void submitUrl()}>
-          {t("attach.read")}
-        </button>
-      )}
     </div>
   );
 }

@@ -29,7 +29,12 @@ function Harness({ onChange }: { onChange: (a: Attachment[]) => void }) {
   return (
     <div>
       <AttachChips attachments={attach.attachments} onRemove={attach.removeAt} />
-      <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} onAddUrl={attach.addUrl} />
+      <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
+      <input
+        data-testid="composer-input"
+        onChange={(e) => attach.onInputChange(e.target.value)}
+        onPaste={attach.onPaste}
+      />
       {attach.error && <div role="alert">{attach.error}</div>}
       <button onClick={() => attach.addFiles([new File(["x"], "shot.png", { type: "image/png" })])}>
         add-image
@@ -54,17 +59,29 @@ describe("ComposerAttach", () => {
     expect(m.extractAttachmentFile).not.toHaveBeenCalled();
   });
 
-  it("URL extract goes through the SSRF-hardened api path, hidden behind the + menu", async () => {
+  it("auto-extracts a PASTED url immediately via the SSRF-hardened api path (no button)", async () => {
     m.extractAttachmentUrl.mockResolvedValue({ text: "body", chars: 4, truncated: false });
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
-    // URL field is hidden until the toggle is clicked
-    expect(screen.queryByPlaceholderText("attach.url_placeholder")).toBeNull();
-    fireEvent.click(screen.getByLabelText("attach.url"));
-    fireEvent.change(screen.getByPlaceholderText("attach.url_placeholder"), {
-      target: { value: "https://x.com" },
+    // there is no URL toggle/field anymore
+    expect(screen.queryByLabelText("attach.url")).toBeNull();
+    await act(async () => {
+      fireEvent.paste(screen.getByTestId("composer-input"), {
+        clipboardData: { files: [], getData: () => "read https://x.com now" },
+      });
     });
-    fireEvent.click(screen.getByText("attach.read"));
     await waitFor(() => expect(m.extractAttachmentUrl).toHaveBeenCalledWith("https://x.com", false));
+  });
+
+  it("auto-detects a TYPED url after the debounce settles", async () => {
+    vi.useFakeTimers();
+    m.extractAttachmentUrl.mockResolvedValue({ text: "b", chars: 1, truncated: false });
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "see https://y.com " } });
+    expect(m.extractAttachmentUrl).not.toHaveBeenCalled();   // not on keystroke
+    await act(async () => { vi.advanceTimersByTime(750); });   // debounce fires
+    expect(m.extractAttachmentUrl).toHaveBeenCalledWith("https://y.com", false);
+    vi.useRealTimers();
   });
 });
