@@ -378,9 +378,10 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
      "Build a trading-comps spread: pick peers, per-industry multiples, consistent definitions, outlier flags.", _S, _REG),
     ("idea-generation", "idea-generation", "finance",
      "Source investment ideas: quant screens by style, thematic sweep, shortlist with thesis hooks and risks.", _S, _REG),
-    # CREATIVE — presentation storytelling (pairs with the render_deck tool)
+    # CREATIVE — presentation storytelling (HTML deck by default; pairs with render_deck for .pptx)
     ("deck-authoring", "deck-authoring", "creative",
-     "Turn content into a storytelling deck: one idea per slide, assertion-evidence titles, narrative arc; renders to native .pptx.", _S, _REG),
+     "Turn content into a storytelling deck: one idea per slide, assertion-evidence titles, narrative arc; "
+     "ships a designed single-file HTML presentation by default, native editable .pptx via render_deck on explicit request.", _S, _REG),
     # WRITING (adapted from anthropics/skills, Apache-2.0)
     ("internal-comms", "internal-comms", "writing",
      "Write internal comms in company formats: 3P updates, newsletters, FAQs, status/incident reports.", _S, _REG),

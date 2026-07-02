@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  ArrowRight, Terminal, Wrench,
-  AlertTriangle, CheckCircle2, XOctagon, Clock,
+  ArrowRight, Terminal,
+  AlertTriangle, CheckCircle2, XOctagon,
   Layers, CornerDownRight,
   Cpu, X,
-  RefreshCcw,
   ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -17,8 +16,7 @@ import MessageBody from './MessageBody';
 import CopyButton from './CopyButton';
 import WorkingPulse from './WorkingPulse';
 import LiveActivity from './LiveActivity';
-import EChart from './EChart';
-import DeckDownloadCard from './DeckDownloadCard';
+import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
@@ -99,7 +97,6 @@ export default function OrchestratorChat({
   const [inputValue, setInputValue] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attach = useComposerAttach(setAttachments);
-  const [collapsedToolActivities, setCollapsedToolActivities] = useState<Record<string, boolean>>({});
   // Optimistic verdicts: filled immediately on click, before the backend verdict_recorded
   // frame round-trips (which sets msg.verdict via the store). Keyed by messageId.
   // KNOWN LIMITATION: verdict_recorded carries no messageId, so the store marks the spawn's
@@ -188,13 +185,6 @@ export default function OrchestratorChat({
     }
   }, [chatHistory]);
 
-
-  const toggleToolCollapse = (id: string) => {
-    setCollapsedToolActivities(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,17 +429,77 @@ export default function OrchestratorChat({
               );
             }
 
-            // Routing announcement: need restatement + @spawn duty lines, rendered for
-            // all themes as a quiet inline brief with mention chips (not a bubble).
+            // Routing announcement: need restatement + @spawn duty lines. Rendered as a
+            // FULL Arslan message bubble (avatar + name header + arslan-bubble styling per
+            // layout variant) — user feedback: the old quiet inline line above the
+            // "X joined" divider read as an anonymous system line, not Arslan speaking.
+            // MentionText keeps the @-mention chips inside the bubble.
             if (msg.isRouteAnnouncement) {
+              if (currentStyle === 'brutalist') {
+                return (
+                  <div key={msg.id} className="border-2 border-primary/60 p-4 font-mono text-[12px] bg-background shadow-[4px_4px_0px_var(--color-primary)] relative">
+                    <div className="flex items-center justify-between pb-2 border-b border-dashed border-border select-none mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-primary font-bold flex items-center gap-1.5">
+                          [<SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5 inline-block" />] {msg.senderName.toUpperCase()}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
+                          {msg.sender.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                    <MentionText
+                      text={msg.text}
+                      knownNames={mentionNames}
+                      className="text-muted-foreground font-sans leading-relaxed text-[12px]"
+                    />
+                  </div>
+                );
+              }
+              if (currentStyle === 'linear') {
+                return (
+                  <div key={msg.id} className="text-[12px] space-y-2">
+                    <div className="flex items-center gap-2 select-none text-[11px]">
+                      <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none arslan-mark" draggable={false} />
+                      <span className="font-bold text-foreground">{msg.senderName}</span>
+                      <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
+                        Orchestrator
+                      </span>
+                    </div>
+                    <div className="pl-5">
+                      <MentionText
+                        text={msg.text}
+                        knownNames={mentionNames}
+                        className="text-foreground font-sans leading-relaxed text-[12.5px]"
+                      />
+                    </div>
+                  </div>
+                );
+              }
+              // quartz (default)
               return (
-                <div key={msg.id} className="flex items-start gap-2.5 py-1 pl-1 select-text">
-                  <CornerDownRight className="w-3.5 h-3.5 text-primary/70 mt-0.5 shrink-0" />
-                  <MentionText
-                    text={msg.text}
-                    knownNames={mentionNames}
-                    className="text-[11.5px] leading-relaxed text-muted-foreground font-sans"
-                  />
+                <div key={msg.id} className="flex gap-4">
+                  <div className="flex flex-col items-center select-none">
+                    <div className="relative">
+                      <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none arslan-mark" draggable={false} />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background bg-success" />
+                    </div>
+                  </div>
+                  <div className="space-y-3 max-w-2xl">
+                    <div className="flex items-center gap-1.5 select-none">
+                      <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
+                      <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
+                        {t('app.name')} Orchestrator
+                      </span>
+                    </div>
+                    <div className="px-4 py-3 text-[12.5px] leading-relaxed relative bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40">
+                      <MentionText
+                        text={msg.text}
+                        knownNames={mentionNames}
+                        className="text-[12.5px] leading-relaxed font-sans"
+                      />
+                    </div>
+                  </div>
                 </div>
               );
             }
@@ -585,64 +635,8 @@ export default function OrchestratorChat({
                       </div>
                     )}
 
-                    {/* 2. Tool-Activity Frame Sub-Component (specifically asked in prompt) */}
-                    {msg.toolActivity && (
-                      <div className="bg-surface border border-border-strong rounded-2xl shadow-lg shadow-background/30 overflow-hidden text-[11px] font-sans">
-                        {/* Header bar */}
-                        <div className="bg-background px-4 py-2.5 flex items-center justify-between border-b border-border select-none">
-                          <div className="flex items-center gap-2">
-                            <RefreshCcw className="animate-spin w-3.5 h-3.5 text-primary" />
-                            <span className="font-mono text-muted-foreground">Tool Socket actively engaged:</span>
-                            <span className="flex items-center gap-1 bg-primary/15 text-primary px-2 py-0.5 rounded-md font-mono text-[10px] uppercase font-bold tracking-wider">
-                              {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
-                              {msg.toolActivity.toolName}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => toggleToolCollapse(msg.toolActivity!.id)}
-                            className="text-[10px] font-mono text-subtle-foreground hover:text-primary transition-all bg-surface-raised border border-border px-2 py-0.5 rounded-md"
-                          >
-                            {collapsedToolActivities[msg.toolActivity.id] ? t('orchestrator.expand_results') : t('orchestrator.collapse_results')}
-                          </button>
-                        </div>
-
-                        {/* Collateral body content */}
-                        {!collapsedToolActivities[msg.toolActivity.id] ? (
-                          <div className="p-4 space-y-3 font-mono">
-                            <div className="flex items-start gap-2 bg-background/45 p-2 rounded-lg border border-border/50 text-success">
-                              <span className="text-subtle-foreground select-none">sh$</span>
-                              <span className="text-[10.5px]">{msg.toolActivity.action}</span>
-                            </div>
-                            <div className="space-y-1 mt-1">
-                              <div className="text-subtle-foreground text-[10px] uppercase">{t('orchestrator.stdout_label')}</div>
-                              <p className="text-muted-foreground text-[10.5px] bg-surface p-3 rounded-lg border border-border-strong/50 leading-relaxed whitespace-pre-line border-l-2 border-l-primary">
-                                {msg.toolActivity.outputSummary}
-                              </p>
-                            </div>
-                            {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
-                                frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
-                            {msg.toolActivity?.artifactChart && (
-                              <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
-                            )}
-                            {msg.toolActivity?.artifactSvg && (
-                              <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
-                            )}
-                            {msg.toolActivity?.artifactPptx && (
-                              <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
-                            )}
-                            <div className="flex items-center gap-1 text-[10px] text-primary/70">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-success inline mr-0.5" />
-                              <span>{t('orchestrator.exec_validated')}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="px-4 py-2 bg-background/20 text-subtle-foreground text-[10.5px] font-mono flex items-center gap-1.5 border-t border-border/50">
-                            <Clock className="w-3 h-3 text-subtle-foreground inline" />
-                            <span>Run details flattened to summary statement: {msg.toolActivity.outputSummary.slice(0, 50)}...</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {/* 2. Tool-Activity Card — humanized headline, raw JSON behind 详情 (shared component) */}
+                    {msg.toolActivity && <ToolActivityCard activity={msg.toolActivity} />}
 
                     {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}
                     {msg.escalation && (
@@ -830,35 +824,10 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Tool Activity Brutalist version */}
+                  {/* Tool Activity — humanized headline, raw JSON behind 详情 (shared component) */}
                   {msg.toolActivity && (
-                    <div className="mt-4 border-2 border-primary bg-background p-3 text-[11px] font-mono">
-                      <div className="text-primary font-bold uppercase pb-1 border-b border-primary/20 flex justify-between items-center">
-                        <span className="flex items-center gap-1.5">
-                          <Wrench className="w-3 h-3" />
-                          EXECUTING SOCKET ACTIVITY: {msg.toolActivity.toolName.toUpperCase()}
-                        </span>
-                        <span className="text-[9px] bg-primary text-primary-foreground px-1">RUNNING</span>
-                      </div>
-
-                      <div className="mt-2 text-muted-foreground p-1 bg-background border border-border">
-                        <span className="text-subtle-foreground">$</span> {msg.toolActivity.action}
-                      </div>
-
-                      <div className="mt-2 text-primary">
-                        RETURN VALUE SUMMARY: {msg.toolActivity.outputSummary}
-                      </div>
-                      {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
-                          frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
-                      {msg.toolActivity?.artifactChart && (
-                        <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
-                      )}
-                      {msg.toolActivity?.artifactSvg && (
-                        <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
-                      )}
-                      {msg.toolActivity?.artifactPptx && (
-                        <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
-                      )}
+                    <div className="mt-4">
+                      <ToolActivityCard activity={msg.toolActivity} />
                     </div>
                   )}
 
@@ -1035,33 +1004,10 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Linear Minimal Tool activity */}
+                  {/* Linear Minimal Tool activity — humanized headline, raw JSON behind 详情 (shared component) */}
                   {msg.toolActivity && (
                     <div className="pl-5 pt-2">
-                      <div className="border border-border bg-background/50 rounded-lg p-2 max-w-xl font-mono text-[10.5px]">
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <Wrench className="w-3.5 h-3.5 text-primary" />
-                          <span>Standard Executor tool {msg.toolActivity.toolName}:</span>
-                          <span className="text-subtle-foreground bg-surface px-1.5 py-0.5 rounded uppercase tracking-wider text-[8px]">OK</span>
-                        </div>
-                        <div className="mt-1 text-subtle-foreground pl-5">
-                          {msg.toolActivity.action}
-                        </div>
-                        <div className="mt-1 pl-5 text-primary">
-                          Summary Outcome: {msg.toolActivity.outputSummary}
-                        </div>
-                        {/* 🔒 SECURITY: artifactSvg is populated ONLY from the backend render_chart tool_result
-                            frame (arslanStore), NEVER from LLM message text. Do not render SVG from any other source. */}
-                        {msg.toolActivity?.artifactChart && (
-                          <EChart option={msg.toolActivity.artifactChart} className="tool-chart" />
-                        )}
-                        {msg.toolActivity?.artifactSvg && (
-                          <div className="tool-chart" dangerouslySetInnerHTML={{ __html: msg.toolActivity.artifactSvg }} />
-                        )}
-                        {msg.toolActivity?.artifactPptx && (
-                          <DeckDownloadCard {...msg.toolActivity.artifactPptx} />
-                        )}
-                      </div>
+                      <ToolActivityCard activity={msg.toolActivity} />
                     </div>
                   )}
 

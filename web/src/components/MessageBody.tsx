@@ -26,6 +26,34 @@ function isFullHtmlDoc(s: string): boolean {
   return /^<!doctype html/i.test(t) || (/^<html[\s>]/i.test(t) && /<\/html>/i.test(s));
 }
 
+/**
+ * Export heuristic (user feedback: an exported report began with the conversational
+ * preamble "I now have enough research data to compile… I will now generate the PPT").
+ * The deliverable proper starts at its first markdown heading — the renderer's styled
+ * title (the `|`-bar look) is just h1/h2 styling, so "first heading line" covers it.
+ *
+ * Rule: if the text contains a `# ` / `## ` / `### ` heading line (up to 3 leading
+ * spaces allowed, lines inside ``` fences ignored), the export starts at the FIRST
+ * such line and everything before it is dropped. Fallbacks — never a gutted export:
+ *   • no heading → full text unchanged;
+ *   • heading is the first line → full text (nothing to strip);
+ *   • stripping would leave < 40% of the original characters → full text.
+ * Export-only: copy button and on-screen rendering always use the full text.
+ */
+export function exportMarkdown(text: string): string {
+  const lines = text.split('\n');
+  let inFence = false;
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*(```|~~~)/.test(lines[i])) { inFence = !inFence; continue; }
+    if (!inFence && /^ {0,3}#{1,3} /.test(lines[i])) { idx = i; break; }
+  }
+  if (idx <= 0) return text;
+  const stripped = lines.slice(idx).join('\n');
+  if (stripped.length < text.length * 0.4) return text;
+  return stripped;
+}
+
 function triggerDownload(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -175,9 +203,22 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions }: { 
   }, [text]);
 
   const downloadHtml = useCallback(() => {
-    const inner = ref.current?.querySelector('[data-md-root]')?.innerHTML ?? '';
+    const root = ref.current?.querySelector('[data-md-root]');
+    let inner = root?.innerHTML ?? '';
+    // Mirror the .md export heuristic on the rendered DOM: when the text-level rule
+    // says "strip the preamble", drop everything before the first rendered h1–h3.
+    if (root && exportMarkdown(text) !== text) {
+      const clone = root.cloneNode(true) as HTMLElement;
+      const heading = clone.querySelector('h1, h2, h3');
+      if (heading) {
+        for (let node: Element | null = heading; node && node !== clone; node = node.parentElement) {
+          while (node.previousSibling) node.previousSibling.remove();
+        }
+        inner = clone.innerHTML;
+      }
+    }
     triggerDownload(`message-${Date.now()}.html`, buildStandaloneHtml(inner, 'Arslan export'), 'text/html;charset=utf-8');
-  }, []);
+  }, [text]);
 
   const collapsed = isLong && !expanded;
 
@@ -225,7 +266,7 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions }: { 
           {showDownloads && (
             <>
               <ActionButton
-                onClick={() => triggerDownload(`message-${Date.now()}.md`, text, 'text/markdown;charset=utf-8')}
+                onClick={() => triggerDownload(`message-${Date.now()}.md`, exportMarkdown(text), 'text/markdown;charset=utf-8')}
                 title={t('msg.download_md')}
               >
                 <Download className="w-3 h-3" /> .md

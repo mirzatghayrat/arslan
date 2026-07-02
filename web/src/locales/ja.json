@@ -228,7 +228,13 @@
     "chart_fail": "Chart rendering hit a snag",
     "code": "Running code",
     "code_fail": "The code run failed",
-    "calls": "{{count}} tool calls"
+    "calls": "{{count}} tool calls",
+    "details": "Details",
+    "done": "Done",
+    "n_results": "{{count}} results",
+    "n_chars": "{{count}} characters read",
+    "deck_done": "PPTX generated \u00b7 {{slides}} slides",
+    "chart_done": "Chart generated"
   },
   "escalation": {
     "needs": "{{name}}が何かを必要としています：",

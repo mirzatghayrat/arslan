@@ -267,6 +267,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             toolName: firstStep.tool,
             emoji: "🔧",
             status: firstStep.status === "running" ? "running" : "completed",
+            // Raw status (incl. error) so the tool card can show ✓/✗ honestly.
+            stepStatus: firstStep.status,
             action: firstStep.argsSummary,
             outputSummary: firstStep.resultSummary ?? "",
             collapsed: false,

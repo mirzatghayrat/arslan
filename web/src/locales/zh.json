@@ -228,7 +228,13 @@
     "chart_fail": "图表渲染遇到问题",
     "code": "运行代码",
     "code_fail": "代码运行失败",
-    "calls": "{{count}} 次工具调用"
+    "calls": "{{count}} 次工具调用",
+    "details": "详情",
+    "done": "完成",
+    "n_results": "{{count}} 条结果",
+    "n_chars": "读取 {{count}} 字符",
+    "deck_done": "已生成 PPTX \u00b7 {{slides}} 页",
+    "chart_done": "已生成图表"
   },
   "escalation": {
     "needs": "{{name}} 需要一些东西：",

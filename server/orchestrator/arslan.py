@@ -887,10 +887,12 @@ async def _dispatch_spawn(  # noqa: ANN001
     )
     tee = recorder.tee(emit)
 
+    # Join FIRST (DB state) so the announcement's roster lookup sees the routed spawn,
+    # but EMIT the routing frame (with the announcement) BEFORE the roster join notice:
+    # the user reads "user message → Arslan's brief → X joined → spawn work" in order.
+    # (User feedback: the brief showing up above an anonymous join divider read as a
+    # bare system line, not Arslan speaking.)
     newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
-    if newly_joined:
-        tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
-    tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     # Routing brief: restate the need + @-mention each involved spawn (grounded in the
     # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
     # re-emit the routing frame for the UI pulse but must not repeat the announcement.
@@ -899,6 +901,9 @@ async def _dispatch_spawn(  # noqa: ANN001
         announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
     tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
          **({"announcement": announcement} if announcement else {})})
+    if newly_joined:
+        tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
+    tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
     try:
         out = await dispatcher.dispatch(

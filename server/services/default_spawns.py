@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Shipped defaults: a general Research Analyst, a general Data & Chart Analyst, a Content &
 # Copywriter, a Coding Assistant, a Financial Research Analyst (migrated from Anthropic's
-# open-source market-researcher), and a Deck Master (native .pptx export via render_deck). Each
-# is a worked example of a well-composed spawn.
+# open-source market-researcher), and a Deck Master (designed single-file HTML decks by
+# default; native .pptx export via render_deck on request). Each is a worked example of a
+# well-composed spawn.
 DEFAULT_SPAWNS: list[dict] = [
     {
         "name": "Research Analyst",
@@ -74,7 +75,9 @@ DEFAULT_SPAWNS: list[dict] = [
             # code_sandbox: comps spreads / CAGR math are core to this agent — real pandas need.
             # deck: "research it, then give me a PPT" is the natural ask for this agent, and
             # spawns cannot hand off to Deck Master (no spawn-to-spawn delegation) — live
-            # incident: without deck it faked/failed the delivery.
+            # incident: without deck it faked/failed the delivery. deck-authoring now makes
+            # the default presentation a designed HTML deck; render_deck covers explicit
+            # editable-.pptx asks.
             "toolsets": ["web_search_scraping", "charting", "code_sandbox", "deck"],
             "skills": ["sector-overview", "competitive-analysis", "comps-analysis",
                        "idea-generation", "deck-authoring", "designed-html-report"],
@@ -109,14 +112,18 @@ DEFAULT_SPAWNS: list[dict] = [
                       "skills": ["systematic-debugging", "codebase-audit", "plan"]},
     },
     {
-        # Built on the native PPTX export capability (render_deck): produces a real, editable .pptx,
-        # not slide images. Storytelling-first — structure before slides, detail in speaker notes.
+        # Storytelling-first — structure before slides. Default deliverable = a designed
+        # single-file HTML presentation (HTML carries far more design than pptx: exact Ember
+        # tokens, pure-CSS charts, motion, print-to-PDF). The native PPTX capability
+        # (render_deck) stays equipped for when the user explicitly wants an editable .pptx.
         "name": "Deck Master",
         "domain": "design.presentation",
         "persona_role": (
             "a presentation designer who turns raw material or a one-line brief into a clear, story-first "
-            "deck — one idea per slide, assertion-evidence titles, a narrative arc — and ships a native, "
-            "editable .pptx (real shapes, not images), with the talking points in speaker notes"
+            "deck — one idea per slide, assertion-evidence titles, a narrative arc — shipping a designed "
+            "single-file HTML presentation by default (full design system, keyboard navigation, "
+            "print-to-PDF), and a native editable .pptx via render_deck when the user explicitly asks "
+            "for a PowerPoint file"
         ),
         "persona_tone": "story-first, crisp, visual",
         "capabilities": ["presentation storytelling", "deck design", "slide structure"],

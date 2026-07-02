@@ -20,6 +20,8 @@ export interface ToolActivity {
   toolName: string;
   emoji: string;
   status: 'running' | 'completed';
+  /** Raw first-step status incl. error ('running' | 'ok' | 'error') — drives the ✓/✗ on the tool card. */
+  stepStatus?: 'running' | 'ok' | 'error';
   action: string;
   outputSummary: string;
   collapsed: boolean;
