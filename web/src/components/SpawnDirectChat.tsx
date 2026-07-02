@@ -3,7 +3,7 @@ import {
   Send, RefreshCcw, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Message, Spawn } from '../types';
+import { Message, MessageAttachment, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import MessageBody from './MessageBody';
@@ -14,7 +14,7 @@ import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useComposerAttach, AttachChips, AttachControl, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -248,6 +248,10 @@ export default function SpawnDirectChat({
     setStreaming(true);  // no dead air: pulse shows from SEND, not from stream_start
     setWorkStartedAt(Date.now());
 
+    // Every attachment (incl. OCR-none images) echoes into the sent bubble as a
+    // thumbnail/chip. previewUrl is a session-only object-URL — kept alive by clearing
+    // with { revokeUrls: false } below so the rendered message can still show it.
+    const display: MessageAttachment[] = attachments.map((a) => ({ name: a.name, kind: a.kind, previewUrl: a.previewUrl }));
     const userMsg: Message = {
       id: `msg-direct-user-${Date.now()}`,
       sender: 'user',
@@ -255,6 +259,7 @@ export default function SpawnDirectChat({
       senderAvatar: '🦁',
       text: inputValue,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      ...(display.length ? { attachments: display } : {}),
     };
 
     // In refine mode, the deliverable being refined must reach the spawn reliably
@@ -278,7 +283,7 @@ export default function SpawnDirectChat({
       ...(attached_context ? { attached_context, attached_names } : {}),
     });
     setInputValue('');
-    attach.clear();
+    attach.clear({ revokeUrls: false });
     setStreaming(true);
   };
 
@@ -380,6 +385,7 @@ export default function SpawnDirectChat({
                 return (
                   <div key={msg.id} className="flex justify-end">
                     <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                      <SentAttachments attachments={msg.attachments} />
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
                       <div className="text-[9px] text-subtle-foreground mt-2 text-right">{msg.timestamp}</div>
                     </div>
@@ -391,14 +397,15 @@ export default function SpawnDirectChat({
                 <div key={msg.id} className="flex justify-end">
                   <div className="max-w-[68%]">
                     <div
-                      className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans whitespace-pre-line"
+                      className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans"
                       style={{
                         background: 'rgba(120,140,170,0.10)',
                         border: '1px solid rgba(255,255,255,0.08)',
                         borderRadius: '12px 12px 4px 12px',
                       }}
                     >
-                      {msg.text}
+                      <SentAttachments attachments={msg.attachments} />
+                      <span className="whitespace-pre-line">{msg.text}</span>
                     </div>
                     <div className="text-[9px] text-subtle-foreground font-mono mt-1 text-right select-none">{msg.timestamp}</div>
                   </div>

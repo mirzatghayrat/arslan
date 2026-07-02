@@ -241,6 +241,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         senderAvatar: "🦁",
         text: item.content,
         timestamp,
+        // Session-only attachment echo (image thumbnails / doc chips in the sent bubble).
+        attachments: item.attachments,
       };
     }
 

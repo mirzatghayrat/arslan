@@ -2,6 +2,7 @@ import { useRef, useState, useCallback } from "react";
 import { Plus, X, Loader2, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
+import type { MessageAttachment } from "../types";
 
 /**
  * In-composer attach UX (replaces the old AttachBar-above-input).
@@ -62,7 +63,9 @@ export interface UseComposerAttach {
   dragActive: boolean;
   addFiles: (files: FileList | File[]) => Promise<void>;
   removeAt: (i: number) => void;
-  clear: () => void;
+  /** Clear all chips. Pass { revokeUrls: false } on SEND so the message bubble can keep
+   *  rendering image thumbnails from the object-URLs (session-only; see clear()). */
+  clear: (opts?: { revokeUrls?: boolean }) => void;
   /** Feed the composer's current input text so typed URLs auto-extract (debounced). */
   onInputChange: (text: string) => void;
   /** Spread onto the composer's input wrapper to enable drag-and-drop. */
@@ -227,8 +230,14 @@ export function useComposerAttach(
     [attachments, commit],
   );
 
-  const clear = useCallback(() => {
-    for (const a of attachments) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+  const clear = useCallback((opts?: { revokeUrls?: boolean }) => {
+    // On SEND the caller passes { revokeUrls: false }: the sent user bubble renders image
+    // thumbnails straight from these object-URLs, so they must stay alive. They are never
+    // revoked afterwards — an accepted small session-only leak (object-URLs die on reload,
+    // and revoking on thread switch would blank thumbnails of still-mounted messages).
+    if (opts?.revokeUrls !== false) {
+      for (const a of attachments) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+    }
     handledUrls.current.clear();
     setAttachments([]);
     setError(null);
@@ -317,6 +326,29 @@ export function AttachChips({
           </button>
         </span>
       ))}
+    </div>
+  );
+}
+
+/** Attachments echoed inside a SENT user bubble (both chats). Image chips with a live
+ *  object-URL render a small thumbnail; everything else — docs/urls, and history-restored
+ *  items whose object-URLs are gone (previewUrl is session-only, never persisted) — falls
+ *  back to a compact file chip. No broken-image icons, no empty block: renders nothing
+ *  when there are no attachments. */
+export function SentAttachments({ attachments }: { attachments?: MessageAttachment[] }) {
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <div className="sent-attachments">
+      {attachments.map((a, i) =>
+        a.kind === "image" && a.previewUrl ? (
+          <img key={`${a.name}-${i}`} src={a.previewUrl} alt={a.name} className="sent-attachment__img" />
+        ) : (
+          <span key={`${a.name}-${i}`} className="sent-attachment__chip" title={a.name}>
+            <FileText className="w-3 h-3 shrink-0" />
+            <span className="sent-attachment__name">{a.name}</span>
+          </span>
+        ),
+      )}
     </div>
   );
 }

@@ -39,6 +39,15 @@ export interface Escalation {
   resolutionMessage?: string;
 }
 
+/** Display info for an attachment echoed inside a SENT user bubble.
+ *  previewUrl is a session-only object-URL (never persisted); when it is absent —
+ *  e.g. a history-restored message — the UI falls back to a compact file chip. */
+export interface MessageAttachment {
+  name: string;
+  kind?: 'doc' | 'image';
+  previewUrl?: string;
+}
+
 export interface Message {
   id: string;
   sender: 'user' | 'arslan' | 'spawn';
@@ -46,6 +55,8 @@ export interface Message {
   senderAvatar: string;
   text: string;
   timestamp: string;
+  /** Attachments sent with this user message (session-only display echo; see MessageAttachment). */
+  attachments?: MessageAttachment[];
   spawnId?: string;
   /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
   isProposal?: boolean;

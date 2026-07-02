@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
+import type { MessageAttachment } from "../types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -44,7 +45,7 @@ interface ArslanState {
 
   setSpawnNames: (map: Record<number, string>) => void;
   setThinking: (v: boolean) => void;
-  addUserMessage: (content: string) => void;
+  addUserMessage: (content: string, attachments?: MessageAttachment[]) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
   dismissUpdate: () => void;
@@ -101,9 +102,11 @@ function makeActions(set: SetState, get: GetState) {
     setSpawnNames: (map: Record<number, string>) =>
       set({ spawnNames: { ...get().spawnNames, ...map } }),
 
-    addUserMessage: (content: string) =>
+    // attachments = session-only display echo (image thumbnails via object-URL, doc chips);
+    // never persisted — history-restored items simply won't carry them.
+    addUserMessage: (content: string, attachments?: MessageAttachment[]) =>
       set({
-        items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content }],
+        items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content, ...(attachments?.length ? { attachments } : {}) }],
         pending: true,
         workStartedAt: Date.now(),
       }),

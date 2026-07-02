@@ -3,7 +3,10 @@
  *   1. Full-HTML documents (`<!DOCTYPE html>…`) render as a compact card + sandboxed
  *      preview instead of an escaped wall (Markdown.tsx deliberately omits rehype-raw).
  *   2. Long prose collapses in-bubble (max-height clamp + fade + Show more / 收起).
- *   3. A subtle per-message action row: Copy (raw markdown) + Download .md / .html.
+ *   3. A subtle export row. The .md/.html download buttons belong ONLY to the long-output
+ *      collapse box — "boxed ⇔ downloadable" is one rule (same LONG_CHARS condition), so
+ *      short/normal conversational replies never grow download buttons. Copy keeps its own
+ *      lower threshold for messages whose parent renders no persistent action row.
  *
  * 🔒 SECURITY: the HTML preview is a fully sandboxed <iframe srcDoc> with NO sandbox
  * flags (no scripts, no same-origin) — untrusted model HTML is rendered isolated and
@@ -14,8 +17,8 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, Download, ChevronDown, ChevronUp, Eye, X, FileCode } from 'lucide-react';
 import Markdown from './Markdown';
 
-const LONG_CHARS = 1800;      // prose longer than this collapses in-bubble
-const EXPORT_MIN_CHARS = 240; // shorter messages don't get an export row (keeps chat clean)
+const LONG_CHARS = 1800;      // prose longer than this collapses in-bubble AND gets .md/.html downloads
+const COPY_MIN_CHARS = 240;   // shorter messages don't get a standalone copy row (keeps chat clean)
 const CLAMP_PX = 360;         // collapsed height
 
 function isFullHtmlDoc(s: string): boolean {
@@ -155,7 +158,13 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions }: { 
   // While streaming, never clamp or show the action row — the text is still growing and
   // collapsing mid-stream causes flicker (compute these only once the message is complete).
   const isLong = !streaming && text.length > LONG_CHARS;
-  const showExport = !streaming && text.length >= EXPORT_MIN_CHARS;
+  // Downloads belong ONLY to the long-output collapse box: "boxed ⇔ downloadable" is one
+  // rule (isLong). Short/normal replies get no .md/.html affordance — the persistent
+  // message action row (👍 👎 copy 重新生成 / refine) is the parent's and stays on every message.
+  const showDownloads = isLong;
+  // Standalone copy keeps its old, lower threshold — but only when the parent renders no
+  // message action row (which owns copy otherwise; see hasMessageActions).
+  const showCopy = !streaming && !hasMessageActions && text.length >= COPY_MIN_CHARS;
   const ind = indent ? 'ml-5' : '';
 
   const copy = useCallback(() => {
@@ -200,26 +209,32 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions }: { 
         </button>
       )}
 
-      {showExport && (
+      {(showCopy || showDownloads) && (
         <div className={`${ind} mt-1.5 flex items-center gap-0.5 text-[10px] font-mono opacity-70 hover:opacity-100 transition-opacity`}>
           {/* Copy lives in the persistent message action row (👍 👎 copy 重新生成) when the parent
-              renders one (spawn deliverables); here we keep only the export buttons to avoid a
-              duplicate copy. Non-deliverable messages have no message row, so copy stays. */}
-          {!hasMessageActions && (
+              renders one (spawn deliverables); non-deliverable messages have no message row,
+              so copy stays here (showCopy). */}
+          {showCopy && (
             <ActionButton onClick={copy} title={t('msg.copy')}>
               {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
               {copied ? t('msg.copied') : t('msg.copy')}
             </ActionButton>
           )}
-          <ActionButton
-            onClick={() => triggerDownload(`message-${Date.now()}.md`, text, 'text/markdown;charset=utf-8')}
-            title={t('msg.download_md')}
-          >
-            <Download className="w-3 h-3" /> .md
-          </ActionButton>
-          <ActionButton onClick={downloadHtml} title={t('msg.download_html')}>
-            <Download className="w-3 h-3" /> .html
-          </ActionButton>
+          {/* Downloads live with the collapse box (like code blocks own their copy button):
+              rendered iff the message is long enough to be boxed (showDownloads === isLong). */}
+          {showDownloads && (
+            <>
+              <ActionButton
+                onClick={() => triggerDownload(`message-${Date.now()}.md`, text, 'text/markdown;charset=utf-8')}
+                title={t('msg.download_md')}
+              >
+                <Download className="w-3 h-3" /> .md
+              </ActionButton>
+              <ActionButton onClick={downloadHtml} title={t('msg.download_html')}>
+                <Download className="w-3 h-3" /> .html
+              </ActionButton>
+            </>
+          )}
         </div>
       )}
     </div>

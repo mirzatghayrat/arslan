@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
-import { Message, Spawn, Tool, Skill } from '../types';
+import { Message, MessageAttachment, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
@@ -24,15 +24,17 @@ import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
-import { useComposerAttach, AttachChips, AttachControl, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
   setChatHistory: React.Dispatch<React.SetStateAction<Message[]>>;
-  /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation. */
-  onSendMessage?: (text: string, attached?: { context: string; names: string[] }) => void;
+  /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation.
+   *  `display` echoes ALL attachments into the sent bubble (session-only); `context`/`names`
+   *  carry only the text-bearing ones to the backend. */
+  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[] }) => void;
   spawns: Spawn[];
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
@@ -197,11 +199,15 @@ export default function OrchestratorChat({
     // where OCR found nothing stay preview-only (empty text) and contribute nothing.
     const context = attachments.map((a) => a.text).filter(Boolean).join("\n\n---\n\n");
     const names = attachments.filter((a) => a.text).map((a) => a.name);
-    const clearAttachments = () => attach.clear();
+    // Every attachment (incl. OCR-none images) echoes into the sent bubble as a
+    // thumbnail/chip. previewUrl is a session-only object-URL — kept alive by clearing
+    // with { revokeUrls: false } below so the rendered message can still show it.
+    const display: MessageAttachment[] = attachments.map((a) => ({ name: a.name, kind: a.kind, previewUrl: a.previewUrl }));
+    const clearAttachments = () => attach.clear({ revokeUrls: false });
 
     if (onSendMessage) {
       // Live WS path: delegate to parent's onSendMessage (store + WS send)
-      onSendMessage(text, context ? { context, names } : undefined);
+      onSendMessage(text, context || display.length ? { context, names, display } : undefined);
       clearAttachments();
       return;
     }
@@ -215,7 +221,8 @@ export default function OrchestratorChat({
       senderName: 'Mirzat',
       senderAvatar: '🦁',
       text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      ...(display.length ? { attachments: display } : {}),
     };
     setChatHistory(prev => [...prev, userMsg]);
   };
@@ -481,7 +488,10 @@ export default function OrchestratorChat({
                     }`}>
                       {/* Message Content */}
                       {isUser
-                        ? <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
+                        ? <>
+                            <SentAttachments attachments={msg.attachments} />
+                            <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
+                          </>
                         : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
 
@@ -731,6 +741,7 @@ export default function OrchestratorChat({
                 return (
                   <div key={msg.id} className="flex justify-end">
                     <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                      <SentAttachments attachments={msg.attachments} />
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
                       <div className="text-[9px] text-subtle-foreground mt-2 text-right">{msg.timestamp}</div>
                     </div>
@@ -918,14 +929,15 @@ export default function OrchestratorChat({
                   <div key={msg.id} className="flex justify-end text-[12px]">
                     <div className="max-w-[68%]">
                       <div
-                        className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans whitespace-pre-line"
+                        className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans"
                         style={{
                           background: 'rgba(120,140,170,0.10)',
                           border: '1px solid rgba(255,255,255,0.08)',
                           borderRadius: '12px 12px 4px 12px',
                         }}
                       >
-                        {msg.text}
+                        <SentAttachments attachments={msg.attachments} />
+                        <span className="whitespace-pre-line">{msg.text}</span>
                       </div>
                       <div className="text-[9px] text-subtle-foreground font-mono mt-1 text-right select-none">{msg.timestamp}</div>
                     </div>

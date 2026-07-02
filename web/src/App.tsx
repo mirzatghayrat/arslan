@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
-import { Spawn, Message, AppSettings } from './types';
+import { Spawn, Message, MessageAttachment, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -210,8 +210,10 @@ export default function App() {
   }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
-  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[] }) => {
-    useArslanStore.getState().addUserMessage(text);
+  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[] }) => {
+    // display = session-only echo for the sent bubble (image thumbnails / doc chips);
+    // only text-bearing attachments ride to the backend as attached_context below.
+    useArslanStore.getState().addUserMessage(text, attached?.display);
     useArslanStore.getState().setThinking(true);
     wsSend({
       type: 'user_message',

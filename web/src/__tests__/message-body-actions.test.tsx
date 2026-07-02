@@ -5,21 +5,47 @@ import MessageBody from '../components/MessageBody';
 // i18n mock: titles render as their key so we can query by them.
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
-const LONG = 'A meaningful sentence about the deliverable. '.repeat(12); // > EXPORT_MIN_CHARS (240)
+const SHORT = 'A quick conversational answer.'; // < COPY_MIN_CHARS (240)
+const MEDIUM = 'A meaningful sentence about the deliverable. '.repeat(12); // ~552 chars: ≥ copy threshold, < LONG_CHARS
+const LONG = 'A meaningful sentence about the deliverable. '.repeat(45); // ~2070 chars: > LONG_CHARS (1800) → boxed
 
 describe('MessageBody action layers', () => {
-  it('prose export row keeps its own Copy when there is NO message action row', () => {
-    render(<MessageBody text={LONG} hasMessageActions={false} />);
-    // export row present (copy + downloads)
-    expect(screen.getByTitle('msg.copy')).toBeTruthy();
-    expect(screen.getByTitle('msg.download_md')).toBeTruthy();
+  it('short reply gets NO row at all (no copy, no downloads)', () => {
+    render(<MessageBody text={SHORT} hasMessageActions={false} />);
+    expect(screen.queryByTitle('msg.copy')).toBeNull();
+    expect(screen.queryByTitle('msg.download_md')).toBeNull();
+    expect(screen.queryByTitle('msg.download_html')).toBeNull();
   });
 
-  it('prose export row DROPS its Copy when the parent renders a message action row', () => {
-    render(<MessageBody text={LONG} hasMessageActions={true} />);
-    // no duplicate copy — the persistent 👍👎 copy 重新生成 row owns it now…
+  it('medium prose keeps its own Copy but NO downloads (boxed ⇔ downloadable)', () => {
+    render(<MessageBody text={MEDIUM} hasMessageActions={false} />);
+    // copy row present for messages without a message action row…
+    expect(screen.getByTitle('msg.copy')).toBeTruthy();
+    // …but downloads belong only to the long-output collapse box.
+    expect(screen.queryByTitle('msg.download_md')).toBeNull();
+    expect(screen.queryByTitle('msg.download_html')).toBeNull();
+  });
+
+  it('medium prose with a message action row renders NO export row at all', () => {
+    render(<MessageBody text={MEDIUM} hasMessageActions={true} />);
+    // copy is owned by the persistent 👍👎 copy 重新生成 row; downloads need the collapse box.
     expect(screen.queryByTitle('msg.copy')).toBeNull();
-    // …but the export downloads stay.
+    expect(screen.queryByTitle('msg.download_md')).toBeNull();
+  });
+
+  it('long (boxed) prose gets the downloads, alongside the collapse toggle', () => {
+    render(<MessageBody text={LONG} hasMessageActions={true} />);
+    // the same LONG_CHARS condition drives the collapse box and the downloads
+    expect(screen.getByText('msg.expand')).toBeTruthy();
+    expect(screen.getByTitle('msg.download_md')).toBeTruthy();
+    expect(screen.getByTitle('msg.download_html')).toBeTruthy();
+    // no duplicate copy — the persistent message action row owns it
+    expect(screen.queryByTitle('msg.copy')).toBeNull();
+  });
+
+  it('long (boxed) prose without a message action row keeps Copy + downloads', () => {
+    render(<MessageBody text={LONG} hasMessageActions={false} />);
+    expect(screen.getByTitle('msg.copy')).toBeTruthy();
     expect(screen.getByTitle('msg.download_md')).toBeTruthy();
     expect(screen.getByTitle('msg.download_html')).toBeTruthy();
   });

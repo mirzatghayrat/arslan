@@ -1,3 +1,5 @@
+import type { MessageAttachment } from "../types";
+
 export interface EquipmentItem {
   key: string;
   name: string;
@@ -236,6 +238,9 @@ export interface ArslanThreadItem {
   refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
   rosterAction?: string;
+  /** role === "user": attachments sent with this message (session-only display echo —
+   *  set client-side on send, never present on history-restored items). */
+  attachments?: MessageAttachment[];
 }
 
 /** A row from the server `history` frame. */

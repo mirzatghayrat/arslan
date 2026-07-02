@@ -47,6 +47,8 @@ describe('OrchestratorChat attach', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith('summarise', {
       context: 'DOC BODY',
       names: ['https://x.com'],
+      // display echoes ALL attachments for the sent bubble (session-only)
+      display: [{ name: 'https://x.com', kind: 'doc', previewUrl: undefined }],
     }));
   });
 
@@ -68,5 +70,67 @@ describe('OrchestratorChat attach', () => {
     const form = msgInput.closest('form');
     if (form) fireEvent.submit(form);
     expect(spy).toHaveBeenCalledWith('hello', undefined);
+  });
+});
+
+describe('sent user bubble attachments', () => {
+  const base = {
+    chatHistory: [] as Message[],
+    setChatHistory: vi.fn(),
+    onSendMessage: vi.fn(),
+    spawns: [],
+    currentStyle: 'quartz' as const,
+    setCurrentStyle: vi.fn(),
+    activeThread: null,
+  };
+
+  it('renders an <img> thumbnail from the previewUrl for a sent image attachment', () => {
+    const history: Message[] = [
+      { id: 'a1', sender: 'arslan', senderName: 'Arslan', senderAvatar: '🦁', text: 'hi', timestamp: '10:00' },
+      {
+        id: 'u1', sender: 'user', senderName: 'You', senderAvatar: '🦁', text: 'look at this', timestamp: '10:01',
+        attachments: [{ name: 'photo.png', kind: 'image', previewUrl: 'blob:mock-url' }],
+      },
+    ];
+    render(<OrchestratorChat {...base} chatHistory={history} />);
+    const img = screen.getByAltText('photo.png') as HTMLImageElement;
+    expect(img.tagName).toBe('IMG');
+    expect(img.getAttribute('src')).toBe('blob:mock-url');
+  });
+
+  it('history-restored image (no previewUrl — object-URLs die on reload) falls back to a chip, no <img>', () => {
+    const history: Message[] = [
+      { id: 'a1', sender: 'arslan', senderName: 'Arslan', senderAvatar: '🦁', text: 'hi', timestamp: '10:00' },
+      {
+        id: 'u1', sender: 'user', senderName: 'You', senderAvatar: '🦁', text: 'look at this', timestamp: '10:01',
+        attachments: [{ name: 'photo.png', kind: 'image' }],
+      },
+    ];
+    render(<OrchestratorChat {...base} chatHistory={history} />);
+    expect(screen.queryByAltText('photo.png')).toBeNull();
+    // compact file-chip fallback shows the name — honest, no broken-image icon
+    expect(screen.getByText('photo.png')).toBeTruthy();
+  });
+
+  it('doc attachments render as compact chips (name), never as <img>', () => {
+    const history: Message[] = [
+      { id: 'a1', sender: 'arslan', senderName: 'Arslan', senderAvatar: '🦁', text: 'hi', timestamp: '10:00' },
+      {
+        id: 'u1', sender: 'user', senderName: 'You', senderAvatar: '🦁', text: 'summarise', timestamp: '10:01',
+        attachments: [{ name: 'notes.pdf', kind: 'doc' }],
+      },
+    ];
+    render(<OrchestratorChat {...base} chatHistory={history} />);
+    expect(screen.getByText('notes.pdf')).toBeTruthy();
+    expect(screen.queryByAltText('notes.pdf')).toBeNull();
+  });
+
+  it('user message without attachments renders no attachment block at all', () => {
+    const history: Message[] = [
+      { id: 'a1', sender: 'arslan', senderName: 'Arslan', senderAvatar: '🦁', text: 'hi', timestamp: '10:00' },
+      { id: 'u1', sender: 'user', senderName: 'You', senderAvatar: '🦁', text: 'plain text', timestamp: '10:01' },
+    ];
+    const { container } = render(<OrchestratorChat {...base} chatHistory={history} />);
+    expect(container.querySelector('.sent-attachments')).toBeNull();
   });
 });
