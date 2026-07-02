@@ -28,9 +28,14 @@ describe('SuggestUpdateCard', () => {
     expect(screen.getByText('formal')).toBeTruthy();      // after
     expect(screen.getByText('deck')).toBeTruthy();        // +deck chip
     expect(screen.getByText('humanizer')).toBeTruthy();   // -humanizer chip
-    fireEvent.click(screen.getByText('orchestrator.update_confirm'));
-    expect(onConfirm).toHaveBeenCalledTimes(1);
+    // dismiss works before confirm…
     fireEvent.click(screen.getByText('orchestrator.update_dismiss'));
     expect(onDismiss).toHaveBeenCalledTimes(1);
+    // …confirm fires once, then the card locks (applying state): re-clicks are dead
+    const confirmBtn = screen.getByText('orchestrator.update_confirm').closest('button')!;
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(confirmBtn.disabled).toBe(true);
   });
 });

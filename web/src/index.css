@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/* ── Universal press feedback (no dead clicks) ─────────────────────────────────
+   Every enabled button visibly reacts the instant it's pressed. Born from a live
+   incident: a click with no reaction reads as "didn't register" → users re-click,
+   which can re-fire non-idempotent actions. Scale is subtle + fast; disabled
+   buttons stay inert so "can't click" also reads clearly. */
+button {
+  transition: transform 90ms ease, opacity 120ms ease;
+}
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.955);
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* Map semantic CSS vars to Tailwind utilities (bg-surface, text-foreground, ...). */
 /* Must live here (not in an @import'd file) for Tailwind v4 to pick up @theme inline. */
 @theme inline {

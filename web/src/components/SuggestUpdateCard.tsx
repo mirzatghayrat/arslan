@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Check, X, Plus, Minus } from "lucide-react";
+import { Pencil, Check, X, Plus, Minus, RefreshCcw } from "lucide-react";
 import type { SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 
 /**
@@ -28,6 +29,9 @@ function DiffRow({ label, before, after }: { label: string; before: string; afte
 
 export default function SuggestUpdateCard({ spawnName, current, changes, reason, onConfirm, onDismiss }: Props) {
   const { t } = useTranslation();
+  // Applying state: the card clears on the spawn_updated ack, so between click and ack the
+  // button must show progress + refuse re-clicks (no dead-click feel, no double-send).
+  const [applying, setApplying] = useState(false);
   const equipmentDelta: { key: string; add: boolean }[] = [
     ...(changes.add_toolsets ?? []).map((k) => ({ key: k, add: true })),
     ...(changes.add_skills ?? []).map((k) => ({ key: k, add: true })),
@@ -81,13 +85,14 @@ export default function SuggestUpdateCard({ spawnName, current, changes, reason,
       </div>
 
       <div className="flex items-center gap-2 pt-1">
-        <button type="button" onClick={onConfirm}
-          className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-bold font-mono uppercase tracking-wider rounded-lg transition-all">
-          <Check className="w-3.5 h-3.5" />
+        <button type="button" disabled={applying}
+          onClick={() => { setApplying(true); onConfirm(); }}
+          className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-bold font-mono uppercase tracking-wider rounded-lg transition-all disabled:opacity-60">
+          {applying ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
           {t("orchestrator.update_confirm")}
         </button>
-        <button type="button" onClick={onDismiss}
-          className="px-4 py-2 bg-surface-raised hover:bg-border text-muted-foreground text-[11px] font-mono uppercase rounded-lg border border-border-strong transition-all">
+        <button type="button" disabled={applying} onClick={onDismiss}
+          className="px-4 py-2 bg-surface-raised hover:bg-border text-muted-foreground text-[11px] font-mono uppercase rounded-lg border border-border-strong transition-all disabled:opacity-50">
           {t("orchestrator.update_dismiss")}
         </button>
       </div>
