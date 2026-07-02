@@ -77,6 +77,40 @@ async def test_extract_file_upload(client, monkeypatch):
     assert r.json()["text"] == "hello attachment"
 
 
+async def test_extract_image_upload_ocr(client, monkeypatch):
+    """End-to-end image path: real extract_text/_extract_file, OCR stubbed."""
+    import io
+
+    import pytesseract
+    from PIL import Image, ImageDraw
+
+    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, **kw: "receipt total 42")
+    img = Image.new("RGB", (120, 40), "white")
+    ImageDraw.Draw(img).text((4, 12), "42", fill="black")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    files = {"file": ("receipt.png", buf.getvalue(), "image/png")}
+    r = await client.post("/api/v1/extract", files=files)
+    assert r.status_code == 200
+    assert r.json()["text"] == "receipt total 42"
+
+
+async def test_extract_image_upload_no_text_200(client, monkeypatch):
+    """OCR failure is best-effort: 200 with empty text, never a 500."""
+    import pytesseract
+
+    def _boom(img, **kw):
+        raise RuntimeError("no tesseract")
+
+    monkeypatch.setattr(pytesseract, "image_to_string", _boom)
+    files = {"file": ("shot.png", b"\x89PNG not really", "image/png")}
+    r = await client.post("/api/v1/extract", files=files)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["text"] == ""
+    assert body["chars"] == 0
+
+
 async def test_extract_missing_body_400(client):
     r = await client.post("/api/v1/extract", json={})
     assert r.status_code == 400

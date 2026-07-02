@@ -76,7 +76,7 @@ async def test_post_file_upload(client):
 
 async def test_post_unsupported_file_400(client):
     sid = await _spawn(client)
-    files = {"file": ("img.png", b"\x89PNG", "image/png")}
+    files = {"file": ("archive.zip", b"PK\x03\x04", "application/zip")}
     r = await client.post(f"/api/v1/spawns/{sid}/knowledge", files=files)
     assert r.status_code == 400
 

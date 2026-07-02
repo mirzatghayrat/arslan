@@ -193,7 +193,8 @@ export default function OrchestratorChat({
     const text = inputValue.trim();
     setInputValue('');
 
-    // Only doc/url attachments carry text; image chips are preview-only (empty text).
+    // Attachments with text (docs/urls/OCR'd images) ride into context; image chips
+    // where OCR found nothing stay preview-only (empty text) and contribute nothing.
     const context = attachments.map((a) => a.text).filter(Boolean).join("\n\n---\n\n");
     const names = attachments.filter((a) => a.text).map((a) => a.name);
     const clearAttachments = () => attach.clear();

@@ -44,19 +44,47 @@ function Harness({ onChange }: { onChange: (a: Attachment[]) => void }) {
 }
 
 describe("ComposerAttach", () => {
-  it("image attachments degrade honestly (preview-only, no text in context)", async () => {
+  it("image attachments OCR through the extract path and carry text into context", async () => {
+    m.extractAttachmentFile.mockResolvedValue({ text: "OCR'd words", chars: 11, truncated: false });
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
     await act(async () => {
       fireEvent.click(screen.getByText("add-image"));
     });
-    // honest label
-    expect(screen.getByText(/attach.image_no_parse/)).toBeInTheDocument();
-    // reported attachment carries empty text so it never injects into context
+    expect(m.extractAttachmentFile).toHaveBeenCalledTimes(1);
+    // chip reports OCR success; thumbnail stays
+    expect(screen.getByText(/attach.image_ocr_ok/)).toBeInTheDocument();
+    // reported attachment carries the OCR text so it rides into attached_context
     const last = onChange.mock.calls.at(-1)![0] as Attachment[];
-    expect(last[0]).toMatchObject({ name: "shot.png", kind: "image", text: "", chars: 0 });
-    // file-extract path is NOT used for images
-    expect(m.extractAttachmentFile).not.toHaveBeenCalled();
+    expect(last[0]).toMatchObject({
+      name: "shot.png", kind: "image", text: "OCR'd words", chars: 11, ocr: "ok",
+      previewUrl: "blob:preview",
+    });
+  });
+
+  it("image with no OCR text degrades honestly to preview-only", async () => {
+    m.extractAttachmentFile.mockResolvedValue({ text: "", chars: 0, truncated: false });
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("add-image"));
+    });
+    expect(screen.getByText(/attach.image_no_parse/)).toBeInTheDocument();
+    const last = onChange.mock.calls.at(-1)![0] as Attachment[];
+    expect(last[0]).toMatchObject({ name: "shot.png", kind: "image", text: "", chars: 0, ocr: "none" });
+  });
+
+  it("image extract failure degrades to preview-only (no error surfaced)", async () => {
+    m.extractAttachmentFile.mockRejectedValue(new Error("backend down"));
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("add-image"));
+    });
+    expect(screen.getByText(/attach.image_no_parse/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    const last = onChange.mock.calls.at(-1)![0] as Attachment[];
+    expect(last[0]).toMatchObject({ kind: "image", text: "", ocr: "none" });
   });
 
   it("auto-extracts a PASTED url immediately via the SSRF-hardened api path (no button)", async () => {

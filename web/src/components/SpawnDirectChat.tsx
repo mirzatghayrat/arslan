@@ -259,7 +259,7 @@ export default function SpawnDirectChat({
 
     // In refine mode, the deliverable being refined must reach the spawn reliably
     // via attached_context — independent of the (user-mutable) attachments array.
-    // Image chips are preview-only (empty text) — they contribute no context.
+    // Image chips carry OCR'd text when found; otherwise empty → no context.
     const textAttachments = attachments.filter((a) => a.text);
     const parts = textAttachments.map((a) => a.text);
     if (refineDeliverable && !parts.includes(refineDeliverable)) parts.unshift(refineDeliverable);

@@ -14,8 +14,9 @@ import { api } from "../api/client";
  *  - URLs are AUTO-DETECTED: when the user types a URL (followed by a space) or
  *    pastes one, it's extracted inline as a source — no button, the way
  *    ChatGPT/Gemini/Perplexity work. The only visible control is "+" for files.
- *  - `<AttachChips>` renders the file/image/url pills (image = honest preview-only
- *    thumbnail, since the doc-ingest backend can't read images).
+ *  - `<AttachChips>` renders the file/image/url pills. Images go through the same
+ *    /extract endpoint (backend OCR); when OCR finds no text the chip degrades
+ *    honestly to preview-only (thumbnail stays either way).
  *  - `<AttachControl>` is the lower-left "+" button → native file/image picker.
  *
  * 🔒 SECURITY: URL extraction goes ONLY through api.extractAttachmentUrl, which
@@ -27,10 +28,12 @@ export interface Attachment {
   text: string;
   chars: number;
   truncated: boolean;
-  /** Preview-only image (doc-ingest backend can't read it). Carries an object-URL
-   *  for the thumbnail; `text` stays empty so it contributes nothing to context. */
+  /** Image chips carry an object-URL for the thumbnail. Their `text` is filled by
+   *  backend OCR; it stays empty when no text is found (preview-only degrade). */
   kind?: "doc" | "image";
   previewUrl?: string;
+  /** OCR lifecycle for image chips: extracting → text found / none found. */
+  ocr?: "pending" | "ok" | "none";
 }
 
 /** Accept list for the native picker: existing doc types + images. */
@@ -112,21 +115,34 @@ export function useComposerAttach(
           continue;
         }
         if (isImage(file)) {
-          // Honest degrade: images aren't ingestable as docs. Preview-only chip,
-          // empty text so it never silently injects into context.
-          const next = [
-            ...current,
-            {
-              name: file.name,
-              text: "",
-              chars: 0,
-              truncated: false,
-              kind: "image" as const,
-              previewUrl: URL.createObjectURL(file),
-            },
-          ];
-          current = next;
-          commit(next);
+          // Same /extract path as docs (backend OCR). Chip shows the thumbnail
+          // immediately; OCR result fills `text`, or the chip degrades honestly
+          // to preview-only when no text is found (incl. extract errors).
+          const chip: Attachment = {
+            name: file.name,
+            text: "",
+            chars: 0,
+            truncated: false,
+            kind: "image" as const,
+            previewUrl: URL.createObjectURL(file),
+            ocr: "pending" as const,
+          };
+          current = [...current, chip];
+          commit(current);
+          setBusy(true);
+          let done: Attachment;
+          try {
+            const r = await api.extractAttachmentFile(file, compress);
+            done = r.text.trim()
+              ? { ...chip, text: r.text, chars: r.chars, truncated: r.truncated, ocr: "ok" as const }
+              : { ...chip, ocr: "none" as const };
+          } catch {
+            done = { ...chip, ocr: "none" as const };
+          } finally {
+            setBusy(false);
+          }
+          current = current.map((a) => (a === chip ? done : a));
+          commit(current);
           continue;
         }
         if (!DOC_EXT.test(file.name)) {
@@ -285,7 +301,11 @@ export function AttachChips({
           <span className="attach-chip__name">{a.name}</span>
           <span className="attach-chip__meta">
             {a.kind === "image"
-              ? `· ${t("attach.image_no_parse")}`
+              ? a.ocr === "pending"
+                ? `· ${t("attach.image_ocr_wait")}`
+                : a.ocr === "ok"
+                  ? `· ${t("attach.image_ocr_ok")}`
+                  : `· ${t("attach.image_no_parse")}`
               : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}`}
           </span>
           <button

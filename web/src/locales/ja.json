@@ -623,6 +623,8 @@
     "chars": "{{n}}文字",
     "truncated": "(省略)",
     "image_no_parse": "画像(プレビューのみ)",
+    "image_ocr_wait": "reading text…",
+    "image_ocr_ok": "text captured",
     "drop_hint": "ファイルをドロップして添付",
     "too_many": "添付は最大 {{max}} 件まで",
     "too_large": "{{name}} は大きすぎます(最大 30 MB)",

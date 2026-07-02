@@ -623,6 +623,8 @@
     "chars": "{{n}} caractères",
     "truncated": " (tronqué)",
     "image_no_parse": "image (aperçu seulement)",
+    "image_ocr_wait": "reading text…",
+    "image_ocr_ok": "text captured",
     "drop_hint": "Déposez des fichiers pour les joindre",
     "too_many": "Jusqu'à {{max}} pièces jointes",
     "too_large": "{{name}} est trop volumineux (max. 30 Mo)",

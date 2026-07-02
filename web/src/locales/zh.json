@@ -623,6 +623,8 @@
     "chars": "{{n}}字",
     "truncated": "(截断)",
     "image_no_parse": "图片(暂不解析)",
+    "image_ocr_wait": "识别中…",
+    "image_ocr_ok": "已识别文字",
     "drop_hint": "拖入文件以添加",
     "too_many": "最多 {{max}} 个附件",
     "too_large": "{{name}} 太大(上限 30 MB)",

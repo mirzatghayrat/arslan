@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _PRIVATE_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 _OCR_MIN_CHARS = 20
+_IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|webp|gif)$", re.IGNORECASE)
 
 
 def _strip_private(text: str) -> str:
@@ -51,6 +52,24 @@ def _ocr_pdf(data: bytes) -> str:
         return ""
 
 
+def _ocr_image(data: bytes) -> str:
+    """OCR a standalone image attachment. Best-effort; returns '' on any failure
+    (undecodable bytes, missing tesseract) or when no text is found. convert("RGB")
+    normalizes RGBA/palette modes and takes an animated GIF's first frame."""
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        try:
+            text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+        except Exception:  # noqa: BLE001 — language pack missing → English only
+            text = pytesseract.image_to_string(img)
+        return text if text.strip() else ""
+    except Exception as exc:  # noqa: BLE001 — OCR is best-effort
+        logger.warning("image OCR failed: %s", exc)
+        return ""
+
+
 def _extract_file(filename: str, data: bytes) -> str:
     name = (filename or "").lower()
     if name.endswith(".txt") or name.endswith(".md"):
@@ -70,6 +89,9 @@ def _extract_file(filename: str, data: bytes) -> str:
         import docx  # python-docx
         document = docx.Document(io.BytesIO(data))
         return "\n".join(p.text for p in document.paragraphs)
+    if _IMAGE_EXT_RE.search(name):
+        # No text found / OCR unavailable → '' (caller surfaces "no text", never 500).
+        return _ocr_image(data)
     raise ValueError(f"unsupported file type: {filename}")
 
 

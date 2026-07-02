@@ -623,6 +623,8 @@
     "chars": "{{n}} Zeichen",
     "truncated": " (gekürzt)",
     "image_no_parse": "Bild (nur Vorschau)",
+    "image_ocr_wait": "reading text…",
+    "image_ocr_ok": "text captured",
     "drop_hint": "Dateien zum Anhängen ablegen",
     "too_many": "Bis zu {{max}} Anhänge",
     "too_large": "{{name}} ist zu groß (max. 30 MB)",

@@ -58,4 +58,4 @@ async def test_ingest_file_txt(memdb):
 async def test_ingest_file_unknown_ext_raises(memdb):
     sid = await _spawn(memdb)
     with pytest.raises(ValueError):
-        await ingest.ingest_file(sid, "image.png", b"\x89PNG")
+        await ingest.ingest_file(sid, "archive.zip", b"PK\x03\x04")
