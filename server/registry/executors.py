@@ -280,7 +280,9 @@ class DeckExecutor:
                     return {"ok": False,
                             "error": f"slide {i}: '{field}' must be a list of <= {_DECK_MAX_BULLETS} strings"}
 
-        theme = args.get("theme") if isinstance(args.get("theme"), dict) else None
+        # Theme is a preset NAME (see deck_pptx.THEMES); unknown/non-string (e.g. the legacy
+        # {'accent': '#hex'} dict) falls back to the default preset inside build_deck.
+        theme = args.get("theme") if isinstance(args.get("theme"), str) else None
         spec = {"title": str(args.get("title") or ""), "theme": theme, "slides": slides}
         try:
             data = deck_pptx.build_deck(spec)

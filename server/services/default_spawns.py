@@ -37,7 +37,8 @@ DEFAULT_SPAWNS: list[dict] = [
         "persona_tone": "clear, evidence-first, concise — no filler",
         "capabilities": ["web research", "source triangulation", "structured briefings"],
         "seed_refs": ["product-trend-researcher", "phase-0-discovery", "finance-investment-researcher"],
-        "equipment": {"toolsets": ["web_search_scraping"], "skills": ["plan", "research-paper-writing"]},
+        "equipment": {"toolsets": ["web_search_scraping"],
+                      "skills": ["plan", "research-paper-writing", "designed-html-report"]},
     },
     {
         # General-purpose analyst (not finance-leaning — the dedicated finance combo is the
@@ -76,7 +77,7 @@ DEFAULT_SPAWNS: list[dict] = [
             # incident: without deck it faked/failed the delivery.
             "toolsets": ["web_search_scraping", "charting", "code_sandbox", "deck"],
             "skills": ["sector-overview", "competitive-analysis", "comps-analysis",
-                       "idea-generation", "deck-authoring"],
+                       "idea-generation", "deck-authoring", "designed-html-report"],
         },
     },
     {
@@ -89,7 +90,8 @@ DEFAULT_SPAWNS: list[dict] = [
         "persona_tone": "human, punchy, on-brand",
         "capabilities": ["copywriting", "content strategy", "multi-channel writing"],
         "seed_refs": ["marketing-content-creator", "marketing-social-media-strategist", "design-brand-guardian"],
-        "equipment": {"toolsets": ["web_search_scraping"], "skills": ["humanizer", "youtube-content"]},
+        "equipment": {"toolsets": ["web_search_scraping"],
+                      "skills": ["humanizer", "youtube-content", "designed-html-report"]},
     },
     {
         "name": "Coding Assistant",
@@ -121,7 +123,8 @@ DEFAULT_SPAWNS: list[dict] = [
         "seed_refs": ["design-visual-storyteller", "narrative-designer", "marketing-content-creator"],
         "equipment": {
             "toolsets": ["deck", "web_search_scraping", "charting"],
-            "skills": ["deck-authoring", "baoyu-infographic", "canvas-design", "humanizer"],
+            "skills": ["deck-authoring", "baoyu-infographic", "canvas-design", "humanizer",
+                       "designed-html-report"],
         },
     },
 ]

@@ -297,9 +297,12 @@ TOOLSETS: list[dict] = [
              "slides=[{layout, ...}]. Per-layout fields (use ONLY these): "
              "title→{title,subtitle} · section→{title} · bullets→{title,bullets:[str]} · "
              "two-column→{title,left:[str],right:[str]} (left/right ONLY here, never on bullets) · "
-             "quote→{text,attribution} · big-number→{value,label}. Each slide may carry notes "
-             "(speaker notes). Optional theme={accent:'#hex'}. The user gets a downloadable "
-             ".pptx — real shapes/text, not images.", "safe", "wired"),
+             "quote→{text,attribution} · big-number→{value,label}. two-column may add "
+             "{left_title,right_title} column headers. Each slide may carry notes "
+             "(speaker notes). Optional theme (string): 'ink' (house default — warm paper, "
+             "near-black ink, chartreuse accent) | 'midnight' (dark, cyan accent) | 'azure' "
+             "(white, deep blue) | 'terra' (warm cream, rust/orange). The user gets a "
+             "downloadable .pptx — real designed shapes/text, not images.", "safe", "wired"),
         ],
     },
     {
@@ -396,6 +399,8 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
     ("claude-design", "claude-design", "creative", "One-off HTML artifacts (landing, deck).", _S, _REG),
     ("comfyui", "comfyui", "creative", "ComfyUI image/video/audio workflows (runs a local server).", _O, _REG),
     ("design-md", "design-md", "creative", "Author/validate DESIGN.md token specs.", _S, _REG),
+    ("designed-html-report", "designed-html-report", "creative",
+     "设计版报告:报告/简报/方案等长篇交付物产出自带设计系统的单文件 HTML(Designed HTML Report),而非 markdown 长文。", _S, _REG),
     ("excalidraw", "excalidraw", "creative", "Hand-drawn Excalidraw JSON diagrams.", _S, _REG),
     ("humanizer", "humanizer", "creative", "Strip AI-isms, add real voice.", _S, _REG),
     ("manim-video", "manim-video", "creative", "Manim CE math/algo animation videos.", _S, _REG),

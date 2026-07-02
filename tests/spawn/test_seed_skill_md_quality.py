@@ -11,6 +11,7 @@ _SEEDS = Path(arslan.spawn.__file__).parent / "seeds"
 AUTHORED = [
     "systematic-debugging", "plan", "codebase-audit", "github-code-review", "design-md",
     "architecture-diagram", "humanizer", "ascii-art", "baoyu-infographic", "sketch", "claude-design",
+    "designed-html-report",
 ]
 
 
