@@ -23,9 +23,10 @@ authors:
 5. **数据诚实**:报告里每一个数字都必须来自对话内容或工具结果;绝不编造指标或案例;未知就明写「未知 / 待确认」。
 6. **单文件、零外部依赖**:不引任何外部 CDN 脚本/字体/图片;字体用系统栈 + 'PingFang SC' / 'Noto Sans SC' 兜底;文件从磁盘双击打开即完整可看,`@media print` 下打印干净。
 
-## 默认设计系统(House style)
+## 默认设计系统(House style · Ember 暖调,WCAG AA 已校准)
 
-- **Tokens(`:root`)**:`--ink:#1e1e1e`(正文与深底)、`--bg:#f6f4f2`(暖纸页面底)、`--accent:#eeff53`(唯一强调色,默认柠檬黄绿;用户有品牌色时只换这一个)、`--green:#54665a`(次级文字/图形)、`--line:#e4e4e4`(发丝分隔线);内容载体是白色页卡。
+- **Tokens(`:root`)**:`--ink:#1A1410`(暖黑,正文与深底)、`--bg:#F2EBE0`(麦色纸页面底)、`--card:#FAF5EE`(页卡底)、`--accent:#D94420`(锈橙红,唯一强调色;米白底上对比 4.6:1 达 AA)、`--accent-bright:#F06A20`(深底上的强调色——深色带里必须用它,别用 #D94420)、`--secondary:#6B5E52`(次要文字)、`--muted:#A8998C`(**只允许 ≥18px 的大字**,正文小字一律用 secondary)、`--green:#2E6645`(**只用于「开源/成功/正向」类 tag**,不作第二主色)、`--line:#D8CFC4`(边框分隔线)。
+- **对比度铁律**:accent 底(#D94420)上配**白字**;深底(#1A1410)上强调用 `--accent-bright`;用户有品牌色时只换 accent 两个值,其余不动。
 - **页面骨架**:居中白卡 `width:min(1040px, calc(100vw - 24px))` + 柔和阴影,浮在暖纸底上。
 - **深色页头带**:eyebrow 小标(accent 色、11px、大写、宽字距)→ 大标题(白、800、紧行高、微负字距)→ 灰副标;右上角一枚 accent 徽章点题。
 - **Section 标签**:10px、700、大写、`.14em` 字距、green 色——每个区块用它定调,再接 19px/800 的小节标题。
@@ -44,34 +45,35 @@ authors:
 <html lang="zh-Hans"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{TITLE}}</title><style>
-:root{--ink:#1e1e1e;--bg:#f6f4f2;--accent:#eeff53;--green:#54665a;--line:#e4e4e4}
+:root{--ink:#1A1410;--bg:#F2EBE0;--card:#FAF5EE;--accent:#D94420;--accent-bright:#F06A20;--secondary:#6B5E52;--muted:#A8998C;--green:#2E6645;--line:#D8CFC4}
 *{box-sizing:border-box}
 body{font-family:-apple-system,'Helvetica Neue','PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif;color:var(--ink);background:var(--bg);margin:0;font-size:14px;line-height:1.5}
-.page{width:min(1040px,calc(100vw - 24px));margin:24px auto;background:#fff;box-shadow:0 4px 32px rgba(30,30,30,.10)}
+.page{width:min(1040px,calc(100vw - 24px));margin:24px auto;background:var(--card);box-shadow:0 4px 32px rgba(26,20,16,.10)}
 .header{background:var(--ink);padding:26px 40px 22px;display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
-.eyebrow{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:9px}
-.header h1{margin:0 0 6px;color:#fff;font-size:29px;font-weight:800;line-height:1.15;letter-spacing:-.01em}
-.header .sub{color:#bfbda7;font-size:13px}
-.badge{background:var(--accent);color:var(--ink);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;white-space:nowrap;align-self:flex-start}
+.eyebrow{color:var(--accent-bright);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:9px}
+.header h1{margin:0 0 6px;color:#F2EBE0;font-size:29px;font-weight:800;line-height:1.15;letter-spacing:-.01em}
+.header .sub{color:var(--muted);font-size:13px}
+.badge{background:var(--accent);color:#fff;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;white-space:nowrap;align-self:flex-start}
 .body{padding:30px 40px 36px}
-.section-label{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--green);margin:30px 0 8px}
+.section-label{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:30px 0 8px}
 h2{margin:0 0 12px;font-size:19px;font-weight:800;letter-spacing:-.01em}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:28px;background:var(--ink)}
-.kpi{background:#fff;padding:16px 12px;text-align:center;border-bottom:3px solid var(--accent)}
-.kpi .l{color:#666;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px}
-.kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em}.kpi .d{color:#888;font-size:11px;margin-top:3px}
-table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;margin-bottom:18px}
-th{background:var(--ink);color:var(--accent);border:1px solid var(--ink);padding:9px 10px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.kpi{background:var(--card);padding:16px 12px;text-align:center;border-bottom:3px solid var(--accent)}
+.kpi .l{color:var(--secondary);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px}
+.kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em}.kpi .d{color:var(--secondary);font-size:11px;margin-top:3px}
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);margin-bottom:18px}
+th{background:var(--ink);color:var(--accent-bright);border:1px solid var(--ink);padding:9px 10px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.05em;text-transform:uppercase}
 td{border:1px solid var(--line);padding:9px 10px;vertical-align:top}
 tbody tr:nth-child(even) td{background:var(--bg)}
 .keybox{background:var(--bg);border-left:4px solid var(--accent);padding:16px 18px;margin:0 0 26px}
+.tag-ok{display:inline-block;background:var(--green);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:4px}
 .bars{background:var(--bg);padding:16px}.bar-row{display:flex;align-items:center;gap:10px;margin:9px 0}
 .bar-name{width:120px;font-size:12px;font-weight:700;flex:none}
-.bar-track{flex:1;background:#e8e6e1;height:22px;border-radius:4px;overflow:hidden}
-.bar-fill{height:100%;background:var(--ink);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:var(--accent);font-size:11px;font-weight:700}
-.bar-fill.hl{background:var(--accent);color:var(--ink)}
-.hl-callout{background:var(--accent);color:var(--ink);padding:14px 18px;font-weight:700;margin:20px 0 0}
-.footer{background:var(--ink);color:#bfbda7;padding:18px 40px;font-size:11px;margin-top:30px}
+.bar-track{flex:1;background:#E4DACB;height:22px;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;background:var(--ink);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:var(--accent-bright);font-size:11px;font-weight:700}
+.bar-fill.hl{background:var(--accent);color:#fff}
+.hl-callout{background:var(--accent);color:#fff;padding:14px 18px;font-weight:700;margin:20px 0 0}
+.footer{background:var(--ink);color:var(--muted);padding:18px 40px;font-size:11px;margin-top:30px}
 @media print{body{background:#fff}.page{box-shadow:none;margin:0;width:100%}
 .header,.footer,.kpi,th,.hl-callout,.bar-fill{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head>
