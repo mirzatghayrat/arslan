@@ -46,16 +46,21 @@ _env_cache: tuple[str, str] | None = None
 
 
 def _data_dir() -> Path:
-    return Path(os.environ.get("ARSLAN_DATA_DIR", "data"))
+    # resolve(): run_python spawns with cwd=tmpdir, so a relative interpreter path would be
+    # (wrongly) resolved inside the tmpdir. The sandbox env must be addressed absolutely.
+    return Path(os.environ.get("ARSLAN_DATA_DIR", "data")).resolve()
 
 
 def _create_batteries_env(venv_dir: Path) -> tuple[str, str]:
-    """Host-side, one-time: venv + numpy/pandas/matplotlib. Blocking — call in a thread."""
+    """Host-side, one-time: venv + numpy/pandas/matplotlib. Blocking — call in a thread.
+    Writes a .ready marker ONLY after pip succeeds, so a half-built env (venv created, pip
+    failed) is never mistaken for a working one on the next boot."""
     subprocess.run([sys.executable, "-m", "venv", "--clear", str(venv_dir)],
                    check=True, capture_output=True, timeout=120)
     py = venv_dir / "bin" / "python"
     subprocess.run([str(py), "-m", "pip", "install", "--quiet", *_BATTERIES],
                    check=True, capture_output=True, timeout=600)
+    (venv_dir / ".ready").write_text("ok")
     return str(py), "batteries: numpy/pandas/matplotlib"
 
 
@@ -66,7 +71,7 @@ async def _sandbox_python() -> tuple[str, str]:
         return _env_cache
     venv_dir = _data_dir() / "sandbox_env"
     py = venv_dir / "bin" / "python"
-    if py.exists():
+    if py.exists() and (venv_dir / ".ready").exists():
         _env_cache = (str(py), "batteries: numpy/pandas/matplotlib")
         return _env_cache
     try:
