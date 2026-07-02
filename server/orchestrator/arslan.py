@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re as _re
 from collections.abc import Callable
 from datetime import datetime
 
@@ -820,16 +821,46 @@ async def _dispatch_spawn(  # noqa: ANN001
     tee({"type": "stream_end", "message_id": out["summary_message_id"]})
 
 
+_REFUSAL_RE = _re.compile(
+    r"用尽了?工具额度|工具额度(已)?(用尽|耗尽|用完)|额度用完"
+    r"|工具?调用次数(已)?用完|调用次数用完"
+    r"|no (further|remaining) (tool )?(quota|capability)"
+    r"|exhausted (my|the) (web[- ]search|tool)|tool quota (is )?exhausted"
+    r"|used up this turn'?s tool calls"
+    r"|cannot produce a (new )?deliverable",
+    _re.IGNORECASE)
+
+
+def _looks_like_refusal(text: str) -> bool:
+    """True for tool-exhaustion/fallback refusals — outputs that must never be treated as a
+    proposal direction or deliverable (observed live: they self-replicate through the
+    confirm→execute path and poison every following turn)."""
+    return bool(_REFUSAL_RE.search(text or ""))
+
+
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
     """User confirmed a pending proposal — execute, carrying the spawn's proposed direction.
 
     The stored ``direction`` is the original task brief; the spawn's own proposed direction
     (its last propose-mode output) is fetched and carried via ``execute_confirmed`` framing so
     the spawn delivers the final result instead of re-asking clarifying questions.
+
+    DOOM-LOOP GUARDS (from a live incident): confirm is ONE-SHOT — a re-click after the
+    pending phase was consumed must not dispatch with an empty Task; and a refusal/fallback
+    ("工具额度用尽…") must never be carried as the "confirmed direction" (the spawn would
+    role-play the refusal forever instead of doing fresh work).
     """
     pending = await phase_service.get_pending(conversation_id)
-    direction = (pending or {}).get("direction", "")
+    direction = ((pending or {}).get("direction") or "").strip()
+    if not direction:
+        # Stale confirm (button re-clicked after the proposal was consumed, or no proposal).
+        emit({"type": "message", "message_id": None, "role": "arslan",
+              "content": "这个提案已经执行过了(或没有待执行的提案)。直接告诉我接下来要做什么就好。"})
+        emit({"type": "stream_end", "message_id": None})
+        return
     proposed = await dispatcher.last_spawn_output(spawn_id)
+    if proposed and _looks_like_refusal(proposed):
+        proposed = None  # never re-inject a refusal as the "direction"
     await phase_service.clear(conversation_id, spawn_id)
     await _dispatch_spawn(
         conversation_id, spawn_id, direction, emit,

@@ -62,6 +62,12 @@ _CLAIMS_CHART_RE = re.compile(
 _CLAIMS_SEARCH_RE = re.compile(
     r"我搜索|搜索了|查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
     re.IGNORECASE)
+_CLAIMS_DECK_RE = re.compile(
+    r"(PPTX?|pptx|deck|幻灯片?|演示文稿)\s*已(经)?(生成|完成|做好|创建)"
+    r"|已(经)?生成\s*(PPTX?|pptx|deck|幻灯|演示)"
+    r"|(deck|pptx|presentation) (is |has been )?(generated|ready|created|done)"
+    r"|你可以(直接)?下载(该|这个)?\s*[`\"']?\.?pptx",
+    re.IGNORECASE)
 
 
 def _claims_chart(text: str) -> bool:
@@ -70,6 +76,10 @@ def _claims_chart(text: str) -> bool:
 
 def _claims_search(text: str) -> bool:
     return bool(_CLAIMS_SEARCH_RE.search(text or ""))
+
+
+def _claims_deck(text: str) -> bool:
+    return bool(_CLAIMS_DECK_RE.search(text or ""))
 
 
 # Chart-as-code-fence: instead of calling render_chart, the model draws a DATA chart by writing a
@@ -150,12 +160,16 @@ _SALVAGE_SYS = (
 
 def _fallback_message(user_content: str) -> str:
     """Honest last-resort answer when even the salvage attempt won't produce prose. Language
-    inferred from the request so a Chinese user doesn't get an English apology (or vice-versa)."""
+    inferred from the request so a Chinese user doesn't get an English apology (or vice-versa).
+    Wording is deliberately PER-TURN ("这一轮") — a live incident showed 'session exhausted'
+    phrasing poisons later turns: the model reads it in history and role-plays permanent
+    exhaustion even though every dispatch starts with a fresh budget."""
     cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
     if cjk:
-        return ("抱歉,我在收集资料时用尽了工具额度,没能整理出完整结论。请把问题缩小或换个问法,我再试一次。")
-    return ("Sorry — I ran out of tool budget while gathering data and couldn't finish a complete "
-            "answer. Please narrow or restate the request and I'll try again.")
+        return ("这一轮的工具调用次数用完了,还没能整理出完整结论。直接说“继续”,"
+                "我下一轮会带着新的工具额度接着做;也可以把问题缩小一点。")
+    return ("I used up this turn's tool calls before finishing. Say \"continue\" and I'll pick "
+            "up with a fresh tool budget next turn — or narrow the request a little.")
 
 
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
@@ -304,6 +318,14 @@ async def run(
                     "The user CANNOT see that as a real chart — it shows as raw code. Emit ONLY the "
                     "render_chart tool JSON now with this SAME data (args: {type, x:[labels], "
                     "series:[{name, values:[numbers]}]}); do NOT draw charts in markdown/mermaid.")
+            elif (_claims_deck(content) and "render_deck" in wired_keys
+                    and "render_deck" not in fired and "render_deck" not in forced_retry):
+                claimed = "render_deck"
+                reprompt = (
+                    "You claimed the PPTX/deck was generated, but you did NOT actually call "
+                    "render_deck this turn — so there is NO file and nothing to download. Emit ONLY "
+                    "the render_deck tool JSON now (slides=[{layout, ...}]), or answer honestly "
+                    "WITHOUT claiming a deck was produced.")
             elif (_claims_search(content) and "web_search" in wired_keys
                     and "web_search" not in fired and "web_search" not in forced_retry):
                 claimed = "web_search"

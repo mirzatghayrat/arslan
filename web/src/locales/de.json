@@ -627,5 +627,11 @@
     "too_many": "Bis zu {{max}} Anhänge",
     "too_large": "{{name}} ist zu groß (max. 30 MB)",
     "unsupported": "{{name}}: nicht unterstützter Typ"
+  },
+  "working": {
+    "summon": "Summoning specialist…",
+    "context": "Assembling context & skills…",
+    "tools": "Dispatching tools…",
+    "compose": "Composing the answer…"
   }
 }

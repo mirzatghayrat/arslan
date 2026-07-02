@@ -627,5 +627,11 @@
     "too_many": "Hasta {{max}} adjuntos",
     "too_large": "{{name}} es demasiado grande (máx. 30 MB)",
     "unsupported": "{{name}}: tipo no compatible"
+  },
+  "working": {
+    "summon": "Summoning specialist…",
+    "context": "Assembling context & skills…",
+    "tools": "Dispatching tools…",
+    "compose": "Composing the answer…"
   }
 }

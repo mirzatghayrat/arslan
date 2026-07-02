@@ -665,9 +665,12 @@ export default function App() {
                   setActiveSection('settings');
                   setPanelView('default');
                 }}
-                onConfirmDirection={(spawnId) =>
-                  wsSend({ type: 'confirm_direction', spawn_id: spawnId })
-                }
+                onConfirmDirection={(spawnId) => {
+                  wsSend({ type: 'confirm_direction', spawn_id: spawnId });
+                  // one-shot: disable the confirm button immediately + show the pulse
+                  useArslanStore.getState().markProposalConfirmed(spawnId);
+                  useArslanStore.getState().setThinking(true);
+                }}
                 onDeliverableVerdict={(action, spawnId, messageId) => {
                   if (action === 'accept') {
                     wsSend({ type: 'accept_deliverable', spawn_id: spawnId, message_id: messageId });

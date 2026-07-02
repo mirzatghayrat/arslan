@@ -46,6 +46,7 @@ interface ArslanState {
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
   dismissUpdate: () => void;
+  markProposalConfirmed: (spawnId: number) => void;
   clearPendingInvite: () => void;
   clearPendingStaffing: () => void;
   clearError: () => void;
@@ -105,6 +106,13 @@ function makeActions(set: SetState, get: GetState) {
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
     dismissUpdate: () => set({ pendingUpdate: null }),
+    // One-shot confirm (doom-loop guard, frontend half): flipping isProposal off disables the
+    // confirm button immediately so a stale re-click can never re-fire execute_confirmed.
+    markProposalConfirmed: (spawnId: number) =>
+      set({
+        items: get().items.map((it) =>
+          it.isProposal && Number(it.spawnId) === spawnId ? { ...it, isProposal: false } : it),
+      }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null }),
@@ -300,7 +308,7 @@ function makeActions(set: SetState, get: GetState) {
               break;
             }
           }
-          set({ activitySteps: steps });
+          set({ activitySteps: steps, thinking: true });
           break;
         }
         case "suggest_create":

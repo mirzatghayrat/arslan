@@ -627,5 +627,11 @@
     "too_many": "Jusqu'à {{max}} pièces jointes",
     "too_large": "{{name}} est trop volumineux (max. 30 Mo)",
     "unsupported": "{{name}} : type non pris en charge"
+  },
+  "working": {
+    "summon": "Summoning specialist…",
+    "context": "Assembling context & skills…",
+    "tools": "Dispatching tools…",
+    "compose": "Composing the answer…"
   }
 }

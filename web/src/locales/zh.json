@@ -627,5 +627,11 @@
     "too_many": "最多 {{max}} 个附件",
     "too_large": "{{name}} 太大(上限 30 MB)",
     "unsupported": "{{name}}:不支持的类型"
+  },
+  "working": {
+    "summon": "正在召唤分身…",
+    "context": "组装上下文与技能…",
+    "tools": "调度工具中…",
+    "compose": "整理结论中…"
   }
 }

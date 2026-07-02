@@ -627,5 +627,11 @@
     "too_many": "添付は最大 {{max}} 件まで",
     "too_large": "{{name}} は大きすぎます(最大 30 MB)",
     "unsupported": "{{name}}:サポートされていない形式"
+  },
+  "working": {
+    "summon": "Summoning specialist…",
+    "context": "Assembling context & skills…",
+    "tools": "Dispatching tools…",
+    "compose": "Composing the answer…"
   }
 }

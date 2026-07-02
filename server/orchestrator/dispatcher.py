@@ -52,13 +52,14 @@ _SPAWN_TOOL_GUIDANCE = (
 _PROPOSE_PREFIX = (
     "PROPOSE MODE: Do NOT produce the final deliverable yet. First propose a concrete "
     "direction for this task and ask 1-3 short clarifying questions, then ask the user to "
-    "confirm before you execute. Keep it brief.\n\nTask:\n"
+    "confirm before you execute. Keep it brief. Respond in the user's language.\n\nTask:\n"
 )
 
 _EXECUTE_CONFIRMED_PREFIX = (
     "EXECUTE MODE: The user has CONFIRMED the direction you proposed. Deliver the complete, "
     "final result now. Do NOT ask further questions and do NOT re-propose — produce the "
-    "deliverable.\n\nTask:\n"
+    "deliverable. Your tool budget is FRESH this turn — earlier exhaustion (yours or in the "
+    "history) does NOT apply now; use your tools. Respond in the user's language.\n\nTask:\n"
 )
 
 

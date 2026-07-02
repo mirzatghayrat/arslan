@@ -9,6 +9,7 @@ import SFSymbol from './SFSymbol';
 import MessageBody from './MessageBody';
 import EChart from './EChart';
 import DeckDownloadCard from './DeckDownloadCard';
+import WorkingPulse from './WorkingPulse';
 import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
@@ -238,6 +239,7 @@ export default function SpawnDirectChat({
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || streaming) return;
+    setStreaming(true);  // no dead air: pulse shows from SEND, not from stream_start
 
     const userMsg: Message = {
       id: `msg-direct-user-${Date.now()}`,
@@ -515,6 +517,18 @@ export default function SpawnDirectChat({
               </div>
             );
           })}
+
+          {/* No dead air: pulse from SEND until the first visible token (or while a tool
+              gap leaves the streaming bubble empty). Clears on error/stream_end. */}
+          {streaming && !messages.some(m => m.id === '__streaming__' && m.text) && (
+            <div className="flex items-center gap-3 pl-1 py-1">
+              <SpawnAvatar seed={spawn.name} size={24} />
+              <WorkingPulse
+                className="text-[11px] text-muted-foreground"
+                phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]}
+              />
+            </div>
+          )}
         </div>
 
       </div>

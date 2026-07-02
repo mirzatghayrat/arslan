@@ -15,6 +15,7 @@ import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody from './MessageBody';
 import CopyButton from './CopyButton';
+import WorkingPulse from './WorkingPulse';
 import EChart from './EChart';
 import DeckDownloadCard from './DeckDownloadCard';
 import { useArslanStore } from '../stores/arslanStore';
@@ -1139,7 +1140,7 @@ export default function OrchestratorChat({
           <div className="flex gap-3 items-center py-2 select-none">
             <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark" draggable={false} />
             <div className="flex items-center gap-1.5 px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
-              <span className="text-[11px] text-muted-foreground font-mono">{t('chat.thinking')}</span>
+              <WorkingPulse className="text-[11px] text-muted-foreground" phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
               <span className="flex gap-0.5 ml-1">
                 {[0, 1, 2].map((i) => (
                   <span

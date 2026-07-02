@@ -71,8 +71,12 @@ DEFAULT_SPAWNS: list[dict] = [
         "seed_refs": ["finance-investment-researcher", "finance-financial-analyst", "finance-fpa-analyst"],
         "equipment": {
             # code_sandbox: comps spreads / CAGR math are core to this agent — real pandas need.
-            "toolsets": ["web_search_scraping", "charting", "code_sandbox"],
-            "skills": ["sector-overview", "competitive-analysis", "comps-analysis", "idea-generation"],
+            # deck: "research it, then give me a PPT" is the natural ask for this agent, and
+            # spawns cannot hand off to Deck Master (no spawn-to-spawn delegation) — live
+            # incident: without deck it faked/failed the delivery.
+            "toolsets": ["web_search_scraping", "charting", "code_sandbox", "deck"],
+            "skills": ["sector-overview", "competitive-analysis", "comps-analysis",
+                       "idea-generation", "deck-authoring"],
         },
     },
     {
