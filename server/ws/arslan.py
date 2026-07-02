@@ -485,7 +485,8 @@ def _to_frame(ev: dict) -> dict:
     """Map an orchestration event dict to a wire frame (already frame-shaped here)."""
     t = ev.get("type")
     if t == "routing":
-        return protocol.routing(ev.get("spawn_id"), ev.get("spawn_name"))
+        return protocol.routing(ev.get("spawn_id"), ev.get("spawn_name"),
+                                announcement=ev.get("announcement"))
     if t == "stream_start":
         return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"))
     if t == "suggest_create":

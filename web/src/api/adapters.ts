@@ -161,6 +161,18 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
     }
 
     if (item.kind === "system") {
+      // Routing brief: need restatement + @-mention duty lines (mention chips in UI).
+      if (item.isRouteAnnouncement) {
+        return {
+          id,
+          sender: "arslan",
+          senderName: "Arslan",
+          senderAvatar: "🦁",
+          text: item.content,
+          timestamp,
+          isRouteAnnouncement: true,
+        };
+      }
       // Roster notice: rosterAction is "joined" | "left"
       if (item.rosterAction) {
         return {

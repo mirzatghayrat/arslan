@@ -238,6 +238,9 @@ export interface ArslanThreadItem {
   refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
   rosterAction?: string;
+  /** kind === "system": routing brief (need restatement + @-mention duty lines)
+   *  from a routing frame's `announcement`. Rendered with mention chips. */
+  isRouteAnnouncement?: boolean;
   /** role === "user": attachments sent with this message (session-only display echo —
    *  set client-side on send, never present on history-restored items). */
   attachments?: MessageAttachment[];
@@ -255,7 +258,8 @@ export interface ArslanHistoryRow {
 export type ArslanServerMessage =
   | { type: "history"; messages: ArslanHistoryRow[] }
   | { type: "proposal"; spawn_id: number; spawn_name: string | null }
-  | { type: "routing"; spawn_id: number; spawn_name: string | null }
+  | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
+  | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number | null }

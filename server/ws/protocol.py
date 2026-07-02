@@ -53,8 +53,16 @@ def ping(ts: int) -> dict[str, Any]:
     return {"type": "ping", "ts": ts}
 
 
-def routing(spawn_id: int, spawn_name: str | None = None) -> dict[str, Any]:
-    return {"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name}
+def routing(
+    spawn_id: int, spawn_name: str | None = None, announcement: str | None = None
+) -> dict[str, Any]:
+    """The dispatch handoff frame. `announcement` (optional) is the routing brief —
+    need restatement + @-mention duty lines — included only when non-empty so the
+    frame stays byte-identical for plain routings."""
+    frame: dict[str, Any] = {"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name}
+    if announcement:
+        frame["announcement"] = announcement
+    return frame
 
 
 def stream_start_src(source: str, spawn_id: int | None = None) -> dict[str, Any]:

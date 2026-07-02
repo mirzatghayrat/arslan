@@ -76,6 +76,8 @@ export interface Message {
     spawnId: string;
     spawnName: string;
   };
+  /** Routing brief (need + @-mention duty lines) — rendered with mention chips. */
+  isRouteAnnouncement?: boolean;
   /** Roster notice: "joined" | "left" — present on system messages from roster_event frames. */
   rosterAction?: string;
   /** The spawn name for a roster notice item. */

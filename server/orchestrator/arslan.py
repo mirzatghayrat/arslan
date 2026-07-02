@@ -38,6 +38,99 @@ EventSink = Callable[[dict], None]
 # Treated as "slow" by speed_weight in evolution leveling.
 _MISSING_ELAPSED_SECONDS = 999.0
 
+# Auto-continue budget: how many extra rounds Arslan may automatically run per user
+# turn when a round ends with a 【阶段性发现】/[Findings so far] digest (tool budget
+# exhausted but evidence carried forward). Threaded as a per-dispatch parameter —
+# NEVER module-global mutable state (concurrent conversations must not share it).
+MAX_AUTO_CONTINUES = 2
+
+# Markers written by tool_loop._fallback_with_digest. Their presence means the round
+# made real progress but ran out of tool budget — safe (and worth it) to auto-continue.
+# The bare no-evidence fallback carries NO marker and must never auto-continue
+# (zero progress → looping would just burn tokens).
+_DIGEST_MARKERS = ("【阶段性发现】", "[Findings so far]")
+
+
+def _has_findings_digest(text: str) -> bool:
+    t = text or ""
+    return any(m in t for m in _DIGEST_MARKERS)
+
+
+def _is_cjk(text: str) -> bool:
+    return any("一" <= ch <= "鿿" for ch in (text or ""))
+
+
+# Deterministic second-stage alias groups: when the task brief mentions any token of a
+# group AND another real spawn's domain/name/capabilities mention any token of the SAME
+# group, that spawn is a plausible next stage (e.g. 生成PPT → the deck/presentation
+# spawn). Purely lexical — no extra LLM call, zero fabrication risk.
+_STAGE_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("ppt", "pptx", "deck", "slide", "slides", "presentation", "幻灯", "演示"),
+    ("chart", "图表", "可视化", "visualization", "visualisation"),
+)
+
+
+def _spawn_terms(s) -> str:  # noqa: ANN001
+    """Lower-cased searchable text for one spawn (name + domain + capabilities)."""
+    fields = [
+        getattr(s, "name", "") or "",
+        getattr(s, "domain_category", "") or "",
+        getattr(s, "domain_subcategory", "") or "",
+        *(getattr(s, "capabilities", None) or []),
+    ]
+    return " ".join(str(f) for f in fields).lower()
+
+
+def _find_second_stage(task_brief: str, spawns: list, primary_id: int, roster_ids: set[int]):  # noqa: ANN001
+    """The one other REAL spawn the task clearly implies as a follow-up stage, or None.
+    Conversation-roster members are preferred over the rest of the registry."""
+    brief_l = (task_brief or "").lower()
+    candidates = sorted(
+        (s for s in spawns if getattr(s, "id", None) != primary_id),
+        key=lambda s: (0 if getattr(s, "id", None) in roster_ids else 1, getattr(s, "id", 0)),
+    )
+    for s in candidates:
+        terms = _spawn_terms(s)
+        for group in _STAGE_ALIAS_GROUPS:
+            if any(tok in brief_l for tok in group) and any(tok in terms for tok in group):
+                return s
+    return None
+
+
+async def _route_announcement(
+    conversation_id: str, spawn_id: int, spawn_name: str, task_brief: str
+) -> str:
+    """Deterministic routing brief shown when Arslan hands a task to a spawn:
+    one sentence restating the need (the router's task_brief), then one line per
+    involved spawn as an @-mention. Every mentioned name comes from the REAL spawn
+    registry/roster — nothing is invented, and no extra LLM call is made."""
+    cjk = _is_cjk(task_brief) or _is_cjk(spawn_name)
+    lines: list[str] = []
+    need = (task_brief or "").strip()
+    if need:
+        lines.append(need)
+
+    primary_role = ""
+    second = None
+    try:
+        spawns = await spawn_service.load_all_spawns()
+        roster = await roster_service.list_roster(conversation_id)
+        roster_ids = {int(m["spawn_id"]) for m in roster if m.get("spawn_id") is not None}
+        primary = next((s for s in spawns if getattr(s, "id", None) == spawn_id), None)
+        primary_role = (getattr(primary, "persona_role", None) or "").strip()
+        second = _find_second_stage(task_brief or "", spawns, spawn_id, roster_ids)
+    except Exception as exc:  # noqa: BLE001 — enrichment is best-effort; the primary line never fails
+        logger.warning("route announcement enrichment failed (non-fatal): %s", exc)
+
+    own = primary_role or ("执行这项任务" if cjk else "handle this task")
+    lines.append(f"@{spawn_name} — 负责:{own}" if cjk else f"@{spawn_name} — owns: {own}")
+    if second is not None:
+        why = ((getattr(second, "persona_role", None) or "").strip()
+               or (getattr(second, "domain_category", "") or ""))
+        lines.append(f"@{second.name} — 可能接力:{why}" if cjk
+                     else f"@{second.name} — may follow up: {why}")
+    return "\n".join(lines)
+
 _ARSLAN_SYSTEM = (
     "You are Arslan, a warm, sharp, genuinely human-feeling meta-agent who talks WITH the user and "
     "coordinates a team of specialist spawns behind the scenes. "
@@ -769,8 +862,15 @@ async def _dispatch_spawn(  # noqa: ANN001
     user_message: str = "",
     route_ms: int | None = None,
     attached_context: str | None = None,
+    _auto_continues: int = MAX_AUTO_CONTINUES,
 ) -> None:
-    """Run one spawn turn, recording it as a Run for replay + evaluation."""
+    """Run one spawn turn, recording it as a Run for replay + evaluation.
+
+    _auto_continues: remaining automatic re-dispatches for THIS user turn (threaded
+    through the recursion — no shared/module state). When a round ends with a
+    findings digest and budget remains, the same spawn is re-dispatched on the same
+    direction; the digest message is already in its history, so the next round
+    builds on the evidence instead of the user having to type 继续."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
     if spawn_name is None:
         # The spawn no longer exists (deleted mid-conversation, or a stale id from any
@@ -791,7 +891,14 @@ async def _dispatch_spawn(  # noqa: ANN001
     if newly_joined:
         tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
     tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
-    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name})
+    # Routing brief: restate the need + @-mention each involved spawn (grounded in the
+    # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
+    # re-emit the routing frame for the UI pulse but must not repeat the announcement.
+    announcement = None
+    if _auto_continues == MAX_AUTO_CONTINUES:
+        announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
+    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
+         **({"announcement": announcement} if announcement else {})})
     tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
     try:
         out = await dispatcher.dispatch(
@@ -827,6 +934,22 @@ async def _dispatch_spawn(  # noqa: ANN001
         "task_brief": task_brief, "run_id": recorder.run_id,
     })
     tee({"type": "stream_end", "message_id": out["summary_message_id"]})
+
+    # Auto-continue: a round that ended with a findings digest made real progress but ran
+    # out of tool budget — never park it on "回复'继续'" while budget remains. The digest
+    # message was already emitted above (the user sees the progress); re-dispatch the SAME
+    # spawn on the SAME direction so the next round builds on the carried evidence. The
+    # bare no-evidence fallback has no marker and never re-dispatches. After the final
+    # auto-continue, a still-digest-ending message is kept as-is (its 回复'继续' tail is
+    # then honest — the user can continue manually).
+    if _auto_continues > 0 and _has_findings_digest(out.get("full_output") or ""):
+        emit({"type": "auto_continue", "spawn_id": spawn_id, "spawn_name": spawn_name,
+              "remaining": _auto_continues - 1})
+        await _dispatch_spawn(
+            conversation_id, spawn_id, task_brief, emit,
+            mode=mode, user_message=user_message, attached_context=attached_context,
+            _auto_continues=_auto_continues - 1,
+        )
 
 
 _REFUSAL_RE = _re.compile(

@@ -200,7 +200,31 @@ function makeActions(set: SetState, get: GetState) {
             spawnNames: frame.spawn_name
               ? { ...state.spawnNames, [frame.spawn_id]: frame.spawn_name }
               : state.spawnNames,
+            // Routing brief (need restatement + @-mention duty lines): render as its
+            // own thread line. Only the first round of a turn carries an announcement.
+            ...(frame.announcement
+              ? {
+                  items: [
+                    ...state.items,
+                    {
+                      id: nextClientId(),
+                      kind: "system" as const,
+                      role: "arslan" as const,
+                      content: frame.announcement,
+                      isRouteAnnouncement: true,
+                      spawnId: frame.spawn_id,
+                      spawnName: frame.spawn_name,
+                    },
+                  ],
+                }
+              : {}),
           });
+          break;
+        case "auto_continue":
+          // Bridge frame between an exhausted (digest) round and its automatic
+          // follow-up dispatch: keep the thinking indicator alive so the activity
+          // pulse continues seamlessly into the next round's frames.
+          set({ thinking: true, workStartedAt: state.workStartedAt ?? Date.now() });
           break;
         case "stream_start":
           set({

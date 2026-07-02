@@ -26,6 +26,7 @@ import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
+import MentionText from './MentionText';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 
 interface OrchestratorChatProps {
@@ -81,6 +82,13 @@ export default function OrchestratorChat({
   const settings = useSettingsStore((s) => s.settings);
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
+  // Known spawn names (ledger prop + names learned from frames) — grounds the
+  // @-mention chips in routing announcements; unknown @text stays plain.
+  const spawnNameMap = useArslanStore((s) => s.spawnNames);
+  const mentionNames = React.useMemo(
+    () => [...new Set([...spawns.map((s) => s.name), ...Object.values(spawnNameMap)])].filter(Boolean),
+    [spawns, spawnNameMap],
+  );
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
   const liveSteps = useArslanStore((s) => (s as any).activitySteps as import('../api/client.types').ToolStep[]);
   const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
@@ -427,6 +435,21 @@ export default function OrchestratorChat({
                     {msg.rosterAction === 'joined' ? '🔗' : '✕'} {label}
                   </span>
                   <div className="flex-1 h-px bg-border/60" />
+                </div>
+              );
+            }
+
+            // Routing announcement: need restatement + @spawn duty lines, rendered for
+            // all themes as a quiet inline brief with mention chips (not a bubble).
+            if (msg.isRouteAnnouncement) {
+              return (
+                <div key={msg.id} className="flex items-start gap-2.5 py-1 pl-1 select-text">
+                  <CornerDownRight className="w-3.5 h-3.5 text-primary/70 mt-0.5 shrink-0" />
+                  <MentionText
+                    text={msg.text}
+                    knownNames={mentionNames}
+                    className="text-[11.5px] leading-relaxed text-muted-foreground font-sans"
+                  />
                 </div>
               );
             }
