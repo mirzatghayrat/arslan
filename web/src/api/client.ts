@@ -130,9 +130,10 @@ export const api = {
       body: JSON.stringify({ first_message: firstMessage, first_reply: firstReply }),
     }),
   getRun: (id: number) => request<RunDetailDto>(`/runs/${id}`),
-  getRuns: (spawnId?: number, limit = 50) => {
+  getRuns: (spawnId?: number, limit = 50, conversationId?: string) => {
     const qs = new URLSearchParams();
     if (spawnId != null) qs.set("spawn_id", String(spawnId));
+    if (conversationId != null) qs.set("conversation_id", conversationId);
     qs.set("limit", String(limit));
     return request<RunListItem[]>(`/runs?${qs.toString()}`);
   },

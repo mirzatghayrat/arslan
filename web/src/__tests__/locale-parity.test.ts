@@ -32,8 +32,8 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 543 keys (baseline guard)", () => {
-    expect(enKeys).toHaveLength(543);
+  it("en locale has 545 keys (baseline guard)", () => {
+    expect(enKeys).toHaveLength(545);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

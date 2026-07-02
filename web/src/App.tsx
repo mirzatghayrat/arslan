@@ -941,7 +941,9 @@ export default function App() {
             )}
 
             {/* Bottom-anchored evaluation dock (bar → slide-up summary → expand-left detail).
-                On a spawn direct-chat, scope runs to that spawn; on the orchestrator, show all. */}
+                On a spawn direct-chat, scope runs to that spawn; on the orchestrator, default
+                to the ACTIVE conversation (same id the /ws/arslan/{id} WS uses), with an
+                in-summary toggle to all sessions. */}
             <EvalDock
               spawnId={
                 activeSection === 'spawn'
@@ -951,6 +953,7 @@ export default function App() {
                     })()
                   : undefined
               }
+              conversationId={activeSection === 'arslan' ? activeThreadId : undefined}
             />
           </aside>
         )}

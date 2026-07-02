@@ -635,5 +635,9 @@
     "context": "Assembling context & skills…",
     "tools": "Dispatching tools…",
     "compose": "Composing the answer…"
+  },
+  "eval": {
+    "scope_conversation": "This chat",
+    "scope_all": "All sessions"
   }
 }

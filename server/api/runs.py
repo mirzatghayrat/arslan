@@ -30,12 +30,15 @@ PASS_THRESHOLD = 7.0
 @router.get("/runs", response_model=list[RunListItemOut])
 async def list_runs(
     spawn_id: int | None = None,
+    conversation_id: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
     q = select(Run).order_by(Run.id.desc()).limit(limit)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
+    if conversation_id is not None:
+        q = q.where(Run.conversation_id == conversation_id)
     rows = (await db.execute(q)).scalars().all()
     return [
         RunListItemOut(

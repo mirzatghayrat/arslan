@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 import RunReplay from "./RunReplay";
@@ -7,6 +8,12 @@ import EvalCharts from "./EvalCharts";
 interface Props {
   onClose: () => void;
   spawnId?: number;
+  /**
+   * When set, the view defaults to THIS conversation's runs only, with a
+   * 本会话/全部会话 toggle to widen to everything. Omitted → global list,
+   * exactly the pre-existing behaviour (no toggle shown).
+   */
+  conversationId?: string;
   /**
    * When `inline` is set, EvalSummary renders bare (no internal full-screen
    * RunReplay swap, no close button) so it can be embedded in the EvalDock
@@ -19,18 +26,23 @@ interface Props {
   onSelectRun?: (runId: number) => void;
 }
 
-export default function EvalSummary({ onClose, spawnId, inline = false, onSelectRun }: Props) {
+export default function EvalSummary({ onClose, spawnId, conversationId, inline = false, onSelectRun }: Props) {
+  const { t } = useTranslation();
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [viewRunId, setViewRunId] = useState<number | null>(null);
+  // Scope toggle only exists when a conversationId is provided; defaults to
+  // the current conversation (the reason the user opened the view from a chat).
+  const [scope, setScope] = useState<"conversation" | "all">("conversation");
+  const conversationScoped = conversationId != null && scope === "conversation";
 
   useEffect(() => {
     let cancelled = false;
-    api.getRuns(spawnId)
+    api.getRuns(spawnId, 50, conversationScoped ? conversationId : undefined)
       .then((r) => { if (!cancelled) setRuns(r); })
       .catch((e) => { if (!cancelled) setError(String(e)); });
     return () => { cancelled = true; };
-  }, [spawnId]);
+  }, [spawnId, conversationId, conversationScoped]);
 
   const handleRowClick = (runId: number) => {
     if (inline) onSelectRun?.(runId);
@@ -60,15 +72,42 @@ export default function EvalSummary({ onClose, spawnId, inline = false, onSelect
 
       {error && <div className="eval-summary__error" role="alert">{error}</div>}
 
+      {/* Scope toggle — only when opened from a conversation. Renders in both
+          overlay and inline (EvalDock) modes, so it lives above the KPIs
+          rather than inside the overlay-only header. */}
+      {conversationId != null && (
+        <div className="eval-summary__scope" role="tablist" aria-label="scope">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === "conversation"}
+            className={`eval-summary__scope-btn${scope === "conversation" ? " eval-summary__scope-btn--active" : ""}`}
+            onClick={() => setScope("conversation")}
+          >
+            {t("eval.scope_conversation")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === "all"}
+            className={`eval-summary__scope-btn${scope === "all" ? " eval-summary__scope-btn--active" : ""}`}
+            onClick={() => setScope("all")}
+          >
+            {t("eval.scope_all")}
+          </button>
+        </div>
+      )}
+
       <div className="eval-summary__kpis">
         <div className="kpi"><div className="kpi__label">已评分</div><div className="kpi__value">{scored.length}</div></div>
         <div className="kpi"><div className="kpi__label">平均分</div><div className="kpi__value">{avg ?? "暂无评分"}</div></div>
         <div className="kpi"><div className="kpi__label">达标率</div><div className="kpi__value">{passRate != null ? `${passRate}%` : "—"}</div></div>
       </div>
 
-      {/* Fleet-wide charts only in the global view — under a per-spawn filter
-          the global aggregates would mislead. Self-hides when <2 scored. */}
-      {spawnId == null && <EvalCharts />}
+      {/* Fleet-wide charts only in the global view — under a per-spawn OR
+          per-conversation filter the global aggregates would mislead.
+          Self-hides when <2 scored. */}
+      {spawnId == null && !conversationScoped && <EvalCharts />}
 
       {runs.length === 0 ? (
         <p className="eval-summary__empty">还没有运行记录</p>

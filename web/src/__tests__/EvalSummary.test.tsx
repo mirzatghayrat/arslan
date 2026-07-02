@@ -7,6 +7,10 @@ vi.mock("../api/client", () => ({ api: { getRuns: vi.fn(), getRun: vi.fn(), getR
 vi.mock("../components/EChart", () => ({
   default: () => <div data-testid="echart-stub" />,
 }));
+// t() returns the key — scope-toggle assertions match on i18n keys.
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
 import { api } from "../api/client";
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
@@ -83,5 +87,37 @@ describe("EvalSummary", () => {
     render(<EvalSummary onClose={() => {}} />);
     await screen.findByText("小美");
     expect(screen.queryByTestId("eval-charts")).toBeNull();
+  });
+
+  it("shows no scope toggle without a conversationId (unchanged global view)", async () => {
+    render(<EvalSummary onClose={() => {}} />);
+    await screen.findByText("小美");
+    expect(screen.queryByText("eval.scope_conversation")).toBeNull();
+    expect(m.getRuns).toHaveBeenCalledWith(undefined, 50, undefined);
+  });
+
+  it("with conversationId defaults to a conversation-filtered fetch and hides charts", async () => {
+    render(<EvalSummary onClose={() => {}} conversationId="conv-1" />);
+    await screen.findByText("小美");
+    expect(m.getRuns).toHaveBeenCalledWith(undefined, 50, "conv-1");
+    expect(screen.queryByTestId("eval-charts")).toBeNull();
+    // Toggle visible, defaulting to the conversation scope.
+    const convTab = screen.getByText("eval.scope_conversation");
+    expect(convTab.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("toggling to 全部会话 refetches unfiltered and shows the charts", async () => {
+    render(<EvalSummary onClose={() => {}} conversationId="conv-1" />);
+    await screen.findByText("小美");
+    fireEvent.click(screen.getByText("eval.scope_all"));
+    await screen.findByTestId("eval-charts");
+    expect(m.getRuns).toHaveBeenLastCalledWith(undefined, 50, undefined);
+    expect(screen.getByText("eval.scope_all").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("conversation scope + spawnId combine on the fetch", async () => {
+    render(<EvalSummary onClose={() => {}} conversationId="conv-1" spawnId={3} />);
+    await screen.findByText("小美");
+    expect(m.getRuns).toHaveBeenCalledWith(3, 50, "conv-1");
   });
 });

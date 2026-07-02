@@ -58,6 +58,40 @@ async def test_list_runs_returns_recent_desc_and_filters(client):
     assert len(r3.json()) == 1
 
 
+async def test_list_runs_filters_by_conversation_id(client):
+    async with client.db_maker() as db:
+        for conv, msg in [("c1", "a"), ("c1", "b"), ("c2", "c")]:
+            db.add(Run(conversation_id=conv, spawn_id=1, spawn_name="S1",
+                       user_message=msg, status="scored", task_tokens=0,
+                       total_ms=100, overall_score=8.0, overall_badge="good"))
+        await db.commit()
+
+    r = await client.get("/api/v1/runs", params={"conversation_id": "c1"})
+    assert r.status_code == 200
+    assert sorted(item["user_message"] for item in r.json()) == ["a", "b"]
+
+    # Unknown conversation → empty list, not an error.
+    r2 = await client.get("/api/v1/runs", params={"conversation_id": "nope"})
+    assert r2.json() == []
+
+    # No filter → everything still comes back.
+    assert len((await client.get("/api/v1/runs")).json()) == 3
+
+
+async def test_list_runs_combines_spawn_and_conversation_filters(client):
+    async with client.db_maker() as db:
+        rows = [("c1", 1, "match"), ("c1", 2, "wrong-spawn"), ("c2", 1, "wrong-conv")]
+        for conv, sid, msg in rows:
+            db.add(Run(conversation_id=conv, spawn_id=sid, spawn_name=f"S{sid}",
+                       user_message=msg, status="scored", task_tokens=0,
+                       total_ms=100, overall_score=8.0, overall_badge="good"))
+        await db.commit()
+
+    r = await client.get("/api/v1/runs",
+                         params={"conversation_id": "c1", "spawn_id": 1})
+    assert [item["user_message"] for item in r.json()] == ["match"]
+
+
 async def test_runs_summary_route_order(client):
     """GET /runs/summary must hit the summary route, not /runs/{run_id} (422)."""
     resp = await client.get("/api/v1/runs/summary")

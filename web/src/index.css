@@ -1598,6 +1598,31 @@ button:disabled {
   font-size: 0.6875rem;
 }
 
+/* Scope toggle — segmented 2-state (this chat / all sessions) */
+.eval-summary__scope {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.eval-summary__scope-btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.6875rem;
+  font-family: monospace;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground, var(--foreground));
+  cursor: pointer;
+}
+
+.eval-summary__scope-btn--active {
+  background: var(--primary);
+  color: var(--primary-foreground, #fff);
+}
+
 /* KPI row — 3-col grid mirroring run-replay__kpis */
 .eval-summary__kpis {
   display: grid;

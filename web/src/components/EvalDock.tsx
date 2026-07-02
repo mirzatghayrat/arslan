@@ -9,6 +9,12 @@ import RunReplay from "./RunReplay";
 interface Props {
   /** Backend numeric spawn id to scope runs to. Omit for all runs (orchestrator). */
   spawnId?: number;
+  /**
+   * Active conversation id. When set, the slide-up summary defaults to this
+   * conversation's runs (with an in-summary toggle to all sessions) and the
+   * collapsed-bar mini stat is scoped the same way, so bar and default view agree.
+   */
+  conversationId?: string;
 }
 
 /**
@@ -21,7 +27,7 @@ interface Props {
  *   3. DETAIL (expands left) — clicking a run opens RunReplay as a panel anchored to
  *      the rail's left edge, growing leftward toward the chat. Back/close → L2.
  */
-export default function EvalDock({ spawnId }: Props) {
+export default function EvalDock({ spawnId, conversationId }: Props) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);            // L2 summary slide-up
   const [detailRunId, setDetailRunId] = useState<number | null>(null); // L3 expand-left
@@ -35,11 +41,11 @@ export default function EvalDock({ spawnId }: Props) {
   // [spawnId] dependency + the `cancelled` flag are the correct refetch control.
   useEffect(() => {
     let cancelled = false;
-    api.getRuns(spawnId)
+    api.getRuns(spawnId, 50, conversationId)
       .then((r) => { if (!cancelled) setRuns(r); })
       .catch(() => { /* bar stat is best-effort */ });
     return () => { cancelled = true; };
-  }, [spawnId]);
+  }, [spawnId, conversationId]);
 
   // Esc closes the open disclosure level (detail first, then summary).
   useEffect(() => {
@@ -70,6 +76,7 @@ export default function EvalDock({ spawnId }: Props) {
             inline
             onClose={() => setOpen(false)}
             spawnId={spawnId}
+            conversationId={conversationId}
             onSelectRun={(id) => setDetailRunId(id)}
           />
         </div>

@@ -635,5 +635,9 @@
     "context": "组装上下文与技能…",
     "tools": "调度工具中…",
     "compose": "整理结论中…"
+  },
+  "eval": {
+    "scope_conversation": "本会话",
+    "scope_all": "全部会话"
   }
 }
