@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { toUiRun } from "../api/adapters";
 import type { UiRun } from "../types";
-import EvalCharts from "./EvalCharts";
+import RunCompareChart from "./RunCompareChart";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
 const BADGE_LABEL: Record<string, string> = { good: "好", ok: "一般", bad: "差" };
@@ -112,9 +112,11 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
         )}
       </section>
 
-      {/* Fleet-wide context under the single-run verdict (fills the dead space
-          below the dims; self-hides when <2 scored runs or fetch fails). */}
-      <EvalCharts />
+      {/* This run against the fleet averages (self-hides when <2 scored runs
+          or the summary fetch fails). Only meaningful once the run is scored. */}
+      {run.scored && (
+        <RunCompareChart dimensions={run.dimensions} overallScore={run.overallScore} />
+      )}
     </div>
   );
 }

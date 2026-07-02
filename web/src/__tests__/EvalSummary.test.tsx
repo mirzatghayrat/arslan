@@ -61,9 +61,25 @@ describe("EvalSummary", () => {
     await screen.findByText(/还没有运行记录/);
   });
 
-  // Aggregate charts moved to the bottom of RunReplay (see RunReplay.test.tsx);
-  // the summary list itself stays chart-free.
-  it("renders no charts in the list view", async () => {
+  // Aggregate charts live between the KPI row and the run list, but only in
+  // the unfiltered global view (per-run comparison lives in RunReplay).
+  it("renders the 3 fleet-wide charts in the global list view", async () => {
+    render(<EvalSummary onClose={() => {}} />);
+    await screen.findByTestId("eval-charts");
+    expect(screen.getAllByTestId("echart-stub")).toHaveLength(3);
+    expect(screen.getByText("评分趋势")).toBeTruthy();
+    expect(screen.getByText("四维平均")).toBeTruthy();
+    expect(screen.getByText("分身达标率")).toBeTruthy();
+  });
+
+  it("renders no charts when filtered to a spawn", async () => {
+    render(<EvalSummary onClose={() => {}} spawnId={1} />);
+    await screen.findByText("小美");
+    expect(screen.queryByTestId("eval-charts")).toBeNull();
+  });
+
+  it("renders no charts when scored_count < 2", async () => {
+    m.getRunsSummary.mockResolvedValue({ ...SUMMARY, scored_count: 1 });
     render(<EvalSummary onClose={() => {}} />);
     await screen.findByText("小美");
     expect(screen.queryByTestId("eval-charts")).toBeNull();

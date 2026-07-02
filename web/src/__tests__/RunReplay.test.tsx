@@ -71,29 +71,36 @@ describe("RunReplay", () => {
     await waitFor(() => expect(screen.getByText(/路由匹配/)).toBeTruthy());
   });
 
-  it("renders the 3 fleet-wide charts at the bottom when scored_count >= 2", async () => {
+  it("renders the 本次 vs 整体 compare chart when scored and scored_count >= 2", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByTestId("eval-charts");
-    expect(screen.getAllByTestId("echart-stub")).toHaveLength(3);
-    expect(screen.getByText("评分趋势")).toBeTruthy();
-    expect(screen.getByText("四维平均")).toBeTruthy();
-    expect(screen.getByText("分身达标率")).toBeTruthy();
+    await screen.findByTestId("run-compare");
+    expect(screen.getByText("本次 vs 整体")).toBeTruthy();
+    expect(screen.getAllByTestId("echart-stub")).toHaveLength(1);
+    // overall 8 vs fleet avg 7.67 → subtle delta line
+    expect(screen.getByText(/平均 7\.7 · 本次 \+0\.3/)).toBeTruthy();
   });
 
-  it("hides the charts when scored_count < 2", async () => {
+  it("hides the compare chart when scored_count < 2", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     (api.getRunsSummary as ReturnType<typeof vi.fn>).mockResolvedValue({ ...SUMMARY, scored_count: 1 });
     render(<RunReplay runId={7} onClose={() => {}} />);
     await screen.findByText("编排回放");
-    expect(screen.queryByTestId("eval-charts")).toBeNull();
+    expect(screen.queryByTestId("run-compare")).toBeNull();
   });
 
-  it("hides the charts when the summary fetch fails (best-effort)", async () => {
+  it("hides the compare chart when the summary fetch fails (best-effort)", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     (api.getRunsSummary as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
     render(<RunReplay runId={7} onClose={() => {}} />);
     await screen.findByText("编排回放");
-    expect(screen.queryByTestId("eval-charts")).toBeNull();
+    expect(screen.queryByTestId("run-compare")).toBeNull();
+  });
+
+  it("hides the compare chart while the run is unscored", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(recording);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByText(/评分中/);
+    expect(screen.queryByTestId("run-compare")).toBeNull();
   });
 });

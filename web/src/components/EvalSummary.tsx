@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 import RunReplay from "./RunReplay";
+import EvalCharts from "./EvalCharts";
 
 interface Props {
   onClose: () => void;
@@ -64,6 +65,10 @@ export default function EvalSummary({ onClose, spawnId, inline = false, onSelect
         <div className="kpi"><div className="kpi__label">平均分</div><div className="kpi__value">{avg ?? "暂无评分"}</div></div>
         <div className="kpi"><div className="kpi__label">达标率</div><div className="kpi__value">{passRate != null ? `${passRate}%` : "—"}</div></div>
       </div>
+
+      {/* Fleet-wide charts only in the global view — under a per-spawn filter
+          the global aggregates would mislead. Self-hides when <2 scored. */}
+      {spawnId == null && <EvalCharts />}
 
       {runs.length === 0 ? (
         <p className="eval-summary__empty">还没有运行记录</p>

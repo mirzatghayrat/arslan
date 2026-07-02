@@ -10,8 +10,8 @@ const DIMENSIONS = ["routing", "fabrication", "identity", "completion"] as const
 /**
  * Global evaluation charts (score trend / dimension averages / per-spawn pass
  * rate) fed by GET /runs/summary. Self-contained and best-effort: fetch failure
- * or fewer than 2 scored runs renders nothing. Lives at the bottom of RunReplay
- * so a single run's verdict is always seen against the fleet-wide picture.
+ * or fewer than 2 scored runs renders nothing. Lives in EvalSummary between
+ * the KPI row and the run list (global view only — never under a spawn filter).
  */
 export default function EvalCharts() {
   const [summary, setSummary] = useState<RunSummary | null>(null);
