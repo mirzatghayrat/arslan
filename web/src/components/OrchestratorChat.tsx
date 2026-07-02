@@ -16,6 +16,7 @@ import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody from './MessageBody';
 import CopyButton from './CopyButton';
 import WorkingPulse from './WorkingPulse';
+import LiveActivity from './LiveActivity';
 import EChart from './EChart';
 import DeckDownloadCard from './DeckDownloadCard';
 import { useArslanStore } from '../stores/arslanStore';
@@ -79,6 +80,9 @@ export default function OrchestratorChat({
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
+  const liveSteps = useArslanStore((s) => (s as any).activitySteps as import('../api/client.types').ToolStep[]);
+  const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
+  const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
   const streaming = useArslanStore((s) => s.streaming);
   const llmError = useArslanStore((s) => s.error);
   const clearLlmError = useArslanStore((s) => s.clearError);
@@ -1136,11 +1140,11 @@ export default function OrchestratorChat({
             with empty text (slow models like Gemini 2.5 Pro have a long delay
             before the first token). thinking stays true until stream_chunk clears
             it, so the dots show through the blank gap. */}
-        {thinking && (
+        {(thinking || liveStreaming) && (
           <div className="flex gap-3 items-center py-2 select-none">
             <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark" draggable={false} />
             <div className="flex items-center gap-1.5 px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
-              <WorkingPulse className="text-[11px] text-muted-foreground" phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
+              <LiveActivity steps={liveSteps} startedAt={workStartedAt} phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
               <span className="flex gap-0.5 ml-1">
                 {[0, 1, 2].map((i) => (
                   <span

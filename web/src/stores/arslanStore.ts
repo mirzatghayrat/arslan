@@ -39,6 +39,8 @@ interface ArslanState {
   pendingUpdate: { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
+  // Timestamp of the current turn's start (send/confirm) — drives the LiveActivity timer.
+  workStartedAt: number | null;
 
   setSpawnNames: (map: Record<number, string>) => void;
   setThinking: (v: boolean) => void;
@@ -85,6 +87,7 @@ function initialData() {
     pendingStaffing: null as { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null,
     pendingUpdate: null as { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null,
     thinking: false,
+    workStartedAt: null as number | null,
   };
 }
 
@@ -93,7 +96,7 @@ type GetState = () => ArslanState;
 
 function makeActions(set: SetState, get: GetState) {
   return {
-    setThinking: (v: boolean) => set({ thinking: v }),
+    setThinking: (v: boolean) => set(v ? { thinking: true, workStartedAt: Date.now() } : { thinking: false }),
 
     setSpawnNames: (map: Record<number, string>) =>
       set({ spawnNames: { ...get().spawnNames, ...map } }),
@@ -102,6 +105,7 @@ function makeActions(set: SetState, get: GetState) {
       set({
         items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content }],
         pending: true,
+        workStartedAt: Date.now(),
       }),
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
@@ -134,7 +138,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "proposal", "propose_invite", "propose_staffing", "suggest_update", "spawn_updated"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_staffing", "suggest_update", "spawn_updated"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
