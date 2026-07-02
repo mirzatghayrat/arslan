@@ -216,6 +216,24 @@ describe("toUiMessages", () => {
     expect(msg.toolActivity?.artifactSvg).toBe("<svg>CHART</svg>");
   });
 
+  it("surfaces a pptx artifact from a later tool step (live incident: deck generated but no download card)", () => {
+    const item: ArslanThreadItem = {
+      id: 10,
+      kind: "message",
+      role: "spawn",
+      content: "PPT 已生成并交付",
+      spawnName: "Deck Master",
+      toolSteps: [
+        { tool: "web_search", argsSummary: "query: okx", status: "ok", resultSummary: "5 results" },
+        { tool: "render_deck", argsSummary: "13 slides", status: "ok", resultSummary: "已生成 PPTX",
+          artifactPptx: { filename: "okx.pptx", bytesB64: "UEsDBA==", slides: 13 } },
+      ],
+    } as ArslanThreadItem;
+    const [msg] = toUiMessages([item]);
+    expect(msg.toolActivity?.artifactPptx?.filename).toBe("okx.pptx");
+    expect(msg.toolActivity?.artifactPptx?.slides).toBe(13);
+  });
+
   it("maps escalation item to spawn message with escalation card", () => {
     const [msg] = toUiMessages([escalationItem]);
     expect(msg.sender).toBe("spawn");

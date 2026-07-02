@@ -264,6 +264,10 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             // not the first tool, e.g. search-then-chart), not just toolSteps[0].
             artifactSvg: item.toolSteps?.find((s) => s.artifactSvg)?.artifactSvg,
             artifactChart: item.toolSteps?.find((s) => s.artifactChart)?.artifactChart,
+            // pptx was missed here when charts were wired — without it the deck's
+            // download card never rendered on the orchestrator thread even though
+            // the file was generated and sitting in the store (live incident).
+            artifactPptx: item.toolSteps?.find((s) => s.artifactPptx)?.artifactPptx,
           }
         : undefined;
       return {
