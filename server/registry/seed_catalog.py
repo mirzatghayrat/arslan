@@ -294,9 +294,11 @@ TOOLSETS: list[dict] = [
         "status": "wired",
         "tools": [
             ("render_deck", "Generate a native, editable PowerPoint (.pptx) from a deck spec. "
-             "slides=[{layout, ...}] where layout=one of title|section|bullets|two-column|quote|big-number "
-             "(title/subtitle, bullets, left/right, text/attribution, value/label per layout); each slide "
-             "may carry notes (speaker notes). Optional theme={accent:'#hex'}. The user gets a downloadable "
+             "slides=[{layout, ...}]. Per-layout fields (use ONLY these): "
+             "title→{title,subtitle} · section→{title} · bullets→{title,bullets:[str]} · "
+             "two-column→{title,left:[str],right:[str]} (left/right ONLY here, never on bullets) · "
+             "quote→{text,attribution} · big-number→{value,label}. Each slide may carry notes "
+             "(speaker notes). Optional theme={accent:'#hex'}. The user gets a downloadable "
              ".pptx — real shapes/text, not images.", "safe", "wired"),
         ],
     },

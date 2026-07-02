@@ -17,7 +17,10 @@ from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
 
-MAX_TOOL_CALLS = 5
+# P4 tuning: 5 was too tight for real research turns (the finance-primer live run burned
+# 4 searches + 1 extract + 1 chart and hit the forced step). 8 gives long tasks headroom
+# while a runaway loop stays bounded; the budget-exhausted salvage guard still backstops.
+MAX_TOOL_CALLS = 8
 TOOL_TIMEOUT_S = 20.0
 
 _PROTOCOL = (
