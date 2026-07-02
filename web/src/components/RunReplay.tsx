@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { toUiRun } from "../api/adapters";
 import type { UiRun } from "../types";
+import EvalCharts from "./EvalCharts";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
 const BADGE_LABEL: Record<string, string> = { good: "好", ok: "一般", bad: "差" };
@@ -110,6 +111,10 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           <p className="run-replay__pending">评分中…</p>
         )}
       </section>
+
+      {/* Fleet-wide context under the single-run verdict (fills the dead space
+          below the dims; self-hides when <2 scored runs or fetch fails). */}
+      <EvalCharts />
     </div>
   );
 }

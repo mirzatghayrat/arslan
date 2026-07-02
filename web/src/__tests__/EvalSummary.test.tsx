@@ -61,26 +61,11 @@ describe("EvalSummary", () => {
     await screen.findByText(/还没有运行记录/);
   });
 
-  it("renders the 3 aggregate charts when scored_count >= 2", async () => {
+  // Aggregate charts moved to the bottom of RunReplay (see RunReplay.test.tsx);
+  // the summary list itself stays chart-free.
+  it("renders no charts in the list view", async () => {
     render(<EvalSummary onClose={() => {}} />);
-    await screen.findByTestId("eval-charts");
-    expect(screen.getAllByTestId("echart-stub")).toHaveLength(3);
-    expect(screen.getByText("评分趋势")).toBeTruthy();
-    expect(screen.getByText("四维平均")).toBeTruthy();
-    expect(screen.getByText("分身达标率")).toBeTruthy();
-  });
-
-  it("hides charts when scored_count < 2", async () => {
-    m.getRunsSummary.mockResolvedValue({ ...SUMMARY, scored_count: 1 });
-    render(<EvalSummary onClose={() => {}} />);
-    await screen.findByText("小美"); // wait for load
-    expect(screen.queryByTestId("eval-charts")).toBeNull();
-  });
-
-  it("skips the global summary fetch when filtered to a spawn", async () => {
-    render(<EvalSummary onClose={() => {}} spawnId={7} />);
     await screen.findByText("小美");
-    expect(m.getRunsSummary).not.toHaveBeenCalled();
     expect(screen.queryByTestId("eval-charts")).toBeNull();
   });
 });

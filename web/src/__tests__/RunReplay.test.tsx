@@ -24,12 +24,32 @@ const recording: RunDetailDto = {
 };
 
 vi.mock("../api/client", () => ({
-  api: { getRun: vi.fn() },
+  api: { getRun: vi.fn(), getRunsSummary: vi.fn() },
+}));
+// Real echarts needs a canvas/layout engine jsdom lacks — assert via a stub.
+vi.mock("../components/EChart", () => ({
+  default: () => <div data-testid="echart-stub" />,
 }));
 import { api } from "../api/client";
 
+const SUMMARY = {
+  scored_count: 3,
+  avg_score: 7.67,
+  pass_rate: 67,
+  dimension_averages: { routing: 7.0, fabrication: null, identity: null, completion: 8.0 },
+  per_spawn: [{ spawn_name: "Mermer", scored_count: 2, avg_score: 7.0, pass_rate: 50 }],
+  recent: [
+    { id: 1, overall_score: 8, created_at: null },
+    { id: 2, overall_score: null, created_at: null },
+    { id: 3, overall_score: 9, created_at: null },
+  ],
+};
+
 describe("RunReplay", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (api.getRunsSummary as ReturnType<typeof vi.fn>).mockResolvedValue(SUMMARY);
+  });
 
   it("renders KPI cards, steps, and dimensions when scored", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
@@ -49,5 +69,31 @@ describe("RunReplay", () => {
 
     await screen.findByText(/评分中/);
     await waitFor(() => expect(screen.getByText(/路由匹配/)).toBeTruthy());
+  });
+
+  it("renders the 3 fleet-wide charts at the bottom when scored_count >= 2", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByTestId("eval-charts");
+    expect(screen.getAllByTestId("echart-stub")).toHaveLength(3);
+    expect(screen.getByText("评分趋势")).toBeTruthy();
+    expect(screen.getByText("四维平均")).toBeTruthy();
+    expect(screen.getByText("分身达标率")).toBeTruthy();
+  });
+
+  it("hides the charts when scored_count < 2", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
+    (api.getRunsSummary as ReturnType<typeof vi.fn>).mockResolvedValue({ ...SUMMARY, scored_count: 1 });
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByText("编排回放");
+    expect(screen.queryByTestId("eval-charts")).toBeNull();
+  });
+
+  it("hides the charts when the summary fetch fails (best-effort)", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
+    (api.getRunsSummary as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByText("编排回放");
+    expect(screen.queryByTestId("eval-charts")).toBeNull();
   });
 });

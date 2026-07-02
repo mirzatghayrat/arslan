@@ -296,6 +296,22 @@ button:disabled {
   margin: 0;
 }
 
+/* Fleet-wide charts section at the bottom of the replay panel */
+.run-replay__charts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-replay__charts h4 {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
 .run-replay__pending {
   font-size: 0.6875rem;
   font-family: monospace;
