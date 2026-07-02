@@ -302,9 +302,31 @@ class DeckExecutor:
         }
 
 
+class RunPythonExecutor:
+    """Sandboxed Python execution (safe-tier). The model supplies code TEXT; the sandbox
+    service is the only execution path and applies every guard unconditionally: ephemeral
+    tmpdir, fully scrubbed env (no keys/DB), rlimits + timeout, network denied via macOS
+    seatbelt (isolation state reported honestly in the result). See services/code_sandbox."""
+
+    key = "run_python"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import code_sandbox  # lazy import keeps boot path light
+        result = await code_sandbox.run_python(args.get("code") or "")
+        if not result.get("ok"):
+            return {"ok": False, "external": False,
+                    "error": result.get("error") or "execution failed",
+                    **{k: result[k] for k in ("stdout", "stderr", "exit_code") if k in result}}
+        n_files = len(result.get("files") or [])
+        summary = (f"已执行 Python:exit 0,stdout {len(result.get('stdout') or '')} 字"
+                   + (f",生成 {n_files} 个文件" if n_files else "")
+                   + ("" if result.get("network_isolated") else "(本次未网络隔离)"))
+        return {"ok": True, "external": False, "summary": summary, **result}
+
+
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
-    DeckExecutor(),
+    DeckExecutor(), RunPythonExecutor(),
 )}
 
 

@@ -51,7 +51,7 @@ DEFAULT_SPAWNS: list[dict] = [
         "persona_tone": "precise, quantitative, visual",
         "capabilities": ["data analysis", "market & metric research", "data visualization"],
         "seed_refs": ["data-consolidation-agent", "sales-pipeline-analyst", "product-trend-researcher"],
-        "equipment": {"toolsets": ["web_search_scraping", "charting"], "skills": ["plan"]},
+        "equipment": {"toolsets": ["web_search_scraping", "charting", "code_sandbox"], "skills": ["plan"]},
     },
     {
         # Migrated from anthropics/financial-services · market-researcher (Apache-2.0). A proper
@@ -70,7 +70,8 @@ DEFAULT_SPAWNS: list[dict] = [
         "capabilities": ["sector & thematic research", "competitive landscape", "trading comps", "idea generation"],
         "seed_refs": ["finance-investment-researcher", "finance-financial-analyst", "finance-fpa-analyst"],
         "equipment": {
-            "toolsets": ["web_search_scraping", "charting"],
+            # code_sandbox: comps spreads / CAGR math are core to this agent — real pandas need.
+            "toolsets": ["web_search_scraping", "charting", "code_sandbox"],
             "skills": ["sector-overview", "competitive-analysis", "comps-analysis", "idea-generation"],
         },
     },
@@ -96,9 +97,10 @@ DEFAULT_SPAWNS: list[dict] = [
         "persona_tone": "rigorous, pragmatic, test-first",
         "capabilities": ["coding", "debugging", "code review", "architecture"],
         "seed_refs": ["engineering-senior-developer", "engineering-backend-architect", "engineering-code-reviewer"],
-        # code_execution is orchestrator-tier (gated) — NOT default equipment; the spawn can
-        # escalate for it. Ships with web lookup (docs/errors) + the safe code-reasoning skills.
-        "equipment": {"toolsets": ["web_search_scraping"], "skills": ["systematic-debugging", "codebase-audit", "plan"]},
+        # code_sandbox (safe, isolated) lets it actually RUN code; code_execution (orchestrator,
+        # full access) stays gated — the spawn can escalate for it.
+        "equipment": {"toolsets": ["web_search_scraping", "code_sandbox"],
+                      "skills": ["systematic-debugging", "codebase-audit", "plan"]},
     },
     {
         # Built on the native PPTX export capability (render_deck): produces a real, editable .pptx,

@@ -34,7 +34,7 @@ async def test_seed_counts_and_exclusions(maker):
         skills = (await s.execute(select(SkillPack))).scalars().all()
         tools = (await s.execute(select(Tool))).scalars().all()
 
-    assert len(toolsets) == 30
+    assert len(toolsets) == 31
     assert len(skills) >= 70
     assert EXCLUDED.isdisjoint({t.key for t in toolsets})
     assert EXCLUDED.isdisjoint({sk.key for sk in skills})
@@ -83,4 +83,4 @@ async def test_seed_idempotent_and_updates(maker):
         assert (await s.get(Toolset, "web_search_scraping")).tier == "safe"
         from sqlalchemy import func
         n = (await s.execute(select(func.count()).select_from(Toolset))).scalar_one()
-    assert n == 30
+    assert n == 31

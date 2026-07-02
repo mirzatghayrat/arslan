@@ -271,6 +271,21 @@ TOOLSETS: list[dict] = [
         ],
     },
     {
+        "key": "code_sandbox",
+        "name": "Code Sandbox",
+        "description": "run_python — execute Python in a local sandbox (no network, scrubbed env, "
+                       "numpy/pandas/matplotlib preinstalled). Lets spawns compute, not just talk.",
+        "tier": "safe",
+        "status": "wired",
+        "tools": [
+            ("run_python", "Run Python code in a local sandbox and get stdout/stderr back. "
+             "Pass {code}. print() your results — stdout is the return channel. No network "
+             "(fetch data via web_search/web_extract first, embed it in the code); "
+             "numpy/pandas/matplotlib preinstalled; ~15s limit; files written land in a "
+             "throwaway dir (names reported).", "safe", "wired"),
+        ],
+    },
+    {
         "key": "deck",
         "name": "Deck / PPTX",
         "description": "render_deck — turn a structured deck spec into a native, editable PowerPoint (.pptx).",
