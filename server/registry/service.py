@@ -6,7 +6,7 @@ Layer 3: wired_tools_for_spawn() — the only tool resolution the loop may call.
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db import session as db_session
@@ -20,8 +20,34 @@ _UNIVERSAL_SAFE_TOOLS = ["web_search", "web_extract", "render_chart"]  # safe "w
 
 
 def is_assignable(tier: str, status: str) -> bool:
-    """The one assignability predicate: safe tier + wired/registered status."""
+    """Base assignability predicate: safe tier + wired/registered status."""
     return tier == "safe" and status in ASSIGNABLE_STATUSES
+
+
+# ── Honesty layer (P0): equippable must mean FUNCTIONAL, not just catalogued ──────────
+# A skill with no body injects nothing at dispatch; a toolset with no wired tool resolves
+# to nothing at Layer 3. Both used to be equippable decoration. Now: catalog-only items
+# stay VISIBLE in the library (assignable: false, shown as "catalog") but cannot be
+# equipped until they gain a real body / a wired tool.
+
+def skill_is_assignable(tier: str, status: str, body: str | None) -> bool:
+    """A skill is equippable only if it actually does something: safe + registered/wired
+    + a non-empty method body (otherwise dispatch injects nothing — pure decoration)."""
+    return is_assignable(tier, status) and bool((body or "").strip())
+
+
+def toolset_is_assignable(tier: str, status: str, *, has_wired_tool: bool) -> bool:
+    """A toolset is equippable only if at least one of its tools is safe+wired (Layer 3
+    resolves nothing otherwise). MCP toolsets qualify naturally once their tools are wired."""
+    return is_assignable(tier, status) and has_wired_tool
+
+
+# Subquery: keys of toolsets that have >=1 safe wired tool.
+_WIRED_TOOLSET_KEYS = select(Tool.toolset_key).where(
+    Tool.tier == "safe", Tool.status == "wired")
+
+# Skills with a real body (non-null, non-empty after trim).
+_SKILL_HAS_BODY = func.length(func.trim(func.coalesce(SkillPack.body, ""))) > 0
 
 
 class NotAssignableError(Exception):
@@ -39,16 +65,19 @@ def _skill_dict(s: SkillPack) -> dict:
 
 
 async def safe_menu() -> dict:
-    """Everything a spawn may be equipped with: tier=safe, wired or registered."""
+    """Everything a spawn may be equipped with: tier=safe, wired or registered, AND
+    functional — toolsets need >=1 safe wired tool, skills need a real body."""
     async with db_session.AsyncSessionLocal() as db:
         ts = (await db.execute(
             select(Toolset).where(Toolset.tier == "safe",
-                                  Toolset.status.in_(ASSIGNABLE_STATUSES))
+                                  Toolset.status.in_(ASSIGNABLE_STATUSES),
+                                  Toolset.key.in_(_WIRED_TOOLSET_KEYS))
             .order_by(Toolset.key)
         )).scalars().all()
         sk = (await db.execute(
             select(SkillPack).where(SkillPack.tier == "safe",
-                                    SkillPack.status.in_(ASSIGNABLE_STATUSES))
+                                    SkillPack.status.in_(ASSIGNABLE_STATUSES),
+                                    _SKILL_HAS_BODY)
             .order_by(SkillPack.key)
         )).scalars().all()
     return {"toolsets": [_toolset_dict(t) for t in ts],
@@ -71,17 +100,33 @@ async def assert_assignable(kind: str, ref_key: str, *, session=None) -> None:
         return (await db.get(Toolset, ref_key) if kind == "toolset"
                 else await db.get(SkillPack, ref_key))
 
+    async def _check(db) -> None:
+        row = await _lookup(db)
+        if row is None:
+            raise NotAssignableError(f"unknown {kind}: {ref_key}")
+        if not is_assignable(row.tier, row.status):
+            raise NotAssignableError(
+                f"{kind} {ref_key} is not spawn-assignable (tier={row.tier}, status={row.status})"
+            )
+        # Honesty layer: catalogued-but-non-functional items are not equippable.
+        if kind == "skill" and not (row.body or "").strip():
+            raise NotAssignableError(
+                f"skill {ref_key} is catalog-only (no method body yet) — not equippable")
+        if kind == "toolset":
+            has_wired = (await db.execute(
+                select(Tool.key).where(Tool.toolset_key == ref_key,
+                                       Tool.tier == "safe", Tool.status == "wired")
+                .limit(1)
+            )).first() is not None
+            if not has_wired:
+                raise NotAssignableError(
+                    f"toolset {ref_key} has no wired tools (catalog-only) — not equippable")
+
     if session is not None:
-        row = await _lookup(session)
+        await _check(session)
     else:
         async with db_session.AsyncSessionLocal() as db:
-            row = await _lookup(db)
-    if row is None:
-        raise NotAssignableError(f"unknown {kind}: {ref_key}")
-    if not is_assignable(row.tier, row.status):
-        raise NotAssignableError(
-            f"{kind} {ref_key} is not spawn-assignable (tier={row.tier}, status={row.status})"
-        )
+            await _check(db)
 
 
 async def _equipment_for_spawn_in(db, spawn_id: int) -> dict:

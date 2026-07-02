@@ -127,7 +127,9 @@ async def test_capability_need_temp_grants_safe_toolset(maker, monkeypatch):
             return {"full_output": "", "spawn_name": "小美",
                     "summary_message_id": 1, "assistant_message_id": 1,
                     "escalation": {"kind": "capability",
-                                   "need": "I need image generation for the cover",
+                                   # a FUNCTIONAL toolset (deck is safe+wired); catalog-only
+                                   # decorations like image_generation are no longer grantable
+                                   "need": "I need to produce a pptx deck for the cover",
                                    "context": ""}}
         return {"full_output": "done", "spawn_name": "小美",
                 "summary_message_id": 2, "assistant_message_id": 2, "escalation": None}
@@ -145,7 +147,7 @@ async def test_capability_need_temp_grants_safe_toolset(maker, monkeypatch):
     assert resolved and resolved[0]["how"] == "granted"
     eq = await registry_service.equipment_for_spawn(7)
     granted = {t["key"] for t in eq["toolsets"] if t["grant"] == "temporary"}
-    assert granted == {"image_generation"}
+    assert granted == {"deck"}
 
 
 @pytest.mark.asyncio

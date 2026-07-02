@@ -119,14 +119,17 @@ function SkillsView({ skills }: { skills: RegistryCatalog["skills"] }) {
 }
 
 function Badge({ tier, status, assignable }: { tier: string; status: string; assignable?: boolean }) {
-  const ok = assignable ?? (tier === "safe" && (status === "wired" || status === "registered"));
+  const ok = assignable === true;
+  // safe + registered but NOT assignable = catalogued-only (no body / no wired tool yet) —
+  // honest label so it never reads as an equippable capability.
+  const catalogOnly = !ok && tier === "safe" && (status === "wired" || status === "registered");
   return (
     <span
       className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${
         ok ? "bg-success/15 text-success" : "bg-surface-raised text-subtle-foreground"
       }`}
     >
-      {ok ? "assignable" : `${tier}/${status}`}
+      {ok ? "assignable" : catalogOnly ? "catalog" : `${tier}/${status}`}
     </span>
   );
 }

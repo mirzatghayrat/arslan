@@ -84,15 +84,16 @@ async def test_curate_happy_path_valid_toolsets_and_skill(seeded, monkeypatch):
     class _A:
         async def chat(self, system, user, **kw):
             return _Resp(
-                '{"toolsets": ["web_search_scraping", "image_generation"],'
+                '{"toolsets": ["web_search_scraping", "charting", "image_generation"],'
                 ' "skills": ["baoyu-infographic"], "why": "x"}'
             )
 
     monkeypatch.setattr(equipment_service, "_get_adapter", lambda: _A())
 
     eq = await equipment_service.curate("研究助手，查资料写报告")
-    # Both valid toolsets survive in order; skill survives
-    assert eq["toolsets"] == ["web_search_scraping", "image_generation"]
+    # Functional toolsets survive in order; catalog-only decoration (image_generation has
+    # no wired tools) is honestly dropped; skill with a real body survives.
+    assert eq["toolsets"] == ["web_search_scraping", "charting"]
     assert eq["skills"] == ["baoyu-infographic"]
 
 
