@@ -303,7 +303,8 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 // Professional-but-plain wording (user asked: 专业的人话, not colloquial).
-const DIMENSION_LABELS: Record<string, string> = {
+// Exported so EvalSummary's charts use the exact same labels.
+export const DIMENSION_LABELS: Record<string, string> = {
   routing: "路由匹配",
   fabrication: "事实可靠",
   identity: "角色一致",

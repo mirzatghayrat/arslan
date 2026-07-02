@@ -1606,6 +1606,36 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* Aggregate charts (trend / dimensions / per-spawn pass rate) */
+.eval-summary__charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.eval-summary__charts .eval-chart {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.5rem 0.25rem;
+  min-width: 0; /* let the chart shrink inside the grid track */
+}
+
+.eval-summary__charts .eval-chart--wide {
+  grid-column: 1 / -1;
+}
+
+.eval-summary__charts .eval-chart__title {
+  font-size: 0.625rem;
+  font-family: monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  margin-bottom: 0.25rem;
+}
+
 /* Empty state */
 .eval-summary__empty {
   color: var(--muted-foreground);

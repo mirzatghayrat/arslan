@@ -13,6 +13,7 @@ import type {
   CuratorFlag,
   RunDetailDto,
   RunListItem,
+  RunSummary,
   SeedsResponse,
   SkillCandidate,
   SkillEvaluateResult,
@@ -135,6 +136,8 @@ export const api = {
     qs.set("limit", String(limit));
     return request<RunListItem[]>(`/runs?${qs.toString()}`);
   },
+  /** Aggregates for the evaluation-summary charts. */
+  getRunsSummary: () => request<RunSummary>("/runs/summary"),
   getKnowledge: (spawnId: number) =>
     request<KnowledgeSource[]>(`/spawns/${spawnId}/knowledge`),
   ingestKnowledgeText: (spawnId: number, source: string, text: string, compress = false) =>

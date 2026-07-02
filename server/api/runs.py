@@ -2,15 +2,29 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
 from server.db.models import Run, RunEvaluation, RunStep
-from server.schemas import RunDetailOut, RunEvaluationOut, RunListItemOut, RunOut, RunStepOut
+from server.schemas import (
+    RunDetailOut,
+    RunEvaluationOut,
+    RunListItemOut,
+    RunOut,
+    RunSpawnSummaryOut,
+    RunStepOut,
+    RunSummaryOut,
+    RunTrendPointOut,
+)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+# Judge dimensions, in display order (mirrors the frontend DIMENSION_LABELS).
+DIMENSIONS = ("routing", "fabrication", "identity", "completion")
+
+PASS_THRESHOLD = 7.0
 
 
 @router.get("/runs", response_model=list[RunListItemOut])
@@ -32,6 +46,75 @@ async def list_runs(
         )
         for r in rows
     ]
+
+
+# NOTE: must stay registered BEFORE /runs/{run_id}, or FastAPI tries to parse
+# "summary" as an int path param (422).
+@router.get("/runs/summary", response_model=RunSummaryOut)
+async def runs_summary(db: AsyncSession = Depends(get_session)) -> RunSummaryOut:
+    scored = (Run.status == "scored", Run.overall_score.isnot(None))
+
+    scored_count, avg_score = (await db.execute(
+        select(func.count(Run.id), func.avg(Run.overall_score)).where(*scored)
+    )).one()
+    pass_count = (await db.execute(
+        select(func.count(Run.id)).where(*scored, Run.overall_score >= PASS_THRESHOLD)
+    )).scalar_one()
+    pass_rate = round(pass_count / scored_count * 100) if scored_count else None
+
+    dim_rows = (await db.execute(
+        select(RunEvaluation.dimension, func.avg(RunEvaluation.score))
+        .join(Run, Run.id == RunEvaluation.run_id)
+        .where(*scored)
+        .group_by(RunEvaluation.dimension)
+    )).all()
+    dimension_averages: dict[str, float | None] = {d: None for d in DIMENSIONS}
+    for dim, avg in dim_rows:
+        if dim in dimension_averages and avg is not None:
+            dimension_averages[dim] = round(float(avg), 2)
+
+    spawn_rows = (await db.execute(
+        select(
+            Run.spawn_name,
+            func.count(Run.id),
+            func.avg(Run.overall_score),
+            func.sum(case((Run.overall_score >= PASS_THRESHOLD, 1), else_=0)),
+        )
+        .where(*scored, Run.spawn_name.isnot(None))
+        .group_by(Run.spawn_name)
+        .order_by(func.count(Run.id).desc())
+    )).all()
+    per_spawn = [
+        RunSpawnSummaryOut(
+            spawn_name=name,
+            scored_count=cnt,
+            avg_score=round(float(avg), 2) if avg is not None else None,
+            pass_rate=round((passed or 0) / cnt * 100) if cnt else None,
+        )
+        for name, cnt, avg, passed in spawn_rows
+    ]
+
+    recent_rows = (await db.execute(
+        select(Run.id, Run.overall_score, Run.created_at)
+        .order_by(Run.id.desc())
+        .limit(50)
+    )).all()
+    recent = [
+        RunTrendPointOut(
+            id=rid, overall_score=score,
+            created_at=created.isoformat() if created else None,
+        )
+        for rid, score, created in reversed(recent_rows)
+    ]
+
+    return RunSummaryOut(
+        scored_count=scored_count,
+        avg_score=round(float(avg_score), 2) if avg_score is not None else None,
+        pass_rate=pass_rate,
+        dimension_averages=dimension_averages,
+        per_spawn=per_spawn,
+        recent=recent,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

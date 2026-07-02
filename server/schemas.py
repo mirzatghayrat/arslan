@@ -365,6 +365,34 @@ class RunListItemOut(BaseModel):
     created_at: str | None = None
 
 
+class RunSpawnSummaryOut(BaseModel):
+    """Per-spawn aggregate over scored runs (GET /runs/summary)."""
+
+    spawn_name: str
+    scored_count: int
+    avg_score: float | None
+    pass_rate: int | None  # % of scored runs with overall_score >= 7
+
+
+class RunTrendPointOut(BaseModel):
+    """One recent run for the score-trend chart (null score = unscored)."""
+
+    id: int
+    overall_score: float | None
+    created_at: str | None = None
+
+
+class RunSummaryOut(BaseModel):
+    """Aggregates for the evaluation-summary charts (GET /runs/summary)."""
+
+    scored_count: int
+    avg_score: float | None
+    pass_rate: int | None  # 0-100, null when nothing scored
+    dimension_averages: dict[str, float | None]
+    per_spawn: list[RunSpawnSummaryOut]
+    recent: list[RunTrendPointOut]
+
+
 class SkillForgeIn(BaseModel):
     key: str
     name: str

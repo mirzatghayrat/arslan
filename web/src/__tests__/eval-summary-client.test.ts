@@ -15,3 +15,16 @@ describe("getRuns", () => {
     expect(url).toContain("limit=10");
   });
 });
+
+describe("getRunsSummary", () => {
+  it("GETs /runs/summary", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        scored_count: 0, avg_score: null, pass_rate: null,
+        dimension_averages: {}, per_spawn: [], recent: [],
+      }), { status: 200 }),
+    );
+    await api.getRunsSummary();
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/runs/summary");
+  });
+});

@@ -89,9 +89,11 @@ function ensureThemeRegistered(): void {
 interface EChartProps {
   option: Record<string, unknown>;
   className?: string;
+  /** Chart height in px (default 320 = in-chat artifact size). */
+  height?: number;
 }
 
-export default function EChart({ option, className }: EChartProps) {
+export default function EChart({ option, className, height = 320 }: EChartProps) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -128,7 +130,7 @@ export default function EChart({ option, className }: EChartProps) {
     <div
       ref={elRef}
       className={className}
-      style={{ width: "100%", height: 320 }}
+      style={{ width: "100%", height }}
       data-testid="echart"
     />
   );

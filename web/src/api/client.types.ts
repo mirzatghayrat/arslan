@@ -379,6 +379,31 @@ export interface RunListItem {
   created_at?: string | null;
 }
 
+/** Per-spawn aggregate over scored runs (GET /runs/summary). */
+export interface RunSpawnSummary {
+  spawn_name: string;
+  scored_count: number;
+  avg_score: number | null;
+  pass_rate: number | null; // % of scored runs with overall_score >= 7
+}
+
+/** One recent run for the score-trend chart (null score = unscored). */
+export interface RunTrendPoint {
+  id: number;
+  overall_score: number | null;
+  created_at?: string | null;
+}
+
+/** Aggregates for the evaluation-summary charts (GET /runs/summary). */
+export interface RunSummary {
+  scored_count: number;
+  avg_score: number | null;
+  pass_rate: number | null; // 0-100, null when nothing scored
+  dimension_averages: Record<string, number | null>;
+  per_spawn: RunSpawnSummary[];
+  recent: RunTrendPoint[];
+}
+
 export interface McpServer {
   id: number;
   label: string;
