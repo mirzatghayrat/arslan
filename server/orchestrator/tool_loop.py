@@ -338,9 +338,16 @@ async def run(
             fired.add(tool_key)
             continue
 
+        # A complete HTML document IN the reply IS the deliverable (HTML-first decks/
+        # reports). Any "you claimed but didn't do it" retry would make the model re-answer
+        # and the shorter second turn would REPLACE the doc as the persisted final — live
+        # incident: a 7-slide HTML deck streamed fine, then a guard reprompt wiped it from
+        # history. With the doc present, claims about it are true: skip all reactive guards.
+        has_html_doc = "<!doctype html" in content.lower() and "</html>" in content.lower()
+
         # Reactive hallucination guard: the model claims a tool result it never produced this run,
         # or draws a chart as Markdown code instead of calling render_chart.
-        if not forced:
+        if not forced and not has_html_doc:
             claimed = None
             reprompt = None
             chart_free = ("render_chart" in wired_keys and "render_chart" not in fired
@@ -395,7 +402,7 @@ async def run(
         # so nothing ran and the user is left waiting on a promise. Only nag when a wired tool is still
         # unused (pure-chat spawns are never pushed to use tools), and at most twice per run (a single
         # nudge isn't enough for a model that narrates step-by-step before acting).
-        if (not forced and promise_retries < 2
+        if (not forced and not has_html_doc and promise_retries < 2
                 and (wired_keys - fired) and _promises_action(content)):
             promise_retries += 1
             convo.append({"role": "assistant", "content": content})

@@ -121,6 +121,22 @@ async def test_claimed_deck_without_tool_forces_honesty(monkeypatch):
     assert len(adapter.calls) == 2
 
 
+async def test_html_doc_reply_is_never_reprompted(monkeypatch):
+    """A reply CONTAINING the complete HTML deck must survive as the final untouched —
+    live incident: a guard reprompt made a short second turn replace the streamed deck."""
+    from tests.server.test_tool_loop import _ScriptedAdapter, _tools
+    doc = ("演示文稿已生成,以下是完整HTML:\n<!DOCTYPE html><html><head><style>"
+           "body{margin:0}</style></head><body><section>slide</section></body></html>")
+    adapter = _ScriptedAdapter([doc, "SECOND TURN MUST NEVER HAPPEN"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="做个演示", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("render_deck"))   # deck wired, unfired
+    assert "<!DOCTYPE html" in out["final"]
+    assert "SECOND TURN" not in out["final"]
+    assert len(adapter.calls) == 1                     # no guard reprompt fired
+
+
 def test_exhausted_round_salvages_evidence_into_fallback():
     """The 3-rounds-of-identical-searches incident: a spent round must leave its tool
     results in the final message so the next round builds on them instead of re-searching."""
