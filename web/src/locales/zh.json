@@ -217,7 +217,18 @@
     "summary": "使用了 {{summary}}",
     "args": "输入",
     "result": "结果",
-    "error": "失败"
+    "error": "失败",
+    "search": "搜索 {{q}}",
+    "search_fail": "有次搜索没成功,换个说法再试",
+    "read": "读取 {{host}}",
+    "read_fail": "有个网页没打开,换个来源",
+    "deck": "生成 PPT",
+    "deck_fail": "PPT 生成遇到问题",
+    "chart": "绘制图表",
+    "chart_fail": "图表渲染遇到问题",
+    "code": "运行代码",
+    "code_fail": "代码运行失败",
+    "calls": "{{count}} 次工具调用"
   },
   "escalation": {
     "needs": "{{name}} 需要一些东西：",

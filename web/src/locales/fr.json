@@ -217,7 +217,18 @@
     "summary": "A utilisé {{summary}}",
     "args": "Entrée",
     "result": "Résultat",
-    "error": "échec"
+    "error": "échec",
+    "search": "Searching {{q}}",
+    "search_fail": "A search didn't go through — retrying differently",
+    "read": "Reading {{host}}",
+    "read_fail": "A page wouldn't open — trying another source",
+    "deck": "Building the PPT",
+    "deck_fail": "Deck generation hit a snag",
+    "chart": "Drawing the chart",
+    "chart_fail": "Chart rendering hit a snag",
+    "code": "Running code",
+    "code_fail": "The code run failed",
+    "calls": "{{count}} tool calls"
   },
   "escalation": {
     "needs": "{{name}} a besoin de quelque chose :",

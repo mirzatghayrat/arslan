@@ -119,3 +119,34 @@ async def test_claimed_deck_without_tool_forces_honesty(monkeypatch):
                               resolve_tools=_tools("web_search"))   # no render_deck wired
     assert "并没有真的产出文件" in out["final"]
     assert len(adapter.calls) == 2
+
+
+def test_exhausted_round_salvages_evidence_into_fallback():
+    """The 3-rounds-of-identical-searches incident: a spent round must leave its tool
+    results in the final message so the next round builds on them instead of re-searching."""
+    trace = [
+        {"tool": "web_search", "args": {"query": "OKX perpetual pairs 2025"},
+         "result": {"ok": True, "results": [{"title": "OKX lists 400+ perpetuals"}]}},
+        {"tool": "web_extract", "args": {"url": "https://x.test/a"},
+         "result": {"ok": False, "error": "http 403"}},          # failures excluded
+    ]
+    out = tool_loop._fallback_with_digest("帮我调研OKX永续合约", trace)
+    assert "【阶段性发现】" in out
+    assert "OKX lists 400+ perpetuals" in out
+    assert "http 403" not in out                                  # failed steps don't pollute
+    assert "回复" in out                                          # continue prompt still present
+    # zero usable evidence → plain fallback, no empty digest header
+    bare = tool_loop._fallback_with_digest("帮我调研OKX", [t for t in trace if not t["result"]["ok"]])
+    assert "【阶段性发现】" not in bare
+
+
+def test_digest_carrying_fallback_is_not_a_refusal():
+    """The digest message ends with the same continue prompt, but it is substantive —
+    the confirm path must CARRY it (dropping it restarts research from zero)."""
+    msg = tool_loop._fallback_with_digest(
+        "帮我调研OKX",
+        [{"tool": "web_search", "args": {"query": "q"},
+          "result": {"ok": True, "results": [{"title": "t"}]}}])
+    assert not arslan._looks_like_refusal(msg)
+    # while the bare (no-evidence) fallback is still treated as a refusal
+    assert arslan._looks_like_refusal(tool_loop._fallback_message("帮我调研OKX"))

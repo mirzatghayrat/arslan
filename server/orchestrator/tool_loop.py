@@ -178,6 +178,40 @@ def _fallback_message(user_content: str) -> str:
             "going — or narrow the scope a little for a faster answer.")
 
 
+def _evidence_digest(tool_trace: list, *, max_items: int = 8, snippet: int = 240,
+                     total: int = 2600) -> str:
+    """Deterministic (no-LLM) salvage of a spent round: compress the OK tool results
+    into a findings block. Without this, a continuation restarts research from ZERO —
+    live incident: 3 rounds × 8 searches on the same task, nothing ever accumulated,
+    the user kept being asked to press 继续. The digest rides inside the round's final
+    message, so the next round sees the evidence in chat history."""
+    lines: list[str] = []
+    for step in tool_trace[-max_items:]:
+        res = step.get("result") or {}
+        if not res.get("ok"):
+            continue
+        args = step.get("args") or {}
+        head = str(args.get("query") or args.get("url") or "")[:60]
+        payload = {k: v for k, v in res.items() if k not in ("ok", "artifact", "external")}
+        body = json.dumps(payload, ensure_ascii=False)[:snippet]
+        lines.append(f"- {step.get('tool')}({head}): {body}")
+    return "\n".join(lines)[:total]
+
+
+def _fallback_with_digest(user_content: str, tool_trace: list) -> str:
+    """Fallback message + whatever evidence this round actually gathered. The 【阶段性发现】
+    marker matters: arslan._looks_like_refusal treats a marked message as substantive
+    (carried forward), not as a refusal to be dropped."""
+    base = _fallback_message(user_content)
+    digest = _evidence_digest(tool_trace)
+    if not digest:
+        return base
+    cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
+    header = ("【阶段性发现】(本轮已查到的资料,尚未成稿)" if cjk
+              else "[Findings so far] (gathered this round, not yet written up)")
+    return f"{header}\n{digest}\n\n{base}"
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
@@ -387,7 +421,7 @@ async def run(
                 salvage += piece
             salvage = salvage.strip()
             final_text = (salvage if salvage and not _is_protocol_json(salvage)
-                          else _fallback_message(user_content))
+                          else _fallback_with_digest(user_content, tool_trace))
             on_chunk(final_text)
             return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
 

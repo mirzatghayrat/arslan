@@ -843,8 +843,15 @@ _REFUSAL_RE = _re.compile(
 def _looks_like_refusal(text: str) -> bool:
     """True for tool-exhaustion/fallback refusals — outputs that must never be treated as a
     proposal direction or deliverable (observed live: they self-replicate through the
-    confirm→execute path and poison every following turn)."""
-    return bool(_REFUSAL_RE.search(text or ""))
+    confirm→execute path and poison every following turn).
+
+    A message carrying a 【阶段性发现】/[Findings so far] digest is SUBSTANTIVE even though it
+    ends with the continue prompt — dropping it would restart research from zero on every
+    continuation (the 3-rounds-of-identical-searches incident). It must be carried forward."""
+    t = text or ""
+    if "【阶段性发现】" in t or "[Findings so far]" in t:
+        return False
+    return bool(_REFUSAL_RE.search(t))
 
 
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
