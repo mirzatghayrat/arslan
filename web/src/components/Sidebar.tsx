@@ -86,8 +86,9 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Main Content Area (Unified scroll region with spacious, clean ratios) */}
-        <div className="flex-1 overflow-y-auto px-2 pb-6 space-y-6 flex flex-col min-h-0 scrollbar-thin">
+        {/* Main Content Area — each list scrolls INSIDE its module so ACTIVE CHATS can
+            never push ACTIVE SPAWNS out of view (they used to share one outer scroll). */}
+        <div className="flex-1 overflow-hidden px-2 pb-4 space-y-6 flex flex-col min-h-0">
           
           {/* MODULE 1: CONTROL DECK (Toolbar, New Chat/Session, Portals) */}
           <div className="space-y-1.5 flex-shrink-0">
@@ -140,8 +141,8 @@ export default function Sidebar({
             </div>
           </div>
 
-          {/* MODULE 2: AGENT CONVERSATIONS (Scrollable active session threads list with spacing) */}
-          <div className="border-t border-border/40 pt-4.5 flex flex-col min-h-0">
+          {/* MODULE 2: AGENT CONVERSATIONS — flexes to fill, its own inner scroll */}
+          <div className="border-t border-border/40 pt-4.5 flex flex-col min-h-0 flex-1">
             {/* Header section with counts and spacing */}
             <div className="px-3 mb-2.5 select-none flex items-center justify-between">
               <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
@@ -152,7 +153,7 @@ export default function Sidebar({
               </span>
             </div>
 
-            <div className="space-y-1 pr-1">
+            <div className="space-y-1 pr-1 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
               {threads.map((thread) => {
                 const isActive = activeSection === 'arslan' && activeThreadId === thread.id;
                 return (
@@ -177,8 +178,8 @@ export default function Sidebar({
             </div>
           </div>
 
-          {/* MODULE 3: ACTIVE SPAWNS (Direct spawn portals/channels with spacing & border) */}
-          <div className="border-t border-border/40 pt-4.5 flex flex-col min-h-0">
+          {/* MODULE 3: ACTIVE SPAWNS — pinned below chats, own capped inner scroll */}
+          <div className="border-t border-border/40 pt-4.5 flex flex-col min-h-0 flex-shrink-0">
             <div className="px-3 mb-2.5 select-none flex items-center justify-between">
               <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
                 {t('sidebar.active_spawns')}
@@ -220,7 +221,7 @@ export default function Sidebar({
               </div>
             )}
 
-            <div className="space-y-1 pr-1">
+            <div className="space-y-1 pr-1 max-h-[32vh] overflow-y-auto scrollbar-thin">
               {spawns.filter(s => s.hasActiveChat).map((spawn) => {
                 const isActive = activeSection === 'spawn' && activeSpawnChatId === spawn.id;
                 return (

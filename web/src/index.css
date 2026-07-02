@@ -249,7 +249,15 @@ button:disabled {
   font-weight: 700;
 }
 
-/* The bar itself — width set inline by component; we style the element as a filled block */
+/* Flexible track the bar's % width is measured against — without it the slowest
+   bar (100%) was 100% of the whole ROW and shot past the label/ms columns. */
+.trace__track {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The bar itself — width set inline by component as a % of the track */
 .trace__bar {
   display: block;
   height: 6px;
@@ -257,7 +265,7 @@ button:disabled {
   background: var(--primary);
   opacity: 0.7;
   min-width: 2px;
-  flex-shrink: 0;
+  max-width: 100%;
 }
 .trace__row--slow .trace__bar {
   opacity: 1;

@@ -37,7 +37,7 @@ describe("RunReplay", () => {
 
     await screen.findByText("交给 Mermer 处理");
     expect(screen.getByText("查天气")).toBeTruthy();
-    expect(screen.getByText("选对了人")).toBeTruthy();
+    expect(screen.getByText(/路由匹配/)).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
   });
 
@@ -48,6 +48,6 @@ describe("RunReplay", () => {
     render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
 
     await screen.findByText(/评分中/);
-    await waitFor(() => expect(screen.getByText("选对了人")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/路由匹配/)).toBeTruthy());
   });
 });

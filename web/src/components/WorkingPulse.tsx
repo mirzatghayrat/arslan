@@ -25,7 +25,7 @@ function scrambleFrame(target: string, progress: number): string {
 export default function WorkingPulse({
   phrases,
   className = '',
-  periodMs = 2200,
+  periodMs = 3800,
 }: {
   phrases: string[];
   className?: string;
@@ -47,7 +47,7 @@ export default function WorkingPulse({
       }, periodMs);
       return () => clearInterval(rot);
     }
-    const resolveMs = Math.min(700, periodMs * 0.4);
+    const resolveMs = Math.min(1500, periodMs * 0.4);
     let start = performance.now();
     const tick = setInterval(() => {
       const elapsed = (performance.now() - start) % periodMs;
@@ -55,9 +55,9 @@ export default function WorkingPulse({
         setText(scrambleFrame(phrases[idx.current % phrases.length], elapsed / resolveMs));
       } else {
         setText(phrases[idx.current % phrases.length]);
-        if (elapsed + 50 >= periodMs) idx.current += 1;
+        if (elapsed + 80 >= periodMs) idx.current += 1;
       }
-    }, 50);
+    }, 80);
     return () => clearInterval(tick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phrases.join('|'), periodMs, reduced]);

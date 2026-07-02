@@ -78,7 +78,9 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           {run.steps.map((s) => (
             <li key={s.seq} className={`trace__row${s.isSlowest ? " trace__row--slow" : ""}`}>
               <span className={`trace__label trace__label--${s.kind}`}>{s.label}</span>
-              <span className="trace__bar" style={{ width: `${((s.durationMs ?? 0) / maxMs) * 100}%` }} />
+              <span className="trace__track">
+                <span className="trace__bar" style={{ width: `${((s.durationMs ?? 0) / maxMs) * 100}%` }} />
+              </span>
               <span className="trace__ms">{s.durationMs != null ? `${s.durationMs}ms` : ""}</span>
             </li>
           ))}

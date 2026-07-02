@@ -302,11 +302,12 @@ const TOOL_LABELS: Record<string, string> = {
   read_file: "读文件",
 };
 
+// Professional-but-plain wording (user asked: 专业的人话, not colloquial).
 const DIMENSION_LABELS: Record<string, string> = {
-  routing: "选对了人",
-  fabrication: "没有编造",
-  identity: "没串错身份",
-  completion: "完成度",
+  routing: "路由匹配",
+  fabrication: "事实可靠",
+  identity: "角色一致",
+  completion: "任务完成度",
 };
 
 function stepLabel(step: RunStepDto): string {

@@ -36,7 +36,7 @@ describe("toUiRun", () => {
     const ui = toUiRun(base);
     expect(ui.scored).toBe(true);
     const routing = ui.dimensions.find((d) => d.dimension === "routing");
-    expect(routing?.label).toBe("选对了人");
+    expect(routing?.label).toBe("路由匹配");
   });
 
   it("scored=false while still recording", () => {
