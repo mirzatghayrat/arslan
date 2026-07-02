@@ -22,8 +22,9 @@ from server.services import spawn_service
 logger = logging.getLogger(__name__)
 
 # Shipped defaults: a general Research Analyst, a general Data & Chart Analyst, a Content &
-# Copywriter, a Coding Assistant, and a Financial Research Analyst (migrated from Anthropic's
-# open-source market-researcher). Each is a worked example of a well-composed spawn.
+# Copywriter, a Coding Assistant, a Financial Research Analyst (migrated from Anthropic's
+# open-source market-researcher), and a Deck Master (native .pptx export via render_deck). Each
+# is a worked example of a well-composed spawn.
 DEFAULT_SPAWNS: list[dict] = [
     {
         "name": "Research Analyst",
@@ -98,6 +99,24 @@ DEFAULT_SPAWNS: list[dict] = [
         # code_execution is orchestrator-tier (gated) — NOT default equipment; the spawn can
         # escalate for it. Ships with web lookup (docs/errors) + the safe code-reasoning skills.
         "equipment": {"toolsets": ["web_search_scraping"], "skills": ["systematic-debugging", "codebase-audit", "plan"]},
+    },
+    {
+        # Built on the native PPTX export capability (render_deck): produces a real, editable .pptx,
+        # not slide images. Storytelling-first — structure before slides, detail in speaker notes.
+        "name": "Deck Master",
+        "domain": "design.presentation",
+        "persona_role": (
+            "a presentation designer who turns raw material or a one-line brief into a clear, story-first "
+            "deck — one idea per slide, assertion-evidence titles, a narrative arc — and ships a native, "
+            "editable .pptx (real shapes, not images), with the talking points in speaker notes"
+        ),
+        "persona_tone": "story-first, crisp, visual",
+        "capabilities": ["presentation storytelling", "deck design", "slide structure"],
+        "seed_refs": ["design-visual-storyteller", "narrative-designer", "marketing-content-creator"],
+        "equipment": {
+            "toolsets": ["deck", "web_search_scraping", "charting"],
+            "skills": ["deck-authoring", "baoyu-infographic", "canvas-design", "humanizer"],
+        },
     },
 ]
 
