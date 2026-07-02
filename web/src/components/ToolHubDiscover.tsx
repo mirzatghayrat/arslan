@@ -11,6 +11,7 @@ import {
 } from '../api/discovery';
 import { addMcpServer } from '../api/mcp';
 import RecommendedMcp from './RecommendedMcp';
+import SkillImportPanel from './SkillImportPanel';
 import type { McpPrefill } from '../data/mcpPresets';
 
 // The type + isOneClick now live in the data module (breaks the RecommendedMcp import cycle);
@@ -265,6 +266,11 @@ export default function ToolHubDiscover({ onPrefillMcp, onMcpConnected }: {
           <div className="space-y-2">
             <span className="text-[10.5px] font-mono text-subtle-foreground select-none">{t('ledger.tool_hub_presets_label')}</span>
             <RecommendedMcp onPrefillMcp={onPrefillMcp} onChanged={onMcpConnected} />
+          </div>
+
+          {/* P3: faithful SKILL.md importer — verbatim, license-gated, scripts → sandbox */}
+          <div className="border-t border-border/40 pt-4">
+            <SkillImportPanel />
           </div>
 
           {evalError && (

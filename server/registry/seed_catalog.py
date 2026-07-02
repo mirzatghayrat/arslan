@@ -279,8 +279,9 @@ TOOLSETS: list[dict] = [
         "status": "wired",
         "tools": [
             ("run_python", "Run Python code in a local sandbox and get stdout/stderr back. "
-             "Pass {code}. print() your results — stdout is the return channel. No network "
-             "(fetch data via web_search/web_extract first, embed it in the code); "
+             "Pass {code}, OR {skill_script: '<skill-key>/<file>.py'} to run a script bundled "
+             "with an imported skill. print() your results — stdout is the return channel. "
+             "No network (fetch data via web_search/web_extract first, embed it in the code); "
              "numpy/pandas/matplotlib preinstalled; ~15s limit; files written land in a "
              "throwaway dir (names reported).", "safe", "wired"),
         ],

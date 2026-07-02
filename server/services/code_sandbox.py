@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import resource
 import shutil
 import signal
@@ -106,8 +107,11 @@ def _truncate(s: str) -> str:
     return s[:MAX_OUTPUT_CHARS] + f"\n…[truncated, {len(s)} chars total]"
 
 
-async def run_python(code: str, *, timeout_s: float = TIMEOUT_S) -> dict:
-    """Execute `code` in the sandbox. Returns
+async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
+                     extra_files: dict[str, str] | None = None) -> dict:
+    """Execute `code` in the sandbox. `extra_files` (name → content, flat safe names) are
+    written beside main.py before exec — used for imported skills' bundled scripts so
+    sibling imports/data files work. Returns
     {ok, stdout, stderr, exit_code, files, network_isolated, env_note} — plus error when not ok."""
     if not isinstance(code, str) or not code.strip():
         return {"ok": False, "error": "missing 'code'"}
@@ -120,6 +124,13 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S) -> dict:
         script = tmp / "main.py"
         script.write_text(code, encoding="utf-8")
         (tmp / ".mpl").mkdir()
+        extra_names = set()
+        for fname, content in (extra_files or {}).items():
+            # flat, safe names only — no separators, no traversal, never main.py
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", fname) or fname == "main.py":
+                continue
+            (tmp / fname).write_text(str(content), encoding="utf-8")
+            extra_names.add(fname)
         # Scrubbed env: NOTHING from the server process leaks into the child.
         env = {
             "PATH": "/usr/bin:/bin",
@@ -174,6 +185,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S) -> dict:
             f"{p.relative_to(tmp)} ({p.stat().st_size}B)"
             for p in tmp.rglob("*")
             if p.is_file() and p != script and ".mpl" not in p.parts
+            and p.name not in extra_names  # inputs we staged, not outputs the code produced
         )
         result = {
             "ok": proc.returncode == 0,

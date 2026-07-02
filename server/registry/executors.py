@@ -310,9 +310,36 @@ class RunPythonExecutor:
 
     key = "run_python"
 
+    @staticmethod
+    def _load_skill_script(ref: str) -> tuple[str, dict[str, str]] | str:
+        """Resolve "<skill_key>/<file>.py" inside data_dir/skill_scripts with traversal
+        protection. Returns (entry_code, sibling_files) or an error string."""
+        import os as _os
+        import re as _re
+        from pathlib import Path as _Path
+        m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.py)", (ref or "").strip())
+        if not m:
+            return "invalid 'skill_script' — expected '<skill-key>/<file>.py'"
+        root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts").resolve()
+        skill_dir = (root / m.group(1)).resolve()
+        entry = (skill_dir / m.group(2)).resolve()
+        if not str(entry).startswith(str(root) + "/") or not entry.is_file():
+            return f"skill script not found: {ref}"
+        siblings = {p.name: p.read_text(encoding="utf-8")
+                    for p in skill_dir.iterdir()
+                    if p.is_file() and p.suffix == ".py" and p != entry}
+        return entry.read_text(encoding="utf-8"), siblings
+
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
-        result = await code_sandbox.run_python(args.get("code") or "")
+        extra_files: dict[str, str] | None = None
+        code = args.get("code") or ""
+        if args.get("skill_script"):
+            loaded = self._load_skill_script(str(args["skill_script"]))
+            if isinstance(loaded, str):
+                return {"ok": False, "external": False, "error": loaded}
+            code, extra_files = loaded
+        result = await code_sandbox.run_python(code, extra_files=extra_files)
         if not result.get("ok"):
             return {"ok": False, "external": False,
                     "error": result.get("error") or "execution failed",

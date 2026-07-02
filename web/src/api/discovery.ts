@@ -83,3 +83,39 @@ export const generateSkill = (ref: string) =>
 
 export const createSkill = (b: { full_name: string; name: string; category: string; description: string; body: string }) =>
   request<CreatedSkill>("/discovery/skill", { method: "POST", body: JSON.stringify(b) });
+
+// ── P3: faithful SKILL.md importer (verbatim; license-gated server-side) ─────────
+// Unlike generateSkill (LLM distill/rewrite), scan+import bring standard Agent-Skills
+// SKILL.md files in VERBATIM, with bundled scripts/*.py stored for the sandbox.
+
+export type ScannedSkill = {
+  path: string;
+  key?: string;
+  name?: string;
+  description?: string;
+  body_bytes?: number;
+  scripts: string[];
+  importable: boolean;
+  reason: string | null;
+};
+
+export type SkillScanResult = {
+  repo: { full_name: string; html_url: string; license: string | null; stars: number };
+  license_ok: boolean;
+  license_note: string | null;
+  skills: ScannedSkill[];
+};
+
+export type ImportedSkill = {
+  key: string; name: string; description: string; scripts: string[]; license: string | null;
+};
+
+export const scanSkills = (ref: string, subpath = "") =>
+  request<SkillScanResult>("/discovery/skills/scan", {
+    method: "POST", body: JSON.stringify({ ref, subpath }),
+  });
+
+export const importSkill = (ref: string, path: string) =>
+  request<ImportedSkill>("/discovery/skills/import", {
+    method: "POST", body: JSON.stringify({ ref, path }),
+  });
