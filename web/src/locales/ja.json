@@ -400,7 +400,15 @@
     "verdict_dislike": "Not helpful",
     "no_model_hint": "モデルがまだ設定されていません — 設定でLLMを追加してください。",
     "open_settings": "設定を開く",
-    "refined_badge": "Refined"
+    "refined_badge": "Refined",
+    "update_title": "Update {{name}}",
+    "update_confirm": "Apply changes",
+    "update_dismiss": "Dismiss",
+    "update_persona_role": "Persona",
+    "update_persona_tone": "Tone",
+    "update_capabilities": "Capabilities",
+    "update_equipment": "Equipment changes",
+    "update_done": "{{name}} updated"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

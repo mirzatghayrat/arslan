@@ -400,7 +400,15 @@
     "verdict_dislike": "踩",
     "no_model_hint": "尚未配置模型 — 请在设置中添加 LLM 以开始使用。",
     "open_settings": "打开设置",
-    "refined_badge": "定稿"
+    "refined_badge": "定稿",
+    "update_title": "更新分身:{{name}}",
+    "update_confirm": "确认修改",
+    "update_dismiss": "取消",
+    "update_persona_role": "人设",
+    "update_persona_tone": "语气",
+    "update_capabilities": "能力标签",
+    "update_equipment": "装备变更",
+    "update_done": "已更新 {{name}}"
   },
   "ledger": {
     "title": "活跃分身账本",

@@ -199,6 +199,45 @@ async def update_config(
     return spawn
 
 
+_SPECIALIZATION_MARK = "\n\nSpecialization"
+
+
+async def apply_conversational_update(session: AsyncSession, spawn_id: int,
+                                      changes: dict) -> Spawn | None:
+    """Apply a confirmed conversational update (persona_role / persona_tone / capabilities).
+
+    CRITICAL: dispatch uses the STORED system_prompt (build_spawn_system takes it as the
+    base), so a persona edit must REGENERATE the prompt or nothing changes behaviorally.
+    We rebuild the base from the (new) persona fields + current domain via the same
+    build_system_prompt used at creation, preserving any Specialization suffix. Equipment
+    changes are NOT handled here — they go through replace_user_equipment (Layer-2 choke)."""
+    spawn = await session.get(Spawn, spawn_id)
+    if spawn is None:
+        return None
+    persona_changed = False
+    if isinstance(changes.get("persona_role"), str) and changes["persona_role"].strip():
+        spawn.persona_role = changes["persona_role"].strip()
+        persona_changed = True
+    if isinstance(changes.get("persona_tone"), str) and changes["persona_tone"].strip():
+        spawn.persona_tone = changes["persona_tone"].strip()
+        persona_changed = True
+    if isinstance(changes.get("capabilities"), list):
+        spawn.capabilities = [str(c).strip() for c in changes["capabilities"] if str(c).strip()]
+    if persona_changed:
+        old = spawn.system_prompt or ""
+        suffix = ""
+        if _SPECIALIZATION_MARK in old:
+            suffix = _SPECIALIZATION_MARK + old.split(_SPECIALIZATION_MARK, 1)[1]
+        spawn.system_prompt = build_system_prompt({
+            "persona_role": spawn.persona_role,
+            "persona_tone": spawn.persona_tone,
+            "domain": _domain(spawn),
+        }) + suffix
+    await session.commit()
+    await session.refresh(spawn)
+    return spawn
+
+
 class BuiltInSpawnError(Exception):
     """Raised when a delete targets a built-in (is_default) spawn."""
 

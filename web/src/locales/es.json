@@ -400,7 +400,15 @@
     "verdict_dislike": "Not helpful",
     "no_model_hint": "Aún no hay modelo configurado — agrega un LLM en Configuración para comenzar.",
     "open_settings": "Abrir configuración",
-    "refined_badge": "Refined"
+    "refined_badge": "Refined",
+    "update_title": "Update {{name}}",
+    "update_confirm": "Apply changes",
+    "update_dismiss": "Dismiss",
+    "update_persona_role": "Persona",
+    "update_persona_tone": "Tone",
+    "update_capabilities": "Capabilities",
+    "update_equipment": "Equipment changes",
+    "update_done": "{{name}} updated"
   },
   "ledger": {
     "title": "Active Spawns Ledger",

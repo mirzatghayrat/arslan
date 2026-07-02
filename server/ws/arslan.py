@@ -181,6 +181,45 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await run_spawn(spawn_id, task_brief)
                 continue
 
+            if msg_type == "confirm_update":
+                # P2 apply path (the ONLY one): persona/tone/capabilities via
+                # apply_conversational_update (regenerates system_prompt), equipment via
+                # replace_user_equipment — every key re-validated at the Layer-2 choke.
+                from server.registry import service as registry_service
+                from server.registry.service import NotAssignableError
+                raw_id = data.get("spawn_id")
+                try:
+                    spawn_id = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
+                    continue
+                changes = data.get("changes") or {}
+                eq = await registry_service.equipment_for_spawn(spawn_id)
+                _user_managed = lambda items: [  # noqa: E731
+                    i["key"] for i in items
+                    if i.get("grant") == "permanent" and i.get("granted_by") in ("create", "user")
+                ]
+                ts = _user_managed(eq["toolsets"])
+                sk = _user_managed(eq["skills"])
+                ts = [k for k in ts if k not in set(changes.get("remove_toolsets") or [])]
+                sk = [k for k in sk if k not in set(changes.get("remove_skills") or [])]
+                ts += [k for k in (changes.get("add_toolsets") or []) if k not in ts]
+                sk += [k for k in (changes.get("add_skills") or []) if k not in sk]
+                try:
+                    async with db_session.AsyncSessionLocal() as db:
+                        spawn = await spawn_service.apply_conversational_update(db, spawn_id, changes)
+                        if spawn is None:
+                            await ws.send_json(protocol.error("INVALID_INPUT", "unknown spawn"))
+                            continue
+                        await registry_service.replace_user_equipment(db, spawn_id, ts, sk)
+                except NotAssignableError as exc:
+                    await ws.send_json(protocol.error("NOT_ASSIGNABLE", str(exc), recoverable=True))
+                    continue
+                fresh = await registry_service.equipment_for_spawn(spawn_id)
+                await ws.send_json(protocol.spawn_updated(spawn_id, spawn.name,
+                                                          applied=changes, equipment=fresh))
+                continue
+
             if msg_type == "route_to":
                 raw_id = data.get("spawn_id")
                 try:

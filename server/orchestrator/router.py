@@ -13,7 +13,7 @@ from server.orchestrator.json_protocol import parse_json_object
 from server.services import spawn_service
 from server.services.llm_factory import build_adapter
 
-_VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify"}
+_VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify", "suggest_update"}
 
 
 @dataclass
@@ -31,7 +31,8 @@ class RouterResult:
 _SYSTEM = (
     "You are Arslan, a meta-agent orchestrator. Decide how to handle the user's latest "
     "message. Reply with ONE JSON object and nothing else:\n"
-    '{"action": "answer" | "route" | "suggest_create" | "clarify", "spawn_id": <int, only for route>, '
+    '{"action": "answer" | "route" | "suggest_create" | "clarify" | "suggest_update", '
+    '"spawn_id": <int, for route AND suggest_update>, '
     '"task_brief": "<self-contained task for the spawn; REQUIRED for route AND suggest_create>", '
     '"suggested_spawn": {"name","domain","capabilities","persona_role","persona_tone"}, '
     '"overlaps": {"spawn_id": <int>, "name": "<existing spawn>", "axes": ["<how a new one could differ>"]}, '
@@ -55,6 +56,11 @@ _SYSTEM = (
     "Arslan's question to gather it first. Never suggest_create on a bare 'make me a spawn'.\n"
     "- overlaps: ONLY when suggest_create would duplicate an EXISTING spawn's domain — name it "
     "and suggest differentiation axes; otherwise omit.\n"
+    "- suggest_update: the user asks to MODIFY an existing spawn itself — change its persona/"
+    "tone, add/remove its tools or skills, adjust its capability tags (e.g. '给财务分析师加上 "
+    "deck 工具', 'make Deck Master more formal'). Set spawn_id to the target spawn and put the "
+    "requested change (verbatim intent) in task_brief. This is about EDITING the agent, NOT "
+    "giving it a task to run (that is route) and NOT creating a new one (that is suggest_create).\n"
     "- clarify: the request is too under-specified to act well (no identifiable topic/subject "
     "AND/OR no inferable deliverable shape — format/angle/output/data source). Do NOT route or "
     "create; the handler will ask clarifying questions. If a topic IS present and a reasonable "
@@ -138,15 +144,15 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
         await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
         return result
 
-    if action == "route" and not isinstance(parsed.get("spawn_id"), int):
-        result = RouterResult(action="answer", reason="route missing valid spawn_id")
+    if action in ("route", "suggest_update") and not isinstance(parsed.get("spawn_id"), int):
+        result = RouterResult(action="answer", reason=f"{action} missing valid spawn_id")
         await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
         return result
 
-    if action == "route" and not await _spawn_exists(parsed["spawn_id"]):
+    if action in ("route", "suggest_update") and not await _spawn_exists(parsed["spawn_id"]):
         # The LLM routed to a non-existent spawn (hallucinated/stale id). Downgrade to
         # answer rather than dispatch to a dangling id (would crash with a FK error).
-        result = RouterResult(action="answer", reason="route to non-existent spawn")
+        result = RouterResult(action="answer", reason=f"{action} to non-existent spawn")
         await _persist(conversation_id, user_message, "fallback", result, _audit_payload(parsed, raw))
         return result
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate } from "../api/client.types";
+import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -34,6 +34,9 @@ interface ArslanState {
   // Pending staffing decision: set when a `propose_staffing` frame arrives.
   // Candidates are mapped snake→camel. Cleared once the user picks or dismisses.
   pendingStaffing: { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null;
+  // Pending conversational spawn edit: set by a `suggest_update` frame; cleared on
+  // confirm (sends confirm_update) or dismiss. Applied ONLY by the backend on confirm.
+  pendingUpdate: { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
 
@@ -42,6 +45,7 @@ interface ArslanState {
   addUserMessage: (content: string) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
+  dismissUpdate: () => void;
   clearPendingInvite: () => void;
   clearPendingStaffing: () => void;
   clearError: () => void;
@@ -78,6 +82,7 @@ function initialData() {
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
     pendingStaffing: null as { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null,
+    pendingUpdate: null as { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null,
     thinking: false,
   };
 }
@@ -99,6 +104,7 @@ function makeActions(set: SetState, get: GetState) {
       }),
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
+    dismissUpdate: () => set({ pendingUpdate: null }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null }),
@@ -120,7 +126,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "proposal", "propose_invite", "propose_staffing"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "proposal", "propose_invite", "propose_staffing", "suggest_update", "spawn_updated"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -342,6 +348,33 @@ function makeActions(set: SetState, get: GetState) {
                 role: "arslan",
                 content: frame.content,
                 sensitive: frame.sensitive,
+              },
+            ],
+          });
+          break;
+        case "suggest_update":
+          set({
+            pending: false,
+            pendingUpdate: {
+              spawnId: frame.spawn_id,
+              spawnName: frame.spawn_name,
+              current: frame.current,
+              changes: frame.changes,
+              reason: frame.reason,
+            },
+          });
+          break;
+        case "spawn_updated":
+          set({
+            pendingUpdate: null,
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "system",
+                role: "arslan",
+                content: `__SPAWN_UPDATED__:${frame.spawn_name}`,
+                equipment: frame.equipment ?? null,
               },
             ],
           });

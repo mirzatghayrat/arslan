@@ -174,6 +174,29 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
           rosterSpawnName: item.spawnName ?? null,
         };
       }
+      // spawn_updated (P2): render a readable notice + the fresh equipment chips.
+      if (item.content.startsWith("__SPAWN_UPDATED__:")) {
+        const updatedName = item.content.slice("__SPAWN_UPDATED__:".length);
+        return {
+          id,
+          sender: "arslan",
+          senderName: "Arslan",
+          senderAvatar: "🦁",
+          // Sentinel kept — App translates it (adapters must stay i18n-free:
+          // importing the i18n singleton breaks every test that mocks react-i18next).
+          text: item.content,
+          timestamp,
+          spawnIntro: item.equipment
+            ? {
+                name: updatedName,
+                domain: "",
+                avatarEmoji: "🤖",
+                tools: item.equipment.toolsets.map((x) => x.key),
+                skills: item.equipment.skills.map((x) => x.key),
+              }
+            : undefined,
+        };
+      }
       // spawn_created: content is "__SPAWN_CREATED__:Name" or intro text
       const spawnNameFromContent = item.content.startsWith("__SPAWN_CREATED__:")
         ? item.content.slice("__SPAWN_CREATED__:".length)

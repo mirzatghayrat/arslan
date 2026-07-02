@@ -26,6 +26,7 @@ import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
 import { LedgerRow } from './components/LedgerRow';
 import SuggestCreateCard from './components/SuggestCreateCard';
+import SuggestUpdateCard from './components/SuggestUpdateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
@@ -114,6 +115,8 @@ export default function App() {
   const suggestionTaskBrief = useArslanStore((s) => s.suggestionTaskBrief);
   const suggestionOverlaps = useArslanStore((s) => s.suggestionOverlaps);
   const dismissSuggestion = useArslanStore((s) => s.dismissSuggestion);
+  const pendingUpdate = useArslanStore((s) => s.pendingUpdate);
+  const dismissUpdate = useArslanStore((s) => s.dismissUpdate);
   // propose_invite state — confirmation card before joining a spawn
   const pendingInvite = useArslanStore((s) => s.pendingInvite);
   const clearPendingInvite = useArslanStore((s) => s.clearPendingInvite);
@@ -154,7 +157,11 @@ export default function App() {
   wsSendRef.current = wsSend;
 
   // Derived UI messages from the live store
-  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
+  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems).map((m) =>
+    m.text.startsWith('__SPAWN_UPDATED__:')
+      ? { ...m, text: t('orchestrator.update_done', { name: m.text.slice('__SPAWN_UPDATED__:'.length) }) }
+      : m,
+  );
 
   // Append an optimistic streaming bubble while a reply is streaming
   const orchestratorChatHistory: Message[] = arslanStreaming && arslanStreamingText
@@ -575,6 +582,22 @@ export default function App() {
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden relative">
+            {activeSection === 'arslan' && pendingUpdate && (
+              <div className="suggest-create-card-overlay">
+                <SuggestUpdateCard
+                  spawnName={pendingUpdate.spawnName}
+                  current={pendingUpdate.current}
+                  changes={pendingUpdate.changes}
+                  reason={pendingUpdate.reason}
+                  onConfirm={() => {
+                    wsSend({ type: 'confirm_update', spawn_id: pendingUpdate.spawnId, changes: pendingUpdate.changes });
+                    // card clears on the spawn_updated ack (or stays if an error frame lands)
+                  }}
+                  onDismiss={() => dismissUpdate()}
+                />
+              </div>
+            )}
+
             {activeSection === 'arslan' && suggestion && (
               <div className="suggest-create-card-overlay">
                 <SuggestCreateCard

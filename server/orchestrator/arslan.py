@@ -300,6 +300,24 @@ async def handle_user_message(
         if result.action == "route" and result.spawn_id is not None:
             await _handle_route(conversation_id, result, emit, user_message=user_message,
                                 route_ms=route_ms, attached_context=attached_context)
+        elif result.action == "suggest_update" and result.spawn_id is not None:
+            # P2: conversational spawn editing. Draft a validated change-set and emit the
+            # confirm card; NOTHING is applied until the user's confirm_update. If drafting
+            # yields no actionable change, fall back to a plain answer (Arslan explains).
+            from server.orchestrator import update_drafter
+            drafted = await update_drafter.draft_update(
+                result.spawn_id, result.task_brief or user_message)
+            if drafted is None:
+                await _handle_answer(
+                    conversation_id, user_message, emit,
+                    extra_system=("The user asked to modify one of the agents, but the request "
+                                  "did not map to an editable change (persona/tone/capabilities/"
+                                  "equipment). Briefly say what CAN be changed and ask exactly "
+                                  "what they want adjusted. Answer in the user's language."),
+                    attached_context=attached_context)
+            else:
+                emit(protocol.suggest_update(**drafted))
+            await memory.maybe_compact(conversation_id)
         elif result.action == "suggest_create":
             # Staffing spine ①–③: the router signalled a (possibly-recurring)
             # capability need. Run extract→accumulate→gate over the staffing slots.

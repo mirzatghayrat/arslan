@@ -150,6 +150,23 @@ def propose_invite(spawn_id: int, reason: str) -> dict[str, Any]:
     return {"type": "propose_invite", "spawn_id": spawn_id, "reason": reason}
 
 
+def suggest_update(spawn_id: int, spawn_name: str, current: dict[str, Any],
+                   changes: dict[str, Any], reason: str = "") -> dict[str, Any]:
+    """Arslan proposes CHANGES to an existing spawn (persona/tone/capabilities/equipment).
+
+    Like suggest_create, emitting this frame changes NOTHING — the frontend renders a
+    confirm card showing before→after; only the user's `confirm_update` applies it."""
+    return {"type": "suggest_update", "spawn_id": spawn_id, "spawn_name": spawn_name,
+            "current": current, "changes": changes, "reason": reason}
+
+
+def spawn_updated(spawn_id: int, spawn_name: str, applied: dict[str, Any],
+                  equipment: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Ack after a confirmed update was applied: what changed + the fresh equipment."""
+    return {"type": "spawn_updated", "spawn_id": spawn_id, "spawn_name": spawn_name,
+            "applied": applied, "equipment": equipment or {"toolsets": [], "skills": []}}
+
+
 def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, Any]:
     """Arslan offers a staffing choice: pick one of the comparable existing spawns
     (each {spawn_id, name, score, why}) OR create a fresh one from `create_draft`.

@@ -184,6 +184,26 @@ export interface OverlapInfo {
   axes: string[];
 }
 
+/** Proposed changes to an existing spawn (from a `suggest_update` frame; wire snake_case). */
+export interface SpawnUpdateChanges {
+  persona_role?: string;
+  persona_tone?: string;
+  capabilities?: string[];
+  add_toolsets?: string[];
+  remove_toolsets?: string[];
+  add_skills?: string[];
+  remove_skills?: string[];
+}
+
+/** The spawn's config at proposal time (before side of the suggest_update card). */
+export interface SpawnUpdateCurrent {
+  persona_role: string;
+  persona_tone: string;
+  capabilities: string[];
+  toolsets: string[];
+  skills: string[];
+}
+
 /** One candidate from a `propose_staffing` frame (wire shape: snake_case). */
 export interface StaffingCandidate {
   spawn_id: number;
@@ -261,7 +281,11 @@ export type ArslanServerMessage =
   | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
   | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null }
 | { type: "attachment_stored"; spawn_name: string | null; chunks: number }
-  | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null };
+  | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
+  | { type: "suggest_update"; spawn_id: number; spawn_name: string;
+      current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string }
+  | { type: "spawn_updated"; spawn_id: number; spawn_name: string;
+      applied: SpawnUpdateChanges; equipment?: Equipment };
 
 export interface RosterMember {
   spawnId: number;
