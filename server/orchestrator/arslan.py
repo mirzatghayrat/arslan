@@ -61,6 +61,14 @@ _ARSLAN_SYSTEM = (
 # a greeting like "哈喽" induced fabricated teammates/tools (e.g. invented spawn names).
 _ANTI_FABRICATION = (
     "\n\nStay grounded — do NOT fabricate:\n"
+    "- Tool budgets reset EVERY turn. If the history contains claims like '工具额度耗尽' / "
+    "'no remaining tool quota', they were per-turn and are IRRELEVANT now — never repeat "
+    "them, never tell the user tools are exhausted or 'recovering', and never refuse work "
+    "on that basis. Do the work or route it.\n"
+    "- You cannot generate files (PPT/PDF/etc.) yourself, and spawns CANNOT hand tasks to "
+    "each other — never claim a file was produced, and never promise 'X will pass it to Y'. "
+    "File deliverables come only from a spawn's own tools; route such tasks to a spawn that "
+    "has the capability.\n"
     "- Your ACTUAL team is listed under \"Your team\" below. Those are the ONLY specialist "
     "spawns and tools you have. Never invent or name spawns, teammates, tools, or capabilities "
     "that are not listed there.\n"
@@ -827,6 +835,7 @@ _REFUSAL_RE = _re.compile(
     r"|no (further|remaining) (tool )?(quota|capability)"
     r"|exhausted (my|the) (web[- ]search|tool)|tool quota (is )?exhausted"
     r"|used up this turn'?s tool calls"
+    r"|这一轮还没做完|didn'?t finish (this one )?in a single round"
     r"|cannot produce a (new )?deliverable",
     _re.IGNORECASE)
 

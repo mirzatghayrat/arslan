@@ -1141,19 +1141,12 @@ export default function OrchestratorChat({
             before the first token). thinking stays true until stream_chunk clears
             it, so the dots show through the blank gap. */}
         {(thinking || liveStreaming) && (
-          <div className="flex gap-3 items-center py-2 select-none">
+          <div className="flex gap-3 items-start py-2 select-none">
             <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark" draggable={false} />
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
+            {/* LiveActivity carries its own motion (✳ pulse + per-step spinner) — the old
+                bouncing-dots trio beside it was redundant noise (user-flagged). */}
+            <div className="px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
               <LiveActivity steps={liveSteps} startedAt={workStartedAt} phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
-              <span className="flex gap-0.5 ml-1">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="w-1 h-1 rounded-full bg-primary/70 animate-bounce"
-                    style={{ animationDelay: `${i * 150}ms` }}
-                  />
-                ))}
-              </span>
             </div>
           </div>
         )}

@@ -62,11 +62,15 @@ _CLAIMS_CHART_RE = re.compile(
 _CLAIMS_SEARCH_RE = re.compile(
     r"我搜索|搜索了|查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
     re.IGNORECASE)
+# Widened after two live evasions ("PPT 已正式生成并交付", "共10页…可直接下载"): allow filler
+# between the deck-noun, the 已/成功/正式 marker, and the delivery verb — in either order.
 _CLAIMS_DECK_RE = re.compile(
-    r"(PPTX?|pptx|deck|幻灯片?|演示文稿)\s*已(经)?(生成|完成|做好|创建)"
-    r"|已(经)?生成\s*(PPTX?|pptx|deck|幻灯|演示)"
-    r"|(deck|pptx|presentation) (is |has been )?(generated|ready|created|done)"
-    r"|你可以(直接)?下载(该|这个)?\s*[`\"']?\.?pptx",
+    r"(PPTX?|pptx|deck|幻灯片?|演示文稿)[^\n。;]{0,12}(已|成功|正式)[^\n。;]{0,8}(生成|交付|完成|创建|做好|输出)"
+    r"|已[^\n。;]{0,6}生成[^\n。;]{0,8}(PPTX?|pptx|deck|幻灯|演示)"
+    r"|已生成并交付"
+    r"|(可|供)(直接)?下载[^\n。;]{0,10}(PPTX?|pptx|\.pptx|deck|幻灯|演示文稿)"
+    r"|(PPTX?|pptx|deck|幻灯片?|演示文稿)[^\n。;]{0,16}可(直接)?下载"
+    r"|(deck|pptx|presentation)[^\n.;]{0,24}(generated|created|ready|done|delivered)",
     re.IGNORECASE)
 
 
@@ -166,10 +170,12 @@ def _fallback_message(user_content: str) -> str:
     exhaustion even though every dispatch starts with a fresh budget."""
     cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
     if cjk:
-        return ("这一轮的工具调用次数用完了,还没能整理出完整结论。直接说“继续”,"
-                "我下一轮会带着新的工具额度接着做;也可以把问题缩小一点。")
-    return ("I used up this turn's tool calls before finishing. Say \"continue\" and I'll pick "
-            "up with a fresh tool budget next turn — or narrow the request a little.")
+        # User-facing copy: NO internal mechanics. "工具调用次数用完" confused a live tester
+        # ("什么意思?误导性很强") and reads like a permanent outage. Just: unfinished + how
+        # to continue.
+        return "这个任务这一轮还没做完。回复“继续”我就接着做;也可以把范围缩小一点,会更快。"
+    return ("I didn't finish this one in a single round. Reply \"continue\" and I'll keep "
+            "going — or narrow the scope a little for a faster answer.")
 
 
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
@@ -326,6 +332,17 @@ async def run(
                     "render_deck this turn — so there is NO file and nothing to download. Emit ONLY "
                     "the render_deck tool JSON now (slides=[{layout, ...}]), or answer honestly "
                     "WITHOUT claiming a deck was produced.")
+            elif _claims_deck(content) and "render_deck" not in wired_keys \
+                    and "deck_honesty" not in forced_retry:
+                # No deck tool at all — the claim is a pure fabrication. Force honesty
+                # ("deck_honesty" is a pseudo-key that just bounds this retry to once).
+                claimed = "deck_honesty"
+                reprompt = (
+                    "You claimed a PPTX/deck was produced, but you DO NOT have a deck tool — no "
+                    "file exists and none can be made here. Answer honestly: say you cannot "
+                    "produce a PPT file yourself, deliver the content as structured text, and "
+                    "suggest asking an agent equipped with the Deck/PPTX capability. Respond in "
+                    "the user's language. NEVER claim a file was generated.")
             elif (_claims_search(content) and "web_search" in wired_keys
                     and "web_search" not in fired and "web_search" not in forced_retry):
                 claimed = "web_search"

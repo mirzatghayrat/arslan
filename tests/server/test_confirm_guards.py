@@ -14,6 +14,8 @@ def test_refusal_detector_matches_live_incident_phrasings():
     for s in [
         "抱歉，我在收集资料时用尽了工具额度，没能整理出完整结论。",
         "这一轮的工具调用次数用完了,还没能整理出完整结论。",
+        "这个任务这一轮还没做完。回复“继续”我就接着做。",      # current fallback copy
+        "I didn't finish this one in a single round.",
         "I have zero remaining tool quota and cannot produce a deliverable.",
         "I have exhausted my web search and web extraction tool quota for this session.",
         "Understood. I have no remaining tool quota and cannot produce a new deliverable.",
@@ -91,3 +93,29 @@ async def test_claimed_pptx_without_render_deck_forces_retry(monkeypatch):
     # the false claim was intercepted; the honest correction is what survives
     assert "文件并不存在" in out["final"]
     assert len(adapter.calls) == 2                     # guard re-prompted exactly once
+
+
+async def test_live_evasion_phrasings_now_caught():
+    # the two phrasings that slipped past the first regex in the user's live test
+    assert tool_loop._claims_deck("PPT 已正式生成并交付:")
+    assert tool_loop._claims_deck("PPT 已生成并交付，共 10 页，原生可编辑，可直接下载。")
+    # and legitimate mentions still pass free
+    assert not tool_loop._claims_deck("如果需要 PPT,建议找 Deck Master")
+    assert not tool_loop._claims_deck("我可以为你做一份PPT大纲")
+
+
+async def test_claimed_deck_without_tool_forces_honesty(monkeypatch):
+    """A spawn WITHOUT render_deck claiming delivery is a pure fabrication — the guard must
+    force an honest correction (deliver as text + point to a deck-capable agent)."""
+    from tests.server.test_tool_loop import _ScriptedAdapter, _tools
+    adapter = _ScriptedAdapter([
+        "PPT 已正式生成并交付，共 7 页。",
+        # neutral honest correction — phrased to trip no other guard (no 制作/生成+PPT adjacency)
+        "抱歉，我并没有真的产出文件——以上只是文字大纲。此类文件需要具备 Deck 能力的分身。",
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    out = await tool_loop.run(system="S", user_content="出个PPT", history=[],
+                              emit=lambda e: None, on_chunk=lambda c: None,
+                              resolve_tools=_tools("web_search"))   # no render_deck wired
+    assert "并没有真的产出文件" in out["final"]
+    assert len(adapter.calls) == 2
