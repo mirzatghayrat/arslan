@@ -27,6 +27,27 @@ function isFullHtmlDoc(s: string): boolean {
 }
 
 /**
+ * Deterministic salvage for a complete HTML document EMBEDDED in a reply (live incident:
+ * the skill mandates a bare `<!DOCTYPE html` reply, but the model prefixed "以下是…完整
+ * HTML 代码" + a ```html fence — so the doc rendered as a code wall instead of the
+ * preview/download card). Don't bet on model obedience: if the text contains a
+ * substantial `<!doctype html … </html>` block anywhere (fenced or not), split it out.
+ * Returns null when there is no complete embedded doc (then normal rendering applies).
+ */
+function extractEmbeddedHtmlDoc(s: string): { pre: string; html: string } | null {
+  const start = s.search(/<!doctype html/i);
+  if (start < 0) return null;
+  const endMatch = /<\/html>/i.exec(s.slice(start));
+  if (!endMatch) return null;
+  const end = start + endMatch.index + endMatch[0].length;
+  const html = s.slice(start, end);
+  if (html.length < 400) return null; // not a real document
+  // Preamble: text before the doc, minus a dangling opening fence (```html / ~~~).
+  const pre = s.slice(0, start).replace(/(^|\n)\s*(`{3,}|~{3,})[a-z]*\s*$/i, "").trimEnd();
+  return { pre, html };
+}
+
+/**
  * Export heuristic (user feedback: an exported report began with the conversational
  * preamble "I now have enough research data to compile… I will now generate the PPT").
  * The deliverable proper starts at its first markdown heading — the renderer's styled
@@ -113,7 +134,7 @@ function HtmlDocCard({ html, indent, hasMessageActions }: { html: string; indent
   }, [html]);
 
   return (
-    <div className={indent ? 'pl-5' : ''}>
+    <div className={indent ? 'pl-5' : ''} data-testid="html-doc-card">
       <div className="flex items-center gap-2.5 max-w-md border border-border-strong bg-background/60 rounded-lg px-3 py-2.5">
         <FileCode className="w-4 h-4 text-primary shrink-0" />
         <span className="text-[11.5px] text-foreground font-medium flex-1">
@@ -297,6 +318,23 @@ interface Props {
 export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false }: Props) {
   if (!streaming && isFullHtmlDoc(text)) {
     return <HtmlDocCard html={text} indent={indent} hasMessageActions={hasMessageActions} />;
+  }
+  // Embedded doc (preamble/fence despite the skill contract) → salvage: short intro as
+  // prose, the document as the preview/download card. 🔒 The card srcdoc comes only from
+  // the extracted block of THIS message's text — same trust boundary as the bare case.
+  if (!streaming) {
+    const embedded = extractEmbeddedHtmlDoc(text);
+    if (embedded) {
+      return (
+        <div className="space-y-2">
+          {embedded.pre && (
+            <ProseBody text={embedded.pre} className={className} indent={indent}
+                       streaming={false} hasMessageActions={true} />
+          )}
+          <HtmlDocCard html={embedded.html} indent={indent} hasMessageActions={hasMessageActions} />
+        </div>
+      );
+    }
   }
   return <ProseBody text={text} className={className} indent={indent} streaming={streaming} hasMessageActions={hasMessageActions} />;
 }

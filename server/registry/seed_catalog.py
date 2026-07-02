@@ -295,7 +295,12 @@ TOOLSETS: list[dict] = [
         "tier": "safe",
         "status": "wired",
         "tools": [
-            ("render_deck", "Generate a native, editable PowerPoint (.pptx) from a deck spec. "
+            ("render_deck", "ONLY when the user EXPLICITLY asks for an editable PowerPoint / "
+             ".pptx FILE (说要'pptx文件'/'可编辑的PPT'/'PowerPoint'). For any other presentation "
+             "request the deliverable is a designed single-file HTML deck typed directly as your "
+             "reply (starts with <!DOCTYPE html — see your deck-authoring skill); do NOT call "
+             "this tool for those. "
+             "Generate a native, editable PowerPoint (.pptx) from a deck spec. "
              "slides=[{layout, ...}]. Per-layout fields (use ONLY these): "
              "title→{title,subtitle} · section→{title} · bullets→{title,bullets:[str]} "
              "(max ~6 shown; keep each bullet one short line) · "

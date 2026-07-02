@@ -67,3 +67,19 @@ describe('MessageBody action layers', () => {
     expect(screen.getByTitle('msg.preview')).toBeTruthy();
   });
 });
+
+describe("embedded HTML doc salvage (live incident: preamble + fence broke the card)", () => {
+  const DOC = "<!DOCTYPE html><html><head><title>t</title><style>" + "x".repeat(400) +
+    "</style></head><body>deck</body></html>";
+
+  it("splits preamble prose + renders the doc card when the doc is fenced mid-message", () => {
+    render(<MessageBody text={"以下是您需要的完整 HTML 代码:\n```html\n" + DOC + "\n```"} />);
+    expect(screen.getByText(/以下是您需要的完整 HTML 代码/)).toBeTruthy();
+    expect(screen.getByTestId("html-doc-card")).toBeTruthy();
+  });
+
+  it("does not salvage incomplete docs (no </html>)", () => {
+    render(<MessageBody text={"讲解一下 <!DOCTYPE html><html><body>片段"} />);
+    expect(screen.queryByTestId("html-doc-card")).toBeNull();
+  });
+});
