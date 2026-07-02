@@ -249,6 +249,67 @@ class CreateSkillExecutor:
 
 _DECK_MAX_SLIDES = 40
 _DECK_MAX_BULLETS = 10
+_DECK_MAX_TABLE_COLS = 8
+_DECK_MAX_TABLE_ROWS = 20
+_DECK_MAX_CHART_CATEGORIES = 25
+_DECK_MAX_CHART_SERIES = 6
+_DECK_CHART_TYPES = ("bar", "column", "line", "pie")
+
+
+def _is_scalar(v) -> bool:
+    """A displayable cell/label value: string or real number (bool is not a number here)."""
+    return isinstance(v, (str, int, float)) and not isinstance(v, bool)
+
+
+def _deck_data_slide_error(i: int, s: dict) -> str | None:
+    """Validate the data layouts (table / chart / kpi). Returns a clear, actionable error
+    string (surfaced to the model so it can fix the spec and retry) or None if valid."""
+    layout = s.get("layout")
+    if layout == "table":
+        headers = s.get("headers")
+        if (not isinstance(headers, list) or not headers
+                or len(headers) > _DECK_MAX_TABLE_COLS or not all(_is_scalar(h) for h in headers)):
+            return (f"slide {i}: table 'headers' must be a non-empty list of "
+                    f"<= {_DECK_MAX_TABLE_COLS} strings")
+        rows = s.get("rows")
+        if (not isinstance(rows, list) or not rows or len(rows) > _DECK_MAX_TABLE_ROWS
+                or not all(isinstance(r, list) and len(r) == len(headers)
+                           and all(_is_scalar(c) for c in r) for r in rows)):
+            return (f"slide {i}: table 'rows' must be a non-empty list of "
+                    f"<= {_DECK_MAX_TABLE_ROWS} rows, each a list of {len(headers)} "
+                    f"string/number cells matching 'headers'")
+    elif layout == "chart":
+        if s.get("chart_type") not in _DECK_CHART_TYPES:
+            return f"slide {i}: 'chart_type' must be one of: {', '.join(_DECK_CHART_TYPES)}"
+        cats = s.get("categories")
+        if (not isinstance(cats, list) or not cats or len(cats) > _DECK_MAX_CHART_CATEGORIES
+                or not all(_is_scalar(c) for c in cats)):
+            return (f"slide {i}: chart 'categories' must be a non-empty list of "
+                    f"<= {_DECK_MAX_CHART_CATEGORIES} labels")
+        series = s.get("series")
+        if not isinstance(series, list) or not series or len(series) > _DECK_MAX_CHART_SERIES:
+            return (f"slide {i}: chart 'series' must be a non-empty list of "
+                    f"<= {_DECK_MAX_CHART_SERIES} {{name, values}} objects")
+        if s["chart_type"] == "pie" and len(series) != 1:
+            return f"slide {i}: pie charts take exactly one series"
+        for j, ser in enumerate(series):
+            if not isinstance(ser, dict):
+                return f"slide {i}: series[{j}] must be an object {{name, values}}"
+            vals = ser.get("values")
+            if (not isinstance(vals, list)
+                    or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                               for v in vals)):
+                return f"slide {i}: series[{j}].values must be a list of numbers"
+            if len(vals) != len(cats):
+                return (f"slide {i}: series[{j}].values has {len(vals)} values but there are "
+                        f"{len(cats)} categories — lengths must match")
+    elif layout == "kpi":
+        items = s.get("items")
+        if (not isinstance(items, list) or not 2 <= len(items) <= 4
+                or not all(isinstance(it, dict) and _is_scalar(it.get("value", ""))
+                           and _is_scalar(it.get("label", "")) for it in items)):
+            return f"slide {i}: kpi 'items' must be a list of 2-4 {{value, label}} objects"
+    return None
 
 
 class DeckExecutor:
@@ -279,6 +340,9 @@ class DeckExecutor:
                                       or not all(isinstance(x, str) for x in v)):
                     return {"ok": False,
                             "error": f"slide {i}: '{field}' must be a list of <= {_DECK_MAX_BULLETS} strings"}
+            data_err = _deck_data_slide_error(i, s)
+            if data_err:
+                return {"ok": False, "error": data_err}
 
         # Theme is a preset NAME (see deck_pptx.THEMES); unknown/non-string (e.g. the legacy
         # {'accent': '#hex'} dict) falls back to the default preset inside build_deck.

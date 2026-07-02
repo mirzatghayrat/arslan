@@ -16,18 +16,29 @@ from __future__ import annotations
 from io import BytesIO
 
 from pptx import Presentation
+from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
 
-LAYOUTS = {"title", "section", "bullets", "two-column", "quote", "big-number"}
+LAYOUTS = {"title", "section", "bullets", "two-column", "quote", "big-number",
+           "table", "chart", "kpi"}
 
 # 16:9 canvas.
 _W = Inches(13.333)
 _H = Inches(7.5)
 _MARGIN = Inches(0.6)
 _CONTENT_W = _W - _MARGIN * 2
+
+# Typeface pair applied to EVERY run. python-pptx's font.name only sets the latin
+# (western-script) typeface — CJK text silently falls back to the viewer default (Calibri-ish,
+# looks cheap) unless an <a:ea> element is ALSO written into the run properties. PingFang SC is
+# the macOS system CJK face; PowerPoint elsewhere falls back gracefully (e.g. Microsoft YaHei).
+_LATIN_FONT = "Helvetica Neue"
+_EA_FONT = "PingFang SC"
 
 # Typography scale (pt) — consistent across every layout.
 _T_TITLE = 40    # title-slide headline / section-slide oversize title
@@ -45,7 +56,15 @@ _T_CAPTION = 12  # page badge / attributions / column headers
 #   light     — text placed ON a primary-filled band
 #   bg        — slide background
 THEMES: dict[str, dict[str, str]] = {
-    # The house look: warm paper, near-black ink, chartreuse highlighter.
+    # The house look — the user's own WCAG-AA calibrated "Ember" system: wheat paper,
+    # warm black ink, rust-orange accent (4.6:1 on paper; _on_accent resolves to white
+    # text on this dark accent automatically).
+    "ember": {"primary": "1A1410", "secondary": "6B5E52", "accent": "D94420",
+              "light": "FAF5EE", "bg": "F2EBE0"},
+    # Ember dark variant: warm black bg, paper text, brighter on-dark accent.
+    "ember-dark": {"primary": "F2EBE0", "secondary": "D0A890", "accent": "F06A20",
+                   "light": "262018", "bg": "1A1410"},
+    # Previous house look: warm paper, near-black ink, chartreuse highlighter.
     "ink": {"primary": "1E1E1E", "secondary": "54665A", "accent": "EEFF53",
             "light": "FFFFFF", "bg": "F6F4F2"},
     # Dark: near-black blue, light text, cyan accent.
@@ -58,7 +77,7 @@ THEMES: dict[str, dict[str, str]] = {
     "terra": {"primary": "7C3F21", "secondary": "9A6B4F", "accent": "E8852B",
               "light": "FFF8EE", "bg": "FAF3E7"},
 }
-DEFAULT_THEME = "ink"
+DEFAULT_THEME = "ember"
 
 
 def _resolve_theme(name: object) -> dict[str, RGBColor]:
@@ -67,11 +86,14 @@ def _resolve_theme(name: object) -> dict[str, RGBColor]:
     key = name.strip().lower() if isinstance(name, str) else ""
     hexes = THEMES.get(key, THEMES[DEFAULT_THEME])
     t = {role: RGBColor.from_string(h) for role, h in hexes.items()}
-    # Text sitting on the (bright) accent: whichever of primary/light is darker.
-    t["on_accent"] = min(
-        (t["primary"], t["light"]),
-        key=lambda c: 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2],
-    )
+    # Text sitting on the accent: pick by the ACCENT's own luminance — a bright accent
+    # (lime, cyan) needs the darker of primary/light on it, a dark accent (ember's rust
+    # #D94420) needs the lighter one (white-ish). The old darker-always rule assumed
+    # bright accents and would put near-black on rust.
+    def _luma(c: RGBColor) -> float:
+        return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+    pick = min if _luma(t["accent"]) >= 128 else max
+    t["on_accent"] = pick((t["primary"], t["light"]), key=_luma)
     return t
 
 
@@ -94,14 +116,33 @@ def _text(slide, left, top, width, height, *, align=PP_ALIGN.LEFT, anchor=MSO_AN
     return box, tf, p
 
 
+def _set_font(run, *, size=None, color=None, bold=None, italic=None):
+    """Apply size/weight/color AND both typefaces to a run. font.name only writes the
+    <a:latin> typeface, so the east-asian one is set via a raw <a:ea> element — without it,
+    Chinese text renders in the viewer's default fallback font."""
+    f = run.font
+    if size is not None:
+        f.size = Pt(size)
+    if bold is not None:
+        f.bold = bold
+    if italic is not None:
+        f.italic = italic
+    if color is not None:
+        f.color.rgb = color
+    f.name = _LATIN_FONT  # writes <a:latin> (and guarantees rPr exists)
+    rPr = f._rPr
+    ea = rPr.find(qn("a:ea"))
+    if ea is None:
+        ea = rPr.makeelement(qn("a:ea"), {})
+        rPr.find(qn("a:latin")).addnext(ea)  # schema order: a:ea directly follows a:latin
+    ea.set("typeface", _EA_FONT)
+    return run
+
+
 def _run(paragraph, text, *, size, color, bold=False, italic=False):
     r = paragraph.add_run()
     r.text = str(text)
-    r.font.size = Pt(size)
-    r.font.bold = bold
-    r.font.italic = italic
-    r.font.color.rgb = color
-    return r
+    return _set_font(r, size=size, color=color, bold=bold, italic=italic)
 
 
 def _accent_underline(slide, t, *, top):
@@ -169,10 +210,26 @@ def _section_slide(slide, s, t, number):
     _run(p, s.get("title") or "", size=_T_TITLE, color=t["primary"], bold=True)
 
 
+_MAX_BULLETS_SHOWN = 6  # per list; overflow is truncated on-slide, full list goes to notes
+
+
+def _cap_bullets(items, label):
+    """Cap a bullet list at _MAX_BULLETS_SHOWN. Returns (shown_items, extra_note_or_None);
+    the note carries the FULL list so nothing is lost — it lands in the speaker notes."""
+    items = [str(x) for x in items]
+    if len(items) <= _MAX_BULLETS_SHOWN:
+        return items, None
+    note = (f"[{label} truncated to {_MAX_BULLETS_SHOWN} on the slide] Full list:\n"
+            + "\n".join(f"• {x}" for x in items))
+    return items[:_MAX_BULLETS_SHOWN], note
+
+
 def _bullets_slide(slide, s, t):
     _heading(slide, s.get("title"), t)
-    _bullet_list(slide, s.get("bullets") or [], t,
+    shown, extra = _cap_bullets(s.get("bullets") or [], "bullets")
+    _bullet_list(slide, shown, t,
                  left=_MARGIN, top=Inches(1.95), width=_CONTENT_W, height=Inches(4.7))
+    return extra
 
 
 def _two_col_slide(slide, s, t):
@@ -191,10 +248,14 @@ def _two_col_slide(slide, s, t):
                 _, _, hp = _text(slide, x, Inches(1.95), col_w, Inches(0.4))
                 _run(hp, str(header).upper(), size=_T_CAPTION + 2, color=t["secondary"], bold=True)
             _rect(slide, x, Inches(2.4), col_w, Pt(1), t["secondary"])  # hairline under header row
-    _bullet_list(slide, s.get("left") or [], t,
+    left_shown, ln = _cap_bullets(s.get("left") or [], "left column")
+    right_shown, rn = _cap_bullets(s.get("right") or [], "right column")
+    _bullet_list(slide, left_shown, t,
                  left=_MARGIN, top=body_top, width=col_w, height=Inches(4.2))
-    _bullet_list(slide, s.get("right") or [], t,
+    _bullet_list(slide, right_shown, t,
                  left=right_x, top=body_top, width=col_w, height=Inches(4.2))
+    extra = "\n\n".join(x for x in (ln, rn) if x)
+    return extra or None
 
 
 def _quote_slide(slide, s, t):
@@ -222,9 +283,139 @@ def _big_number_slide(slide, s, t):
         _run(lp, s["label"], size=_T_BODY, color=t["secondary"])
 
 
+# ---- data layouts (table / chart / kpi) — numbers deserve better than bullet walls ----
+
+_TABLE_MAX_ROWS = 7  # body rows shown; extra rows are truncated into the speaker notes
+
+
+def _cell_text(cell, text, *, size, color, bold=False):
+    cell.margin_left = cell.margin_right = Inches(0.1)
+    cell.margin_top = cell.margin_bottom = Inches(0.05)
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf = cell.text_frame
+    tf.word_wrap = True
+    _run(tf.paragraphs[0], text, size=size, color=color, bold=bold)
+
+
+def _cell_bottom_accent(cell, color):
+    """Accent bottom edge on a header cell — python-pptx has no cell-border API, so write
+    the <a:lnB> element into tcPr directly (borders precede fill in the tcPr sequence)."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    lnB = tcPr.find(qn("a:lnB"))
+    if lnB is None:
+        lnB = tcPr.makeelement(qn("a:lnB"), {})
+        tcPr.insert(0, lnB)
+    lnB.set("w", "28575")  # 2.25pt (EMU)
+    fill = lnB.makeelement(qn("a:solidFill"), {})
+    clr = fill.makeelement(qn("a:srgbClr"), {"val": str(color)})
+    fill.append(clr)
+    lnB.append(fill)
+
+
+def _table_slide(slide, s, t):
+    _heading(slide, s.get("title"), t)
+    headers = [str(h) for h in (s.get("headers") or [])]
+    all_rows = [[str(c) for c in row] for row in (s.get("rows") or [])]
+    rows = all_rows[:_TABLE_MAX_ROWS]
+    top = Inches(1.95)
+    gf = slide.shapes.add_table(len(rows) + 1, len(headers), _MARGIN, top,
+                                _CONTENT_W, Inches(0.55) * (len(rows) + 1))
+    table = gf.table
+    table.horz_banding = False  # we zebra explicitly with theme colors
+    for j, h in enumerate(headers):
+        cell = table.cell(0, j)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = t["primary"]
+        _cell_bottom_accent(cell, t["accent"])
+        _cell_text(cell, h, size=13, color=t["light"], bold=True)
+    for i, row in enumerate(rows):
+        fill = t["light"] if i % 2 else t["bg"]  # zebra
+        for j, val in enumerate(row):
+            cell = table.cell(i + 1, j)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = fill
+            _cell_text(cell, val, size=13, color=t["primary"])
+    if len(all_rows) > _TABLE_MAX_ROWS:
+        hidden = all_rows[_TABLE_MAX_ROWS:]
+        return (f"[table truncated — showing {_TABLE_MAX_ROWS} of {len(all_rows)} rows] "
+                "Remaining rows:\n" + "\n".join(" | ".join(r) for r in hidden))
+    return None
+
+
+_CHART_TYPES = {
+    "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+    "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "line": XL_CHART_TYPE.LINE,
+    "pie": XL_CHART_TYPE.PIE,
+}
+
+
+def _chart_slide(slide, s, t):
+    """Native, editable pptx chart (not an image). Data problems raise ValueError — the
+    executor surfaces the message to the model so it can fix the spec and retry."""
+    ctype = s.get("chart_type")
+    if ctype not in _CHART_TYPES:
+        raise ValueError(f"chart_type must be one of: {', '.join(sorted(_CHART_TYPES))}")
+    cats = [str(c) for c in (s.get("categories") or [])]
+    series = s.get("series") or []
+    if not cats or not series:
+        raise ValueError("chart needs non-empty 'categories' and 'series'")
+    data = CategoryChartData()
+    data.categories = cats
+    for ser in series:
+        vals = [float(v) for v in (ser.get("values") or [])]
+        if len(vals) != len(cats):
+            raise ValueError(f"series {ser.get('name')!r} has {len(vals)} values but there are "
+                             f"{len(cats)} categories — lengths must match")
+        data.add_series(str(ser.get("name") or ""), vals)
+    _heading(slide, s.get("title"), t)
+    gf = slide.shapes.add_chart(_CHART_TYPES[ctype], _MARGIN, Inches(1.95),
+                                _CONTENT_W, Inches(4.8), data)
+    chart = gf.chart
+    chart.has_title = False  # the styled slide heading is the title
+    chart.has_legend = len(series) > 1  # legend only earns its space with multiple series
+    if chart.has_legend:
+        chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+        chart.legend.include_in_layout = False
+    # Theme the first series where python-pptx allows (pie keeps auto-varied slice colors).
+    first = chart.plots[0].series[0]
+    if ctype == "line":
+        first.format.line.color.rgb = t["accent"]
+        first.format.line.width = Pt(2.5)
+    elif ctype != "pie":
+        first.format.fill.solid()
+        first.format.fill.fore_color.rgb = t["accent"]
+
+
+def _kpi_slide(slide, s, t):
+    # Row of stat blocks: light rounded card + accent top bar, value huge, label quiet.
+    _heading(slide, s.get("title"), t)
+    items = list(s.get("items") or [])[:4]
+    n = max(len(items), 1)
+    gap = Inches(0.4)
+    w = (_CONTENT_W - gap * (n - 1)) / n
+    top, h = Inches(2.35), Inches(2.7)
+    for i, item in enumerate(items):
+        x = _MARGIN + (w + gap) * i
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, top, w, h)
+        card.fill.solid()
+        card.fill.fore_color.rgb = t["light"]
+        card.line.color.rgb = t["secondary"]  # hairline keeps cards visible on same-color bgs
+        card.line.width = Pt(0.75)
+        card.shadow.inherit = False
+        _rect(slide, x + Inches(0.35), top, w - Inches(0.7), Inches(0.09), t["accent"])
+        _, _, vp = _text(slide, x + Inches(0.1), top + Inches(0.5), w - Inches(0.2), Inches(1.2),
+                         align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+        _run(vp, item.get("value") or "", size=_T_TITLE, color=t["primary"], bold=True)
+        _, _, lp = _text(slide, x + Inches(0.15), top + Inches(1.8), w - Inches(0.3), Inches(0.7),
+                         align=PP_ALIGN.CENTER)
+        _run(lp, item.get("label") or "", size=_T_CAPTION, color=t["secondary"])
+
+
 _RENDERERS = {
     "title": _title_slide, "section": _section_slide, "bullets": _bullets_slide,
     "two-column": _two_col_slide, "quote": _quote_slide, "big-number": _big_number_slide,
+    "table": _table_slide, "chart": _chart_slide, "kpi": _kpi_slide,
 }
 
 
@@ -248,14 +439,17 @@ def build_deck(spec: dict) -> bytes:
         layout = s["layout"]
         if layout == "section":
             section_no += 1
-            _section_slide(slide, s, t, section_no)
+            extra_notes = _section_slide(slide, s, t, section_no)
         else:
-            _RENDERERS[layout](slide, s, t)
+            extra_notes = _RENDERERS[layout](slide, s, t)
         if layout != "title":
             _page_badge(slide, idx, t)
-        notes = s.get("notes")
-        if notes:
-            slide.notes_slide.notes_text_frame.text = str(notes)
+        # Speaker notes = the author's notes + anything a renderer truncated off the slide.
+        parts = [str(s["notes"])] if s.get("notes") else []
+        if extra_notes:
+            parts.append(extra_notes)
+        if parts:
+            slide.notes_slide.notes_text_frame.text = "\n\n".join(parts)
 
     buf = BytesIO()
     prs.save(buf)
