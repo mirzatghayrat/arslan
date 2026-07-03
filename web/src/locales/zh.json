@@ -6,7 +6,15 @@
   "nav": {
     "dashboard": "仪表盘",
     "spawns": "分身",
-    "settings": "设置"
+    "settings": "设置",
+    "secondBrain": "第二大脑"
+  },
+  "brain": {
+    "loading": "正在组装你的第二大脑…",
+    "empty": "第二大脑还是空的——喂它一份资料。",
+    "error": "知识图谱加载失败。",
+    "connections": "关联",
+    "noConnections": "还没有关联。"
   },
   "dashboard": {
     "title": "你的分身",
@@ -534,7 +542,8 @@
     "workspace_specialist": "专家流：{{name}}",
     "workspace_ledger": "分身账本仪表盘",
     "workspace_settings": "系统诊断配置",
-    "workspace_capabilities": "能力库"
+    "workspace_capabilities": "能力库",
+    "workspace_brain": "第二大脑"
   },
   "capabilities": {
     "title": "能力库",

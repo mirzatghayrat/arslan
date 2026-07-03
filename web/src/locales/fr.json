@@ -6,7 +6,15 @@
   "nav": {
     "dashboard": "Tableau de bord",
     "spawns": "Spawns",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "secondBrain": "Second Brain"
+  },
+  "brain": {
+    "loading": "Assembling your second brain…",
+    "empty": "Your second brain is empty — feed it a source.",
+    "error": "Couldn't load your knowledge graph.",
+    "connections": "Connections",
+    "noConnections": "No connections yet."
   },
   "dashboard": {
     "title": "Vos spawns",
@@ -534,7 +542,8 @@
     "workspace_specialist": "Specialist Stream: {{name}}",
     "workspace_ledger": "Spawns Ledger Dashboard",
     "workspace_settings": "System Diagnostics Config",
-    "workspace_capabilities": "Capability Library"
+    "workspace_capabilities": "Capability Library",
+    "workspace_brain": "Second Brain"
   },
   "capabilities": {
     "title": "Capability Library",

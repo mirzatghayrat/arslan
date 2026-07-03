@@ -33,6 +33,11 @@ import RunCommandCard from './components/RunCommandCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
+import KnowledgeOrrery from './components/orrery/KnowledgeOrrery';
+import OrreryDetailPanel from './components/orrery/OrreryDetailPanel';
+import { useKnowledgeGraph } from './hooks/useKnowledgeGraph';
+import type { OrreryNodeIn } from './components/orrery/orreryLayout';
+import WorkingPulse from './components/WorkingPulse';
 
 interface ArslanThread {
   id: string;
@@ -63,8 +68,8 @@ export default function App() {
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
 
-// Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings'
-  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'settings'>('arslan');
+// Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'settings'
+  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'settings'>('arslan');
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -300,6 +305,10 @@ export default function App() {
   useEffect(() => { api.listMcpServers().then(setMcpServers).catch(() => setMcpServers([])); }, []);
 
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
+
+  // ── Second Brain: live knowledge graph + the node whose detail panel is open.
+  const { graph: knowledgeGraph, loading: knowledgeLoading, error: knowledgeError } = useKnowledgeGraph();
+  const [selectedNode, setSelectedNode] = useState<OrreryNodeIn | null>(null);
 
   // Spawn Studio — the roomy create/configure panel (replaces SpawnEditPopup +
   // the old full-screen SpawnEditor). `edit` carries a numeric spawn id.
@@ -574,7 +583,8 @@ export default function App() {
                   {activeSection === 'arslan' ? t('modal.workspace_orchestrator', { title: activeThread.title }) :
                    activeSection === 'spawn' ? t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' }) :
                    activeSection === 'ledger' ? t('modal.workspace_ledger') :
-                   activeSection === 'capabilities' ? t('modal.workspace_capabilities') : t('modal.workspace_settings')}
+                   activeSection === 'capabilities' ? t('modal.workspace_capabilities') :
+                   activeSection === 'brain' ? t('modal.workspace_brain') : t('modal.workspace_settings')}
                 </span>
               </span>
             </div>
@@ -582,8 +592,8 @@ export default function App() {
             <div className="flex items-center gap-3">
 
 
-              {/* Toggle Diagnostic Rail button */}
-              {!isThreadEmpty && (
+              {/* Toggle Diagnostic Rail button — only where the rail can appear */}
+              {!isThreadEmpty && (activeSection === 'arslan' || activeSection === 'spawn') && (
                 <button
                   id="toggle-control-panel"
                   onClick={() => setShowControlPanel(!showControlPanel)}
@@ -766,6 +776,50 @@ export default function App() {
 
             {activeSection === 'capabilities' && (
               <Capabilities />
+            )}
+
+            {activeSection === 'brain' && (
+              <div className="flex-1 flex h-full overflow-hidden relative">
+                <div className="flex-1 relative h-full">
+                  {knowledgeLoading ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <WorkingPulse
+                        phrases={[t('brain.loading')]}
+                        className="text-[11px] text-subtle-foreground uppercase tracking-widest"
+                      />
+                    </div>
+                  ) : knowledgeError ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center select-none">
+                      <span className="text-lg">⚠️</span>
+                      <p className="text-[11px] font-mono text-muted-foreground max-w-sm leading-relaxed">
+                        {t('brain.error')}
+                      </p>
+                    </div>
+                  ) : knowledgeGraph.nodes.length <= 1 ? (
+                    <div className="absolute inset-0 flex items-center justify-center px-8 text-center select-none">
+                      <p className="text-[11px] font-mono text-subtle-foreground max-w-sm leading-relaxed">
+                        {t('brain.empty')}
+                      </p>
+                    </div>
+                  ) : (
+                    <KnowledgeOrrery
+                      nodes={knowledgeGraph.nodes}
+                      edges={knowledgeGraph.edges}
+                      onSelect={setSelectedNode}
+                      className="w-full h-full"
+                    />
+                  )}
+                </div>
+
+                {selectedNode && (
+                  <OrreryDetailPanel
+                    node={selectedNode}
+                    nodes={knowledgeGraph.nodes}
+                    edges={knowledgeGraph.edges}
+                    onSelect={setSelectedNode}
+                  />
+                )}
+              </div>
             )}
 
             {activeSection === 'settings' && (
