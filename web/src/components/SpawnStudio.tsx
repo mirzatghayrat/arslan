@@ -562,7 +562,23 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
                               )}
                             </span>
                             <span className="min-w-0">
-                              <span className="block text-[11px] font-medium text-foreground truncate">{it.name}</span>
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-[11px] font-medium text-foreground truncate">{it.name}</span>
+                                {/* Locked rows carry a one-word WHY tag (user feedback: the 🚫
+                                    cursor says "no" but not why) + full reason as native tooltip. */}
+                                {locked && (
+                                  <span
+                                    title={t(it.tier === "orchestrator"
+                                      ? "capabilities.catalog.orchestrator_note"
+                                      : "capabilities.catalog.unimplemented_note")}
+                                    className="shrink-0 text-[8.5px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-foreground/[0.06] text-subtle-foreground border border-border/60"
+                                  >
+                                    {t(it.tier === "orchestrator"
+                                      ? "capabilities.chips.arslan_only"
+                                      : "capabilities.chips.unimplemented")}
+                                  </span>
+                                )}
+                              </span>
                               {it.description && (
                                 <span className="block text-[10px] text-subtle-foreground leading-snug line-clamp-2">
                                   {it.description}
