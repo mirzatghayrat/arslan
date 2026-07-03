@@ -14,7 +14,7 @@ export default function FilterChips({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div role="group" className="flex items-center gap-1.5 overflow-x-auto pb-1 mb-4">
+    <div role="group" className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin pb-1.5 mb-4">
       {chips.map((c) => {
         const on = active === c.id;
         return (

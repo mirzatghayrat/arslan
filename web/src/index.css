@@ -16,6 +16,29 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* ── Hairline scrollbars ───────────────────────────────────────────────────────
+   .scrollbar-thin was referenced (sidebar, chip rows) but never defined — so the
+   OS default fat bar rendered and overlapped content (user-flagged on the chip
+   row). 4px thumb, transparent track, subtle until hover. */
+.scrollbar-thin {
+  scrollbar-width: thin;                             /* Firefox */
+  scrollbar-color: var(--border-strong) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+}
+
 /* Map semantic CSS vars to Tailwind utilities (bg-surface, text-foreground, ...). */
 /* Must live here (not in an @import'd file) for Tailwind v4 to pick up @theme inline. */
 @theme inline {
