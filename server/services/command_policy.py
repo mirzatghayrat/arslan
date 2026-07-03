@@ -60,10 +60,13 @@ def _looks_executable(path: str) -> bool:
 # SecurityAnalyzer tiers, but only the pattern layer — no LLM. Per-binary lookup on
 # the first subcommand; fail-safe = unknown shapes are never LOW.
 _GIT_LOW = frozenset({"status", "log", "diff", "show", "branch", "remote", "ls-files",
-                      "rev-parse", "describe", "config"})
+                      "rev-parse", "describe"})
 _GIT_HIGH = frozenset({"push", "pull", "fetch", "clone", "submodule"})
+# `config` is MEDIUM (not LOW): git config core.sshCommand/core.pager/alias.x=!cmd
+# writes stored config that makes git execute an arbitrary program later —
+# stored-command-injection. Must always show a confirmation card under ask_risky.
 _GIT_MEDIUM = frozenset({"add", "commit", "checkout", "init", "restore", "reset", "rm",
-                         "mv", "tag", "stash", "merge", "rebase", "apply", "clean"})
+                         "mv", "tag", "stash", "merge", "rebase", "apply", "clean", "config"})
 
 
 def classify(command: str, argv) -> str:

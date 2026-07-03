@@ -8,6 +8,11 @@ refuse instead of degrading.
 
 Assumes the caller already ran command_policy.validate() — this module does NOT
 re-validate the whitelist; it only executes.
+
+NOTE: the seatbelt profile denies NETWORK but not filesystem — a command may read/write
+any path the server user can (that is the point: run local tools on the user's files).
+This is why every command is confirmation-gated and ffmpeg/pandoc classify at least MEDIUM
+(always carded under ask_risky). Do not treat the tmpdir cwd as a filesystem jail.
 """
 from __future__ import annotations
 

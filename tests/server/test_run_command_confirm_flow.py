@@ -273,3 +273,45 @@ def test_remember_auto_approves_same_shape(app_client, monkeypatch):
         assert any(f.get("type") == "tool_result" and f.get("ok") for f in after2)
 
     assert len(fake_exec.calls) == 2
+
+
+def test_remember_low_does_not_auto_approve_high(app_client, monkeypatch):
+    """SECURITY regression: remembering a LOW command (git status) must NOT
+    auto-approve a HIGH one (git push). The old _cmd_sig collapsed the git
+    subcommand to '·', so both hashed to `git\\x1f·` and remembering status
+    silently allowlisted push. Fix keeps the subcommand literal AND never
+    remembers HIGH-risk commands — so git push must still show a fresh card."""
+    _enable_shell()  # ask_all default → LOW cards (so we can remember it)
+    _stub_answer_route(monkeypatch)
+    fake_exec = _stub_run_command_executor(monkeypatch)
+
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+
+        # Turn 1: git status (LOW), confirm with remember=true.
+        _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
+        ws.send_json({"type": "user_message", "content": "check repo"})
+        frames = _collect_until(ws, "propose_run_command")
+        call_id = frames[-1]["call_id"]
+        ws.send_json({"type": "confirm_run_command", "call_id": call_id, "remember": True})
+        after1 = _collect_until(ws, "stream_end")
+        assert any(f.get("type") == "tool_result" for f in after1)
+
+        # Turn 2: git push (HIGH) → must STILL card, never auto-approved.
+        _stub_tool_loop_adapter(monkeypatch, "git", ["push"])
+        ws.send_json({"type": "user_message", "content": "push it"})
+        frames2 = _collect_until(ws, "propose_run_command")
+        assert frames2[-1]["type"] == "propose_run_command", (
+            "HIGH git push must card even after remembering git status "
+            f"(got {[f['type'] for f in frames2]})"
+        )
+        assert frames2[-1]["command"] == "git"
+        assert frames2[-1]["argv"] == ["push"]
+        call_id2 = frames2[-1]["call_id"]
+        # Even confirm it WITH remember=true; a HIGH command must never be allowlisted.
+        ws.send_json({"type": "confirm_run_command", "call_id": call_id2, "remember": True})
+        after2 = _collect_until(ws, "stream_end")
+        assert any(f.get("type") == "tool_result" for f in after2)
+
+    assert len(fake_exec.calls) == 2

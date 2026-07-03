@@ -27,6 +27,24 @@ from server.ws import protocol
 logger = logging.getLogger(__name__)
 
 
+def _cmd_sig(command: str, argv: list) -> str:
+    # signature = binary + subcommand (kept literal) + arg SHAPE of the rest
+    # (flags kept, free values blanked). Keeping the FIRST non-flag token — the
+    # git/gh subcommand, the risk-bearing token — is what stops "remember git
+    # status" from auto-approving "git push".
+    sig_parts: list[str] = []
+    seen_subcommand = False
+    for a in argv:
+        if a.startswith("-"):
+            sig_parts.append(a)            # flags kept verbatim
+        elif not seen_subcommand:
+            sig_parts.append(a)            # first non-flag token = subcommand, kept
+            seen_subcommand = True
+        else:
+            sig_parts.append("·")          # later free values blanked
+    return command + "\x1f" + "\x1f".join(sig_parts)
+
+
 async def _history(conversation_id: str) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
@@ -139,12 +157,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     session_cmd_allow: set[str] = set()  # command signatures auto-approved this session
 
-    def _cmd_sig(command: str, argv: list) -> str:
-        # signature = binary + arg SHAPE (flags kept, free values blanked) so that
-        # "remember git status" never auto-approves "git push".
-        shape = [a if a.startswith("-") else "·" for a in argv]
-        return command + "\x1f" + "\x1f".join(shape)
-
     async def confirm_command(command: str, argv: list) -> bool:
         from server.services import command_policy, settings_service
         sig = _cmd_sig(command, argv)
@@ -188,7 +200,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             # Client vanished mid-confirmation: decline and re-raise so the outer
             # handler's disconnect path runs (clean socket teardown).
             raise
-        if decision.get("remember"):
+        # Never permanently auto-approve a HIGH-risk (e.g. network) command, even if
+        # the user checked "remember" — those always require a fresh card.
+        if decision.get("remember") and risk != "HIGH":
             session_cmd_allow.add(sig)
         return bool(decision.get("approved"))
 

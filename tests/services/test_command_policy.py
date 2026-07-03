@@ -87,3 +87,8 @@ def test_classify_bare_probe_is_low():
     assert cp.classify("git", ["--version"]) == "LOW"
     assert cp.classify("git", ["-v"]) == "LOW"
     assert cp.classify("ffmpeg", ["-version"]) == "LOW"
+
+
+def test_git_config_is_medium_not_low():
+    # git config can set core.sshCommand/alias = stored command injection; must card.
+    assert cp.classify("git", ["config", "core.pager", "less"]) == "MEDIUM"
