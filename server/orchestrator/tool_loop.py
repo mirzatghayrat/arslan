@@ -37,6 +37,7 @@ _PROTOCOL = (
 )
 
 ResolveTools = Callable[[], Awaitable[list[dict]]]
+ConfirmCommand = Callable[[str, list], Awaitable[bool]]
 
 
 def _get_adapter():
@@ -212,12 +213,45 @@ def _fallback_with_digest(user_content: str, tool_trace: list) -> str:
     return f"{header}\n{digest}\n\n{base}"
 
 
+def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo) -> dict:
+    emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
+          "summary": _summarize_result(result), "artifact": result.get("artifact")})
+    tool_trace.append({"tool": tool_key, "args": args, "result": result})
+    convo.append({"role": "assistant", "content": assistant_content})
+    feedback = {k: v for k, v in result.items() if k != "artifact"}
+    raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
+    framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
+    convo.append({"role": "user",
+                  "content": f"TOOL RESULT for {tool_key}:\n{framed}"
+                             "\nUse this to continue: call another tool, escalate, or give your final answer."})
+    return result
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
-                         tool_timeout_s, tool_trace, convo) -> dict:
+                         tool_timeout_s, tool_trace, convo, confirm_command=None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
-    assistant turn + framed tool result into convo. Returns the raw result dict."""
+    assistant turn + framed tool result into convo. Returns the raw result dict.
+
+    run_command is special: it requires per-command user confirmation via the injected
+    confirm_command(command, argv) -> bool callback. No callback → refuse (safety default)."""
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+
+    if tool_key == "run_command":
+        command = str(args.get("command") or "")
+        argv = args.get("argv") if isinstance(args.get("argv"), list) else []
+        if confirm_command is None:
+            result = {"ok": False,
+                      "error": "run_command requires user confirmation, which is not "
+                               "available in this context"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo)
+        approved = await confirm_command(command, argv)
+        if not approved:
+            result = {"ok": False, "error": "user declined this command"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo)
+
     live = {t["key"] for t in await resolve_tools()}
     executor = (await resolve_executor(tool_key)) if tool_key in live else None
     if executor is None:
@@ -230,17 +264,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
-    emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
-          "summary": _summarize_result(result), "artifact": result.get("artifact")})
-    tool_trace.append({"tool": tool_key, "args": args, "result": result})
-    convo.append({"role": "assistant", "content": assistant_content})
-    feedback = {k: v for k, v in result.items() if k != "artifact"}
-    raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
-    framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
-    convo.append({"role": "user",
-                  "content": f"TOOL RESULT for {tool_key}:\n{framed}"
-                             "\nUse this to continue: call another tool, escalate, or give your final answer."})
-    return result
+    return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                               assistant_content, convo)
 
 
 async def run(
@@ -255,6 +280,7 @@ async def run(
     max_tool_calls: int = MAX_TOOL_CALLS,
     tool_timeout_s: float = TOOL_TIMEOUT_S,
     force_tools: bool = False,
+    confirm_command: ConfirmCommand | None = None,
 ) -> dict:
     """Run the loop. Returns {"final": str|None, "escalation": dict|None, "tool_trace": list}.
     Exactly one of final/escalation is non-None. resolve_tools() returns the currently
@@ -334,7 +360,8 @@ async def run(
             args = parsed.get("args") if isinstance(parsed.get("args"), dict) else {}
             await _dispatch_tool(tool_key, args, content, resolve_tools=resolve_tools,
                                  emit=emit, tool_timeout_s=tool_timeout_s,
-                                 tool_trace=tool_trace, convo=convo)
+                                 tool_trace=tool_trace, convo=convo,
+                                 confirm_command=confirm_command)
             fired.add(tool_key)
             continue
 
