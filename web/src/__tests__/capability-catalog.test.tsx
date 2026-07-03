@@ -2,103 +2,146 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CapabilityCatalog from "../components/CapabilityCatalog";
 
-vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn() } }));
+// i18n passthrough — t() returns the key so assertions are locale-independent.
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { changeLanguage: vi.fn() },
+  }),
+  initReactI18next: { type: "3rdParty", init: vi.fn() },
+}));
+
+vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn(), listSpawns: vi.fn(), updateEquipment: vi.fn() } }));
 import { api } from "../api/client";
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
+const CATALOG = {
+  toolsets: [
+    { key: "web", name: "Web Tools", description: "Search the web", tier: "safe", status: "wired", assignable: true, tools: [] },
+    { key: "discord", name: "Discord", description: "Fetch messages", tier: "safe", status: "registered", assignable: false, tools: [] },
+    { key: "shell", name: "Shell", description: "Run shell commands", tier: "orchestrator", status: "registered", assignable: false, tools: [] },
+    { key: "ghost", name: "Ghost", description: "gone", tier: "orchestrator", status: "infeasible", assignable: false, tools: [] },
+  ],
+  skills: [
+    { key: "writer", name: "Writer", category: "content", description: "Write copy", tier: "safe", status: "registered", assignable: true },
+    { key: "planner", name: "Planner", category: "ops", description: "Plan work", tier: "safe", status: "registered", assignable: true },
+    { key: "airtable", name: "Airtable", category: "productivity", description: "Bases", tier: "safe", status: "registered", assignable: false },
+    { key: "claude-code", name: "Claude Code", category: "agents", description: "Delegate coding", tier: "orchestrator", status: "registered", assignable: false },
+    { key: "dead", name: "Dead", category: "content", description: "gone", tier: "safe", status: "infeasible", assignable: false },
+  ],
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  m.getRegistry.mockResolvedValue({
-    toolsets: [
-      { key: "web", name: "Web Tools", description: "Search the web", tier: "safe", status: "wired", assignable: true, tools: [] },
-      { key: "shell", name: "Shell", description: "Run shell commands", tier: "orchestrator", status: "wired", assignable: false, tools: [] },
-    ],
-    skills: [
-      { key: "writer", name: "Writer", category: "content", description: "Write copy", tier: "safe", status: "registered", assignable: true },
-    ],
-  });
+  m.getRegistry.mockResolvedValue(CATALOG);
+  m.listSpawns.mockResolvedValue([]);
 });
 
-describe("CapabilityCatalog", () => {
-  it("lists toolsets with a badge in tools mode (both groups visible by default)", async () => {
+const chipBtn = (re: RegExp) => screen.getByRole("button", { name: re });
+
+describe("CapabilityCatalog — usable-first availability chips", () => {
+  it("tools: default 可用 chip shows only assignable toolsets (hollow + orchestrator hidden)", async () => {
+    render(<CapabilityCatalog kind="tools" />);
+    expect(await screen.findByText("Web Tools")).toBeInTheDocument();
+    expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+    expect(screen.queryByText("Shell")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ghost")).not.toBeInTheDocument(); // infeasible always hidden
+    // usable chip is the default (active)
+    expect(chipBtn(/capabilities\.chips\.usable/)).toHaveAttribute("aria-pressed", "true");
+    // counts derived from real data (infeasible excluded)
+    expect(chipBtn(/capabilities\.chips\.usable/)).toHaveTextContent("1");
+    expect(chipBtn(/capabilities\.chips\.unimplemented/)).toHaveTextContent("1");
+    expect(chipBtn(/capabilities\.chips\.arslan_only/)).toHaveTextContent("1");
+    expect(chipBtn(/capabilities\.chips\.all/)).toHaveTextContent("3");
+  });
+
+  it("tools: 未实装 chip reveals hollow items muted with the honest placeholder note", async () => {
     render(<CapabilityCatalog kind="tools" />);
     await screen.findByText("Web Tools");
-    // Shell is non-assignable → shown under the locked group (default = all)
-    expect(screen.getByText("Shell")).toBeTruthy();
-    expect(screen.getAllByText("assignable").length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(chipBtn(/capabilities\.chips\.unimplemented/));
+    expect(screen.getByText("Discord")).toBeInTheDocument();
+    expect(screen.queryByText("Web Tools")).not.toBeInTheDocument();
+    expect(screen.getByText("capabilities.catalog.unimplemented_note")).toBeInTheDocument();
+    // no fake equip affordance on hollow rows
+    expect(screen.queryByText("capabilities.equip.action")).not.toBeInTheDocument();
   });
 
-  it("lists skills in skills mode", async () => {
+  it("tools: 仅 Arslan chip shows orchestrator items with the security explainer", async () => {
+    render(<CapabilityCatalog kind="tools" />);
+    await screen.findByText("Web Tools");
+    fireEvent.click(chipBtn(/capabilities\.chips\.arslan_only/));
+    expect(screen.getByText("Shell")).toBeInTheDocument();
+    expect(screen.getByText("capabilities.catalog.orchestrator_note")).toBeInTheDocument();
+    expect(screen.queryByText("capabilities.equip.action")).not.toBeInTheDocument();
+  });
+
+  it("tools: 全部 chip shows everything (except infeasible) with badges", async () => {
+    render(<CapabilityCatalog kind="tools" />);
+    await screen.findByText("Web Tools");
+    fireEvent.click(chipBtn(/capabilities\.chips\.all/));
+    expect(screen.getByText("Web Tools")).toBeInTheDocument();
+    expect(screen.getByText("Discord")).toBeInTheDocument();
+    expect(screen.getByText("Shell")).toBeInTheDocument();
+    expect(screen.queryByText("Ghost")).not.toBeInTheDocument();
+    expect(screen.getByText("assignable")).toBeInTheDocument();
+    expect(screen.getByText("catalog")).toBeInTheDocument();
+    expect(screen.getByText("orchestrator/registered")).toBeInTheDocument();
+  });
+
+  it("skills: default 可用 chip shows only assignable skills; category chips filter within usable", async () => {
+    render(<CapabilityCatalog kind="skills" />);
+    expect(await screen.findByText("Writer")).toBeInTheDocument();
+    expect(screen.getByText("Planner")).toBeInTheDocument();
+    expect(screen.queryByText("Airtable")).not.toBeInTheDocument();
+    expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dead")).not.toBeInTheDocument();
+    // category chips derived from the usable pool only (no productivity/agents chip)
+    expect(screen.queryByRole("button", { name: /productivity/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /agents/ })).not.toBeInTheDocument();
+    fireEvent.click(chipBtn(/content/));
+    expect(screen.getByText("Writer")).toBeInTheDocument();
+    expect(screen.queryByText("Planner")).not.toBeInTheDocument();
+    fireEvent.click(chipBtn(/ops/));
+    expect(screen.queryByText("Writer")).not.toBeInTheDocument();
+    expect(screen.getByText("Planner")).toBeInTheDocument();
+  });
+
+  it("skills: 未实装 chip reveals hollow skill with honest note; 仅 Arslan shows orchestrator skill + explainer", async () => {
     render(<CapabilityCatalog kind="skills" />);
     await screen.findByText("Writer");
-    expect(screen.getAllByText(/content/i).length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(chipBtn(/capabilities\.chips\.unimplemented/));
+    expect(screen.getByText("Airtable")).toBeInTheDocument();
+    expect(screen.queryByText("Writer")).not.toBeInTheDocument();
+    expect(screen.getByText("capabilities.catalog.unimplemented_note")).toBeInTheDocument();
+    fireEvent.click(chipBtn(/capabilities\.chips\.arslan_only/));
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(screen.getByText("capabilities.catalog.orchestrator_note")).toBeInTheDocument();
   });
 
-  it("tools: hides infeasible; status chips derived from data filter the groups", async () => {
-    const cat = { toolsets: [
-      { key: "a", name: "Alpha", description: "d", tier: "safe", status: "wired", assignable: true, tools: [] },
-      { key: "b", name: "Bravo", description: "d", tier: "orchestrator", status: "registered", assignable: false, tools: [] },
-      { key: "c", name: "Charlie", description: "d", tier: "orchestrator", status: "infeasible", assignable: false, tools: [] },
-    ], skills: [] };
-    (api.getRegistry as any).mockResolvedValue(cat);
-    render(<CapabilityCatalog kind="tools" />);
-    expect(await screen.findByText("Alpha")).toBeInTheDocument();   // assignable, shown
-    expect(screen.getByText("Bravo")).toBeInTheDocument();          // locked, shown under all
-    expect(screen.queryByText("Charlie")).not.toBeInTheDocument();  // infeasible, hidden
-
-    // Chips carry counts derived from the real data (Charlie excluded)
-    const allChip = screen.getByRole("button", { name: /capabilities\.chips\.all/ });
-    const assignableChip = screen.getByRole("button", { name: /assignable_group/ });
-    const lockedChip = screen.getByRole("button", { name: /locked_group/ });
-    expect(allChip).toHaveTextContent("2");
-    expect(assignableChip).toHaveTextContent("1");
-    expect(lockedChip).toHaveTextContent("1");
-
-    // assignable chip → locked group filtered out
-    fireEvent.click(assignableChip);
-    expect(screen.getByText("Alpha")).toBeInTheDocument();
-    expect(screen.queryByText("Bravo")).not.toBeInTheDocument();
-    // locked chip → assignable group filtered out
-    fireEvent.click(lockedChip);
-    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
-    expect(screen.getByText("Bravo")).toBeInTheDocument();
-    // all resets
-    fireEvent.click(allChip);
-    expect(screen.getByText("Alpha")).toBeInTheDocument();
-    expect(screen.getByText("Bravo")).toBeInTheDocument();
-  });
-
-  it("skills: hides infeasible; category chips with counts filter, all resets", async () => {
-    const cat = { toolsets: [], skills: [
-      { key: "s1", name: "S1", category: "creative", description: "d", tier: "safe", status: "registered", assignable: true },
-      { key: "s2", name: "S2", category: "research", description: "d", tier: "safe", status: "registered", assignable: true },
-      { key: "s3", name: "S3", category: "creative", description: "d", tier: "orchestrator", status: "infeasible", assignable: false },
-    ] };
-    (api.getRegistry as any).mockResolvedValue(cat);
+  it("skills: switching availability resets the category filter (no stale empty view)", async () => {
     render(<CapabilityCatalog kind="skills" />);
-    expect(await screen.findByText("S1")).toBeInTheDocument();
-    expect(screen.getByText("S2")).toBeInTheDocument();
-    expect(screen.queryByText("S3")).not.toBeInTheDocument();        // infeasible hidden
+    await screen.findByText("Writer");
+    fireEvent.click(chipBtn(/content/)); // category within usable
+    fireEvent.click(chipBtn(/capabilities\.chips\.unimplemented/));
+    // hollow pool has no "content" category — must not render an empty stale filter
+    expect(screen.getByText("Airtable")).toBeInTheDocument();
+  });
 
-    // Category chips derived from the real registry categories, with counts
-    // (S3 is infeasible → creative counts 1, not 2)
-    const creativeChip = screen.getByRole("button", { name: /creative/ });
-    const researchChip = screen.getByRole("button", { name: /research/ });
-    const allChip = screen.getByRole("button", { name: /capabilities\.chips\.all/ });
-    expect(allChip).toHaveTextContent("2");
-    expect(creativeChip).toHaveTextContent("1");
-    expect(researchChip).toHaveTextContent("1");
+  it("assignable rows carry the equip affordance", async () => {
+    render(<CapabilityCatalog kind="skills" />);
+    await screen.findByText("Writer");
+    // both usable skills expose the equip action
+    expect(screen.getAllByText("capabilities.equip.action")).toHaveLength(2);
+  });
 
-    // Clicking a category chip filters to that category
-    fireEvent.click(creativeChip);
-    expect(screen.getByText("S1")).toBeInTheDocument();
-    expect(screen.queryByText("S2")).not.toBeInTheDocument();
-    fireEvent.click(researchChip);
-    expect(screen.queryByText("S1")).not.toBeInTheDocument();
-    expect(screen.getByText("S2")).toBeInTheDocument();
-    // all resets to every category (sub-headers back)
-    fireEvent.click(allChip);
-    expect(screen.getByText("S1")).toBeInTheDocument();
-    expect(screen.getByText("S2")).toBeInTheDocument();
+  it("hides infeasible everywhere and keeps counts honest", async () => {
+    render(<CapabilityCatalog kind="skills" />);
+    await screen.findByText("Writer");
+    expect(chipBtn(/capabilities\.chips\.usable/)).toHaveTextContent("2");
+    expect(chipBtn(/capabilities\.chips\.unimplemented/)).toHaveTextContent("1");
+    expect(chipBtn(/capabilities\.chips\.arslan_only/)).toHaveTextContent("1");
+    // two "all" chips exist in skills view (availability row + category row) — take the availability one
+    fireEvent.click(screen.getAllByRole("button", { name: /capabilities\.chips\.all/ })[0]);
+    expect(screen.queryByText("Dead")).not.toBeInTheDocument();
   });
 });

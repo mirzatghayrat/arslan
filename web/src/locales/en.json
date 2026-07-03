@@ -545,14 +545,17 @@
     "chips": {
       "all": "All",
       "recommended": "Recommended",
-      "registered": "Registered servers"
+      "registered": "Registered servers",
+      "usable": "Usable",
+      "unimplemented": "Not implemented",
+      "arslan_only": "Arslan only"
     },
     "catalog": {
       "loading": "Loading registry…",
       "empty": "Nothing here yet.",
       "equip_hint": "Equip these from a spawn's menu.",
-      "assignable_group": "Assignable",
-      "locked_group": "Locked / host-only"
+      "unimplemented_note": "Not implemented — catalog placeholder only, cannot be equipped.",
+      "orchestrator_note": "For safety, these are usable only by Arslan (the orchestrator) and cannot be equipped to spawns."
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",
@@ -604,6 +607,12 @@
         "create_skill": "Register as skill",
         "create_ok": "Added to the Skills library (safe)."
       }
+    },
+    "equip": {
+      "action": "Equip to spawn…",
+      "loading": "Loading spawns…",
+      "empty": "No spawns yet.",
+      "error": "Equip failed — change rolled back."
     }
   },
   "forge": {
