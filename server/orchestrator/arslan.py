@@ -198,6 +198,21 @@ _WEB_TOOL_GUIDANCE = (
     "with only what you reliably know — never invent a result."
 )
 
+# Capability self-awareness: the real user complaint was Arslan refusing ("I can't browse
+# GitHub / can't introspect my system") for things it CAN do with web_search. This block
+# tells it exactly what it can do itself and forbids claiming it can't. Added on the answer
+# path, right after _WEB_TOOL_GUIDANCE.
+_CAPABILITY_SELF = (
+    "\n\n你自己能做这些(你有工具,直接做,别推给分身、别说做不到):\n"
+    "- 联网搜索任何主题(web_search)——包括在 GitHub 上找项目/代码、查最新信息、查某个工具或库。"
+    "用户让你「查一下 X / 看看 GitHub 上的 Y」,你就直接 CALL web_search,"
+    "绝不要说「我没法查我自己的系统 / 我不能浏览 GitHub」——你能查。\n"
+    "- 抓取网页正文(web_extract)、把结构化数据画成图(render_chart)。\n"
+    "诚实红线:永远不要谎称你「不能」做你其实有工具能做的事。不确定能不能做时,先试你的工具,"
+    "而不是拒绝或让用户自己去查。你确实不能做的只有:自己生成 PPT/PDF 等文件(那要有对应能力的分身)、"
+    "凭空捏造不存在的分身或工具。"
+)
+
 
 def _now_line() -> str:
     """Current server time injected into Arslan's prompt so date/time questions need no search."""
@@ -620,7 +635,7 @@ async def _handle_answer(
     facts = await memory.facts_text()
     roster = await _team_roster()
     system = (
-        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _WEB_TOOL_GUIDANCE + _now_line()
+        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )
