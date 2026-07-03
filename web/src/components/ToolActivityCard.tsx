@@ -11,7 +11,8 @@
  * stay always visible — only the raw text plumbing is folded away.
  */
 import { useState } from 'react';
-import { Check, X, RefreshCcw, ChevronRight, ChevronDown } from 'lucide-react';
+import { Check, X, ChevronRight, ChevronDown } from 'lucide-react';
+import MatrixSpinner from './MatrixSpinner';
 import { useTranslation } from 'react-i18next';
 import type { ToolActivity } from '../types';
 import { humanizeStep, humanizeOutcome } from '../lib/toolHumanize';
@@ -42,7 +43,7 @@ export default function ToolActivityCard({ activity }: { activity: ToolActivity 
       {/* Humanized headline: verb phrase + honest ✓/✗ + plain-words outcome */}
       <div className="flex items-center gap-2 min-w-0">
         {status === 'running'
-          ? <RefreshCcw className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
+          ? <MatrixSpinner size={14} className="text-primary shrink-0" />
           : status === 'error'
           ? <X className="w-3.5 h-3.5 text-danger shrink-0" />
           : <Check className="w-3.5 h-3.5 text-success shrink-0" />}

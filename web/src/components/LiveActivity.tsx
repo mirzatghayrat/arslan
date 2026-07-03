@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { RefreshCcw, Check, X, Asterisk } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import WorkingPulse from './WorkingPulse';
+import MatrixSpinner from './MatrixSpinner';
 import { humanizeStep } from '../lib/toolHumanize';
 import type { ToolStep } from '../api/client.types';
 
@@ -46,7 +47,7 @@ export default function LiveActivity({
           {steps.map((s, i) => (
             <div key={i} className="flex items-center gap-2 text-[10.5px] min-w-0">
               {s.status === 'running'
-                ? <RefreshCcw className="w-3 h-3 text-primary animate-spin shrink-0" />
+                ? <MatrixSpinner size={12} className="text-primary shrink-0" />
                 : s.status === 'ok'
                 ? <Check className="w-3 h-3 text-success shrink-0" />
                 : <X className="w-3 h-3 text-danger shrink-0" />}
@@ -58,7 +59,7 @@ export default function LiveActivity({
         </div>
       )}
       <div className="flex items-center gap-2 pl-1">
-        <Asterisk className="w-3.5 h-3.5 text-primary animate-pulse shrink-0" />
+        <MatrixSpinner size={14} className="text-primary shrink-0" />
         <WorkingPulse className="text-[11px] text-muted-foreground" phrases={phrases} />
         <span className="text-[10px] font-mono text-subtle-foreground shrink-0">
           · {fmtElapsed(startedAt, now)}

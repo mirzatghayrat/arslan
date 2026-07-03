@@ -2268,3 +2268,16 @@ button:disabled {
   from { transform: translateX(40px) scaleX(0.96); opacity: 0; }
   to   { transform: translateX(0) scaleX(1); opacity: 1; }
 }
+
+/* MatrixSpinner — dot-ring loader for agent-waiting moments. Each dot pulses on a
+   staggered delay (set inline per dot) so the bright point chases around the ring. */
+@keyframes matrix-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.18; }
+}
+.matrix-spinner__dot {
+  animation: matrix-dot-pulse 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .matrix-spinner__dot { animation: none; opacity: 0.5; }
+}

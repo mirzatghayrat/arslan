@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Send, RefreshCcw, Check
+  Send, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import MatrixSpinner from './MatrixSpinner';
 import { Message, MessageAttachment, Spawn } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
@@ -431,7 +432,7 @@ export default function SpawnDirectChat({
                     {msg.toolActivity && (
                       <div className="mt-3 bg-surface border border-border rounded-xl p-4 font-mono text-[10.5px]">
                         <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                          <RefreshCcw className="animate-spin w-3.5 h-3.5 text-primary" />
+                          <MatrixSpinner size={14} className="text-primary" />
                           <span className="flex items-center gap-1">
                             {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
                             {msg.toolActivity.toolName} completed:
