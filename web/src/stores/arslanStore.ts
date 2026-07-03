@@ -32,6 +32,9 @@ interface ArslanState {
   // Pending invite: set when a `propose_invite` frame arrives; cleared once the
   // user confirms (sends roster_invite) or cancels.
   pendingInvite: { spawnId: number; reason: string } | null;
+  // Pending shell command: set when a `propose_run_command` frame arrives; cleared
+  // once the user confirms (sends confirm_run_command) or cancels.
+  pendingCommand: { callId: string; pretty: string; reason: string } | null;
   // Pending staffing decision: set when a `propose_staffing` frame arrives.
   // Candidates are mapped snake→camel. Cleared once the user picks or dismisses.
   pendingStaffing: { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null;
@@ -51,6 +54,7 @@ interface ArslanState {
   dismissUpdate: () => void;
   markProposalConfirmed: (spawnId: number) => void;
   clearPendingInvite: () => void;
+  clearPendingCommand: () => void;
   clearPendingStaffing: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
@@ -85,6 +89,7 @@ function initialData() {
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
+    pendingCommand: null as { callId: string; pretty: string; reason: string } | null,
     pendingStaffing: null as { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null,
     pendingUpdate: null as { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null,
     thinking: false,
@@ -121,6 +126,7 @@ function makeActions(set: SetState, get: GetState) {
           it.isProposal && Number(it.spawnId) === spawnId ? { ...it, isProposal: false } : it),
       }),
     clearPendingInvite: () => set({ pendingInvite: null }),
+    clearPendingCommand: () => set({ pendingCommand: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null }),
 
@@ -141,7 +147,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_staffing", "suggest_update", "spawn_updated"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_staffing", "suggest_update", "spawn_updated"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -525,6 +531,10 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_invite":
           set({ pendingInvite: { spawnId: frame.spawn_id, reason: frame.reason } });
+          break;
+        case "propose_run_command":
+          set({ pendingCommand: { callId: frame.call_id, pretty: frame.pretty,
+                                  reason: frame.reason || "" } });
           break;
         case "propose_staffing":
           set({

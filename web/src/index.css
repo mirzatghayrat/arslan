@@ -1563,6 +1563,112 @@ button:disabled {
   background: var(--surface-raised);
 }
 
+/* ── RunCommandCard (propose_run_command confirm card) ──────────────────────── */
+
+.runcmd-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.875rem;
+  background: var(--surface);
+  max-width: 32rem;
+}
+.runcmd-card__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.runcmd-card__cmd {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--foreground);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+.runcmd-card__reason {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+.runcmd-card__remember {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+.runcmd-card__actions {
+  display: flex;
+  gap: 0.375rem;
+  justify-content: flex-end;
+}
+.runcmd-card__btn {
+  padding: 0.3125rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.6875rem;
+  font-family: monospace;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.runcmd-card__btn--primary {
+  background: var(--primary);
+  border: 1px solid transparent;
+  color: var(--primary-foreground);
+}
+.runcmd-card__btn--primary:hover {
+  opacity: 0.88;
+}
+.runcmd-card__btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--muted-foreground);
+}
+.runcmd-card__btn--ghost:hover {
+  color: var(--foreground);
+  background: var(--surface-raised);
+}
+
+/* ── Composer shell-policy pill ─────────────────────────────────────────────── */
+
+.shell-policy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  font-family: monospace;
+  font-size: 0.625rem;
+  cursor: pointer;
+}
+.shell-policy-pill__label {
+  color: var(--subtle-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.shell-policy-pill__select {
+  background: transparent;
+  border: none;
+  color: var(--foreground);
+  font-family: monospace;
+  font-size: 0.625rem;
+  cursor: pointer;
+  outline: none;
+}
+
 /* ── EvalSummary overlay ──────────────────────────────────────────────────────── */
 
 /* Entry button — mirrors .spawn-detail-open-btn */

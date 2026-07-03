@@ -56,6 +56,8 @@ const defaultSettings: AppSettings = {
   spawnMode: "auto",
   llmStrategy: "single",
   distillOnSessionEnd: true,
+  orchestratorShellEnabled: false,
+  shellConfirmPolicy: "ask_all",
 };
 
 const providers: ProviderOption[] = [

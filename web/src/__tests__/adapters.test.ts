@@ -94,6 +94,8 @@ describe("toBackendSettings", () => {
     spawnMode: "auto",
     llmStrategy: "single",
     distillOnSessionEnd: true,
+    orchestratorShellEnabled: false,
+    shellConfirmPolicy: "ask_all",
   };
 
   it("omits search_api_key when empty", () => {

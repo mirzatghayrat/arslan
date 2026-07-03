@@ -28,6 +28,10 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
     distillOnSessionEnd: backend.distill_on_session_end ?? true,
+    // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
+    // both default OFF / most-cautious when absent.
+    orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
+    shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
   };
 }
 
@@ -44,6 +48,8 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     language: ui.language,
     llm_strategy: ui.llmStrategy,
     distill_on_session_end: ui.distillOnSessionEnd,
+    orchestrator_shell_enabled: ui.orchestratorShellEnabled ? "true" : "false",
+    shell_confirm_policy: ui.shellConfirmPolicy,
   };
 
   // Only send the search key if the user entered something new (non-empty, non-masked).

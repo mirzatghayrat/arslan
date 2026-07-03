@@ -149,4 +149,8 @@ export interface AppSettings {
   spawnMode: 'auto' | 'interactive' | 'strict';
   llmStrategy: 'single' | 'cost' | 'balanced' | 'performance';
   distillOnSessionEnd: boolean;
+  /** Orchestrator (Arslan) may run whitelisted shell commands. Off by default. */
+  orchestratorShellEnabled: boolean;
+  /** Confirmation posture for shell commands. */
+  shellConfirmPolicy: 'ask_all' | 'ask_risky';
 }

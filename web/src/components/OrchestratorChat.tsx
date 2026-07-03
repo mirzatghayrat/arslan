@@ -56,6 +56,12 @@ interface OrchestratorChatProps {
   onAcceptInvite?: (spawnId: number) => void;
   /** Dismiss the pending invite → clear it (no dispatch). */
   onDismissInvite?: () => void;
+  /** True when the orchestrator-shell capability is enabled (drives the policy pill). */
+  shellEnabled?: boolean;
+  /** Current shell confirmation posture, shown + flippable in the composer pill. */
+  shellPolicy?: 'ask_all' | 'ask_risky';
+  /** Called when the user flips the confirmation posture from the composer pill. */
+  onShellPolicyChange?: (policy: 'ask_all' | 'ask_risky') => void;
 }
 
 export default function OrchestratorChat({
@@ -75,6 +81,9 @@ export default function OrchestratorChat({
   pendingInvite,
   onAcceptInvite,
   onDismissInvite,
+  shellEnabled = false,
+  shellPolicy = 'ask_all',
+  onShellPolicyChange,
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -1185,6 +1194,24 @@ export default function OrchestratorChat({
             </div>
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
+          {shellEnabled && (
+            <div className="max-w-4xl mx-auto mt-2 flex items-center justify-end">
+              <label className="shell-policy-pill" data-testid="shell-policy-pill">
+                <Terminal className="w-3 h-3 text-primary shrink-0" />
+                <span className="shell-policy-pill__label">{t('runcmd.pillLabel')}</span>
+                <select
+                  aria-label={t('settings.labelShellConfirmPolicy')}
+                  data-testid="shell-policy-select"
+                  value={shellPolicy}
+                  onChange={(e) => onShellPolicyChange?.(e.target.value as 'ask_all' | 'ask_risky')}
+                  className="shell-policy-pill__select"
+                >
+                  <option value="ask_all">{t('settings.shellPolicyAskAll')}</option>
+                  <option value="ask_risky">{t('settings.shellPolicyAskRisky')}</option>
+                </select>
+              </label>
+            </div>
+          )}
           <div className="flex items-center justify-center gap-6 mt-2 text-[10px] text-subtle-foreground font-mono">
             <span>{t('orchestrator.footer_hint')}</span>
             <span>•</span>

@@ -277,6 +277,46 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* Separation divider */}
             <div className="h-[1px] bg-border/40"></div>
 
+            {/* Orchestrator shell — Arslan may run whitelisted commands (default off) */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelOrchestratorShell')}</h4>
+                <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+                  {t('settings.orchestratorShellDesc')}
+                </p>
+              </div>
+              <input
+                id="settings-shell-toggle"
+                type="checkbox"
+                checked={localSettings.orchestratorShellEnabled ?? false}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, orchestratorShellEnabled: e.target.checked }))}
+                className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+              />
+            </div>
+
+            {/* Confirm-policy select — only meaningful when shell is enabled */}
+            {localSettings.orchestratorShellEnabled && (
+              <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelShellConfirmPolicy')}</h4>
+                </div>
+                <Select
+                  id="settings-shell-policy"
+                  value={localSettings.shellConfirmPolicy}
+                  onChange={(v) => setLocalSettings(prev => ({ ...prev, shellConfirmPolicy: v as AppSettings['shellConfirmPolicy'] }))}
+                  options={[
+                    { value: 'ask_all', label: t('settings.shellPolicyAskAll') },
+                    { value: 'ask_risky', label: t('settings.shellPolicyAskRisky') },
+                  ]}
+                  className="w-56"
+                  ariaLabel={t('settings.labelShellConfirmPolicy')}
+                />
+              </div>
+            )}
+
+            {/* Separation divider */}
+            <div className="h-[1px] bg-border/40"></div>
+
             {/* Spawns synthesis modes */}
             <div className="flex items-center justify-between">
               <div>

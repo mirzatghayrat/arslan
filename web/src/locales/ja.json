@@ -333,7 +333,12 @@
     "btnTestAll": "全てテスト",
     "sectionSearch": "検索",
     "sectionAppearance": "テーマパレット",
-    "sectionLlmConfig": "LLM 設定"
+    "sectionLlmConfig": "LLM 設定",
+    "labelOrchestratorShell": "Orchestrator shell",
+    "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
+    "labelShellConfirmPolicy": "Confirm policy",
+    "shellPolicyAskAll": "Confirm every command",
+    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -729,5 +734,12 @@
   "eval": {
     "scope_conversation": "This chat",
     "scope_all": "All sessions"
+  },
+  "runcmd": {
+    "label": "Run this command?",
+    "remember": "Don't ask again this session",
+    "run": "Run",
+    "cancel": "Cancel",
+    "pillLabel": "Shell"
   }
 }

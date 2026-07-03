@@ -29,6 +29,7 @@ import SuggestCreateCard from './components/SuggestCreateCard';
 import SuggestUpdateCard from './components/SuggestUpdateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import StaffingPickerCard from './components/StaffingPickerCard';
+import RunCommandCard from './components/RunCommandCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
@@ -123,6 +124,9 @@ export default function App() {
   // propose_staffing state — candidate picker card
   const pendingStaffing = useArslanStore((s) => s.pendingStaffing);
   const clearPendingStaffing = useArslanStore((s) => s.clearPendingStaffing);
+  // propose_run_command state — per-command confirmation card
+  const pendingCommand = useArslanStore((s) => s.pendingCommand);
+  const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
   // Returns true if a spawn (identified by its UI string id) is in the current roster
   const isRosterMember = (spawnId: string) => roster.some((m) => m.spawnId === Number(spawnId));
 
@@ -221,6 +225,15 @@ export default function App() {
       ...(attached?.context ? { attached_context: attached.context, attached_names: attached.names } : {}),
     });
   }, [wsSend]);
+
+  // Composer policy pill: flip the shell confirm posture at task start (Claude-Code-style).
+  // Optimistic local update + a best-effort PUT reusing the Settings write path.
+  const handleShellPolicyChange = useCallback((policy: 'ask_all' | 'ask_risky') => {
+    setSettings((prev) => ({ ...prev, shellConfirmPolicy: policy }));
+    api.updateSettings({ shell_confirm_policy: policy }).catch(() => {
+      /* best-effort — the pill already reflects the intended posture */
+    });
+  }, []);
 
   // Best-effort: flush a session_ended for the active thread if the page is closed/hidden
   // without an explicit thread switch, so the last conversation still gets its background
@@ -653,6 +666,24 @@ export default function App() {
               </div>
             )}
 
+            {activeSection === 'arslan' && pendingCommand && (
+              <div className="suggest-create-card-overlay">
+                <RunCommandCard
+                  callId={pendingCommand.callId}
+                  pretty={pendingCommand.pretty}
+                  reason={pendingCommand.reason}
+                  onConfirm={(callId, remember) => {
+                    wsSend({ type: 'confirm_run_command', call_id: callId, remember });
+                    clearPendingCommand();
+                  }}
+                  onCancel={(callId) => {
+                    wsSend({ type: 'cancel_run_command', call_id: callId });
+                    clearPendingCommand();
+                  }}
+                />
+              </div>
+            )}
+
             {activeSection === 'arslan' && (
               <OrchestratorChat
                 chatHistory={orchestratorChatHistory}
@@ -690,6 +721,9 @@ export default function App() {
                   wsSend({ type: 'dismiss_invite' });
                   clearPendingInvite();
                 }}
+                shellEnabled={settings.orchestratorShellEnabled}
+                shellPolicy={settings.shellConfirmPolicy}
+                onShellPolicyChange={handleShellPolicyChange}
               />
             )}
 

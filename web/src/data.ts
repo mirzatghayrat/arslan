@@ -123,7 +123,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   telemetry: false,
   spawnMode: 'interactive',
   llmStrategy: 'single',
-  distillOnSessionEnd: true
+  distillOnSessionEnd: true,
+  orchestratorShellEnabled: false,
+  shellConfirmPolicy: 'ask_all'
 };
 
 export const INITIAL_CHAT_HISTORY: Message[] = [

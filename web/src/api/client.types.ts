@@ -105,6 +105,8 @@ export interface AppSettings {
   github_token: string; // masked on read
   llm_strategy?: string;
   distill_on_session_end?: boolean;
+  orchestrator_shell_enabled?: string; // "true" | "false"
+  shell_confirm_policy?: string; // "ask_all" | "ask_risky"
 }
 
 export interface ProviderOption {
@@ -265,6 +267,7 @@ export type ArslanServerMessage =
   | { type: "stream_end"; message_id: number | null }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
+  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "message"; message_id: number; content: string; role: string }

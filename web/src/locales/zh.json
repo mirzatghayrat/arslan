@@ -333,7 +333,12 @@
     "btnTestAll": "全部测试",
     "sectionSearch": "搜索",
     "sectionAppearance": "主题配色",
-    "sectionLlmConfig": "LLM 配置"
+    "sectionLlmConfig": "LLM 配置",
+    "labelOrchestratorShell": "编排器命令行",
+    "orchestratorShellDesc": "允许 Arslan 运行白名单内的命令行。仅 Arslan · 每条命令按风险确认 · 默认关。",
+    "labelShellConfirmPolicy": "确认策略",
+    "shellPolicyAskAll": "每条命令都确认",
+    "shellPolicyAskRisky": "仅高风险命令确认(只读自动跑)"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -729,5 +734,12 @@
   "eval": {
     "scope_conversation": "本会话",
     "scope_all": "全部会话"
+  },
+  "runcmd": {
+    "label": "运行这条命令?",
+    "remember": "本会话不再询问此命令",
+    "run": "运行",
+    "cancel": "取消",
+    "pillLabel": "命令行"
   }
 }
