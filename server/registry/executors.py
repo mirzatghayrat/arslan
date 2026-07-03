@@ -417,9 +417,37 @@ class RunPythonExecutor:
         return {"ok": True, "external": False, "summary": summary, **result}
 
 
+class RunCommandExecutor:
+    """Orchestrator-only whitelisted shell (spec). Arslan-tier — spawns can never
+    reach this (tier gate + host-only exposure). Validates against command_policy
+    then runs in the seatbelt command sandbox. Confirmation is enforced UPSTREAM in
+    tool_loop (this executor assumes the user already approved)."""
+
+    key = "run_command"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import command_policy, command_sandbox
+        command = (args.get("command") or "").strip()
+        argv = args.get("argv")
+        if argv is None:
+            argv = []
+        verdict = command_policy.validate(command, argv)
+        if not verdict["ok"]:
+            return {"ok": False, "external": False, "error": verdict["reason"]}
+        result = await command_sandbox.run_command(command, argv)
+        pretty = " ".join([command, *argv])
+        if not result.get("ok"):
+            return {"ok": False, "external": False,
+                    "error": result.get("error") or "command failed",
+                    **{k: result[k] for k in ("stdout", "stderr", "exit_code") if k in result}}
+        return {"ok": True, "external": False,
+                "summary": f"已执行 `{pretty}`:exit 0,stdout {len(result.get('stdout') or '')} 字",
+                **result}
+
+
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
-    DeckExecutor(), RunPythonExecutor(),
+    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(),
 )}
 
 
