@@ -745,11 +745,20 @@ async def _arslan_tools() -> list[dict]:
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
     }
     tools = [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
-    # Host-allowed MCP tools: human-wired AND explicitly host_enabled (default off).
     from sqlalchemy import select
 
     from server.db import session as db_session
     from server.db.models import Tool
+
+    # Orchestrator-only shell: exposed to Arslan ONLY when the user opted in (default off).
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        if await settings_service.shell_enabled(db):
+            tools.append({"key": "run_command",
+                          "description": "Run a whitelisted shell command (git/gh/ffmpeg/pandoc). "
+                                         "Each command requires the user's per-command confirmation. "
+                                         "argv is a list; no pipes/redirects/shell operators."})
+    # Host-allowed MCP tools: human-wired AND explicitly host_enabled (default off).
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(
             select(Tool).where(Tool.toolset_key.like("mcp_%"),

@@ -16,6 +16,8 @@ class SettingsIn(BaseModel):
     search_api_key: str | None = None
     llm_strategy: str | None = None
     distill_on_session_end: bool | None = None
+    orchestrator_shell_enabled: str | None = None
+    shell_confirm_policy: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -28,6 +30,8 @@ class SettingsOut(BaseModel):
     search_api_key: str = ""  # masked
     llm_strategy: str = "single"
     distill_on_session_end: bool = True
+    orchestrator_shell_enabled: str = ""
+    shell_confirm_policy: str = ""
 
 
 class ProviderOption(BaseModel):
