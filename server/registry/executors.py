@@ -433,14 +433,17 @@ class RunCommandExecutor:
             argv = []
         verdict = command_policy.validate(command, argv)
         if not verdict["ok"]:
-            return {"ok": False, "external": False, "error": verdict["reason"]}
+            return {"ok": False, "error": verdict["reason"]}
         result = await command_sandbox.run_command(command, argv)
         pretty = " ".join([command, *argv])
+        # SECURITY: command stdout/stderr can carry attacker-influenced text, so we do
+        # NOT mark results external:False — tool_loop wraps them (wrap_external) and the
+        # LLM treats them as untrusted, consistent with the web tools (spec §组件2).
         if not result.get("ok"):
-            return {"ok": False, "external": False,
+            return {"ok": False,
                     "error": result.get("error") or "command failed",
                     **{k: result[k] for k in ("stdout", "stderr", "exit_code") if k in result}}
-        return {"ok": True, "external": False,
+        return {"ok": True,
                 "summary": f"已执行 `{pretty}`:exit 0,stdout {len(result.get('stdout') or '')} 字",
                 **result}
 

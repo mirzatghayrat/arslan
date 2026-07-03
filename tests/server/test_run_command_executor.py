@@ -30,3 +30,12 @@ async def test_run_command_git_version_ok_or_honest():
     assert ("summary" in r) or ("error" in r)
     if r["ok"]:
         assert "git version" in (r.get("stdout") or "").lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
+async def test_run_command_output_is_untrusted_not_external_false():
+    # Command output can carry attacker-influenced text (git log messages, file
+    # metadata), so results must NOT be marked external:False — tool_loop must wrap them.
+    r = await EXECUTORS["run_command"].execute({"command": "git", "argv": ["--version"]})
+    assert r.get("external") is not False
