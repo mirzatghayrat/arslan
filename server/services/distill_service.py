@@ -15,10 +15,17 @@ import logging
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn
+from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn, UserFact
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.distill import DISTILL_SYSTEM
+
+_META_UPFLOW_SYSTEM = (
+    "你是 Arslan 的记忆整理器。只提炼 AT MOST 一条对【所有分身 / Arslan 本身】都有用的元知识——"
+    "要么是通用的用户偏好(如「用户偏口语、忌硬广」),要么是领域归属"
+    "(如「小红书类内容交给某分身」)。不要提炼只对该分身领域内部有用的细节。"
+    "如果没有值得上浮的,返回空字符串。只输出一行纯文本(那条元知识或空),不要解释、不要 JSON、不要引号。"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +48,41 @@ async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
     if not isinstance(facts, list):
         return None
     return [str(f).strip() for f in facts if str(f).strip()][:_MAX_FACTS]
+
+
+async def distill_meta_upflow(db, spawn, new_facts: list[str]) -> str | None:
+    """After per-spawn distillation, bubble ONE cross-spawn META fact up to Arslan's
+    user profile (UserFact, source='upflow'). Meta = a user preference OR a
+    domain-ownership hint ('X 内容找 <spawn>'). Domain depth stays in the spawn; only
+    meta rises. Returns the fact written, or None. Dedup: skip if an existing UserFact
+    already covers it (simple containment). Best-effort: any exception → None."""
+    if not new_facts:
+        return None
+    try:
+        existing = [
+            (f.content or "").strip()
+            for f in (await db.execute(select(UserFact))).scalars().all()
+        ]
+        existing = [e for e in existing if e]
+        prompt = (
+            f"分身「{spawn.name}」(领域:{spawn.domain_category})刚学到的偏好:\n"
+            + "\n".join(f"- {f}" for f in new_facts)
+            + "\n\n已有的用户画像(别重复):\n"
+            + ("\n".join(f"- {e}" for e in existing) if existing else "(空)")
+        )
+        adapter = await build_adapter(role="judgment")
+        resp = await adapter.chat(system=_META_UPFLOW_SYSTEM, user=prompt)
+        fact = (resp.content or "").strip().strip('"').strip("「」").strip()
+        if not fact:
+            return None
+        # cheap dedup guard: skip if an existing fact contains / is contained by it
+        if any(fact in e or e in fact for e in existing):
+            return None
+        db.add(UserFact(content=fact, source="upflow"))
+        return fact
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("distill_meta_upflow(spawn=%s) failed: %s", getattr(spawn, "id", "?"), exc)
+        return None
 
 
 async def distill_session(conversation_id: str) -> None:
@@ -101,6 +143,9 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> None:
         spawn = await db.get(Spawn, spawn_id)
         if spawn is not None:
             spawn.memory_facts = new_facts
+            # Best-effort metaknowledge upflow: bubble ONE cross-spawn meta-fact up to
+            # Arslan's user profile. A failure here must not break the per-spawn distill.
+            await distill_meta_upflow(db, spawn, new_facts)
         db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
 
