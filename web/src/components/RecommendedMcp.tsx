@@ -148,13 +148,13 @@ export default function RecommendedMcp({
         <div className="flex items-center gap-1.5 text-[10px] font-mono text-subtle-foreground uppercase tracking-widest mb-2">
           <Zap className="w-3 h-3 text-success" /> One-click (no credentials)
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{oneClickPresets.map(card)}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">{oneClickPresets.map(card)}</div>
       </div>
       <div>
         <div className="flex items-center gap-1.5 text-[10px] font-mono text-subtle-foreground uppercase tracking-widest mb-2">
           <KeyRound className="w-3 h-3 text-warning" /> Needs an API key — set up, then connect
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{authPresets.map(card)}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">{authPresets.map(card)}</div>
       </div>
     </div>
   );

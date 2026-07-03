@@ -233,7 +233,7 @@
     "done": "Done",
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
-    "deck_done": "PPTX generated \u00b7 {{slides}} slides",
+    "deck_done": "PPTX generated · {{slides}} slides",
     "chart_done": "Chart generated"
   },
   "escalation": {
@@ -547,6 +547,57 @@
       "equip_hint": "Equip these from a spawn's menu.",
       "assignable_group": "Assignable",
       "locked_group": "Locked / host-only"
+    },
+    "hero": {
+      "placeholder": "Paste a GitHub link, or search…",
+      "research": "Research",
+      "hint": "A repo link gets a full dossier (license, type, value); anything else searches GitHub.",
+      "results": "Search results",
+      "evaluate": "Evaluate",
+      "save": "Save"
+    },
+    "sections": {
+      "recommended_mcp": "Recommended · one-click connect",
+      "import_skills": "Import skills from a repo"
+    },
+    "dossier": {
+      "no_license": "no license",
+      "license_ok": "License OK — usable",
+      "license_learn": "Learning only",
+      "type": {
+        "mcp": "MCP server",
+        "skill": "Skill repo",
+        "agent": "Agent project",
+        "other": "Other"
+      },
+      "value_label": "Value for Arslan",
+      "actions": {
+        "register_skill": "Register as Skill",
+        "add_mcp": "Add as MCP",
+        "distill": "Distill to note",
+        "save": "Save to catalog"
+      },
+      "saved_ok": "Saved to catalog.",
+      "scan": {
+        "title": "SKILL.md files (verbatim import, license-gated)",
+        "none": "No SKILL.md files found.",
+        "import": "Import",
+        "imported": "Imported"
+      },
+      "mcp": {
+        "title": "Suggested launch command (review & edit)",
+        "add": "Add as MCP server",
+        "added": "Added to the MCP panel (locked) — connect it in the MCPS tab below."
+      },
+      "note": {
+        "title": "Reference note (review & edit)",
+        "fallback": "LLM distill unavailable — showing the evaluation summary instead.",
+        "pick_spawn": "Choose a spawn…",
+        "ingest": "Feed to spawn knowledge",
+        "ingest_ok": "Ingested into {{name}}'s knowledge base.",
+        "create_skill": "Register as skill",
+        "create_ok": "Added to the Skills library (safe)."
+      }
     }
   },
   "forge": {
@@ -606,6 +657,13 @@
       "cancel": "Cancel",
       "retireHint": "flagged for review — retire unassigns it everywhere and makes it non-assignable",
       "retired": "Retired \"{{key}}\" — unassigned from {{count}} spawn(s)."
+    },
+    "modes": {
+      "title": "Two ways in",
+      "a_title": "A · Paste a SKILL.md",
+      "a_desc": "Have a ready SKILL.md? Paste its body into the form below and forge it as a candidate — the form is the upload path.",
+      "b_title": "B · Guided co-build",
+      "b_desc": "Describe your method field by field — key, name, category, description, then a body with ## Trigger and decision rules. Candidates are observed, gated on real scored runs, and promoted by you."
     }
   },
   "spawn": {

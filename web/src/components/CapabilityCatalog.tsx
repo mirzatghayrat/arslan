@@ -44,7 +44,7 @@ function ToolsView({ toolsets }: { toolsets: RegistryCatalog["toolsets"] }) {
       {assignable.length > 0 && (
         <>
           <div className={subHeader}>{t("capabilities.catalog.assignable_group")} ({assignable.length})</div>
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {assignable.map((ts) => (
               <ToolCard key={ts.key} ts={ts} />
             ))}
@@ -61,7 +61,7 @@ function ToolsView({ toolsets }: { toolsets: RegistryCatalog["toolsets"] }) {
             {showLocked ? "▾" : "▸"} {t("capabilities.catalog.locked_group")} ({locked.length})
           </button>
           {showLocked && (
-            <div className="space-y-3 opacity-70">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 opacity-70">
               {locked.map((ts) => (
                 <ToolCard key={ts.key} ts={ts} />
               ))}

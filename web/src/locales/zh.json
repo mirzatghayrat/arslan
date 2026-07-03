@@ -233,7 +233,7 @@
     "done": "完成",
     "n_results": "{{count}} 条结果",
     "n_chars": "读取 {{count}} 字符",
-    "deck_done": "已生成 PPTX \u00b7 {{slides}} 页",
+    "deck_done": "已生成 PPTX · {{slides}} 页",
     "chart_done": "已生成图表"
   },
   "escalation": {
@@ -547,6 +547,57 @@
       "equip_hint": "从分身的菜单中装配这些能力。",
       "assignable_group": "可装备",
       "locked_group": "主机级 / 未启用"
+    },
+    "hero": {
+      "placeholder": "贴一个 GitHub 链接，或搜索…",
+      "research": "研究",
+      "hint": "仓库链接会生成完整档案（许可证、类型、价值）；其他内容会搜索 GitHub。",
+      "results": "搜索结果",
+      "evaluate": "评估",
+      "save": "收藏"
+    },
+    "sections": {
+      "recommended_mcp": "推荐 · 一键接入",
+      "import_skills": "从仓库导入技能"
+    },
+    "dossier": {
+      "no_license": "无许可证",
+      "license_ok": "许可证可用",
+      "license_learn": "仅可学习",
+      "type": {
+        "mcp": "MCP 服务器",
+        "skill": "技能仓库",
+        "agent": "Agent 项目",
+        "other": "其他"
+      },
+      "value_label": "对 Arslan 的价值",
+      "actions": {
+        "register_skill": "注册为 Skill",
+        "add_mcp": "接入为 MCP",
+        "distill": "蒸馏为参考笔记",
+        "save": "存入候选目录"
+      },
+      "saved_ok": "已存入候选目录。",
+      "scan": {
+        "title": "SKILL.md 文件（原文导入，许可证门控）",
+        "none": "未找到 SKILL.md 文件。",
+        "import": "导入",
+        "imported": "已导入"
+      },
+      "mcp": {
+        "title": "建议启动命令（可检查修改）",
+        "add": "添加为 MCP 服务器",
+        "added": "已加入 MCP 面板（锁定）——请在下方 MCP 标签页连接。"
+      },
+      "note": {
+        "title": "参考笔记（可检查修改）",
+        "fallback": "LLM 蒸馏不可用——已改用评估摘要。",
+        "pick_spawn": "选择分身…",
+        "ingest": "喂给分身知识库",
+        "ingest_ok": "已存入 {{name}} 的知识库。",
+        "create_skill": "注册为技能",
+        "create_ok": "已加入技能库（safe）。"
+      }
     }
   },
   "forge": {
@@ -606,6 +657,13 @@
       "cancel": "取消",
       "retireHint": "已标记待审 — 退役会从所有分身解绑并使其不可装备",
       "retired": "已退役 \"{{key}}\" — 从 {{count}} 个分身解绑。"
+    },
+    "modes": {
+      "title": "两种入口",
+      "a_title": "A · 上传/粘贴 SKILL.md",
+      "a_desc": "已有现成的 SKILL.md？把正文粘贴进下方表单直接锻造候选——表单就是上传通道。",
+      "b_title": "B · 引导式共建",
+      "b_desc": "按字段描述你的方法——key、名称、类别、描述，再写包含 ## Trigger 与决策规则的正文。候选先观察、对真实评分回放过闸、由你晋升。"
     }
   },
   "spawn": {

@@ -187,7 +187,29 @@ export default function SkillForge() {
 
   return (
     <div className="space-y-5 select-text">
-      <p className="text-[10px] text-subtle-foreground font-sans">{t("forge.intro")}</p>
+      {/* ── Framing header: the forge's two entry modes ───────────────────
+          (a) paste a ready SKILL.md into the form below — there is no separate
+              upload/parse endpoint; the body textarea → forge-candidate API IS
+              the path.
+          (b) guided co-build — describe the method field by field in the same
+              form; the candidate then goes observe → evaluate → promote. */}
+      <div className="bg-surface/40 border border-border-strong rounded-2xl p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Hammer className="w-4 h-4 text-primary" />
+          <h3 className="text-[13px] font-bold font-sans text-foreground">{t("forge.modes.title")}</h3>
+        </div>
+        <p className="text-[11px] text-subtle-foreground font-sans">{t("forge.intro")}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div className="bg-background border border-border/60 rounded-xl p-3.5">
+            <div className="text-[11px] font-bold text-foreground mb-1">{t("forge.modes.a_title")}</div>
+            <p className="text-[10.5px] text-subtle-foreground font-sans leading-relaxed">{t("forge.modes.a_desc")}</p>
+          </div>
+          <div className="bg-background border border-border/60 rounded-xl p-3.5">
+            <div className="text-[11px] font-bold text-foreground mb-1">{t("forge.modes.b_title")}</div>
+            <p className="text-[10.5px] text-subtle-foreground font-sans leading-relaxed">{t("forge.modes.b_desc")}</p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Create Skill form ─────────────────────────────────────────── */}
       <div className="bg-background border border-border-strong rounded-xl p-5 space-y-3">
