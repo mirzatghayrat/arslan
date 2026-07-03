@@ -59,9 +59,16 @@ def test_toolset_predicate_requires_wired_tool():
 # ── against the seeded registry (real catalog) ────────────────────────────────
 
 async def test_hollow_skill_not_equippable(seeded_registry):
-    # 'notion' is a catalogued integration entry with no body — must be refused.
+    # Every seeded safe skill now carries a real body (curation pass), so simulate a
+    # hollow row (e.g. a stale import) — bodyless skills must still be refused.
+    from server.db.models import SkillPack
+
+    async with seeded_registry() as s:
+        s.add(SkillPack(key="hollow-skill", name="hollow", category="general",
+                        description="no body", tier="safe", status="registered"))
+        await s.commit()
     with pytest.raises(NotAssignableError, match="catalog-only"):
-        await assert_assignable("skill", "notion")
+        await assert_assignable("skill", "hollow-skill")
 
 
 async def test_real_skill_still_equippable(seeded_registry):
@@ -69,9 +76,10 @@ async def test_real_skill_still_equippable(seeded_registry):
 
 
 async def test_unwired_toolset_not_equippable(seeded_registry):
-    # 'spotify' is safe|registered but none of its tools are wired — decoration, refuse.
+    # 'session_search' is safe|registered but none of its tools are wired yet
+    # (wire-candidate) — until then it's decoration, refuse.
     with pytest.raises(NotAssignableError, match="no wired tools"):
-        await assert_assignable("toolset", "spotify")
+        await assert_assignable("toolset", "session_search")
 
 
 async def test_wired_toolset_still_equippable(seeded_registry):
@@ -86,6 +94,9 @@ async def test_safe_menu_lists_only_functional(seeded_registry):
     # functional ones present
     assert {"web_search_scraping", "charting", "skill_authoring", "deck"} <= ts_keys
     assert "systematic-debugging" in sk_keys and "deck-authoring" in sk_keys
-    # decoration absent
+    # not-yet-wired wire-candidates absent from the equip menu
+    assert {"session_search", "task_planning", "file_operations",
+            "skills_management"}.isdisjoint(ts_keys)
+    # retired decoration keys gone from the catalog entirely
     assert "spotify" not in ts_keys and "image_generation" not in ts_keys
     assert "notion" not in sk_keys and "powerpoint" not in sk_keys

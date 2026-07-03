@@ -11,10 +11,10 @@ async def test_registry_lists_catalog_with_assignable_flags(client):
     skills = {s["key"]: s for s in body["skills"]}
 
     assert toolsets["web_search_scraping"]["assignable"] is True
-    assert toolsets["code_execution"]["assignable"] is False        # orchestrator tier
-    assert toolsets["code_execution"]["tier"] == "orchestrator"     # listed, transparent
-    assert toolsets["memory"]["assignable"] is False                # absorbed
-    assert skills["claude-code"]["assignable"] is False
+    assert toolsets["session_search"]["assignable"] is False        # no wired tool yet
+    assert toolsets["session_search"]["tier"] == "safe"             # listed, transparent
+    assert skills["claude-code"]["assignable"] is False             # orchestrator tier
+    assert skills["claude-code"]["tier"] == "orchestrator"          # listed, transparent
     assert skills["baoyu-infographic"]["assignable"] is True
     ws_tools = {t["key"]: t for t in toolsets["file_operations"]["tools"]}
     assert ws_tools["read_file"]["tier"] == "safe"
@@ -30,4 +30,4 @@ async def test_registry_is_idempotent(client):
     body1 = resp1.json()
     body2 = resp2.json()
     assert body1 == body2
-    assert len(body1["toolsets"]) == 31
+    assert len(body1["toolsets"]) == 9

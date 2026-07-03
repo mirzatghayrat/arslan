@@ -12,6 +12,8 @@ AUTHORED = [
     "systematic-debugging", "plan", "codebase-audit", "github-code-review", "design-md",
     "architecture-diagram", "humanizer", "ascii-art", "baoyu-infographic", "sketch", "claude-design",
     "designed-html-report", "deck-authoring",
+    "excalidraw", "p5js", "pretext", "songwriting-and-ai-music", "arxiv", "llm-wiki",
+    "blogwatcher",
 ]
 
 

@@ -4,6 +4,13 @@ Pure data. Tier principle: real-world side-effect risk — data/results in = saf
 state changed in the world (filesystem writes, sends, execution, physical
 devices) = orchestrator. EXCLUDED (never registered): godmode, obliteratus,
 hermes-agent, hermes-agent-skill-authoring.
+
+2026-07 curation (open-source honesty pass): the catalog now ships ONLY entries
+that are real — wired toolsets, wire-candidates we intend to wire, and skills
+with an actual SKILL.md method body (plus the orchestrator-tier coding-delegation
+skills, kept as transparent catalog entries per decision §9). Integration
+placeholders and Hermes-bound/infeasible entries were removed; their keys are
+retired from existing DBs by the seeder's retirement list (see seeder.py).
 """
 from __future__ import annotations
 
@@ -21,89 +28,7 @@ TOOLSETS: list[dict] = [
             ("web_extract", "Fetch a URL and extract readable text.", "safe", "wired"),
         ],
     },
-    {
-        "key": "browser_automation",
-        "name": "Browser Automation",
-        "description": "Navigate, click, type, scroll a real browser.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [
-            ("browser_navigate", "Open a URL in the driven browser.", "orchestrator", "registered"),
-            ("browser_click", "Click an element.", "orchestrator", "registered"),
-            ("browser_type", "Type into an element.", "orchestrator", "registered"),
-            ("browser_snapshot", "Snapshot page state.", "orchestrator", "registered"),
-        ],
-    },
-    {
-        "key": "clarifying_questions",
-        "name": "Clarifying Questions",
-        "description": "Ask the user to narrow an under-specified request.",
-        "tier": "safe",
-        "status": "absorbed",
-        "backend_note": "Native: the router 'clarify' action (conversation-quality round).",
-        "tools": [("clarify", "Ask clarifying questions.", "safe", "absorbed")],
-    },
-    {
-        "key": "code_execution",
-        "name": "Code Execution",
-        "description": "Execute code.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [("execute_code", "Run code and return output.", "orchestrator", "registered")],
-    },
-    {
-        "key": "computer_use",
-        "name": "Computer Use (macOS)",
-        "description": "Background desktop control via cua-driver.",
-        "tier": "orchestrator",
-        "status": "infeasible",
-        "backend_note": "cua-driver is Hermes-bound; no backend on Arslan's side.",
-        "tools": [("computer_use", "Drive the desktop.", "orchestrator", "infeasible")],
-    },
-    {
-        "key": "context_engine",
-        "name": "Context Engine",
-        "description": "Runtime tools from the active context engine.",
-        "tier": "orchestrator",
-        "status": "infeasible",
-        "backend_note": "Hermes-runtime concept; unclear scope.",
-        "tools": [],
-    },
-    {
-        "key": "cron_jobs",
-        "name": "Cron Jobs",
-        "description": "Create/list/update/pause/resume/run scheduled jobs.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [("cronjob", "Manage scheduled runs.", "orchestrator", "registered")],
-    },
-    {
-        "key": "cross_platform_messaging",
-        "name": "Cross-Platform Messaging",
-        "description": "Send messages on the user's behalf.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [("send_message", "Send an outbound message.", "orchestrator", "registered")],
-    },
-    {
-        "key": "discord",
-        "name": "Discord (read/participate)",
-        "description": "Fetch messages, search members.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [
-            ("discord_read", "Fetch/search messages and members.", "safe", "registered"),
-            ("discord_create_thread", "Create a thread.", "orchestrator", "registered"),
-        ],
-    },
-    {
-        "key": "discord_admin",
-        "name": "Discord Server Admin",
-        "description": "Channels/roles, pin, assign roles.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [("discord_admin", "Server admin actions.", "orchestrator", "registered")],
-    },
+    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
     {
         "key": "file_operations",
         "name": "File Operations",
@@ -117,43 +42,7 @@ TOOLSETS: list[dict] = [
             ("patch", "Patch a file.", "orchestrator", "registered"),
         ],
     },
-    {
-        "key": "home_assistant",
-        "name": "Home Assistant",
-        "description": "Smart home device control.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "backend_note": "Physical devices → orchestrator (side-effect principle).",
-        "tools": [
-            ("ha_get_state", "Read entity state.", "orchestrator", "registered"),
-            ("ha_call_service", "Call a device service.", "orchestrator", "registered"),
-        ],
-    },
-    {
-        "key": "image_generation",
-        "name": "Image Generation",
-        "description": "Generate images.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("image_generate", "Generate an image.", "safe", "registered")],
-    },
-    {
-        "key": "memory",
-        "name": "Memory",
-        "description": "Persistent memory across sessions.",
-        "tier": "safe",
-        "status": "absorbed",
-        "backend_note": "Native: user facts + per-spawn memory; not re-implemented.",
-        "tools": [("memory", "Persistent memory.", "safe", "absorbed")],
-    },
-    {
-        "key": "mixture_of_agents",
-        "name": "Mixture of Agents",
-        "description": "Agent-orchestration primitive.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [("mixture_of_agents", "Fan out to multiple models.", "orchestrator", "registered")],
-    },
+    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
     {
         "key": "session_search",
         "name": "Session Search",
@@ -162,6 +51,7 @@ TOOLSETS: list[dict] = [
         "status": "registered",
         "tools": [("session_search", "Search past sessions.", "safe", "registered")],
     },
+    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
     {
         "key": "skills_management",
         "name": "Skills",
@@ -174,29 +64,7 @@ TOOLSETS: list[dict] = [
             ("skill_manage", "Install/modify skills (capability mutation).", "orchestrator", "registered"),
         ],
     },
-    {
-        "key": "spotify",
-        "name": "Spotify",
-        "description": "Playback, search, playlists, library.",
-        "tier": "safe",
-        "status": "registered",
-        "backend_note": "Safe by side-effect principle: worst case is the user's own music playing.",
-        "tools": [
-            ("spotify_search", "Search the catalog.", "safe", "registered"),
-            ("spotify_playback", "Control playback.", "safe", "registered"),
-            ("spotify_playlists", "Manage playlists.", "safe", "registered"),
-            ("spotify_library", "Read the library.", "safe", "registered"),
-        ],
-    },
-    {
-        "key": "task_delegation",
-        "name": "Task Delegation",
-        "description": "delegate_task — the spawn-dispatch mechanism itself.",
-        "tier": "orchestrator",
-        "status": "absorbed",
-        "backend_note": "Native: server/orchestrator/dispatcher.dispatch.",
-        "tools": [("delegate_task", "Dispatch a task to a spawn.", "orchestrator", "absorbed")],
-    },
+    # Wire-candidate: kept catalogued (assignable only once a tool is wired).
     {
         "key": "task_planning",
         "name": "Task Planning",
@@ -204,57 +72,6 @@ TOOLSETS: list[dict] = [
         "tier": "safe",
         "status": "registered",
         "tools": [("todo", "Maintain a todo list.", "safe", "registered")],
-    },
-    {
-        "key": "terminal_processes",
-        "name": "Terminal & Processes",
-        "description": "terminal, process control.",
-        "tier": "orchestrator",
-        "status": "registered",
-        "tools": [
-            ("terminal", "Run terminal commands.", "orchestrator", "registered"),
-            ("process", "Manage processes.", "orchestrator", "registered"),
-        ],
-    },
-    {
-        "key": "text_to_speech",
-        "name": "Text-to-Speech",
-        "description": "text_to_speech.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("text_to_speech", "Synthesize speech.", "safe", "registered")],
-    },
-    {
-        "key": "video_analysis",
-        "name": "Video Analysis",
-        "description": "video_analyze (video-capable model).",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("video_analyze", "Analyze a video.", "safe", "registered")],
-    },
-    {
-        "key": "video_generation",
-        "name": "Video Generation",
-        "description": "text-to-video + image-to-video.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("video_generate", "Generate video.", "safe", "registered")],
-    },
-    {
-        "key": "vision_analysis",
-        "name": "Vision / Image Analysis",
-        "description": "vision_analyze.",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("vision_analyze", "Analyze an image.", "safe", "registered")],
-    },
-    {
-        "key": "x_search",
-        "name": "X (Twitter) Search",
-        "description": "x_search (needs xAI key).",
-        "tier": "safe",
-        "status": "registered",
-        "tools": [("x_search", "Search X.", "safe", "registered")],
     },
     {
         "key": "charting",
@@ -337,27 +154,12 @@ TOOLSETS: list[dict] = [
              "observation/eval, never auto-installed.", "safe", "wired"),
         ],
     },
-    {
-        "key": "yuanbao",
-        "name": "Yuanbao",
-        "description": "Group info, member queries, DM.",
-        "tier": "safe",
-        "status": "infeasible",
-        "backend_note": "Hermes-internal backend; queries safe / sends orchestrator if ever wired.",
-        "tools": [
-            ("yb_query_group_info", "Query group info.", "safe", "infeasible"),
-            ("yb_query_group_members", "Query members.", "safe", "infeasible"),
-            ("yb_send_dm", "Send a DM.", "orchestrator", "infeasible"),
-            ("yb_send_sticker", "Send a sticker.", "orchestrator", "infeasible"),
-        ],
-    },
 ]
 
 # (key, name, category, description, tier, status)
 _S = "safe"
 _O = "orchestrator"
 _REG = "registered"
-_INF = "infeasible"
 SKILLS: list[tuple[str, str, str, str, str, str]] = [
     # META (self-authoring — ingested/adapted from anthropics/skills, Apache-2.0; see THIRD_PARTY_NOTICES.md)
     ("skill-creator", "skill-creator", "meta",
@@ -402,12 +204,6 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
      "Design-philosophy method for original static visual art (poster/artwork): 90% visual, 10% text.", _S, _REG),
     ("algorithmic-art", "algorithmic-art", "creative",
      "Algorithmic-philosophy method for p5.js generative art with seeded, reproducible randomness.", _S, _REG),
-    # APPLE
-    ("apple-notes", "apple-notes", "apple", "Manage Apple Notes via memo CLI.", _S, _REG),
-    ("apple-reminders", "apple-reminders", "apple", "Apple Reminders via remindctl.", _S, _REG),
-    ("findmy", "findmy", "apple", "Track Apple devices/AirTags.", _S, _REG),
-    ("imessage", "imessage", "apple", "iMessage/SMS — read/draft for spawns; sending is Arslan-mediated.", _S, _REG),
-    ("macos-computer-use", "macos-computer-use", "apple", "Drive the macOS desktop.", _O, _INF),
     # AUTONOMOUS-AI-AGENTS (decision §9: registered, orchestrator-only, unwired)
     ("claude-code", "claude-code", "autonomous-ai-agents", "Delegate coding to Claude Code CLI.", _O, _REG),
     ("codex", "codex", "autonomous-ai-agents", "Delegate coding to OpenAI Codex CLI.", _O, _REG),
@@ -415,70 +211,30 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
     # CREATIVE
     ("architecture-diagram", "architecture-diagram", "creative", "SVG architecture diagrams as HTML.", _S, _REG),
     ("ascii-art", "ascii-art", "creative", "ASCII art.", _S, _REG),
-    ("ascii-video", "ascii-video", "creative", "Video/audio to colored ASCII MP4/GIF.", _S, _REG),
     ("baoyu-infographic", "baoyu-infographic", "creative", "Infographics: 21 layouts x 21 styles.", _S, _REG),
     ("claude-design", "claude-design", "creative", "One-off HTML artifacts (landing, deck).", _S, _REG),
-    ("comfyui", "comfyui", "creative", "ComfyUI image/video/audio workflows (runs a local server).", _O, _REG),
     ("design-md", "design-md", "creative", "Author/validate DESIGN.md token specs.", _S, _REG),
     ("designed-html-report", "designed-html-report", "creative",
      "设计版报告:报告/简报/方案等长篇交付物产出自带设计系统的单文件 HTML(Designed HTML Report),而非 markdown 长文。", _S, _REG),
     ("excalidraw", "excalidraw", "creative", "Hand-drawn Excalidraw JSON diagrams.", _S, _REG),
     ("humanizer", "humanizer", "creative", "Strip AI-isms, add real voice.", _S, _REG),
-    ("manim-video", "manim-video", "creative", "Manim CE math/algo animation videos.", _S, _REG),
     ("p5js", "p5js", "creative", "p5.js sketches.", _S, _REG),
-    ("popular-web-designs", "popular-web-designs", "creative", "54 real design systems as HTML/CSS.", _S, _REG),
     ("pretext", "pretext", "creative", "DOM-free text layout / kinetic typography HTML demos.", _S, _REG),
     ("sketch", "sketch", "creative", "Throwaway HTML mockups, 2-3 variants.", _S, _REG),
     ("songwriting-and-ai-music", "songwriting-and-ai-music", "creative", "Songwriting + Suno prompts.", _S, _REG),
-    ("touchdesigner-mcp", "touchdesigner-mcp", "creative", "Control TouchDesigner (executes Python).", _O, _INF),
-    # DATA-SCIENCE
-    ("jupyter-live-kernel", "jupyter-live-kernel", "data-science", "Iterative Python via live Jupyter kernel.", _O, _REG),
-    # EMAIL
-    ("himalaya", "himalaya", "email", "IMAP/SMTP email — read/draft for spawns; sending is Arslan-mediated.", _S, _REG),
-    # GENERAL
-    ("dogfood", "dogfood", "general", "Exploratory QA of web apps.", _S, _REG),
-    ("yuanbao-groups", "yuanbao", "general", "Yuanbao groups — query info/members; mentions Arslan-mediated.", _S, _INF),
     # GITHUB
-    ("codebase-inspection", "codebase-inspection", "github", "Inspect codebases: LOC, languages (read-only).", _S, _REG),
     ("github-auth", "github-auth", "github", "GitHub auth setup (credentials).", _O, _REG),
     ("github-code-review", "github-code-review", "github", "Review PR diffs; posting comments needs orchestrator tools.", _S, _REG),
     ("github-issues", "github-issues", "github", "Create/triage issues (repo writes).", _O, _REG),
     ("github-pr-workflow", "github-pr-workflow", "github", "PR lifecycle (repo mutation).", _O, _REG),
     ("github-repo-management", "github-repo-management", "github", "Clone/fork/releases (repo mutation).", _O, _REG),
     # MEDIA
-    ("gif-search", "gif-search", "media", "Search/download GIFs from Tenor.", _S, _REG),
-    ("heartmula", "heartmula", "media", "Song generation from lyrics + tags.", _S, _REG),
-    ("songsee", "songsee", "media", "Audio spectrograms/features.", _S, _REG),
     ("youtube-content", "youtube-content", "media", "YouTube transcripts → summaries/threads.", _S, _REG),
-    # MLOPS
-    ("audiocraft-audio-generation", "audiocraft-audio-generation", "mlops", "MusicGen/AudioGen.", _S, _REG),
-    ("evaluating-llms-harness", "evaluating-llms-harness", "mlops", "lm-eval-harness benchmarks (runs local jobs).", _O, _REG),
-    ("huggingface-hub", "huggingface-hub", "mlops", "HF search/download; uploads need orchestrator tools.", _S, _REG),
-    ("llama-cpp", "llama-cpp", "mlops", "Local GGUF inference (runs local inference).", _O, _REG),
-    ("segment-anything-model", "segment-anything-model", "mlops", "SAM zero-shot segmentation.", _S, _REG),
-    ("serving-llms-vllm", "serving-llms-vllm", "mlops", "vLLM serving (spins up a process).", _O, _REG),
-    ("weights-and-biases", "weights-and-biases", "mlops", "W&B experiment logging.", _S, _REG),
-    # NOTE-TAKING
-    ("obsidian", "obsidian", "note-taking", "Read/search/create notes in the Obsidian vault.", _S, _REG),
-    # PRODUCTIVITY
-    ("airtable", "airtable", "productivity", "Airtable REST: records CRUD.", _S, _REG),
-    ("google-workspace", "google-workspace", "productivity", "Gmail/Calendar/Drive/Docs — read/draft for spawns; sends Arslan-mediated.", _S, _REG),
-    ("maps", "maps", "productivity", "Geocode, POIs, routes via OSM/OSRM.", _S, _REG),
-    ("nano-pdf", "nano-pdf", "productivity", "Edit PDF text via nano-pdf CLI.", _S, _REG),
-    ("notion", "notion", "productivity", "Notion API: pages, databases, markdown.", _S, _REG),
-    ("ocr-and-documents", "ocr-and-documents", "productivity", "Extract text from PDFs/scans.", _S, _REG),
-    ("powerpoint", "powerpoint", "productivity", "Create/read/edit .pptx decks.", _S, _REG),
-    ("teams-meeting-pipeline", "teams-meeting-pipeline", "productivity", "Teams meeting pipeline via Hermes CLI.", _O, _INF),
     # RESEARCH
     ("arxiv", "arxiv", "research", "Search arXiv papers.", _S, _REG),
     ("blogwatcher", "blogwatcher", "research", "Monitor blogs/RSS feeds.", _S, _REG),
     ("llm-wiki", "llm-wiki", "research", "Build/query interlinked markdown KB.", _S, _REG),
-    ("polymarket", "polymarket", "research", "Query Polymarket markets/prices.", _S, _REG),
     ("research-paper-writing", "research-paper-writing", "research", "Write ML papers (NeurIPS/ICML).", _S, _REG),
-    # SMART-HOME
-    ("openhue", "openhue", "smart-home", "Philips Hue control (physical devices).", _O, _REG),
-    # SOCIAL-MEDIA
-    ("xurl", "xurl", "social-media", "X/Twitter — read/search for spawns; posts/DMs Arslan-mediated.", _S, _REG),
     # SOFTWARE-DEVELOPMENT
     ("verification-before-completion", "verification-before-completion", "software-development",
      "Run verification and read output before claiming done/fixed/passing (analysis discipline).", _S, _REG),

@@ -98,7 +98,7 @@ async def test_drafter_filters_to_menu_and_equipped(seeded, monkeypatch):
         async def chat(self, system, user, **kw):
             return _Resp(
                 '{"persona_role": null, "persona_tone": "正式", "capabilities": null,'
-                ' "add_toolsets": ["deck", "image_generation", "bogus"],'
+                ' "add_toolsets": ["deck", "session_search", "bogus"],'
                 ' "remove_toolsets": ["charting"],'
                 ' "add_skills": ["humanizer"], "remove_skills": [], "reason": "按要求"}'
             )
@@ -108,7 +108,7 @@ async def test_drafter_filters_to_menu_and_equipped(seeded, monkeypatch):
     assert out is not None and out["spawn_id"] == sid
     ch = out["changes"]
     assert ch["persona_tone"] == "正式"
-    # deck survives (honest menu); image_generation (catalog-only) + bogus dropped
+    # deck survives (honest menu); session_search (catalog-only, unwired) + bogus dropped
     assert ch["add_toolsets"] == ["deck"]
     # remove_toolsets dropped entirely: charting is not equipped on this spawn
     assert "remove_toolsets" not in ch

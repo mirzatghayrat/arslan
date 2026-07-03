@@ -28,7 +28,7 @@ def maker(tmp_path, monkeypatch):
                         system_prompt="You are an image artist."))
             s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
             s.add(SpawnCapability(spawn_id=7, kind="skill", ref_key="baoyu-infographic"))
-            s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="image_generation"))
+            s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="session_search"))
             await s.commit()
 
     anyio.run(_seed)
@@ -88,7 +88,7 @@ async def test_unequipped_spawn_gets_universal_baseline(maker, monkeypatch):
 async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
     """Spawn equipped with a registered (not wired) toolset gets '(not yet live)' label.
 
-    Spawn 9 is equipped (image_generation) → has_equipment → dispatch resolves wired tools,
+    Spawn 9 is equipped (session_search) → has_equipment → dispatch resolves wired tools,
     which now always include the universal safe tool render_chart → the spawn runs through the
     tool loop. Stub tool_loop's adapter (not the legacy dispatcher one) so no real LLM call fires.
     """
@@ -103,10 +103,10 @@ async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
 
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
-    await dispatcher.dispatch("main", spawn_id=9, task_brief="draw something")
+    await dispatcher.dispatch("main", spawn_id=9, task_brief="search past sessions")
     s = captured["system"]
     assert "(not yet live)" in s
-    assert "Image Generation" in s
+    assert "Session Search" in s
 
 
 @pytest.mark.asyncio

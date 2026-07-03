@@ -1,9 +1,13 @@
-"""Idempotent registry seeding: insert-or-update by key; never deletes."""
+"""Idempotent registry seeding: insert-or-update by key; deletes ONLY explicitly
+retired seed keys (never user-created rows — MCP toolsets use mcp_* keys and
+imported/promoted skills carry their own keys, none of which appear in the
+retirement lists; the literal key match IS the safety)."""
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import arslan.spawn
@@ -15,6 +19,32 @@ from server.registry.seed_catalog import SKILLS, TOOLSETS
 logger = logging.getLogger(__name__)
 
 _SEEDS_DIR = Path(arslan.spawn.__file__).parent / "seeds"
+
+# ── Retirement lists (2026-07 open-source curation) ────────────────────────────
+# Seed keys that used to ship in the catalog and must be removed from existing
+# DBs on boot. ONLY keys listed here are ever deleted; the seeder never deletes
+# anything else. Keep entries forever (deletion is idempotent on absent keys).
+RETIRED_SKILL_KEYS: tuple[str, ...] = (
+    # integration placeholders (no method body; the integration never existed)
+    "apple-notes", "apple-reminders", "findmy", "imessage", "himalaya",
+    "airtable", "google-workspace", "maps", "notion", "nano-pdf", "obsidian",
+    "xurl", "gif-search", "polymarket", "manim-video", "ascii-video",
+    "audiocraft-audio-generation", "huggingface-hub", "segment-anything-model",
+    "weights-and-biases", "llama-cpp", "serving-llms-vllm",
+    "evaluating-llms-harness", "openhue", "comfyui", "jupyter-live-kernel",
+    # unclear / redundant / infeasible
+    "dogfood", "heartmula", "songsee", "popular-web-designs", "powerpoint",
+    "ocr-and-documents", "codebase-inspection", "yuanbao-groups",
+    "macos-computer-use", "teams-meeting-pipeline", "touchdesigner-mcp",
+)
+RETIRED_TOOLSET_KEYS: tuple[str, ...] = (
+    "discord", "discord_admin", "spotify", "x_search", "home_assistant",
+    "cross_platform_messaging", "image_generation", "video_generation",
+    "video_analysis", "vision_analysis", "text_to_speech", "code_execution",
+    "mixture_of_agents", "task_delegation", "memory", "clarifying_questions",
+    "browser_automation", "terminal_processes", "cron_jobs", "computer_use",
+    "context_engine", "yuanbao",
+)
 
 
 def _skill_body(key: str) -> str | None:
@@ -30,10 +60,20 @@ def _skill_body(key: str) -> str | None:
         return None
 
 
+async def _retire_removed_seeds(db: AsyncSession) -> None:
+    """Delete retired seed rows (and the retired toolsets' tools). Idempotent;
+    touches ONLY the literal keys above — user rows (mcp_* toolsets, imported
+    or promoted skills) are never in these lists."""
+    await db.execute(delete(Tool).where(Tool.toolset_key.in_(RETIRED_TOOLSET_KEYS)))
+    await db.execute(delete(Toolset).where(Toolset.key.in_(RETIRED_TOOLSET_KEYS)))
+    await db.execute(delete(SkillPack).where(SkillPack.key.in_(RETIRED_SKILL_KEYS)))
+
+
 async def seed_registry_with(db: AsyncSession) -> None:
     """Upsert the full catalog into the given session. Reclassifications ship as
-    code changes and are applied on restart; rows are never deleted (user grants
-    reference them)."""
+    code changes and are applied on restart; rows are deleted ONLY via the
+    explicit retirement lists (user grants may reference everything else)."""
+    await _retire_removed_seeds(db)
     for ts in TOOLSETS:
         row = await db.get(Toolset, ts["key"])
         if row is None:

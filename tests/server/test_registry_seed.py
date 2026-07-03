@@ -34,8 +34,8 @@ async def test_seed_counts_and_exclusions(maker):
         skills = (await s.execute(select(SkillPack))).scalars().all()
         tools = (await s.execute(select(Tool))).scalars().all()
 
-    assert len(toolsets) == 31
-    assert len(skills) >= 70
+    assert len(toolsets) == 9
+    assert len(skills) == 55
     assert EXCLUDED.isdisjoint({t.key for t in toolsets})
     assert EXCLUDED.isdisjoint({sk.key for sk in skills})
     assert all(t.tier in ("safe", "orchestrator") for t in toolsets + tools)
@@ -53,15 +53,10 @@ async def test_seed_core_wiring_and_splits(maker):
     async with maker() as s:
         ws = await s.get(Toolset, "web_search_scraping")
         assert ws.tier == "safe" and ws.status == "wired"
-        for key in ("code_execution", "computer_use", "terminal_processes"):
-            assert (await s.get(Toolset, key)).tier == "orchestrator"
         # READ/WRITE split inside File Operations
         assert (await s.get(Tool, "read_file")).tier == "safe"
         assert (await s.get(Tool, "write_file")).tier == "orchestrator"
         assert (await s.get(Tool, "patch")).tier == "orchestrator"
-        # absorbed machinery
-        assert (await s.get(Toolset, "task_delegation")).status == "absorbed"
-        assert (await s.get(Toolset, "memory")).status == "absorbed"
         # coding-delegation skills: registered, orchestrator-only (decision §9)
         for key in ("claude-code", "codex", "opencode"):
             sk = await s.get(SkillPack, key)
@@ -83,4 +78,41 @@ async def test_seed_idempotent_and_updates(maker):
         assert (await s.get(Toolset, "web_search_scraping")).tier == "safe"
         from sqlalchemy import func
         n = (await s.execute(select(func.count()).select_from(Toolset))).scalar_one()
-    assert n == 31
+    assert n == 9
+
+
+@pytest.mark.asyncio
+async def test_seed_retires_removed_keys_but_spares_user_rows(maker):
+    """Retirement: a previously-seeded retired key is deleted on re-seed; user rows
+    (mcp_* toolsets, imported/promoted skills) survive because only the literal
+    retirement lists are ever deleted."""
+    from server.registry.seeder import seed_registry
+
+    # simulate an old DB: retired seed rows + user-created rows
+    async with maker() as s:
+        s.add(Toolset(key="spotify", name="Spotify", description="old seed",
+                      tier="safe", status="registered"))
+        s.add(Tool(key="spotify_search", toolset_key="spotify", description="old",
+                   tier="safe", status="registered", input_schema={}))
+        s.add(SkillPack(key="notion", name="notion", category="productivity",
+                        description="old seed", tier="safe", status="registered"))
+        s.add(Toolset(key="mcp_x", name="User MCP", description="user-added",
+                      tier="safe", status="registered"))
+        s.add(Tool(key="mcp_x__do", toolset_key="mcp_x", description="user tool",
+                   tier="safe", status="wired", input_schema={}))
+        s.add(SkillPack(key="my-imported-skill", name="my-imported-skill",
+                        category="imported", description="user import",
+                        tier="safe", status="registered", body="## Trigger\nx" * 30))
+        await s.commit()
+
+    await seed_registry()
+    await seed_registry()  # idempotent on absent keys
+
+    async with maker() as s:
+        assert await s.get(Toolset, "spotify") is None
+        assert await s.get(Tool, "spotify_search") is None
+        assert await s.get(SkillPack, "notion") is None
+        # user rows untouched
+        assert (await s.get(Toolset, "mcp_x")).name == "User MCP"
+        assert (await s.get(Tool, "mcp_x__do")).status == "wired"
+        assert (await s.get(SkillPack, "my-imported-skill")).body
