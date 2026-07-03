@@ -1,0 +1,87 @@
+"""Deterministic gate for the orchestrator-only run_command tool (spec §组件1).
+
+Pure functions, no IO. TWO independent lines of defence:
+  1. binary whitelist — only these executables may ever run.
+  2. hard-deny scan over every argv element — shell metacharacters, sudo,
+     rm -rf, absolute-path executables — refused regardless of the binary.
+
+argv is a LIST (never a shell string): the executor uses create_subprocess_exec
+with *[command, *argv], so no shell parsing ever happens. This module additionally
+guarantees no element can smuggle shell syntax that a downstream tool might re-parse.
+"""
+from __future__ import annotations
+
+import re
+
+# v1 whitelist: high-value, non-code-fetching binaries. Extend HERE to add commands.
+ALLOWED_BINARIES = frozenset({"git", "gh", "ffmpeg", "pandoc"})
+
+# Any argv element containing one of these is refused (shell metacharacters that
+# would matter if the string were ever re-parsed by a shell).
+_SHELL_META = re.compile(r"[|&;<>$`\n\r()]")
+# Tokens that are dangerous even as bare argv elements.
+_DENY_TOKENS = frozenset({"sudo", "rm"})
+
+
+def validate(command: str, argv) -> dict:
+    """Return {"ok": bool, "reason": str}. Structural + policy check only —
+    does NOT execute anything."""
+    if not command or not isinstance(command, str):
+        return {"ok": False, "reason": "empty command"}
+    if command not in ALLOWED_BINARIES:
+        return {"ok": False, "reason": f"binary '{command}' not allowed (v1 whitelist: "
+                f"{', '.join(sorted(ALLOWED_BINARIES))})"}
+    if not isinstance(argv, list):
+        return {"ok": False, "reason": "argv must be a list of strings"}
+    for el in argv:
+        if not isinstance(el, str):
+            return {"ok": False, "reason": "every argv element must be a string"}
+        if _SHELL_META.search(el):
+            return {"ok": False, "reason": f"argv element contains shell metacharacters: {el!r}"}
+        if el in _DENY_TOKENS:
+            return {"ok": False, "reason": f"denied token in argv: {el!r}"}
+        if el.startswith("/") and _looks_executable(el):
+            return {"ok": False, "reason": f"absolute-path executable denied: {el!r}"}
+    for el in argv:
+        if el.startswith("-") and set(el[1:]) >= {"r", "f"}:
+            return {"ok": False, "reason": "destructive rm pattern denied"}
+    return {"ok": True, "reason": ""}
+
+
+def _looks_executable(path: str) -> bool:
+    """Absolute paths to common shells/interpreters are the real risk; a plain
+    /tmp/data.mp4 file argument is fine. Refuse paths whose basename is a known
+    interpreter/shell."""
+    base = path.rsplit("/", 1)[-1]
+    return base in {"sh", "bash", "zsh", "python", "python3", "node", "perl", "ruby", "env"}
+
+
+# Deterministic risk classification (spec §组件1). Borrowed from OpenHands'
+# SecurityAnalyzer tiers, but only the pattern layer — no LLM. Per-binary lookup on
+# the first subcommand; fail-safe = unknown shapes are never LOW.
+_GIT_LOW = frozenset({"status", "log", "diff", "show", "branch", "remote", "ls-files",
+                      "rev-parse", "describe", "config"})
+_GIT_HIGH = frozenset({"push", "pull", "fetch", "clone", "submodule"})
+_GIT_MEDIUM = frozenset({"add", "commit", "checkout", "init", "restore", "reset", "rm",
+                         "mv", "tag", "stash", "merge", "rebase", "apply", "clean"})
+
+
+def classify(command: str, argv) -> str:
+    """Return "LOW" | "MEDIUM" | "HIGH". Deterministic; no IO, no LLM."""
+    args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
+    if any(a in ("--version", "-version", "-v", "--help", "-h") for a in args):
+        return "LOW"
+    if command == "gh":
+        return "HIGH"
+    if command == "git":
+        sub = args[0] if args else ""
+        if sub in _GIT_HIGH:
+            return "HIGH"
+        if sub in _GIT_LOW:
+            return "LOW"
+        if sub in _GIT_MEDIUM:
+            return "MEDIUM"
+        return "HIGH"
+    if command in ("ffmpeg", "pandoc"):
+        return "MEDIUM"
+    return "HIGH"
