@@ -67,21 +67,33 @@ _GIT_MEDIUM = frozenset({"add", "commit", "checkout", "init", "restore", "reset"
 
 
 def classify(command: str, argv) -> str:
-    """Return "LOW" | "MEDIUM" | "HIGH". Deterministic; no IO, no LLM."""
+    """Return "LOW" | "MEDIUM" | "HIGH". Deterministic; no IO, no LLM.
+
+    The subcommand's risk always wins: a HIGH/MEDIUM git subcommand is never
+    downgraded to LOW by a coincidental verbose flag (e.g. `git push -v`)."""
     args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
-    if any(a in ("--version", "-version", "-v", "--help", "-h") for a in args):
-        return "LOW"
     if command == "gh":
         return "HIGH"
     if command == "git":
         sub = args[0] if args else ""
         if sub in _GIT_HIGH:
             return "HIGH"
-        if sub in _GIT_LOW:
-            return "LOW"
         if sub in _GIT_MEDIUM:
             return "MEDIUM"
+        if sub in _GIT_LOW:
+            return "LOW"
+        # No recognized subcommand: a bare version/help probe is LOW, else fail-safe HIGH.
+        if _is_probe(args):
+            return "LOW"
         return "HIGH"
     if command in ("ffmpeg", "pandoc"):
-        return "MEDIUM"
+        # A pure version/help probe is LOW; anything else produces output → MEDIUM.
+        return "LOW" if _is_probe(args) else "MEDIUM"
     return "HIGH"
+
+
+def _is_probe(args) -> bool:
+    """True when the args are ONLY a version/help probe (no other tokens), so a
+    verbose flag riding on a real operation can never masquerade as a probe."""
+    probe = {"--version", "-version", "version", "--help", "-h", "-v"}
+    return len(args) == 1 and args[0] in probe

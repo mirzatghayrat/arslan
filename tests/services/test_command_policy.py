@@ -74,3 +74,16 @@ def test_classify_network_is_high():
 
 def test_classify_unknown_subcommand_defaults_high():
     assert cp.classify("git", ["some-unknown-subcmd"]) in ("MEDIUM", "HIGH")
+
+
+def test_classify_verbose_flag_never_downgrades_risky_subcommand():
+    # -v riding on a real operation must NOT masquerade as a version probe.
+    assert cp.classify("git", ["push", "-v"]) == "HIGH"
+    assert cp.classify("git", ["commit", "-v", "-m", "x"]) == "MEDIUM"
+    assert cp.classify("git", ["add", "-v", "."]) == "MEDIUM"
+
+
+def test_classify_bare_probe_is_low():
+    assert cp.classify("git", ["--version"]) == "LOW"
+    assert cp.classify("git", ["-v"]) == "LOW"
+    assert cp.classify("ffmpeg", ["-version"]) == "LOW"
