@@ -105,6 +105,18 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             queue.put_nowait(None)  # sentinel: flush remainder, stop sender
             await sender
 
+    async def run_with_confirm_frames(coro: Coroutine[Any, Any, object]) -> None:
+        """Run a plain-message orchestration. run_command pauses mid-loop via the
+        injected `confirm_command`, which OWNS ws.receive itself (see below) only
+        while a command is pending — so there is never a blocked receiver to cancel,
+        and the outer loop cleanly resumes receiving once orchestration finishes."""
+        sender = asyncio.create_task(_drain())
+        try:
+            await coro
+        finally:
+            queue.put_nowait(None)
+            await sender
+
     async def run_spawn(spawn_id: int, task_brief: str, **kw) -> None:
         await run_with_live_frames(
             arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
@@ -121,6 +133,64 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     recent_material = ""
     recent_names: list[str] = []
     awaiting_store: tuple[str, list[str]] | None = None
+
+    # Per-connection run_command confirmation state (Task 6).
+    import uuid
+
+    session_cmd_allow: set[str] = set()  # command signatures auto-approved this session
+
+    def _cmd_sig(command: str, argv: list) -> str:
+        # signature = binary + arg SHAPE (flags kept, free values blanked) so that
+        # "remember git status" never auto-approves "git push".
+        shape = [a if a.startswith("-") else "·" for a in argv]
+        return command + "\x1f" + "\x1f".join(shape)
+
+    async def confirm_command(command: str, argv: list) -> bool:
+        from server.services import command_policy, settings_service
+        sig = _cmd_sig(command, argv)
+        if sig in session_cmd_allow:
+            return True
+        # Confirmation policy: 'ask_risky' auto-runs LOW-risk (read-only) commands.
+        risk = command_policy.classify(command, argv)
+        async with db_session.AsyncSessionLocal() as db:
+            policy = await settings_service.shell_confirm_policy(db)
+        if policy == "ask_risky" and risk == "LOW":
+            return True
+        call_id = uuid.uuid4().hex
+        emit(protocol.propose_run_command(call_id, command, argv, reason=f"risk: {risk}"))
+        # Own ws.receive HERE, only while this one command is pending. The plain-message
+        # orchestration coro that led here is blocked awaiting this call, so the outer
+        # `while True: ws.receive_json()` loop is not receiving — there is exactly one
+        # receiver. We loop until THIS call_id is answered; any other frame arriving
+        # mid-confirmation gets a recoverable BUSY notice (ping/pong ignored). On the
+        # matching confirm/cancel we return, and the outer loop resumes receiving.
+        decision = {"approved": False}
+        try:
+            while True:
+                try:
+                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                except TimeoutError:
+                    decision = {"approved": False}
+                    break
+                t = data.get("type")
+                if t in ("ping", "pong"):
+                    continue
+                if (t in ("confirm_run_command", "cancel_run_command")
+                        and data.get("call_id") == call_id):
+                    decision = {"approved": t == "confirm_run_command",
+                                "remember": bool(data.get("remember"))}
+                    break
+                # Any other frame (including a confirm for an unknown/stale call_id) is
+                # not actionable while we are paused — tell the client, keep waiting.
+                await ws.send_json(protocol.error(
+                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+        except WebSocketDisconnect:
+            # Client vanished mid-confirmation: decline and re-raise so the outer
+            # handler's disconnect path runs (clean socket teardown).
+            raise
+        if decision.get("remember"):
+            session_cmd_allow.add(sig)
+        return bool(decision.get("approved"))
 
     async def _spawn_names() -> list[str]:
         roster = await roster_service.list_roster(conversation_id)
@@ -467,8 +537,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.stream_end(msg_id))
                     continue
 
-            await run_with_live_frames(
-                arslan.handle_user_message(conversation_id, content, emit, attached_context=attached or None)
+            await run_with_confirm_frames(
+                arslan.handle_user_message(conversation_id, content, emit,
+                                           attached_context=attached or None,
+                                           confirm_command=confirm_command)
             )
     except WebSocketDisconnect:
         return

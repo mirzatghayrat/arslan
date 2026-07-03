@@ -317,6 +317,7 @@ async def handle_user_message(
     emit: EventSink,
     *,
     attached_context: str | None = None,
+    confirm_command=None,
 ) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
     with usage_sink.collecting():
@@ -394,7 +395,8 @@ async def handle_user_message(
             await phase_service.clear(conversation_id)
             await _handle_answer(conversation_id, user_message, emit,
                                  extra_system=_CLARIFY_ADDENDUM,
-                                 attached_context=attached_context)
+                                 attached_context=attached_context,
+                                 confirm_command=confirm_command)
             await memory.maybe_compact(conversation_id)
             return
 
@@ -416,7 +418,7 @@ async def handle_user_message(
                                   "did not map to an editable change (persona/tone/capabilities/"
                                   "equipment). Briefly say what CAN be changed and ask exactly "
                                   "what they want adjusted. Answer in the user's language."),
-                    attached_context=attached_context)
+                    attached_context=attached_context, confirm_command=confirm_command)
             else:
                 emit(protocol.suggest_update(**drafted))
             await memory.maybe_compact(conversation_id)
@@ -440,6 +442,7 @@ async def handle_user_message(
                     conversation_id, user_message, emit,
                     extra_system=_gather_clarify_addendum(staffing_gather.missing_slots(slots)),
                     attached_context=attached_context,
+                    confirm_command=confirm_command,
                 )
                 await memory.maybe_compact(conversation_id)
                 return
@@ -449,18 +452,21 @@ async def handle_user_message(
             await _staffing_match_and_propose(
                 conversation_id, user_message, slots, result, emit,
                 attached_context=attached_context,
+                confirm_command=confirm_command,
             )
         elif result.action == "clarify":
             # Router no longer sees create-intent — release any gather phase.
             if gathering:
                 await phase_service.clear(conversation_id)
             await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
-                                 attached_context=attached_context)
+                                 attached_context=attached_context,
+                                 confirm_command=confirm_command)
         else:  # answer (incl. fallback)
             # Router no longer sees create-intent — release any gather phase.
             if gathering:
                 await phase_service.clear(conversation_id)
-            await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context)
+            await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
+                                 confirm_command=confirm_command)
 
         # 5. compact the working thread if it grew too long
         await memory.maybe_compact(conversation_id)
@@ -550,7 +556,7 @@ async def _fused_create_draft(slots: dict, result, seed_spawn_ids: list[int]) ->
 
 async def _staffing_match_and_propose(  # noqa: ANN001
     conversation_id, user_message, slots, result, emit: EventSink, *,
-    attached_context: str | None = None,
+    attached_context: str | None = None, confirm_command=None,
 ) -> None:
     """Ready-path (B4): the gather gate has passed and the staffing `slots` are
     complete. Score existing spawns against the need, classify into one of three
@@ -565,7 +571,8 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     # recurrence is False → one-off, do it once, never staff.
     if slots.get("recurrence") is False:
         await _handle_answer(conversation_id, user_message, emit,
-                             attached_context=attached_context)
+                             attached_context=attached_context,
+                             confirm_command=confirm_command)
         return
 
     # Score existing spawns against the gathered need, then classify into a band.
@@ -607,7 +614,7 @@ async def _staffing_match_and_propose(  # noqa: ANN001
 
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
-    attached_context: str | None = None,
+    attached_context: str | None = None, confirm_command=None,
 ) -> None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
@@ -634,6 +641,7 @@ async def _handle_answer(
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
             resolve_tools=_arslan_tools,
             allow_escalation=False,
+            confirm_command=confirm_command,
         )
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})

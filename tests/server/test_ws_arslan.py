@@ -66,7 +66,7 @@ def app_client(tmp_path, monkeypatch):
 
 def test_answer_turn_streams(app_client, monkeypatch):
     # Stub the orchestration loop to a deterministic answer.
-    async def _fake_handle(conv, msg, emit, *, attached_context=None):
+    async def _fake_handle(conv, msg, emit, *, attached_context=None, confirm_command=None):
         emit({"type": "stream_start", "source": "arslan"})
         emit({"type": "stream_chunk", "content": "Hello"})
         emit({"type": "stream_end", "message_id": 1})
@@ -586,7 +586,7 @@ def test_arslan_storage_reflow_giveup_clears_material(app_client, monkeypatch):
 
     # Stub handle_user_message so turn 2 and 3 fall-through is observable.
     handle_calls = {"n": 0}
-    async def _fake_handle(conv, msg, emit, *, attached_context=None):
+    async def _fake_handle(conv, msg, emit, *, attached_context=None, confirm_command=None):
         handle_calls["n"] += 1
         emit({"type": "stream_start", "source": "arslan"})
         emit({"type": "stream_chunk", "content": "OK"})

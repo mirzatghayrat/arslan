@@ -186,6 +186,14 @@ def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, An
     return {"type": "propose_staffing", "candidates": candidates, "create_draft": create_draft}
 
 
+def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "") -> dict[str, Any]:
+    """Arslan proposes running ONE whitelisted command. Emitting this frame runs
+    NOTHING — the frontend renders a confirm card showing the full command; only the
+    user's `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`)."""
+    return {"type": "propose_run_command", "call_id": call_id, "command": command,
+            "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+
+
 def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
     """Notify the client that a spawn joined or left the roster.
 
