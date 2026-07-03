@@ -217,6 +217,10 @@ export default function App() {
   const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[] }) => {
     // display = session-only echo for the sent bubble (image thumbnails / doc chips);
     // only text-bearing attachments ride to the backend as attached_context below.
+    // Sending a new message without acting on a pending proposal card = implicitly
+    // dismiss it, so un-acted suggest_create / propose_invite / propose_staffing /
+    // suggest_update cards clear when the user moves on instead of stacking forever.
+    useArslanStore.getState().dismissAllPending();
     useArslanStore.getState().addUserMessage(text, attached?.display);
     useArslanStore.getState().setThinking(true);
     wsSend({

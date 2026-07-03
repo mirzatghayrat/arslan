@@ -52,6 +52,10 @@ interface ArslanState {
   handleFrame: (frame: ArslanServerMessage) => void;
   dismissSuggestion: () => void;
   dismissUpdate: () => void;
+  // Implicit-dismiss: clear ALL user-facing proposal cards in one call. Fired when
+  // the user sends a new message without acting on a pending card. Does NOT touch
+  // pendingRoute / pendingProposalSpawnId (execution-phase markers cleared on stream_end).
+  dismissAllPending: () => void;
   markProposalConfirmed: (spawnId: number) => void;
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
@@ -118,6 +122,10 @@ function makeActions(set: SetState, get: GetState) {
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
     dismissUpdate: () => set({ pendingUpdate: null }),
+    dismissAllPending: () => set({
+      suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null,
+      pendingInvite: null, pendingStaffing: null, pendingUpdate: null,
+    }),
     // One-shot confirm (doom-loop guard, frontend half): flipping isProposal off disables the
     // confirm button immediately so a stale re-click can never re-fire execute_confirmed.
     markProposalConfirmed: (spawnId: number) =>
