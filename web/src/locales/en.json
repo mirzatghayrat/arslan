@@ -535,11 +535,17 @@
     "title": "Capability Library",
     "subtitle": "Discover, install, and manage tools, skills, and MCP servers.",
     "tabs": {
+      "discover": "Discover",
       "tools": "Tools",
       "skills": "Skills",
       "forge": "Skill Forge",
       "mcps": "MCPs",
       "saved": "Saved"
+    },
+    "chips": {
+      "all": "All",
+      "recommended": "Recommended",
+      "registered": "Registered servers"
     },
     "catalog": {
       "loading": "Loading registry…",
@@ -587,7 +593,7 @@
       "mcp": {
         "title": "Suggested launch command (review & edit)",
         "add": "Add as MCP server",
-        "added": "Added to the MCP panel (locked) — connect it in the MCPS tab below."
+        "added": "Added to the MCP panel (locked) — connect it in the MCPS tab."
       },
       "note": {
         "title": "Reference note (review & edit)",

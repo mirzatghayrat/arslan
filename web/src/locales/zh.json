@@ -535,11 +535,17 @@
     "title": "能力库",
     "subtitle": "发现、安装、管理工具、技能与 MCP 服务器。",
     "tabs": {
+      "discover": "发现",
       "tools": "工具",
       "skills": "技能",
       "forge": "技能锻造",
       "mcps": "MCP",
       "saved": "已存"
+    },
+    "chips": {
+      "all": "全部",
+      "recommended": "推荐接入",
+      "registered": "已注册服务器"
     },
     "catalog": {
       "loading": "正在加载注册表…",
@@ -587,7 +593,7 @@
       "mcp": {
         "title": "建议启动命令（可检查修改）",
         "add": "添加为 MCP 服务器",
-        "added": "已加入 MCP 面板（锁定）——请在下方 MCP 标签页连接。"
+        "added": "已加入 MCP 面板（锁定）——请在 MCP 标签页连接。"
       },
       "note": {
         "title": "参考笔记（可检查修改）",

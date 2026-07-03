@@ -63,25 +63,66 @@ beforeEach(() => {
   (mcp.listMcpServers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
-describe("Capabilities page structure (hero + one tab bar)", () => {
-  it("renders the Tool-Hub hero input and Research button at top level", () => {
+describe("Capabilities page structure (one tab bar, Discover first)", () => {
+  it("renders one tab bar with all six tabs, Discover first", () => {
     render(<Capabilities />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((el) => el.textContent)).toEqual([
+      "capabilities.tabs.discover",
+      "capabilities.tabs.tools",
+      "capabilities.tabs.skills",
+      "capabilities.tabs.forge",
+      "capabilities.tabs.mcps",
+      "capabilities.tabs.saved",
+    ]);
+  });
+
+  it("DISCOVER is the default tab and holds the Tool-Hub hero (input + Research)", () => {
+    render(<Capabilities />);
+    expect(screen.getByRole("tab", { name: "capabilities.tabs.discover" }))
+      .toHaveAttribute("aria-selected", "true");
     expect(screen.getByPlaceholderText("capabilities.hero.placeholder")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /capabilities\.hero\.research/ })).toBeInTheDocument();
   });
 
-  it("renders one tab bar with all five tabs", () => {
+  it("the hero lives only inside the Discover tab (gone on other tabs)", () => {
     render(<Capabilities />);
-    for (const id of ["tools", "skills", "forge", "mcps", "saved"]) {
-      expect(screen.getByRole("tab", { name: `capabilities.tabs.${id}` })).toBeInTheDocument();
-    }
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
+    expect(screen.queryByPlaceholderText("capabilities.hero.placeholder")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.discover" }));
+    expect(screen.getByPlaceholderText("capabilities.hero.placeholder")).toBeInTheDocument();
   });
 
-  it("MCPS tab (default) contains the rehomed Recommended one-click section", async () => {
+  it("MCPS tab contains the rehomed Recommended one-click section", async () => {
     render(<Capabilities />);
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.mcps" }));
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
     // RecommendedMcp preset cards render inside the tab
     expect(await screen.findByText("Memory")).toBeInTheDocument();
+  });
+
+  it("MCPS chips filter between the presets section and the server list; all resets", async () => {
+    render(<Capabilities />);
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.mcps" }));
+    // Chip row derived from real data: presets count (static) + registered servers count (fetched)
+    const recommendedChip = screen.getByRole("button", { name: /capabilities\.chips\.recommended/ });
+    expect(recommendedChip).toHaveTextContent(/9/); // MCP_PRESETS.length
+    expect(screen.getByRole("button", { name: /capabilities\.chips\.registered/ })).toBeInTheDocument();
+    // Both sections visible by default (all)
+    expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
+    expect(await screen.findByText("MCP Servers")).toBeInTheDocument();
+    // registered → presets section hidden, server list stays
+    fireEvent.click(screen.getByRole("button", { name: /capabilities\.chips\.registered/ }));
+    expect(screen.queryByText("capabilities.sections.recommended_mcp")).not.toBeInTheDocument();
+    expect(screen.getByText("MCP Servers")).toBeInTheDocument();
+    // recommended → server list hidden, presets stay
+    fireEvent.click(recommendedChip);
+    expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
+    expect(screen.queryByText("MCP Servers")).not.toBeInTheDocument();
+    // all → both back
+    fireEvent.click(screen.getByRole("button", { name: /capabilities\.chips\.all/ }));
+    expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
+    expect(screen.getByText("MCP Servers")).toBeInTheDocument();
   });
 
   it("SKILLS tab contains the rehomed Import-skills form + registry catalog", async () => {
