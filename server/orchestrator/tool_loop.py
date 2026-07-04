@@ -544,11 +544,24 @@ _ESCALATE_SCHEMA = {
 
 # Appended to `system` in native mode. Curbs the "N tiny searches" pattern the old text loop
 # suffered from — see spec §效率.
+# General research discipline (domain-agnostic) — converges any gather-then-answer task with any
+# single model, instead of fumbling N snippet searches on noisy results.
 _NATIVE_EFFICIENCY = (
-    "\n\nFor 'top list' / ranking questions, prefer fetching ONE authoritative list "
-    "(e.g. web_extract a ranking page) over many individual web_search calls. Stop "
-    "searching as soon as you have enough to answer."
+    "\n\nRESEARCH DISCIPLINE — be efficient and converge:\n"
+    "1. web_search returns short SNIPPETS, not full data. Use it to LOCATE the best source, not to "
+    "collect facts one query at a time.\n"
+    "2. Do at most 1–2 broad searches, then web_extract the most authoritative page you found to get "
+    "the real content — extracting one good source beats many snippet searches.\n"
+    "3. Do NOT run several similar searches for the same thing, and do NOT chase individual data "
+    "points with a separate search each. As soon as you can answer, ANSWER — stop searching.\n"
+    "4. If the data you gathered is incomplete, give your best synthesis and note the gap in one "
+    "line — never keep searching in circles."
 )
+
+# Framework-level convergence cap: after this many web_searches in one turn, further searches are
+# refused and the model is pushed to extract a source or answer. Deterministic — it makes even a
+# fumble-prone model stop the snippet spiral. (web_extract does not count; extracting IS the goal.)
+_SEARCH_CAP = 3
 
 
 def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[dict]:
@@ -679,6 +692,7 @@ async def run_native(
     # outputs re-enter context IDENTICALLY to the old loop.
     convo: list[dict] = list(history) + [{"role": "user", "content": user_content}]
     tool_trace: list[dict] = []
+    searches_done = 0  # web_search count this turn — capped at _SEARCH_CAP to force convergence
 
     # force_tools (spawn proactive web_search): deterministic pre-run, mirrors run().
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
@@ -694,6 +708,7 @@ async def run_native(
                 json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command)
+            searches_done += 1
 
     for step in range(max_tool_calls + 1):
         forced = step == max_tool_calls
@@ -720,6 +735,17 @@ async def run_native(
                                            "context": str(args.get("context") or "").strip()}}
                 # assistant_content is a JSON string of the call so trace/convo read like run().
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
+                # Convergence cap: after _SEARCH_CAP searches, refuse more web_search and push the
+                # model to extract a source or answer — deterministically ends the snippet spiral.
+                if name == "web_search":
+                    if searches_done >= _SEARCH_CAP:
+                        nudge = {"ok": False, "external": False,
+                                 "error": (f"search limit reached ({_SEARCH_CAP} searches). Do NOT "
+                                           "search again — web_extract the most authoritative source "
+                                           "you already found, or answer now with what you have.")}
+                        _record_tool_result(name, args, nudge, emit, tool_trace, assistant_content, convo)
+                        continue
+                    searches_done += 1
                 await _dispatch_tool(
                     name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,

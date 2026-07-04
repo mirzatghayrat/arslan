@@ -187,3 +187,24 @@ async def test_forced_step_toolcall_triggers_focused_synthesis(monkeypatch):
     assert "PaddleOCR" in (r["final"] or "")            # synthesized from findings
     assert '"tool"' not in (r["final"] or "")           # the fake text tool-call never surfaces
     assert "Let me search more" not in (r["final"] or "")
+
+
+@pytest.mark.asyncio
+async def test_search_cap_forces_convergence(monkeypatch):
+    # Framework-general: however many searches the model requests, the executor runs at most
+    # _SEARCH_CAP times — the rest are refused with a nudge to extract/answer. Ends the spiral.
+    calls = {"n": 0}
+    class _Stub:
+        async def execute(self, args):
+            calls["n"] += 1
+            return {"ok": True, "summary": "5 results", "results": [{"title": "x", "snippet": "y"}]}
+    from server.registry import executors
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+    replies = [_LLMResp(content="searching", tool_calls=[_tc("web_search", {"query": f"q{i}"})]) for i in range(6)]
+    replies.append(_LLMResp(content="final answer from what I have", tool_calls=[]))
+    adapter = _NativeAdapter(replies)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    r = await tool_loop.run_native(system="s", user_content="research a topic", history=[],
+        emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=_resolve, max_tool_calls=8)
+    assert calls["n"] <= tool_loop._SEARCH_CAP           # real searches capped
+    assert "final answer" in (r["final"] or "")
