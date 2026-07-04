@@ -118,8 +118,11 @@ _PROMISES_ACTION_RE = re.compile(
     # completed answer that says "接下来你可以自行搜索" (second-person) never trips it.
     r"|(现在)?\s*(我|让我)\s*(来|去|先|这就|马上|现在就|继续)?\s*(为您|帮您)?\s*"
     r"(搜索|查|查询|抓取|获取|拉取|绘制|生成|画|制作|调用)"
-    # promising a chart/figure: 生成/绘制/画/制作 … 图/图表/趋势图/全景图 (+ optional 以便/接着 lead-in)
-    r"|(以便|接着|然后)?\s*(生成|绘制|画|制作|输出)\s*[^。\n]{0,8}(图表|趋势图|全景图|示意图|图$|图[，,。\s])"
+    # promising a chart/figure: 生成/绘制/画/制作 … a NAMED chart type. Must be a specific chart noun
+    # (图表/趋势图/柱状图/…), NOT the bare "图" — bare "画图" is the render_chart CAPABILITY's common
+    # name and legitimately appears in capability answers (e.g. "我有内置的…画图"); matching it there
+    # falsely rejects a good answer into the digest/继续 floor.
+    r"|(以便|接着|然后)?\s*(生成|绘制|画|制作|输出)\s*[^。\n]{0,8}(图表|趋势图|全景图|示意图|柱状图|折线图|饼图|散点图)"
     # STEP narration: 'STEP <anything-short> 调取/搜索/获取/生成…' — the icon/number between STEP and
     # the verb is arbitrary (we saw 'STEP <icon> 调取各项目详情'), so match loosely.
     r"|STEP\s*\S{0,4}\s*(调用|调取|搜索|抓取|获取|查询|绘制|生成|call|search|fetch|generate)"
@@ -616,6 +619,16 @@ def _clean_findings(tool_trace: list, *, limit: int = 4000) -> str:
             lines.append(str(res["text"])[:700].strip())
         elif res.get("summary"):
             lines.append(str(res["summary"]).strip())
+        else:
+            # Any OTHER tool (e.g. list_my_capabilities returns {builtin, mcp}) — its result is
+            # itself the answer material, not web findings. Render the meaningful payload as data
+            # so synthesis can write a real answer from it, instead of falling through to the
+            # raw-dump digest floor + a bogus 继续 nudge (which reads as "still working" when the
+            # tool already returned everything needed).
+            payload = {k: v for k, v in res.items()
+                       if k not in ("ok", "artifact", "external", "error")}
+            if payload:
+                lines.append(f"{step.get('tool')} 返回:{json.dumps(payload, ensure_ascii=False)[:900]}")
     return "\n".join(lines)[:limit]
 
 

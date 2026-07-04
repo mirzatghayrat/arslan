@@ -189,6 +189,46 @@ async def test_forced_step_toolcall_triggers_focused_synthesis(monkeypatch):
     assert "Let me search more" not in (r["final"] or "")
 
 
+def test_clean_findings_renders_non_web_tool():
+    # A non-web tool (list_my_capabilities returns {builtin, mcp}) must still produce usable
+    # findings — otherwise synthesis short-circuits to the raw-dump + 继续 nudge floor.
+    trace = [{"tool": "list_my_capabilities", "args": {},
+              "result": {"ok": True,
+                         "builtin": [{"key": "web_search"}],
+                         "mcp": [{"label": "github-mcp-server", "status": "registered"}]}}]
+    findings = tool_loop._clean_findings(trace)
+    assert findings.strip(), "non-web tool result must yield non-empty findings"
+    assert "github-mcp-server" in findings
+
+
+@pytest.mark.asyncio
+async def test_non_web_tool_result_synthesized_not_nudged(monkeypatch):
+    # Live regression: user asks 'what skills/MCPs do you have', model calls list_my_capabilities
+    # (a non-web tool), then fumbles the answer (empty). The guard must NOT dump the raw tool JSON
+    # + '还没做完，回复继续' — it must synthesize a real answer from the capability data.
+    class _Caps:
+        async def execute(self, args):
+            return {"ok": True, "builtin": [{"key": "web_search"}],
+                    "mcp": [{"label": "github-mcp-server", "status": "registered"}]}
+    from server.registry import executors
+    monkeypatch.setitem(executors.EXECUTORS, "list_my_capabilities", _Caps())
+
+    async def _resolve_caps():
+        return [{"key": "list_my_capabilities", "description": "list my capabilities"}]
+
+    adapter = _NativeAdapter([
+        _LLMResp(content="", tool_calls=[_tc("list_my_capabilities", {})]),   # step0: call the tool
+        _LLMResp(content="", tool_calls=[]),                                   # step1: fumbles (empty)
+        _LLMResp(content="我装了 github-mcp-server,加上内置的搜索/抓取/画图。", tool_calls=[]),  # synthesis
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    r = await tool_loop.run_native(
+        system="s", user_content="你配了哪些 skills/MCP", history=[], emit=lambda e: None,
+        on_chunk=lambda c: None, resolve_tools=_resolve_caps)
+    assert "还没做完" not in (r["final"] or ""), "non-web tool result must not fall to the 继续 nudge"
+    assert "github-mcp-server" in (r["final"] or "")
+
+
 @pytest.mark.asyncio
 async def test_no_tool_answer_is_not_swapped_for_continue_nudge(monkeypatch):
     # Live bug: a chat/meta answer that merely DESCRIBED searching ("让我帮您搜索…") tripped

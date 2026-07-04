@@ -791,9 +791,9 @@ async def _arslan_tools() -> list[dict]:
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "
-                                     "MCP servers). Call this when the user asks what you can do / "
-                                     "what tools or MCPs you have, so you answer from real data "
-                                     "instead of guessing."})
+                                     "MCP servers). Call this ONCE when the user asks what you can do / "
+                                     "what tools or MCPs you have, then answer from its result in a "
+                                     "short friendly summary — never paste the raw JSON back."})
     from sqlalchemy import select
 
     from server.db import session as db_session
