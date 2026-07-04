@@ -29,6 +29,26 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
     return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url)
 
 
+async def build_synthesis_adapter() -> LLMAdapter | None:
+    """Optional dedicated adapter for the tool-loop's forced-step SYNTHESIS call (turning gathered
+    findings into the finished answer). Returns the stronger model ONLY when a dedicated synthesis
+    config is set (settings `synthesis_config_id` → a provider_config id); otherwise None, so the
+    caller keeps its normal adapter. Lets the tool loop stay on a fast model (DeepSeek) while the
+    synthesis step uses a stronger one (e.g. Gemini) — without disturbing the default."""
+    async with db_session.AsyncSessionLocal() as db:
+        cfg = await settings_service.get_settings(db)
+        sid = str(cfg.get("synthesis_config_id") or "").strip()
+        if not sid:
+            return None
+        for c in await provider_config_service.list_configs(db):
+            if str(c.get("id")) == sid:
+                key = await provider_config_service.get_decrypted_key(db, c["id"])
+                provider, model, base_url = expand_preset(
+                    c["provider"], c["model"], c.get("base_url") or "")
+                return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url)
+    return None
+
+
 async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
     cfg = await settings_service.get_settings(db)
     api_key = await settings_service.get_decrypted_api_key(db)

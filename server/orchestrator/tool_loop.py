@@ -571,10 +571,39 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
 
 
 def _embeds_protocol(text: str) -> bool:
-    """True if `text` is / EMBEDS a tool-call or escalate JSON (even behind a prose prefix like
-    'Let me search…{\"tool\":…}'). first_json_object finds the object anywhere in the text."""
+    """True if `text` is / EMBEDS a tool-call or escalate JSON in ANY provider's shape (even behind
+    a prose prefix like 'Let me search…{…}'). Covers OpenAI/DeepSeek ({"tool"} / {"tool_calls"} /
+    {"function_call"}), Gemini ({"functionCall"}), and our escalate object. A finished answer is
+    prose — it never surfaces one of these as the reply."""
     obj = first_json_object(text or "") or parse_json_object(text or "")
-    return isinstance(obj, dict) and bool(obj.get("tool") or isinstance(obj.get("escalate"), dict))
+    if not isinstance(obj, dict):
+        return False
+    return bool(obj.get("tool") or obj.get("tool_calls") or obj.get("function_call")
+                or obj.get("functionCall") or isinstance(obj.get("escalate"), dict))
+
+
+def _clean_findings(tool_trace: list, *, limit: int = 4000) -> str:
+    """Human-readable findings for the synthesis step — plain facts, NOT tool-call logs. Feeding
+    the model 'web_search(q): {json}' makes it imitate and emit more tool-calls; clean prose gives
+    it nothing to imitate, so it just writes the answer."""
+    lines: list[str] = []
+    for step in tool_trace:
+        res = step.get("result") or {}
+        if not res.get("ok"):
+            continue
+        if isinstance(res.get("results"), list):          # web_search
+            for r in res["results"][:5]:
+                if not isinstance(r, dict):
+                    continue
+                title = str(r.get("title") or "").strip()
+                snip = str(r.get("snippet") or r.get("content") or r.get("text") or "").strip()
+                if title or snip:
+                    lines.append(f"- {title}: {snip}".strip(" -:"))
+        elif res.get("text"):                              # web_extract
+            lines.append(str(res["text"])[:700].strip())
+        elif res.get("summary"):
+            lines.append(str(res["summary"]).strip())
+    return "\n".join(lines)[:limit]
 
 
 async def _synthesize_from_findings(a, system: str, user_content: str, tool_trace: list) -> str:
@@ -582,16 +611,26 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
     tool-loop convo (which DeepSeek resists — it keeps wanting to search), hand it its OWN gathered
     findings in a CLEAN, isolated prompt and demand the finished answer. Falls back to an honest
     findings digest only if even this refuses."""
-    digest = _evidence_digest(tool_trace, max_items=8, snippet=320, total=4000)
+    digest = _clean_findings(tool_trace)
     if not digest.strip():
         return _fallback_with_digest(user_content, tool_trace)
+    # Synthesis may run on a dedicated stronger model (DeepSeek synthesizes weakly). Use it ONLY
+    # when configured; otherwise keep the tool-loop adapter `a`.
+    try:
+        from server.services.llm_factory import build_synthesis_adapter
+        synth = await build_synthesis_adapter()
+        if synth is not None:
+            a = synth
+    except Exception:  # noqa: BLE001
+        pass
     synth_system = (
-        "You have NO tools and cannot search further. Below are the findings you already gathered. "
-        "Write the COMPLETE final answer to the user's question NOW, using ONLY these findings. "
-        "If they asked for a ranking/top-N, output a clean numbered list or table. Be decisive: if a "
-        "few data points are uncertain, give your best synthesis and note it briefly — do NOT ask to "
-        "search more, do NOT output JSON or a tool call, do NOT say 'let me…'.")
-    synth_user = f"User's question:\n{user_content}\n\nYour gathered findings:\n{digest}\n\nWrite the final answer now."
+        "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
+        "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
+        "well-structured answer to the user's question NOW, using ONLY those notes. If they asked for "
+        "a ranking/top-N, output a clean numbered list or table with the details. Be decisive: if a "
+        "few numbers are uncertain, give your best synthesis and note it in one line. Output ONLY the "
+        "prose answer — never JSON, never a tool call, never 'let me…' or 'I'll search'.")
+    synth_user = f"The user asked:\n{user_content}\n\nReference notes:\n{digest}\n\nNow write the final answer."
     try:
         resp = await a.chat(synth_system, synth_user, history=[], tools=None)
         s = (resp.content or "").strip()
