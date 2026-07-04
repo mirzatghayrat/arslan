@@ -671,6 +671,35 @@ async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
     raise last if last else RuntimeError("chat failed")
 
 
+_PLAIN_ANSWER_SYS = (
+    "\n\nAnswer the user's message directly, in plain text, right NOW. Do NOT call a tool, output "
+    "JSON, or say you will search / look into it / get back to them later — just give your actual "
+    "answer using what you already know.")
+
+
+async def _salvage_plain(a, system: str, user_content: str) -> str | None:
+    """Direct-answer salvage for a turn where NO tool ran but the model's content was empty, a raw
+    tool-call, or tripped the promises-action guard. With no findings there is nothing to synthesize
+    and nothing 'unfinished', so we must NOT show the research 继续 nudge — re-ask for a plain,
+    tool-free answer instead. Returns clean prose, or None if even this won't produce usable text."""
+    try:
+        resp = await _chat_retry(a, system + _PLAIN_ANSWER_SYS, user_content, history=[], tools=None)
+        s = (resp.content or "").strip()
+        if s and not _embeds_protocol(s):
+            return s
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _chat_miss_message(user_content: str) -> str:
+    """Gentle honest miss for a chat turn that produced nothing usable — distinct from the research
+    'reply 继续' nudge (there is no work in progress to continue here)."""
+    cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
+    return ("抱歉,我刚没接住你的意思——能再说一次或换个说法吗?" if cjk
+            else "Sorry, I didn't quite catch that — could you say it another way?")
+
+
 # Progressive reveal of the final answer. run_native gets the whole answer at once (native
 # tool-calling returns `content` complete, not token-streamed), so a single on_chunk() makes it
 # POP into view. Slicing it into small paced chunks reproduces the old streaming loop's typed-out
@@ -805,10 +834,20 @@ async def run_native(
         final_text = (resp.content or "").strip()
         # A clean answer is prose. Reject content that is / embeds a tool-call or escalate object
         # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or
-        # that merely promises more action. When rejected, don't dump raw results — run a FOCUSED
-        # synthesis: an isolated call handing the model its own findings and demanding the answer.
+        # that merely promises more action. When rejected, repair — but HOW depends on whether any
+        # tool actually ran this turn:
+        #   • tool_trace non-empty  → a real research round: synthesize the answer from the gathered
+        #     findings (may honestly fall to a findings-digest + 继续 nudge — work WAS done).
+        #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
+        #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
+        #     lie. Salvage a direct plain-text answer instead. (Live bug: a meta answer that merely
+        #     described searching tripped _promises_action and got swapped for the bogus 继续 nudge.)
         if (not final_text) or _embeds_protocol(final_text) or _promises_action(final_text):
-            final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
+            if tool_trace:
+                final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
+            else:
+                final_text = (await _salvage_plain(a, system, user_content)
+                              or final_text or _chat_miss_message(user_content))
         if final_text:
             await _reveal_streamed(final_text, on_chunk)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace}

@@ -190,6 +190,26 @@ async def test_forced_step_toolcall_triggers_focused_synthesis(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_no_tool_answer_is_not_swapped_for_continue_nudge(monkeypatch):
+    # Live bug: a chat/meta answer that merely DESCRIBED searching ("让我帮您搜索…") tripped
+    # _promises_action, but NO tool ran (empty trace). The old guard sent it to the findings
+    # synthesizer, which with zero findings returned the bare "还没做完，回复继续" research nudge —
+    # a lie (nothing was in progress). It must instead salvage a real direct answer.
+    adapter = _NativeAdapter([
+        _LLMResp(content="让我帮您搜索一下你缺的工具", tool_calls=[]),          # trips promises_action, no tool
+        _LLMResp(content="我不会自己装工具,但会主动告诉你缺什么、需要装什么。", tool_calls=[]),  # salvage answer
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    r = await tool_loop.run_native(
+        system="s", user_content="你会自动帮我找缺的工具吗", history=[],
+        emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=_resolve)
+    assert "还没做完" not in (r["final"] or ""), "empty-trace turn must not show the 继续 research nudge"
+    assert "回复“继续”" not in (r["final"] or "")
+    assert r["final"] == "我不会自己装工具,但会主动告诉你缺什么、需要装什么。"  # the salvaged real answer
+    assert r["tool_trace"] == []
+
+
+@pytest.mark.asyncio
 async def test_final_answer_is_revealed_progressively(monkeypatch):
     # UX: the final answer must be emitted in several paced slices (typed-out feel), not one
     # blob that pops. Slices must still concatenate to exactly the final answer.
