@@ -77,6 +77,50 @@ async def test_inference_green_no_chip(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dual_track_grows_inferred_spawn(monkeypatch):
+    # 组件5:推断分支里 Arslan 自己给了一版够长的产出 → 后台把产出喂给 router 推断的那个分身。
+    long_answer = "半导体行业梳理:" + "。".join(f"要点{i}内容详实一段" for i in range(30))
+
+    async def _answer(conv, msg, emit, **kw):
+        emit({"type": "stream_end", "message_id": 1})
+        return long_answer
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+    monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
+    monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
+    monkeypatch.setattr(arslan.spawn_trust, "trust",
+                        lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
+    fired = []
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda sid, sig: fired.append((sid, sig)))
+
+    result = arslan.router.RouterResult(action="route", spawn_id=7, task_brief="梳理半导体")
+    await arslan._handle_route("main", result, lambda e: None, user_message="帮我梳理半导体行业现状")
+
+    assert fired, "dual-track must fire for a substantive inferred-route answer"
+    sid, sig = fired[-1]
+    assert sid == 7
+    assert "帮我梳理半导体行业现状" in sig
+    assert "要点0内容详实一段" in sig
+
+
+@pytest.mark.asyncio
+async def test_dual_track_skips_short_answer(monkeypatch):
+    async def _answer(conv, msg, emit, **kw):
+        emit({"type": "stream_end", "message_id": 1})
+        return "好的 👍"
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+    monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
+    monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
+    monkeypatch.setattr(arslan.spawn_trust, "trust",
+                        lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
+    fired = []
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda sid, sig: fired.append((sid, sig)))
+
+    result = arslan.router.RouterResult(action="route", spawn_id=7, task_brief="x")
+    await arslan._handle_route("main", result, lambda e: None, user_message="随便聊聊")
+    assert not fired
+
+
+@pytest.mark.asyncio
 async def test_named_spawn_dispatches(monkeypatch):
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Deck Master"))
     monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(True))

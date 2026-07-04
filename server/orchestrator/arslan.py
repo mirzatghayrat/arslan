@@ -1,6 +1,7 @@
 """The orchestration loop for one user turn (transport-agnostic; emits event dicts)."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re as _re
@@ -18,6 +19,7 @@ from server.ws import protocol
 from arslan.llm import usage_sink
 from server.registry import service as registry_service
 from server.services import (
+    distill_service,
     equipment_service,
     evolution_service,
     phase_service,
@@ -634,7 +636,7 @@ async def _staffing_match_and_propose(  # noqa: ANN001
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, confirm_command=None,
-) -> None:
+) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
     roster = await _team_roster()
@@ -670,6 +672,7 @@ async def _handle_answer(
     full = result.get("final") or ""
     msg_id = await memory.add_message(conversation_id, "arslan", full)
     emit({"type": "stream_end", "message_id": msg_id})
+    return full
 
 
 async def _invite_capability_summary(spawn_id: int) -> str:
@@ -717,6 +720,22 @@ async def dispatch_routed(  # noqa: ANN001
                           attached_context=attached_context, announce=announce)
 
 
+_DUAL_TRACK_MIN_CHARS = 200        # only substantive deliverables grow a spawn — skip chit-chat / short answers
+_DUAL_TRACK_SIGNAL_CAP = 4000
+
+
+def _dual_track_signals(user_message: str, answer_text: str) -> str:
+    """Frame Arslan's own deliverable as a learning signal for the spawn whose domain it fell in."""
+    return (f"[主脑 Arslan 替你完成了一个落在你领域的任务,产出如下,供你学习沉淀]\n"
+            f"用户需求:{user_message}\n\n产出:\n{answer_text[:_DUAL_TRACK_SIGNAL_CAP]}")
+
+
+def _fire_dual_track(spawn_id: int, signals: str) -> None:
+    """Component 5: grow the inferred spawn in the BACKGROUND from Arslan's own deliverable — fire-and-
+    forget (distill_from_signals is best-effort and never raises; never blocks the user's reply)."""
+    asyncio.create_task(distill_service.distill_from_signals(spawn_id, signals))
+
+
 async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
     """True when the user EXPLICITLY referenced this spawn (its name or an @-mention) in the
     message — a direct delegation request. False means the router merely INFERRED this spawn
@@ -736,8 +755,12 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     # a trusted specialist) floats a lightweight "让 X 接手更专业?" chip whose Accept dispatches the
     # parked task. Explicit naming falls through to the existing dispatch/invite path below.
     if not await _user_named_spawn(user_message, result.spawn_id):
-        await _handle_answer(conversation_id, user_message, emit,
-                             attached_context=attached_context, confirm_command=confirm_command)
+        answer_text = await _handle_answer(conversation_id, user_message, emit,
+                                           attached_context=attached_context, confirm_command=confirm_command)
+        # Dual-track growth (boundary component 5): Arslan just did an INFERRED spawn's job itself —
+        # feed the deliverable to that spawn in the background so it learns without having acted.
+        if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
+            _fire_dual_track(result.spawn_id, _dual_track_signals(user_message, answer_text))
         async with db_session.AsyncSessionLocal() as _db:
             band = (await spawn_trust.trust(_db, result.spawn_id)).get("band")
         if band == "trusted":
