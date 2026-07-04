@@ -645,13 +645,30 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         "prose answer — never JSON, never a tool call, never 'let me…' or 'I'll search'.")
     synth_user = f"The user asked:\n{user_content}\n\nReference notes:\n{digest}\n\nNow write the final answer."
     try:
-        resp = await a.chat(synth_system, synth_user, history=[], tools=None)
+        resp = await _chat_retry(a, synth_system, synth_user, history=[], tools=None)
         s = (resp.content or "").strip()
         if s and not _embeds_protocol(s) and not _promises_action(s):
             return s
     except Exception:  # noqa: BLE001
         pass
     return _fallback_with_digest(user_content, tool_trace)
+
+
+_CHAT_TIMEOUT_S = 75.0  # per model call — DeepSeek's API can be slow and occasionally stalls.
+
+
+async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
+    """One retry on a stalled/failed model call. DeepSeek's API occasionally hangs (a whole turn
+    then produces nothing); a single retry recovers most transient stalls. Framework-general
+    reliability — any BYOK provider can be flaky, so the loop shouldn't dead-hang on one bad call."""
+    last: Exception | None = None
+    for _ in range(2):
+        try:
+            return await asyncio.wait_for(
+                a.chat(system, user, history=history, tools=tools), timeout=_CHAT_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+    raise last if last else RuntimeError("chat failed")
 
 
 async def run_native(
@@ -685,7 +702,9 @@ async def run_native(
     wired = await resolve_tools()
     wired_keys = {t["key"] for t in wired}
     schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
-    system = system + _NATIVE_EFFICIENCY
+    # _NATIVE_EFFICIENCY = research discipline; GUARD_NOTE = injection defense (wrapped tool/web
+    # content is untrusted DATA, not instructions) — same guard the old loop carried.
+    system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD_NOTE
 
     # convo mirrors run()'s message list: history + tool result turns are appended via
     # _record_tool_result (assistant turn + framed "TOOL RESULT for X" user turn), so tool
@@ -716,9 +735,9 @@ async def run_native(
             system + "\n\nTool budget exhausted: answer now with what you have. Text only.")
         # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
         # prose from the accumulated TOOL RESULTs — never an empty turn.
-        resp = await a.chat(sys_now, convo[-1]["content"],
-                            history=convo[:-1],
-                            tools=(None if forced else schemas))
+        resp = await _chat_retry(a, sys_now, convo[-1]["content"],
+                                 history=convo[:-1],
+                                 tools=(None if forced else schemas))
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
 
         if not forced and tool_calls:

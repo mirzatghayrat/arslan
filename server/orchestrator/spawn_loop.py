@@ -29,7 +29,9 @@ async def run(
     async def _resolve():
         return await wired_tools_for_spawn(spawn_id, current_turn=current_turn)
 
-    return await tool_loop.run(
+    # Native tool-calling loop (same fix as Arslan's answer path): no narration-as-answer, no
+    # leak, convergence cap. Spawns get the reliable loop too.
+    return await tool_loop.run_native(
         system=system, user_content=user_content, history=history,
         emit=emit, on_chunk=on_chunk, resolve_tools=_resolve,
         allow_escalation=allow_escalation, force_tools=True,
