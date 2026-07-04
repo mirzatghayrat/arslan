@@ -146,6 +146,29 @@ class WebExtractExecutor:
         return {"ok": True, "url": url, "text": text[:_EXTRACT_CHAR_LIMIT]}
 
 
+class ListMyCapabilitiesExecutor:
+    """Report Arslan's OWN directly-usable capabilities: built-in tools + installed MCP
+    servers. Read-only — lets Arslan answer 'what can you do / which MCPs do you have'
+    from real data instead of guessing."""
+    key = "list_my_capabilities"
+
+    async def execute(self, args: dict) -> dict:
+        from server.db import session as db_session
+        from server.services import mcp_service, settings_service
+        builtin = [
+            {"key": "web_search", "desc": "联网搜索(标题/链接/摘要)"},
+            {"key": "web_extract", "desc": "抓取网页正文(SSRF 防护)"},
+            {"key": "render_chart", "desc": "把结构化数据画成图,用户能看到"},
+        ]
+        async with db_session.AsyncSessionLocal() as db:
+            if await settings_service.shell_enabled(db):
+                builtin.append({"key": "run_command",
+                                "desc": "白名单 shell(git/gh/ffmpeg/pandoc,逐条需确认)"})
+        servers = await mcp_service.list_servers()
+        mcp = [{"label": s.get("label"), "status": s.get("status")} for s in servers]
+        return {"ok": True, "builtin": builtin, "mcp": mcp}
+
+
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
@@ -450,7 +473,7 @@ class RunCommandExecutor:
 
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
-    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(),
+    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
 )}
 
 
