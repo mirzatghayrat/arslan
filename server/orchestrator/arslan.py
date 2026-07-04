@@ -211,6 +211,8 @@ _CAPABILITY_SELF = (
     "诚实红线:永远不要谎称你「不能」做你其实有工具能做的事。不确定能不能做时,先试你的工具,"
     "而不是拒绝或让用户自己去查。你确实不能做的只有:自己生成 PPT/PDF 等文件(那要有对应能力的分身)、"
     "凭空捏造不存在的分身或工具。"
+    "\n想知道你到底装了哪些 MCP/额外工具时,调用 list_my_capabilities,用它返回的真实清单回答——"
+    "别再说「我不知道我装了啥」。"
 )
 
 
@@ -786,6 +788,12 @@ async def _arslan_tools() -> list[dict]:
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
     }
     tools = [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
+    if "list_my_capabilities" in EXECUTORS:
+        tools.append({"key": "list_my_capabilities",
+                      "description": "List your OWN usable capabilities (built-in tools + installed "
+                                     "MCP servers). Call this when the user asks what you can do / "
+                                     "what tools or MCPs you have, so you answer from real data "
+                                     "instead of guessing."})
     from sqlalchemy import select
 
     from server.db import session as db_session
