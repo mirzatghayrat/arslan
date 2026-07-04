@@ -140,6 +140,20 @@ def _promises_action(text: str) -> bool:
     return bool(_PROMISES_ACTION_RE.search(text or ""))
 
 
+# A genuine deferral ("让我继续查各项目的 star 数" with no tool call and no real content) is SHORT.
+# A substantive answer that merely MENTIONS action verbs — a capability rundown ("我能搜索、抓取网页、
+# 画图表"), a plan, a summary that describes what tools do — is long and IS the answer. Rejecting the
+# latter as "still promising action" was the bug behind: capability answers → digest/继续 floor, and
+# good synthesized answers bounced. So only treat a promise as a deferral to reject when it's ALSO
+# short/stub-like; keep any substantive answer regardless of the action words in it.
+_DEFERRAL_MAX = 160
+
+
+def _is_deferral_stub(text: str) -> bool:
+    t = (text or "").strip()
+    return len(t) < _DEFERRAL_MAX and _promises_action(t)
+
+
 def _is_protocol_json(text: str) -> bool:
     """True if `text` IS a tool/escalate protocol object (a whole-message tool call/escalation),
     rather than prose. INVARIANT: such JSON must never be surfaced to the user as an answer —
@@ -660,7 +674,7 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
     try:
         resp = await _chat_retry(a, synth_system, synth_user, history=[], tools=None)
         s = (resp.content or "").strip()
-        if s and not _embeds_protocol(s) and not _promises_action(s):
+        if s and not _embeds_protocol(s) and not _is_deferral_stub(s):
             return s
     except Exception:  # noqa: BLE001
         pass
@@ -846,16 +860,17 @@ async def run_native(
         # tool-call. (Ports run()'s salvage; the native content field made the leak rarer, not gone.)
         final_text = (resp.content or "").strip()
         # A clean answer is prose. Reject content that is / embeds a tool-call or escalate object
-        # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or
-        # that merely promises more action. When rejected, repair — but HOW depends on whether any
-        # tool actually ran this turn:
+        # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or a
+        # SHORT deferral stub that promises action without delivering. A long, substantive answer is
+        # KEPT even if it mentions action verbs — describing capabilities ("我能搜索、画图表") is not a
+        # deferral (live bug: capability answers were bounced to the digest/继续 floor). When rejected,
+        # repair — but HOW depends on whether any tool actually ran this turn:
         #   • tool_trace non-empty  → a real research round: synthesize the answer from the gathered
         #     findings (may honestly fall to a findings-digest + 继续 nudge — work WAS done).
         #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
         #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
-        #     lie. Salvage a direct plain-text answer instead. (Live bug: a meta answer that merely
-        #     described searching tripped _promises_action and got swapped for the bogus 继续 nudge.)
-        if (not final_text) or _embeds_protocol(final_text) or _promises_action(final_text):
+        #     lie. Salvage a direct plain-text answer instead.
+        if (not final_text) or _embeds_protocol(final_text) or _is_deferral_stub(final_text):
             if tool_trace:
                 final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
             else:

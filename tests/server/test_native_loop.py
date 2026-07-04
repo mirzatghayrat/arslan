@@ -202,6 +202,42 @@ def test_clean_findings_renders_non_web_tool():
 
 
 @pytest.mark.asyncio
+async def test_substantive_answer_kept_despite_action_words(monkeypatch):
+    # THE root fix: after a tool runs, the model's own long, well-formed answer that DESCRIBES
+    # actions ("把数据画成图表", "我能搜索") must be kept as-is — not rejected as "promising action"
+    # and bounced to synthesis/digest. Only a SHORT deferral stub should be rejected.
+    class _Caps:
+        async def execute(self, args):
+            return {"ok": True, "builtin": [{"key": "render_chart"}], "mcp": []}
+    from server.registry import executors
+    monkeypatch.setitem(executors.EXECUTORS, "list_my_capabilities", _Caps())
+
+    async def _resolve_caps():
+        return [{"key": "list_my_capabilities", "description": "list my capabilities"}]
+
+    long_answer = (
+        "以下是我当前配备的全部能力:\n\n"
+        "### 内置工具\n"
+        "- web_search:联网搜索,返回标题、链接、摘要\n"
+        "- web_extract:抓取指定网页的正文\n"
+        "- render_chart:把结构化数据画成图表,用户直接可见\n\n"
+        "### 已连接的 MCP 服务器\n- GitHub MCP:已连接\n- Memory:已连接\n\n"
+        "简单说,我能搜索、抓取网页、画图表,还能操作 GitHub。有什么想让我试试的吗?")
+    assert len(long_answer) >= tool_loop._DEFERRAL_MAX  # it's substantive, not a stub
+    assert tool_loop._promises_action(long_answer)      # it DOES mention action verbs
+    adapter = _NativeAdapter([
+        _LLMResp(content="", tool_calls=[_tc("list_my_capabilities", {})]),
+        _LLMResp(content=long_answer, tool_calls=[]),   # only 2 replies: a 3rd (synth) would IndexError
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    r = await tool_loop.run_native(
+        system="s", user_content="你配了哪些 skills/MCP", history=[], emit=lambda e: None,
+        on_chunk=lambda c: None, resolve_tools=_resolve_caps)
+    assert r["final"] == long_answer                    # kept verbatim, no synthesis, no 继续 nudge
+    assert "还没做完" not in r["final"]
+
+
+@pytest.mark.asyncio
 async def test_non_web_tool_result_synthesized_not_nudged(monkeypatch):
     # Live regression: user asks 'what skills/MCPs do you have', model calls list_my_capabilities
     # (a non-web tool), then fumbles the answer (empty). The guard must NOT dump the raw tool JSON
