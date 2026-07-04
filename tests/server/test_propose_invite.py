@@ -43,6 +43,13 @@ def maker(tmp_path, monkeypatch):
     return m
 
 
+async def _force_named(_msg, _sid):
+    # Boundary component 2 routes UNNAMED (inferred) spawns to doer-first (answer + chip) instead of
+    # the invite card. These tests exercise the invite/dispatch MECHANICS, so force the explicit-
+    # naming path; naming detection itself is covered in test_boundary_doer_first.
+    return True
+
+
 def test_propose_invite_frame_shape():
     f = protocol.propose_invite(spawn_id=12, reason="best fit for the SEO subtask")
     assert f == {"type": "propose_invite", "spawn_id": 12, "reason": "best fit for the SEO subtask"}
@@ -91,6 +98,7 @@ async def test_route_to_non_roster_spawn_proposes_invite_no_dispatch(maker, monk
         return router.RouterResult(action="route", spawn_id=7, task_brief="audit keywords")
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan, "_user_named_spawn", _force_named)
 
     dispatched = []
 
@@ -138,6 +146,7 @@ async def test_route_to_non_roster_spawn_propose_mode_still_proposes_invite(make
         )
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan, "_user_named_spawn", _force_named)
 
     dispatched = []
 
@@ -173,6 +182,7 @@ async def test_route_to_roster_member_dispatches_directly_no_invite(maker, monke
         return router.RouterResult(action="route", spawn_id=7, task_brief="audit keywords")
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan, "_user_named_spawn", _force_named)
 
     dispatched = []
 
@@ -205,6 +215,7 @@ async def test_invite_capability_summary_falls_back_to_capability(maker, monkeyp
         return router.RouterResult(action="route", spawn_id=7, task_brief="x")
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan, "_user_named_spawn", _force_named)
     monkeypatch.setattr(arslan, "_dispatch_spawn", lambda *a, **k: _noop())
 
     events = []

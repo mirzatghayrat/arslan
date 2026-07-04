@@ -26,6 +26,7 @@ from server.services import (
     spawn_drafter,
     spawn_match_service,
     spawn_service,
+    spawn_trust,
     staffing_gather,
 )
 from server.services.llm_factory import build_adapter
@@ -420,7 +421,8 @@ async def handle_user_message(
         # 4. handle the action
         if result.action == "route" and result.spawn_id is not None:
             await _handle_route(conversation_id, result, emit, user_message=user_message,
-                                route_ms=route_ms, attached_context=attached_context)
+                                route_ms=route_ms, attached_context=attached_context,
+                                confirm_command=confirm_command)
         elif result.action == "suggest_update" and result.spawn_id is not None:
             # P2: conversational spawn editing. Draft a validated change-set and emit the
             # confirm card; NOTHING is applied until the user's confirm_update. If drafting
@@ -715,9 +717,40 @@ async def dispatch_routed(  # noqa: ANN001
                           attached_context=attached_context, announce=announce)
 
 
+async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
+    """True when the user EXPLICITLY referenced this spawn (its name or an @-mention) in the
+    message — a direct delegation request. False means the router merely INFERRED this spawn
+    fits, so doer-first applies (Arslan does it itself + optionally suggests). Deterministic."""
+    name = (await dispatcher.get_spawn_name(spawn_id) or "").strip().lower()
+    if not name:
+        return False
+    msg = (user_message or "").lower()
+    return f"@{name}" in msg or name in msg
+
+
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
                         user_message: str = "", route_ms: int | None = None,
-                        attached_context: str | None = None) -> None:
+                        attached_context: str | None = None, confirm_command=None) -> None:
+    # Doer-first (boundary component 2): if the user did NOT explicitly name this spawn, the router
+    # merely INFERRED it fits — do NOT silently dispatch. Arslan does the task ITSELF, then (only for
+    # a trusted specialist) floats a lightweight "让 X 接手更专业?" chip whose Accept dispatches the
+    # parked task. Explicit naming falls through to the existing dispatch/invite path below.
+    if not await _user_named_spawn(user_message, result.spawn_id):
+        await _handle_answer(conversation_id, user_message, emit,
+                             attached_context=attached_context, confirm_command=confirm_command)
+        async with db_session.AsyncSessionLocal() as _db:
+            band = (await spawn_trust.trust(_db, result.spawn_id)).get("band")
+        if band == "trusted":
+            spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+            reason = (f"让「{spawn_name}」接手更专业?" if _is_cjk(user_message)
+                      else f"Let {spawn_name} take this for more depth?")
+            await phase_service.set_inviting(
+                conversation_id, result.spawn_id,
+                task_brief=result.task_brief or "", user_message=user_message,
+                needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
+            emit(protocol.propose_invite(result.spawn_id, reason))
+        return
+
     # Inline roster invite gates FIRST CONTACT — before the propose-vs-execute decision.
     # If the router wants to route to a spawn that is NOT yet a member of this
     # conversation, do NOT silently auto-join + dispatch (in EITHER propose or execute
