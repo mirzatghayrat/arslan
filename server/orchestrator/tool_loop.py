@@ -480,3 +480,188 @@ async def run(
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
 
     raise AssertionError("unreachable")  # forced branch always returns
+
+
+# ---------------------------------------------------------------------------
+# Native tool-calling loop (run_native)
+# ---------------------------------------------------------------------------
+# Root-cause fix (spec: 2026-07-05-arslan-native-toolcall-loop-design.md): the old run()
+# drives the model over a hand-rolled text protocol ("reply with ONLY JSON") and regex-parses
+# the reply. DeepSeek prepends narration ("让我继续查…") which (1) leaks into the message and
+# (2) gets mistaken for the final answer, ending the turn empty. Native tool-calling returns
+# `content` (narration) and `tool_calls` (structured action) as SEPARATE fields on LLMResponse,
+# so narration can NEVER be confused with the answer.
+#
+# This lives ALONGSIDE run() — run() and its 38 tests are untouched.
+
+# Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
+# so these can be loose; they exist only to nudge the model toward the right shape.
+_NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
+    "web_search": {"type": "object",
+                   "properties": {"query": {"type": "string"}},
+                   "required": ["query"]},
+    "web_extract": {"type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"]},
+    "render_chart": {"type": "object",
+                     "properties": {"type": {"type": "string"},
+                                    "x": {"type": "array"},
+                                    "series": {"type": "array"},
+                                    "title": {"type": "string"}}},
+    "render_deck": {"type": "object",
+                    "properties": {"title": {"type": "string"},
+                                   "slides": {"type": "array"}}},
+    "run_command": {"type": "object",
+                    "properties": {"command": {"type": "string"},
+                                   "argv": {"type": "array"}},
+                    "required": ["command"]},
+    "create_skill": {"type": "object",
+                     "properties": {"key": {"type": "string"},
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "body": {"type": "string"}}},
+    "run_python": {"type": "object",
+                   "properties": {"code": {"type": "string"}}},
+}
+
+_ESCALATE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "escalate",
+        "description": "Raise a missing capability or missing data you cannot get with your "
+                       "tools. Describe the OUTCOME you need, never an operation to run.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["data", "capability"]},
+                "need": {"type": "string"},
+                "context": {"type": "string"},
+            },
+            "required": ["need"],
+        },
+    },
+}
+
+# Appended to `system` in native mode. Curbs the "N tiny searches" pattern the old text loop
+# suffered from — see spec §效率.
+_NATIVE_EFFICIENCY = (
+    "\n\nFor 'top list' / ranking questions, prefer fetching ONE authoritative list "
+    "(e.g. web_extract a ranking page) over many individual web_search calls. Stop "
+    "searching as soon as you have enough to answer."
+)
+
+
+def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[dict]:
+    """Turn resolve_tools()'s [{key, description}] into OpenAI function schemas. Unknown keys
+    get a permissive schema (executor re-validates args). Adds `escalate` when allowed."""
+    schemas: list[dict] = []
+    for t in wired:
+        key = t["key"]
+        params = _NATIVE_PARAM_SCHEMAS.get(
+            key, {"type": "object", "properties": {}, "additionalProperties": True})
+        schemas.append({
+            "type": "function",
+            "function": {"name": key,
+                         "description": t.get("description", ""),
+                         "parameters": params},
+        })
+    if allow_escalation:
+        schemas.append(_ESCALATE_SCHEMA)
+    return schemas
+
+
+async def run_native(
+    *,
+    system: str,
+    user_content: str,
+    history: list[dict],
+    emit: Callable[[dict], None],
+    on_chunk: Callable[[str], None],
+    resolve_tools: ResolveTools,
+    allow_escalation: bool = True,
+    max_tool_calls: int = MAX_TOOL_CALLS,
+    tool_timeout_s: float = TOOL_TIMEOUT_S,
+    force_tools: bool = False,
+    confirm_command: ConfirmCommand | None = None,
+) -> dict:
+    """Native tool-calling twin of run(). Same signature, same return shape
+    ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
+
+    Each step calls adapter.chat(..., tools=schemas) → LLMResponse{content, tool_calls}:
+      - tool_calls non-empty → dispatch each (gated, exactly like run()); content is narration
+        ONLY, never surfaced as the answer; continue.
+      - escalate tool call → return {"escalation": {...}} (when allow_escalation).
+      - no tool_calls → content IS the final answer; stream it and return.
+      - forced step (step == max_tool_calls) → call with tools=None so the model MUST answer in
+        prose from accumulated tool results — guaranteeing a non-empty synthesized answer.
+    """
+    adapter = _get_adapter()
+    a = await adapter if hasattr(adapter, "__await__") else adapter
+
+    wired = await resolve_tools()
+    wired_keys = {t["key"] for t in wired}
+    schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+    system = system + _NATIVE_EFFICIENCY
+
+    # convo mirrors run()'s message list: history + tool result turns are appended via
+    # _record_tool_result (assistant turn + framed "TOOL RESULT for X" user turn), so tool
+    # outputs re-enter context IDENTICALLY to the old loop.
+    convo: list[dict] = list(history) + [{"role": "user", "content": user_content}]
+    tool_trace: list[dict] = []
+
+    # force_tools (spawn proactive web_search): deterministic pre-run, mirrors run().
+    if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
+        from server.services import tool_intent
+        try:
+            intent = await tool_intent.classify(user_content, sorted(wired_keys))
+        except Exception:  # noqa: BLE001
+            intent = None
+        if intent is not None and intent.needs and intent.tool == "web_search":
+            q = (intent.query or user_content)[:400]
+            await _dispatch_tool(
+                "web_search", {"query": q},
+                json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
+                resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
+                tool_trace=tool_trace, convo=convo, confirm_command=confirm_command)
+
+    for step in range(max_tool_calls + 1):
+        forced = step == max_tool_calls
+        sys_now = system if not forced else (
+            system + "\n\nTool budget exhausted: answer now with what you have. Text only.")
+        # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
+        # prose from the accumulated TOOL RESULTs — never an empty turn.
+        resp = await a.chat(sys_now, convo[-1]["content"],
+                            history=convo[:-1],
+                            tools=(None if forced else schemas))
+        tool_calls = list(getattr(resp, "tool_calls", None) or [])
+
+        if not forced and tool_calls:
+            for call in tool_calls:
+                fn = call.get("function") or {}
+                name = str(fn.get("name") or "")
+                args = fn.get("arguments")
+                if not isinstance(args, dict):
+                    args = {}
+                if name == "escalate" and allow_escalation:
+                    return {"final": None, "tool_trace": tool_trace,
+                            "escalation": {"kind": str(args.get("kind") or "data"),
+                                           "need": str(args.get("need") or "").strip(),
+                                           "context": str(args.get("context") or "").strip()}}
+                # assistant_content is a JSON string of the call so trace/convo read like run().
+                assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
+                await _dispatch_tool(
+                    name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
+                    tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
+                    confirm_command=confirm_command)
+            # resp.content is narration — surface it as an ephemeral note ONLY, never final.
+            if (resp.content or "").strip():
+                emit({"type": "note", "text": (resp.content or "").strip()[:400]})
+            continue
+
+        # No tool calls (or forced) → resp.content is the FINAL answer.
+        final_text = resp.content or ""
+        if final_text:
+            on_chunk(final_text)
+        return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
+
+    raise AssertionError("unreachable")  # forced branch always returns
