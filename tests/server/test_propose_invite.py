@@ -109,10 +109,17 @@ async def test_route_to_non_roster_spawn_proposes_invite_no_dispatch(maker, monk
     assert invite["reason"] == "audits sites for SEO issues"
     assert dispatched == [], "must NOT dispatch — the invite awaits user confirmation"
 
+    # Speak-first: Arslan's brief (an `arslan` stream, @-mentioning the spawn) must be emitted
+    # BEFORE the propose_invite card — so the user reads the reasoning, then decides.
+    types = [e["type"] for e in events]
+    assert types.index("stream_start") < types.index("propose_invite"), "brief must precede the card"
+    brief = "".join(e["content"] for e in events if e["type"] == "stream_chunk")
+    assert "seo-auditor" in brief, "brief should @-mention the spawn being proposed"
+
     pending = await phase_service.get_pending_invite("main")
     assert pending == {
         "spawn_id": 7, "task_brief": "audit keywords", "user_message": "audit my site",
-        "needs_proposal": False,
+        "needs_proposal": False, "announced": True,
     }
 
 
@@ -150,7 +157,7 @@ async def test_route_to_non_roster_spawn_propose_mode_still_proposes_invite(make
     pending = await phase_service.get_pending_invite("main")
     assert pending == {
         "spawn_id": 7, "task_brief": "optimize linkedin",
-        "user_message": "帮我优化我的 LinkedIn", "needs_proposal": True,
+        "user_message": "帮我优化我的 LinkedIn", "needs_proposal": True, "announced": True,
     }
 
 

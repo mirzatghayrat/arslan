@@ -425,6 +425,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         pending_invite.get("task_brief") or "",
                         bool(pending_invite.get("needs_proposal")),
                         user_message=pending_invite.get("user_message") or "",
+                        # Arslan already spoke its brief before the card — don't repeat it.
+                        announce=not bool(pending_invite.get("announced")),
                     )
                     continue
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")

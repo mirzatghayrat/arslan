@@ -84,7 +84,7 @@ async def clear(conversation_id: str, spawn_id: int | None = None) -> None:
 
 async def set_inviting(
     conversation_id: str, spawn_id: int, *, task_brief: str, user_message: str,
-    needs_proposal: bool = False,
+    needs_proposal: bool = False, announced: bool = False,
 ) -> None:
     """Persist a pending roster invite for the conversation.
 
@@ -100,7 +100,7 @@ async def set_inviting(
     """
     payload = {
         "spawn_id": spawn_id, "task_brief": task_brief, "user_message": user_message,
-        "needs_proposal": bool(needs_proposal),
+        "needs_proposal": bool(needs_proposal), "announced": bool(announced),
     }
     await _upsert_phase(
         conversation_id,

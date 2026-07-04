@@ -671,6 +671,29 @@ async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
     raise last if last else RuntimeError("chat failed")
 
 
+# Progressive reveal of the final answer. run_native gets the whole answer at once (native
+# tool-calling returns `content` complete, not token-streamed), so a single on_chunk() makes it
+# POP into view. Slicing it into small paced chunks reproduces the old streaming loop's typed-out
+# feel — gentler to read. Bounded: ~_REVEAL_TOTAL_S over at most _REVEAL_MAX_STEPS slices, so a
+# long report reveals in ~the same time as a short one (never drags). Slices concatenate to
+# exactly `text`, so callers/tests that assert "".join(chunks) == final still hold.
+_REVEAL_TOTAL_S = 0.7
+_REVEAL_MAX_STEPS = 60
+
+
+async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
+    n = len(text)
+    if n == 0:
+        return
+    steps = min(_REVEAL_MAX_STEPS, n)
+    size = -(-n // steps)  # ceil division — no math import
+    delay = _REVEAL_TOTAL_S / steps
+    for i in range(0, n, size):
+        on_chunk(text[i:i + size])
+        if i + size < n:
+            await asyncio.sleep(delay)
+
+
 async def run_native(
     *,
     system: str,
@@ -787,7 +810,7 @@ async def run_native(
         if (not final_text) or _embeds_protocol(final_text) or _promises_action(final_text):
             final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
         if final_text:
-            on_chunk(final_text)
+            await _reveal_streamed(final_text, on_chunk)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
 
     raise AssertionError("unreachable")  # forced branch always returns

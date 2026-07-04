@@ -190,6 +190,21 @@ async def test_forced_step_toolcall_triggers_focused_synthesis(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_final_answer_is_revealed_progressively(monkeypatch):
+    # UX: the final answer must be emitted in several paced slices (typed-out feel), not one
+    # blob that pops. Slices must still concatenate to exactly the final answer.
+    long_answer = "半导体行业全景：\n" + "".join(f"{i}. 要点内容一段。\n" for i in range(40))
+    adapter = _NativeAdapter([_LLMResp(content=long_answer, tool_calls=[])])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    r = await tool_loop.run_native(
+        system="s", user_content="半导体", history=[], emit=lambda e: None,
+        on_chunk=chunks.append, resolve_tools=_resolve)
+    assert len(chunks) > 1, "final answer must be revealed in multiple slices, not one blob"
+    assert "".join(chunks) == r["final"]  # slices reconstruct the answer exactly
+
+
+@pytest.mark.asyncio
 async def test_search_cap_forces_convergence(monkeypatch):
     # Framework-general: however many searches the model requests, the executor runs at most
     # _SEARCH_CAP times — the rest are refused with a nudge to extract/answer. Ends the spiral.

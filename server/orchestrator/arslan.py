@@ -686,7 +686,7 @@ async def _invite_capability_summary(spawn_id: int) -> str:
 async def dispatch_routed(  # noqa: ANN001
     conversation_id, spawn_id, task_brief, needs_proposal, emit: EventSink, *,
     user_message: str = "", route_ms: int | None = None,
-    attached_context: str | None = None,
+    attached_context: str | None = None, announce: bool = True,
 ) -> None:
     """The propose-vs-execute dispatch a roster-member route gets.
 
@@ -696,6 +696,9 @@ async def dispatch_routed(  # noqa: ANN001
     AND the `roster_invite` accept handler (after the user accepted an inline invite),
     so accepting an invite produces exactly the same first response the user would have
     seen if the spawn had already been in the roster.
+
+    `announce=False` suppresses the routing brief — used by the accept handler when Arslan
+    already spoke its brief BEFORE the invite card, so the dispatch shouldn't repeat it.
     """
     if needs_proposal:
         spawn_name = await dispatcher.get_spawn_name(spawn_id)
@@ -703,11 +706,11 @@ async def dispatch_routed(  # noqa: ANN001
         emit({"type": "proposal", "spawn_id": spawn_id, "spawn_name": spawn_name})
         await _dispatch_spawn(conversation_id, spawn_id, task_brief or "", emit,
                               mode="propose", user_message=user_message, route_ms=route_ms,
-                              attached_context=attached_context)
+                              attached_context=attached_context, announce=announce)
         return
     await _dispatch_spawn(conversation_id, spawn_id, task_brief or "", emit,
                           user_message=user_message, route_ms=route_ms,
-                          attached_context=attached_context)
+                          attached_context=attached_context, announce=announce)
 
 
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
@@ -723,10 +726,23 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     # `dismiss_invite` clears it. A spawn already in the roster dispatches directly.
     if not await roster_service.is_member(conversation_id, result.spawn_id):
         summary = await _invite_capability_summary(result.spawn_id)
+        # Speak first, THEN ask. Arslan states its brief (need + @-mention of who it wants
+        # to bring in) as its OWN message, and only then pops the Accept/Dismiss card — so
+        # the user reads Arslan's reasoning before deciding, instead of a bare card that
+        # only explains itself after Accept. The brief is `announced` so the post-accept
+        # dispatch (`dispatch_routed(announce=False)`) does not repeat it.
+        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        brief = await _route_announcement(
+            conversation_id, result.spawn_id, spawn_name, result.task_brief or "")
+        emit({"type": "stream_start", "source": "arslan"})
+        emit({"type": "stream_chunk", "content": brief})
+        msg_id = await memory.add_message(conversation_id, "arslan", brief)
+        emit({"type": "stream_end", "message_id": msg_id})
         await phase_service.set_inviting(
             conversation_id, result.spawn_id,
             task_brief=result.task_brief or "", user_message=user_message,
             needs_proposal=bool(getattr(result, "needs_proposal", False)),
+            announced=True,
         )
         emit(protocol.propose_invite(result.spawn_id, summary))
         return
@@ -896,6 +912,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     user_message: str = "",
     route_ms: int | None = None,
     attached_context: str | None = None,
+    announce: bool = True,
     _auto_continues: int = MAX_AUTO_CONTINUES,
 ) -> None:
     """Run one spawn turn, recording it as a Run for replay + evaluation.
@@ -930,8 +947,10 @@ async def _dispatch_spawn(  # noqa: ANN001
     # Routing brief: restate the need + @-mention each involved spawn (grounded in the
     # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
     # re-emit the routing frame for the UI pulse but must not repeat the announcement.
+    # `announce=False` when the brief was ALREADY shown before an invite card (accepted
+    # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
     announcement = None
-    if _auto_continues == MAX_AUTO_CONTINUES:
+    if announce and _auto_continues == MAX_AUTO_CONTINUES:
         announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
     tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
          **({"announcement": announcement} if announcement else {})})
