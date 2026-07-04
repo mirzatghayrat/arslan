@@ -163,3 +163,27 @@ async def test_schema_includes_escalate_when_allowed(monkeypatch):
     assert "escalate" in names
     ws = next(s for s in schemas if s["function"]["name"] == "web_search")
     assert ws["function"]["parameters"]["required"] == ["query"]
+
+
+@pytest.mark.asyncio
+async def test_forced_step_toolcall_triggers_focused_synthesis(monkeypatch):
+    # Regression: DeepSeek gathers findings (a tool ran), then on the forced step ignores
+    # "answer now" and writes a TEXT tool-call in content. That must NOT become the final answer —
+    # a focused synthesis from the gathered findings produces the real answer instead.
+    class _Stub:
+        async def execute(self, args):
+            return {"ok": True, "summary": "5 results", "results": [{"title": "PaddleOCR", "snippet": "73k stars"}]}
+    from server.registry import executors
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+    adapter = _NativeAdapter([
+        _LLMResp(content="searching", tool_calls=[_tc("web_search", {"query": "ocr stars"})]),   # step 0: gather
+        _LLMResp(content='Let me search more.\n{"tool":"web_search","args":{"query":"x"}}', tool_calls=[]),  # step 1 (forced): disguised
+        _LLMResp(content="Top 10 OCR: 1. PaddleOCR 73k 2. Tesseract 75k", tool_calls=[]),          # focused synthesis
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    got = []
+    r = await tool_loop.run_native(system="s", user_content="查 github top10 OCR", history=[],
+        emit=lambda e: None, on_chunk=lambda c: got.append(c), resolve_tools=_resolve, max_tool_calls=1)
+    assert "PaddleOCR" in (r["final"] or "")            # synthesized from findings
+    assert '"tool"' not in (r["final"] or "")           # the fake text tool-call never surfaces
+    assert "Let me search more" not in (r["final"] or "")

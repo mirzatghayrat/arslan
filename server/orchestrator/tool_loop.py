@@ -570,6 +570,38 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     return schemas
 
 
+def _embeds_protocol(text: str) -> bool:
+    """True if `text` is / EMBEDS a tool-call or escalate JSON (even behind a prose prefix like
+    'Let me search…{\"tool\":…}'). first_json_object finds the object anywhere in the text."""
+    obj = first_json_object(text or "") or parse_json_object(text or "")
+    return isinstance(obj, dict) and bool(obj.get("tool") or isinstance(obj.get("escalate"), dict))
+
+
+async def _synthesize_from_findings(a, system: str, user_content: str, tool_trace: list) -> str:
+    """Forced-step / salvage synthesis. Instead of asking the model to answer from the messy
+    tool-loop convo (which DeepSeek resists — it keeps wanting to search), hand it its OWN gathered
+    findings in a CLEAN, isolated prompt and demand the finished answer. Falls back to an honest
+    findings digest only if even this refuses."""
+    digest = _evidence_digest(tool_trace, max_items=8, snippet=320, total=4000)
+    if not digest.strip():
+        return _fallback_with_digest(user_content, tool_trace)
+    synth_system = (
+        "You have NO tools and cannot search further. Below are the findings you already gathered. "
+        "Write the COMPLETE final answer to the user's question NOW, using ONLY these findings. "
+        "If they asked for a ranking/top-N, output a clean numbered list or table. Be decisive: if a "
+        "few data points are uncertain, give your best synthesis and note it briefly — do NOT ask to "
+        "search more, do NOT output JSON or a tool call, do NOT say 'let me…'.")
+    synth_user = f"User's question:\n{user_content}\n\nYour gathered findings:\n{digest}\n\nWrite the final answer now."
+    try:
+        resp = await a.chat(synth_system, synth_user, history=[], tools=None)
+        s = (resp.content or "").strip()
+        if s and not _embeds_protocol(s) and not _promises_action(s):
+            return s
+    except Exception:  # noqa: BLE001
+        pass
+    return _fallback_with_digest(user_content, tool_trace)
+
+
 async def run_native(
     *,
     system: str,
@@ -658,8 +690,18 @@ async def run_native(
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})
             continue
 
-        # No tool calls (or forced) → resp.content is the FINAL answer.
-        final_text = resp.content or ""
+        # No tool calls (or forced) → resp.content should be the FINAL answer. GUARD: the model
+        # (esp. on the forced step) may ignore "answer now" and instead narrate or write a TEXT
+        # tool-call in its content. Never surface that. Salvage once with a hard no-tools prompt,
+        # then synthesize from the accumulated TOOL RESULTs so we NEVER end empty or with a fake
+        # tool-call. (Ports run()'s salvage; the native content field made the leak rarer, not gone.)
+        final_text = (resp.content or "").strip()
+        # A clean answer is prose. Reject content that is / embeds a tool-call or escalate object
+        # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or
+        # that merely promises more action. When rejected, don't dump raw results — run a FOCUSED
+        # synthesis: an isolated call handing the model its own findings and demanding the answer.
+        if (not final_text) or _embeds_protocol(final_text) or _promises_action(final_text):
+            final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
         if final_text:
             on_chunk(final_text)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace}

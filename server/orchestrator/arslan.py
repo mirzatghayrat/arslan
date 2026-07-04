@@ -648,7 +648,9 @@ async def _handle_answer(
 
     emit({"type": "stream_start", "source": "arslan"})
     try:
-        result = await tool_loop.run(
+        # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
+        # no text-protocol narration-as-answer bug). Spawns stay on run() until migrated.
+        result = await tool_loop.run_native(
             system=system,
             user_content=llm_user,
             history=ctx["history"][:-1],
