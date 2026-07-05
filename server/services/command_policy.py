@@ -100,3 +100,18 @@ def _is_probe(args) -> bool:
     verbose flag riding on a real operation can never masquerade as a probe."""
     probe = {"--version", "-version", "version", "--help", "-h", "-v"}
     return len(args) == 1 and args[0] in probe
+
+
+# git subcommands that touch the network (vs local-only status/log/commit/…).
+_GIT_NETWORK = frozenset({"push", "pull", "fetch", "clone", "submodule", "ls-remote"})
+
+
+def is_network_command(command: str, argv) -> bool:
+    """True if this command needs the network (gh always; git only for network subcommands).
+    Local commands (local git, ffmpeg, pandoc) run fully offline as today."""
+    args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
+    if command == "gh":
+        return True
+    if command == "git":
+        return bool(args) and args[0] in _GIT_NETWORK
+    return False
