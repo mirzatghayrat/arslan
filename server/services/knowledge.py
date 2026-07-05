@@ -95,18 +95,22 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
         provider = await embedding_service.active_provider()
         if provider is None:
             return [], {}
-        qvec = (await provider.embed([query]))[0]
+        # Fetch the scope's vector rows BEFORE embedding the query: an empty
+        # vector scope (fresh spawn / backfill pending) must not pay a network
+        # embedding call on every dispatch. Provider resolution above is cheap
+        # (pure DB read) and supplies the model_id filter for this SELECT.
         stmt = _bind(sa_text(
             "SELECT kc.id, kc.source, kc.text, kc.embedding FROM knowledge_chunks kc "
             f"WHERE {where} AND kc.embedding IS NOT NULL AND kc.embedding_model = :em"), params)
         rows = (await db.execute(stmt, {**params, "em": provider.model_id})).all()
         if not rows:
             return [], {}
+        qvec = (await provider.embed([query]))[0]
         import numpy as np
         mat = np.array([embedding_service.blob_to_vec(r[3]) for r in rows], dtype=np.float32)
         q = np.array(qvec, dtype=np.float32)
         sims = mat @ q / (np.linalg.norm(mat, axis=1) * (np.linalg.norm(q) or 1e-9) + 1e-9)
-        order = np.argsort(-sims)[:CANDIDATES]
+        order = np.argsort(-sims, kind="stable")[:CANDIDATES]
         return ([rows[i][0] for i in order],
                 {rows[i][0]: (rows[i][1], rows[i][2]) for i in order})
     except Exception as exc:  # noqa: BLE001 — vector route is never fatal

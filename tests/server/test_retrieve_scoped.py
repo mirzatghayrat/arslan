@@ -93,6 +93,34 @@ def test_fts_only_without_provider(maker):
     assert len(out) == 2  # FTS 照常工作 = 今天的行为
 
 
+def test_empty_vector_scope_skips_query_embedding(maker, monkeypatch):
+    """Scope 内没有一条(当前模型的)向量 ⇒ 不得为查询白付一次 embedding 调用。"""
+    from server.services import knowledge
+
+    class CountingProvider(FakeProvider):
+        calls = 0
+        async def embed(self, texts):
+            CountingProvider.calls += 1
+            return await super().embed(texts)
+
+    async def _fake_active():
+        return CountingProvider()
+    monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
+
+    async def _run():
+        # 新分身 3:井里只有一条无向量 chunk —— 向量 scope 为空,FTS 照常。
+        async with maker() as s:
+            s.add(Spawn(id=3, name="丙", domain_category="c", system_prompt="p"))
+            await s.flush()
+            await _add_chunk(s, 200, spawn_id=3, source="new.txt", text="猫粮 新分身无向量")
+            await s.commit()
+        return await knowledge.retrieve_scoped("猫粮", spawn_id=3, k=5)
+
+    out = anyio.run(_run)
+    assert CountingProvider.calls == 0          # 没白付 embedding 网络调用
+    assert any("新分身无向量" in t for t in _texts(out))  # FTS 路照常召回
+
+
 def test_rrf_merge_dedups_and_ranks():
     from server.services.knowledge import rrf_merge
     # id=7 在两路都第一 → 融合后必第一;id=8/9 各只在一路
