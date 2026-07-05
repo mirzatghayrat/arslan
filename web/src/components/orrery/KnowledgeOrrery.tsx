@@ -145,15 +145,28 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
       R = 0;
 
     // ---- offscreen nebula (built once per resize) ----
+    // Sized larger than the canvas (+ NEB_MARGIN on each side) so the slow
+    // drift applied at draw time (see frame()) never exposes an uncovered
+    // edge — the nebula is drawn centered with a negative offset and the
+    // drift stays within this margin.
+    const NEB_MARGIN = 0.06; // fraction of R padded on each side
     const neb = document.createElement("canvas");
     const nbx = neb.getContext("2d");
+    let nebPad = 0; // px padding actually baked into neb (half-margin, per side)
     function buildNebula() {
       if (!nbx) return;
-      neb.width = W;
-      neb.height = H;
-      nbx.clearRect(0, 0, W, H);
+      nebPad = R * NEB_MARGIN;
+      const nw = W + nebPad * 2;
+      const nh = H + nebPad * 2;
+      neb.width = nw;
+      neb.height = nh;
+      // blob/star coordinates below are in canvas space (CX,CY-relative);
+      // offset by nebPad so canvas (0,0) maps to neb (nebPad,nebPad)
+      nbx.clearRect(0, 0, nw, nh);
       nbx.fillStyle = "#080A0D";
-      nbx.fillRect(0, 0, W, H);
+      nbx.fillRect(0, 0, nw, nh);
+      nbx.save();
+      nbx.translate(nebPad, nebPad);
       const blobs: [string, number, number, number, number][] = [
         ["#3A2A12", CX, CY * 0.9, R * 1.5, 0.5],
         ["#241A44", CX - R * 0.6, CY - R * 0.5, R * 1.1, 0.32],
@@ -179,6 +192,7 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
         nbx.arc(x, y, r, 0, 6.28);
         nbx.fill();
       }
+      nbx.restore();
     }
 
     function resize() {
@@ -323,14 +337,19 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
         }
       }
 
-      // 1) nebula (far plane)
+      // 1) nebula (far plane) — slow drift, frozen under reduced-motion.
+      // neb is baked NEB_MARGIN*R larger than the canvas on each side (see
+      // buildNebula), so drift is clamped to +/-nebPad and never exposes
+      // an uncovered edge.
+      const driftX = RM ? 0 : clamp(Math.sin(t * 0.06) * R * 0.02, -nebPad, nebPad);
+      const driftY = RM ? 0 : clamp(Math.cos(t * 0.04) * R * 0.015, -nebPad, nebPad);
       const ns = 1.06;
       c.save();
       c.translate(CX + camx * 0.35, CY + camy * 0.35);
       c.scale(ns, ns);
       c.translate(-CX, -CY);
       c.globalAlpha = lerp(0, 1, smooth(introT * 1.3));
-      c.drawImage(neb, 0, 0, W, H);
+      c.drawImage(neb, -nebPad + driftX, -nebPad + driftY, W + nebPad * 2, H + nebPad * 2, 0, 0, W, H);
       c.globalAlpha = 1;
       c.restore();
 
@@ -359,6 +378,20 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
         if ("letterSpacing" in c) (c as unknown as { letterSpacing: string }).letterSpacing = "3px";
         c.fillText(cd.label.toUpperCase(), 0, 0);
         c.restore();
+      }
+      c.restore();
+
+      // 2b) collection orbit rings — one faint circle per collection node,
+      // traced at its own orbit radius so collections read as satellites.
+      c.save();
+      c.translate(camx * 0.5, camy * 0.5);
+      for (const n of rnodes) {
+        if (n.cat !== "collection" || hiddenRef.current.has("collection")) continue;
+        c.beginPath();
+        c.arc(CX, CY, R * n.rf, 0, 6.283);
+        c.strokeStyle = hex(COLORS.collection, 0.06 + 0.04 * n.appear);
+        c.lineWidth = 1;
+        c.stroke();
       }
       c.restore();
 
@@ -431,17 +464,20 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
         let d = lerp(1, near(n) ? 1 : 0.16, dimG);
         if (searchQ) d *= hit ? 1 : 0.12;
         const tw = RM ? 1 : 1 + 0.1 * Math.sin(t * 1.2 + n.phase);
+        // slow "breathing" glow: radius + alpha idle-pulse per node, frozen under RM
+        const breathe = RM ? 0 : Math.sin(t * 1.6 + n.phase) * 0.5 + 0.5; // 0..1
         const depth = lerp(0.55, 1.15, n.z);
         const base = n.size * (0.5 + n.imp * 0.6) * depth * (1 + n.cur * 0.6) * (1 + n.pulse) * n.appear;
-        const gr = base * 3.6 * (hit ? 1.5 : 1),
+        const glowR = base * (2.6 + 0.5 * breathe) * (hit ? 1.5 : 1),
+          glowA = 0.20 + 0.10 * breathe,
           core = lerp(0.35, 0.62, n.z);
-        const g = c.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, gr);
-        g.addColorStop(0, hex(catColor(n), (0.5 + n.cur * 0.3) * d * tw * lerp(0.6, 1, n.z)));
+        const g = c.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, glowR);
+        g.addColorStop(0, hex(catColor(n), (glowA + n.cur * 0.3) * d * tw * lerp(0.6, 1, n.z)));
         g.addColorStop(core, hex(catColor(n), 0.14 * d * tw));
         g.addColorStop(1, hex(catColor(n), 0));
         c.fillStyle = g;
         c.beginPath();
-        c.arc(n.sx, n.sy, gr, 0, 6.283);
+        c.arc(n.sx, n.sy, glowR, 0, 6.283);
         c.fill();
       }
 

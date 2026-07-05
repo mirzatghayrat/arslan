@@ -32,16 +32,20 @@ export function useKnowledgeGraph() {
     setLoading(true);
     setError(null);
     try {
-      const spawns = await api.listSpawns();
-      const facts = await api.listFacts().catch(() => []);
-      // fetch each spawn's knowledge sources in parallel
-      const kbs = await Promise.all(
-        spawns.map((s) => api.getKnowledge(s.id).catch(() => [])),
-      );
-      const collections = await api.listCollections().catch(() => []);
-      const collKbs = await Promise.all(
-        collections.map((c) => api.getCollectionKnowledge(c.id).catch(() => [])),
-      );
+      // the three top-level fetches are independent — fire them together
+      // instead of serializing (listSpawns keeps its current, uncaught
+      // error behavior; the other two keep their existing .catch fallback)
+      const [spawns, facts, collections] = await Promise.all([
+        api.listSpawns(),
+        api.listFacts().catch(() => []),
+        api.listCollections().catch(() => []),
+      ]);
+      // fetch each spawn's / collection's knowledge sources in parallel
+      // (these genuinely depend on the id lists above)
+      const [kbs, collKbs] = await Promise.all([
+        Promise.all(spawns.map((s) => api.getKnowledge(s.id).catch(() => []))),
+        Promise.all(collections.map((c) => api.getCollectionKnowledge(c.id).catch(() => []))),
+      ]);
 
       const nodes: OrreryNodeIn[] = [{ id: "hub", cat: "hub", label: "YOU" }];
       const edges: OrreryEdgeIn[] = [];
