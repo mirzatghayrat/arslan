@@ -20,12 +20,16 @@ def test_hostport_from_connect():
 
 
 def test_inject_auth():
-    out = command_proxy._inject_auth(b"GET /x HTTP/1.1\r\nHost: github.com\r\n\r\n", "TOK")
+    # git-over-HTTPS (github.com) → basic auth with x-access-token
+    out = command_proxy._inject_auth(b"GET /x HTTP/1.1\r\nHost: github.com\r\n\r\n", "TOK", "github.com")
     assert b"Authorization: Basic " + base64.b64encode(b"x-access-token:TOK") in out
     assert b"Connection: close" in out
     assert out.startswith(b"GET /x HTTP/1.1\r\n")
+    # REST API (api.github.com) → bearer
+    api = command_proxy._inject_auth(b"GET /user HTTP/1.1\r\n\r\n", "TOK", "api.github.com")
+    assert b"Authorization: Bearer TOK" in api
     # existing Authorization from the client is dropped
-    out2 = command_proxy._inject_auth(b"GET / HTTP/1.1\r\nAuthorization: Basic evil\r\n\r\n", "TOK")
+    out2 = command_proxy._inject_auth(b"GET / HTTP/1.1\r\nAuthorization: Basic evil\r\n\r\n", "TOK", "github.com")
     assert b"evil" not in out2
 
 

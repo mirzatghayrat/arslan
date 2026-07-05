@@ -35,10 +35,11 @@ def _host_from_connect(head: bytes) -> str | None:
     return _hostport_from_connect(head)[0]
 
 
-def _inject_auth(req_head: bytes, token: str | None) -> bytes:
-    """Insert GitHub HTTPS basic auth (user 'x-access-token', pass = token) + force
-    `Connection: close` (one request per connection, so injection always applies). Drops any
-    Authorization/Connection the client sent — the sandbox has no creds, but be defensive."""
+def _inject_auth(req_head: bytes, token: str | None, host: str) -> bytes:
+    """Insert GitHub credentials + force `Connection: close` (one request per connection so
+    injection always applies). Format depends on the target: the REST API (api.github.com) wants
+    `Bearer <token>`; git-over-HTTPS (github.com) wants basic auth (user 'x-access-token'). Drops
+    any Authorization/Connection the client sent — the sandbox has no creds, but be defensive."""
     lines = req_head.split(b"\r\n")
     kept = [ln for ln in lines if ln and not ln.lower().startswith(b"authorization:")
             and not ln.lower().startswith(b"connection:")]
@@ -46,8 +47,11 @@ def _inject_auth(req_head: bytes, token: str | None) -> bytes:
         return req_head
     inject: list[bytes] = []
     if token:
-        blob = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-        inject.append(f"Authorization: Basic {blob}".encode())
+        if host == "api.github.com":
+            inject.append(f"Authorization: Bearer {token}".encode())
+        else:
+            blob = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+            inject.append(f"Authorization: Basic {blob}".encode())
     inject.append(b"Connection: close")
     return b"\r\n".join([kept[0], *inject, *kept[1:]]) + b"\r\n\r\n"
 
@@ -139,7 +143,7 @@ async def start_proxy(*, allow_hosts: set, inject_token: str | None, ca: LocalCA
             cw.close()
             uw.close()
             return
-        uw.write(_inject_auth(req, inject_token))
+        uw.write(_inject_auth(req, inject_token, host))
         await uw.drain()
         await asyncio.gather(_pump(cr, uw), _pump(ur, cw))
 

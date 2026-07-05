@@ -457,7 +457,13 @@ class RunCommandExecutor:
         verdict = command_policy.validate(command, argv)
         if not verdict["ok"]:
             return {"ok": False, "error": verdict["reason"]}
-        result = await command_sandbox.run_command(command, argv)
+        if command_policy.is_network_command(command, argv):
+            # Network git/gh: run through the host allowlist + credential-injecting proxy so the
+            # real token never enters the sandbox (see command_net). Local commands stay fully offline.
+            from server.services import command_net
+            result = await command_net.run_network_command(command, argv)
+        else:
+            result = await command_sandbox.run_command(command, argv)
         pretty = " ".join([command, *argv])
         # SECURITY: command stdout/stderr can carry attacker-influenced text, so we do
         # NOT mark results external:False — tool_loop wraps them (wrap_external) and the
