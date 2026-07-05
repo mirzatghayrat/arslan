@@ -14,7 +14,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, Spawn
-from server.services import phase_service, staffing_gather
+from server.services import phase_service
+from server.ws import protocol
+
+
+class _LLMResp:
+    """Native LLMResponse stub (Arslan's answer/clarify path uses run_native → a.chat)."""
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls or []
+
+
+class _NativeAdapter:
+    def __init__(self, replies, capture=None):
+        self._it = iter(replies)
+        self.capture = capture
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        if self.capture is not None:
+            self.capture["system"] = system
+        return next(self._it)
 
 
 @pytest.fixture
@@ -103,13 +122,8 @@ async def test_underspecified_gathers_and_clarifies(maker, monkeypatch):
 
     captured = {}
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["What ", "exactly?"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="What exactly?")], capture=captured))
 
     events = []
     await arslan.handle_user_message("main", "I need an SEO helper", _events(events))
@@ -157,13 +171,8 @@ async def test_route_intent_during_gather_suppressed(maker, monkeypatch):
 
     captured = {}
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["Which ", "site?"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="Which site?")], capture=captured))
 
     events = []
     await arslan.handle_user_message("main", "the SEO one", _events(events))
@@ -180,8 +189,6 @@ async def test_route_intent_during_gather_suppressed(maker, monkeypatch):
 # ---------------------------------------------------------------------------
 # Part 2 (B4): match-and-propose 3 bands + propose_staffing frame + one-off gate.
 # ---------------------------------------------------------------------------
-
-from server.ws import protocol
 
 
 def test_propose_staffing_frame_shape():
@@ -344,12 +351,8 @@ async def test_ready_one_off_does_not_staff(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.spawn_match_service, "score_spawns", _spy_score)
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            for piece in ["Done", "."]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="Done.")]))
 
     events = []
     await arslan.handle_user_message("main", "just audit acme.com this once", _events(events))

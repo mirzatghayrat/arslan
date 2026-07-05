@@ -41,6 +41,13 @@ async def _fake_noop(): pass
 async def _fake_list(): return []
 
 
+async def _force_named(_msg, _sid):
+    # Boundary component 2 sends UNNAMED (inferred) routes to doer-first (answer). These route
+    # tests exercise the routing/dispatch MECHANICS, so force the explicit-naming path; naming
+    # detection itself is covered in test_boundary_doer_first.
+    return True
+
+
 async def _fake_curate(need):
     """Hermetic stub for equipment_service.curate (no outbound LLM call)."""
     return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
@@ -50,6 +57,31 @@ async def _ready_slots(history_text):
     """Hermetic stub for staffing_gather.extract_slots returning a READY slot set —
     drives the spine's ready path (match-and-propose / suggest_create card)."""
     return {"domain": "x.y", "capability": "do-x", "first_task": "run x", "recurrence": True}
+
+
+class _LLMResp:
+    """Native LLMResponse stub: separate content (prose) + tool_calls (structured)."""
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls or []
+
+
+def _tc(name, args):
+    return {"id": "c1", "type": "function", "function": {"name": name, "arguments": args}}
+
+
+class _NativeAdapter:
+    """chat()-based stub (Arslan's answer path uses run_native → a.chat, not chat_stream).
+    Returns queued LLMResponses in order; optionally records the system/user it saw."""
+    def __init__(self, replies, capture=None):
+        self._it = iter(replies)
+        self.capture = capture
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        if self.capture is not None:
+            self.capture["system"] = system
+            self.capture["user"] = user
+        return next(self._it)
 
 
 @pytest.mark.asyncio
@@ -65,13 +97,8 @@ async def test_answer_path_streams_and_persists(maker, monkeypatch):
 
     from server.orchestrator import tool_loop
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["Hi ", "there"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="Hi there")], capture=captured))
 
     events = []
     await arslan.handle_user_message("main", "hello", _events(events))
@@ -101,14 +128,11 @@ async def test_arslan_answer_calls_web_tool(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
-    class _A:
-        def __init__(self):
-            self._q = ['{"tool":"web_search","args":{"query":"today"}}', "Fresh info: X happened."]
-
-        async def chat_stream(self, system, user, history=None):
-            yield self._q.pop(0)
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = _NativeAdapter([
+        _LLMResp(content="", tool_calls=[_tc("web_search", {"query": "today"})]),
+        _LLMResp(content="Fresh info: X happened."),
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     class _Stub:
         async def execute(self, args):
@@ -134,11 +158,8 @@ async def test_arslan_answer_plain_no_tool(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            yield "just a friendly reply"
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="just a friendly reply")]))
 
     events = []
     await arslan.handle_user_message("main", "哈喽", _events(events))
@@ -161,13 +182,8 @@ async def test_clarify_streams_arslan_answer_and_does_not_create_or_dispatch(mak
 
     from server.orchestrator import tool_loop
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["What ", "topic?"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="What topic?")], capture=captured))
 
     events = []
     await arslan.handle_user_message("main", "research stuff", _events(events))
@@ -198,13 +214,8 @@ async def test_answer_path_grounds_real_roster_and_guards_fabrication(maker, mon
 
     from server.orchestrator import tool_loop
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["hi"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="hi")], capture=captured))
 
     await arslan.handle_user_message("main", "哈喽", _events([]))
 
@@ -243,6 +254,7 @@ async def test_route_path_emits_routing_and_dispatches(maker, monkeypatch):
     await roster_service.join("main", 7, via="invited")
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
+    monkeypatch.setattr(arslan, "_user_named_spawn", _force_named)
     monkeypatch.setattr(roster_service, "join", lambda c, s, *, via: _fake_noop())
     monkeypatch.setattr(roster_service, "list_roster", lambda c: _fake_list())
 
@@ -442,6 +454,7 @@ async def test_route_path_emits_spawn_meta(maker, monkeypatch):
         }
 
     monkeypatch.setattr(arslan.dispatcher, "dispatch", _fake_dispatch)
+    monkeypatch.setattr(arslan, "_user_named_spawn", _force_named)
     # Spawn 7 is already in the roster → route dispatches directly (no invite card).
     await roster_service.join("main", 7, via="invited")
 
@@ -469,12 +482,8 @@ async def test_arslan_answer_prompt_has_web_tool_guidance(maker, monkeypatch):
 
     captured = {}
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            yield "ok"
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: _NativeAdapter([_LLMResp(content="ok")], capture=captured))
 
     await arslan.handle_user_message("main", "今天的新闻", _events([]))
     sys = captured["system"]
