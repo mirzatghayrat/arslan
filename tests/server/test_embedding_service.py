@@ -1,5 +1,6 @@
 """Embedding provider layer: codec, preference-order resolution, API provider."""
 import anyio
+import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -58,3 +59,35 @@ def test_active_provider_skips_non_embedding_provider(maker):
             await s.commit()
         return await es.active_provider()
     assert anyio.run(_run) is None
+
+
+def test_embed_reorders_out_of_order_response(monkeypatch):
+    """Provider 乱序返回 data[] 时,embed() 必须按 index 升序重排——排错=向量静默错位。"""
+    from server.services import embedding_service as es
+
+    class _Resp:
+        status_code = 200
+        def json(self):
+            return {"data": [
+                {"index": 2, "embedding": [2.0, 2.5]},
+                {"index": 0, "embedding": [0.0, 0.5]},
+                {"index": 1, "embedding": [1.0, 1.5]},
+            ]}
+        def raise_for_status(self):
+            pass
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, headers=None, json=None):
+            _Client.last = {"url": url, "headers": headers, "json": json}
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    p = es.ApiEmbeddingProvider("https://api.example.com/v1/", "sk-test", "embedding-3")
+    out = anyio.run(p.embed, ["a", "b", "c"])
+    assert out == [[0.0, 0.5], [1.0, 1.5], [2.0, 2.5]]
+    assert _Client.last["url"] == "https://api.example.com/v1/embeddings"
+    assert _Client.last["headers"]["Authorization"] == "Bearer sk-test"
+    assert _Client.last["json"] == {"model": "embedding-3", "input": ["a", "b", "c"]}
