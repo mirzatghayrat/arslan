@@ -18,7 +18,7 @@ async def test_runs_git_version_in_tmpdir():
 
 @pytest.mark.asyncio
 async def test_refuses_when_seatbelt_unavailable(monkeypatch):
-    monkeypatch.setattr(cs, "_seatbelt_wrapper", lambda: None)
+    monkeypatch.setattr(cs, "_seatbelt_wrapper", lambda *a, **k: None)  # now takes optional profile
     r = await cs.run_command("git", ["--version"])
     assert r["ok"] is False
     assert "sandbox" in r["error"].lower()

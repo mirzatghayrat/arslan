@@ -27,6 +27,7 @@ from server.services.code_sandbox import (
     MAX_OUTPUT_CHARS,
     _child_limits,
     _seatbelt_wrapper,
+    net_profile,
 )
 
 TIMEOUT_S = 30.0  # commands (ffmpeg/pandoc) can be heavier than a python snippet
@@ -38,10 +39,18 @@ def _trunc(s: str) -> str:
     return s[:MAX_OUTPUT_CHARS] + f"\n…[truncated, {len(s)} chars total]"
 
 
-async def run_command(command: str, argv: list[str], *, timeout_s: float = TIMEOUT_S) -> dict:
-    """Execute [command, *argv] inside a seatbelt sandbox + ephemeral cwd. Returns
-    {ok, stdout, stderr, exit_code} — plus error when not ok. No network (deny all)."""
-    wrapper = _seatbelt_wrapper()
+async def run_command(command: str, argv: list[str], *, timeout_s: float = TIMEOUT_S,
+                      proxy_port: int | None = None, cwd: str | None = None,
+                      extra_env: dict | None = None) -> dict:
+    """Execute [command, *argv] inside a seatbelt sandbox. Returns {ok, stdout, stderr, exit_code}
+    — plus error when not ok.
+
+    Local commands (default): ephemeral cwd, HOME/TMPDIR scrubbed, ALL network denied — unchanged.
+    Network commands (git/gh): pass `proxy_port` → seatbelt allows ONLY localhost:proxy_port;
+    `cwd` = the real repo (so git operates on it); `extra_env` = proxy/CA env. HOME/TMPDIR stay
+    scrubbed to `tmp`, so the sandboxed git still cannot read ~/.ssh or ~/.gitconfig — auth is
+    injected by the proxy, never by mounted credentials."""
+    wrapper = _seatbelt_wrapper(net_profile(proxy_port) if proxy_port else None)
     if wrapper is None:
         return {"ok": False, "exit_code": None,
                 "error": "command sandbox unavailable (macOS seatbelt required); refusing to run"}
@@ -50,9 +59,11 @@ async def run_command(command: str, argv: list[str], *, timeout_s: float = TIMEO
     try:
         env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
                "HOME": str(tmp), "TMPDIR": str(tmp), "LC_ALL": "en_US.UTF-8"}
+        if extra_env:
+            env.update(extra_env)
         cmd = [*wrapper, command, *argv]
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=str(tmp), env=env,
+            *cmd, cwd=(cwd or str(tmp)), env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             start_new_session=True, preexec_fn=_child_limits,
         )
