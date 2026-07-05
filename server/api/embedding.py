@@ -12,6 +12,18 @@ from server.services import embedding_service, local_embedding
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
+# Hold strong refs to fire-and-forget tasks: asyncio keeps only a weak ref to a
+# running Task, so a bare create_task(...) whose return value is discarded can be
+# garbage-collected mid-flight, silently killing the backfill/download. The
+# done-callback discards the ref once the task settles, so the set never grows.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _fire(coro) -> None:
+    t = asyncio.create_task(coro)
+    _bg_tasks.add(t)
+    t.add_done_callback(_bg_tasks.discard)
+
 
 @router.get("/embedding/status")
 async def embedding_status() -> dict:
@@ -36,11 +48,11 @@ async def trigger_reindex() -> dict:
     provider = await embedding_service.active_provider()
     if provider is None:
         return {"started": False, "reason": "no embedding provider configured"}
-    asyncio.create_task(embedding_service.embed_missing())
+    _fire(embedding_service.embed_missing())
     return {"started": True}
 
 
 @router.post("/embedding/download-model")
 async def trigger_download() -> dict:
-    asyncio.create_task(local_embedding.download_local_model())
+    _fire(local_embedding.download_local_model())
     return {"started": True, "status": local_embedding.download_status()}

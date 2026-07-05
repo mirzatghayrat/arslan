@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 LOCAL_MODEL = "intfloat/multilingual-e5-small"   # zh+en 多语,384 维,~120MB ONNX
 LOCAL_MODEL_ID = "local:multilingual-e5-small"
 
+# Single-process assumption: download state lives in this worker's memory only.
+# Under a multi-worker deployment each worker has its own _state, so "downloading"
+# is per-worker (disk presence is still shared via model_present()); horizontal
+# scaling needs the transient state moved to the DB (or another shared store).
 _state: dict = {"status": "absent", "error": None}  # absent|downloading|ready|error
 _model = None  # cached fastembed.TextEmbedding
 

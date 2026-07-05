@@ -59,10 +59,17 @@ async def test_reindex_returns_accepted(client):
 
 async def test_download_model_kicks_state(client, monkeypatch):
     from server.services import local_embedding as le
-    original_state = dict(le._state)
-    monkeypatch.setattr(le, "_state", original_state, raising=False)
+    # Isolate the module-level state dict to this test so the fake download's
+    # mutation doesn't leak into other test files sharing this process.
+    monkeypatch.setattr(le, "_state", dict(le._state), raising=False)
     async def fake_dl():
         le._state.update(status="downloading", error=None)
     monkeypatch.setattr(le, "download_local_model", fake_dl)
     r = await client.post("/api/v1/embedding/download-model")
     assert r.status_code == 200
+    body = r.json()
+    assert body["started"] is True
+    # Prove the response carries the download-status contract (a synchronous
+    # read): {status: {status: <enum>, error: ...}}.
+    assert body["status"]["status"] in ("absent", "downloading", "ready", "error")
+    assert "error" in body["status"]

@@ -108,6 +108,10 @@ async def active_provider():
     return None
 
 
+# Single-process assumption: this progress state lives in this worker's memory
+# only. Under a multi-worker deployment each worker holds its own _reindex_state,
+# so status and single-flight are per-worker; horizontal scaling needs this moved
+# to the DB (or another shared store).
 _reindex_state: dict = {"running": False, "done": 0, "total": 0, "error": None}
 
 # NULL-safe predicate: a row needs (re-)embedding if the vector is missing OR
