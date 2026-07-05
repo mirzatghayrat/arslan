@@ -60,7 +60,7 @@ def app_client(tmp_path, monkeypatch):
             spawn.system_prompt or "You are a helpful assistant.")
         system = base
         try:
-            chunks = await knowledge.retrieve(spawn.id, retrieval_query)
+            chunks = await knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id)
             system += knowledge.knowledge_block(chunks)
         except Exception:  # noqa: BLE001
             pass
@@ -179,8 +179,8 @@ def test_chat_injects_kb(app_client, monkeypatch):
         return {"final": "ok", "escalation": None, "tool_trace": []}
     monkeypatch.setattr(spawn_loop, "run", _s)
     from server.services import knowledge
-    async def fake_retrieve(spawn_id, query, *, k=5): return ["KB FACT: serum X is best"]
-    monkeypatch.setattr(knowledge, "retrieve", fake_retrieve)
+    async def fake_retrieve(query, *, spawn_id, k=5): return [("kb.txt", "KB FACT: serum X is best")]
+    monkeypatch.setattr(knowledge, "retrieve_scoped", fake_retrieve)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()  # history
         ws.send_json({"type": "user_message", "content": "what serum?"})

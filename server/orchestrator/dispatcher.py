@@ -171,7 +171,7 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     if suffix:
         system = f"{system}\n\n{suffix}"
     try:
-        _kb = await _knowledge.retrieve(spawn.id, retrieval_query)
+        _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id)
         system += _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001
         logger.warning("knowledge retrieve failed (non-fatal): %s", exc)

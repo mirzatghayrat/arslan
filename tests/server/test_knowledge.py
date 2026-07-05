@@ -31,27 +31,28 @@ async def test_retrieve_matches(memdb):
     sid = await _spawn(memdb)
     await ingest.ingest_text(sid, "doc", "Our refund policy allows returns within 30 days.")
     await ingest.ingest_text(sid, "doc", "The office is open on weekdays.")
-    hits = await knowledge.retrieve(sid, "what is the refund policy?")
-    assert any("refund" in h for h in hits)
+    hits = await knowledge.retrieve_scoped("what is the refund policy?", spawn_id=sid)
+    assert any("refund" in t for _, t in hits)
 
 
 async def test_retrieve_scoped_to_spawn(memdb):
     a = await _spawn(memdb, "A")
     b = await _spawn(memdb, "B")
     await ingest.ingest_text(a, "doc", "alpha secret material")
-    hits_b = await knowledge.retrieve(b, "alpha")
+    hits_b = await knowledge.retrieve_scoped("alpha", spawn_id=b)
     assert hits_b == []
 
 
 async def test_retrieve_empty_and_weird_query_no_crash(memdb):
     sid = await _spawn(memdb)
-    assert await knowledge.retrieve(sid, "") == []
+    assert await knowledge.retrieve_scoped("", spawn_id=sid) == []
     await ingest.ingest_text(sid, "doc", "hello world")
-    assert isinstance(await knowledge.retrieve(sid, '"*(quote) AND foo*'), list)
+    assert isinstance(await knowledge.retrieve_scoped('"*(quote) AND foo*', spawn_id=sid), list)
 
 
 def test_knowledge_block_format():
     assert knowledge.knowledge_block([]) == ""
-    block = knowledge.knowledge_block(["chunk one", "chunk two"])
+    block = knowledge.knowledge_block([("src.txt", "chunk one"), ("src.txt", "chunk two")])
     assert "knowledge base" in block.lower()
     assert "chunk one" in block and "chunk two" in block
+    assert "[src.txt]" in block
