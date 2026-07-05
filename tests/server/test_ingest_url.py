@@ -70,7 +70,7 @@ async def test_ingest_url_passes_compress(memdb, monkeypatch):
             return {"ok": True, "url": args["url"], "text": "body content here"}
     monkeypatch.setitem(executors.EXECUTORS, "web_extract", _Stub())
     seen = {}
-    async def fake_ingest_text(spawn_id, source, text, *, compress=False):
+    async def fake_ingest_text(spawn_id, source, text, *, collection_id=None, compress=False):
         seen["compress"] = compress
         return 1
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest_text)

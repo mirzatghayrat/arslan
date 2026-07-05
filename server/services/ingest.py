@@ -107,28 +107,61 @@ async def _compress(text: str) -> str:
         return text
 
 
-async def ingest_text(spawn_id: int, source: str, text: str, *, compress: bool = False) -> int:
-    """Strip private blocks, chunk, store. Returns number of chunks stored."""
+async def ingest_text(spawn_id: int | None, source: str, text: str, *,
+                      collection_id: int | None = None, compress: bool = False) -> int:
+    """Strip private blocks, chunk, store into EXACTLY ONE of a spawn's private
+    well (spawn_id) or a shared collection (collection_id), then best-effort
+    embed the new chunks. Returns number of chunks stored."""
+    if (spawn_id is None) == (collection_id is None):
+        raise ValueError("provide exactly one of spawn_id / collection_id")
     cleaned = _strip_private(text)
     if compress:
         cleaned = await _compress(cleaned)
     chunks = chunk_text(cleaned)
     if not chunks:
         return 0
+    ids_texts: list[tuple[int, str]] = []
     async with db_session.AsyncSessionLocal() as db:
         for i, chunk in enumerate(chunks):
-            row = KnowledgeChunk(spawn_id=spawn_id, source=source, chunk_index=i, text=chunk)
+            row = KnowledgeChunk(spawn_id=spawn_id, collection_id=collection_id,
+                                 source=source, chunk_index=i, text=chunk)
             db.add(row)
             await db.flush()  # populate row.id for the FTS rowid
             await db.execute(
                 sa_text("INSERT INTO knowledge_chunks_fts (rowid, text) VALUES (:rid, :t)"),
                 {"rid": row.id, "t": chunk},
             )
+            ids_texts.append((row.id, chunk))
         await db.commit()
+    await _embed_new_chunks(ids_texts)
     return len(chunks)
 
 
-async def ingest_url(spawn_id: int, url: str, *, compress: bool = False) -> int:
+async def _embed_new_chunks(ids_texts: list[tuple[int, str]]) -> None:
+    """Vectorize freshly stored chunks. Best-effort: any failure leaves the
+    embedding NULL and the chunks retrievable via FTS only."""
+    if not ids_texts:
+        return
+    try:
+        from server.services import embedding_service
+        provider = await embedding_service.active_provider()
+        if provider is None:
+            return
+        vecs = await provider.embed([t for _, t in ids_texts])
+        async with db_session.AsyncSessionLocal() as db:
+            for (cid, _), vec in zip(ids_texts, vecs):
+                await db.execute(
+                    sa_text("UPDATE knowledge_chunks SET embedding = :b, embedding_model = :m "
+                            "WHERE id = :id"),
+                    {"b": embedding_service.vec_to_blob(vec), "m": provider.model_id, "id": cid},
+                )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — embedding is never fatal
+        logger.warning("chunk embedding failed (non-fatal, FTS-only): %s", exc)
+
+
+async def ingest_url(spawn_id: int | None, url: str, *,
+                     collection_id: int | None = None, compress: bool = False) -> int:
     """Fetch + extract a web page via the SSRF-guarded WebExtractExecutor (per-hop
     host revalidation + private-IP block — NEVER a raw httpx request), then ingest.
     Raises ValueError on fetch failure / private-address rejection."""
@@ -136,11 +169,14 @@ async def ingest_url(spawn_id: int, url: str, *, compress: bool = False) -> int:
     res = await EXECUTORS["web_extract"].execute({"url": url})
     if not res.get("ok"):
         raise ValueError(res.get("error") or "fetch failed")
-    return await ingest_text(spawn_id, url, res.get("text", ""), compress=compress)
+    return await ingest_text(spawn_id, url, res.get("text", ""),
+                             collection_id=collection_id, compress=compress)
 
 
-async def ingest_file(spawn_id: int, filename: str, data: bytes, *, compress: bool = False) -> int:
+async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
+                      collection_id: int | None = None, compress: bool = False) -> int:
     """Extract text from a supported file then ingest. Raises ValueError on
     unsupported extension; extraction errors propagate (API maps to 400)."""
     extracted = _extract_file(filename, data)
-    return await ingest_text(spawn_id, filename, extracted, compress=compress)
+    return await ingest_text(spawn_id, filename, extracted,
+                             collection_id=collection_id, compress=compress)
