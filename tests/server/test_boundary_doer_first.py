@@ -121,6 +121,40 @@ async def test_dual_track_skips_short_answer(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_scenario3_create_band_does_it_itself_then_suggests(monkeypatch):
+    # 场景3:重复需求 + 无覆盖分身(create band)→ Arslan 先自己做,再飘轻 suggest_create chip。
+    order = []
+
+    async def _answer(conv, msg, emit, **kw):
+        order.append("answer")
+        emit({"type": "stream_end", "message_id": 1})
+        return "我先给你做了一版草稿……"
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+    monkeypatch.setattr(arslan.spawn_service, "load_all_spawns", lambda: _aw([]))
+    monkeypatch.setattr(arslan.spawn_match_service, "score_spawns", lambda need, spawns: _aw([]))
+    monkeypatch.setattr(arslan, "_fused_create_draft",
+                        lambda slots, result, seeds: _aw({"name": "文案", "domain": "content.xhs"}))
+    monkeypatch.setattr(arslan.spawn_service, "find_overlap", lambda draft, spawns: None)
+
+    frames = []
+    slots = {"domain": "content.xhs", "capability": "写小红书", "recurrence": True, "first_task": "写3条种草"}
+    result = arslan.router.RouterResult(action="suggest_create", task_brief="写3条种草")
+    await arslan._staffing_match_and_propose("main", "帮我写3条小红书种草", slots, result, frames.append)
+
+    assert "answer" in order                                    # Arslan 先自己做了
+    types = [f.get("type") for f in frames]
+    assert "suggest_create" in types                            # 再飘建分身 chip
+    assert types.index("stream_end") < types.index("suggest_create")
+
+
+def test_scenario8_router_prompt_handles_multi_domain():
+    # 场景8:多领域/含深度段的任务 → answer + Arslan 自己串,不整活派出去(router 判据显式化)。
+    from server.orchestrator import router
+    assert "MULTIPLE domains" in router._SYSTEM
+    assert "stitches" in router._SYSTEM
+
+
+@pytest.mark.asyncio
 async def test_named_spawn_dispatches(monkeypatch):
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Deck Master"))
     monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(True))

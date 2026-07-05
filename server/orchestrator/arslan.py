@@ -616,9 +616,14 @@ async def _staffing_match_and_propose(  # noqa: ANN001
         return
 
     # band == "create": there are no >=LOW matches by definition (else classify_band
-    # would have returned invite_one/picker), so seed equipment from the full ranked
-    # list as a weak domain-adjacency prior, then run the existing L2-B2 overlap
-    # detection and emit suggest_create.
+    # would have returned invite_one/picker). Doer-first (boundary scenario 3): a recurring
+    # need with NO covering spawn — Arslan does what it can of the task ITSELF now (immediate
+    # value + honest about any part it can't), THEN offers a LIGHT, implicitly-dismissable
+    # "建个长期 X 分身?" chip instead of a blocking create-and-run card.
+    await _handle_answer(conversation_id, user_message, emit,
+                         attached_context=attached_context, confirm_command=confirm_command)
+    # then seed equipment from the full ranked list as a weak domain-adjacency prior, run the
+    # existing L2-B2 overlap detection, and emit suggest_create as the follow-on suggestion.
     near_ids = [r["spawn_id"] for r in ranked if r.get("spawn_id") is not None]
     draft = await _fused_create_draft(slots, result, near_ids)
     overlap = spawn_service.find_overlap(draft, spawns)
