@@ -139,7 +139,10 @@ async def ingest_text(spawn_id: int | None, source: str, text: str, *,
 
 async def _embed_new_chunks(ids_texts: list[tuple[int, str]]) -> None:
     """Vectorize freshly stored chunks. Best-effort: any failure leaves the
-    embedding NULL and the chunks retrievable via FTS only."""
+    embedding NULL and the chunks retrievable via FTS only. All chunks from one
+    ingest are sent as a single un-chunked provider batch, so an oversized
+    input can fail the whole batch at once; recovery relies on the
+    embed_missing() backfill picking up the resulting NULL rows later."""
     if not ids_texts:
         return
     try:

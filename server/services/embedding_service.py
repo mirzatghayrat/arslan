@@ -10,6 +10,7 @@ import logging
 import struct
 
 import httpx
+from sqlalchemy import text as sa_text
 
 from arslan.llm.presets import resolve_preset
 from server.db import session as db_session
@@ -105,3 +106,62 @@ async def active_provider():
     except Exception as exc:  # noqa: BLE001 — provider resolution is never fatal
         logger.warning("embedding provider resolution failed (non-fatal): %s", exc)
     return None
+
+
+_reindex_state: dict = {"running": False, "done": 0, "total": 0, "error": None}
+
+# NULL-safe predicate: a row needs (re-)embedding if the vector is missing OR
+# the model tag is missing OR the model tag doesn't match the active provider.
+# `embedding_model IS NULL` is listed explicitly even though today's writers
+# always pair embedding with embedding_model — defense in depth against any
+# future writer that sets one without the other. COUNT and SELECT below MUST
+# stay identical or the progress total will drift from the actual work done.
+_MISSING_OR_STALE = (
+    "embedding IS NULL OR embedding_model IS NULL OR embedding_model != :m"
+)
+
+
+def reindex_status() -> dict:
+    return dict(_reindex_state)
+
+
+async def embed_missing(batch_size: int = 64) -> int:
+    """Backfill vectors for chunks with NULL or stale-model embeddings.
+    Single-flight (concurrent call returns 0 immediately); progress readable
+    via reindex_status(). Serves: initial backfill, ingest-failure retry, and
+    model-switch re-embedding — one path for all three."""
+    if _reindex_state["running"]:
+        return 0
+    provider = await active_provider()
+    if provider is None:
+        return 0
+    _reindex_state.update(running=True, done=0, total=0, error=None)
+    done = 0
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            _reindex_state["total"] = (await db.execute(sa_text(
+                f"SELECT COUNT(*) FROM knowledge_chunks WHERE {_MISSING_OR_STALE}"),
+                {"m": provider.model_id})).scalar_one()
+        while True:
+            async with db_session.AsyncSessionLocal() as db:
+                rows = (await db.execute(sa_text(
+                    f"SELECT id, text FROM knowledge_chunks WHERE {_MISSING_OR_STALE} "
+                    "LIMIT :n"),
+                    {"m": provider.model_id, "n": batch_size})).all()
+                if not rows:
+                    break
+                vecs = await provider.embed([r[1] for r in rows])
+                for r, vec in zip(rows, vecs):
+                    await db.execute(sa_text(
+                        "UPDATE knowledge_chunks SET embedding = :b, embedding_model = :m "
+                        "WHERE id = :id"),
+                        {"b": vec_to_blob(vec), "m": provider.model_id, "id": r[0]})
+                await db.commit()
+                done += len(rows)
+                _reindex_state["done"] = done
+    except Exception as exc:  # noqa: BLE001 — backfill is never fatal
+        logger.warning("embed_missing failed (non-fatal): %s", exc)
+        _reindex_state["error"] = str(exc)
+    finally:
+        _reindex_state["running"] = False
+    return done

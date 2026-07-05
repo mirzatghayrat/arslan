@@ -10,7 +10,10 @@ from server.db.models import Base, Collection, Spawn
 
 class FakeProvider:
     model_id = "fake-embed-1"
+    def __init__(self):
+        self.calls = 0
     async def embed(self, texts):
+        self.calls += 1
         return [[1.0, 0.0, float(len(t))] for t in texts]
 
 
@@ -53,17 +56,23 @@ def test_ingest_requires_exactly_one_target(maker):
 
 def test_ingest_embeds_when_provider_available(maker, monkeypatch):
     from server.services import embedding_service, ingest
+    provider = FakeProvider()
     async def _fake_active():
-        return FakeProvider()
+        return provider
     monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
-    anyio.run(lambda: ingest.ingest_text(1, "b.txt", "深井内容"))
+    long_text = "深井内容。" * 400  # chunk_text splits at ~800 chars → multiple chunks
+    n = anyio.run(lambda: ingest.ingest_text(1, "b.txt", long_text))
+    assert n > 1
+    assert provider.calls == 1  # one batch call across all chunks, not per-chunk
     async def _check():
         async with maker() as s:
             return (await s.execute(sa_text(
-                "SELECT embedding, embedding_model FROM knowledge_chunks WHERE source='b.txt'"))).one()
-    blob, model = anyio.run(_check)
-    assert model == "fake-embed-1" and blob is not None
-    assert embedding_service.blob_to_vec(blob)[0] == pytest.approx(1.0)
+                "SELECT embedding, embedding_model FROM knowledge_chunks WHERE source='b.txt'"))).all()
+    rows = anyio.run(_check)
+    assert len(rows) == n
+    for blob, model in rows:
+        assert model == "fake-embed-1" and blob is not None
+        assert embedding_service.blob_to_vec(blob)[0] == pytest.approx(1.0)
 
 
 def test_ingest_survives_embed_failure(maker, monkeypatch):
