@@ -65,6 +65,7 @@ function catColorMap(): Record<OrreryCat, string> {
   return {
     hub: cssVar("--hub", "#FFC773"),
     spawn: cssVar("--primary", "#F3A64A"),
+    collection: cssVar("--success", "#7BD88F"),
     source: cssVar("--info", "#46C2B2"),
     pref: cssVar("--danger", "#EC7A9C"),
   };

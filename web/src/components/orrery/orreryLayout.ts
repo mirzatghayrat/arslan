@@ -1,4 +1,4 @@
-export type OrreryCat = "hub" | "spawn" | "source" | "pref";
+export type OrreryCat = "hub" | "spawn" | "collection" | "source" | "pref";
 
 export interface OrreryNodeIn {
   id: string;
@@ -24,11 +24,12 @@ export interface CategoryDef {
   rf: [number, number];  // radius band [inner, outer]
 }
 
-// 3 real categories (collections deferred — no backend model yet). Hub is central.
+// 4 real categories. Hub is central. Collections orbit between spawns and sources.
 export const CATEGORIES: CategoryDef[] = [
-  { key: "spawn",  label: "Spawns",      angDeg: -90, rf: [0.30, 0.45] },
-  { key: "pref",   label: "Preferences", angDeg: 180, rf: [0.28, 0.43] },
-  { key: "source", label: "Sources",     angDeg:  90, rf: [0.62, 0.86] },
+  { key: "spawn",      label: "Spawns",      angDeg: -90, rf: [0.30, 0.45] },
+  { key: "pref",       label: "Preferences", angDeg: 180, rf: [0.28, 0.43] },
+  { key: "collection", label: "Collections", angDeg:  90, rf: [0.48, 0.58] },
+  { key: "source",     label: "Sources",     angDeg:  90, rf: [0.66, 0.88] },
 ];
 const BAND_DEG = 46; // angular half-band per sector (deterministic jitter range)
 
@@ -57,7 +58,7 @@ export function layout(nodes: OrreryNodeIn[]): LaidNode[] {
     const angle = (c ? c.angDeg : 0) * Math.PI / 180 + (j1 - 0.5) * BAND_DEG * Math.PI / 180;
     const rf = c ? c.rf[0] + j2 * (c.rf[1] - c.rf[0]) : 0.5;
     const z = Math.max(0.12, Math.min(1, 1 - rf * 0.92 + (hash01(n.id + "z") - 0.5) * 0.14));
-    const size = n.cat === "spawn" ? 7.5 : n.cat === "source" ? 4.5 : 5;
+    const size = n.cat === "spawn" ? 7.5 : n.cat === "collection" ? 6 : n.cat === "source" ? 4.5 : 5;
     return { ...n, angle, rf, z, size, imp: n.imp ?? 0.6 };
   });
 }

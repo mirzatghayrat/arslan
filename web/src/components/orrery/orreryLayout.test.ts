@@ -35,4 +35,15 @@ describe("orreryLayout", () => {
     const { x, y } = toXY(s, 100, 100, 100);
     expect(Math.hypot(x - 100, y - 100)).toBeGreaterThan(50);
   });
+  it("collection band sits between spawn ring and source ring", () => {
+    const laid = layout([
+      { id: "c1", cat: "collection", label: "库" },
+      { id: "s1", cat: "source", label: "源" },
+    ]);
+    const coll = laid.find((n) => n.id === "c1")!;
+    const src = laid.find((n) => n.id === "s1")!;
+    expect(coll.rf).toBeGreaterThanOrEqual(0.48);
+    expect(coll.rf).toBeLessThanOrEqual(0.58);
+    expect(src.rf).toBeGreaterThan(coll.rf);
+  });
 });

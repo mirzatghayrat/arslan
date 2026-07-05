@@ -17,6 +17,9 @@ export interface KnowledgeGraph {
  * - Each knowledge source becomes a node; sources sharing a name across
  *   spawns are deduped into a single node, with an edge from every spawn
  *   that uses it.
+ * - Each shared collection becomes a "collection" node linked to the hub,
+ *   with edges to bound spawns and to its sources (sources share the same
+ *   `src:` namespace/dedup as spawn sources).
  * - Each user fact becomes a preference node linked to the hub.
  * - On empty data or failure the graph is hub-only.
  */
@@ -34,6 +37,10 @@ export function useKnowledgeGraph() {
       // fetch each spawn's knowledge sources in parallel
       const kbs = await Promise.all(
         spawns.map((s) => api.getKnowledge(s.id).catch(() => [])),
+      );
+      const collections = await api.listCollections().catch(() => []);
+      const collKbs = await Promise.all(
+        collections.map((c) => api.getCollectionKnowledge(c.id).catch(() => [])),
       );
 
       const nodes: OrreryNodeIn[] = [{ id: "hub", cat: "hub", label: "YOU" }];
@@ -64,6 +71,29 @@ export function useKnowledgeGraph() {
             });
           }
           edges.push({ a: sid, b: nid }); // this spawn uses this source
+        }
+      });
+
+      collections.forEach((c, i) => {
+        const cid = `coll:${c.id}`;
+        nodes.push({ id: cid, cat: "collection", label: c.name, meta: `${c.chunks} chunks`, imp: 0.8 });
+        edges.push({ a: "hub", b: cid });
+        for (const sid of c.spawn_ids) {
+          if (spawns.some((s) => s.id === sid)) edges.push({ a: `spawn:${sid}`, b: cid });
+        }
+        for (const src of collKbs[i]) {
+          const nid = sourceId(src.source);
+          if (!seenSource.has(nid)) {
+            // dedup against spawn sources — same `src:` namespace
+            seenSource.add(nid);
+            nodes.push({
+              id: nid,
+              cat: "source",
+              label: src.source,
+              meta: `${src.chunks} chunks`,
+            });
+          }
+          edges.push({ a: cid, b: nid }); // this collection contains this source
         }
       });
 

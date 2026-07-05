@@ -7,6 +7,8 @@ vi.mock("../api/client", () => ({
     listSpawns: vi.fn(),
     listFacts: vi.fn(),
     getKnowledge: vi.fn(),
+    listCollections: vi.fn(),
+    getCollectionKnowledge: vi.fn(),
   },
 }));
 
@@ -15,6 +17,8 @@ import { api } from "../api/client";
 const listSpawns = api.listSpawns as ReturnType<typeof vi.fn>;
 const listFacts = api.listFacts as ReturnType<typeof vi.fn>;
 const getKnowledge = api.getKnowledge as ReturnType<typeof vi.fn>;
+const listCollections = api.listCollections as ReturnType<typeof vi.fn>;
+const getCollectionKnowledge = api.getCollectionKnowledge as ReturnType<typeof vi.fn>;
 
 afterEach(() => vi.clearAllMocks());
 
@@ -33,6 +37,8 @@ describe("useKnowledgeGraph", () => {
           ]),
     );
     listFacts.mockResolvedValue([{ id: 9, content: "偏口语" }]);
+    listCollections.mockResolvedValue([]);
+    getCollectionKnowledge.mockResolvedValue([]);
 
     const { result } = renderHook(() => useKnowledgeGraph());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -79,6 +85,8 @@ describe("useKnowledgeGraph", () => {
     listSpawns.mockResolvedValue([]);
     listFacts.mockResolvedValue([]);
     getKnowledge.mockResolvedValue([]);
+    listCollections.mockResolvedValue([]);
+    getCollectionKnowledge.mockResolvedValue([]);
 
     const { result } = renderHook(() => useKnowledgeGraph());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -103,5 +111,42 @@ describe("useKnowledgeGraph", () => {
       { id: "hub", cat: "hub", label: "YOU" },
     ]);
     expect(result.current.graph.edges).toEqual([]);
+  });
+
+  it("assembles a collection node bound to a spawn with its own source", async () => {
+    listSpawns.mockResolvedValue([
+      { id: 1, name: "小红书" },
+      { id: 2, name: "金融" },
+    ]);
+    getKnowledge.mockResolvedValue([]);
+    listFacts.mockResolvedValue([]);
+    listCollections.mockResolvedValue([
+      { id: 5, name: "共享库", description: null, chunks: 4, sources: 1, spawn_ids: [2] },
+    ]);
+    getCollectionKnowledge.mockResolvedValue([{ source: "shared.pdf", chunks: 4 }]);
+
+    const { result } = renderHook(() => useKnowledgeGraph());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const { nodes, edges } = result.current.graph;
+
+    const collNodes = nodes.filter((n) => n.cat === "collection");
+    expect(collNodes).toHaveLength(1);
+    expect(collNodes[0].id).toBe("coll:5");
+    expect(collNodes[0].label).toBe("共享库");
+
+    // hub <-> collection
+    expect(edges).toContainEqual({ a: "hub", b: "coll:5" });
+    // bound spawn (id 2) <-> collection
+    expect(edges).toContainEqual({ a: "spawn:2", b: "coll:5" });
+    // spawn 1 is not bound — no edge to the collection
+    expect(edges).not.toContainEqual({ a: "spawn:1", b: "coll:5" });
+
+    // collection's source node attached to the collection
+    const sourceNodes = nodes.filter((n) => n.cat === "source");
+    expect(sourceNodes.map((n) => n.id)).toContain("src:shared.pdf");
+    expect(edges).toContainEqual({ a: "coll:5", b: "src:shared.pdf" });
+
+    expect(result.current.error).toBeNull();
   });
 });
