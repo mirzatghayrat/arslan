@@ -9,6 +9,7 @@
   --foreground: #0F172A; --muted-foreground: #64748B; --subtle-foreground: #94A3B8;
   --border: #E2E8F0; --border-strong: #CBD5E1; --ring: rgba(229,125,27,0.28);
   --primary: #E57D1B; --primary-hover: #C2640C; --primary-foreground: #1A0E00;
+  --hub: #B45309;
   --success: #059669; --danger: #DC2626; --warning: #B45309; --info: #2563EB;
 }
 
@@ -19,6 +20,7 @@
   --foreground: #FFFFFF; --muted-foreground: #94A3B8; --subtle-foreground: #6B7280;
   --border: #1E2330; --border-strong: #23293E; --ring: rgba(255,142,36,0.20);
   --primary: #FF8E24; --primary-hover: #FF9C3A; --primary-foreground: #1A0E00;
+  --hub: #FFC773;
   --success: #10B981; --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6;
 }
 
@@ -28,6 +30,7 @@
   --foreground:#1C1917; --muted-foreground:#78716C; --subtle-foreground:#A8A29E;
   --border:#E7E5E4; --border-strong:#D6D3D1; --ring:rgba(194,65,12,0.28);
   --primary:#C2410C; --primary-hover:#9A3412; --primary-foreground:#FFF7ED;
+  --hub:#9A3412;
   --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
 }
 .dark[data-palette="ember"] {
@@ -35,6 +38,7 @@
   --foreground:#FAFAF9; --muted-foreground:#A8A29E; --subtle-foreground:#78716C;
   --border:#292524; --border-strong:#353029; --ring:rgba(249,115,22,0.25);
   --primary:#F97316; --primary-hover:#FB923C; --primary-foreground:#3A1404;
+  --hub:#FDBA74;
   --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
 }
 /* TERMINAL */
@@ -43,6 +47,7 @@
   --foreground:#0A1F14; --muted-foreground:#5C7567; --subtle-foreground:#88A294;
   --border:#DCEAE2; --border-strong:#C5DACD; --ring:rgba(21,128,61,0.28);
   --primary:#15803D; --primary-hover:#166534; --primary-foreground:#F0FDF4;
+  --hub:#166534;
   --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
 }
 .dark[data-palette="terminal"] {
@@ -50,6 +55,7 @@
   --foreground:#ECFDF5; --muted-foreground:#8CA99B; --subtle-foreground:#5C7567;
   --border:#1E2A24; --border-strong:#24332B; --ring:rgba(34,197,94,0.25);
   --primary:#22C55E; --primary-hover:#4ADE80; --primary-foreground:#05330F;
+  --hub:#86EFAC;
   --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
 }
 /* NEBULA */
@@ -58,6 +64,7 @@
   --foreground:#1A1430; --muted-foreground:#6B6486; --subtle-foreground:#9089A6;
   --border:#E7E3F2; --border-strong:#D6CFEA; --ring:rgba(109,40,217,0.28);
   --primary:#6D28D9; --primary-hover:#5B21B6; --primary-foreground:#F5F3FF;
+  --hub:#5B21B6;
   --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
 }
 .dark[data-palette="nebula"] {
@@ -65,6 +72,7 @@
   --foreground:#F5F3FF; --muted-foreground:#A39CB8; --subtle-foreground:#6B6486;
   --border:#241F33; --border-strong:#2C2640; --ring:rgba(139,92,246,0.25);
   --primary:#8B5CF6; --primary-hover:#A78BFA; --primary-foreground:#1E1340;
+  --hub:#C4B5FD;
   --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
 }
 /* SLATE */
@@ -73,6 +81,7 @@
   --foreground:#0F172A; --muted-foreground:#64748B; --subtle-foreground:#94A3B8;
   --border:#E2E8F0; --border-strong:#CBD5E1; --ring:rgba(29,78,216,0.28);
   --primary:#1D4ED8; --primary-hover:#1E40AF; --primary-foreground:#EFF6FF;
+  --hub:#1E40AF;
   --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
 }
 .dark[data-palette="slate"] {
@@ -80,6 +89,7 @@
   --foreground:#F8FAFC; --muted-foreground:#94A3B8; --subtle-foreground:#64748B;
   --border:#20262E; --border-strong:#28303A; --ring:rgba(59,130,246,0.25);
   --primary:#3B82F6; --primary-hover:#60A5FA; --primary-foreground:#0A2540;
+  --hub:#93C5FD;
   --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
 }
 /* GLACIER */
@@ -88,6 +98,7 @@
   --foreground:#06201D; --muted-foreground:#5A7E79; --subtle-foreground:#86A5A0;
   --border:#D6EAE7; --border-strong:#BFDDD9; --ring:rgba(14,116,144,0.28);
   --primary:#0E7490; --primary-hover:#155E75; --primary-foreground:#ECFEFF;
+  --hub:#0C5A72;
   --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
 }
 .dark[data-palette="glacier"] {
@@ -95,5 +106,6 @@
   --foreground:#ECFEFF; --muted-foreground:#8FB3AD; --subtle-foreground:#5A7E79;
   --border:#163A38; --border-strong:#1C4644; --ring:rgba(6,182,212,0.25);
   --primary:#06B6D4; --primary-hover:#22D3EE; --primary-foreground:#04303A;
+  --hub:#7DD3FC;
   --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
 }
