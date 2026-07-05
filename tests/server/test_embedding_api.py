@@ -57,6 +57,40 @@ async def test_reindex_returns_accepted(client):
     assert r.json()["started"] in (True, False)  # no provider → False, never crashes
 
 
+async def test_pending_reflects_stale_model_after_switch(client, monkeypatch):
+    """With an active provider, 'pending' counts the real embed_missing backlog
+    (NULL or stale-model), not just NULL — so a model switch honestly shows work
+    remaining even though every row already has *some* vector."""
+    from sqlalchemy import text as sa_text
+
+    from server.db.models import Spawn
+    from server.services import embedding_service
+
+    async with client.db_maker() as s:
+        s.add(Spawn(id=1, name="s", domain_category="c", system_prompt="p"))
+        await s.flush()
+        # Two rows already embedded under the OLD model, one never embedded.
+        await s.execute(sa_text(
+            "INSERT INTO knowledge_chunks (spawn_id, source, chunk_index, text, embedding, embedding_model) "
+            "VALUES (1,'a',0,'x',:b,'old-model'), (1,'a',1,'y',:b,'old-model'), (1,'a',2,'z',NULL,NULL)"),
+            {"b": b"\x00\x00\x80?"})
+        await s.commit()
+
+    class NewProvider:
+        model_id = "new-model"
+        async def embed(self, texts):  # pragma: no cover — status path doesn't embed
+            return [[0.0] for _ in texts]
+
+    async def _fake_active():
+        return NewProvider()
+    monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
+
+    body = (await client.get("/api/v1/embedding/status")).json()
+    assert body["model"] == "new-model"
+    assert body["embedded"] == 2          # naive NOT-NULL count
+    assert body["pending"] == 3           # all 3 need (re)embedding under new-model
+
+
 async def test_download_model_kicks_state(client, monkeypatch):
     from server.services import local_embedding as le
     # Isolate the module-level state dict to this test so the fake download's

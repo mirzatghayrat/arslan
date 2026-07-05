@@ -33,11 +33,18 @@ async def embedding_status() -> dict:
             "SELECT COUNT(*) FROM knowledge_chunks WHERE embedding IS NOT NULL"))).scalar_one()
         total = (await db.execute(sa_text(
             "SELECT COUNT(*) FROM knowledge_chunks"))).scalar_one()
+    # With an active provider, 'pending' is the real embed_missing() backlog
+    # (NULL or stale-model) so a model switch honestly shows work remaining;
+    # without one, it's rows lacking any vector at all.
+    pending = (
+        await embedding_service.pending_count(provider.model_id)
+        if provider else total - embedded
+    )
     return {
         "provider": type(provider).__name__ if provider else None,
         "model": provider.model_id if provider else None,
         "embedded": embedded,
-        "pending": total - embedded,
+        "pending": pending,
         "reindex": embedding_service.reindex_status(),
         "local_model": local_embedding.download_status(),
     }

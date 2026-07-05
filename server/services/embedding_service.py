@@ -129,6 +129,17 @@ def reindex_status() -> dict:
     return dict(_reindex_state)
 
 
+async def pending_count(model_id: str) -> int:
+    """Rows embed_missing() would still process for `model_id` (NULL embedding
+    OR missing/stale model tag). Shares _MISSING_OR_STALE with the backfill so
+    the status endpoint's 'pending' matches the real reindex backlog — notably
+    after a model switch, where every row is embedded but stale-tagged."""
+    async with db_session.AsyncSessionLocal() as db:
+        return (await db.execute(sa_text(
+            f"SELECT COUNT(*) FROM knowledge_chunks WHERE {_MISSING_OR_STALE}"),
+            {"m": model_id})).scalar_one()
+
+
 async def embed_missing(batch_size: int = 64) -> int:
     """Backfill vectors for chunks with NULL or stale-model embeddings.
     Single-flight (concurrent call returns 0 immediately); progress readable
