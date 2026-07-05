@@ -3,7 +3,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -378,16 +391,47 @@ class EvolutionProposal(Base):
     promoted_at = Column(DateTime, nullable=True)
 
 
-class KnowledgeChunk(Base):
-    """One chunk of a spawn's ingested knowledge base (grounding material)."""
+class Collection(Base):
+    """A shared, named knowledge collection (layer A). Spawn wells stay on
+    knowledge_chunks.spawn_id; shared material lives under collection_id."""
 
-    __tablename__ = "knowledge_chunks"
+    __tablename__ = "collections"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SpawnCollection(Base):
+    """spawn ↔ collection binding (binding IS the retrieval routing)."""
+
+    __tablename__ = "spawn_collections"
+    __table_args__ = (UniqueConstraint("spawn_id", "collection_id"),)
 
     id = Column(Integer, primary_key=True)
     spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
+    collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=False, index=True)
+
+
+class KnowledgeChunk(Base):
+    """One chunk of ingested knowledge. Exactly one of spawn_id (private well)
+    / collection_id (shared collection) is set — enforced by CHECK."""
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        CheckConstraint("(spawn_id IS NULL) != (collection_id IS NULL)",
+                        name="ck_chunk_exactly_one_scope"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=True, index=True)
+    collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=True, index=True)
     source = Column(String(200), nullable=False)
     chunk_index = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
+    embedding = Column(LargeBinary, nullable=True)          # float32 LE bytes
+    embedding_model = Column(String(80), nullable=True)     # provider model id
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
