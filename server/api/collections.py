@@ -7,7 +7,7 @@ from sqlalchemy import text as sa_text
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import Collection, SpawnCollection
+from server.db.models import Collection, Spawn, SpawnCollection
 from server.schemas import CollectionIn, CollectionOut, CollectionPatch, IngestOut, KnowledgeIn, KnowledgeSourceOut
 from server.services import ingest
 
@@ -154,6 +154,8 @@ async def delete_collection_source(collection_id: int, source: str) -> dict:
 async def bind_collection(spawn_id: int, collection_id: int) -> dict:
     async with db_session.AsyncSessionLocal() as db:
         await _get_or_404(db, collection_id)
+        if await db.get(Spawn, spawn_id) is None:
+            raise HTTPException(status_code=404, detail="spawn not found")
         exists = (await db.execute(sa_text(
             "SELECT 1 FROM spawn_collections WHERE spawn_id = :sid AND collection_id = :cid"),
             {"sid": spawn_id, "cid": collection_id})).first()

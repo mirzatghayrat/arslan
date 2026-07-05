@@ -91,6 +91,14 @@ async def test_bind_unbind_spawn(client):
     assert (await client.get("/api/v1/collections")).json()[0]["spawn_ids"] == []
 
 
+async def test_bind_nonexistent_spawn_404_no_orphan(client):
+    cid = (await client.post("/api/v1/collections", json={"name": "库"})).json()["id"]
+    r = await client.put(f"/api/v1/spawns/9999/collections/{cid}")
+    assert r.status_code == 404
+    body = (await client.get("/api/v1/collections")).json()
+    assert body[0]["spawn_ids"] == []  # 无孤儿绑定
+
+
 async def test_delete_collection_cascades(client):
     cid = (await client.post("/api/v1/collections", json={"name": "临时"})).json()["id"]
     await client.post(f"/api/v1/collections/{cid}/ingest", json={"source": "x", "text": "独特词汇烎"})
