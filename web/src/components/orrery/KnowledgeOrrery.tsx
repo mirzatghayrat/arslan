@@ -119,7 +119,10 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
       appear: 0,
       pulse: 0,
       cur: 0,
-      phase: (n.id.length * 1.37) % 6.28,
+      // phase from id *content* hash (not length) so equal-length ids
+      // (pref:0/pref:1, same-length source names) don't lock-step pulse.
+      // Drives both the twinkle and the breathing glow.
+      phase: ([...n.id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0) % 628) / 100,
       deg: 0,
     }));
     const byId = new Map(rnodes.map((n) => [n.id, n]));
@@ -145,10 +148,11 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
       R = 0;
 
     // ---- offscreen nebula (built once per resize) ----
-    // Sized larger than the canvas (+ NEB_MARGIN on each side) so the slow
-    // drift applied at draw time (see frame()) never exposes an uncovered
-    // edge — the nebula is drawn centered with a negative offset and the
-    // drift stays within this margin.
+    // Sized larger than the canvas (+ NEB_MARGIN on each side) to give the
+    // slow drift (see frame()) some baked-in margin to move within. Note the
+    // edge is actually hidden by the ns=1.06 overscan at draw time, not by
+    // this margin alone — clamping drift to ±nebPad just keeps the drift
+    // within that overscan slack so no seam can appear.
     const NEB_MARGIN = 0.06; // fraction of R padded on each side
     const neb = document.createElement("canvas");
     const nbx = neb.getContext("2d");
@@ -338,9 +342,9 @@ export default function KnowledgeOrrery({ nodes, edges, onSelect, className }: P
       }
 
       // 1) nebula (far plane) — slow drift, frozen under reduced-motion.
-      // neb is baked NEB_MARGIN*R larger than the canvas on each side (see
-      // buildNebula), so drift is clamped to +/-nebPad and never exposes
-      // an uncovered edge.
+      // The ns=1.06 overscan below is what hides the edge; clamping drift to
+      // ±nebPad (the baked NEB_MARGIN*R margin) keeps the drift inside that
+      // overscan slack so it can never pull a seam into view.
       const driftX = RM ? 0 : clamp(Math.sin(t * 0.06) * R * 0.02, -nebPad, nebPad);
       const driftY = RM ? 0 : clamp(Math.cos(t * 0.04) * R * 0.015, -nebPad, nebPad);
       const ns = 1.06;
