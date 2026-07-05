@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
 import { AppearanceSettings } from './AppearanceSettings';
+import EmbeddingSettings from './EmbeddingSettings';
 import Select from './Select';
 
 interface SettingsScreenProps {
@@ -227,6 +228,15 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               }))
             }
           />
+          <div className="pt-2 border-t border-border/40">
+            <EmbeddingSettings
+              providerConfigs={providerConfigs}
+              embeddingConfigId={localSettings.embeddingConfigId ?? ''}
+              onEmbeddingConfigIdChange={(v) =>
+                setLocalSettings((prev) => ({ ...prev, embeddingConfigId: v }))
+              }
+            />
+          </div>
         </div>
 
         {/* Interface — telemetry + spawn mode */}

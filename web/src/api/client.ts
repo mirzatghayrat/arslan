@@ -2,7 +2,9 @@ import { useAuthStore } from "../stores/authStore";
 import type {
   AppSettings,
   CatalogEntry,
+  CollectionOut,
   ConfirmResult,
+  EmbeddingStatus,
   EvolutionStats,
   EvolveProposal,
   IngestResult,
@@ -25,6 +27,8 @@ import type {
   TemplateInfo,
   UserFact,
 } from "./client.types";
+
+export type { CollectionOut, EmbeddingStatus };
 
 // Configurable for desktop (Tauri) builds; empty = same-origin relative URLs.
 export const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").replace(/\/+$/, "");
@@ -237,6 +241,55 @@ export const api = {
     if (!resp.ok) { let detail = `HTTP ${resp.status}`; try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ } throw new ApiError(detail, resp.status); }
     return (await resp.json()) as { text: string; chars: number; truncated: boolean };
   },
+  // ── Second Brain: shared knowledge collections (layer A) ──────────────────────
+  listCollections: () => request<CollectionOut[]>("/collections"),
+  createCollection: (name: string, description?: string) =>
+    request<CollectionOut>("/collections", {
+      method: "POST",
+      body: JSON.stringify({ name, description }),
+    }),
+  patchCollection: (id: number, patch: { name?: string; description?: string }) =>
+    request<CollectionOut>(`/collections/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteCollection: (id: number) => request<{ deleted: boolean; chunks_removed: number }>(`/collections/${id}`, { method: "DELETE" }),
+  ingestCollection: (id: number, body: { source?: string; text?: string; url?: string }) =>
+    request<IngestResult>(`/collections/${id}/ingest`, { method: "POST", body: JSON.stringify(body) }),
+  /** Multipart upload — mirrors ingestKnowledgeFile: build the fetch by hand so
+   *  the browser sets its own multipart Content-Type (with boundary) rather
+   *  than the JSON header `request` applies by default. */
+  ingestCollectionFile: async (id: number, file: File): Promise<IngestResult> => {
+    const token = useAuthStore.getState().token;
+    const form = new FormData();
+    form.append("file", file);
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const resp = await fetch(`${BASE}/collections/${id}/ingest`, {
+      method: "POST",
+      body: form,
+      headers,
+    });
+    if (!resp.ok) {
+      let detail = `HTTP ${resp.status}`;
+      try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ }
+      throw new ApiError(detail, resp.status);
+    }
+    return (await resp.json()) as IngestResult;
+  },
+  getCollectionKnowledge: (id: number) => request<KnowledgeSource[]>(`/collections/${id}/knowledge`),
+  deleteCollectionSource: (id: number, source: string) =>
+    request<{ deleted: number }>(
+      `/collections/${id}/knowledge?source=${encodeURIComponent(source)}`,
+      { method: "DELETE" },
+    ),
+  bindCollection: (spawnId: number, cid: number) =>
+    request<{ bound: boolean }>(`/spawns/${spawnId}/collections/${cid}`, { method: "PUT" }),
+  unbindCollection: (spawnId: number, cid: number) =>
+    request<{ bound: boolean }>(`/spawns/${spawnId}/collections/${cid}`, { method: "DELETE" }),
+  // ── Embedding ops: active provider status, backfill, local-model download ─────
+  embeddingStatus: () => request<EmbeddingStatus>("/embedding/status"),
+  reindexEmbeddings: () =>
+    request<{ started: boolean; reason?: string }>("/embedding/reindex", { method: "POST" }),
+  downloadEmbeddingModel: () =>
+    request<{ started: boolean; status: EmbeddingStatus["local_model"] }>("/embedding/download-model", { method: "POST" }),
 };
 
 // ── Provider Config CRUD ───────────────────────────────────────────────────────

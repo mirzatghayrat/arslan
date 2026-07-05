@@ -107,6 +107,8 @@ export interface AppSettings {
   distill_on_session_end?: boolean;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
+  /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
+  embedding_config_id?: string;
 }
 
 export interface ProviderOption {
@@ -362,6 +364,26 @@ export interface RunDetailDto {
 
 export interface KnowledgeSource { source: string; chunks: number; }
 export interface IngestResult { source: string; chunks_added: number; }
+
+/** Shared knowledge collection (layer A): CRUD, ingest, sources, spawn binding. */
+export interface CollectionOut {
+  id: number;
+  name: string;
+  description?: string | null;
+  chunks: number;
+  sources: number;
+  spawn_ids: number[];
+}
+
+/** Embedding ops status: active provider/model, backfill counts, reindex + local-model download progress. */
+export interface EmbeddingStatus {
+  provider: string | null;
+  model: string | null;
+  embedded: number;
+  pending: number;
+  reindex: { running: boolean; done: number; total: number; error: string | null };
+  local_model: { status: string; error: string | null };
+}
 export interface EvolveGate {
   passed: boolean;
   reason: string;

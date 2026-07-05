@@ -32,6 +32,7 @@ import StaffingPickerCard from './components/StaffingPickerCard';
 import RunCommandCard from './components/RunCommandCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
+import CollectionsPanel from './components/CollectionsPanel';
 import EvalDock from './components/EvalDock';
 import KnowledgeOrrery from './components/orrery/KnowledgeOrrery';
 import OrreryDetailPanel from './components/orrery/OrreryDetailPanel';
@@ -307,7 +308,7 @@ export default function App() {
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
   // ── Second Brain: live knowledge graph + the node whose detail panel is open.
-  const { graph: knowledgeGraph, loading: knowledgeLoading, error: knowledgeError } = useKnowledgeGraph();
+  const { graph: knowledgeGraph, loading: knowledgeLoading, error: knowledgeError, refresh: refreshKnowledgeGraph } = useKnowledgeGraph();
   const [selectedNode, setSelectedNode] = useState<OrreryNodeIn | null>(null);
 
   // Spawn Studio — the roomy create/configure panel (replaces SpawnEditPopup +
@@ -811,13 +812,17 @@ export default function App() {
                   )}
                 </div>
 
-                {selectedNode && (
+                {selectedNode ? (
                   <OrreryDetailPanel
                     node={selectedNode}
                     nodes={knowledgeGraph.nodes}
                     edges={knowledgeGraph.edges}
                     onSelect={setSelectedNode}
                   />
+                ) : (
+                  <aside className="w-80 border-l border-border bg-sidebar/95 backdrop-blur-xl flex flex-col h-full select-none relative z-20 overflow-y-auto">
+                    <CollectionsPanel onChanged={refreshKnowledgeGraph} />
+                  </aside>
                 )}
               </div>
             )}

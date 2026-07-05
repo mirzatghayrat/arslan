@@ -153,4 +153,6 @@ export interface AppSettings {
   orchestratorShellEnabled: boolean;
   /** Confirmation posture for shell commands. */
   shellConfirmPolicy: 'ask_all' | 'ask_risky';
+  /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
+  embeddingConfigId?: string;
 }

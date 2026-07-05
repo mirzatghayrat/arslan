@@ -32,6 +32,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // both default OFF / most-cautious when absent.
     orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
+    embeddingConfigId: backend.embedding_config_id ?? "",
   };
 }
 
@@ -50,6 +51,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     distill_on_session_end: ui.distillOnSessionEnd,
     orchestrator_shell_enabled: ui.orchestratorShellEnabled ? "true" : "false",
     shell_confirm_policy: ui.shellConfirmPolicy,
+    embedding_config_id: ui.embeddingConfigId ?? "",
   };
 
   // Only send the search key if the user entered something new (non-empty, non-masked).
