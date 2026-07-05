@@ -652,6 +652,12 @@ async def _handle_answer(
     )
     if ctx["summary"]:
         system += f"\n\nConversation summary so far:\n{ctx['summary']}"
+    try:
+        from server.services import knowledge as _knowledge
+        _kb = await _knowledge.retrieve_scoped(user_message, spawn_id=None)
+        system += _knowledge.knowledge_block(_kb)
+    except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
+        logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
 
     llm_user = user_message
     if attached_context:
