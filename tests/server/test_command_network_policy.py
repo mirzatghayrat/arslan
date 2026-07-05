@@ -19,3 +19,12 @@ def test_resolve_target_host():
     assert cp.resolve_target_host("git", ["push"], repo_remotes=R) == "github.com"  # default origin
     assert cp.resolve_target_host("git", ["clone", "git@gitlab.com:a/b.git"], repo_remotes={}) == "gitlab.com"
     assert cp.resolve_target_host("git", ["fetch", "nope"], repo_remotes={}) is None
+
+
+def test_is_host_allowed():
+    assert cp.is_host_allowed("github.com", repo_remote_hosts=set()) is True
+    assert cp.is_host_allowed("api.github.com", repo_remote_hosts=set()) is True
+    assert cp.is_host_allowed("gitlab.com", repo_remote_hosts={"gitlab.com"}) is True
+    assert cp.is_host_allowed("evil.com", repo_remote_hosts={"gitlab.com"}) is False
+    assert cp.is_host_allowed(None, repo_remote_hosts=set()) is False
+    assert cp.is_host_allowed("", repo_remote_hosts=set()) is False

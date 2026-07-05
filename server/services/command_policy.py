@@ -141,3 +141,14 @@ def resolve_target_host(command: str, argv, *, repo_remotes: dict) -> str | None
         if a in repo_remotes:
             return _url_host(repo_remotes[a])
     return _url_host(repo_remotes["origin"]) if "origin" in repo_remotes else None
+
+
+_GITHUB_HOSTS = frozenset({"github.com", "api.github.com"})
+
+
+def is_host_allowed(host, *, repo_remote_hosts: set) -> bool:
+    """v1 allowlist: GitHub + the hosts of THIS repo's configured remotes. Everything else refused."""
+    if not host:
+        return False
+    h = host.lower()
+    return h in _GITHUB_HOSTS or h in {str(r).lower() for r in repo_remote_hosts}
