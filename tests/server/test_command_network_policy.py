@@ -28,3 +28,15 @@ def test_is_host_allowed():
     assert cp.is_host_allowed("evil.com", repo_remote_hosts={"gitlab.com"}) is False
     assert cp.is_host_allowed(None, repo_remote_hosts=set()) is False
     assert cp.is_host_allowed("", repo_remote_hosts=set()) is False
+
+
+def test_push_targets_current_branch():
+    f = cp.push_targets_current_branch
+    assert f(["status"], "main") is True                       # not a push
+    assert f(["push"], "main") is True                         # default → current branch
+    assert f(["push", "origin"], "main") is True               # default → current branch
+    assert f(["push", "origin", "main"], "main") is True
+    assert f(["push", "origin", "HEAD"], "main") is True
+    assert f(["push", "origin", "+main"], "main") is True      # force of current branch
+    assert f(["push", "origin", "other"], "main") is False     # arbitrary ref → refuse
+    assert f(["push", "origin", "main:release"], "main") is False

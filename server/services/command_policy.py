@@ -152,3 +152,17 @@ def is_host_allowed(host, *, repo_remote_hosts: set) -> bool:
         return False
     h = host.lower()
     return h in _GITHUB_HOSTS or h in {str(r).lower() for r in repo_remote_hosts}
+
+
+def push_targets_current_branch(argv, current_branch: str) -> bool:
+    """Guard: a `git push` may only push the CURRENT branch (or HEAD) — never an arbitrary ref.
+    Deterministic; `current_branch` is resolved host-side. Non-push commands pass through."""
+    args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
+    if not args or args[0] != "push":
+        return True
+    refs = [a for a in args[1:] if not a.startswith("-")]
+    refspecs = refs[1:] if refs else []                # first non-flag is the remote
+    if not refspecs:
+        return True                                    # `git push [origin]` pushes current branch
+    allowed = {current_branch, "HEAD", f"+{current_branch}"}
+    return all(r in allowed for r in refspecs)
