@@ -132,12 +132,16 @@ async def embed_missing(batch_size: int = 64) -> int:
     model-switch re-embedding — one path for all three."""
     if _reindex_state["running"]:
         return 0
-    provider = await active_provider()
-    if provider is None:
-        return 0
+    # Claim the single-flight slot BEFORE any await — active_provider() does
+    # real DB I/O, and an await between check and set lets two concurrent
+    # callers both pass the check (TOCTOU). finally below always resets it,
+    # including the provider-is-None early return.
     _reindex_state.update(running=True, done=0, total=0, error=None)
     done = 0
     try:
+        provider = await active_provider()
+        if provider is None:
+            return 0
         async with db_session.AsyncSessionLocal() as db:
             _reindex_state["total"] = (await db.execute(sa_text(
                 f"SELECT COUNT(*) FROM knowledge_chunks WHERE {_MISSING_OR_STALE}"),
@@ -151,6 +155,11 @@ async def embed_missing(batch_size: int = 64) -> int:
                 if not rows:
                     break
                 vecs = await provider.embed([r[1] for r in rows])
+                if len(vecs) != len(rows):
+                    # A short response would leave the missing rows matching
+                    # the predicate forever → infinite loop, done inflating.
+                    raise RuntimeError(
+                        f"provider returned {len(vecs)} vectors for {len(rows)} texts")
                 for r, vec in zip(rows, vecs):
                     await db.execute(sa_text(
                         "UPDATE knowledge_chunks SET embedding = :b, embedding_model = :m "

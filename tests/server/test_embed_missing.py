@@ -58,3 +58,27 @@ def test_embed_missing_backfills_null_and_stale(maker, monkeypatch):
 def test_embed_missing_noop_without_provider(maker):
     from server.services import embedding_service as es
     assert anyio.run(lambda: es.embed_missing()) == 0
+
+
+def test_embed_missing_short_vector_response_terminates(maker, monkeypatch):
+    """Provider returns fewer vectors than texts → error recorded, no infinite
+    loop, running reset. Without the count guard the un-updated rows keep
+    matching the predicate forever."""
+    from server.services import embedding_service as es
+    class ShortProvider:
+        model_id = "short-embed"
+        def __init__(self):
+            self.calls = 0
+        async def embed(self, texts):
+            self.calls += 1
+            return [[0.1, 0.2] for _ in texts[:-1]]  # always one vector short
+    provider = ShortProvider()
+    async def _fake_active():
+        return provider
+    monkeypatch.setattr(es, "active_provider", _fake_active)
+    done = anyio.run(lambda: es.embed_missing(batch_size=2))
+    assert done == 0  # guard raises before any row of the batch is committed
+    assert provider.calls == 1  # first bad batch aborts the run
+    st = es.reindex_status()
+    assert st["running"] is False
+    assert st["error"] and "vectors" in st["error"]
