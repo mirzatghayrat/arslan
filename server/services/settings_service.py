@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
-               "shell_confirm_policy", "synthesis_config_id")
+               "shell_confirm_policy", "synthesis_config_id", "embedding_config_id")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
 
