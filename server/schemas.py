@@ -358,6 +358,25 @@ class KnowledgeSourceOut(BaseModel):
     chunks: int
 
 
+class CollectionIn(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class CollectionPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class CollectionOut(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    chunks: int = 0
+    sources: int = 0
+    spawn_ids: list[int] = []
+
+
 class RunListItemOut(BaseModel):
     id: int
     spawn_name: str | None
