@@ -76,3 +76,61 @@ def test_check_constraint_enforced(old_db):
             conn.exec_driver_sql(
                 "INSERT INTO knowledge_chunks (spawn_id, collection_id, source, chunk_index, text) "
                 "VALUES (NULL, NULL, 'x', 0, 'y')")
+
+
+def test_rebuild_with_foreign_keys_on(old_db):
+    """Production runs PRAGMA foreign_keys=ON (server/db/session.py); the
+    rebuild's drop/rename must survive that path with no FK violations."""
+    from sqlalchemy import event
+
+    from server.db.migrations.versions._0018_second_brain import upgrade_sync
+
+    engine = create_engine(f"sqlite:///{old_db}")
+
+    @event.listens_for(engine, "connect")
+    def _fk_on(dbapi_conn, _record):  # noqa: ANN001
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    with engine.begin() as conn:
+        assert conn.exec_driver_sql("PRAGMA foreign_keys").fetchone() == (1,)
+        upgrade_sync(conn)
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
+        row = conn.exec_driver_sql(
+            "SELECT id, spawn_id, text FROM knowledge_chunks").fetchone()
+        assert row == (42, 1, "hello world")
+
+
+def test_downgrade_drops_collection_rows_and_their_fts(old_db):
+    """Downgrade is lossy for collection-only rows — but must also delete their
+    FTS rows, or future id reuse would produce false matches."""
+    from server.db.migrations.versions._0018_second_brain import downgrade_sync
+
+    engine = _upgrade(old_db)
+    with engine.begin() as conn:
+        conn.exec_driver_sql("INSERT INTO collections (id, name) VALUES (7, 'shared')")
+        conn.exec_driver_sql(
+            "INSERT INTO knowledge_chunks (id, collection_id, source, chunk_index, text) "
+            "VALUES (99, 7, 'c.txt', 0, 'orange banana')")
+        conn.exec_driver_sql(
+            "INSERT INTO knowledge_chunks_fts (rowid, text) VALUES (99, 'orange banana')")
+    with engine.begin() as conn:
+        downgrade_sync(conn)
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    assert "collections" not in tables and "spawn_collections" not in tables
+    cols = {c["name"]: c for c in insp.get_columns("knowledge_chunks")}
+    assert "collection_id" not in cols
+    assert cols["spawn_id"]["nullable"] is False
+    with engine.connect() as conn:
+        rows = conn.exec_driver_sql(
+            "SELECT id, spawn_id, text FROM knowledge_chunks").fetchall()
+        assert rows == [(42, 1, "hello world")]  # spawn row survives, collection row gone
+        assert conn.exec_driver_sql(
+            "SELECT rowid FROM knowledge_chunks_fts WHERE text MATCH 'orange'"
+        ).fetchall() == []  # collection row's FTS entry deleted (no orphan)
+        assert conn.exec_driver_sql(
+            "SELECT rowid FROM knowledge_chunks_fts WHERE text MATCH 'hello'"
+        ).fetchall() == [(42,)]  # spawn row's FTS entry intact

@@ -64,6 +64,8 @@ def _upgrade(bind) -> None:  # noqa: ANN001
     cols = {c["name"]: c for c in insp.get_columns("knowledge_chunks")}
     if "collection_id" in cols and cols["spawn_id"]["nullable"]:
         return  # already migrated (idempotent)
+    # Self-heal: a crash between CREATE and RENAME can leave the temp table behind.
+    bind.exec_driver_sql("DROP TABLE IF EXISTS knowledge_chunks_new")
     bind.exec_driver_sql(_NEW_SHAPE)
     bind.exec_driver_sql(
         "INSERT INTO knowledge_chunks_new (id, spawn_id, source, chunk_index, text, created_at) "
@@ -78,14 +80,22 @@ def _upgrade(bind) -> None:  # noqa: ANN001
 
 def _downgrade(bind) -> None:  # noqa: ANN001
     """Reverse the rebuild: drop the new columns/constraint, restore spawn_id
-    NOT NULL. Rows with collection_id set (no spawn_id) cannot survive a
+    NOT NULL. LOSSY: rows with collection_id set (no spawn_id) cannot survive a
     downgrade to the old spawn-only shape and are dropped — this mirrors the
-    forward-only nature of the feature (shared collections didn't exist pre-0018)."""
+    forward-only nature of the feature (shared collections didn't exist pre-0018).
+    Their knowledge_chunks_fts rows are deleted too, or future id reuse would
+    produce false FTS matches (the vtable maps rowid == knowledge_chunks.id)."""
     insp = sa.inspect(bind)
     tables = set(insp.get_table_names())
     if "knowledge_chunks" in tables:
         cols = {c["name"] for c in insp.get_columns("knowledge_chunks")}
         if "collection_id" in cols:
+            if "knowledge_chunks_fts" in tables:
+                bind.exec_driver_sql(
+                    "DELETE FROM knowledge_chunks_fts WHERE rowid IN "
+                    "(SELECT id FROM knowledge_chunks WHERE spawn_id IS NULL)")
+            # Self-heal: a crash between CREATE and RENAME can leave the temp table behind.
+            bind.exec_driver_sql("DROP TABLE IF EXISTS knowledge_chunks_old")
             bind.exec_driver_sql(_OLD_SHAPE)
             bind.exec_driver_sql(
                 "INSERT INTO knowledge_chunks_old (id, spawn_id, source, chunk_index, text, created_at) "
