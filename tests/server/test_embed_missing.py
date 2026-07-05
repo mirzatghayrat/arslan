@@ -82,3 +82,48 @@ def test_embed_missing_short_vector_response_terminates(maker, monkeypatch):
     st = es.reindex_status()
     assert st["running"] is False
     assert st["error"] and "vectors" in st["error"]
+
+
+def test_embed_missing_partial_progress_honest_on_later_batch_failure(maker, monkeypatch):
+    """First batch succeeds and commits; second batch trips the short-vector
+    guard. `done` must reflect the committed first batch (not 0, not all),
+    the error must be recorded, running must reset, and only the first
+    batch's rows may have persisted embeddings — proving progress reporting
+    tells the truth about partial work rather than collapsing to all-or-nothing."""
+    from server.services import embedding_service as es
+
+    class FlakyProvider:
+        model_id = "flaky-embed"
+        def __init__(self):
+            self.calls = 0
+        async def embed(self, texts):
+            self.calls += 1
+            if self.calls == 1:
+                return [[0.9, 0.9] for _ in texts]  # batch 1: succeeds fully
+            return [[0.1, 0.2] for _ in texts[:-1]]  # batch 2: one vector short
+
+    provider = FlakyProvider()
+    async def _fake_active():
+        return provider
+    monkeypatch.setattr(es, "active_provider", _fake_active)
+    done = anyio.run(lambda: es.embed_missing(batch_size=2))
+    assert done == 2  # exactly batch 1's committed rows — not 0, not all 4
+    assert provider.calls == 2
+    st = es.reindex_status()
+    assert st["running"] is False
+    assert st["done"] == 2
+    assert st["error"] and "vectors" in st["error"]
+
+    async def _check():
+        async with maker() as s:
+            embedded = (await s.execute(sa_text(
+                "SELECT COUNT(*) FROM knowledge_chunks WHERE embedding_model = 'flaky-embed'"
+            ))).scalar_one()
+            still_pending = (await s.execute(sa_text(
+                "SELECT COUNT(*) FROM knowledge_chunks WHERE "
+                "embedding IS NULL OR embedding_model IS NULL OR embedding_model != 'flaky-embed'"
+            ))).scalar_one()
+            return embedded, still_pending
+    embedded, still_pending = anyio.run(_check)
+    assert embedded == 2  # batch 1's rows persisted
+    assert still_pending == 2  # batch 2's rows (1 NULL + 1 stale-model) untouched

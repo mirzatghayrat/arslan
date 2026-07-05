@@ -34,3 +34,30 @@ def test_provider_ready_when_onnx_present(tmp_path, monkeypatch):
     p = le.provider_if_ready()
     assert p is not None and p.model_id == le.LOCAL_MODEL_ID
     assert le.download_status()["status"] == "ready"
+
+
+def test_embed_preserves_order_and_coerces_float(monkeypatch):
+    """LocalEmbeddingProvider.embed() must return vectors in the same order
+    as the input texts (providers/models must not silently reorder), and
+    every component must be a plain float (not numpy scalar/int) since the
+    result is packed with struct.pack('<{n}f', ...) downstream."""
+    import numpy as np
+    from server.services import local_embedding as le
+
+    class FakeModel:
+        def embed(self, texts):
+            # distinct, known vectors — one per input, numpy arrays like the
+            # real fastembed model would yield.
+            for i, _ in enumerate(texts):
+                yield np.array([float(i), float(i) + 0.5], dtype=np.float32)
+
+    monkeypatch.setattr(le, "_model", FakeModel())
+    provider = le.LocalEmbeddingProvider()
+    texts = ["第一", "第二", "第三"]
+    vecs = anyio.run(lambda: provider.embed(texts))
+
+    assert len(vecs) == len(texts)
+    for i, vec in enumerate(vecs):
+        assert vec == [float(i), float(i) + 0.5]
+        for x in vec:
+            assert isinstance(x, float)

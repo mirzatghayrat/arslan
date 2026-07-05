@@ -135,6 +135,10 @@ def create_app() -> FastAPI:
 
     app.include_router(collections_api.router, prefix="/api/v1")
 
+    from server.api import embedding as embedding_api
+
+    app.include_router(embedding_api.router, prefix="/api/v1")
+
     from server.api.extract import router as extract_router
 
     app.include_router(extract_router)
