@@ -59,3 +59,21 @@ async def test_ingest_file_unknown_ext_raises(memdb):
     sid = await _spawn(memdb)
     with pytest.raises(ValueError):
         await ingest.ingest_file(sid, "archive.zip", b"PK\x03\x04")
+
+
+async def test_ingest_survives_orphan_fts_rowid(memdb):
+    """A stale FTS row (rowid=1) left from a deleted chunk must not make the next
+    ingest 500 with a rowid collision — knowledge_chunks ids restart at 1 when the
+    table is empty, so ingest overwrites the orphan instead of colliding."""
+    from sqlalchemy import text as sa_text
+    async with memdb() as db:
+        await db.execute(sa_text(
+            "INSERT INTO knowledge_chunks_fts (rowid, text) VALUES (1, 'orphan leftover')"))
+        await db.commit()
+    sid = await _spawn(memdb)
+    n = await ingest.ingest_text(sid, "doc", "gamma delta. " * 200)  # first chunk reuses rowid 1
+    assert n >= 1
+    async with memdb() as db:
+        fts = (await db.execute(sa_text(
+            "SELECT text FROM knowledge_chunks_fts WHERE rowid = 1"))).scalar_one()
+    assert "orphan" not in fts  # FTS now mirrors the real chunk, not the stale row

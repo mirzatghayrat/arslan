@@ -127,6 +127,14 @@ async def ingest_text(spawn_id: int | None, source: str, text: str, *,
                                  source=source, chunk_index=i, text=chunk)
             db.add(row)
             await db.flush()  # populate row.id for the FTS rowid
+            # Defensive: clear any stale FTS row at this rowid first. knowledge_chunks
+            # ids restart from 1 when the table is emptied, so a leftover FTS orphan
+            # (from a crash / partial delete / migration edge) would otherwise collide
+            # and 500 every ingest. Delete-then-insert keeps the FTS mirror consistent.
+            await db.execute(
+                sa_text("DELETE FROM knowledge_chunks_fts WHERE rowid = :rid"),
+                {"rid": row.id},
+            )
             await db.execute(
                 sa_text("INSERT INTO knowledge_chunks_fts (rowid, text) VALUES (:rid, :t)"),
                 {"rid": row.id, "t": chunk},
