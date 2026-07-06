@@ -32,13 +32,8 @@ import StaffingPickerCard from './components/StaffingPickerCard';
 import RunCommandCard from './components/RunCommandCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
-import CollectionsPanel from './components/CollectionsPanel';
 import EvalDock from './components/EvalDock';
-import KnowledgeOrrery from './components/orrery/KnowledgeOrrery';
-import OrreryDetailPanel from './components/orrery/OrreryDetailPanel';
-import { useKnowledgeGraph } from './hooks/useKnowledgeGraph';
-import type { OrreryNodeIn } from './components/orrery/orreryLayout';
-import WorkingPulse from './components/WorkingPulse';
+import BrainSection from './components/brain/BrainSection';
 
 interface ArslanThread {
   id: string;
@@ -306,10 +301,6 @@ export default function App() {
   useEffect(() => { api.listMcpServers().then(setMcpServers).catch(() => setMcpServers([])); }, []);
 
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
-
-  // ── Second Brain: live knowledge graph + the node whose detail panel is open.
-  const { graph: knowledgeGraph, loading: knowledgeLoading, error: knowledgeError, refresh: refreshKnowledgeGraph } = useKnowledgeGraph();
-  const [selectedNode, setSelectedNode] = useState<OrreryNodeIn | null>(null);
 
   // Spawn Studio — the roomy create/configure panel (replaces SpawnEditPopup +
   // the old full-screen SpawnEditor). `edit` carries a numeric spawn id.
@@ -779,53 +770,7 @@ export default function App() {
               <Capabilities />
             )}
 
-            {activeSection === 'brain' && (
-              <div className="flex-1 flex h-full overflow-hidden relative">
-                <div className="flex-1 relative h-full">
-                  {knowledgeLoading ? (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <WorkingPulse
-                        phrases={[t('brain.loading')]}
-                        className="text-[11px] text-subtle-foreground uppercase tracking-widest"
-                      />
-                    </div>
-                  ) : knowledgeError ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center select-none">
-                      <span className="text-lg">⚠️</span>
-                      <p className="text-[11px] font-mono text-muted-foreground max-w-sm leading-relaxed">
-                        {t('brain.error')}
-                      </p>
-                    </div>
-                  ) : knowledgeGraph.nodes.length <= 1 ? (
-                    <div className="absolute inset-0 flex items-center justify-center px-8 text-center select-none">
-                      <p className="text-[11px] font-mono text-subtle-foreground max-w-sm leading-relaxed">
-                        {t('brain.empty')}
-                      </p>
-                    </div>
-                  ) : (
-                    <KnowledgeOrrery
-                      nodes={knowledgeGraph.nodes}
-                      edges={knowledgeGraph.edges}
-                      onSelect={setSelectedNode}
-                      className="w-full h-full"
-                    />
-                  )}
-                </div>
-
-                {selectedNode ? (
-                  <OrreryDetailPanel
-                    node={selectedNode}
-                    nodes={knowledgeGraph.nodes}
-                    edges={knowledgeGraph.edges}
-                    onSelect={setSelectedNode}
-                  />
-                ) : (
-                  <aside className="w-80 border-l border-border bg-sidebar/95 backdrop-blur-xl flex flex-col h-full select-none relative z-20 overflow-y-auto">
-                    <CollectionsPanel onChanged={refreshKnowledgeGraph} />
-                  </aside>
-                )}
-              </div>
-            )}
+            {activeSection === 'brain' && <BrainSection />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
