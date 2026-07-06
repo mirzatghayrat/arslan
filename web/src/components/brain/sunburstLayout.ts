@@ -14,6 +14,8 @@ export interface LayoutOpts {
   bandR: number;    // thin depth-1 top-category band width (root view only)
   padAngle: number; // angular gap between sibling segments (removes hard seams)
   band?: boolean;   // draw the thin depth-1 band (true at true root; false when drilled)
+  topMinFrac?: number; // root view only: min angular fraction each top category gets (placeholder for empties)
+  gapAngle?: number;   // radians left as a gap at 12 o'clock (root sweep = TAU - gapAngle)
 }
 
 export function arcPath(cx: number, cy: number, ri: number, ro: number, a0: number, a1: number): string {
@@ -68,17 +70,30 @@ export function layoutSegments(tree: TreeNode, opts: LayoutOpts): Segment[] {
     const kids = node.children ?? [];
     if (kids.length) {
       const pad = opts.padAngle;
-      const total = kids.reduce((s, c) => s + Math.max(c.value, 0.0001), 0);
-      const avail = a1 - a0 - pad * kids.length;
+      const avail = Math.max(a1 - a0 - pad * kids.length, 0);
+      // Root-view top level (depth 0 → depth 1) reserves a floor per category so empty
+      // top categories stay visible; deeper levels + drilled views stay pure-proportional.
+      const useFloor = depth === 0 && opts.band !== false && (opts.topMinFrac ?? 0) > 0;
+      const minF = useFloor ? Math.min(opts.topMinFrac as number, 0.9 / kids.length) : 0;
+      // Floor branch: weight children by their *real* value (0 for empties, no epsilon
+      // pollution) so the reserved floor is exact; only fall back to an equal split when
+      // every child is empty (avoids a 0/0 division).
+      const rawSum = kids.reduce((s, c) => s + Math.max(c.value, 0), 0);
+      const sumV = kids.reduce((s, c) => s + Math.max(c.value, 0.0001), 0);
       let a = a0 + pad / 2;
       for (const c of kids) {
-        const span = (Math.max(c.value, 0.0001) / total) * Math.max(avail, 0);
+        const vFrac = useFloor
+          ? (rawSum > 0 ? Math.max(c.value, 0) / rawSum : 1 / kids.length)
+          : Math.max(c.value, 0.0001) / sumV;
+        const frac = useFloor ? (minF + (1 - kids.length * minF) * vFrac) : vFrac;
+        const span = frac * avail;
         place(c, a, a + span, depth + 1);
         a += span + pad;
       }
     }
   };
-  place(tree, -Math.PI / 2, -Math.PI / 2 + TAU, 0);
+  const gap = opts.gapAngle ?? 0;
+  place(tree, -Math.PI / 2 + gap / 2, -Math.PI / 2 + TAU - gap / 2, 0);
   return out;
 }
 

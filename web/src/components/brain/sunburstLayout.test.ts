@@ -67,3 +67,32 @@ it("lays out every node beyond depth 3 (no 3-ring cap)", () => {
   const src = segs.find((s) => s.id === "src:1")!;
   expect(src.depth).toBe(4);
 });
+
+it("reserves a min angle for empty top categories + a top gap (root view)", () => {
+  const opts = { cx: 0, cy: 0, innerR: 20, outerR: 100, bandR: 8, padAngle: 0, topMinFrac: 0.1, gapAngle: 0.2 } as any;
+  const t: any = { id: "root", name: "YOU", kind: "root", cat: "collection", value: 10, children: [
+    { id: "cat:collection", name: "库", kind: "category", cat: "collection", value: 0, children: [] },
+    { id: "cat:spawn", name: "分身", kind: "category", cat: "spawn", value: 0, children: [] },
+    { id: "cat:pref", name: "偏好", kind: "category", cat: "pref", value: 10, children: [
+      { id: "pref:1", name: "a", kind: "pref", cat: "pref", value: 10 }] },
+  ]};
+  const segs = layoutSegments(t, opts);
+  const ang = (id: string) => { const s = segs.find((x) => x.id === id)!; return s.a1 - s.a0; };
+  const TAU = Math.PI * 2;
+  const top = ["cat:collection", "cat:spawn", "cat:pref"].map(ang);
+  expect(top.reduce((a, b) => a + b, 0)).toBeCloseTo(TAU - 0.2, 5);
+  expect(ang("cat:collection")).toBeCloseTo(0.1 * (TAU - 0.2), 5);
+  expect(ang("cat:spawn")).toBeCloseTo(0.1 * (TAU - 0.2), 5);
+  expect(ang("cat:pref")).toBeGreaterThan(0.5 * (TAU - 0.2));
+});
+
+it("does NOT apply the floor when drilled (band=false)", () => {
+  const opts = { cx: 0, cy: 0, innerR: 20, outerR: 100, bandR: 8, padAngle: 0, topMinFrac: 0.1, gapAngle: 0, band: false } as any;
+  const t: any = { id: "g", name: "任务", kind: "category", cat: "pref", value: 4, children: [
+    { id: "a", name: "a", kind: "pref", cat: "pref", value: 3 },
+    { id: "b", name: "b", kind: "pref", cat: "pref", value: 1 },
+  ]};
+  const segs = layoutSegments(t, opts);
+  const ang = (id: string) => { const s = segs.find((x) => x.id === id)!; return s.a1 - s.a0; };
+  expect(ang("a") / ang("b")).toBeCloseTo(3, 4);
+});
