@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base, Spawn
 from server.services import phase_service
+from tests.server.conftest import MockAdapter
 
 
 @pytest.fixture
@@ -78,15 +79,8 @@ async def test_followup_during_clarify_does_not_route(maker, monkeypatch):
 
     monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
 
-    captured = {}
-
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["Which ", "site?"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(stream_chunks=["Which ", "site?"], chat_content="Which site?")
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     # 4) Act: a clarify follow-up.
     events = []
@@ -100,7 +94,8 @@ async def test_followup_during_clarify_does_not_route(maker, monkeypatch):
     # speaks as Arslan, not a spawn
     assert all(e.get("source") != "spawn" for e in events if e["type"] == "stream_start")
     # the clarify addendum reached the system prompt (still gathering)
-    assert "clarifying questions" in captured["system"]
+    captured_system = (adapter.chat_stream_calls + adapter.chat_calls)[0]["system"]
+    assert "clarifying questions" in captured_system
 
 
 @pytest.mark.asyncio
@@ -120,12 +115,8 @@ async def test_b3_downgrade_pins_gathering_phase(maker, monkeypatch):
     monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _incomplete_slots)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            for piece in ["What ", "kind?"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(stream_chunks=["What ", "kind?"], chat_content="What kind?")
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     events = []
     await arslan.handle_user_message("main", "make me a spawn", _events(events))
@@ -188,11 +179,8 @@ async def test_clarify_phase_released_when_router_returns_answer(maker, monkeypa
 
     monkeypatch.setattr(arslan.router, "route", _fake_route)
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            yield "sure, here's a thought"
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(stream_chunks=["sure, here's a thought"], chat_content="sure, here's a thought")
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     events = []
     await arslan.handle_user_message("main", "actually, what's the weather like?", _events(events))
@@ -215,11 +203,8 @@ async def test_route_dispatches_after_clarify_released(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _route_answer)
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            yield "ok"
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(stream_chunks=["ok"], chat_content="ok")
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     await arslan.handle_user_message("main", "never mind", _events([]))
     assert await phase_service.get_pending("main") is None

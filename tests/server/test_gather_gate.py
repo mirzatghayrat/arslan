@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, Spawn
+from tests.server.conftest import MockAdapter
 
 
 @pytest.fixture
@@ -68,15 +69,8 @@ async def test_underspecified_create_downgrades_to_clarify(maker, monkeypatch):
     monkeypatch.setattr(arslan.staffing_gather, "extract_slots", _incomplete_slots)
     monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
 
-    captured = {}
-
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            captured["system"] = system
-            for piece in ["What ", "kind?"]:
-                yield piece
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(stream_chunks=["What ", "kind?"], chat_content="What kind?")
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     events = []
     await arslan.handle_user_message("main", "make me a spawn", _events(events))
@@ -86,8 +80,9 @@ async def test_underspecified_create_downgrades_to_clarify(maker, monkeypatch):
     assert "suggest_create" not in types
     # Instead it clarifies via the answer path
     assert "stream_start" in types and "stream_end" in types
-    assert "clarifying questions" in captured["system"]
-    assert "under-specified" in captured["system"]
+    captured_system = (adapter.chat_stream_calls + adapter.chat_calls)[0]["system"]
+    assert "clarifying questions" in captured_system
+    assert "under-specified" in captured_system
 
 
 @pytest.mark.asyncio
