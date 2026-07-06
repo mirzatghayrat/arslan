@@ -8,12 +8,14 @@ interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string
 const CX = 310, CY = 310;
 const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.012 };
 
-function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: string }, depth: number, focused: boolean): string {
+/** depth 1 = neutral thin top band; depth>=2 = the group's hue, brightening toward
+ * white the further out it sits (cd = colored-ring index). No mixing toward --surface. */
+function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: string }, depth: number): string {
+  if (depth <= 1) return "color-mix(in srgb, var(--muted-foreground) 22%, var(--surface))"; // faint band
   const key = node.fileType ? `ft:${node.fileType}` : (node.hueKey ?? node.cat);
-  const base = depth <= 1 ? "var(--muted-foreground)" : hueVar(key);   // ring1 顶类 stays neutral
-  const mix = depth <= 1 ? 60 : depth === 2 ? 92 : 74;
-  if (focused) return `color-mix(in srgb, color-mix(in srgb, ${base} ${mix}%, var(--surface)) 86%, var(--foreground))`;
-  return `color-mix(in srgb, ${base} ${mix}%, var(--surface))`;
+  const cd = depth - 2;                                  // 0 at innermost colored ring
+  const lighten = Math.min(12 + cd * 20, 68);            // % white, brighter outward
+  return `color-mix(in srgb, ${hueVar(key)} ${100 - lighten}%, white ${lighten}%)`;
 }
 
 /** Native mouseenter/mouseleave listeners (not React's synthetic onMouseEnter/Leave,
@@ -33,8 +35,8 @@ function SegmentPath({ s, focused, onFocus }: { s: Segment; focused: boolean; on
 
   return (
     <path ref={ref} data-node={s.id} data-focus={focused ? "1" : "0"} d={s.d}
-      style={{ fill: fillFor(s, s.depth, focused), stroke: focused ? "var(--foreground)" : "var(--background)",
-        strokeWidth: 1.6, strokeLinejoin: "round", cursor: "pointer", transition: "fill .12s, stroke .12s" }} />
+      style={{ fill: fillFor(s, s.depth), stroke: "var(--surface)", strokeWidth: 0.5,
+        strokeLinejoin: "round", cursor: "pointer", transition: "fill .12s, opacity .12s" }} />
   );
 }
 

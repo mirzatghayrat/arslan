@@ -47,4 +47,16 @@ describe("KnowledgeSunburst", () => {
     const src = container.querySelector('path[data-node="s1"]')!;
     expect((src as HTMLElement).style.fill).toContain("var(--hue-");
   });
+
+  it("brightens outward toward white (not toward surface) and has no dark stroke", () => {
+    const tree = { id:"root", name:"YOU", kind:"root", cat:"collection", value:6, children:[
+      { id:"cat:collection", name:"共享库", kind:"category", cat:"collection", value:6, children:[
+        { id:"coll:1", name:"A", kind:"collection", cat:"collection", hueKey:"A", value:6, children:[
+          { id:"s1", name:"条款.pdf", kind:"source", cat:"collection", fileType:"pdf", hueKey:"ft:pdf", value:6 }]}]}]} as any;
+    const { container } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={()=>{}} />);
+    const src = container.querySelector('path[data-node="s1"]') as HTMLElement;
+    expect(src.style.fill).toContain("white");
+    expect(src.style.fill).not.toContain("--surface");
+    expect(src.style.stroke || "").not.toContain("--foreground");
+  });
 });
