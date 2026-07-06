@@ -56,3 +56,14 @@ async def dedup() -> dict:
     from server.services import fact_dedup
 
     return {"deleted": await fact_dedup.dedup_facts()}
+
+
+@router.post("/facts/classify")
+async def classify() -> dict:
+    """Kick off a fire-and-forget backfill of category for all facts where it's
+    NULL. Single-flight (a second call while running is a no-op). Not wired into
+    any write path yet."""
+    from server.services import fact_classify
+
+    fact_classify.schedule(fact_classify.classify_missing())
+    return {"started": True, "status": fact_classify.classify_status()}
