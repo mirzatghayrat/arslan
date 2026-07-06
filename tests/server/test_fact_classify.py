@@ -105,3 +105,21 @@ def test_classify_missing_surfaces_provider_failure_not_mislabel(maker, monkeypa
         async with maker() as s:
             return (await s.execute(sa_text("SELECT label FROM user_facts"))).scalars().all()
     assert anyio.run(_check) == [None, None]
+
+
+def test_classify_ids_skips_on_outage_no_mislabel(maker, monkeypatch):
+    """Write-time honest-fail path: if the provider is down while classifying a
+    freshly-written fact, classify_ids must leave the row category/label NULL (for
+    boot backfill) rather than persisting a mislabel — and must never raise."""
+    from server.services import fact_classify
+    class _Boom:
+        async def chat(self, system, user, **kw): raise RuntimeError("provider down")
+    async def _fake(role=None): return _Boom()
+    monkeypatch.setattr(fact_classify, "build_adapter", _fake)
+    # id=2 starts category=NULL, label=NULL. A failed classify must not touch it.
+    anyio.run(lambda: fact_classify.classify_ids([2]))  # must not raise
+    async def _check():
+        async with maker() as s:
+            return (await s.execute(sa_text(
+                "SELECT category, label FROM user_facts WHERE id = 2"))).first()
+    assert anyio.run(_check) == (None, None)  # left NULL, nothing mislabeled
