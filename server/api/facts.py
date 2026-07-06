@@ -16,7 +16,7 @@ def _to_out(row) -> FactOut:  # noqa: ANN001
         content=row.content,
         source=row.source,
         sensitive=row.sensitive,
-        category=getattr(row, "category", None),
+        category=row.category,
     )
 
 
