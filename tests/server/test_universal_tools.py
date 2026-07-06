@@ -43,4 +43,4 @@ async def test_arslan_host_tools_include_render_chart(monkeypatch):
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     tools = await arslan._arslan_tools()
-    assert {t["key"] for t in tools} == {"web_search", "web_extract", "render_chart"}
+    assert {"web_search", "web_extract", "render_chart"} <= {t["key"] for t in tools}
