@@ -213,6 +213,13 @@ async def save_facts(facts: list[dict]) -> list[UserFact]:
         await db.commit()
         for row in created:
             await db.refresh(row)
+    try:
+        from server.services import fact_classify
+        ids = [r.id for r in created]
+        if ids:
+            fact_classify.schedule(fact_classify.classify_ids(ids))
+    except Exception:  # noqa: BLE001 — scheduling never blocks the write
+        pass
     return created
 
 
@@ -263,6 +270,11 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
         db.add(row)
         await db.commit()
         await db.refresh(row)
+        try:
+            from server.services import fact_classify
+            fact_classify.schedule(fact_classify.classify_ids([row.id]))
+        except Exception:  # noqa: BLE001 — scheduling never blocks the write
+            pass
         return row
 
 

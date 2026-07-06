@@ -3,8 +3,9 @@ classify_one → 其他 (never blocks a write, never raises). Backfill mirrors
 embed_missing: single-flight, best-effort, and honest — a real provider outage
 aborts (surfaced via _state['error']) instead of silently mass-labeling 其他.
 Fire-and-forget scheduling holds task refs so a bare create_task can't be GC'd
-mid-flight. classify_ids/schedule are staged for CL-T4 write-time wiring — not yet
-called from any write path."""
+mid-flight. classify_ids/schedule are wired into write paths (CL-T4): memory.py
+(save_facts/add_manual_fact), distill_service.py (distill_meta_upflow), and a
+non-blocking boot backfill in main.py's lifespan."""
 from __future__ import annotations
 
 import asyncio
@@ -63,10 +64,13 @@ async def classify_missing(batch_size: int = 32) -> int:
     _state.update(running=True, done=0, total=0, error=None)
     done = 0
     try:
-        adapter = await build_adapter(role="converse")  # built once, reused across the batch
         async with db_session.AsyncSessionLocal() as db:
-            _state["total"] = (await db.execute(sa_text(
+            total = (await db.execute(sa_text(
                 "SELECT COUNT(*) FROM user_facts WHERE category IS NULL"))).scalar_one()
+        _state["total"] = total
+        if total == 0:
+            return 0  # zero-cost on a fully-classified DB; don't even build an adapter
+        adapter = await build_adapter(role="converse")  # built once, reused across the batch
         while True:
             async with db_session.AsyncSessionLocal() as db:
                 rows = (await db.execute(sa_text(
@@ -97,8 +101,8 @@ def schedule(coro) -> None:
 
 
 async def classify_ids(ids: list[int]) -> None:
-    """Classify specific fact ids. Staged for CL-T4 write-time fire-and-forget —
-    not yet called from any write path. Best-effort."""
+    """Classify specific fact ids. Called fire-and-forget from write paths
+    (CL-T4) via schedule(). Best-effort."""
     for fid in ids:
         try:
             async with db_session.AsyncSessionLocal() as db:

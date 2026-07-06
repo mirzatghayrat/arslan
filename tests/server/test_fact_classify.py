@@ -66,6 +66,22 @@ def test_classify_missing_only_touches_null(maker, monkeypatch):
     assert anyio.run(_check) == ["身份背景", "沟通偏好"]
 
 
+def test_classify_missing_zero_pending_is_free_no_provider_needed(maker, monkeypatch):
+    """A fully-classified DB returns 0 without building an adapter or setting error."""
+    from server.services import fact_classify
+    def _boom(role=None):
+        raise AssertionError("build_adapter must NOT be called when 0 pending")
+    monkeypatch.setattr(fact_classify, "build_adapter", _boom)
+    async def _pre():
+        async with maker() as s:
+            await s.execute(sa_text("UPDATE user_facts SET category='身份背景'"))
+            await s.commit()
+    anyio.run(_pre)
+    done = anyio.run(lambda: fact_classify.classify_missing())
+    assert done == 0
+    assert fact_classify.classify_status()["error"] is None
+
+
 def test_classify_missing_surfaces_provider_failure_not_mislabel(maker, monkeypatch):
     """If the LLM provider is unusable, classify_missing must NOT mass-label 其他 —
     it aborts, sets _state['error'], and leaves rows NULL for retry."""

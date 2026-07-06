@@ -75,6 +75,10 @@ async def lifespan(app: FastAPI):
             delete(BuildSession).where(BuildSession.updated_at < cutoff)
         )
         await db.commit()
+
+    from server.services import fact_classify
+
+    fact_classify.schedule(fact_classify.classify_missing())
     yield
 
     from server.mcp.session import manager as _mcp_manager

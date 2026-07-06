@@ -78,7 +78,14 @@ async def distill_meta_upflow(db, spawn, new_facts: list[str]) -> str | None:
         # cheap dedup guard: skip if an existing fact contains / is contained by it
         if any(fact in e or e in fact for e in existing):
             return None
-        db.add(UserFact(content=fact, source="upflow"))
+        row = UserFact(content=fact, source="upflow")
+        db.add(row)
+        try:
+            await db.flush()  # assign row.id without committing (caller commits)
+            from server.services import fact_classify
+            fact_classify.schedule(fact_classify.classify_ids([row.id]))
+        except Exception:  # noqa: BLE001 — scheduling never blocks distillation
+            pass
         return fact
     except Exception as exc:  # noqa: BLE001
         logger.warning("distill_meta_upflow(spawn=%s) failed: %s", getattr(spawn, "id", "?"), exc)
