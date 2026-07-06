@@ -85,8 +85,6 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
                 onFocus={onFocus} onClick={hasKids ? () => setRootId(s.id) : undefined} />
             );
           })}
-          <circle cx={CX} cy={CY} r={62}
-            style={{ fill: "var(--surface)", stroke: "var(--hub)", strokeOpacity: 0.4, strokeWidth: 1.6 }} />
         </svg>
         <div data-orb-core="1"
           onClick={() => { if (crumbs.length > 1) setRootId(crumbs[crumbs.length - 2].id); }}

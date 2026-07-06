@@ -23,8 +23,8 @@ export default function BrainOrbCore({ size = 124 }: { size?: number }) {
     overflow: "hidden",
     position: "relative",
     pointerEvents: "none",
-    background: "radial-gradient(circle at 50% 42%, #23264e 0%, #0c0d1f 84%)",
-    boxShadow: "0 0 0 1px rgba(190,205,255,0.16), 0 10px 34px -10px rgba(90,120,255,0.5)",
+    background: "transparent",
+    boxShadow: "0 10px 34px -12px rgba(90,120,255,0.45)",
     animation: reduced ? "none" : "brain-orb-breathe 5.5s ease-in-out infinite",
   };
 
@@ -39,7 +39,7 @@ export default function BrainOrbCore({ size = 124 }: { size?: number }) {
         thickness={2.4}
         glow={1}
         glass
-        glassSize={0.92}
+        glassSize={1}
         style={{ width: "100%", height: "100%" }}
       />
     </div>
