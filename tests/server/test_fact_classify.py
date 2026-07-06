@@ -64,3 +64,22 @@ def test_classify_missing_only_touches_null(maker, monkeypatch):
         async with maker() as s:
             return (await s.execute(sa_text("SELECT category FROM user_facts ORDER BY id"))).scalars().all()
     assert anyio.run(_check) == ["身份背景", "沟通偏好"]
+
+
+def test_classify_missing_surfaces_provider_failure_not_mislabel(maker, monkeypatch):
+    """If the LLM provider is unusable, classify_missing must NOT mass-label 其他 —
+    it aborts, sets _state['error'], and leaves rows NULL for retry."""
+    from server.services import fact_classify
+    class _Broken:
+        async def chat(self, system, user, **kw):
+            raise RuntimeError("no api key")
+    async def _fake(role=None): return _Broken()
+    monkeypatch.setattr(fact_classify, "build_adapter", _fake)
+    done = anyio.run(lambda: fact_classify.classify_missing())
+    assert done == 0
+    assert fact_classify.classify_status()["error"]
+    async def _check():
+        async with maker() as s:
+            return (await s.execute(sa_text("SELECT category FROM user_facts"))).scalars().all()
+    # both rows still NULL — nothing was mislabeled 其他
+    assert anyio.run(_check) == [None, None]

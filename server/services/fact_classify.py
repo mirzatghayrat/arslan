@@ -1,7 +1,10 @@
 """Classify each preference into a FIXED semantic category via the LLM. Fail-open:
-any error → 其他 (never blocks a write, never raises). Backfill mirrors
-embed_missing: single-flight, best-effort. Fire-and-forget scheduling holds task
-refs so a bare create_task can't be GC'd mid-flight."""
+classify_one → 其他 (never blocks a write, never raises). Backfill mirrors
+embed_missing: single-flight, best-effort, and honest — a real provider outage
+aborts (surfaced via _state['error']) instead of silently mass-labeling 其他.
+Fire-and-forget scheduling holds task refs so a bare create_task can't be GC'd
+mid-flight. classify_ids/schedule are staged for CL-T4 write-time wiring — not yet
+called from any write path."""
 from __future__ import annotations
 
 import asyncio
@@ -28,16 +31,22 @@ def classify_status() -> dict:
     return dict(_state)
 
 
+async def _classify_with(adapter, content: str) -> str:  # noqa: ANN001
+    """Raw LLM call + enum match. NO try/except — raises on provider failure so
+    callers can distinguish a real outage from an illegal-but-answered reply."""
+    resp = await adapter.chat(system=_SYSTEM, user=content)
+    reply = (resp.content or "").strip()
+    for c in FACT_CATEGORIES:
+        if c in reply:
+            return c
+    return "其他"
+
+
 async def classify_one(content: str) -> str:
     """Return one of FACT_CATEGORIES. Fail-open → 其他 on any error / illegal reply."""
     try:
         adapter = await build_adapter(role="converse")
-        resp = await adapter.chat(system=_SYSTEM, user=content)
-        reply = (resp.content or "").strip()
-        for c in FACT_CATEGORIES:
-            if c in reply:
-                return c
-        return "其他"
+        return await _classify_with(adapter, content)
     except Exception as exc:  # noqa: BLE001 — classification is never fatal
         logger.warning("classify_one failed (non-fatal → 其他): %s", exc)
         return "其他"
@@ -45,12 +54,16 @@ async def classify_one(content: str) -> str:
 
 async def classify_missing(batch_size: int = 32) -> int:
     """Backfill category for facts where category IS NULL. Single-flight; COUNT
-    first so a no-NULL DB returns instantly. Best-effort."""
+    first so a no-NULL DB returns instantly. Builds ONE adapter up front and uses
+    the raising _classify_with, so a real provider failure aborts the backfill
+    (with _state['error'] set) and leaves remaining rows NULL for retry — instead
+    of silently mass-labeling everything 其他. Best-effort."""
     if _state["running"]:
         return 0
     _state.update(running=True, done=0, total=0, error=None)
     done = 0
     try:
+        adapter = await build_adapter(role="converse")  # built once, reused across the batch
         async with db_session.AsyncSessionLocal() as db:
             _state["total"] = (await db.execute(sa_text(
                 "SELECT COUNT(*) FROM user_facts WHERE category IS NULL"))).scalar_one()
@@ -62,14 +75,14 @@ async def classify_missing(batch_size: int = 32) -> int:
                 if not rows:
                     break
                 for rid, content in rows:
-                    cat = await classify_one(content)
+                    cat = await _classify_with(adapter, content)  # RAISES on provider failure
                     await db.execute(sa_text("UPDATE user_facts SET category = :c WHERE id = :id"),
                                      {"c": cat, "id": rid})
                 await db.commit()
                 done += len(rows)
                 _state["done"] = done
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("classify_missing failed (non-fatal): %s", exc)
+    except Exception as exc:  # noqa: BLE001 — backfill is non-fatal; surface via _state
+        logger.warning("classify_missing aborted (non-fatal): %s", exc)
         _state["error"] = str(exc)
     finally:
         _state["running"] = False
@@ -84,7 +97,8 @@ def schedule(coro) -> None:
 
 
 async def classify_ids(ids: list[int]) -> None:
-    """Classify specific fact ids (used by write-time fire-and-forget). Best-effort."""
+    """Classify specific fact ids. Staged for CL-T4 write-time fire-and-forget —
+    not yet called from any write path. Best-effort."""
     for fid in ids:
         try:
             async with db_session.AsyncSessionLocal() as db:
