@@ -13,6 +13,7 @@ import anyio
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 import server.db.session as db_session
 import server.orchestrator.arslan as arslan_mod
@@ -102,7 +103,12 @@ def app_client(tmp_path, monkeypatch):
 
     importlib.reload(config)
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'rc.db'}")
+    # NullPool: this fixture drives the same file DB from multiple event loops
+    # (anyio.run(_seed)/anyio.run(_do) each spin a throwaway loop, while the WS
+    # traffic runs on TestClient's portal loop). A pooled aiosqlite connection
+    # opened on one loop and reused on another hangs forever — NullPool opens a
+    # fresh connection per use and never reuses one across loops.
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'rc.db'}", poolclass=NullPool)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _seed():
