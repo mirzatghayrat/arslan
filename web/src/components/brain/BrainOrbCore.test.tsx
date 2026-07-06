@@ -1,9 +1,5 @@
-import { fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../backgrounds/Orb", () => ({ default: () => <div data-testid="live-orb" /> }));
-let mode = "dark";
-vi.mock("../../stores/themeStore", () => ({ useThemeStore: (sel: any) => sel({ mode }) }));
+import { render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import BrainOrbCore from "./BrainOrbCore";
 
@@ -24,39 +20,27 @@ function setReduced(v: boolean) {
   });
 }
 
-afterEach(() => {
-  mode = "dark";
-});
-
 describe("BrainOrbCore", () => {
-  it("dark mode plays the dark video (no live WebGL)", () => {
+  it("renders the CSS glow orb, animated by default", () => {
     setReduced(false);
-    mode = "dark";
-    const { container, queryByTestId } = render(<BrainOrbCore />);
-    expect(container.querySelector("video")!.getAttribute("src")).toBe("/orb-dark.mp4");
-    expect(queryByTestId("live-orb")).toBeNull();
-  });
-
-  it("light mode plays the light video", () => {
-    setReduced(false);
-    mode = "light";
     const { container } = render(<BrainOrbCore />);
-    expect(container.querySelector("video")!.getAttribute("src")).toBe("/orb-light.mp4");
+    const orb = container.querySelector(".brain-orb");
+    expect(orb).not.toBeNull();
+    expect(orb!.getAttribute("data-static")).toBe("0");
+    expect(container.querySelectorAll(".brain-orb__blob").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("reduced-motion renders a static core (no video, no live orb)", () => {
+  it("freezes to a static orb under reduced-motion", () => {
     setReduced(true);
-    const { container, queryByTestId } = render(<BrainOrbCore />);
-    expect(container.querySelector("video")).toBeNull();
-    expect(queryByTestId("live-orb")).toBeNull();
-    expect(container.querySelector('[data-static-core="1"]')).not.toBeNull();
+    const { container } = render(<BrainOrbCore />);
+    expect(container.querySelector(".brain-orb")!.getAttribute("data-static")).toBe("1");
   });
 
-  it("falls back to the live orb when the video errors", () => {
+  it("respects the size prop", () => {
     setReduced(false);
-    mode = "dark";
-    const { container, getByTestId } = render(<BrainOrbCore />);
-    fireEvent.error(container.querySelector("video")!);
-    expect(getByTestId("live-orb")).not.toBeNull();
+    const { container } = render(<BrainOrbCore size={200} />);
+    const orb = container.querySelector(".brain-orb") as HTMLElement;
+    expect(orb.style.width).toBe("200px");
+    expect(orb.style.height).toBe("200px");
   });
 });
