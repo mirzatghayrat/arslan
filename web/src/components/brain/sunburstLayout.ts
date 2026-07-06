@@ -11,8 +11,9 @@ export interface LayoutOpts {
   cx: number; cy: number;
   innerR: number;   // inner hole radius
   outerR: number;   // outer boundary
-  bandR: number;    // thin depth-1 top-category band width
+  bandR: number;    // thin depth-1 top-category band width (root view only)
   padAngle: number; // angular gap between sibling segments (removes hard seams)
+  band?: boolean;   // draw the thin depth-1 band (true at true root; false when drilled)
 }
 
 export function arcPath(cx: number, cy: number, ri: number, ro: number, a0: number, a1: number): string {
@@ -33,9 +34,17 @@ export function maxDepthOf(tree: TreeNode): number {
   return max;
 }
 
-/** Ring [ri,ro] for a given depth. depth 1 = thin top-category band; depth>=2 =
- * equal-width colored rings splitting the remaining radius across depths 2..maxDepth. */
+/** Ring [ri,ro] for a given depth. Root view (band): depth 1 = thin top-category
+ * band, depth>=2 = equal-width colored rings over depths 2..maxDepth. Drilled view
+ * (no band): depth 1..maxDepth are equal-width colored rings filling the full radius
+ * — so drilling into a group whose children are leaves still fills the disk. */
 function ringFor(depth: number, maxDepth: number, o: LayoutOpts): [number, number] {
+  if (o.band === false) {
+    const colorRings = Math.max(1, maxDepth);            // depths 1..maxDepth
+    const w = (o.outerR - o.innerR) / colorRings;
+    const ri = o.innerR + (depth - 1) * w;
+    return [ri, ri + w];
+  }
   const bandOuter = o.innerR + o.bandR;
   if (depth <= 1) return [o.innerR, bandOuter];
   const colorRings = Math.max(1, maxDepth - 1);          // depths 2..maxDepth

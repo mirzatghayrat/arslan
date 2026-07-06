@@ -20,12 +20,13 @@ function pathTo(n: TreeNode, id: string, acc: TreeNode[] = []): TreeNode[] | nul
   return null;
 }
 
-/** depth 1 = neutral thin top band; depth>=2 = the group's hue, brightening toward
- * white the further out it sits (cd = colored-ring index). No mixing toward --surface. */
-function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: string }, depth: number): string {
-  if (depth <= 1) return "color-mix(in srgb, var(--muted-foreground) 22%, var(--surface))"; // faint band
+/** Root view: depth 1 = neutral thin top band, depth>=2 = the group's hue brightening
+ * toward white outward. Drilled view (atRoot=false): color from depth 1, since there's
+ * no top-category band to delineate. cd = colored-ring index (0 = innermost colored). */
+function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: string }, depth: number, atRoot: boolean): string {
+  if (atRoot && depth <= 1) return "color-mix(in srgb, var(--muted-foreground) 22%, var(--surface))"; // faint band
   const key = node.fileType ? `ft:${node.fileType}` : (node.hueKey ?? node.cat);
-  const cd = depth - 2;                                  // 0 at innermost colored ring
+  const cd = atRoot ? depth - 2 : depth - 1;             // 0 at innermost colored ring
   const lighten = Math.min(12 + cd * 20, 68);            // % white, brighter outward
   return `color-mix(in srgb, ${hueVar(key)} ${100 - lighten}%, white ${lighten}%)`;
 }
@@ -33,7 +34,7 @@ function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: 
 /** Native mouseenter/mouseleave listeners (not React's synthetic onMouseEnter/Leave,
  * which are backed by bubbling mouseover/mouseout and never fire for a real, non-bubbling
  * mouseenter/mouseleave pair) so hover-to-focus reacts to genuine pointer transitions. */
-function SegmentPath({ s, dim, onFocus, onClick }: { s: Segment; dim: boolean; onFocus: (id: string | null) => void; onClick?: () => void }) {
+function SegmentPath({ s, dim, atRoot, onFocus, onClick }: { s: Segment; dim: boolean; atRoot: boolean; onFocus: (id: string | null) => void; onClick?: () => void }) {
   const ref = useRef<SVGPathElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -47,7 +48,7 @@ function SegmentPath({ s, dim, onFocus, onClick }: { s: Segment; dim: boolean; o
 
   return (
     <path ref={ref} data-node={s.id} data-dim={dim ? "1" : "0"} d={s.d} onClick={onClick}
-      style={{ fill: fillFor(s, s.depth), stroke: "white", strokeOpacity: 0.85, strokeWidth: 1.25,
+      style={{ fill: fillFor(s, s.depth, atRoot), stroke: "white", strokeOpacity: 0.85, strokeWidth: 1.25,
         strokeLinejoin: "round", cursor: "pointer", opacity: dim ? 0.22 : 1,
         transition: "opacity .14s, fill .12s" }}>
       <title>{s.full ?? s.name}</title>
@@ -58,8 +59,9 @@ function SegmentPath({ s, dim, onFocus, onClick }: { s: Segment; dim: boolean; o
 export default function KnowledgeSunburst({ tree, focusedId, onFocus, className }: Props) {
   const [rootId, setRootId] = useState("root");
   const viewRoot = useMemo(() => findNode(tree, rootId) ?? tree, [tree, rootId]);
+  const atRoot = viewRoot.id === "root";
   const crumbs = useMemo(() => pathTo(tree, viewRoot.id) ?? [tree], [tree, viewRoot.id]);
-  const segs = useMemo(() => layoutSegments(viewRoot, LAYOUT), [viewRoot]);
+  const segs = useMemo(() => layoutSegments(viewRoot, { ...LAYOUT, band: atRoot }), [viewRoot, atRoot]);
   const fam = useMemo(() => familyIds(viewRoot, focusedId), [viewRoot, focusedId]);
   const items = useMemo(() => leafCount(viewRoot), [viewRoot]);
 
@@ -79,7 +81,7 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
           {segs.map((s) => {
             const hasKids = (findNode(viewRoot, s.id)?.children?.length ?? 0) > 0;
             return (
-              <SegmentPath key={s.id} s={s} dim={focusedId != null && !fam.has(s.id)}
+              <SegmentPath key={s.id} s={s} dim={focusedId != null && !fam.has(s.id)} atRoot={atRoot}
                 onFocus={onFocus} onClick={hasKids ? () => setRootId(s.id) : undefined} />
             );
           })}
