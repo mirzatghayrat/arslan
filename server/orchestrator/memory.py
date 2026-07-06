@@ -175,15 +175,32 @@ async def _summarize(adapter, text: str) -> str:  # noqa: ANN001
 # ---- Scope 3: long-term facts ----
 
 async def save_facts(facts: list[dict]) -> list[UserFact]:
-    """Persist auto-extracted facts; return the created rows."""
+    """Persist auto-extracted facts; return the created rows.
+
+    Write-time dedup (exact-normalized) skips facts that already exist, within
+    the batch and against the existing store. Fail-open: any failure computing
+    the existing-norm set is swallowed and treated as empty (i.e. dedup is
+    skipped, not the write) — a user's fact must always get saved.
+    """
     created: list[UserFact] = []
     if not facts:
         return created
+
+    from server.services.fact_dedup import norm
+
+    seen = await existing_norms_safe()
+
     async with db_session.AsyncSessionLocal() as db:
         for f in facts:
             content = (f.get("content") or "").strip()
             if not content:
                 continue
+            try:
+                key = norm(content)
+                if key in seen:
+                    continue
+            except Exception:  # noqa: BLE001 - fail-open: never skip a legit write on error
+                key = None
             row = UserFact(
                 content=content,
                 source=f.get("source", "auto"),
@@ -191,10 +208,23 @@ async def save_facts(facts: list[dict]) -> list[UserFact]:
             )
             db.add(row)
             created.append(row)
+            if key is not None:
+                seen.add(key)
         await db.commit()
         for row in created:
             await db.refresh(row)
     return created
+
+
+async def existing_norms_safe() -> set[str]:
+    """Fail-open wrapper: returns existing_norms(), or empty set on any failure."""
+    try:
+        from server.services.fact_dedup import existing_norms
+
+        return await existing_norms()
+    except Exception:  # noqa: BLE001 - dedup must never block writes
+        logger.warning("existing_norms failed; treating as empty (fail-open)", exc_info=True)
+        return set()
 
 
 async def list_facts() -> list[UserFact]:
@@ -204,10 +234,30 @@ async def list_facts() -> list[UserFact]:
 
 
 async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
-    """Add a user-authored fact (source='manual')."""
+    """Add a user-authored fact (source='manual').
+
+    Write-time dedup (exact-normalized): if a fact with the same normalized
+    content already exists, return that existing row instead of inserting a
+    duplicate. Fail-open: any exception in the dedup check is swallowed and
+    falls through to a normal insert — a user's fact must always get saved.
+    """
     text = content.strip()
     if not text:
         raise ValueError("Fact content cannot be empty")
+
+    try:
+        from server.services.fact_dedup import norm
+
+        target = norm(text)
+        if target in await existing_norms_safe():
+            async with db_session.AsyncSessionLocal() as db:
+                rows = await db.execute(select(UserFact).order_by(UserFact.id))
+                for row in rows.scalars().all():
+                    if norm(row.content) == target:
+                        return row
+    except Exception:  # noqa: BLE001 - fail-open: dedup must never block the write
+        logger.warning("add_manual_fact: dedup check failed; proceeding with insert", exc_info=True)
+
     async with db_session.AsyncSessionLocal() as db:
         row = UserFact(content=text, source="manual", sensitive=bool(sensitive))
         db.add(row)

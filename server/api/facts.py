@@ -47,3 +47,12 @@ async def remove_fact(fact_id: int) -> Response:
     if not await memory.delete_fact(fact_id):
         raise HTTPException(status_code=404, detail="Fact not found")
     return Response(status_code=204)
+
+
+@router.post("/facts/dedup")
+async def dedup() -> dict:
+    """Explicit, destructive exact-normalized dedup backfill. Only reachable here —
+    never called on boot, on the write path, or from a timer."""
+    from server.services import fact_dedup
+
+    return {"deleted": await fact_dedup.dedup_facts()}
