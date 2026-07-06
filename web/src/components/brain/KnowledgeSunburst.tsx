@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { familyIds, layoutSegments, type Segment } from "./sunburstLayout";
 import { hueVar } from "./hues";
+import BrainOrbCore from "./BrainOrbCore";
 
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
@@ -63,7 +64,6 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
   const crumbs = useMemo(() => pathTo(tree, viewRoot.id) ?? [tree], [tree, viewRoot.id]);
   const segs = useMemo(() => layoutSegments(viewRoot, { ...LAYOUT, band: atRoot }), [viewRoot, atRoot]);
   const fam = useMemo(() => familyIds(viewRoot, focusedId), [viewRoot, focusedId]);
-  const items = useMemo(() => leafCount(viewRoot), [viewRoot]);
 
   return (
     <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
@@ -86,19 +86,15 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
             );
           })}
           <circle cx={CX} cy={CY} r={62}
-            onClick={() => { if (crumbs.length > 1) setRootId(crumbs[crumbs.length - 2].id); }}
-            style={{ fill: "var(--surface)", stroke: "var(--hub)", strokeOpacity: 0.4, strokeWidth: 1.6, cursor: "pointer" }} />
+            style={{ fill: "var(--surface)", stroke: "var(--hub)", strokeOpacity: 0.4, strokeWidth: 1.6 }} />
         </svg>
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none", textAlign: "center" }}>
-          <div style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)", fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--muted-foreground)", marginBottom: 7 }}>整个第二大脑</div>
-          <div style={{ fontSize: 34, fontWeight: 600, color: "var(--foreground)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{viewRoot.value}<span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted-foreground)", marginLeft: 5 }}>块</span></div>
-          <div style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted-foreground)", marginTop: 8 }}>{items} 项 · {(viewRoot.children ?? []).length} 分类</div>
+        <div data-orb-core="1"
+          onClick={() => { if (crumbs.length > 1) setRootId(crumbs[crumbs.length - 2].id); }}
+          style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <BrainOrbCore size={124} />
         </div>
       </div>
     </div>
   );
-}
-
-function leafCount(n: TreeNode): number {
-  return n.children && n.children.length ? n.children.reduce((s, c) => s + leafCount(c), 0) : 1;
 }

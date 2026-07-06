@@ -15,11 +15,11 @@ const tree: TreeNode = {
 };
 
 describe("KnowledgeSunburst", () => {
-  it("renders one <path> per node and a static center total", () => {
-    const { container, getByText } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={() => {}} />);
+  it("renders one <path> per node and the center orb core", () => {
+    const { container } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={() => {}} />);
     const paths = container.querySelectorAll("path[data-node]");
     expect(paths.length).toBe(3);
-    expect(getByText("12")).toBeInTheDocument();
+    expect(container.querySelector('[data-orb-core="1"]')).not.toBeNull();
   });
 
   it("calls onFocus with node id on hover and null on leave", () => {
@@ -88,5 +88,20 @@ describe("KnowledgeSunburst", () => {
     expect(container.querySelector('path[data-node="pref:1"]')).not.toBeNull(); // in view
     fireEvent.click(container.querySelector('[data-breadcrumb="root"]') as HTMLElement);
     expect(container.querySelector('path[data-node="pref:2"]')).not.toBeNull(); // back
+  });
+
+  it("has no center stats text and the center core drills up", () => {
+    const tree = { id:"root", name:"YOU", kind:"root", cat:"collection", value:2, children:[
+      { id:"cat:pref", name:"偏好", kind:"category", cat:"pref", value:2, children:[
+        { id:"g1", name:"任务需求", kind:"category", cat:"pref", hueKey:"任务需求", value:1, children:[
+          { id:"pref:1", name:"A", kind:"pref", cat:"pref", value:1 }]},
+        { id:"g2", name:"沟通偏好", kind:"category", cat:"pref", hueKey:"沟通偏好", value:1, children:[
+          { id:"pref:2", name:"B", kind:"pref", cat:"pref", value:1 }]}]}]} as any;
+    const { container, queryByText } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={()=>{}} />);
+    expect(queryByText("整个第二大脑")).toBeNull();
+    fireEvent.click(container.querySelector('path[data-node="g1"]') as HTMLElement);
+    expect(container.querySelector('path[data-node="pref:2"]')).toBeNull();
+    fireEvent.click(container.querySelector('[data-orb-core="1"]') as HTMLElement);
+    expect(container.querySelector('path[data-node="pref:2"]')).not.toBeNull();
   });
 });
