@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api } from "../../api/client";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
+import { hueVar } from "./hues";
 
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; onChanged: () => void; }
 
@@ -15,6 +16,8 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setExpanded((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const ql = q.trim().toLowerCase();
   const cats = useMemo(() => (tree.children ?? []).filter((c) => matches(c, ql)), [tree, ql]);
 
@@ -34,15 +37,25 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
   const Row = ({ n, depth }: { n: TreeNode; depth: number }) => {
     if (!matches(n, ql)) return null;
     const on = focusedId === n.id;
+    const hasChildren = (n.children ?? []).length > 0;
+    const open = expanded.has(n.id) || (ql !== "" && (n.children ?? []).some((c) => matches(c, ql)));
+    const isGroup = n.kind === "category" || n.kind === "collection";
     return (
       <>
         <div onMouseEnter={() => onFocus(n.id)} onMouseLeave={() => onFocus(null)}
+          onClick={() => { if (hasChildren) toggle(n.id); }}
           className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13.5px] cursor-default border ${on ? "bg-foreground/[0.05] border-border" : "border-transparent hover:bg-foreground/[0.03]"}`}
           style={{ marginLeft: depth * 12 }}>
+          {hasChildren ? (
+            <span className="flex-none w-3 text-center text-subtle-foreground text-[11px]">{open ? "▾" : "▸"}</span>
+          ) : (
+            <span className="flex-none w-3" />
+          )}
+          {isGroup && <span style={{ background: hueVar(n.hueKey ?? n.name), width: 9, height: 9, borderRadius: 2, flex: "none" }} />}
           <span className="flex-1 truncate text-foreground">{n.name}</span>
           <span className="font-mono text-[11px] text-subtle-foreground tabular-nums">{n.value}</span>
         </div>
-        {(n.children ?? []).map((c) => <Row key={c.id} n={c} depth={depth + 1} />)}
+        {open && (n.children ?? []).map((c) => <Row key={c.id} n={c} depth={depth + 1} />)}
       </>
     );
   };

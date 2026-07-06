@@ -30,4 +30,18 @@ describe("KnowledgeNav", () => {
     expect(screen.getByText("条款.pdf")).toBeInTheDocument();
     expect(screen.queryByText("偏好")).not.toBeInTheDocument();
   });
+
+  it("collapses deep nodes and expands on click", () => {
+    render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    // a source nested under a collection group is hidden until the group is expanded
+    expect(screen.queryByText("条款.pdf")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("保险资料"));
+    expect(screen.getByText("条款.pdf")).toBeInTheDocument();
+  });
+
+  it("auto-expands the path to a search hit", () => {
+    render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "条款" } });
+    expect(screen.getByText("条款.pdf")).toBeInTheDocument();
+  });
 });
