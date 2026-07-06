@@ -123,14 +123,10 @@ async def test_handle_answer_llm_error_emits_error_frame(db, monkeypatch):
     monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
 
     from server.orchestrator import tool_loop
+    from tests.server.conftest import MockAdapter
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            raise TimeoutError("read timeout")
-            # unreachable but makes this an async generator
-            yield  # noqa: unreachable
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: MockAdapter(raise_on_call=TimeoutError("read timeout")))
 
     events, emit = _collect()
     await arslan.handle_user_message("test-conv", "hi", emit)
@@ -158,13 +154,10 @@ async def test_normal_answer_still_works_after_error_guard(db, monkeypatch):
     monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
 
     from server.orchestrator import tool_loop
+    from tests.server.conftest import MockAdapter
 
-    class _A:
-        async def chat_stream(self, system, user, history=None):
-            for chunk in ["Hello ", "world"]:
-                yield chunk
-
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    monkeypatch.setattr(tool_loop, "_get_adapter",
+                        lambda: MockAdapter(chat_content="Hello world", stream_chunks=["Hello ", "world"]))
 
     events, emit = _collect()
     await arslan.handle_user_message("test-conv", "hi", emit)
@@ -172,7 +165,11 @@ async def test_normal_answer_still_works_after_error_guard(db, monkeypatch):
     types = [e["type"] for e in events]
     assert "stream_start" in types
     assert "stream_end" in types
-    assert any(e["type"] == "stream_chunk" and "Hello" in e.get("content", "") for e in events)
+    # run_native answers via adapter.chat() (not chat_stream()) then reveals the
+    # final content incrementally via on_chunk, so assert on the joined stream
+    # rather than any single chunk.
+    streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
+    assert "Hello" in streamed
     assert not any(e["type"] == "error" for e in events)
 
 
