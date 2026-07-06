@@ -27,11 +27,15 @@ from server.db.models import Base
 # --------------------------------------------------------------------------- #
 
 class _ToolThenAnswerAdapter:
-    """execute-role adapter for tool_loop: on the FIRST chat_stream turn yields a
-    run_command tool-call JSON; on every subsequent turn yields a plain final answer
-    (so the loop terminates after the tool result comes back)."""
+    """execute-role adapter for tool_loop: on the FIRST turn returns a run_command tool
+    call; on every subsequent turn returns a plain final answer (so the loop terminates
+    after the tool result comes back). Implements BOTH the legacy text-protocol
+    `chat_stream` and the native tool-calling `chat` (run_native's actual entry point),
+    since run_native drives `a.chat(..., tools=...)` and inspects `LLMResponse.tool_calls`."""
 
     def __init__(self, command: str, argv: list[str], answer: str = "done"):
+        self._command = command
+        self._argv = argv
         self._tool_json = (
             '{"tool": "run_command", "args": {"command": "%s", "argv": %s}}'
             % (command, _json_argv(argv))
@@ -39,12 +43,31 @@ class _ToolThenAnswerAdapter:
         self._answer = answer
         self._turn = 0
 
-    async def chat_stream(self, system, user, history=None):  # noqa: ANN001
+    async def chat_stream(self, system, user, history=None, tools=None,  # noqa: ANN001
+                          temperature=0.7):
         self._turn += 1
         if self._turn == 1:
             yield self._tool_json
         else:
             yield self._answer
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):  # noqa: ANN001
+        from arslan.models import LLMResponse
+
+        if not getattr(self, "_did_tool", False):
+            self._did_tool = True
+            return LLMResponse(
+                content=None,
+                tool_calls=[{
+                    "id": "c1",
+                    "function": {
+                        "name": "run_command",
+                        "arguments": {"command": self._command, "argv": self._argv},
+                    },
+                }],
+                usage={},
+            )
+        return LLMResponse(content=self._answer, tool_calls=[], usage={})
 
 
 def _json_argv(argv: list[str]) -> str:
