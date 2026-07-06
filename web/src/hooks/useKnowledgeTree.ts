@@ -11,12 +11,41 @@ export interface TreeNode {
   cat: Cat;
   value: number;
   children?: TreeNode[];
+  /** Set on source leaves: coarse file-type bucket derived from the source name. */
+  fileType?: string;
+  /** Grouping key used to drive sunburst/nav color (category name, domain, collection, etc). */
+  hueKey?: string;
 }
 
 function sum(n: TreeNode): number {
   if (!n.children || n.children.length === 0) return n.value;
   n.value = n.children.reduce((s, c) => s + sum(c), 0);
   return n.value;
+}
+
+/** Coarse file-type bucket for a source name/URL, used to color source leaves. */
+export function fileTypeOf(name: string): string {
+  const n = name.toLowerCase();
+  if (/^https?:\/\//.test(n)) return "url";
+  if (/\.(pdf)$/.test(n)) return "pdf";
+  if (/\.(docx?|rtf)$/.test(n)) return "doc";
+  if (/\.(txt|md|markdown)$/.test(n)) return "text";
+  if (/\.(png|jpe?g|gif|webp|bmp)$/.test(n)) return "image";
+  return "other";
+}
+
+/** Group items into stable-order buckets keyed by a derived key, falling back
+ * to "其他" when the key is missing/empty. Preserves first-appearance order. */
+function groupBy<T>(items: T[], keyOf: (item: T) => string | null | undefined): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const raw = keyOf(item);
+    const key = raw && raw.trim() ? raw : "其他";
+    const list = groups.get(key);
+    if (list) list.push(item);
+    else groups.set(key, [item]);
+  }
+  return groups;
 }
 
 /** Assemble the whole second-brain as one hierarchical tree — the single data
@@ -42,19 +71,36 @@ export function useKnowledgeTree() {
       ]);
 
       const collChildren: TreeNode[] = collections.map((c, i): TreeNode => ({
-        id: `coll:${c.id}`, name: c.name, kind: "collection", cat: "collection", value: 0,
+        id: `coll:${c.id}`, name: c.name, kind: "collection", cat: "collection", value: 0, hueKey: c.name,
         children: collKbs[i].map((s): TreeNode => ({
           id: `src:coll:${c.id}:${s.source}`, name: s.source, kind: "source", cat: "collection", value: s.chunks,
+          fileType: fileTypeOf(s.source), hueKey: `ft:${fileTypeOf(s.source)}`,
         })),
       }));
-      const spawnChildren: TreeNode[] = spawns.map((s, i): TreeNode => ({
-        id: `spawn:${s.id}`, name: s.name, kind: "spawn", cat: "spawn", value: 0,
-        children: spawnKbs[i].map((k): TreeNode => ({
-          id: `src:spawn:${s.id}:${k.source}`, name: k.source, kind: "source", cat: "spawn", value: k.chunks,
+
+      // Spawns: group top-level by domain (first segment before "."), fallback "其他".
+      const spawnDomainGroups = groupBy(
+        spawns.map((s, i) => ({ s, i })),
+        ({ s }) => s.domain?.split(".")[0],
+      );
+      const spawnChildren: TreeNode[] = Array.from(spawnDomainGroups.entries()).map(([domain, entries]): TreeNode => ({
+        id: `dom:${domain}`, name: domain, kind: "category", cat: "spawn", value: 0, hueKey: domain,
+        children: entries.map(({ s, i }): TreeNode => ({
+          id: `spawn:${s.id}`, name: s.name, kind: "spawn", cat: "spawn", value: 0, hueKey: s.name,
+          children: spawnKbs[i].map((k): TreeNode => ({
+            id: `src:spawn:${s.id}:${k.source}`, name: k.source, kind: "source", cat: "spawn", value: k.chunks,
+            fileType: fileTypeOf(k.source), hueKey: `ft:${fileTypeOf(k.source)}`,
+          })),
         })),
       }));
-      const prefChildren: TreeNode[] = facts.map((f): TreeNode => ({
-        id: `pref:${f.id}`, name: f.content, kind: "pref", cat: "pref", value: 1,
+
+      // Prefs: group top-level by category label, fallback "其他".
+      const prefCategoryGroups = groupBy(facts, (f) => f.category);
+      const prefChildren: TreeNode[] = Array.from(prefCategoryGroups.entries()).map(([category, groupFacts]): TreeNode => ({
+        id: `pref-grp:${category}`, name: category, kind: "category", cat: "pref", value: 0, hueKey: category,
+        children: groupFacts.map((f): TreeNode => ({
+          id: `pref:${f.id}`, name: f.content, kind: "pref", cat: "pref", value: 1,
+        })),
       }));
 
       const root: TreeNode = {

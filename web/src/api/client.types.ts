@@ -167,6 +167,7 @@ export interface UserFact {
   content: string;
   source: "auto" | "manual";
   sensitive: boolean;
+  category?: string | null;
 }
 
 export interface SuggestDraft {
