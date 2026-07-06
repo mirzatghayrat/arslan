@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { TreeNode, Cat } from "../../hooks/useKnowledgeTree";
+import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { familyIds, layoutSegments, type Segment } from "./sunburstLayout";
+import { hueVar } from "./hues";
 
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
-const TOKEN: Record<Cat, string> = { collection: "--success", spawn: "--primary", pref: "--danger" };
-const SRC = "--info";
 const RINGS: (null | [number, number])[] = [null, [70, 150], [156, 224], [230, 296]];
 const CX = 310, CY = 310;
 
-function fillFor(cat: Cat, kind: string, depth: number, focused: boolean): string {
-  const tok = kind === "source" ? SRC : TOKEN[cat];
-  const mix = depth <= 1 ? 100 : depth === 2 ? 82 : 66;
-  if (focused) return `color-mix(in srgb, color-mix(in srgb, var(${tok}) ${mix}%, var(--surface)) 86%, var(--foreground))`;
-  return `color-mix(in srgb, var(${tok}) ${mix}%, var(--surface))`;
+function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: string }, depth: number, focused: boolean): string {
+  const key = node.fileType ? `ft:${node.fileType}` : (node.hueKey ?? node.cat);
+  const base = depth <= 1 ? "var(--muted-foreground)" : hueVar(key);   // ring1 顶类 stays neutral
+  const mix = depth <= 1 ? 60 : depth === 2 ? 92 : 74;
+  if (focused) return `color-mix(in srgb, color-mix(in srgb, ${base} ${mix}%, var(--surface)) 86%, var(--foreground))`;
+  return `color-mix(in srgb, ${base} ${mix}%, var(--surface))`;
 }
 
 /** Native mouseenter/mouseleave listeners (not React's synthetic onMouseEnter/Leave,
@@ -33,7 +33,7 @@ function SegmentPath({ s, focused, onFocus }: { s: Segment; focused: boolean; on
 
   return (
     <path ref={ref} data-node={s.id} data-focus={focused ? "1" : "0"} d={s.d}
-      style={{ fill: fillFor(s.cat, s.kind, s.depth, focused), stroke: focused ? "var(--foreground)" : "var(--background)",
+      style={{ fill: fillFor(s, s.depth, focused), stroke: focused ? "var(--foreground)" : "var(--background)",
         strokeWidth: 1.6, strokeLinejoin: "round", cursor: "pointer", transition: "fill .12s, stroke .12s" }} />
   );
 }

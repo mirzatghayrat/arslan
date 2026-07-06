@@ -5,6 +5,7 @@ const TAU = Math.PI * 2;
 export interface Segment {
   id: string; name: string; cat: TreeNode["cat"]; kind: TreeNode["kind"];
   depth: number; a0: number; a1: number; d: string; value: number;
+  hueKey?: string; fileType?: string;
 }
 export interface LayoutOpts { cx: number; cy: number; rings: (null | [number, number])[]; }
 
@@ -24,7 +25,8 @@ export function layoutSegments(tree: TreeNode, opts: LayoutOpts): Segment[] {
     if (depth >= 1 && depth <= 3) {
       const rr = rings[depth]!;
       out.push({ id: node.id, name: node.name, cat: node.cat, kind: node.kind, depth, a0, a1,
-        d: arcPath(opts.cx, opts.cy, rr[0], rr[1], a0, a1), value: node.value });
+        d: arcPath(opts.cx, opts.cy, rr[0], rr[1], a0, a1), value: node.value,
+        hueKey: node.hueKey, fileType: node.fileType });
     }
     if (node.children && node.children.length) {
       const pad = depth === 0 ? 0.05 : 0.006;
