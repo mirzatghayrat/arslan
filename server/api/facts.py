@@ -17,6 +17,7 @@ def _to_out(row) -> FactOut:  # noqa: ANN001
         source=row.source,
         sensitive=row.sensitive,
         category=row.category,
+        label=row.label,
     )
 
 

@@ -147,6 +147,7 @@ class UserFact(Base):
     source = Column(String(20), default="auto")  # "auto" | "manual"
     sensitive = Column(Boolean, default=False)
     category = Column(String(30), nullable=True)
+    label = Column(String(40), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
