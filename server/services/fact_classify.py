@@ -45,6 +45,15 @@ def classify_status() -> dict:
     return dict(_state)
 
 
+_LABEL_NULL = "label IS NULL"  # backfill/write-time judge: a fact still needs (re)labeling
+
+
+def _fallback_label(label: str | None, content: str) -> str:
+    """Guarantee a non-NULL label so a just-labeled row won't be re-picked by backfill:
+    the LLM's short label, else the (codepoint-safe) truncated content."""
+    return label or (content or "")[:40]
+
+
 def _parse(reply: str) -> tuple[str, str | None]:
     """Parse the LLM reply into (category, label). Fail-open: bad/illegal → (其他, None)
     for category; JSON preferred, substring category match as fallback when no JSON."""
@@ -98,7 +107,7 @@ async def classify_missing(batch_size: int = 32) -> int:
     try:
         async with db_session.AsyncSessionLocal() as db:
             total = (await db.execute(sa_text(
-                "SELECT COUNT(*) FROM user_facts WHERE label IS NULL"))).scalar_one()
+                f"SELECT COUNT(*) FROM user_facts WHERE {_LABEL_NULL}"))).scalar_one()
         _state["total"] = total
         if total == 0:
             return 0  # zero-cost on a fully-labeled DB; don't even build an adapter
@@ -106,7 +115,7 @@ async def classify_missing(batch_size: int = 32) -> int:
         while True:
             async with db_session.AsyncSessionLocal() as db:
                 rows = (await db.execute(sa_text(
-                    "SELECT id, content FROM user_facts WHERE label IS NULL LIMIT :n"),
+                    f"SELECT id, content FROM user_facts WHERE {_LABEL_NULL} LIMIT :n"),
                     {"n": batch_size})).all()
                 if not rows:
                     break
@@ -114,7 +123,7 @@ async def classify_missing(batch_size: int = 32) -> int:
                     cat, label = await _classify_with(adapter, content)  # RAISES on outage
                     await db.execute(sa_text(
                         "UPDATE user_facts SET category = :c, label = :l WHERE id = :id"),
-                        {"c": cat, "l": label or (content or "")[:40], "id": rid})
+                        {"c": cat, "l": _fallback_label(label, content), "id": rid})
                 await db.commit()
                 done += len(rows)
                 _state["done"] = done
@@ -141,7 +150,7 @@ async def classify_ids(ids: list[int]) -> None:
         try:
             async with db_session.AsyncSessionLocal() as db:
                 row = (await db.execute(sa_text(
-                    "SELECT content FROM user_facts WHERE id = :id AND label IS NULL"),
+                    f"SELECT content FROM user_facts WHERE id = :id AND {_LABEL_NULL}"),
                     {"id": fid})).first()
                 if not row:
                     continue
@@ -149,7 +158,7 @@ async def classify_ids(ids: list[int]) -> None:
                 cat, label = await _classify_with(adapter, row[0])  # raises on outage
                 await db.execute(sa_text(
                     "UPDATE user_facts SET category = :c, label = :l WHERE id = :id"),
-                    {"c": cat, "l": label or (row[0] or "")[:40], "id": fid})
+                    {"c": cat, "l": _fallback_label(label, row[0]), "id": fid})
                 await db.commit()
         except Exception as exc:  # noqa: BLE001 — leave NULL for boot backfill on failure
             logger.warning("classify_ids(%s) failed (non-fatal, left NULL): %s", fid, exc)
