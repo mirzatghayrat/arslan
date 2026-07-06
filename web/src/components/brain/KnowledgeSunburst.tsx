@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { familyIds, layoutSegments, type Segment } from "./sunburstLayout";
 import { hueVar } from "./hues";
-import BrainOrbCore from "./BrainOrbCore";
 
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
@@ -85,13 +84,11 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
                 onFocus={onFocus} onClick={hasKids ? () => setRootId(s.id) : undefined} />
             );
           })}
+          <circle cx={CX} cy={CY} r={62} data-center="1"
+            onClick={() => { if (crumbs.length > 1) setRootId(crumbs[crumbs.length - 2].id); }}
+            style={{ fill: "var(--surface)", stroke: "var(--border)", strokeWidth: 1,
+              cursor: crumbs.length > 1 ? "pointer" : "default" }} />
         </svg>
-        <div data-orb-core="1"
-          onClick={() => { if (crumbs.length > 1) setRootId(crumbs[crumbs.length - 2].id); }}
-          style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <BrainOrbCore size={124} />
-        </div>
       </div>
     </div>
   );

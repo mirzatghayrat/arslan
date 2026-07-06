@@ -15,11 +15,11 @@ const tree: TreeNode = {
 };
 
 describe("KnowledgeSunburst", () => {
-  it("renders one <path> per node and the center orb core", () => {
+  it("renders one <path> per node and the center circle", () => {
     const { container } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={() => {}} />);
     const paths = container.querySelectorAll("path[data-node]");
     expect(paths.length).toBe(3);
-    expect(container.querySelector('[data-orb-core="1"]')).not.toBeNull();
+    expect(container.querySelector('[data-center="1"]')).not.toBeNull();
   });
 
   it("calls onFocus with node id on hover and null on leave", () => {
@@ -101,7 +101,7 @@ describe("KnowledgeSunburst", () => {
     expect(queryByText("整个第二大脑")).toBeNull();
     fireEvent.click(container.querySelector('path[data-node="g1"]') as HTMLElement);
     expect(container.querySelector('path[data-node="pref:2"]')).toBeNull();
-    fireEvent.click(container.querySelector('[data-orb-core="1"]') as HTMLElement);
+    fireEvent.click(container.querySelector('[data-center="1"]') as HTMLElement);
     expect(container.querySelector('path[data-node="pref:2"]')).not.toBeNull();
   });
 });
