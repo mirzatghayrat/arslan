@@ -61,7 +61,7 @@ export default function BrainOrbCore({ size = 124 }: { size?: number }) {
   }
   return (
     <div style={box}>
-      <Orb hue={230} rotateOnHover={false} hoverIntensity={0.15} />
+      <Orb hue={248} rotateOnHover={false} hoverIntensity={1.1} forceHoverState />
     </div>
   );
 }
