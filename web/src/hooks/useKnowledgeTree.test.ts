@@ -71,4 +71,24 @@ describe("useKnowledgeTree", () => {
     const coll = t.children!.find((c) => c.id === "cat:collection")!.children![0];
     expect(coll.children![0].fileType).toBe("pdf");                // source fileType
   });
+
+  it("uses label as the pref leaf name and keeps full content", async () => {
+    m("listSpawns").mockResolvedValue([]);
+    m("listFacts").mockResolvedValue([
+      { id: 7, content: "用户希望创建一个专门处理GitHub项目分析的分身", source: "auto", category: "想建的分身", label: "GitHub 分析分身" },
+      { id: 8, content: "喜欢中文", source: "auto", category: "沟通偏好", label: null },
+    ]);
+    m("listCollections").mockResolvedValue([]);
+    m("getKnowledge").mockResolvedValue([]);
+    m("getCollectionKnowledge").mockResolvedValue([]);
+    const { result } = renderHook(() => useKnowledgeTree());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const pref = result.current.tree.children!.find((c) => c.id === "cat:pref")!;
+    const leaves = pref.children!.flatMap((g) => g.children!);
+    const withLabel = leaves.find((l) => l.id === "pref:7")!;
+    expect(withLabel.name).toBe("GitHub 分析分身");                       // label as name
+    expect(withLabel.full).toBe("用户希望创建一个专门处理GitHub项目分析的分身"); // full kept
+    const noLabel = leaves.find((l) => l.id === "pref:8")!;
+    expect(noLabel.name).toBe("喜欢中文");                               // falls back to content
+  });
 });

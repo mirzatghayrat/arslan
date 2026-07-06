@@ -15,6 +15,8 @@ export interface TreeNode {
   fileType?: string;
   /** Grouping key used to drive sunburst/nav color (category name, domain, collection, etc). */
   hueKey?: string;
+  /** Full content for pref leaves, kept for hover tooltips when name is a short label. */
+  full?: string;
 }
 
 function sum(n: TreeNode): number {
@@ -99,10 +101,10 @@ export function useKnowledgeTree() {
       const prefChildren: TreeNode[] = Array.from(prefCategoryGroups.entries()).map(([category, groupFacts]): TreeNode => ({
         id: `pref-grp:${category}`, name: category, kind: "category", cat: "pref", value: 0, hueKey: category,
         children: groupFacts.map((f): TreeNode => ({
-          id: `pref:${f.id}`, name: f.content, kind: "pref", cat: "pref", value: 1,
+          id: `pref:${f.id}`, name: f.label || f.content, kind: "pref", cat: "pref", value: 1,
           // inherit the category hue so ring2 (group) + ring3 (its prefs) form one
           // coherent concentric color wedge instead of a two-tone split.
-          hueKey: category,
+          hueKey: category, full: f.content,
         })),
       }));
 
