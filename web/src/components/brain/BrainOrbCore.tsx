@@ -7,32 +7,41 @@ import { useMemo } from "react";
 
 const CSS = `
 .brain-orb { position: relative; border-radius: 50%; overflow: hidden; isolation: isolate;
-  background: radial-gradient(circle at 50% 42%, #14162e 0%, #070810 78%);
-  box-shadow: 0 0 0 1px rgba(180,200,255,0.10), inset 0 0 18px 2px rgba(0,0,0,0.55),
-    inset 0 6px 14px -6px rgba(200,220,255,0.30); }
-.brain-orb__blob { position: absolute; border-radius: 50%; filter: blur(11px);
+  background: radial-gradient(circle at 50% 42%, #23264e 0%, #0c0d1f 84%);
+  box-shadow: 0 0 0 1px rgba(190,205,255,0.16), inset 0 8px 16px -8px rgba(220,232,255,0.40); }
+/* interior color fields — light blur only, so colors stay crisp (not frosted) */
+.brain-orb__blob { position: absolute; border-radius: 50%; filter: blur(4px);
   mix-blend-mode: screen; will-change: transform; }
-.brain-orb__blob--a { left: -12%; top: -14%; width: 78%; height: 78%;
-  background: radial-gradient(circle at 50% 50%, #4f7cff, transparent 68%);
+.brain-orb__blob--a { left: -10%; top: -12%; width: 74%; height: 74%;
+  background: radial-gradient(circle at 50% 50%, #4f7cff, transparent 66%);
   animation: brain-orb-a 9s ease-in-out infinite; }
-.brain-orb__blob--b { right: -14%; bottom: -18%; width: 82%; height: 82%;
-  background: radial-gradient(circle at 50% 50%, #9b5cff, transparent 68%);
+.brain-orb__blob--b { right: -12%; bottom: -16%; width: 80%; height: 80%;
+  background: radial-gradient(circle at 50% 50%, #a15cff, transparent 66%);
   animation: brain-orb-b 11s ease-in-out infinite; }
-.brain-orb__blob--c { left: -18%; bottom: -6%; width: 70%; height: 70%;
-  background: radial-gradient(circle at 50% 50%, #ff5ca8, transparent 70%);
+.brain-orb__blob--c { left: -14%; bottom: -4%; width: 66%; height: 66%;
+  background: radial-gradient(circle at 50% 50%, #ff5ca8, transparent 68%);
   animation: brain-orb-c 13s ease-in-out infinite; }
-.brain-orb__blob--d { right: -6%; top: -10%; width: 60%; height: 60%;
-  background: radial-gradient(circle at 50% 50%, #3fd7ff, transparent 72%);
+.brain-orb__blob--d { right: -4%; top: -8%; width: 56%; height: 56%;
+  background: radial-gradient(circle at 50% 50%, #3fd7ff, transparent 70%);
   animation: brain-orb-a 10s ease-in-out infinite reverse; }
-.brain-orb__bloom { position: absolute; inset: 30%; border-radius: 50%; z-index: 2; filter: blur(2px);
-  background: radial-gradient(circle at 50% 42%, rgba(226,238,255,0.92), rgba(150,180,255,0.25) 52%, transparent 72%);
-  animation: brain-orb-breathe 6s ease-in-out infinite; }
-@keyframes brain-orb-a { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(16%,12%) scale(1.18)} 66%{transform:translate(-8%,16%) scale(0.92)} }
-@keyframes brain-orb-b { 0%,100%{transform:translate(0,0) scale(1.06)} 50%{transform:translate(-16%,-12%) scale(0.88)} }
-@keyframes brain-orb-c { 0%,100%{transform:translate(0,0) scale(0.94)} 50%{transform:translate(14%,-12%) scale(1.22)} }
-@keyframes brain-orb-breathe { 0%,100%{transform:scale(1);opacity:0.88} 50%{transform:scale(1.14);opacity:1} }
-.brain-orb[data-static="1"] .brain-orb__blob, .brain-orb[data-static="1"] .brain-orb__bloom { animation: none; }
-@media (prefers-reduced-motion: reduce) { .brain-orb__blob, .brain-orb__bloom { animation: none !important; } }
+/* crisp colorful gradient rim (Siri edge), slowly rotating */
+.brain-orb__rim { position: absolute; inset: 0; border-radius: 50%; z-index: 2; opacity: 1;
+  background: conic-gradient(from 0deg, #5b8cff, #b06bff, #ff6bb0, #ffc46b, #4fe0ff, #5b8cff);
+  filter: saturate(1.3) brightness(1.12);
+  -webkit-mask: radial-gradient(circle, transparent 58%, #000 70%, #000 92%, transparent 99%);
+  mask: radial-gradient(circle, transparent 58%, #000 70%, #000 92%, transparent 99%);
+  animation: brain-orb-spin 16s linear infinite; }
+/* sharp glossy specular highlight */
+.brain-orb__bloom { position: absolute; left: 28%; top: 22%; width: 30%; height: 26%; border-radius: 50%; z-index: 3;
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.95), rgba(255,255,255,0.18) 46%, transparent 68%);
+  filter: blur(0.5px); animation: brain-orb-breathe 6s ease-in-out infinite; }
+@keyframes brain-orb-a { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(14%,10%) scale(1.14)} 66%{transform:translate(-8%,14%) scale(0.94)} }
+@keyframes brain-orb-b { 0%,100%{transform:translate(0,0) scale(1.05)} 50%{transform:translate(-14%,-10%) scale(0.9)} }
+@keyframes brain-orb-c { 0%,100%{transform:translate(0,0) scale(0.95)} 50%{transform:translate(12%,-10%) scale(1.18)} }
+@keyframes brain-orb-breathe { 0%,100%{transform:scale(1);opacity:0.9} 50%{transform:scale(1.1);opacity:1} }
+@keyframes brain-orb-spin { to { transform: rotate(360deg); } }
+.brain-orb[data-static="1"] .brain-orb__blob, .brain-orb[data-static="1"] .brain-orb__bloom, .brain-orb[data-static="1"] .brain-orb__rim { animation: none; }
+@media (prefers-reduced-motion: reduce) { .brain-orb__blob, .brain-orb__bloom, .brain-orb__rim { animation: none !important; } }
 `;
 
 export default function BrainOrbCore({ size = 124 }: { size?: number }) {
@@ -55,6 +64,7 @@ export default function BrainOrbCore({ size = 124 }: { size?: number }) {
       <div className="brain-orb__blob brain-orb__blob--b" />
       <div className="brain-orb__blob brain-orb__blob--c" />
       <div className="brain-orb__blob brain-orb__blob--d" />
+      <div className="brain-orb__rim" />
       <div className="brain-orb__bloom" />
     </div>
   );
