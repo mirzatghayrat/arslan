@@ -11,11 +11,12 @@
   --primary: #E57D1B; --primary-hover: #C2640C; --primary-foreground: #1A0E00;
   --hub: #B45309;
   --success: #059669; --danger: #DC2626; --warning: #B45309; --info: #2563EB;
-  /* Second-brain hue palette — one neutral rainbow, palette-INDEPENDENT (defined
-     on the :root/.dark arms so it cascades to every data-palette; no palette block
-     overrides --hue-*). Light set. */
-  --hue-1:#C2410C; --hue-2:#B45309; --hue-3:#15803D; --hue-4:#0E7490; --hue-5:#1D4ED8;
-  --hue-6:#6D28D9; --hue-7:#9D174D; --hue-8:#4D7C0F; --hue-9:#B91C1C; --hue-10:#5B5B54;
+  /* Second-brain hue palette — a curated categorical set, warm-led to harmonize with
+     Arslan's orange, cool anchors for contrast, muted-vibrant for a premium feel.
+     palette-INDEPENDENT (on :root/.dark arms → cascades to every data-palette).
+     Light set: deeper/richer for contrast on the light surface. */
+  --hue-1:#C57C22; --hue-2:#C15734; --hue-3:#B34472; --hue-4:#8E4EB2; --hue-5:#514FC0;
+  --hue-6:#2A7CAE; --hue-7:#1B8F7E; --hue-8:#5C8E2E; --hue-9:#B0552C; --hue-10:#616B84;
 }
 
 /* CURRENT — dark */
@@ -27,9 +28,9 @@
   --primary: #FF8E24; --primary-hover: #FF9C3A; --primary-foreground: #1A0E00;
   --hub: #FFC773;
   --success: #10B981; --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6;
-  /* Second-brain hue palette — dark set (brighter for dark grounds). */
-  --hue-1:#FB923C; --hue-2:#FBBF24; --hue-3:#4ADE80; --hue-4:#22D3EE; --hue-5:#60A5FA;
-  --hue-6:#A78BFA; --hue-7:#F472B6; --hue-8:#A3E635; --hue-9:#F87171; --hue-10:#A8A29E;
+  /* Second-brain hue palette — dark set (luminous, not neon, for contrast on charcoal). */
+  --hue-1:#EBA34D; --hue-2:#E67E55; --hue-3:#DE6A93; --hue-4:#B77BD0; --hue-5:#8A85E0;
+  --hue-6:#5AA6D6; --hue-7:#45B8A6; --hue-8:#8FBE5E; --hue-9:#C9714E; --hue-10:#A0A8BC;
 }
 
 /* EMBER */
