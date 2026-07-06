@@ -5,8 +5,8 @@ import { hueVar } from "./hues";
 
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
-const RINGS: (null | [number, number])[] = [null, [70, 150], [156, 224], [230, 296]];
 const CX = 310, CY = 310;
+const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.012 };
 
 function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: string }, depth: number, focused: boolean): string {
   const key = node.fileType ? `ft:${node.fileType}` : (node.hueKey ?? node.cat);
@@ -39,7 +39,7 @@ function SegmentPath({ s, focused, onFocus }: { s: Segment; focused: boolean; on
 }
 
 export default function KnowledgeSunburst({ tree, focusedId, onFocus, className }: Props) {
-  const segs = useMemo(() => layoutSegments(tree, { cx: CX, cy: CY, rings: RINGS }), [tree]);
+  const segs = useMemo(() => layoutSegments(tree, LAYOUT), [tree]);
   const fam = useMemo(() => familyIds(tree, focusedId), [tree, focusedId]);
   const items = useMemo(() => leafCount(tree), [tree]);
 

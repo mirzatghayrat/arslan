@@ -5,9 +5,15 @@ const TAU = Math.PI * 2;
 export interface Segment {
   id: string; name: string; cat: TreeNode["cat"]; kind: TreeNode["kind"];
   depth: number; a0: number; a1: number; d: string; value: number;
-  hueKey?: string; fileType?: string;
+  hueKey?: string; fileType?: string; full?: string;
 }
-export interface LayoutOpts { cx: number; cy: number; rings: (null | [number, number])[]; }
+export interface LayoutOpts {
+  cx: number; cy: number;
+  innerR: number;   // inner hole radius
+  outerR: number;   // outer boundary
+  bandR: number;    // thin depth-1 top-category band width
+  padAngle: number; // angular gap between sibling segments (removes hard seams)
+}
 
 export function arcPath(cx: number, cy: number, ri: number, ro: number, a0: number, a1: number): string {
   const large = a1 - a0 > Math.PI ? 1 : 0;
@@ -16,25 +22,48 @@ export function arcPath(cx: number, cy: number, ri: number, ro: number, a0: numb
   return `M${x0} ${y0}A${ro} ${ro} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${ri} ${ri} 0 ${large} 0 ${x3} ${y3}Z`;
 }
 
-/** Assign each node (depth>=1) an angular slice proportional to its value and an
- * arc path at its ring. Returns a flat segment list for rendering. */
+/** Deepest branch depth (root=0). */
+export function maxDepthOf(tree: TreeNode): number {
+  let max = 0;
+  const walk = (n: TreeNode, d: number) => {
+    max = Math.max(max, d);
+    (n.children ?? []).forEach((c) => walk(c, d + 1));
+  };
+  walk(tree, 0);
+  return max;
+}
+
+/** Ring [ri,ro] for a given depth. depth 1 = thin top-category band; depth>=2 =
+ * equal-width colored rings splitting the remaining radius across depths 2..maxDepth. */
+function ringFor(depth: number, maxDepth: number, o: LayoutOpts): [number, number] {
+  const bandOuter = o.innerR + o.bandR;
+  if (depth <= 1) return [o.innerR, bandOuter];
+  const colorRings = Math.max(1, maxDepth - 1);          // depths 2..maxDepth
+  const w = (o.outerR - bandOuter) / colorRings;
+  const ri = bandOuter + (depth - 2) * w;
+  return [ri, ri + w];
+}
+
+/** Assign each node (depth>=1) an angular slice ∝ value + an arc at its ring.
+ * No depth cap: every branch fans to its own real depth. padAngle removes seams. */
 export function layoutSegments(tree: TreeNode, opts: LayoutOpts): Segment[] {
   const out: Segment[] = [];
-  const rings = opts.rings;
+  const maxDepth = Math.max(1, maxDepthOf(tree));
   const place = (node: TreeNode, a0: number, a1: number, depth: number) => {
-    if (depth >= 1 && depth <= 3) {
-      const rr = rings[depth]!;
+    if (depth >= 1) {
+      const [ri, ro] = ringFor(depth, maxDepth, opts);
       out.push({ id: node.id, name: node.name, cat: node.cat, kind: node.kind, depth, a0, a1,
-        d: arcPath(opts.cx, opts.cy, rr[0], rr[1], a0, a1), value: node.value,
-        hueKey: node.hueKey, fileType: node.fileType });
+        d: arcPath(opts.cx, opts.cy, ri, ro, a0, a1), value: node.value,
+        hueKey: node.hueKey, fileType: node.fileType, full: node.full });
     }
-    if (node.children && node.children.length) {
-      const pad = depth === 0 ? 0.05 : 0.006;
-      const total = node.children.reduce((s, c) => s + Math.max(c.value, 0.0001), 0);
-      const avail = a1 - a0 - pad * node.children.length;
+    const kids = node.children ?? [];
+    if (kids.length) {
+      const pad = opts.padAngle;
+      const total = kids.reduce((s, c) => s + Math.max(c.value, 0.0001), 0);
+      const avail = a1 - a0 - pad * kids.length;
       let a = a0 + pad / 2;
-      for (const c of node.children) {
-        const span = (Math.max(c.value, 0.0001) / total) * avail;
+      for (const c of kids) {
+        const span = (Math.max(c.value, 0.0001) / total) * Math.max(avail, 0);
         place(c, a, a + span, depth + 1);
         a += span + pad;
       }

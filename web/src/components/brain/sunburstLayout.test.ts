@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { arcPath, familyIds, layoutSegments } from "./sunburstLayout";
+import { arcPath, familyIds, layoutSegments, maxDepthOf, type LayoutOpts } from "./sunburstLayout";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
+
+const OPTS: LayoutOpts = { cx: 100, cy: 100, innerR: 20, outerR: 100, bandR: 8, padAngle: 0.01 };
 
 const tree: TreeNode = {
   id: "root", name: "YOU", kind: "root", cat: "collection", value: 20,
@@ -20,7 +22,7 @@ const tree: TreeNode = {
 
 describe("sunburstLayout", () => {
   it("assigns depth-1 category spans proportional to value, non-overlapping", () => {
-    const segs = layoutSegments(tree, { cx: 100, cy: 100, rings: [null, [30, 55], [58, 78], [81, 98]] });
+    const segs = layoutSegments(tree, OPTS);
     const d1 = segs.filter((s) => s.depth === 1);
     expect(d1.map((s) => s.id).sort()).toEqual(["cat:collection", "cat:spawn"]);
     const coll = d1.find((s) => s.id === "cat:collection")!;
@@ -45,4 +47,23 @@ describe("sunburstLayout", () => {
     expect(d.startsWith("M")).toBe(true);
     expect(d.trim().endsWith("Z")).toBe(true);
   });
+});
+
+const deepTree: any = { id: "root", name: "YOU", kind: "root", cat: "collection", value: 3, children: [
+  { id: "cat:spawn", name: "分身", kind: "category", cat: "spawn", value: 3, children: [
+    { id: "dom:research", name: "research", kind: "category", cat: "spawn", value: 3, hueKey: "research", children: [
+      { id: "spawn:1", name: "R", kind: "spawn", cat: "spawn", value: 3, hueKey: "R", children: [
+        { id: "src:1", name: "a.pdf", kind: "source", cat: "spawn", value: 3, fileType: "pdf" }]}]}]}]};
+
+it("maxDepthOf returns the deepest branch depth", () => {
+  expect(maxDepthOf(deepTree)).toBe(4);
+});
+
+it("lays out every node beyond depth 3 (no 3-ring cap)", () => {
+  const segs = layoutSegments(deepTree, OPTS);
+  const ids = segs.map((s) => s.id);
+  expect(ids).toContain("spawn:1");
+  expect(ids).toContain("src:1");
+  const src = segs.find((s) => s.id === "src:1")!;
+  expect(src.depth).toBe(4);
 });
