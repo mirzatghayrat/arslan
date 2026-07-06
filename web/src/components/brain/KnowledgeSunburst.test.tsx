@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import KnowledgeSunburst from "./KnowledgeSunburst";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
@@ -73,5 +73,20 @@ describe("KnowledgeSunburst", () => {
     rerender(<KnowledgeSunburst tree={tree} focusedId={"g1"} onFocus={()=>{}} />);
     expect(op('path[data-node="pref:1"]')).toBe(1);      // in focused family (child of g1)
     expect(op('path[data-node="pref:2"]')).toBeLessThan(1); // outside → dimmed
+  });
+
+  it("drills into a clicked node and back out via center", () => {
+    const tree = { id:"root", name:"YOU", kind:"root", cat:"collection", value:2, children:[
+      { id:"cat:pref", name:"偏好", kind:"category", cat:"pref", value:2, children:[
+        { id:"g1", name:"任务需求", kind:"category", cat:"pref", hueKey:"任务需求", value:1, children:[
+          { id:"pref:1", name:"A", kind:"pref", cat:"pref", value:1 }]},
+        { id:"g2", name:"沟通偏好", kind:"category", cat:"pref", hueKey:"沟通偏好", value:1, children:[
+          { id:"pref:2", name:"B", kind:"pref", cat:"pref", value:1 }]}]}]} as any;
+    const { container } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={()=>{}} />);
+    fireEvent.click(container.querySelector('path[data-node="g1"]') as HTMLElement);
+    expect(container.querySelector('path[data-node="pref:2"]')).toBeNull();     // out of view
+    expect(container.querySelector('path[data-node="pref:1"]')).not.toBeNull(); // in view
+    fireEvent.click(container.querySelector('[data-breadcrumb="root"]') as HTMLElement);
+    expect(container.querySelector('path[data-node="pref:2"]')).not.toBeNull(); // back
   });
 });
