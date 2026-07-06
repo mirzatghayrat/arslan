@@ -76,9 +76,15 @@ async def lifespan(app: FastAPI):
         )
         await db.commit()
 
-    from server.services import fact_classify
+    # Non-blocking boot backfill for any fact left with category=NULL (write-time
+    # classify failed / process died mid-flight / pre-existing rows). Fire-and-forget;
+    # wrapped defensively so nothing here can ever abort startup before `yield`.
+    try:
+        from server.services import fact_classify
 
-    fact_classify.schedule(fact_classify.classify_missing())
+        fact_classify.schedule(fact_classify.classify_missing())
+    except Exception:  # noqa: BLE001 — boot backfill must never block/break startup
+        pass
     yield
 
     from server.mcp.session import manager as _mcp_manager

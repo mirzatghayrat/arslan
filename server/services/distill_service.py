@@ -81,7 +81,11 @@ async def distill_meta_upflow(db, spawn, new_facts: list[str]) -> str | None:
         row = UserFact(content=fact, source="upflow")
         db.add(row)
         try:
-            await db.flush()  # assign row.id without committing (caller commits)
+            # flush (not commit) assigns row.id; the caller (_distill_one) owns the
+            # commit. If that later commit rolls back, this scheduled classify targets
+            # a now-nonexistent id — a safe no-op, since classify_ids matches on
+            # `WHERE id=:id AND category IS NULL` and simply finds nothing.
+            await db.flush()
             from server.services import fact_classify
             fact_classify.schedule(fact_classify.classify_ids([row.id]))
         except Exception:  # noqa: BLE001 — scheduling never blocks distillation
