@@ -69,18 +69,13 @@ async def test_unequipped_spawn_gets_universal_baseline(maker, monkeypatch):
     """Every spawn now has the universal safe baseline (web_search/web_extract/render_chart)
     and runs through the tool loop — the legacy zero-tool path is retired."""
     from server.orchestrator import dispatcher, tool_loop
+    from tests.server.conftest import MockAdapter
 
-    captured = {}
-
-    class _A:
-        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
-            captured["system"] = system
-            yield "ok"
-
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(chat_content="all done", stream_chunks=["ok"])
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     await dispatcher.dispatch("main", spawn_id=8, task_brief="do Y")
-    s = captured["system"]
+    s = adapter.chat_calls[-1]["system"]
     assert "render_chart" in s and "web_search" in s   # baseline tools listed in the equipment block
 
 
@@ -93,18 +88,13 @@ async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
     tool loop. Stub tool_loop's adapter (not the legacy dispatcher one) so no real LLM call fires.
     """
     from server.orchestrator import dispatcher, tool_loop
+    from tests.server.conftest import MockAdapter
 
-    captured = {}
-
-    class _A:
-        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
-            captured["system"] = system
-            yield "ok"
-
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(chat_content="all done", stream_chunks=["ok"])
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     await dispatcher.dispatch("main", spawn_id=9, task_brief="search past sessions")
-    s = captured["system"]
+    s = adapter.chat_calls[-1]["system"]
     assert "(not yet live)" in s
     assert "Session Search" in s
 
@@ -115,18 +105,13 @@ async def test_spawn_prompt_has_tool_use_guidance(maker, monkeypatch):
     narrate a tool call as text nor fabricate data + return code. Regression for spawns
     that printed matplotlib code / 'STEP 1 调用 web_search' instead of calling tools."""
     from server.orchestrator import dispatcher, tool_loop
+    from tests.server.conftest import MockAdapter
 
-    captured = {}
-
-    class _A:
-        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
-            captured["system"] = system
-            yield "ok"
-
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _A())
+    adapter = MockAdapter(chat_content="all done", stream_chunks=["ok"])
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     await dispatcher.dispatch("main", spawn_id=8, task_brief="chart tesla prices this week")
-    s = captured["system"]
+    s = adapter.chat_calls[-1]["system"]
     assert "render_chart" in s
     # the guidance must explicitly forbid narrating / fabricating-then-coding and require emitting the tool call
     assert "ACT" in s or "emit the tool call" in s
