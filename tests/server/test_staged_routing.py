@@ -39,7 +39,10 @@ async def test_open_task_proposes_and_sets_phase(monkeypatch):
     # decision (needs_proposal=True → propose mode) runs as before.
     monkeypatch.setattr(roster_service, "is_member", lambda c, s: _aw(True))
     r = router.RouterResult(action="route", spawn_id=4, task_brief="help linkedin", needs_proposal=True)
-    await arslan._handle_route("conv-x", r, events.append)
+    # user_message NAMES "x" (the mocked spawn name) so the doer-first explicit-naming
+    # gate (arslan.py _user_named_spawn) honors the direct delegation instead of
+    # diverting to Arslan answering the task itself.
+    await arslan._handle_route("conv-x", r, events.append, user_message="have x help with linkedin")
     assert ("dispatch","propose") in events
     assert any(isinstance(e, dict) and e.get("type") == "proposal" for e in events)
 
@@ -56,7 +59,10 @@ async def test_crisp_task_executes_directly(monkeypatch):
     # Already a roster member → direct execute (no invite card gate).
     monkeypatch.setattr(roster_service, "is_member", lambda c, s: _aw(True))
     r = router.RouterResult(action="route", spawn_id=4, task_brief="summarize this", needs_proposal=False)
-    await arslan._handle_route("conv-y", r, events.append)
+    # user_message NAMES "x" (the mocked spawn name) so the doer-first explicit-naming
+    # gate (arslan.py _user_named_spawn) honors the direct delegation instead of
+    # diverting to Arslan answering the task itself.
+    await arslan._handle_route("conv-y", r, events.append, user_message="have x summarize this")
     assert ("dispatch","execute") in events
     assert not any(isinstance(e, dict) and e.get("type") == "proposal" for e in events)
 

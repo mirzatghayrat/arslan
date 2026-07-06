@@ -39,18 +39,21 @@ async def test_route_turn_end_to_end(maker, monkeypatch):
 
     monkeypatch.setattr(arslan.router, "route", _route)
 
-    class _A:
-        async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
-            yield "Post 1. Post 2."
+    from server.orchestrator import tool_loop
+    from tests.server.conftest import MockAdapter
+    adapter = MockAdapter(chat_content="Post 1. Post 2.", stream_chunks=["Post 1. Post 2."])
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _A())
-
-    # Spawn 7 already in roster → route dispatches directly (no invite card).
+    # Spawn 7 already in roster → route dispatches directly (no invite card). The
+    # message NAMES beauty-guru so the doer-first explicit-naming gate (arslan.py
+    # _user_named_spawn) honors the direct delegation instead of diverting to
+    # Arslan answering the task itself.
     from server.services import roster_service
     await roster_service.join("main", 7, via="invited")
 
     events = []
-    await arslan.handle_user_message("main", "make posts", lambda e: events.append(e))
+    await arslan.handle_user_message("main", "have beauty-guru make posts", lambda e: events.append(e))
 
     async with db_session.AsyncSessionLocal() as s:
         cms = (await s.execute(select(ChatMessage))).scalars().all()
