@@ -1,4 +1,4 @@
-"""LLM fact classification into a FIXED enum; fail-open to 其他; single-flight backfill."""
+"""LLM fact classification: few-shot, one call returns (category, label); fail-open."""
 import anyio
 import pytest
 from sqlalchemy import text as sa_text
@@ -17,7 +17,7 @@ def maker(tmp_path, monkeypatch):
             await conn.run_sync(Base.metadata.create_all)
         monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
         async with m() as s:
-            s.add(UserFact(id=1, content="用户在北京工作", source="auto"))
+            s.add(UserFact(id=1, content="用户在北京工作", source="auto", category="其他"))
             s.add(UserFact(id=2, content="用户喜欢中文沟通", source="auto"))
             await s.commit()
     anyio.run(_seed)
@@ -25,9 +25,7 @@ def maker(tmp_path, monkeypatch):
 
 
 class _Adapter:
-    def __init__(self, reply):
-        self.reply = reply
-
+    def __init__(self, reply): self.reply = reply
     async def chat(self, system, user, **kw):
         class _R:
             content = None
@@ -35,60 +33,69 @@ class _Adapter:
         return _R
 
 
-def test_classify_one_returns_only_enum(maker, monkeypatch):
+def test_parse_json_category_and_label():
+    from server.services.fact_classify import _parse
+    assert _parse('{"category": "身份背景", "label": "北京工作"}') == ("身份背景", "北京工作")
+
+
+def test_parse_illegal_category_falls_open():
+    from server.services.fact_classify import _parse
+    assert _parse('{"category": "不合法", "label": ""}') == ("其他", None)
+
+
+def test_parse_non_json_substring_fallback():
+    from server.services.fact_classify import _parse
+    assert _parse("这条属于 沟通偏好 类") == ("沟通偏好", None)
+    assert _parse("完全无关的回复") == ("其他", None)
+
+
+def test_classify_one_returns_tuple(maker, monkeypatch):
     from server.services import fact_classify
-    async def _fake(role=None): return _Adapter("身份背景")
+    async def _fake(role=None): return _Adapter('{"category":"身份背景","label":"北京工作"}')
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
-    assert anyio.run(lambda: fact_classify.classify_one("用户在北京工作")) == "身份背景"
+    assert anyio.run(lambda: fact_classify.classify_one("用户在北京工作")) == ("身份背景", "北京工作")
 
 
-def test_classify_one_illegal_reply_falls_open_to_other(maker, monkeypatch):
+def test_classify_one_adapter_exception_fails_open(maker, monkeypatch):
     from server.services import fact_classify
-    async def _fake(role=None): return _Adapter("这不是合法类别哈哈")
+    class _Boom:
+        async def chat(self, system, user, **kw): raise RuntimeError("no key")
+    async def _fake(role=None): return _Boom()
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
-    assert anyio.run(lambda: fact_classify.classify_one("x")) == "其他"
+    assert anyio.run(lambda: fact_classify.classify_one("x")) == ("其他", None)
 
 
-def test_classify_missing_only_touches_null(maker, monkeypatch):
+def test_classify_missing_backfills_label_and_overwrites_category(maker, monkeypatch):
     from server.services import fact_classify
-    async def _fake(role=None): return _Adapter("沟通偏好")
+    async def _fake(role=None): return _Adapter('{"category":"沟通偏好","label":"中文沟通"}')
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
-    async def _pre():
-        async with maker() as s:
-            await s.execute(sa_text("UPDATE user_facts SET category='身份背景' WHERE id=1"))
-            await s.commit()
-    anyio.run(_pre)
     done = anyio.run(lambda: fact_classify.classify_missing())
-    assert done == 1
+    assert done == 2
     async def _check():
         async with maker() as s:
-            return (await s.execute(sa_text("SELECT category FROM user_facts ORDER BY id"))).scalars().all()
-    assert anyio.run(_check) == ["身份背景", "沟通偏好"]
+            return (await s.execute(sa_text(
+                "SELECT category, label FROM user_facts ORDER BY id"))).all()
+    rows = anyio.run(_check)
+    assert rows == [("沟通偏好", "中文沟通"), ("沟通偏好", "中文沟通")]
 
 
-def test_classify_missing_zero_pending_is_free_no_provider_needed(maker, monkeypatch):
-    """A fully-classified DB returns 0 without building an adapter or setting error."""
+def test_classify_missing_zero_pending_no_provider(maker, monkeypatch):
     from server.services import fact_classify
-    def _boom(role=None):
-        raise AssertionError("build_adapter must NOT be called when 0 pending")
+    def _boom(role=None): raise AssertionError("must not build adapter when 0 pending")
     monkeypatch.setattr(fact_classify, "build_adapter", _boom)
     async def _pre():
         async with maker() as s:
-            await s.execute(sa_text("UPDATE user_facts SET category='身份背景'"))
+            await s.execute(sa_text("UPDATE user_facts SET label='x'"))
             await s.commit()
     anyio.run(_pre)
-    done = anyio.run(lambda: fact_classify.classify_missing())
-    assert done == 0
+    assert anyio.run(lambda: fact_classify.classify_missing()) == 0
     assert fact_classify.classify_status()["error"] is None
 
 
 def test_classify_missing_surfaces_provider_failure_not_mislabel(maker, monkeypatch):
-    """If the LLM provider is unusable, classify_missing must NOT mass-label 其他 —
-    it aborts, sets _state['error'], and leaves rows NULL for retry."""
     from server.services import fact_classify
     class _Broken:
-        async def chat(self, system, user, **kw):
-            raise RuntimeError("no api key")
+        async def chat(self, system, user, **kw): raise RuntimeError("db lookup exploded")
     async def _fake(role=None): return _Broken()
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
     done = anyio.run(lambda: fact_classify.classify_missing())
@@ -96,6 +103,5 @@ def test_classify_missing_surfaces_provider_failure_not_mislabel(maker, monkeypa
     assert fact_classify.classify_status()["error"]
     async def _check():
         async with maker() as s:
-            return (await s.execute(sa_text("SELECT category FROM user_facts"))).scalars().all()
-    # both rows still NULL — nothing was mislabeled 其他
+            return (await s.execute(sa_text("SELECT label FROM user_facts"))).scalars().all()
     assert anyio.run(_check) == [None, None]
