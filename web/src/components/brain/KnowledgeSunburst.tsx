@@ -6,7 +6,7 @@ import { hueVar } from "./hues";
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
 const CX = 310, CY = 310;
-const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 305, bandR: 9, padAngle: 0.0015, topMinFrac: 0.07, gapAngle: 0.175, minReach: 0.42 };
+const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.0015, topMinFrac: 0.07, gapAngle: 0.175 };
 
 function findNode(n: TreeNode, id: string): TreeNode | null {
   if (n.id === id) return n;
@@ -76,7 +76,7 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
         ))}
       </div>
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <svg viewBox="0 0 620 620" style={{ width: "min(680px,82vh)", height: "auto" }} role="img" aria-label="第二大脑同心扇形,悬停联动">
+        <svg viewBox="0 0 620 620" style={{ width: "min(560px,70vh)", height: "auto" }} role="img" aria-label="第二大脑同心扇形,悬停联动">
           {segs.map((s) => {
             const hasKids = (findNode(viewRoot, s.id)?.children?.length ?? 0) > 0;
             return (

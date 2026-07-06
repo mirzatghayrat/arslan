@@ -16,7 +16,6 @@ export interface LayoutOpts {
   band?: boolean;   // draw the thin depth-1 band (true at true root; false when drilled)
   topMinFrac?: number; // root view only: min angular fraction each top category gets (placeholder for empties)
   gapAngle?: number;   // radians left as a gap at 12 o'clock (root sweep = TAU - gapAngle)
-  minReach?: number;   // smallest group's radial reach as a fraction of the span (coxcomb floor)
 }
 
 export function arcPath(cx: number, cy: number, ri: number, ro: number, a0: number, a1: number): string {
@@ -37,48 +36,33 @@ export function maxDepthOf(tree: TreeNode): number {
   return max;
 }
 
-/** Radial ring [ri,ro] for a segment. Root view: depth 1 = thin top-category band;
- * depth>=2 = colored rings filling [bandOuter, reach] over this branch's real depth.
- * Drilled view (no band): colored from depth 1 filling [innerR, reach]. `reach` is the
- * branch's value-scaled outer radius (coxcomb — bigger groups bloom further out), so
- * segments end at different radii instead of one tidy concentric edge. */
-function ringForR(depth: number, o: LayoutOpts, reach: number, groupDepth: number,
-                  radialStart: number, branchMax: number): [number, number] {
-  if (o.band !== false && depth <= 1) return [o.innerR, o.innerR + o.bandR]; // thin top band
-  const rings = Math.max(1, branchMax - groupDepth + 1); // groupDepth..branchMax inclusive
-  const w = (reach - radialStart) / rings;
-  const ri = radialStart + (depth - groupDepth) * w;
+/** Ring [ri,ro] for a given depth. Root view (band): depth 1 = thin top-category
+ * band, depth>=2 = equal-width colored rings over depths 2..maxDepth. Drilled view
+ * (no band): depth 1..maxDepth are equal-width colored rings filling the full radius
+ * — so drilling into a group whose children are leaves still fills the disk. */
+function ringFor(depth: number, maxDepth: number, o: LayoutOpts): [number, number] {
+  if (o.band === false) {
+    const colorRings = Math.max(1, maxDepth);            // depths 1..maxDepth
+    const w = (o.outerR - o.innerR) / colorRings;
+    const ri = o.innerR + (depth - 1) * w;
+    return [ri, ri + w];
+  }
+  const bandOuter = o.innerR + o.bandR;
+  if (depth <= 1) return [o.innerR, bandOuter];
+  const colorRings = Math.max(1, maxDepth - 1);          // depths 2..maxDepth
+  const w = (o.outerR - bandOuter) / colorRings;
+  const ri = bandOuter + (depth - 2) * w;
   return [ri, ri + w];
 }
 
-/** Assign each node (depth>=1) an angular slice ∝ value + an arc at a value-scaled ring.
- * No depth cap. Each branch reaches a different outer radius (coxcomb bloom). */
+/** Assign each node (depth>=1) an angular slice ∝ value + an arc at its ring.
+ * No depth cap: every branch fans to its own real depth. padAngle removes seams. */
 export function layoutSegments(tree: TreeNode, opts: LayoutOpts): Segment[] {
   const out: Segment[] = [];
-  const drilled = opts.band === false;
-  const bandOuter = opts.innerR + opts.bandR;
-  const groupDepth = drilled ? 1 : 2;                    // the "group" ring level
-  const radialStart = drilled ? opts.innerR : bandOuter; // where colored rings begin
-  const gap = opts.gapAngle ?? 0;
-  const minReach = opts.minReach ?? 0.45;                // smallest groups still reach ~45%
-
-  // Max value among the group-level nodes → scales each branch's radial reach.
-  let maxGroupVal = 0;
-  const scan = (n: TreeNode, d: number) => {
-    if (d === groupDepth) { maxGroupVal = Math.max(maxGroupVal, Math.max(n.value, 0)); return; }
-    (n.children ?? []).forEach((c) => scan(c, d + 1));
-  };
-  scan(tree, 0);
-  maxGroupVal = maxGroupVal || 1;
-
-  const place = (node: TreeNode, a0: number, a1: number, depth: number, reach: number, branchMax: number) => {
-    if (depth === groupDepth) {
-      const frac = Math.pow(Math.max(node.value, 0.0001) / maxGroupVal, 0.6);
-      reach = radialStart + (minReach + (1 - minReach) * frac) * (opts.outerR - radialStart);
-      branchMax = depth + maxDepthOf(node);              // absolute deepest depth in this branch
-    }
+  const maxDepth = Math.max(1, maxDepthOf(tree));
+  const place = (node: TreeNode, a0: number, a1: number, depth: number) => {
     if (depth >= 1) {
-      const [ri, ro] = ringForR(depth, opts, reach, groupDepth, radialStart, branchMax);
+      const [ri, ro] = ringFor(depth, maxDepth, opts);
       out.push({ id: node.id, name: node.name, cat: node.cat, kind: node.kind, depth, a0, a1,
         d: arcPath(opts.cx, opts.cy, ri, ro, a0, a1), value: node.value,
         hueKey: node.hueKey, fileType: node.fileType, full: node.full });
@@ -103,12 +87,13 @@ export function layoutSegments(tree: TreeNode, opts: LayoutOpts): Segment[] {
           : Math.max(c.value, 0.0001) / sumV;
         const frac = useFloor ? (minF + (1 - kids.length * minF) * vFrac) : vFrac;
         const span = frac * avail;
-        place(c, a, a + span, depth + 1, reach, branchMax);
+        place(c, a, a + span, depth + 1);
         a += span + pad;
       }
     }
   };
-  place(tree, -Math.PI / 2 + gap / 2, -Math.PI / 2 + TAU - gap / 2, 0, opts.outerR, maxDepthOf(tree));
+  const gap = opts.gapAngle ?? 0;
+  place(tree, -Math.PI / 2 + gap / 2, -Math.PI / 2 + TAU - gap / 2, 0);
   return out;
 }
 
