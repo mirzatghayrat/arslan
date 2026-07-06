@@ -6,7 +6,7 @@ import { hueVar } from "./hues";
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
 const CX = 310, CY = 310;
-const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.0015 };
+const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.0015, topMinFrac: 0.07, gapAngle: 0.175 };
 
 function findNode(n: TreeNode, id: string): TreeNode | null {
   if (n.id === id) return n;
@@ -66,8 +66,8 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
   const items = useMemo(() => leafCount(viewRoot), [viewRoot]);
 
   return (
-    <div className={className} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{ display: "flex", gap: 6, fontSize: 11, marginBottom: 6, color: "var(--muted-foreground)", flexWrap: "wrap" }}>
+    <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+      <div style={{ position: "absolute", top: 12, left: 14, display: "flex", gap: 6, fontSize: 11, color: "var(--muted-foreground)", flexWrap: "wrap", maxWidth: "60%", zIndex: 2 }}>
         {crumbs.map((c, i) => (
           <span key={c.id} data-breadcrumb={c.id === "root" ? "root" : c.id}
             onClick={() => setRootId(c.id)}
