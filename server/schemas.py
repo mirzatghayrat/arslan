@@ -203,6 +203,7 @@ class FactOut(BaseModel):
     content: str
     source: str
     sensitive: bool
+    category: str | None = None
 
 
 class ToolOut(BaseModel):

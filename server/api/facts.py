@@ -11,7 +11,13 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 def _to_out(row) -> FactOut:  # noqa: ANN001
-    return FactOut(id=row.id, content=row.content, source=row.source, sensitive=row.sensitive)
+    return FactOut(
+        id=row.id,
+        content=row.content,
+        source=row.source,
+        sensitive=row.sensitive,
+        category=getattr(row, "category", None),
+    )
 
 
 @router.get("/facts", response_model=list[FactOut])

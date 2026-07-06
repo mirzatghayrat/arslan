@@ -58,6 +58,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_skill_candidates_upgrade)
         from server.db.migrations.versions._0018_second_brain import upgrade_sync as _second_brain_upgrade
         await conn.run_sync(_second_brain_upgrade)
+        from server.db.migrations.versions._0019_fact_category import upgrade_sync as _fact_cat_upgrade
+        await conn.run_sync(_fact_cat_upgrade)
 
     from server.registry.seeder import seed_registry
 
