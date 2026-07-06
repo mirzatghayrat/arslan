@@ -15,8 +15,8 @@
      Arslan's orange, cool anchors for contrast, muted-vibrant for a premium feel.
      palette-INDEPENDENT (on :root/.dark arms → cascades to every data-palette).
      Light set: deeper/richer for contrast on the light surface. */
-  --hue-1:#C57C22; --hue-2:#C15734; --hue-3:#B34472; --hue-4:#8E4EB2; --hue-5:#514FC0;
-  --hue-6:#2A7CAE; --hue-7:#1B8F7E; --hue-8:#5C8E2E; --hue-9:#B0552C; --hue-10:#616B84;
+  --hue-1:#1F9E48; --hue-2:#6E9E24; --hue-3:#9A8E1E; --hue-4:#DD8A2E; --hue-5:#1E9E8E;
+  --hue-6:#2E86BE; --hue-7:#3E54D4; --hue-8:#7E3ECC; --hue-9:#BE2ECA; --hue-10:#D63C82;
 }
 
 /* CURRENT — dark */
@@ -29,8 +29,8 @@
   --hub: #FFC773;
   --success: #10B981; --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6;
   /* Second-brain hue palette — dark set (luminous, not neon, for contrast on charcoal). */
-  --hue-1:#EBA34D; --hue-2:#E67E55; --hue-3:#DE6A93; --hue-4:#B77BD0; --hue-5:#8A85E0;
-  --hue-6:#5AA6D6; --hue-7:#45B8A6; --hue-8:#8FBE5E; --hue-9:#C9714E; --hue-10:#A0A8BC;
+  --hue-1:#45E67A; --hue-2:#A8E84A; --hue-3:#E6E84A; --hue-4:#FBAE4E; --hue-5:#3FE8D2;
+  --hue-6:#4FC2F5; --hue-7:#5B84FF; --hue-8:#9E6BFF; --hue-9:#D65BEF; --hue-10:#FF5FA6;
 }
 
 /* EMBER */
