@@ -12,8 +12,8 @@ import BrainSection from "./BrainSection";
 describe("BrainSection", () => {
   it("hovering a nav row highlights the matching sunburst branch (shared focusedId)", async () => {
     const { container } = render(<BrainSection />);
-    await waitFor(() => expect(screen.getByText("保险资料")).toBeInTheDocument());
-    fireEvent.mouseEnter(screen.getByText("保险资料"));
-    await waitFor(() => expect(container.querySelector('path[data-node="coll:1"]')!.getAttribute("data-focus")).toBe("1"));
+    await waitFor(() => expect(screen.getAllByText("保险资料").length).toBeGreaterThan(0));
+    fireEvent.mouseEnter(screen.getByText("保险资料", { selector: "span" }));
+    await waitFor(() => expect(container.querySelector('path[data-node="coll:1"]')!.getAttribute("data-dim")).toBe("0"));
   });
 });

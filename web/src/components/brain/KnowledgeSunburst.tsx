@@ -21,7 +21,7 @@ function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: 
 /** Native mouseenter/mouseleave listeners (not React's synthetic onMouseEnter/Leave,
  * which are backed by bubbling mouseover/mouseout and never fire for a real, non-bubbling
  * mouseenter/mouseleave pair) so hover-to-focus reacts to genuine pointer transitions. */
-function SegmentPath({ s, focused, onFocus }: { s: Segment; focused: boolean; onFocus: (id: string | null) => void }) {
+function SegmentPath({ s, dim, onFocus }: { s: Segment; dim: boolean; onFocus: (id: string | null) => void }) {
   const ref = useRef<SVGPathElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -34,9 +34,12 @@ function SegmentPath({ s, focused, onFocus }: { s: Segment; focused: boolean; on
   }, [s.id, onFocus]);
 
   return (
-    <path ref={ref} data-node={s.id} data-focus={focused ? "1" : "0"} d={s.d}
+    <path ref={ref} data-node={s.id} data-dim={dim ? "1" : "0"} d={s.d}
       style={{ fill: fillFor(s, s.depth), stroke: "var(--surface)", strokeWidth: 0.5,
-        strokeLinejoin: "round", cursor: "pointer", transition: "fill .12s, opacity .12s" }} />
+        strokeLinejoin: "round", cursor: "pointer", opacity: dim ? 0.22 : 1,
+        transition: "opacity .14s, fill .12s" }}>
+      <title>{s.full ?? s.name}</title>
+    </path>
   );
 }
 
@@ -49,7 +52,7 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
     <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <svg viewBox="0 0 620 620" style={{ width: "min(560px,70vh)", height: "auto" }} role="img" aria-label="第二大脑同心扇形,悬停联动">
         {segs.map((s) => (
-          <SegmentPath key={s.id} s={s} focused={fam.has(s.id)} onFocus={onFocus} />
+          <SegmentPath key={s.id} s={s} dim={focusedId != null && !fam.has(s.id)} onFocus={onFocus} />
         ))}
         <circle cx={CX} cy={CY} r={62} style={{ fill: "var(--surface)", stroke: "var(--hub)", strokeOpacity: 0.4, strokeWidth: 1.6 }} />
       </svg>

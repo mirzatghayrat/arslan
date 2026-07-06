@@ -32,10 +32,10 @@ describe("KnowledgeSunburst", () => {
     expect(onFocus).toHaveBeenCalledWith(null);
   });
 
-  it("marks focus-family segments with data-focus", () => {
+  it("marks focus-family segments with data-dim=0 (not dimmed)", () => {
     const { container } = render(<KnowledgeSunburst tree={tree} focusedId="coll:1" onFocus={() => {}} />);
-    expect(container.querySelector('path[data-node="src:coll:1:x"]')!.getAttribute("data-focus")).toBe("1");
-    expect(container.querySelector('path[data-node="cat:collection"]')!.getAttribute("data-focus")).toBe("1");
+    expect(container.querySelector('path[data-node="src:coll:1:x"]')!.getAttribute("data-dim")).toBe("0");
+    expect(container.querySelector('path[data-node="cat:collection"]')!.getAttribute("data-dim")).toBe("0");
   });
 
   it("colors group segments by hueKey and source leaves by fileType hue", () => {
@@ -58,5 +58,20 @@ describe("KnowledgeSunburst", () => {
     expect(src.style.fill).toContain("white");
     expect(src.style.fill).not.toContain("--surface");
     expect(src.style.stroke || "").not.toContain("--foreground");
+  });
+
+  it("dims non-focused segments and keeps the focused family full opacity", () => {
+    const tree = { id:"root", name:"YOU", kind:"root", cat:"collection", value:2, children:[
+      { id:"cat:pref", name:"偏好", kind:"category", cat:"pref", value:2, children:[
+        { id:"g1", name:"任务需求", kind:"category", cat:"pref", hueKey:"任务需求", value:1, children:[
+          { id:"pref:1", name:"A", kind:"pref", cat:"pref", value:1 }]},
+        { id:"g2", name:"沟通偏好", kind:"category", cat:"pref", hueKey:"沟通偏好", value:1, children:[
+          { id:"pref:2", name:"B", kind:"pref", cat:"pref", value:1 }]}]}]} as any;
+    const { container, rerender } = render(<KnowledgeSunburst tree={tree} focusedId={null} onFocus={()=>{}} />);
+    const op = (sel: string) => Number((container.querySelector(sel) as HTMLElement).style.opacity || "1");
+    expect(op('path[data-node="pref:1"]')).toBe(1);
+    rerender(<KnowledgeSunburst tree={tree} focusedId={"g1"} onFocus={()=>{}} />);
+    expect(op('path[data-node="pref:1"]')).toBe(1);      // in focused family (child of g1)
+    expect(op('path[data-node="pref:2"]')).toBeLessThan(1); // outside → dimmed
   });
 });
