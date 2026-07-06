@@ -1,5 +1,7 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../backgrounds/Strands", () => ({ default: () => <div data-testid="strands" /> }));
 
 import BrainOrbCore from "./BrainOrbCore";
 
@@ -21,26 +23,22 @@ function setReduced(v: boolean) {
 }
 
 describe("BrainOrbCore", () => {
-  it("renders the CSS glow orb, animated by default", () => {
+  it("renders the strands orb", () => {
     setReduced(false);
-    const { container } = render(<BrainOrbCore />);
-    const orb = container.querySelector(".brain-orb");
-    expect(orb).not.toBeNull();
-    expect(orb!.getAttribute("data-static")).toBe("0");
-    expect(container.querySelectorAll(".brain-orb__blob").length).toBeGreaterThanOrEqual(3);
+    const { container, getByTestId } = render(<BrainOrbCore />);
+    expect(container.querySelector('[data-orb-strands="1"]')).not.toBeNull();
+    expect(getByTestId("strands")).not.toBeNull();
   });
 
-  it("freezes to a static orb under reduced-motion", () => {
-    setReduced(true);
-    const { container } = render(<BrainOrbCore />);
-    expect(container.querySelector(".brain-orb")!.getAttribute("data-static")).toBe("1");
-  });
-
-  it("respects the size prop", () => {
+  it("respects size", () => {
     setReduced(false);
     const { container } = render(<BrainOrbCore size={200} />);
-    const orb = container.querySelector(".brain-orb") as HTMLElement;
-    expect(orb.style.width).toBe("200px");
-    expect(orb.style.height).toBe("200px");
+    expect((container.querySelector('[data-orb-strands="1"]') as HTMLElement).style.width).toBe("200px");
+  });
+
+  it("freezes under reduced-motion (no breathe animation)", () => {
+    setReduced(true);
+    const { container } = render(<BrainOrbCore />);
+    expect((container.querySelector('[data-orb-strands="1"]') as HTMLElement).style.animation).toBe("none");
   });
 });
