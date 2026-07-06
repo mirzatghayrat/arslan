@@ -100,6 +100,9 @@ export function useKnowledgeTree() {
         id: `pref-grp:${category}`, name: category, kind: "category", cat: "pref", value: 0, hueKey: category,
         children: groupFacts.map((f): TreeNode => ({
           id: `pref:${f.id}`, name: f.content, kind: "pref", cat: "pref", value: 1,
+          // inherit the category hue so ring2 (group) + ring3 (its prefs) form one
+          // coherent concentric color wedge instead of a two-tone split.
+          hueKey: category,
         })),
       }));
 
