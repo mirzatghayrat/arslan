@@ -222,11 +222,12 @@ async def test_route_dispatches_after_clarify_released(maker, monkeypatch):
 
     monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
 
-    # Spawn 7 is already in the roster → route dispatches directly (no invite card).
+    # Spawn 7 is already in the roster → no invite card. The message NAMES seo-auditor,
+    # so doer-first (explicit-naming gate) honors the direct delegation and dispatches.
     from server.services import roster_service
     await roster_service.join("main", 7, via="invited")
 
-    await arslan.handle_user_message("main", "audit my site", _events([]))
+    await arslan.handle_user_message("main", "have seo-auditor audit my site", _events([]))
     assert len(dispatched) == 1
 
 
@@ -248,10 +249,11 @@ async def test_routing_resumes_after_clarify_cleared(maker, monkeypatch):
 
     monkeypatch.setattr(arslan, "_dispatch_spawn", _spy_dispatch)
 
-    # Spawn 7 is already in the roster → route dispatches directly (no invite card).
+    # Spawn 7 is already in the roster → no invite card. The message NAMES seo-auditor,
+    # so doer-first (explicit-naming gate) honors the direct delegation and dispatches.
     from server.services import roster_service
     await roster_service.join("main", 7, via="invited")
 
     events = []
-    await arslan.handle_user_message("main", "audit my site", _events(events))
+    await arslan.handle_user_message("main", "have seo-auditor audit my site", _events(events))
     assert len(dispatched) == 1
