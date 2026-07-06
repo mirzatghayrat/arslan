@@ -6,7 +6,7 @@ import { hueVar } from "./hues";
 interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
 
 const CX = 310, CY = 310;
-const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.012 };
+const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.0015 };
 
 function findNode(n: TreeNode, id: string): TreeNode | null {
   if (n.id === id) return n;
@@ -47,7 +47,7 @@ function SegmentPath({ s, dim, onFocus, onClick }: { s: Segment; dim: boolean; o
 
   return (
     <path ref={ref} data-node={s.id} data-dim={dim ? "1" : "0"} d={s.d} onClick={onClick}
-      style={{ fill: fillFor(s, s.depth), stroke: "var(--surface)", strokeWidth: 0.5,
+      style={{ fill: fillFor(s, s.depth), stroke: "white", strokeOpacity: 0.85, strokeWidth: 1.25,
         strokeLinejoin: "round", cursor: "pointer", opacity: dim ? 0.22 : 1,
         transition: "opacity .14s, fill .12s" }}>
       <title>{s.full ?? s.name}</title>
