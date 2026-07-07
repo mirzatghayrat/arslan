@@ -3,7 +3,7 @@ import { ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
-import EvalSummary from "./EvalSummary";
+import DiagnosisCatalog from "./DiagnosisCatalog";
 import RunReplay from "./RunReplay";
 
 interface Props {
@@ -23,18 +23,21 @@ interface Props {
  *   1. BAR (collapsed) — a Settings-save-bar-styled bar pinned at the rail bottom.
  *      Shows a label + a mini stat (run count / avg score). Clicking toggles L2.
  *   2. SUMMARY (slides up) — clicking the bar slides a panel UP revealing the
- *      EvalSummary (KPIs + scrollable run list), reusing EvalSummary in inline mode.
- *   3. DETAIL (expands left) — clicking a run opens RunReplay as a panel anchored to
- *      the rail's left edge, growing leftward toward the chat. Back/close → L2.
+ *      DiagnosisCatalog (RED fleet cards + worst-first per-spawn table). Clicking
+ *      a spawn row drills into a per-spawn placeholder (DG-6 replaces with SpawnDetail).
+ *   3. DETAIL (expands left) — RunReplay as a panel anchored to the rail's left
+ *      edge, growing leftward toward the chat. Back/close → L2.
  */
 export default function EvalDock({ spawnId, conversationId }: Props) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);            // L2 summary slide-up
   const [detailRunId, setDetailRunId] = useState<number | null>(null); // L3 expand-left
   const [runs, setRuns] = useState<RunListItem[]>([]);
+  // Which spawn (if any) the L2 diagnosis catalog has drilled into. null = catalog overview.
+  const [selSpawn, setSelSpawn] = useState<{ sid: number | null; name: string | null } | null>(null);
 
-  // Lightweight stat fetch for the collapsed bar. EvalSummary fetches its own
-  // copy when the slide-up mounts; this is just the at-a-glance summary.
+  // Lightweight stat fetch for the collapsed bar. DiagnosisCatalog fetches its
+  // own catalog when the slide-up mounts; this is just the at-a-glance summary.
   // NOTE: no ref-based "already fetched" guard — under React StrictMode the ref
   // persists across the mount→cleanup→remount cycle, which would cancel the first
   // fetch and skip the second, leaving the bar permanently at "0 runs". The
@@ -72,13 +75,19 @@ export default function EvalDock({ spawnId, conversationId }: Props) {
       {/* L2: summary slide-up (max-height transition) */}
       <div className={`eval-dock__summary${open ? " eval-dock__summary--open" : ""}`}>
         <div className="eval-dock__summary-inner">
-          <EvalSummary
-            inline
-            onClose={() => setOpen(false)}
-            spawnId={spawnId}
-            conversationId={conversationId}
-            onSelectRun={(id) => setDetailRunId(id)}
-          />
+          {selSpawn == null ? (
+            <DiagnosisCatalog
+              onClose={() => setOpen(false)}
+              onSelectSpawn={(sid, name) => setSelSpawn({ sid, name })}
+              spawnId={spawnId}
+              conversationId={conversationId}
+            />
+          ) : (
+            <div className="eval-dock__spawn-placeholder">
+              <button onClick={() => setSelSpawn(null)}>← 诊断台</button>
+              <div>{selSpawn.name} · 详情(DG-6 接入)</div>
+            </div>
+          )}
         </div>
       </div>
 
