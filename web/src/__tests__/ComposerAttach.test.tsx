@@ -39,6 +39,12 @@ function Harness({ onChange }: { onChange: (a: Attachment[]) => void }) {
       <button onClick={() => attach.addFiles([new File(["x"], "shot.png", { type: "image/png" })])}>
         add-image
       </button>
+      <button onClick={() => attach.addFiles([new File(["<h1>hi</h1>"], "page.html", { type: "text/html" })])}>
+        add-html
+      </button>
+      <button onClick={() => attach.addFiles([new File(["PK"], "archive.zip", { type: "application/zip" })])}>
+        add-zip
+      </button>
     </div>
   );
 }
@@ -85,6 +91,29 @@ describe("ComposerAttach", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     const last = onChange.mock.calls.at(-1)![0] as Attachment[];
     expect(last[0]).toMatchObject({ kind: "image", text: "", ocr: "none" });
+  });
+
+  it("an .html file rides the doc extract path (backend supports it), not rejected as unsupported", async () => {
+    m.extractAttachmentFile.mockResolvedValue({ text: "hi", chars: 2, truncated: false });
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("add-html"));
+    });
+    expect(m.extractAttachmentFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();  // no "unsupported" error
+    const last = onChange.mock.calls.at(-1)![0] as Attachment[];
+    expect(last[0]).toMatchObject({ name: "page.html", text: "hi", chars: 2 });
+  });
+
+  it("a genuinely unsupported type (.zip) is still rejected with an error", async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("add-zip"));
+    });
+    expect(m.extractAttachmentFile).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeInTheDocument();  // attach.unsupported
   });
 
   it("auto-extracts a PASTED url immediately via the SSRF-hardened api path (no button)", async () => {
