@@ -19,13 +19,13 @@ def test_record_noop_without_context():
 
 def test_record_prompt_noop_without_context():
     run_trace.record_prompt(system_prompt="x", injected_kb="y")  # must not raise
-    assert run_trace.prompt() == {"system_prompt": None, "injected_kb": None}
+    assert run_trace.prompt() == {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}
 
 
 def test_record_prompt_round_trips_inside_collecting():
     with run_trace.collecting():
-        assert run_trace.prompt() == {"system_prompt": None, "injected_kb": None}
-        run_trace.record_prompt(system_prompt="SYS", injected_kb="KB")
-        assert run_trace.prompt() == {"system_prompt": "SYS", "injected_kb": "KB"}
+        assert run_trace.prompt() == {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}
+        run_trace.record_prompt(system_prompt="SYS", injected_kb="KB", injected_kb_sources=["a.pdf"])
+        assert run_trace.prompt() == {"system_prompt": "SYS", "injected_kb": "KB", "injected_kb_sources": ["a.pdf"]}
     # outside the context, prompt() reports empty again
-    assert run_trace.prompt() == {"system_prompt": None, "injected_kb": None}
+    assert run_trace.prompt() == {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}

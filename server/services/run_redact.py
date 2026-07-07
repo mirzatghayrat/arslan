@@ -1,7 +1,7 @@
 """Privacy retention for run debug detail. Clears ONLY the SENSITIVE + BULKY fields
-(system_prompt, injected_kb, per-step args_full/result_raw) while keeping stats
-(scores, timings, summaries). Never deletes a run row. Shared by the boot sweep and
-the manual redact endpoints. Idempotent."""
+(system_prompt, injected_kb, injected_kb_sources, per-step args_full/result_raw) while
+keeping stats (scores, timings, summaries). Never deletes a run row. Shared by the boot
+sweep and the manual redact endpoints. Idempotent."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -29,6 +29,7 @@ async def redact_run(run_id: int) -> None:
             return
         run.system_prompt = None
         run.injected_kb = None
+        run.injected_kb_sources = None
         steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id))).scalars().all()
         _scrub_steps(list(steps))
         await db.commit()
@@ -41,6 +42,7 @@ async def redact_all() -> int:
         for run in runs:
             run.system_prompt = None
             run.injected_kb = None
+            run.injected_kb_sources = None
         steps = (await db.execute(select(RunStep))).scalars().all()
         _scrub_steps(list(steps))
         await db.commit()
@@ -59,6 +61,7 @@ async def sweep(retention_days: int) -> int:
         for run in runs:
             run.system_prompt = None
             run.injected_kb = None
+            run.injected_kb_sources = None
         if ids:
             steps = (await db.execute(select(RunStep).where(RunStep.run_id.in_(ids)))).scalars().all()
             _scrub_steps(list(steps))

@@ -40,23 +40,25 @@ def snapshot() -> list[dict]:
     return list(_trace.get() or [])
 
 
-def record_prompt(*, system_prompt: str | None, injected_kb: str | None = None) -> None:
+def record_prompt(*, system_prompt: str | None, injected_kb: str | None = None,
+                   injected_kb_sources: list | None = None) -> None:
     d = _prompt.get()
     if d is None:
         return
     d["system_prompt"] = system_prompt
     d["injected_kb"] = injected_kb
+    d["injected_kb_sources"] = injected_kb_sources
 
 
 def prompt() -> dict:
     d = _prompt.get()
-    return dict(d) if d else {"system_prompt": None, "injected_kb": None}
+    return dict(d) if d else {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}
 
 
 @contextmanager
 def collecting():
     buf: list[dict] = []
-    prompt_bucket = {"system_prompt": None, "injected_kb": None}
+    prompt_bucket = {"system_prompt": None, "injected_kb": None, "injected_kb_sources": None}
     token = _trace.set(buf)
     ptoken = _prompt.set(prompt_bucket)
     try:

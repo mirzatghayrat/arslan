@@ -9,7 +9,7 @@ const base: RunDetailDto = {
     status: "scored", overall_score: 8, overall_badge: "good",
     model: null, provider: null, tokens_in: null, tokens_out: null,
     tokens_estimated: false, error_kind: null, error_text: null,
-    system_prompt: null, injected_kb: null,
+    system_prompt: null, injected_kb: null, injected_kb_sources: null,
   },
   steps: [
     { seq: 0, kind: "route", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 80 },

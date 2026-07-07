@@ -367,6 +367,7 @@ export interface RunDto {
   error_text: string | null;
   system_prompt: string | null;
   injected_kb: string | null;
+  injected_kb_sources: string[] | null;
 }
 
 export interface RunDetailDto {

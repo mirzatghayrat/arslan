@@ -1120,6 +1120,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                 tokens_estimated=(_usage["tokens_in"] is None),
                 error_kind=type(exc).__name__, error_text=str(exc),
                 system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                injected_kb_sources=_prompt.get("injected_kb_sources"),
             )
             return
 
@@ -1138,6 +1139,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                 tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
                 tokens_estimated=(_usage["tokens_in"] is None),
                 system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                injected_kb_sources=_prompt.get("injected_kb_sources"),
             )
             return
 
@@ -1149,6 +1151,7 @@ async def _dispatch_spawn(  # noqa: ANN001
             tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
             tokens_estimated=(_usage["tokens_in"] is None),
             system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+            injected_kb_sources=_prompt.get("injected_kb_sources"),
         )
     tee({
         "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],

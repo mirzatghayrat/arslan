@@ -358,6 +358,7 @@ class Run(Base):
     error_text = Column(Text, nullable=True)          # error message (truncated by the recorder)
     system_prompt = Column(Text, nullable=True)       # SENSITIVE: assembled system prompt (retention-governed)
     injected_kb = Column(Text, nullable=True)         # SENSITIVE: injected knowledge (retention-governed)
+    injected_kb_sources = Column(JSON, nullable=True)  # SENSITIVE: source labels for detail-page chips (retention-governed)
 
 
 class RunStep(Base):

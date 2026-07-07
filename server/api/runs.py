@@ -304,6 +304,7 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
             tokens_estimated=run.tokens_estimated,
             error_kind=run.error_kind, error_text=run.error_text,
             system_prompt=run.system_prompt, injected_kb=run.injected_kb,
+            injected_kb_sources=run.injected_kb_sources,
         ),
         steps=[RunStepOut(seq=s.seq, kind=s.kind, ref=s.ref or {}, detail=s.detail or {},
                           duration_ms=s.duration_ms) for s in steps],

@@ -326,6 +326,7 @@ class RunOut(BaseModel):
     error_text: str | None = None
     system_prompt: str | None = None
     injected_kb: str | None = None
+    injected_kb_sources: list | None = None
 
 
 class RunDetailOut(BaseModel):

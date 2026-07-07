@@ -162,7 +162,8 @@ class RunRecorder:
                         tokens_in: int | None = None, tokens_out: int | None = None,
                         tokens_estimated: bool = False,
                         error_kind: str | None = None, error_text: str | None = None,
-                        system_prompt: str | None = None, injected_kb: str | None = None) -> int:
+                        system_prompt: str | None = None, injected_kb: str | None = None,
+                        injected_kb_sources: list | None = None) -> int:
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
         self._merge_tool_trace(steps)
@@ -184,6 +185,7 @@ class RunRecorder:
                 run.error_text = (error_text[:RUN_ERR_CAP] if error_text else None)
                 run.system_prompt = system_prompt
                 run.injected_kb = injected_kb
+                run.injected_kb_sources = injected_kb_sources
                 for s in steps:
                     db.add(RunStep(run_id=self.run_id, **s))
                 if summary_message_id is not None:

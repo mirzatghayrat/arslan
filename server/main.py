@@ -69,6 +69,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_run_detail_upgrade)
         from server.db.migrations.versions._0022_run_created_idx import upgrade_sync as _run_created_idx_upgrade
         await conn.run_sync(_run_created_idx_upgrade)
+        from server.db.migrations.versions._0023_run_kb_sources import upgrade_sync as _run_kb_sources_upgrade
+        await conn.run_sync(_run_kb_sources_upgrade)
 
     from server.registry.seeder import seed_registry
 

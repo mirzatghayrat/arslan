@@ -180,9 +180,11 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     suffix = evolution_service.prompt_suffix(spawn.name)
     if suffix:
         system = f"{system}\n\n{suffix}"
+    _kb_sources = None
     try:
         _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id)
         system += _knowledge.knowledge_block(_kb)
+        _kb_sources = [src for src, _ in _kb] or None
     except Exception as exc:  # noqa: BLE001
         logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
     if attached_context:
@@ -194,7 +196,7 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     system += _SPAWN_TOOL_GUIDANCE
 
     from server.orchestrator import run_trace
-    run_trace.record_prompt(system_prompt=system, injected_kb=None)
+    run_trace.record_prompt(system_prompt=system, injected_kb=None, injected_kb_sources=_kb_sources)
 
     return system, wired
 
