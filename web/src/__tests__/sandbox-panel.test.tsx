@@ -65,6 +65,20 @@ describe("SandboxPanel", () => {
     expect(screen.getByTestId("html-doc-card")).toBeDefined();
   });
 
+  it("humanizes tool activity instead of showing a raw 🔧 web_search", () => {
+    render(
+      <SandboxPanel spawn={spawn} sessionId="s" seed={null} conversationId="main"
+        onClose={() => {}} onMerged={() => {}} />,
+    );
+    act(() => { sandboxFrameCb({ type: "stream_start" }); });
+    act(() => { sandboxFrameCb({ type: "tool_call", tool: "web_search", args_summary: '{"query":"OKX"}' }); });
+    act(() => { sandboxFrameCb({ type: "tool_result", tool: "web_search", ok: true, summary: "5 results" }); });
+    act(() => { sandboxFrameCb({ type: "stream_chunk", content: "done" }); });
+    act(() => { sandboxFrameCb({ type: "stream_end" }); });
+    expect(screen.queryByText(/🔧 web_search/)).toBeNull();     // no raw tool id
+    expect(screen.getByText("activity.search")).toBeDefined();   // humanized (i18n key via the t-mock)
+  });
+
   it("shows a live thinking indicator during the pre-first-token gap (parity with main chat)", () => {
     render(
       <SandboxPanel spawn={spawn} sessionId="s" seed={null} conversationId="main"

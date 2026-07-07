@@ -6,6 +6,8 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody from './MessageBody';
 import LiveActivity from './LiveActivity';
+import { humanizeStep } from '../lib/toolHumanize';
+import type { ToolStep } from '../api/client.types';
 
 interface SandboxPanelProps {
   spawn: Spawn;
@@ -19,7 +21,7 @@ interface SandboxPanelProps {
   hidden?: boolean;               // mounted but not the active pane — keep socket alive
 }
 
-type Msg = { id: string; role: 'user' | 'spawn'; text: string; tools?: string[] };
+type Msg = { id: string; role: 'user' | 'spawn'; text: string; tools?: ToolStep[] };
 
 export default function SandboxPanel({ spawn, sessionId, seed, conversationId, onClose, onMerged, hidden = false }: SandboxPanelProps) {
   const { t } = useTranslation();
@@ -27,7 +29,7 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const toolsRef = useRef<string[]>([]);
+  const toolsRef = useRef<ToolStep[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -44,11 +46,24 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
         setMessages((p) => p.map((x) => (x.id === '__s__' ? { ...x, text: x.text + m.content } : x)));
         break;
       case 'tool_call':
-        toolsRef.current.push(`🔧 ${m.tool}`);
-        break;
-      case 'tool_result':
+        // Track as a ToolStep (name + args + running) — the same shape the main chat uses —
+        // so the sandbox can humanize activity instead of showing a raw `🔧 web_search`.
+        toolsRef.current = [...toolsRef.current, { tool: m.tool, argsSummary: m.args_summary, status: 'running' }];
         setMessages((p) => p.map((x) => (x.id === '__s__' ? { ...x, tools: [...toolsRef.current] } : x)));
         break;
+      case 'tool_result': {
+        // Resolve the most-recent running step with this tool → ok/error + summary (mirrors arslanStore).
+        const steps = [...toolsRef.current];
+        for (let i = steps.length - 1; i >= 0; i--) {
+          if (steps[i].tool === m.tool && steps[i].status === 'running') {
+            steps[i] = { ...steps[i], status: m.ok ? 'ok' : 'error', resultSummary: m.summary };
+            break;
+          }
+        }
+        toolsRef.current = steps;
+        setMessages((p) => p.map((x) => (x.id === '__s__' ? { ...x, tools: [...steps] } : x)));
+        break;
+      }
       case 'stream_end':
         setMessages((p) => p.map((x) => (x.id === '__s__' ? { ...x, id: `m-${Date.now()}` } : x)));
         setStreaming(false);
@@ -120,13 +135,17 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
               style={m.role === 'user' ? { background: 'rgba(120,140,170,0.10)', border: '1px solid rgba(255,255,255,0.08)' } : undefined}>
               {m.role === 'spawn'
                 ? (m.id === '__s__' && !m.text
-                    ? <LiveActivity steps={[]} startedAt={startedAt}
+                    ? <LiveActivity steps={m.tools ?? []} startedAt={startedAt}
                         phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
                     : <MessageBody text={m.text} streaming={m.id === '__s__'} hasMessageActions={false}
                         className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />)
                 : m.text}
-              {m.tools && m.tools.length > 0 && (
-                <div className="mt-2 text-[10px] font-mono text-muted-foreground border-l-2 border-primary pl-2">{m.tools.join('  ')}</div>
+              {/* Humanized tool summary under the reply (LiveActivity already shows steps live
+                  during the empty-text gap, so skip the duplicate there). */}
+              {m.tools && m.tools.length > 0 && !(m.id === '__s__' && !m.text) && (
+                <div className="mt-2 text-[10px] font-mono text-muted-foreground border-l-2 border-primary pl-2 space-y-0.5">
+                  {m.tools.map((s, i) => <div key={i}>{humanizeStep(s, t)}</div>)}
+                </div>
               )}
             </div>
           </div>
