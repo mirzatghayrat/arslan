@@ -506,6 +506,7 @@ class BrainUsage(Base):
     (material/learning/profile), incremented when retrieval injects it."""
 
     __tablename__ = "brain_usage"
+    __table_args__ = (UniqueConstraint("kind", "ref_key", name="ux_brain_usage_kind_ref"),)
 
     id = Column(Integer, primary_key=True)
     kind = Column(String(20), nullable=False)          # material|learning|profile
