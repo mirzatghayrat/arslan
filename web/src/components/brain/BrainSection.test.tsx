@@ -7,6 +7,7 @@ vi.mock("../../api/client", () => ({ api: {
   getKnowledge: vi.fn().mockResolvedValue([]), getCollectionKnowledge: vi.fn().mockResolvedValue([{ source: "条款.pdf", chunks: 6 }]),
   createCollection: vi.fn(), ingestCollection: vi.fn(),
 } }));
+vi.mock("../../lib/feed", () => ({ feedFile: vi.fn() }));
 import BrainSection from "./BrainSection";
 
 describe("BrainSection", () => {
@@ -15,5 +16,17 @@ describe("BrainSection", () => {
     await waitFor(() => expect(screen.getAllByText("保险资料").length).toBeGreaterThan(0));
     fireEvent.mouseEnter(screen.getByText("保险资料", { selector: "span" }));
     await waitFor(() => expect(container.querySelector('path[data-node="coll:1"]')!.getAttribute("data-dim")).toBe("0"));
+  });
+
+  it("drops files → feeds each via feedFile then refreshes", async () => {
+    const feed = await import("../../lib/feed");
+    const spy = vi.spyOn(feed, "feedFile").mockResolvedValue({ chunks_added: 1 } as any);
+    const { container } = render(<BrainSection />);
+    const zone = container.querySelector('[data-dropzone="1"]')! as HTMLElement;
+    const file = new File(["x"], "a.pdf", { type: "application/pdf" });
+    fireEvent.dragOver(zone, { dataTransfer: { files: [file], types: ["Files"] } });
+    expect(container.querySelector('[data-drop-overlay="1"]')).not.toBeNull(); // overlay shows
+    fireEvent.drop(zone, { dataTransfer: { files: [file], types: ["Files"] } });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
   });
 });
