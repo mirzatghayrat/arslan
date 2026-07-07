@@ -148,6 +148,7 @@ class UserFact(Base):
     sensitive = Column(Boolean, default=False)
     category = Column(String(30), nullable=True)
     label = Column(String(40), nullable=True)
+    confidence = Column(Float, default=0.6)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -482,3 +483,34 @@ class ConversationEvent(Base):
     ref = Column(JSON, nullable=True)
     summary = Column(Text, nullable=False, default="")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Learning(Base):
+    """心得 (know-how) distilled from concrete signals (a distill event, a user
+    correction, or a repeated run pattern). Always carries a traceable source_ref."""
+
+    __tablename__ = "learnings"
+
+    id = Column(Integer, primary_key=True)
+    content = Column(Text, nullable=False)
+    label = Column(String(60), nullable=True)
+    source_kind = Column(String(20), nullable=False)   # distill|feedback|run_pattern
+    source_ref = Column(JSON, nullable=False)
+    spawn_id = Column(Integer, nullable=True, index=True)
+    confidence = Column(Float, default=0.6)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BrainUsage(Base):
+    """Unified cross-cutting usage for the Second Brain: one row per used entity
+    (material/learning/profile), incremented when retrieval injects it."""
+
+    __tablename__ = "brain_usage"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(20), nullable=False)          # material|learning|profile
+    ref_key = Column(String(300), nullable=False)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+    last_used_ref = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
