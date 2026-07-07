@@ -33,4 +33,17 @@ describe("DiagnosisCatalog", () => {
     fireEvent.click((await screen.findByText("Bad")).closest("[data-testid='cat-row']")!);
     expect(onSel).toHaveBeenCalledWith(1, "Bad");
   });
+  it("anomaly badge is collapsed by default and expands on click", async () => {
+    const { api } = await import("../api/client");
+    (api.getRunAnomalies as any).mockResolvedValueOnce([
+      { severity:"red", kind:"error_rate", spawn_id:1, spawn_name:"Bad", title:"Bad 错误率偏高", detail:"20% · 1/5 报错", since:null, run_id:null },
+      { severity:"amber", kind:"tool_error", spawn_id:3, spawn_name:"CI", title:"CI 工具报错", detail:"web_extract 失败", since:null, run_id:58 },
+    ]);
+    render(<DiagnosisCatalog onClose={() => {}} onSelectSpawn={() => {}} />);
+    const badge = await screen.findByTestId("anomaly-badge");
+    expect(badge.textContent).toContain("2");                    // count while collapsed
+    expect(screen.queryByText(/错误率偏高/)).toBeNull();         // detail hidden by default
+    fireEvent.click(badge);
+    expect(screen.getByText(/错误率偏高/)).toBeTruthy();         // expanded shows detail
+  });
 });

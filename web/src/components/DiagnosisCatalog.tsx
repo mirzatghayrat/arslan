@@ -70,12 +70,19 @@ function Sparkline({ points }: { points: number[] }) {
   );
 }
 
+/** Small severity dot — red for hard failures, amber for warnings. */
+function SeverityDot({ severity }: { severity: string }) {
+  const color = severity === "red" ? "var(--danger)" : "var(--warning)";
+  return <span className="anomaly-row__dot" style={{ background: color }} aria-hidden="true" />;
+}
+
 export default function DiagnosisCatalog({ onSelectSpawn }: Props) {
   const { t } = useTranslation();
   const [range, setRange] = useState<RangeKey>("1h");
   const [catalog, setCatalog] = useState<RunCatalogDto | null>(null);
   const [anomalies, setAnomalies] = useState<AnomalyDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [anomOpen, setAnomOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,9 +145,45 @@ export default function DiagnosisCatalog({ onSelectSpawn }: Props) {
         </div>
       </div>
 
-      <div className="diag-catalog__anomalies" data-testid="anomaly-badge">
-        异常 {anomalies.length}
-      </div>
+      {anomalies.length > 0 ? (
+        <div
+          className="diag-catalog__anomalies"
+          data-testid="anomaly-badge"
+          role="button"
+          tabIndex={0}
+          onClick={() => setAnomOpen((o) => !o)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setAnomOpen((o) => !o); }}
+        >
+          异常 · 断言 {anomalies.length}
+          <span className={`diag-catalog__anomalies-chevron${anomOpen ? " diag-catalog__anomalies-chevron--open" : ""}`}>▾</span>
+        </div>
+      ) : (
+        <div className="diag-catalog__anomalies diag-catalog__anomalies--empty" data-testid="anomaly-badge">
+          无异常
+        </div>
+      )}
+
+      {anomOpen && anomalies.length > 0 && (
+        <div className="anomaly-panel" data-testid="anomaly-panel">
+          {anomalies.map((a, i) => (
+            <div className="anomaly-row" key={i}>
+              <SeverityDot severity={a.severity} />
+              <div className="anomaly-row__body">
+                <div className="anomaly-row__title">{a.title}</div>
+                <div className="anomaly-row__detail">{a.detail}</div>
+                {a.since && <div className="anomaly-row__since">{a.since}</div>}
+              </div>
+              <button
+                type="button"
+                className="anomaly-row__jump"
+                onClick={() => onSelectSpawn(a.spawn_id, a.spawn_name)}
+              >
+                查 →
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading && spawns.length === 0 ? (
         <p className="diag-catalog__empty">加载中…</p>
