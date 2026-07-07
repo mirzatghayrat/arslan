@@ -2281,3 +2281,26 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   .matrix-spinner__dot { animation: none; opacity: 0.5; }
 }
+
+/* Shiny text — a moving highlight swept across the glyphs (à la reactbits shiny-text),
+   used on a spawn pill's label while that spawn is running a turn. Themed via tokens. */
+@keyframes shiny-sweep {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+.shiny-text {
+  background: linear-gradient(
+    110deg,
+    var(--primary) 42%,
+    color-mix(in srgb, var(--primary) 30%, var(--foreground)) 50%,
+    var(--primary) 58%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shiny-sweep 2.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shiny-text { animation: none; color: var(--primary); }
+}

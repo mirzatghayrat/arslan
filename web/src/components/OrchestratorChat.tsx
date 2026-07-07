@@ -90,6 +90,10 @@ export default function OrchestratorChat({
   const settings = useSettingsStore((s) => s.settings);
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
+  // Per-spawn "running a turn now" signal for the pill shimmer: pendingRoute is set on the
+  // routing frame and cleared on stream_end; streamSpawnId covers the token-streaming window.
+  const pendingRoute = useArslanStore((s) => s.pendingRoute);
+  const streamSpawnId = useArslanStore((s) => s.streamSpawnId);
   // Known spawn names (ledger prop + names learned from frames) — grounds the
   // @-mention chips in routing announcements; unknown @text stays plain.
   const spawnNameMap = useArslanStore((s) => s.spawnNames);
@@ -300,6 +304,9 @@ export default function OrchestratorChat({
             return activeDisplayList.map(spawn => {
               const isSplitActive = activeSandboxSpawnId === spawn.id;
               const isOpen = openSandboxes.some((s) => s.spawnId === spawn.id);
+              // spawn.id is a string; pendingRoute.spawnId / streamSpawnId are numbers → coerce.
+              const running = (pendingRoute?.spawnId != null && String(pendingRoute.spawnId) === spawn.id)
+                || (streamSpawnId != null && String(streamSpawnId) === spawn.id);
 
               // Indicator: spawns with an open sandbox get a solid primary dot (the
               // active one pulses); spawns with no sandbox get a quiet green idle dot.
@@ -340,7 +347,7 @@ export default function OrchestratorChat({
                   }
                 >
                   {statusIndicator}
-                  <span>{spawn.name}</span>
+                  <span className={running ? 'shiny-text' : undefined}>{spawn.name}</span>
                 </button>
               );
             });
