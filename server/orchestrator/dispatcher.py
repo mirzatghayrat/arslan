@@ -182,7 +182,10 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
         system = f"{system}\n\n{suffix}"
     _kb_sources = None
     try:
-        _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id)
+        # used_ref=None: build_spawn_system has no conversation_id in scope; usage
+        # count still accrues per material hit, the "最近用于" ref is filled by the
+        # Arslan direct-chat path which does carry conversation_id.
+        _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id, used_ref=None)
         system += _knowledge.knowledge_block(_kb)
         _kb_sources = [src for src, _ in _kb] or None
     except Exception as exc:  # noqa: BLE001

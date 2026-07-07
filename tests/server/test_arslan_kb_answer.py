@@ -22,7 +22,7 @@ def test_handle_answer_injects_collection_kb(monkeypatch):
     from server.services import knowledge
     captured = {}
 
-    async def fake_retrieve_scoped(query, *, spawn_id, k=5):
+    async def fake_retrieve_scoped(query, *, spawn_id, k=5, used_ref=None):
         assert spawn_id is None
         return [("公司手册.pdf", "报销上限 500 元")]
 
@@ -43,7 +43,7 @@ def test_handle_answer_survives_retrieve_failure(monkeypatch):
     from server.services import knowledge
     captured = {}
 
-    async def boom(query, *, spawn_id, k=5):
+    async def boom(query, *, spawn_id, k=5, used_ref=None):
         raise RuntimeError("db locked")
 
     async def fake_run_native(**kwargs):

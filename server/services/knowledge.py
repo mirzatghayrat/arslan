@@ -79,11 +79,11 @@ async def _fts_route(db, query: str, where: str, params: dict) -> tuple[list[int
     if not match:
         return [], {}
     stmt = _bind(sa_text(
-        "SELECT kc.id, kc.source, kc.text FROM knowledge_chunks_fts f "
+        "SELECT kc.id, kc.source, kc.text, kc.collection_id, kc.spawn_id FROM knowledge_chunks_fts f "
         "JOIN knowledge_chunks kc ON kc.id = f.rowid "
         f"WHERE f.text MATCH :q AND {where} ORDER BY rank LIMIT :lim"), params)
     rows = (await db.execute(stmt, {**params, "q": match, "lim": CANDIDATES})).all()
-    return [r[0] for r in rows], {r[0]: (r[1], r[2]) for r in rows}
+    return [r[0] for r in rows], {r[0]: (r[1], r[2], r[3], r[4]) for r in rows}
 
 
 async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[int], dict]:
@@ -100,7 +100,7 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
         # embedding call on every dispatch. Provider resolution above is cheap
         # (pure DB read) and supplies the model_id filter for this SELECT.
         stmt = _bind(sa_text(
-            "SELECT kc.id, kc.source, kc.text, kc.embedding FROM knowledge_chunks kc "
+            "SELECT kc.id, kc.source, kc.text, kc.embedding, kc.collection_id, kc.spawn_id FROM knowledge_chunks kc "
             f"WHERE {where} AND kc.embedding IS NOT NULL AND kc.embedding_model = :em"), params)
         rows = (await db.execute(stmt, {**params, "em": provider.model_id})).all()
         if not rows:
@@ -112,16 +112,18 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
         sims = mat @ q / (np.linalg.norm(mat, axis=1) * (np.linalg.norm(q) or 1e-9) + 1e-9)
         order = np.argsort(-sims, kind="stable")[:CANDIDATES]
         return ([rows[i][0] for i in order],
-                {rows[i][0]: (rows[i][1], rows[i][2]) for i in order})
+                {rows[i][0]: (rows[i][1], rows[i][2], rows[i][4], rows[i][5]) for i in order})
     except Exception as exc:  # noqa: BLE001 — vector route is never fatal
         logger.warning("vector route failed (non-fatal): %s", exc)
         return [], {}
 
 
-async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5) -> list[tuple[str, str]]:
+async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
+                          used_ref: str | None = None) -> list[tuple[str, str]]:
     """Return up to k (source, text) chunks for the query within the caller's
     partition. This is the single retrieval entry point for dispatch (live +
-    eval) and Arslan direct chat alike."""
+    eval) and Arslan direct chat alike. Records material usage on each hit
+    (best-effort — usage never affects what's returned)."""
     async with db_session.AsyncSessionLocal() as db:
         coll_ids = await _bound_collection_ids(db, spawn_id) if spawn_id is not None else []
         where, params = _scope_clause(spawn_id, coll_ids)
@@ -129,7 +131,13 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5) -> li
         vec_ids, vmeta = await _vector_route(db, query, where, params)
     meta.update(vmeta)
     merged = rrf_merge([r for r in (fts_ids, vec_ids) if r], k=k)
-    return rerank(query, [meta[cid] for cid in merged])
+    hits = [meta[cid] for cid in merged]           # (source, text, coll_id, spawn_id)
+    from server.services import brain_usage
+    for src, _txt, cid, sid in hits:
+        ref_key = (f"material:coll:{cid}:{src}" if cid is not None
+                   else f"material:spawn:{sid}:{src}")
+        await brain_usage.record("material", ref_key, used_ref=used_ref)
+    return rerank(query, [(src, txt) for src, txt, _c, _s in hits])
 
 
 def knowledge_block(chunks: list[tuple[str, str]]) -> str:

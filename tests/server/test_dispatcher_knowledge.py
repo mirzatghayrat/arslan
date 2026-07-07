@@ -40,7 +40,7 @@ async def test_dispatch_injects_retrieved_knowledge(memdb, monkeypatch):
     sink = {}
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _FakeAdapter(sink))
 
-    async def fake_retrieve(query, *, spawn_id, k=5):
+    async def fake_retrieve(query, *, spawn_id, k=5, used_ref=None):
         return [("policy.txt", "Refund policy: 30 days.")]
     monkeypatch.setattr(knowledge, "retrieve_scoped", fake_retrieve)
 
@@ -64,7 +64,7 @@ async def test_dispatch_survives_retrieval_error(memdb, monkeypatch):
     sink = {}
     monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _FakeAdapter(sink))
 
-    async def boom(query, *, spawn_id, k=5):
+    async def boom(query, *, spawn_id, k=5, used_ref=None):
         raise RuntimeError("fts down")
     monkeypatch.setattr(knowledge, "retrieve_scoped", boom)
 
