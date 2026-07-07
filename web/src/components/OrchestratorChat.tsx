@@ -26,6 +26,7 @@ import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type At
 import InviteConfirmCard from './InviteConfirmCard';
 import MentionText from './MentionText';
 import { resolveSpawnName } from '../api/resolveSpawnName';
+import { activeMention, filterRoster, insertMention } from '../lib/mentions';
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -106,6 +107,38 @@ export default function OrchestratorChat({
   const [inputValue, setInputValue] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attach = useComposerAttach(setAttachments);
+
+  // @-mention autocomplete for the chat composer — a dropdown of this conversation's roster
+  // members that filters as you type `@…` and inserts the full `@Name ` on pick (so routing
+  // gets an exact name). Chat composer only (empty-state hero intentionally excluded).
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const [mention, setMention] = useState<{ query: string; index: number } | null>(null);
+  const mentionCands = React.useMemo(
+    () => (mention ? filterRoster(roster, mention.query).slice(0, 8) : []),
+    [mention, roster],
+  );
+  const syncMention = (value: string, caret: number | null) => {
+    const tok = caret == null ? null : activeMention(value, caret);
+    setMention(tok ? { query: tok.query, index: 0 } : null);
+  };
+  const pickMention = (name: string) => {
+    const el = chatInputRef.current;
+    const caret = el?.selectionStart ?? inputValue.length;
+    const tok = activeMention(inputValue, caret);
+    if (!tok) return;
+    const next = insertMention(inputValue, tok, caret, name);
+    setInputValue(next.value);
+    attach.onInputChange(next.value);
+    setMention(null);
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(next.caret, next.caret); });
+  };
+  const onMentionKeyDown = (e: React.KeyboardEvent) => {
+    if (!mention || mentionCands.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setMention((m) => m && { ...m, index: (m.index + 1) % mentionCands.length }); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setMention((m) => m && { ...m, index: (m.index - 1 + mentionCands.length) % mentionCands.length }); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickMention(mentionCands[mention.index]?.spawnName ?? ''); }
+    else if (e.key === 'Escape') { e.preventDefault(); setMention(null); }
+  };
   // Optimistic verdicts: filled immediately on click, before the backend verdict_recorded
   // frame round-trips (which sets msg.verdict via the store). Keyed by messageId.
   // KNOWN LIMITATION: verdict_recorded carries no messageId, so the store marks the spawn's
@@ -1181,16 +1214,33 @@ export default function OrchestratorChat({
               className={`composer-box${attach.dragActive ? ' composer-box--drop' : ''}`}
               {...attach.dndHandlers}
             >
+              {mention && mentionCands.length > 0 && (
+                <div data-testid="mention-dropdown"
+                  className="absolute bottom-full left-0 mb-1 w-64 max-h-56 overflow-auto bg-surface border border-border-strong rounded-xl shadow-2xl z-30 py-1">
+                  {mentionCands.map((m, i) => (
+                    <button key={m.spawnId} type="button"
+                      onMouseDown={(e) => { e.preventDefault(); pickMention(m.spawnName ?? ''); }}
+                      onMouseEnter={() => setMention((s) => s && { ...s, index: i })}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${i === mention.index ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04]'}`}>
+                      <SpawnAvatar seed={m.spawnName ?? ''} size={20} />
+                      <span className="flex-1 truncate">{m.spawnName}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <input
                 id="chat-message-input"
+                ref={chatInputRef}
                 type="text"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
                 value={inputValue}
-                onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
+                onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); syncMention(e.target.value, e.target.selectionStart); }}
+                onKeyDown={onMentionKeyDown}
+                onBlur={() => setMention(null)}
                 onPaste={attach.onPaste}
                 placeholder={t('orchestrator.placeholder_chat')}
                 className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
