@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
   Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
-  ChevronDown, ChevronUp, Boxes, Orbit
+  ChevronDown, ChevronUp, Boxes, Orbit, HeartPulse
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
@@ -26,8 +26,8 @@ interface SidebarProps {
   onSelectSpawnChat: (id: string) => void;
 
   // Outer global view states
-  activeSection: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'settings';
-  onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'settings') => void;
+  activeSection: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings';
+  onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings') => void;
 
   /** Called when the user completes (完结) a direct chat with a spawn */
   onCompleteChat: (id: string) => void;
@@ -151,6 +151,22 @@ export default function Sidebar({
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Orbit className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'brain' ? 'text-primary' : 'text-subtle-foreground'}`} />
                   <span className="truncate font-sans font-medium">{t('nav.secondBrain')}</span>
+                </div>
+              </button>
+
+              {/* Diagnosis View — standalone full-width catalog→spawn→run drill-down */}
+              <button
+                id="nav-btn-diagnosis-deck"
+                onClick={() => onChangeSection('diagnosis')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
+                  activeSection === 'diagnosis'
+                    ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <HeartPulse className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'diagnosis' ? 'text-primary' : 'text-subtle-foreground'}`} />
+                  <span className="truncate font-sans font-medium">诊断台</span>
                 </div>
               </button>
 

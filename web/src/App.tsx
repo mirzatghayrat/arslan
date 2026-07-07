@@ -20,7 +20,7 @@ import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnStudio from './components/SpawnStudio';
 import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
-import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, LayoutGrid, Paintbrush, Wrench, Brain } from 'lucide-react';
+import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, LayoutGrid, Paintbrush, Wrench, Brain, HeartPulse } from 'lucide-react';
 import { getIcon } from './components/iconMap';
 import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
@@ -34,6 +34,7 @@ import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
 import BrainSection from './components/brain/BrainSection';
+import DiagnosisView from './components/DiagnosisView';
 
 interface ArslanThread {
   id: string;
@@ -64,8 +65,8 @@ export default function App() {
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
 
-// Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'settings'
-  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'settings'>('arslan');
+// Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'
+  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'>('arslan');
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -576,7 +577,8 @@ export default function App() {
                    activeSection === 'spawn' ? t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' }) :
                    activeSection === 'ledger' ? t('modal.workspace_ledger') :
                    activeSection === 'capabilities' ? t('modal.workspace_capabilities') :
-                   activeSection === 'brain' ? t('modal.workspace_brain') : t('modal.workspace_settings')}
+                   activeSection === 'brain' ? t('modal.workspace_brain') :
+                   activeSection === 'diagnosis' ? '诊断台' : t('modal.workspace_settings')}
                 </span>
               </span>
             </div>
@@ -771,6 +773,8 @@ export default function App() {
             )}
 
             {activeSection === 'brain' && <BrainSection />}
+
+            {activeSection === 'diagnosis' && <DiagnosisView />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
