@@ -327,6 +327,32 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             {/* Separation divider */}
             <div className="h-[1px] bg-border/40"></div>
 
+            {/* Run debug detail retention — days before boot sweep redacts sensitive/bulky run fields */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-foreground font-sans">运行调试详情保留天数</h4>
+                <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+                  超过此天数的 run，实际系统提示 / 注入知识 / 工具完整入参与原始返回会被自动清除（分数与耗时不受影响）。
+                </p>
+              </div>
+              <input
+                id="settings-run-debug-retention-days"
+                type="number"
+                min={1}
+                value={localSettings.runDebugRetentionDays ?? 30}
+                onChange={(e) =>
+                  setLocalSettings((prev) => ({
+                    ...prev,
+                    runDebugRetentionDays: Math.max(1, Number(e.target.value) || 1),
+                  }))
+                }
+                className="w-24 bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none transition-all font-mono"
+              />
+            </div>
+
+            {/* Separation divider */}
+            <div className="h-[1px] bg-border/40"></div>
+
             {/* Spawns synthesis modes */}
             <div className="flex items-center justify-between">
               <div>

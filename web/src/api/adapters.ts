@@ -33,6 +33,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
     embeddingConfigId: backend.embedding_config_id ?? "",
+    runDebugRetentionDays: backend.run_debug_retention_days ?? 30,
   };
 }
 
@@ -52,6 +53,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     orchestrator_shell_enabled: ui.orchestratorShellEnabled ? "true" : "false",
     shell_confirm_policy: ui.shellConfirmPolicy,
     embedding_config_id: ui.embeddingConfigId ?? "",
+    run_debug_retention_days: ui.runDebugRetentionDays ?? 30,
   };
 
   // Only send the search key if the user entered something new (non-empty, non-masked).
@@ -368,6 +370,9 @@ export function toUiRun(dto: RunDetailDto): UiRun {
     ok: typeof s.ref.ok === "boolean" ? s.ref.ok : undefined,
     durationMs: s.duration_ms,
     isSlowest: maxMs > 0 && (s.duration_ms ?? 0) === maxMs,
+    argsFull: typeof s.detail?.args_full === "string" ? s.detail.args_full : undefined,
+    resultRaw: typeof s.detail?.result_raw === "string" ? s.detail.result_raw : undefined,
+    error: typeof s.detail?.error === "string" ? s.detail.error : undefined,
   }));
   const dimensions: UiRunDimension[] = evaluations.map((e) => ({
     dimension: e.dimension,
@@ -388,5 +393,14 @@ export function toUiRun(dto: RunDetailDto): UiRun {
     steps: uiSteps,
     dimensions,
     scored: run.status === "scored",
+    model: run.model ?? undefined,
+    provider: run.provider ?? undefined,
+    tokensIn: run.tokens_in ?? undefined,
+    tokensOut: run.tokens_out ?? undefined,
+    tokensEstimated: run.tokens_estimated,
+    errorKind: run.error_kind ?? undefined,
+    errorText: run.error_text ?? undefined,
+    systemPrompt: run.system_prompt ?? undefined,
+    injectedKb: run.injected_kb ?? undefined,
   };
 }

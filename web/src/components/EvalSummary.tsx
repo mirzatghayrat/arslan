@@ -31,10 +31,17 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [viewRunId, setViewRunId] = useState<number | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
   // Scope toggle only exists when a conversationId is provided; defaults to
   // the current conversation (the reason the user opened the view from a chat).
   const [scope, setScope] = useState<"conversation" | "all">("conversation");
   const conversationScoped = conversationId != null && scope === "conversation";
+
+  function reloadRuns() {
+    return api.getRuns(spawnId, 50, conversationScoped ? conversationId : undefined)
+      .then((r) => setRuns(r))
+      .catch((e) => setError(String(e)));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +55,19 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
     if (inline) onSelectRun?.(runId);
     else setViewRunId(runId);
   };
+
+  async function handleClearAll() {
+    if (!window.confirm("确定清除所有 run 的调试详情吗？实际系统提示/注入知识/工具完整入参与原始返回将被清除，分数与耗时不受影响。此操作不可撤销。")) {
+      return;
+    }
+    setClearingAll(true);
+    try {
+      await api.redactAllRuns();
+      await reloadRuns();
+    } finally {
+      setClearingAll(false);
+    }
+  }
 
   if (!inline && viewRunId != null) {
     return <RunReplay runId={viewRunId} onClose={() => setViewRunId(null)} />;
@@ -128,6 +148,17 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
           ))}
         </ul>
       )}
+
+      <div className="eval-summary__footer">
+        <button
+          type="button"
+          className="eval-summary__clear-all-btn"
+          onClick={handleClearAll}
+          disabled={clearingAll}
+        >
+          {clearingAll ? "清除中…" : "清除所有调试详情"}
+        </button>
+      </div>
     </div>
   );
 }

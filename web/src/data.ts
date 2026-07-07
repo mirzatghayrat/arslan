@@ -125,7 +125,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmStrategy: 'single',
   distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
-  shellConfirmPolicy: 'ask_all'
+  shellConfirmPolicy: 'ask_all',
+  runDebugRetentionDays: 30
 };
 
 export const INITIAL_CHAT_HISTORY: Message[] = [

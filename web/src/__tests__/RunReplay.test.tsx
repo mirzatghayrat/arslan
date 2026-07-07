@@ -40,8 +40,40 @@ const recording: RunDetailDto = {
   evaluations: [],
 };
 
+const scoredWithP2: RunDetailDto = {
+  ...scored,
+  run: {
+    ...scored.run,
+    model: "gpt-x",
+    provider: "openai",
+    tokens_in: null,
+    tokens_out: null,
+    tokens_estimated: true,
+    task_tokens: 1200,
+    error_kind: "ToolError",
+    error_text: "timeout hitting api",
+    system_prompt: "SYS PROMPT TEXT",
+    injected_kb: null,
+  },
+  steps: [
+    ...scored.steps,
+    {
+      seq: 2,
+      kind: "tool_call",
+      ref: { tool: "web_search", ok: true },
+      detail: {
+        args_summary: '{"query":"OKX"}',
+        summary: "5 results",
+        args_full: '{"q":"x"}',
+        result_raw: "RAW_MARKER_123",
+      },
+      duration_ms: 300,
+    },
+  ],
+};
+
 vi.mock("../api/client", () => ({
-  api: { getRun: vi.fn(), getRunsSummary: vi.fn() },
+  api: { getRun: vi.fn(), getRunsSummary: vi.fn(), redactRun: vi.fn(), redactAllRuns: vi.fn() },
 }));
 // Real echarts needs a canvas/layout engine jsdom lacks — assert via a stub.
 vi.mock("../components/EChart", () => ({
@@ -136,5 +168,52 @@ describe("RunReplay", () => {
     render(<RunReplay runId={7} onClose={() => {}} />);
     await screen.findByText(/web_search|搜索|查资料|用工具/);
     expect(screen.queryByText(/OKX/)).toBeNull();
+  });
+
+  it("shows the model and an estimated-token '约' mark", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    expect(await screen.findByText(/gpt-x/)).toBeTruthy();
+    expect(screen.getByText(/约/)).toBeTruthy();
+  });
+
+  it("shows a run-level error banner when error_text is present", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    expect(await screen.findByText(/timeout hitting api/)).toBeTruthy();
+  });
+
+  it("expanding a tool step reveals full args + raw result", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    const label = await screen.findByText(/web_search|搜索|查资料|用工具/);
+    fireEvent.click(label.closest("li")!);
+    expect(screen.getByText(/RAW_MARKER_123/)).toBeTruthy();
+  });
+
+  it("shows the system prompt / injected KB collapsible section", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    expect(await screen.findByText(/SYS PROMPT TEXT/)).toBeTruthy();
+  });
+
+  it("shows a cleared-debug-detail placeholder when prompt/kb are both null", async () => {
+    const redacted: RunDetailDto = {
+      ...scored,
+      run: { ...scored.run, system_prompt: null, injected_kb: null },
+    };
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(redacted);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    expect(await screen.findByText(/调试详情已清除/)).toBeTruthy();
+  });
+
+  it("clear button calls redactRun after confirm", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
+    const spy = api.redactRun as ReturnType<typeof vi.fn>;
+    spy.mockResolvedValue({ redacted: true });
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    fireEvent.click(await screen.findByText(/清除.*调试详情|清除此/));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(7));
   });
 });

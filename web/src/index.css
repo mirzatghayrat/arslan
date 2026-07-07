@@ -183,11 +183,30 @@ button:disabled {
   word-break: break-word;
 }
 
+/* Run-level error banner (error_kind · error_text) */
+.run-replay__error-banner {
+  font-size: 0.6875rem;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* KPI row */
 .run-replay__kpis {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.5rem;
+}
+
+.kpi__value--text {
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kpi {
@@ -350,6 +369,105 @@ button:disabled {
 
 .trace__ok--yes { color: var(--success, #3fb950); font-weight: 700; }
 .trace__ok--no  { color: var(--destructive, #f85149); font-weight: 700; }
+
+/* Full-args / raw-result / tool-error blocks — stacked (not baseline-inline) so
+   long monospace content doesn't fight the label for a line. */
+.trace__detail-row--block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.125rem;
+}
+
+.trace__detail-val--pre {
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.375rem 0.5rem;
+  background: var(--surface, rgba(0, 0, 0, 0.15));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.625rem;
+  line-height: 1.4;
+}
+
+.trace__detail-val--error {
+  color: var(--danger);
+}
+
+/* Collapsible system-prompt / injected-KB debug section + clear buttons */
+.run-replay__debug {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-replay__prompt-details {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.run-replay__prompt-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.625rem;
+  color: var(--muted-foreground);
+  padding: 0.25rem 0;
+}
+
+.run-replay__prompt-details[open] > summary {
+  margin-bottom: 0.375rem;
+}
+
+.run-replay__cleared {
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--subtle-foreground);
+  margin: 0;
+}
+
+.run-replay__clear-btn,
+.eval-summary__clear-all-btn {
+  align-self: flex-start;
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.run-replay__clear-btn:hover,
+.eval-summary__clear-all-btn:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+.run-replay__clear-btn:disabled,
+.eval-summary__clear-all-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.eval-summary__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-replay__clear-btn,
+  .eval-summary__clear-all-btn {
+    transition: none;
+  }
+}
 
 /* Eval section */
 .run-replay__eval {

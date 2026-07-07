@@ -117,6 +117,12 @@ export interface UiRunStep {
   ok?: boolean;
   durationMs: number | null;
   isSlowest: boolean;
+  /** Full (untruncated-at-summary-level) tool args JSON — from detail.args_full. Absent once redacted. */
+  argsFull?: string;
+  /** Raw tool result text (may be truncated server-side) — from detail.result_raw. Absent once redacted. */
+  resultRaw?: string;
+  /** Tool-level error message — from detail.error. */
+  error?: string;
 }
 
 export interface UiRunDimension {
@@ -139,6 +145,24 @@ export interface UiRun {
   steps: UiRunStep[];
   dimensions: UiRunDimension[];
   scored: boolean;
+  /** Model the spawn actually used for this run (null when unknown/pre-P2/redacted). */
+  model?: string | null;
+  /** Provider key (openai|anthropic|gemini|zhipu…). */
+  provider?: string | null;
+  /** Real provider input tokens, when a non-stream call reported them. */
+  tokensIn?: number | null;
+  /** Real provider output tokens. */
+  tokensOut?: number | null;
+  /** True when taskTokens is an estimate (the common case — spawns stream). */
+  tokensEstimated?: boolean;
+  /** Structured error class/category, when the run failed. */
+  errorKind?: string | null;
+  /** Error message (truncated), when the run failed. */
+  errorText?: string | null;
+  /** SENSITIVE: assembled system prompt — retention-governed, null once redacted. */
+  systemPrompt?: string | null;
+  /** SENSITIVE: injected knowledge — retention-governed, null once redacted. */
+  injectedKb?: string | null;
 }
 
 export interface AppSettings {
@@ -157,4 +181,6 @@ export interface AppSettings {
   shellConfirmPolicy: 'ask_all' | 'ask_risky';
   /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
   embeddingConfigId?: string;
+  /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
+  runDebugRetentionDays?: number;
 }

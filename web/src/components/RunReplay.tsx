@@ -18,7 +18,9 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const [run, setRun] = useState<UiRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
+  const [clearing, setClearing] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
 
   function toggleStep(seq: number) {
     setOpenSteps((prev) => {
@@ -29,29 +31,52 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
     });
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const ui = toUiRun(await api.getRun(runId));
-        if (cancelled) return;
-        setRun(ui);
-        if (!ui.scored && ui.status !== "score_failed") {
-          timer.current = setTimeout(load, pollMs);
-        }
-      } catch (e) {
-        if (!cancelled) setError(String(e));
+  async function load() {
+    try {
+      const ui = toUiRun(await api.getRun(runId));
+      if (cancelledRef.current) return;
+      setRun(ui);
+      if (!ui.scored && ui.status !== "score_failed") {
+        timer.current = setTimeout(load, pollMs);
       }
+    } catch (e) {
+      if (!cancelledRef.current) setError(String(e));
     }
+  }
+
+  useEffect(() => {
+    cancelledRef.current = false;
     load();
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       if (timer.current) clearTimeout(timer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, pollMs]);
+
+  async function handleClearThisRun() {
+    if (!window.confirm("确定清除此 run 的调试详情吗？实际系统提示/注入知识/工具完整入参与原始返回将被清除，分数与耗时不受影响。此操作不可撤销。")) {
+      return;
+    }
+    setClearing(true);
+    try {
+      await api.redactRun(runId);
+      await load();
+    } finally {
+      setClearing(false);
+    }
+  }
 
   if (error) return <div className="run-replay run-replay--error" role="alert">{error}</div>;
   if (!run) return <div className="run-replay run-replay--loading">…</div>;
+
+  const tokensNode = run.tokensEstimated
+    ? `约 ${run.taskTokens}`
+    : run.tokensIn != null || run.tokensOut != null
+      ? `${run.tokensIn ?? "—"} / ${run.tokensOut ?? "—"}`
+      : run.taskTokens;
+
+  const hasDebugDetail = run.systemPrompt != null || run.injectedKb != null;
 
   const maxMs = run.steps.reduce((m, s) => Math.max(m, s.durationMs ?? 0), 0) || 1;
 
@@ -66,14 +91,24 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
       <p className="run-replay__usermsg">{run.userMessage}</p>
 
+      {run.errorText != null && (
+        <div className="run-replay__error-banner" role="alert">
+          {run.errorKind ? `${run.errorKind} · ` : ""}{run.errorText}
+        </div>
+      )}
+
       <div className="run-replay__kpis">
         <div className="kpi">
           <div className="kpi__label">总耗时</div>
           <div className="kpi__value">{run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—"}</div>
         </div>
         <div className="kpi">
+          <div className="kpi__label">模型</div>
+          <div className="kpi__value kpi__value--text">{run.model ?? "—"}</div>
+        </div>
+        <div className="kpi">
           <div className="kpi__label">tokens</div>
-          <div className="kpi__value">{run.taskTokens}</div>
+          <div className="kpi__value">{tokensNode}</div>
         </div>
         <div className="kpi">
           <div className="kpi__label">评分</div>
@@ -126,6 +161,24 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
                           <div className="trace__detail-row">
                             <span className="trace__detail-key">结果</span>
                             <span className="trace__detail-val">{String(detail.summary)}</span>
+                          </div>
+                        )}
+                        {s.argsFull != null && (
+                          <div className="trace__detail-row trace__detail-row--block">
+                            <span className="trace__detail-key">完整入参</span>
+                            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.argsFull}</pre>
+                          </div>
+                        )}
+                        {s.resultRaw != null && (
+                          <div className="trace__detail-row trace__detail-row--block">
+                            <span className="trace__detail-key">原始返回</span>
+                            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.resultRaw}</pre>
+                          </div>
+                        )}
+                        {s.error != null && (
+                          <div className="trace__detail-row trace__detail-row--block">
+                            <span className="trace__detail-key">工具错误</span>
+                            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre trace__detail-val--error">{s.error}</pre>
                           </div>
                         )}
                       </>
@@ -189,6 +242,39 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       {run.scored && (
         <RunCompareChart dimensions={run.dimensions} overallScore={run.overallScore} />
       )}
+
+      <section className="run-replay__debug">
+        <details className="run-replay__prompt-details">
+          <summary>实际系统提示 / 注入的知识</summary>
+          {hasDebugDetail ? (
+            <>
+              {run.systemPrompt != null && (
+                <div className="trace__detail-row trace__detail-row--block">
+                  <span className="trace__detail-key">系统提示</span>
+                  <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{run.systemPrompt}</pre>
+                </div>
+              )}
+              {run.injectedKb != null && (
+                <div className="trace__detail-row trace__detail-row--block">
+                  <span className="trace__detail-key">注入知识</span>
+                  <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{run.injectedKb}</pre>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="run-replay__cleared">调试详情已清除</p>
+          )}
+        </details>
+
+        <button
+          type="button"
+          className="run-replay__clear-btn"
+          onClick={handleClearThisRun}
+          disabled={clearing}
+        >
+          {clearing ? "清除中…" : "清除此 run 调试详情"}
+        </button>
+      </section>
     </div>
   );
 }
