@@ -152,9 +152,15 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
     merged = rrf_merge([r for r in (fts_ids, vec_ids) if r], k=k)
     hits = [meta[cid] for cid in merged]           # (source, text, coll_id, spawn_id)
     from server.services import brain_usage
+    # Count usage once per source per retrieval — "用过几次" means "retrieved in N
+    # turns", not "how many chunks were injected" (a multi-chunk doc must not inflate).
+    seen_refs: set[str] = set()
     for src, _txt, cid, sid in hits:
         ref_key = (f"material:coll:{cid}:{src}" if cid is not None
                    else f"material:spawn:{sid}:{src}")
+        if ref_key in seen_refs:
+            continue
+        seen_refs.add(ref_key)
         await brain_usage.record("material", ref_key, used_ref=used_ref)
     # Fold in 心得 (top 2) — distilled know-how retrieved alongside material.
     async with db_session.AsyncSessionLocal() as db:
