@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunCatalogDto, AnomalyDto } from "../api/client.types";
+import VitalsHeader from "./VitalsHeader";
+import AnomalyTimeline from "./AnomalyTimeline";
 
 interface Props {
   onClose: () => void;
@@ -72,6 +74,18 @@ function Sparkline({ points }: { points: number[] }) {
   );
 }
 
+/** Tiny inline-SVG line sparkline for per-row rate/error/latency trends. */
+function LineSpark({ points, color, width = 56, height = 16 }: { points: (number | null)[] | undefined; color: string; width?: number; height?: number }) {
+  const vals = (points ?? []).map((p) => (p == null ? null : p));
+  const real = vals.filter((v): v is number => v != null);
+  if (real.length === 0) return null;
+  const max = Math.max(...real, 1), min = Math.min(...real, 0);
+  const span = max - min || 1;
+  const step = width / Math.max(1, vals.length - 1);
+  const d = vals.map((v, i) => v == null ? null : `${i * step},${height - ((v - min) / span) * height}`).filter(Boolean).join(" ");
+  return (<svg data-testid="line-spark" width={width} height={height} style={{ display: "block" }}><polyline points={d} fill="none" stroke={color} strokeWidth={1.5} /></svg>);
+}
+
 /** Small severity dot — red for hard failures, amber for warnings. */
 function SeverityDot({ severity }: { severity: string }) {
   const color = severity === "red" ? "var(--danger)" : "var(--warning)";
@@ -119,6 +133,8 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
           </button>
         ))}
       </div>
+
+      <VitalsHeader range={range} />
 
       <div className={`diag-catalog__cards${narrow ? " diag-catalog__cards--narrow" : ""}`}>
         <div className="diag-card">
@@ -187,6 +203,8 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
         </div>
       )}
 
+      <AnomalyTimeline range={range} onSelectSpawn={onSelectSpawn} />
+
       {loading && spawns.length === 0 ? (
         <p className="diag-catalog__empty">加载中…</p>
       ) : spawns.length === 0 ? (
@@ -212,6 +230,11 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
               </div>
               <div className="diag-card-row__stat" style={{ color: healthColor(s.health) }}>
                 {s.run_count} run · 达标 {s.pass_rate ?? "—"}% · P95 {fmtP95(s.p95_ms)}
+              </div>
+              <div className="diag-card-row__sparks">
+                <LineSpark points={s.rate_trend} color="var(--primary)" />
+                <LineSpark points={s.error_trend} color="var(--danger)" />
+                <LineSpark points={s.latency_trend} color="var(--muted-foreground)" />
               </div>
               <div className="diag-card-row__bottom">
                 <span>{fmtTokens(s.tokens_sum)}</span>
@@ -250,11 +273,24 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
                   <div className="diag-table__spawn">{s.spawn_name ?? "—"}</div>
                   <div className="diag-table__model">{s.model ?? ""}</div>
                 </td>
-                <td>{s.run_count}</td>
-                <td style={{ color: healthColor(s.health) }}>
-                  {Math.round(s.error_ratio * 100)}%
+                <td>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span>{s.run_count}</span>
+                    <LineSpark points={s.rate_trend} color="var(--primary)" />
+                  </div>
                 </td>
-                <td style={{ color: healthColor(s.health) }}>{fmtP95(s.p95_ms)}</td>
+                <td style={{ color: healthColor(s.health) }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span>{Math.round(s.error_ratio * 100)}%</span>
+                    <LineSpark points={s.error_trend} color="var(--danger)" />
+                  </div>
+                </td>
+                <td style={{ color: healthColor(s.health) }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span>{fmtP95(s.p95_ms)}</span>
+                    <LineSpark points={s.latency_trend} color="var(--muted-foreground)" />
+                  </div>
+                </td>
                 <td style={{ color: healthColor(s.health) }}>
                   {s.pass_rate ?? "—"}%
                 </td>
