@@ -1,6 +1,9 @@
 """Read-only Run replay + evaluation endpoint."""
 from __future__ import annotations
 
+import math
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +12,9 @@ from server.auth import require_auth
 from server.db.session import get_session
 from server.db.models import Run, RunEvaluation, RunStep
 from server.schemas import (
+    CatalogFleetOut,
+    CatalogSpawnOut,
+    RunCatalogOut,
     RunDetailOut,
     RunEvaluationOut,
     RunListItemOut,
@@ -25,6 +31,39 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 DIMENSIONS = ("routing", "fabrication", "identity", "completion")
 
 PASS_THRESHOLD = 7.0
+
+# --- /runs/catalog thresholds ---------------------------------------------
+ERR_RED, ERR_AMBER = 0.15, 0.05
+SCORE_RED, SCORE_AMBER = 4.0, 7.0
+PASS_RED = 50
+
+
+def _window_start(rng: str) -> datetime | None:
+    if rng == "1h":
+        return datetime.utcnow() - timedelta(hours=1)
+    if rng == "24h":
+        return datetime.utcnow() - timedelta(hours=24)
+    return None
+
+
+def _p95(values: list[int]) -> int | None:
+    xs = sorted(v for v in values if v is not None)
+    if not xs:
+        return None
+    idx = max(0, math.ceil(0.95 * len(xs)) - 1)
+    return int(xs[idx])
+
+
+def _health(error_ratio: float, avg_score: float | None, pass_rate: int | None) -> str:
+    if error_ratio > ERR_RED or (avg_score is not None and avg_score < SCORE_RED) \
+       or (pass_rate is not None and pass_rate < PASS_RED):
+        return "red"
+    if error_ratio > ERR_AMBER or (avg_score is not None and avg_score < SCORE_AMBER):
+        return "amber"
+    return "green"
+
+
+_HEALTH_ORDER = {"red": 0, "amber": 1, "green": 2}
 
 
 @router.get("/runs", response_model=list[RunListItemOut])
@@ -118,6 +157,53 @@ async def runs_summary(db: AsyncSession = Depends(get_session)) -> RunSummaryOut
         per_spawn=per_spawn,
         recent=recent,
     )
+
+
+# NOTE: must stay registered BEFORE /runs/{run_id}, or FastAPI tries to parse
+# "catalog" as an int path param (422).
+@router.get("/runs/catalog", response_model=RunCatalogOut)
+async def runs_catalog(range: str = Query("1h"),
+                       db: AsyncSession = Depends(get_session)) -> RunCatalogOut:
+    start = _window_start(range)
+    q = select(Run)
+    if start is not None:
+        q = q.where(Run.created_at >= start)
+    runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
+
+    by_spawn: dict[int | None, list[Run]] = {}
+    for r in runs:
+        by_spawn.setdefault(r.spawn_id, []).append(r)
+
+    spawns: list[CatalogSpawnOut] = []
+    for sid, rs in by_spawn.items():
+        n = len(rs)
+        errs = sum(1 for r in rs if r.error_kind)
+        scored = [r.overall_score for r in rs if r.status == "scored" and r.overall_score is not None]
+        passed = sum(1 for s in scored if s >= PASS_THRESHOLD)
+        avg = round(sum(scored) / len(scored), 2) if scored else None
+        pass_rate = round(passed / len(scored) * 100) if scored else None
+        error_ratio = round(errs / n, 4) if n else 0.0
+        trend = [round(s, 2) for s in scored][-8:]
+        spawns.append(CatalogSpawnOut(
+            spawn_id=sid,
+            spawn_name=next((r.spawn_name for r in reversed(rs) if r.spawn_name), None),
+            model=next((r.model for r in reversed(rs) if r.model), None),
+            run_count=n, error_ratio=error_ratio,
+            p95_ms=_p95([r.total_ms for r in rs]), pass_rate=pass_rate, avg_score=avg,
+            tokens_sum=sum(r.task_tokens or 0 for r in rs),
+            health=_health(error_ratio, avg, pass_rate), score_trend=trend,
+        ))
+    spawns.sort(key=lambda s: (_HEALTH_ORDER.get(s.health, 3), -s.error_ratio))
+
+    all_scored = [r.overall_score for r in runs if r.status == "scored" and r.overall_score is not None]
+    fleet = CatalogFleetOut(
+        run_count=len(runs),
+        error_ratio=round(sum(1 for r in runs if r.error_kind) / len(runs), 4) if runs else 0.0,
+        p95_ms=_p95([r.total_ms for r in runs]),
+        pass_rate=round(sum(1 for s in all_scored if s >= PASS_THRESHOLD) / len(all_scored) * 100) if all_scored else None,
+        tokens_sum=sum(r.task_tokens or 0 for r in runs),
+    )
+    return RunCatalogOut(range=range, fleet=fleet, spawns=spawns)
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

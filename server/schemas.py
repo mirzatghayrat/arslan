@@ -429,6 +429,40 @@ class RunSummaryOut(BaseModel):
     recent: list[RunTrendPointOut]
 
 
+class CatalogSpawnOut(BaseModel):
+    """Per-spawn RED aggregate row (GET /runs/catalog)."""
+
+    spawn_id: int | None = None
+    spawn_name: str | None = None
+    model: str | None = None
+    run_count: int
+    error_ratio: float
+    p95_ms: int | None = None
+    pass_rate: int | None = None
+    avg_score: float | None = None
+    tokens_sum: int
+    health: str
+    score_trend: list[float]
+
+
+class CatalogFleetOut(BaseModel):
+    """Fleet-wide rollup (GET /runs/catalog)."""
+
+    run_count: int
+    error_ratio: float
+    p95_ms: int | None = None
+    pass_rate: int | None = None
+    tokens_sum: int
+
+
+class RunCatalogOut(BaseModel):
+    """Response for GET /runs/catalog — per-spawn RED + fleet rollup, worst-first."""
+
+    range: str
+    fleet: CatalogFleetOut
+    spawns: list[CatalogSpawnOut]
+
+
 class SkillForgeIn(BaseModel):
     key: str
     name: str
