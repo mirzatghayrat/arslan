@@ -193,14 +193,18 @@ async def runs_summary(db: AsyncSession = Depends(get_session)) -> RunSummaryOut
 
 # NOTE: must stay registered BEFORE /runs/{run_id}, or FastAPI tries to parse
 # "catalog" as an int path param (422).
+N_CATALOG_TREND = 12
+
+
 @router.get("/runs/catalog", response_model=RunCatalogOut)
-async def runs_catalog(range: str = Query("1h"),
+async def runs_catalog(rng: str = Query("1h", alias="range"),
                        db: AsyncSession = Depends(get_session)) -> RunCatalogOut:
-    start = _window_start(range)
+    start = _window_start(rng)
     q = select(Run)
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
+    edges = _bucket_bounds(start, runs, N_CATALOG_TREND)
 
     by_spawn: dict[int | None, list[Run]] = {}
     for r in runs:
@@ -216,6 +220,21 @@ async def runs_catalog(range: str = Query("1h"),
         pass_rate = round(passed / len(scored) * 100) if scored else None
         error_ratio = round(errs / n, 4) if n else 0.0
         trend = [round(s, 2) for s in scored][-8:]
+        # Per-bucket sparkline trends (12 buckets over the window).
+        lat_buckets: list[list[int]] = [[] for _ in range(N_CATALOG_TREND)]
+        err_buckets = [0] * N_CATALOG_TREND
+        cnt_buckets = [0] * N_CATALOG_TREND
+        for r in rs:
+            if not r.created_at:
+                continue
+            b = _bucket_index(r.created_at, edges)
+            cnt_buckets[b] += 1
+            if r.error_kind:
+                err_buckets[b] += 1
+            if r.total_ms is not None:
+                lat_buckets[b].append(r.total_ms)
+        latency_trend = [_p95(v) for v in lat_buckets]
+        error_trend = [round(e / c, 4) if c else 0.0 for e, c in zip(err_buckets, cnt_buckets)]
         spawns.append(CatalogSpawnOut(
             spawn_id=sid,
             spawn_name=next((r.spawn_name for r in reversed(rs) if r.spawn_name), None),
@@ -224,6 +243,7 @@ async def runs_catalog(range: str = Query("1h"),
             p95_ms=_p95([r.total_ms for r in rs]), pass_rate=pass_rate, avg_score=avg,
             tokens_sum=sum(r.task_tokens or 0 for r in rs),
             health=_health(error_ratio, avg, pass_rate), score_trend=trend,
+            latency_trend=latency_trend, error_trend=error_trend, rate_trend=cnt_buckets,
         ))
     spawns.sort(key=lambda s: (_HEALTH_ORDER.get(s.health, 3), -s.error_ratio))
 
@@ -235,7 +255,7 @@ async def runs_catalog(range: str = Query("1h"),
         pass_rate=round(sum(1 for s in all_scored if s >= PASS_THRESHOLD) / len(all_scored) * 100) if all_scored else None,
         tokens_sum=sum(r.task_tokens or 0 for r in runs),
     )
-    return RunCatalogOut(range=range, fleet=fleet, spawns=spawns)
+    return RunCatalogOut(range=rng, fleet=fleet, spawns=spawns)
 
 
 N_VITALS_BUCKETS = 30

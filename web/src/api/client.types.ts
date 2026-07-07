@@ -465,6 +465,9 @@ export interface CatalogSpawnDto {
   tokens_sum: number;
   health: string;
   score_trend: number[];
+  latency_trend: (number | null)[];
+  error_trend: number[];
+  rate_trend: number[];
 }
 
 /** Response for GET /runs/catalog — per-spawn RED + fleet rollup, worst-first. */
