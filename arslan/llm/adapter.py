@@ -124,6 +124,12 @@ class LLMAdapter:
                 yield piece
         finally:
             usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
+            usage_sink.report_detail(
+                tokens_in=None,
+                tokens_out=None,
+                model=self.model,
+                provider=self.provider_name,
+            )
 
     # ------------------------------------------------------------------
     # Private helpers
