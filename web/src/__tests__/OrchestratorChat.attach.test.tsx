@@ -73,6 +73,43 @@ describe('OrchestratorChat attach', () => {
   });
 });
 
+describe('OrchestratorChat hero attach (empty state)', () => {
+  const base = {
+    setChatHistory: vi.fn(),
+    spawns: [],
+    currentStyle: 'quartz' as const,
+    setCurrentStyle: vi.fn(),
+    activeThread: null,
+  };
+
+  it('the empty-state hero exposes an attach control (＋)', () => {
+    render(<OrchestratorChat {...base} chatHistory={[]} onSendMessage={vi.fn()} />);
+    // hero input is present …
+    expect(screen.getByPlaceholderText(/placeholder_empty/i)).toBeTruthy();
+    // … and now so is the attach button (was missing before)
+    expect(screen.getByLabelText('attach.add')).toBeTruthy();
+  });
+
+  it('hero: a pasted url attaches and rides into context on send', async () => {
+    const { api } = await import('../api/client');
+    (api.extractAttachmentUrl as ReturnType<typeof vi.fn>).mockResolvedValue({
+      text: 'DOC BODY', chars: 8, truncated: false,
+    });
+    const spy = vi.fn();
+    render(<OrchestratorChat {...base} chatHistory={[]} onSendMessage={spy} />);
+    const heroInput = screen.getByPlaceholderText(/placeholder_empty/i);
+    fireEvent.paste(heroInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
+    await screen.findByLabelText('remove-attachment');
+    fireEvent.change(heroInput, { target: { value: 'summarise' } });
+    fireEvent.keyDown(heroInput, { key: 'Enter' });   // hero sends via Enter (no <form>)
+    await waitFor(() => expect(spy).toHaveBeenCalledWith('summarise', {
+      context: 'DOC BODY',
+      names: ['https://x.com'],
+      display: [{ name: 'https://x.com', kind: 'doc', previewUrl: undefined }],
+    }));
+  });
+});
+
 describe('sent user bubble attachments', () => {
   const base = {
     chatHistory: [] as Message[],

@@ -348,12 +348,17 @@ export default function OrchestratorChat({
             <NoModelHint hasModel={hasModel} onOpenSettings={onOpenSettings ?? (() => {})} />
 
             {/* Luxurious prompt input box resembling Claude's container design */}
-            <div className="w-full max-w-xl bg-surface border border-border-strong rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all">
+            <div
+              className={`relative w-full max-w-xl bg-surface border rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all ${attach.dragActive ? 'border-primary border-dashed' : 'border-border-strong'}`}
+              {...attach.dndHandlers}
+            >
+              <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <textarea
                 id="landing-message-input"
                 rows={3}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
+                onPaste={attach.onPaste}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -368,10 +373,14 @@ export default function OrchestratorChat({
 
               {/* Action options row */}
               <div className="flex items-center justify-between pt-2 border-t border-border/50 select-none">
-                {/* Model indicator — static chip showing real configured model */}
-                <div className="flex items-center gap-1 bg-background/40 px-2.5 py-1 rounded-full border border-border text-[10px] font-mono text-muted-foreground max-w-[160px] sm:max-w-none truncate">
-                  <Cpu className="w-3 h-3 text-primary flex-shrink-0" />
-                  <span className="ml-0.5 truncate">{settings ? `${settings.llm_provider} · ${settings.llm_model}` : '—'}</span>
+                {/* Left group: attach control + model indicator */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
+                  {/* Model indicator — static chip showing real configured model */}
+                  <div className="flex items-center gap-1 bg-background/40 px-2.5 py-1 rounded-full border border-border text-[10px] font-mono text-muted-foreground max-w-[160px] sm:max-w-none truncate">
+                    <Cpu className="w-3 h-3 text-primary flex-shrink-0" />
+                    <span className="ml-0.5 truncate">{settings ? `${settings.llm_provider} · ${settings.llm_model}` : '—'}</span>
+                  </div>
                 </div>
 
                 <button
@@ -387,6 +396,13 @@ export default function OrchestratorChat({
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
+
+              {attach.error && <div className="attach-error mt-1" role="alert">{attach.error}</div>}
+              {attach.dragActive && (
+                <div className="absolute inset-0 z-10 rounded-2xl flex items-center justify-center pointer-events-none bg-primary/[0.08] text-primary text-xs font-semibold">
+                  {t('attach.drop_hint')}
+                </div>
+              )}
             </div>
 
             {/* Quick action pill suggestions inspired by Claude suggestions */}
