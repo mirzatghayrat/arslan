@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 
+from server.orchestrator import run_trace
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -234,6 +235,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
           "summary": _summarize_result(result), "artifact": result.get("artifact")})
     tool_trace.append({"tool": tool_key, "args": args, "result": result})
+    run_trace.record(tool=tool_key, args=args, result=result,
+                      ok=bool(result.get("ok")), error=result.get("error"), ms=None)
     convo.append({"role": "assistant", "content": assistant_content})
     feedback = {k: v for k, v in result.items() if k != "artifact"}
     raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]

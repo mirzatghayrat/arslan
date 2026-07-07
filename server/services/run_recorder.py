@@ -20,6 +20,9 @@ from arslan.llm import usage_sink
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunStep
 
+RUN_RAW_CAP = 2000   # per-tool args_full / result_raw truncation cap
+RUN_ERR_CAP = 2000   # error_text truncation cap
+
 logger = logging.getLogger(__name__)
 
 
