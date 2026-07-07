@@ -467,3 +467,18 @@ class PersonaSeed(Base):
     raw = Column(Text, nullable=False)
     source = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ConversationEvent(Base):
+    """A growth/learning event during a conversation (distill, memory, skill, evolution,
+    invite) for the in-rail recap timeline. Runs live in `runs` and are merged at read time,
+    NOT duplicated here."""
+
+    __tablename__ = "conversation_events"
+
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(String(50), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)
+    ref = Column(JSON, nullable=True)
+    summary = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
