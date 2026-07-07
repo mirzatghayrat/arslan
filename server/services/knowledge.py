@@ -86,6 +86,25 @@ async def _fts_route(db, query: str, where: str, params: dict) -> tuple[list[int
     return [r[0] for r in rows], {r[0]: (r[1], r[2], r[3], r[4]) for r in rows}
 
 
+async def _learnings_route(db, query: str, spawn_id: int | None) -> dict[int, str]:
+    """FTS over 心得 (learnings). Partition parity with knowledge scoping: Arslan
+    (spawn_id=None) sees global learnings (spawn_id IS NULL); a spawn sees its own
+    + global. Any failure → {} (never fatal)."""
+    match = _safe_match_query(query)
+    if not match:
+        return {}
+    try:
+        scope = "l.spawn_id IS NULL" if spawn_id is None else "(l.spawn_id IS NULL OR l.spawn_id = :sid)"
+        rows = (await db.execute(sa_text(
+            "SELECT l.id, l.content FROM learnings_fts f JOIN learnings l ON l.id = f.rowid "
+            f"WHERE f.text MATCH :q AND {scope} ORDER BY rank LIMIT :lim"),
+            {"q": match, "sid": spawn_id, "lim": CANDIDATES})).all()
+        return {r[0]: r[1] for r in rows}
+    except Exception as exc:  # noqa: BLE001 — learnings route never fatal
+        logger.warning("learnings route failed (non-fatal): %s", exc)
+        return {}
+
+
 async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[int], dict]:
     """Cosine top-CANDIDATES over the scope's vectors (active model only).
     Any failure or absence of provider/vectors → empty route (non-fatal)."""
@@ -137,7 +156,14 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
         ref_key = (f"material:coll:{cid}:{src}" if cid is not None
                    else f"material:spawn:{sid}:{src}")
         await brain_usage.record("material", ref_key, used_ref=used_ref)
-    return rerank(query, [(src, txt) for src, txt, _c, _s in hits])
+    # Fold in 心得 (top 2) — distilled know-how retrieved alongside material.
+    async with db_session.AsyncSessionLocal() as db:
+        learn = await _learnings_route(db, query, spawn_id)
+    learn_items = list(learn.items())[:2]
+    for lid, _lt in learn_items:
+        await brain_usage.record("learning", f"learning:{lid}", used_ref=used_ref)
+    learn_chunks = [(f"心得#{lid}", ltext) for lid, ltext in learn_items]
+    return rerank(query, [(src, txt) for src, txt, _c, _s in hits] + learn_chunks)
 
 
 def knowledge_block(chunks: list[tuple[str, str]]) -> str:

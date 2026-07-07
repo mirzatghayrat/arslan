@@ -765,12 +765,16 @@ def _dual_track_signals(user_message: str, answer_text: str) -> str:
 def _fire_dual_track(conversation_id: str, spawn_id: int, spawn_name: str | None, signals: str) -> None:
     """Component 5 + recap: background-distill the deliverable into the inferred spawn AND log a
     distill growth event for the conversation recap. Fire-and-forget, never fatal."""
-    from server.services import recap_service
+    from server.services import learning_service, recap_service
 
     asyncio.create_task(distill_service.distill_from_signals(spawn_id, signals))
     asyncio.create_task(recap_service.log_event(
         conversation_id, "distill", {"spawn_id": spawn_id, "spawn_name": spawn_name},
         f"Arslan 亲自做 → 喂给 {spawn_name or '分身'} 学习"))
+    # Distill a reusable 心得 from this real deliverable → the learnings store.
+    asyncio.create_task(learning_service.distill_from_event(
+        conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
+        signal_text=signals))
 
 
 async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
