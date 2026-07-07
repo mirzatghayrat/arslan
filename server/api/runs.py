@@ -138,9 +138,32 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
             spawn_name=run.spawn_name, user_message=run.user_message, total_ms=run.total_ms,
             task_tokens=run.task_tokens, status=run.status,
             overall_score=run.overall_score, overall_badge=run.overall_badge,
+            model=run.model, provider=run.provider,
+            tokens_in=run.tokens_in, tokens_out=run.tokens_out,
+            tokens_estimated=run.tokens_estimated,
+            error_kind=run.error_kind, error_text=run.error_text,
+            system_prompt=run.system_prompt, injected_kb=run.injected_kb,
         ),
         steps=[RunStepOut(seq=s.seq, kind=s.kind, ref=s.ref or {}, detail=s.detail or {},
                           duration_ms=s.duration_ms) for s in steps],
         evaluations=[RunEvaluationOut(dimension=e.dimension, status=e.status,
                                       score=e.score, comment=e.comment) for e in evals],
     )
+
+
+@router.post("/runs/{run_id}/redact")
+async def redact_run_endpoint(run_id: int) -> dict:
+    """Manually clear sensitive/bulky debug detail for one run. No-op if it doesn't exist."""
+    from server.services import run_redact
+
+    await run_redact.redact_run(run_id)
+    return {"redacted": True}
+
+
+@router.post("/runs/redact-all")
+async def redact_all_endpoint() -> dict:
+    """Manually clear sensitive/bulky debug detail for every run. Returns the count touched."""
+    from server.services import run_redact
+
+    n = await run_redact.redact_all()
+    return {"redacted": n}

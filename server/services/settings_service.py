@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id")
+# Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
+_INT_KEYS = ("run_debug_retention_days",)
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
 
@@ -83,6 +85,9 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
     for key in _PLAIN_KEYS:
         if key in data and data[key] is not None:
             await _set_raw(session, key, str(data[key]))
+    for int_key in _INT_KEYS:
+        if int_key in data and data[int_key] is not None:
+            await _set_raw(session, int_key, str(data[int_key]))
     for secret_key in _SECRET_KEYS:
         val = data.get(secret_key)
         # Skip masked echoes: a GET→PUT round-trip sends back the masked value
@@ -102,6 +107,7 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     for secret_key in _SECRET_KEYS:
         enc = await _get_raw(session, secret_key)
         out[secret_key] = mask_secret(_safe_decrypt(enc)) if enc else ""
+    out["run_debug_retention_days"] = await run_debug_retention_days(session)
     return out
 
 

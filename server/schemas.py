@@ -18,6 +18,7 @@ class SettingsIn(BaseModel):
     distill_on_session_end: bool | None = None
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
+    run_debug_retention_days: int | None = None
 
 
 class SettingsOut(BaseModel):
@@ -32,6 +33,7 @@ class SettingsOut(BaseModel):
     distill_on_session_end: bool = True
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
+    run_debug_retention_days: int = 30
 
 
 class ProviderOption(BaseModel):
@@ -315,6 +317,15 @@ class RunOut(BaseModel):
     status: str
     overall_score: float | None
     overall_badge: str | None
+    model: str | None = None
+    provider: str | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    tokens_estimated: bool = False
+    error_kind: str | None = None
+    error_text: str | None = None
+    system_prompt: str | None = None
+    injected_kb: str | None = None
 
 
 class RunDetailOut(BaseModel):

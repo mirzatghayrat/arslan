@@ -6,7 +6,10 @@ import type { RunDetailDto } from "../api/client.types";
 const scored: RunDetailDto = {
   run: { id: 7, conversation_id: "c1", spawn_id: 1, spawn_name: "Mermer",
     user_message: "查天气", total_ms: 1500, task_tokens: 42,
-    status: "scored", overall_score: 8, overall_badge: "good" },
+    status: "scored", overall_score: 8, overall_badge: "good",
+    model: null, provider: null, tokens_in: null, tokens_out: null,
+    tokens_estimated: false, error_kind: null, error_text: null,
+    system_prompt: null, injected_kb: null },
   steps: [
     { seq: 0, kind: "route", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 80 },
     { seq: 1, kind: "dispatch", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 1200 },

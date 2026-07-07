@@ -109,6 +109,8 @@ export interface AppSettings {
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
+  /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
+  run_debug_retention_days?: number;
 }
 
 export interface ProviderOption {
@@ -356,6 +358,15 @@ export interface RunDto {
   status: string;
   overall_score: number | null;
   overall_badge: string | null;
+  model: string | null;
+  provider: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  tokens_estimated: boolean;
+  error_kind: string | null;
+  error_text: string | null;
+  system_prompt: string | null;
+  injected_kb: string | null;
 }
 
 export interface RunDetailDto {

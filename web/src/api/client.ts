@@ -143,6 +143,10 @@ export const api = {
   },
   /** Aggregates for the evaluation-summary charts. */
   getRunsSummary: () => request<RunSummary>("/runs/summary"),
+  /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
+  redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
+  /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
+  redactAllRuns: () => request<{ redacted: number }>(`/runs/redact-all`, { method: "POST" }),
   getKnowledge: (spawnId: number) =>
     request<KnowledgeSource[]>(`/spawns/${spawnId}/knowledge`),
   ingestKnowledgeText: (spawnId: number, source: string, text: string, compress = false) =>
