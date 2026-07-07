@@ -986,10 +986,9 @@ export default function App() {
             </div>
             )}
 
-            {/* Bottom-anchored evaluation dock (bar → slide-up summary → expand-left detail).
-                On a spawn direct-chat, scope runs to that spawn; on the orchestrator, default
-                to the ACTIVE conversation (same id the /ws/arslan/{id} WS uses), with an
-                in-summary toggle to all sessions. */}
+            {/* Bottom-anchored evaluation health pill — a lightweight glance (anomaly
+                count) that opens the standalone DiagnosisView (top-level "诊断台" nav
+                section) rather than hosting the catalog/replay drill-down inline. */}
             <EvalDock
               spawnId={
                 activeSection === 'spawn'
@@ -1000,6 +999,7 @@ export default function App() {
                   : undefined
               }
               conversationId={activeSection === 'arslan' ? activeThreadId : undefined}
+              onOpenDiagnosis={() => setActiveSection('diagnosis')}
             />
           </aside>
         )}

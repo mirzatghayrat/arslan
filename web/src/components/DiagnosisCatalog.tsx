@@ -8,6 +8,8 @@ interface Props {
   onSelectSpawn: (spawnId: number | null, name: string | null) => void;
   spawnId?: number;
   conversationId?: string;
+  /** Narrow container (e.g. mobile-width DiagnosisView) — render cards instead of a table. */
+  narrow?: boolean;
 }
 
 type RangeKey = "1h" | "24h" | "all";
@@ -76,7 +78,7 @@ function SeverityDot({ severity }: { severity: string }) {
   return <span className="anomaly-row__dot" style={{ background: color }} aria-hidden="true" />;
 }
 
-export default function DiagnosisCatalog({ onSelectSpawn }: Props) {
+export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
   const { t } = useTranslation();
   const [range, setRange] = useState<RangeKey>("1h");
   const [catalog, setCatalog] = useState<RunCatalogDto | null>(null);
@@ -118,7 +120,7 @@ export default function DiagnosisCatalog({ onSelectSpawn }: Props) {
         ))}
       </div>
 
-      <div className="diag-catalog__cards">
+      <div className={`diag-catalog__cards${narrow ? " diag-catalog__cards--narrow" : ""}`}>
         <div className="diag-card">
           <div className="diag-card__label">运行数</div>
           <div className="diag-card__value">{fleet?.run_count ?? "—"}</div>
@@ -189,6 +191,35 @@ export default function DiagnosisCatalog({ onSelectSpawn }: Props) {
         <p className="diag-catalog__empty">加载中…</p>
       ) : spawns.length === 0 ? (
         <p className="diag-catalog__empty">{t("eval.empty", "还没有运行记录")}</p>
+      ) : narrow ? (
+        <div className="diag-cards">
+          {spawns.map((s) => (
+            <div
+              key={s.spawn_id ?? s.spawn_name ?? Math.random()}
+              data-testid="cat-card"
+              className="diag-card-row"
+              onClick={() => onSelectSpawn(s.spawn_id, s.spawn_name)}
+            >
+              <div className="diag-card-row__top">
+                <HealthRing score={s.avg_score} health={s.health} />
+                <div className="diag-card-row__name">
+                  <div className="diag-table__spawn">{s.spawn_name ?? "—"}</div>
+                  <div className="diag-table__model">{s.model ?? ""}</div>
+                </div>
+                <div className="diag-card-row__score">
+                  {s.avg_score != null ? s.avg_score.toFixed(1) : "—"}
+                </div>
+              </div>
+              <div className="diag-card-row__stat" style={{ color: healthColor(s.health) }}>
+                {s.run_count} run · 达标 {s.pass_rate ?? "—"}% · P95 {fmtP95(s.p95_ms)}
+              </div>
+              <div className="diag-card-row__bottom">
+                <span>{fmtTokens(s.tokens_sum)}</span>
+                <Sparkline points={s.score_trend} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <table className="diag-table">
           <thead>

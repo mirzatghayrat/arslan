@@ -46,4 +46,9 @@ describe("DiagnosisCatalog", () => {
     fireEvent.click(badge);
     expect(screen.getByText(/错误率偏高/)).toBeTruthy();         // expanded shows detail
   });
+  it("renders spawn cards (not a table) when narrow", async () => {
+    render(<DiagnosisCatalog onClose={() => {}} onSelectSpawn={() => {}} narrow />);
+    expect((await screen.findAllByTestId("cat-card")).length).toBeGreaterThan(0); // cards, not cat-row
+    expect(screen.queryByTestId("cat-row")).toBeNull();           // table rows gone in narrow
+  });
 });

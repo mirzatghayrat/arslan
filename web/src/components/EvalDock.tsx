@@ -1,127 +1,52 @@
 import { useEffect, useState } from "react";
-import { ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
-import type { RunListItem } from "../api/client.types";
-import DiagnosisCatalog from "./DiagnosisCatalog";
-import SpawnRunDetail from "./SpawnRunDetail";
-import RunReplay from "./RunReplay";
+import type { AnomalyDto } from "../api/client.types";
 
 interface Props {
   /** Backend numeric spawn id to scope runs to. Omit for all runs (orchestrator). */
   spawnId?: number;
-  /**
-   * Active conversation id. When set, the slide-up summary defaults to this
-   * conversation's runs (with an in-summary toggle to all sessions) and the
-   * collapsed-bar mini stat is scoped the same way, so bar and default view agree.
-   */
+  /** Active conversation id — currently unused by the pill itself but kept so
+   * callers don't need to branch; may inform a future scoped glance. */
   conversationId?: string;
+  /** Opens the standalone full-width DiagnosisView (top-level nav section). */
+  onOpenDiagnosis: () => void;
 }
 
 /**
- * Bottom-of-rail evaluation dock with three progressive-disclosure levels:
- *
- *   1. BAR (collapsed) — a Settings-save-bar-styled bar pinned at the rail bottom.
- *      Shows a label + a mini stat (run count / avg score). Clicking toggles L2.
- *   2. SUMMARY (slides up) — clicking the bar slides a panel UP revealing the
- *      DiagnosisCatalog (RED fleet cards + worst-first per-spawn table). Clicking
- *      a spawn row drills into SpawnRunDetail (per-spawn run list), whose rows
- *      drill further into L3 RunReplay via setDetailRunId.
- *   3. DETAIL (expands left) — RunReplay as a panel anchored to the rail's left
- *      edge, growing leftward toward the chat. Back/close → L2.
+ * Bottom-of-rail evaluation entry point — downgraded from a 3-level
+ * progressive-disclosure dock (bar → slide-up catalog → expand-left replay) to
+ * a lightweight health pill. The catalog/spawn-detail/replay drill-down now
+ * lives entirely in the standalone DiagnosisView (top-level "诊断台" nav
+ * section); this pill is just the at-a-glance signal + entry point into it.
  */
-export default function EvalDock({ spawnId, conversationId }: Props) {
+export default function EvalDock({ conversationId: _conversationId, onOpenDiagnosis }: Props) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);            // L2 summary slide-up
-  const [detailRunId, setDetailRunId] = useState<number | null>(null); // L3 expand-left
-  const [runs, setRuns] = useState<RunListItem[]>([]);
-  // Which spawn (if any) the L2 diagnosis catalog has drilled into. null = catalog overview.
-  const [selSpawn, setSelSpawn] = useState<{ sid: number | null; name: string | null } | null>(null);
+  const [anomalyCount, setAnomalyCount] = useState(0);
 
-  // Lightweight stat fetch for the collapsed bar. DiagnosisCatalog fetches its
-  // own catalog when the slide-up mounts; this is just the at-a-glance summary.
-  // NOTE: no ref-based "already fetched" guard — under React StrictMode the ref
-  // persists across the mount→cleanup→remount cycle, which would cancel the first
-  // fetch and skip the second, leaving the bar permanently at "0 runs". The
-  // [spawnId] dependency + the `cancelled` flag are the correct refetch control.
   useEffect(() => {
     let cancelled = false;
-    api.getRuns(spawnId, 50, conversationId)
-      .then((r) => { if (!cancelled) setRuns(r); })
-      .catch(() => { /* bar stat is best-effort */ });
+    api.getRunAnomalies("1h")
+      .then((anomalies: AnomalyDto[]) => { if (!cancelled) setAnomalyCount(anomalies.length); })
+      .catch(() => { /* pill glance is best-effort */ });
     return () => { cancelled = true; };
-  }, [spawnId, conversationId]);
+  }, []);
 
-  // Esc closes the open disclosure level (detail first, then summary).
-  useEffect(() => {
-    if (detailRunId == null && !open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (detailRunId != null) setDetailRunId(null);
-      else setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [detailRunId, open]);
-
-  const scored = runs.filter((r) => r.status === "scored" && r.overall_score != null);
-  const avg = scored.length
-    ? (scored.reduce((s, r) => s + (r.overall_score ?? 0), 0) / scored.length).toFixed(1)
-    : null;
-  const miniStat = avg != null
-    ? `${t('rail.eval_avg')} ${avg}`
-    : t('rail.eval_runs', { count: runs.length });
+  const hasAnomalies = anomalyCount > 0;
+  const label = hasAnomalies
+    ? `${t('rail.eval_label')} · ${anomalyCount} 异常`
+    : t('rail.eval_label');
 
   return (
     <div className="eval-dock">
-      {/* L2: summary slide-up (max-height transition) */}
-      <div className={`eval-dock__summary${open ? " eval-dock__summary--open" : ""}`}>
-        <div className="eval-dock__summary-inner">
-          {selSpawn == null ? (
-            <DiagnosisCatalog
-              onClose={() => setOpen(false)}
-              onSelectSpawn={(sid, name) => setSelSpawn({ sid, name })}
-              spawnId={spawnId}
-              conversationId={conversationId}
-            />
-          ) : selSpawn.sid != null ? (
-            <SpawnRunDetail
-              spawnId={selSpawn.sid}
-              spawnName={selSpawn.name}
-              onBack={() => setSelSpawn(null)}
-              onSelectRun={(id) => setDetailRunId(id)}
-            />
-          ) : (
-            <div className="eval-dock__spawn-placeholder">
-              <button onClick={() => setSelSpawn(null)}>← 诊断台</button>
-              <div>{selSpawn.name} · 无法定位分身 id</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* L1: collapsed bar, styled like the Settings save-bar */}
       <button
         type="button"
-        className="eval-dock__bar"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        className={`eval-dock__pill${hasAnomalies ? " eval-dock__pill--alert" : ""}`}
+        onClick={onOpenDiagnosis}
       >
-        <span className="eval-dock__bar-left">
-          <span className="eval-dock__bar-label">{t('rail.eval_label')}</span>
-          <span className="eval-dock__bar-stat">{miniStat}</span>
-        </span>
-        <ChevronUp className={`eval-dock__bar-chevron${open ? " eval-dock__bar-chevron--open" : ""}`} />
+        {hasAnomalies && <span className="eval-dock__pill-dot" aria-hidden="true" />}
+        <span className="eval-dock__pill-label">{label}</span>
       </button>
-
-      {/* L3: run detail, expands LEFT from the rail edge toward the chat */}
-      {detailRunId != null && (
-        <div className="eval-dock__detail-overlay" onClick={() => setDetailRunId(null)}>
-          <div className="eval-dock__detail-panel" onClick={(e) => e.stopPropagation()}>
-            <RunReplay runId={detailRunId} onClose={() => setDetailRunId(null)} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

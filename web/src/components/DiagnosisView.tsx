@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DiagnosisCatalog from "./DiagnosisCatalog";
 import SpawnRunDetail from "./SpawnRunDetail";
 import RunReplay from "./RunReplay";
@@ -8,19 +8,41 @@ type Selection =
   | { spawnId: number; name: string | null; runId?: undefined }
   | { spawnId: number; name: string | null; runId: number };
 
+const NARROW_BREAKPOINT = 700;
+
 /**
  * Standalone full-width diagnosis section (catalog → spawn → run) mounted as a
  * top-level nav section, separate from the conversation-rail EvalDock dock.
  */
 export default function DiagnosisView() {
   const [sel, setSel] = useState<Selection>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [narrow, setNarrow] = useState(false);
+
+  // Measure the container's own width (not the window) so the catalog switches
+  // to cards whenever its host is narrow — whether that's a small viewport or a
+  // squeezed panel. ResizeObserver is undefined in jsdom; guard so tests don't
+  // crash, and just default to `narrow=false` there.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setNarrow(entry.contentRect.width < NARROW_BREAKPOINT);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
-    <div className="flex-1 h-full overflow-auto p-6">
+    <div ref={containerRef} className="flex-1 h-full overflow-auto p-6">
       {sel == null && (
         <DiagnosisCatalog
           onClose={() => {}}
           onSelectSpawn={(spawnId, name) => setSel({ spawnId: spawnId ?? 0, name })}
+          narrow={narrow}
         />
       )}
 
