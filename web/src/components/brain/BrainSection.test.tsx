@@ -6,16 +6,27 @@ vi.mock("../../api/client", () => ({ api: {
   listCollections: vi.fn().mockResolvedValue([{ id: 1, name: "保险资料", chunks: 6, sources: 1, spawn_ids: [] }]),
   getKnowledge: vi.fn().mockResolvedValue([]), getCollectionKnowledge: vi.fn().mockResolvedValue([{ source: "条款.pdf", chunks: 6 }]),
   createCollection: vi.fn(), ingestCollection: vi.fn(),
+  getBrainTree: vi.fn().mockResolvedValue({ branches: [
+    { kind: "material", label: "材料", children: [
+      { kind: "material", ref: "material:coll:1:okx.pdf", label: "okx.pdf", provenance: "投喂",
+        confidence: null, usage_count: 3, last_used_at: null, last_used_ref: null, value: 4 } ] },
+    { kind: "learning", label: "心得", children: [] },
+    { kind: "profile", label: "画像", children: [] },
+  ] }),
+  getBrainEntry: vi.fn(),
 } }));
 vi.mock("../../lib/feed", () => ({ feedFile: vi.fn() }));
 import BrainSection from "./BrainSection";
 
-describe("BrainSection", () => {
-  it("hovering a nav row highlights the matching sunburst branch (shared focusedId)", async () => {
-    const { container } = render(<BrainSection />);
-    await waitFor(() => expect(screen.getAllByText("保险资料").length).toBeGreaterThan(0));
-    fireEvent.mouseEnter(screen.getByText("保险资料", { selector: "span" }));
-    await waitFor(() => expect(container.querySelector('path[data-node="coll:1"]')!.getAttribute("data-dim")).toBe("0"));
+describe("BrainSection (A′)", () => {
+  it("renders the three brain panels driven by /brain/tree", async () => {
+    render(<BrainSection />);
+    await waitFor(() => expect(screen.getByText("okx.pdf")).toBeInTheDocument());
+    // labels appear in both the panel headers and the sunburst titles → use getAllByText
+    expect(screen.getAllByText("材料").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("心得").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("画像").length).toBeGreaterThan(0);
+    expect(screen.getByText(/用过 3/)).toBeInTheDocument();
   });
 
   it("drops files → feeds each via feedFile then refreshes", async () => {

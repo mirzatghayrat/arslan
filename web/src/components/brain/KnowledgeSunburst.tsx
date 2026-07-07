@@ -3,7 +3,7 @@ import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { familyIds, layoutSegments, type Segment } from "./sunburstLayout";
 import { hueVar } from "./hues";
 
-interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; }
+interface Props { tree: TreeNode; focusedId: string | null; onFocus: (id: string | null) => void; className?: string; glowIds?: Set<string>; }
 
 const CX = 310, CY = 310;
 const LAYOUT = { cx: CX, cy: CY, innerR: 66, outerR: 300, bandR: 9, padAngle: 0.0015, topMinFrac: 0.07, gapAngle: 0.175 };
@@ -34,7 +34,7 @@ function fillFor(node: { kind: string; cat: string; hueKey?: string; fileType?: 
 /** Native mouseenter/mouseleave listeners (not React's synthetic onMouseEnter/Leave,
  * which are backed by bubbling mouseover/mouseout and never fire for a real, non-bubbling
  * mouseenter/mouseleave pair) so hover-to-focus reacts to genuine pointer transitions. */
-function SegmentPath({ s, dim, atRoot, onFocus, onClick }: { s: Segment; dim: boolean; atRoot: boolean; onFocus: (id: string | null) => void; onClick?: () => void }) {
+function SegmentPath({ s, dim, atRoot, glow, onFocus, onClick }: { s: Segment; dim: boolean; atRoot: boolean; glow: boolean; onFocus: (id: string | null) => void; onClick?: () => void }) {
   const ref = useRef<SVGPathElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -50,13 +50,14 @@ function SegmentPath({ s, dim, atRoot, onFocus, onClick }: { s: Segment; dim: bo
     <path ref={ref} data-node={s.id} data-dim={dim ? "1" : "0"} d={s.d} onClick={onClick}
       style={{ fill: fillFor(s, s.depth, atRoot), stroke: "white", strokeOpacity: 0.85, strokeWidth: 1.25,
         strokeLinejoin: "round", cursor: "pointer", opacity: dim ? 0.22 : 1,
+        filter: glow ? "drop-shadow(0 0 5px var(--primary))" : undefined,
         transition: "opacity .14s, fill .12s" }}>
       <title>{s.full ?? s.name}</title>
     </path>
   );
 }
 
-export default function KnowledgeSunburst({ tree, focusedId, onFocus, className }: Props) {
+export default function KnowledgeSunburst({ tree, focusedId, onFocus, className, glowIds }: Props) {
   const [rootId, setRootId] = useState("root");
   const viewRoot = useMemo(() => findNode(tree, rootId) ?? tree, [tree, rootId]);
   const atRoot = viewRoot.id === "root";
@@ -81,6 +82,7 @@ export default function KnowledgeSunburst({ tree, focusedId, onFocus, className 
             const hasKids = (findNode(viewRoot, s.id)?.children?.length ?? 0) > 0;
             return (
               <SegmentPath key={s.id} s={s} dim={focusedId != null && !fam.has(s.id)} atRoot={atRoot}
+                glow={glowIds?.has(s.id) ?? false}
                 onFocus={onFocus} onClick={hasKids ? () => setRootId(s.id) : undefined} />
             );
           })}

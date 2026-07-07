@@ -11,6 +11,16 @@ export function hueIndex(key: string): number {
   return (h % 10) + 1;
 }
 
+/** Fixed hues for the three Second-Brain content types so the sunburst wedges and
+ * the panel cards share one color per type (material=blue, learning=teal,
+ * profile=purple). These are the ONLY keys that bypass the hash. */
+const TYPE_HUE: Record<string, string> = {
+  material: "var(--hue-6)",
+  learning: "var(--hue-5)",
+  profile: "var(--hue-8)",
+};
+
 export function hueVar(key: string): string {
+  if (key in TYPE_HUE) return TYPE_HUE[key];
   return `var(--hue-${hueIndex(key)})`;
 }
