@@ -38,14 +38,29 @@ class _S:
 
 @pytest.mark.asyncio
 async def test_resolve_at_mentioned_spawn(monkeypatch):
-    """Only an explicit @name resolves; a bare name does not; longest match wins."""
+    """@full-name AND @first-word both resolve; bare name (no @) does not; a partial that isn't a
+    word boundary does not; longest match wins."""
     monkeypatch.setattr(arslan.spawn_service, "load_all_spawns",
-                        lambda: _aw([_S(3, "Deck Master"), _S(9, "Deck Master Pro"), _S(7, "Research Analyst")]))
-    assert await arslan._resolve_at_mentioned_spawn("@Deck Master 你能干嘛") == 3
-    assert await arslan._resolve_at_mentioned_spawn("@Deck Master Pro do it") == 9   # longest wins
-    assert await arslan._resolve_at_mentioned_spawn("deck master 是谁") is None        # bare name, no @
-    assert await arslan._resolve_at_mentioned_spawn("just a question") is None
+                        lambda: _aw([_S(3, "Deck Master"), _S(7, "Research Analyst")]))
+    assert await arslan._resolve_at_mentioned_spawn("@Deck Master 你能干嘛") == 3   # full name
+    assert await arslan._resolve_at_mentioned_spawn("@Deck 你能干嘛") == 3          # first-word prefix
+    assert await arslan._resolve_at_mentioned_spawn("@deck") == 3                  # case-insensitive
+    assert await arslan._resolve_at_mentioned_spawn("@Deck你好") == 3              # 中文紧跟 = boundary
+    assert await arslan._resolve_at_mentioned_spawn("@Research do it") == 7        # first word of the other
+    assert await arslan._resolve_at_mentioned_spawn("deck master 是谁") is None     # bare name, no @
+    assert await arslan._resolve_at_mentioned_spawn("@decka 你好") is None          # mid-ascii-word, not a prefix
     assert await arslan._resolve_at_mentioned_spawn("") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_at_mentioned_spawn_prefix_ambiguity(monkeypatch):
+    """An @prefix that fits more than one spawn is ambiguous → None (don't guess). But an exact
+    full-name still wins even when it's a prefix of a longer spawn name."""
+    monkeypatch.setattr(arslan.spawn_service, "load_all_spawns",
+                        lambda: _aw([_S(3, "Deck Master"), _S(9, "Deck Master Pro")]))
+    assert await arslan._resolve_at_mentioned_spawn("@Deck 做个 deck") is None          # ambiguous prefix
+    assert await arslan._resolve_at_mentioned_spawn("@Deck Master 做个 deck") == 3      # exact full name wins
+    assert await arslan._resolve_at_mentioned_spawn("@Deck Master Pro 做个 deck") == 9  # longest exact
 
 
 @pytest.mark.asyncio

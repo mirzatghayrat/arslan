@@ -774,20 +774,50 @@ async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
 
 
 async def _resolve_at_mentioned_spawn(user_message: str) -> int | None:
-    """Resolve an EXPLICIT @-mention of a real spawn to its id. Requires the `@name` form
-    (not a bare name) so it only fires on unambiguous delegation intent and never hijacks a
-    normal answer turn that merely contains a spawn's name as a word. On multiple matches the
-    LONGEST name wins (so `@Deck Master Pro` beats `@Deck Master`). Deterministic."""
+    """Resolve an EXPLICIT @-mention to a real spawn id. Requires the `@` form (never a bare
+    name) so it can't hijack a normal answer turn. Matching, in order:
+      1. exact full-name @mention — the longest one wins, and beats any prefix collision
+         (`@Deck Master` resolves to "Deck Master" even if "Deck Master Pro" also exists);
+      2. else a WORD-PREFIX @mention (`@Deck` → "Deck Master") — but only when that prefix
+         belongs to exactly ONE spawn; an ambiguous prefix (two spawns share it) returns None
+         so we fall back to the LLM router instead of guessing.
+    A match must end on a word boundary: the char after the token may be whitespace, CJK,
+    punctuation, or end-of-string — but NOT a continuing ASCII letter/digit (so `@decka`
+    does not match a "Deck" spawn). Deterministic."""
     msg = (user_message or "").lower()
     if "@" not in msg:
         return None
     spawns = await spawn_service.load_all_spawns()
-    best_id: int | None = None
-    best_len = 0
+    names: list[tuple[str, int]] = []                 # (full name, id)
+    prefix_ids: dict[str, set[int]] = {}              # word-prefix → spawn ids sharing it
     for s in spawns:
         name = (getattr(s, "name", "") or "").strip().lower()
-        if name and f"@{name}" in msg and len(name) > best_len:
-            best_id, best_len = s.id, len(name)
+        if not name:
+            continue
+        names.append((name, s.id))
+        words = name.split()
+        for i in range(1, len(words) + 1):
+            prefix_ids.setdefault(" ".join(words[:i]), set()).add(s.id)
+
+    def _at_bounded(token: str) -> bool:
+        idx = msg.find("@" + token)
+        if idx < 0:
+            return False
+        nxt = msg[idx + 1 + len(token): idx + 2 + len(token)]
+        return not (nxt.isascii() and nxt.isalnum())  # boundary unless mid-ASCII-word
+
+    # 1) exact full name wins (longest), even if it's a prefix of a longer spawn name
+    best_id: int | None = None
+    best_len = 0
+    for name, sid in names:
+        if len(name) > best_len and _at_bounded(name):
+            best_id, best_len = sid, len(name)
+    if best_id is not None:
+        return best_id
+    # 2) else the longest UNAMBIGUOUS word-prefix
+    for prefix, ids in prefix_ids.items():
+        if len(ids) == 1 and len(prefix) > best_len and _at_bounded(prefix):
+            best_id, best_len = next(iter(ids)), len(prefix)
     return best_id
 
 
