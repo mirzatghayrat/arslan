@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "../../api/client";
-import { feedTextOrUrl } from "../../lib/feed";
+import { feedTextOrUrl, feedFileInto } from "../../lib/feed";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { hueVar } from "./hues";
 
@@ -50,9 +50,23 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
     const hasChildren = (n.children ?? []).length > 0;
     const open = expanded.has(n.id) || (ql !== "" && (n.children ?? []).some((c) => matches(c, ql)));
     const isGroup = n.kind === "category" || n.kind === "collection";
+    const collId = n.kind === "collection" ? Number(n.id.replace(/^coll:/, "")) : null;
     return (
       <>
-        <div onMouseEnter={() => onFocus(n.id)} onMouseLeave={() => onFocus(null)}
+        <div
+          {...(collId != null ? {
+            "data-coll-id": collId,
+            onDragOver: (e: React.DragEvent) => { if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLElement).style.outline = "2px solid var(--primary)"; } },
+            onDragLeave: (e: React.DragEvent) => { (e.currentTarget as HTMLElement).style.outline = ""; },
+            onDrop: async (e: React.DragEvent) => {
+              e.preventDefault(); e.stopPropagation();
+              (e.currentTarget as HTMLElement).style.outline = "";
+              const files = Array.from(e.dataTransfer?.files ?? []);
+              for (const file of files) { try { await feedFileInto(collId, file); } catch { /* row-drop best-effort */ } }
+              onChanged();
+            },
+          } : {})}
+          onMouseEnter={() => onFocus(n.id)} onMouseLeave={() => onFocus(null)}
           onClick={() => { if (hasChildren) toggle(n.id); }}
           className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13.5px] cursor-default border ${on ? "bg-foreground/[0.05] border-border" : "border-transparent hover:bg-foreground/[0.03]"}`}
           style={{ marginLeft: depth * 12 }}>

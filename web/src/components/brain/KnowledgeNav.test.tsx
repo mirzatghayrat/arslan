@@ -16,6 +16,15 @@ const tree: TreeNode = {
   ],
 };
 
+const treeWithColl: TreeNode = {
+  id: "root", name: "YOU", kind: "root", cat: "collection", value: 0, children: [
+    { id: "cat:collection", name: "共享库", kind: "category", cat: "collection", value: 0, children: [
+      { id: "coll:5", name: "我的资料", kind: "collection", cat: "collection", value: 0, children: [] }] },
+    { id: "cat:spawn", name: "分身深井", kind: "category", cat: "spawn", value: 0, children: [] },
+    { id: "cat:pref", name: "偏好", kind: "category", cat: "pref", value: 0, children: [] },
+  ],
+};
+
 describe("KnowledgeNav", () => {
   it("renders the tree and fires onFocus on row hover", () => {
     const onFocus = vi.fn();
@@ -61,5 +70,15 @@ describe("KnowledgeNav", () => {
     fireEvent.change(screen.getByPlaceholderText(/库名/), { target: { value: "我的资料" } });
     fireEvent.click(screen.getByText(/建立/));
     await waitFor(() => expect(api.createCollection).toHaveBeenCalledWith("我的资料"));
+  });
+
+  it("dropping a file on a collection row feeds into that collection", async () => {
+    const feed = await import("../../lib/feed");
+    const spy = vi.spyOn(feed, "feedFileInto").mockResolvedValue({ chunks_added: 1 } as any);
+    render(<KnowledgeNav tree={treeWithColl} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    const row = screen.getByText("我的资料").closest("[data-coll-id]") as HTMLElement;
+    const file = new File(["x"], "a.pdf");
+    fireEvent.drop(row, { dataTransfer: { files: [file], types: ["Files"] } });
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(5, expect.any(File)));
   });
 });
