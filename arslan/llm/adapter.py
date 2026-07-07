@@ -94,6 +94,15 @@ class LLMAdapter:
         if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
         usage_sink.report(total)
+        u = resp.usage or {}
+        tin = u.get("prompt_tokens") or u.get("input_tokens") or u.get("promptTokenCount")
+        tout = u.get("completion_tokens") or u.get("output_tokens") or u.get("candidatesTokenCount")
+        usage_sink.report_detail(
+            tokens_in=tin,
+            tokens_out=tout,
+            model=self.model,
+            provider=self.provider_name,
+        )
         return resp
 
     async def chat_stream(

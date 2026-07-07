@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 _sink: ContextVar[list[int] | None] = ContextVar("usage_sink", default=None)
+_detail: ContextVar[dict | None] = ContextVar("usage_detail", default=None)
 
 
 def report(tokens: int) -> None:
@@ -21,15 +22,46 @@ def total() -> int:
     return sum(bucket) if bucket else 0
 
 
+def report_detail(
+    *,
+    tokens_in: int | None,
+    tokens_out: int | None,
+    model: str | None,
+    provider: str | None,
+) -> None:
+    """Structured usage from a real (non-stream) provider response. Aggregates in/out
+    across the turn; keeps the latest non-null model/provider. No-op without context."""
+    d = _detail.get()
+    if d is None:
+        return
+    if tokens_in is not None:
+        d["tokens_in"] = (d["tokens_in"] or 0) + int(tokens_in)
+    if tokens_out is not None:
+        d["tokens_out"] = (d["tokens_out"] or 0) + int(tokens_out)
+    if model:
+        d["model"] = model
+    if provider:
+        d["provider"] = provider
+
+
+def detail() -> dict:
+    """Snapshot of the structured usage, all-None when no context/reports."""
+    d = _detail.get()
+    return dict(d) if d else {"tokens_in": None, "tokens_out": None, "model": None, "provider": None}
+
+
 @contextmanager
 def collecting():
-    """Activate a fresh accumulation bucket for the duration of the block."""
+    """Activate fresh accumulation buckets (total + structured) for the duration of the block."""
     bucket: list[int] = []
+    detail_bucket = {"tokens_in": None, "tokens_out": None, "model": None, "provider": None}
     token = _sink.set(bucket)
+    dtoken = _detail.set(detail_bucket)
     try:
         yield bucket
     finally:
         _sink.reset(token)
+        _detail.reset(dtoken)
 
 
 def estimate_tokens(*parts: str | None) -> int:
