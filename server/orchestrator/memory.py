@@ -186,30 +186,27 @@ async def save_facts(facts: list[dict]) -> list[UserFact]:
     if not facts:
         return created
 
-    from server.services.fact_dedup import norm
-
-    seen = await existing_norms_safe()
+    from server.services.fact_dedup import find_near_dup
 
     async with db_session.AsyncSessionLocal() as db:
         for f in facts:
             content = (f.get("content") or "").strip()
             if not content:
                 continue
-            try:
-                key = norm(content)
-                if key in seen:
-                    continue
-            except Exception:  # noqa: BLE001 - fail-open: never skip a legit write on error
-                key = None
+            # Near-dup → merge (bump the existing fact's confidence), don't append.
+            # This collapses the "广告科技 ×3 / OKX 模板 ×4" duplication at the source.
+            dup = await find_near_dup(db, content)
+            if dup is not None:
+                dup.confidence = min(1.0, (dup.confidence or 0.6) + 0.1)
+                continue
             row = UserFact(
                 content=content,
                 source=f.get("source", "auto"),
                 sensitive=bool(f.get("sensitive", False)),
+                confidence=0.9 if f.get("source") == "manual" else 0.6,
             )
             db.add(row)
             created.append(row)
-            if key is not None:
-                seen.add(key)
         await db.commit()
         for row in created:
             await db.refresh(row)
