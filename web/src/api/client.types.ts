@@ -492,6 +492,24 @@ export interface AnomalyDto {
   run_id: number | null;
 }
 
+/** GET /runs/vitals — bucketed run-rate + error overlay + duration heatmap. */
+export interface VitalsBucketDto { t: string; count: number; errors: number }
+export interface RunVitalsDto {
+  range: string;
+  bucket_ms: number;
+  total: number;
+  error_ratio: number;
+  p95_ms: number | null;
+  buckets: VitalsBucketDto[];
+  duration_bins: string[];
+  duration_matrix: number[][];
+}
+
+/** GET /runs/timeline — per-spawn severity bands over time. */
+export interface TimelineCellDto { sev: string; count: number; errors: number }
+export interface TimelineSpawnDto { spawn_id: number | null; spawn_name: string | null; cells: TimelineCellDto[] }
+export interface RunTimelineDto { range: string; buckets: string[]; spawns: TimelineSpawnDto[] }
+
 export interface McpServer {
   id: number;
   label: string;

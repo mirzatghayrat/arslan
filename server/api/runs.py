@@ -24,6 +24,11 @@ from server.schemas import (
     RunStepOut,
     RunSummaryOut,
     RunTrendPointOut,
+    TimelineCellOut,
+    TimelineOut,
+    TimelineSpawnOut,
+    VitalsBucketOut,
+    VitalsOut,
 )
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -45,6 +50,32 @@ def _window_start(rng: str) -> datetime | None:
     if rng == "24h":
         return datetime.utcnow() - timedelta(hours=24)
     return None
+
+
+# Duration heatmap bins (ms). Fixed thresholds — observational, not tied to scoring.
+DURATION_EDGES = [0, 100, 500, 1000, 3000, 10000, math.inf]
+DURATION_LABELS = ["<0.1s", "0.1–0.5s", "0.5–1s", "1–3s", "3–10s", ">10s"]
+
+
+def _bucket_bounds(start: datetime | None, runs: list, n: int) -> list[datetime]:
+    """n+1 evenly-spaced edges over [start (or earliest run), now]. range='all'
+    (start is None) falls back to the earliest run's timestamp."""
+    end = datetime.utcnow()
+    if start is None:
+        stamps = [r.created_at for r in runs if r.created_at]
+        start = min(stamps) if stamps else end - timedelta(hours=1)
+    if end <= start:
+        end = start + timedelta(seconds=1)
+    step = (end - start) / n
+    return [start + step * i for i in range(n + 1)]
+
+
+def _bucket_index(ts: datetime, edges: list[datetime]) -> int:
+    """Bucket ts falls in, clamped to [0, len(edges)-2]."""
+    for i in range(len(edges) - 1):
+        if ts < edges[i + 1]:
+            return i
+    return len(edges) - 2
 
 
 def _p95(values: list[int]) -> int | None:
@@ -205,6 +236,47 @@ async def runs_catalog(range: str = Query("1h"),
         tokens_sum=sum(r.task_tokens or 0 for r in runs),
     )
     return RunCatalogOut(range=range, fleet=fleet, spawns=spawns)
+
+
+N_VITALS_BUCKETS = 30
+
+
+# NOTE: must stay registered BEFORE /runs/{run_id} (path-param collision).
+@router.get("/runs/vitals", response_model=VitalsOut)
+async def runs_vitals(rng: str = Query("1h", alias="range"),
+                      db: AsyncSession = Depends(get_session)) -> VitalsOut:
+    start = _window_start(rng)
+    q = select(Run)
+    if start is not None:
+        q = q.where(Run.created_at >= start)
+    runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
+    edges = _bucket_bounds(start, runs, N_VITALS_BUCKETS)
+    counts = [0] * N_VITALS_BUCKETS
+    errors = [0] * N_VITALS_BUCKETS
+    matrix = [[0] * N_VITALS_BUCKETS for _ in DURATION_LABELS]
+    for r in runs:
+        if not r.created_at:
+            continue
+        b = _bucket_index(r.created_at, edges)
+        counts[b] += 1
+        if r.error_kind:
+            errors[b] += 1
+        ms = r.total_ms or 0
+        for di in range(len(DURATION_LABELS)):
+            if DURATION_EDGES[di] <= ms < DURATION_EDGES[di + 1]:
+                matrix[di][b] += 1
+                break
+    total = len(runs)
+    step_ms = int((edges[1] - edges[0]).total_seconds() * 1000) if len(edges) > 1 else 0
+    return VitalsOut(
+        range=rng, bucket_ms=step_ms, total=total,
+        error_ratio=round(sum(errors) / total, 4) if total else 0.0,
+        p95_ms=_p95([r.total_ms for r in runs]),
+        buckets=[VitalsBucketOut(t=edges[i].isoformat(), count=counts[i], errors=errors[i])
+                 for i in range(N_VITALS_BUCKETS)],
+        duration_bins=list(DURATION_LABELS),
+        duration_matrix=matrix,
+    )
 
 
 # NOTE: must stay registered BEFORE /runs/{run_id}, or FastAPI tries to parse

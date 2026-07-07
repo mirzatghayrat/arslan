@@ -444,6 +444,9 @@ class CatalogSpawnOut(BaseModel):
     tokens_sum: int
     health: str
     score_trend: list[float]
+    latency_trend: list[int | None] = []
+    error_trend: list[float] = []
+    rate_trend: list[int] = []
 
 
 class CatalogFleetOut(BaseModel):
@@ -475,6 +478,49 @@ class AnomalyOut(BaseModel):
     detail: str
     since: str | None = None
     run_id: int | None = None
+
+
+class VitalsBucketOut(BaseModel):
+    """One time bucket of the diagnosis vitals header (GET /runs/vitals)."""
+
+    t: str
+    count: int
+    errors: int
+
+
+class VitalsOut(BaseModel):
+    """Bucketed run-rate + error overlay + duration heatmap (GET /runs/vitals)."""
+
+    range: str
+    bucket_ms: int
+    total: int
+    error_ratio: float
+    p95_ms: int | None = None
+    buckets: list[VitalsBucketOut]
+    duration_bins: list[str]
+    duration_matrix: list[list[int]]
+
+
+class TimelineCellOut(BaseModel):
+    """One spawn×bucket health cell of the anomaly timeline (GET /runs/timeline)."""
+
+    sev: str            # red | amber | green | none
+    count: int
+    errors: int
+
+
+class TimelineSpawnOut(BaseModel):
+    spawn_id: int | None = None
+    spawn_name: str | None = None
+    cells: list[TimelineCellOut]
+
+
+class TimelineOut(BaseModel):
+    """Response for GET /runs/timeline — per-spawn severity bands over time."""
+
+    range: str
+    buckets: list[str]
+    spawns: list[TimelineSpawnOut]
 
 
 class SkillForgeIn(BaseModel):

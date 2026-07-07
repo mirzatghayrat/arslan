@@ -15,6 +15,8 @@ import type {
   RegistryCatalog,
   CuratorFlag,
   RunCatalogDto,
+  RunVitalsDto,
+  RunTimelineDto,
   RunDetailDto,
   RunListItem,
   RunSummary,
@@ -177,6 +179,10 @@ export const api = {
   getRunCatalog: (range: string) => request<RunCatalogDto>(`/runs/catalog?range=${range}`),
   /** Deterministic threshold-rule findings, severity-sorted (diagnosis dashboard). */
   getRunAnomalies: (range: string) => request<AnomalyDto[]>(`/runs/anomalies?range=${range}`),
+  /** Bucketed run-rate + error overlay + duration heatmap (diagnosis vitals). */
+  getRunVitals: (range: string) => request<RunVitalsDto>(`/runs/vitals?range=${range}`),
+  /** Per-spawn severity bands over time (anomaly timeline). */
+  getRunTimeline: (range: string) => request<RunTimelineDto>(`/runs/timeline?range=${range}`),
   /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
   redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
