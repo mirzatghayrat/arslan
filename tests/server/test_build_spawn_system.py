@@ -38,6 +38,22 @@ def test_build_spawn_system_includes_equipment_and_guidance(maker):
     assert any(t["key"] == "web_search" for t in wired)
 
 
+def test_build_spawn_system_has_language_directive(maker):
+    """The spawn must be told to reply in the user's CURRENT language, and that
+    'Known facts about the user' are background — NOT a language instruction.
+    Regression guard for the Uyghur-drift bug: identity facts like '用户是甲语母语者…
+    不需要中文翻译' were read as an order to answer in Uyghur in the sandbox."""
+    from server.orchestrator.dispatcher import build_spawn_system
+    async def _run():
+        async with maker() as s:
+            spawn = await s.get(Spawn, 7)
+        return await build_spawn_system(spawn, retrieval_query="x", current_turn=1)
+    system, _ = anyio.run(_run)
+    low = system.lower()
+    assert "reply in the same language as the user" in low          # follow-the-user's-language
+    assert "not instructions about what language" in low            # facts are background, not a lang order
+
+
 def test_build_spawn_system_override(maker):
     from server.orchestrator.dispatcher import build_spawn_system
     async def _run():
