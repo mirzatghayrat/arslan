@@ -295,6 +295,46 @@ button:disabled {
   border-radius: 2px;
 }
 
+/* Step waterfall — per-step cumulative-offset gantt bars */
+.run-replay__waterfall {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.wf-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wf-label {
+  flex: 0 0 120px;
+  width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  color: var(--muted-foreground);
+}
+
+.wf-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.wf-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+}
+
 .trace {
   list-style: none;
   margin: 0;

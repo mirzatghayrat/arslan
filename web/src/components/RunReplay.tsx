@@ -172,6 +172,22 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const outputPreview = run.steps.find((s) => s.kind === "dispatch" && s.detail?.output_preview != null)?.detail
     ?.output_preview as string | undefined;
 
+  // Step waterfall (cumulative-offset gantt): each step's bar starts where the
+  // previous one ended, so the row shows the whole run's timeline at a glance.
+  const waterfallTotalMs = run.steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0) || 1;
+  let waterfallCursorMs = 0;
+  const waterfallRows = run.steps.map((s) => {
+    const offsetMs = waterfallCursorMs;
+    waterfallCursorMs += s.durationMs ?? 0;
+    let color = "var(--muted-foreground)";
+    if (s.kind === "route") color = "var(--hue-7)";
+    else if (s.kind === "dispatch") color = "var(--hue-6)";
+    else if (s.kind === "tool_call") color = s.ok === false ? "var(--danger)" : "var(--hue-5)";
+    else if (s.kind === "escalation") color = "var(--warning)";
+    const tooltipLabel = s.kind === "tool_call" ? `${s.kind} · ${s.label}` : s.kind;
+    return { seq: s.seq, kind: s.kind, label: s.kind, tooltipLabel, offsetMs, durationMs: s.durationMs ?? 0, color };
+  });
+
   // Dims radar: this run's dimension scores vs the fleet averages. Guarded — renders
   // only once both the run is scored, has dimensions, and the summary fetch succeeded.
   const scoreByDim: Record<string, number> = {};
@@ -274,6 +290,29 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
             ))}
           </div>
         </div>
+
+        {run.steps.length > 0 && (
+          <section className="run-replay__waterfall" data-testid="run-waterfall">
+            <h4>步骤瀑布</h4>
+            {waterfallRows.map((row) => (
+              <div className="wf-row" data-testid="wf-row" key={row.seq}>
+                <span className="wf-label" title={row.tooltipLabel}>{row.label}</span>
+                <span className="wf-track">
+                  <span
+                    className="wf-bar"
+                    data-testid="wf-bar"
+                    style={{
+                      left: `${(row.offsetMs / waterfallTotalMs) * 100}%`,
+                      width: `max(0.6%, ${(row.durationMs / waterfallTotalMs) * 100}%)`,
+                      background: row.color,
+                    }}
+                    title={`${row.durationMs}ms`}
+                  />
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
 
         <ul className="trace">
           {run.steps.map((s) => {

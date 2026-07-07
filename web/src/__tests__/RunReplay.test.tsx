@@ -280,6 +280,26 @@ describe("RunReplay", () => {
     expect(screen.getByText(/导出 json/)).toBeTruthy();
   });
 
+  it("renders a step waterfall with one bar per step, failed tool_call bar uses --danger", async () => {
+    const withWaterfall: RunDetailDto = {
+      ...scored,
+      steps: [
+        { seq: 0, kind: "route", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 100 },
+        { seq: 1, kind: "tool_call", ref: { tool: "web_search", ok: false }, detail: {}, duration_ms: 0 },
+        { seq: 2, kind: "dispatch", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 300 },
+      ],
+    };
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(withWaterfall);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByText("交给 Mermer 处理");
+
+    const bars = screen.getAllByTestId("wf-bar");
+    expect(bars).toHaveLength(3);
+    // middle bar (seq 1, tool_call, ok:false) must render with the danger token
+    const failedBar = bars[1] as HTMLElement;
+    expect(failedBar.style.background).toContain("var(--danger)");
+  });
+
   it("degrades gracefully: no spawnId → no sparkline, no kb sources → no chips, summary failure → no radar", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...scored,
