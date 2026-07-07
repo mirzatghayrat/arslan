@@ -75,8 +75,36 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   return (await resp.json()) as T;
 }
 
+export interface BrainLeaf {
+  kind: "material" | "learning" | "profile";
+  ref: string;
+  label: string;
+  provenance: string | null;
+  confidence: number | null;
+  usage_count: number;
+  last_used_at: string | null;
+  last_used_ref: string | null;
+  value: number;
+  children?: BrainLeaf[];
+}
+export interface BrainBranch { kind: BrainLeaf["kind"]; label: string; children: BrainLeaf[]; }
+export interface BrainEntry {
+  kind: string;
+  ref: string;
+  label: string;
+  provenance: string | null;
+  confidence: number | null;
+  excerpt: string;
+  usage_count: number;
+  last_used_at: string | null;
+  last_used_ref: string | null;
+}
+
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
+  getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
+  getBrainEntry: (kind: string, ref: string) =>
+    request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
   draftSpawn: (description: string) =>
     request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),

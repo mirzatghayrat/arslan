@@ -175,6 +175,10 @@ def create_app() -> FastAPI:
 
     app.include_router(collections_api.router, prefix="/api/v1")
 
+    from server.api import brain as brain_api
+
+    app.include_router(brain_api.router, prefix="/api/v1")
+
     from server.api import embedding as embedding_api
 
     app.include_router(embedding_api.router, prefix="/api/v1")
