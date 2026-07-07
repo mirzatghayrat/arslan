@@ -348,6 +348,17 @@ class Run(Base):
     overall_badge = Column(String(10), nullable=True)  # "good" | "ok" | "bad"
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # --- detailed replay (P2), all nullable for backward compat ---
+    model = Column(String(80), nullable=True)         # model the spawn actually used
+    provider = Column(String(40), nullable=True)      # openai|anthropic|gemini|zhipu…
+    tokens_in = Column(Integer, nullable=True)        # real provider input tokens (usually NULL: spawn streams)
+    tokens_out = Column(Integer, nullable=True)       # real provider output tokens
+    tokens_estimated = Column(Boolean, nullable=False, default=False)  # true → task_tokens is an estimate
+    error_kind = Column(String(60), nullable=True)    # structured error class/category
+    error_text = Column(Text, nullable=True)          # error message (truncated by the recorder)
+    system_prompt = Column(Text, nullable=True)       # SENSITIVE: assembled system prompt (retention-governed)
+    injected_kb = Column(Text, nullable=True)         # SENSITIVE: injected knowledge (retention-governed)
+
 
 class RunStep(Base):
     """One ordered step inside a Run (for the 'what it did' waterfall + gantt)."""
