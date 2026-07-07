@@ -365,6 +365,7 @@ export function toUiRun(dto: RunDetailDto): UiRun {
     kind: s.kind,
     label: stepLabel(s),
     detail: s.detail,
+    ok: typeof s.ref.ok === "boolean" ? s.ref.ok : undefined,
     durationMs: s.duration_ms,
     isSlowest: maxMs > 0 && (s.duration_ms ?? 0) === maxMs,
   }));

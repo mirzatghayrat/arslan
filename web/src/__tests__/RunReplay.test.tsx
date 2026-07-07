@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RunReplay from "../components/RunReplay";
 import type { RunDetailDto } from "../api/client.types";
@@ -17,6 +17,20 @@ const scored: RunDetailDto = {
   evaluations: [
     { dimension: "routing", status: "pass", score: 9, comment: "选对了人" },
     { dimension: "completion", status: "warn", score: 6, comment: "略简略" },
+  ],
+};
+
+const scoredWithTool: RunDetailDto = {
+  ...scored,
+  steps: [
+    ...scored.steps,
+    {
+      seq: 2,
+      kind: "tool_call",
+      ref: { tool: "web_search", ok: true },
+      detail: { args_summary: '{"query":"OKX"}', summary: "5 results" },
+      duration_ms: 300,
+    },
   ],
 };
 
@@ -105,5 +119,22 @@ describe("RunReplay", () => {
     render(<RunReplay runId={7} onClose={() => {}} />);
     await screen.findByText(/评分中/);
     expect(screen.queryByTestId("run-compare")).toBeNull();
+  });
+
+  it("expands a tool step to reveal args_summary + result summary + ✓", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithTool);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    const label = await screen.findByText(/web_search|搜索|查资料|用工具/);
+    fireEvent.click(label.closest("li")!);
+    expect(screen.getByText(/OKX/)).toBeTruthy();
+    expect(screen.getByText(/5 results/)).toBeTruthy();
+    expect(screen.getByText("✓", { selector: ".trace__ok--yes" })).toBeTruthy();
+  });
+
+  it("does not show the detail until the row is clicked", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithTool);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByText(/web_search|搜索|查资料|用工具/);
+    expect(screen.queryByText(/OKX/)).toBeNull();
   });
 });

@@ -112,7 +112,9 @@ export interface UiRunStep {
   seq: number;
   kind: string;
   label: string;
-  detail: Record<string, unknown>;
+  detail?: Record<string, unknown>;
+  /** From ref.ok — tool success/failure (undefined when the step has no ok flag, e.g. route/dispatch). */
+  ok?: boolean;
   durationMs: number | null;
   isSlowest: boolean;
 }

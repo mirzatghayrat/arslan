@@ -17,7 +17,17 @@ interface Props {
 export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const [run, setRun] = useState<UiRun | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function toggleStep(seq: number) {
+    setOpenSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(seq)) next.delete(seq);
+      else next.add(seq);
+      return next;
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -76,15 +86,77 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       <section className="run-replay__trace">
         <h4>它做了什么</h4>
         <ul className="trace">
-          {run.steps.map((s) => (
-            <li key={s.seq} className={`trace__row${s.isSlowest ? " trace__row--slow" : ""}`}>
-              <span className={`trace__label trace__label--${s.kind}`}>{s.label}</span>
-              <span className="trace__track">
-                <span className="trace__bar" style={{ width: `${((s.durationMs ?? 0) / maxMs) * 100}%` }} />
-              </span>
-              <span className="trace__ms">{s.durationMs != null ? `${s.durationMs}ms` : ""}</span>
-            </li>
-          ))}
+          {run.steps.map((s) => {
+            const isOpen = openSteps.has(s.seq);
+            const detail = s.detail;
+            return (
+              <li
+                key={s.seq}
+                className={`trace__row${s.isSlowest ? " trace__row--slow" : ""}${isOpen ? " trace__row--open" : ""}`}
+                onClick={() => toggleStep(s.seq)}
+                role="button"
+                tabIndex={0}
+              >
+                <div className="trace__summary">
+                  <span className={`trace__label trace__label--${s.kind}`}>{s.label}</span>
+                  <span className="trace__track">
+                    <span className="trace__bar" style={{ width: `${((s.durationMs ?? 0) / maxMs) * 100}%` }} />
+                  </span>
+                  <span className="trace__ms">{s.durationMs != null ? `${s.durationMs}ms` : ""}</span>
+                </div>
+                {isOpen && (
+                  <div className="trace__detail">
+                    {s.kind === "tool_call" && (
+                      <>
+                        {s.ok != null && (
+                          <div className="trace__detail-row">
+                            <span className="trace__detail-key">状态</span>
+                            <span className={`trace__detail-val trace__ok--${s.ok ? "yes" : "no"}`}>
+                              {s.ok ? "✓" : "✗"}
+                            </span>
+                          </div>
+                        )}
+                        {detail?.args_summary != null && (
+                          <div className="trace__detail-row">
+                            <span className="trace__detail-key">查询</span>
+                            <span className="trace__detail-val trace__detail-val--mono">{String(detail.args_summary)}</span>
+                          </div>
+                        )}
+                        {detail?.summary != null && (
+                          <div className="trace__detail-row">
+                            <span className="trace__detail-key">结果</span>
+                            <span className="trace__detail-val">{String(detail.summary)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {s.kind === "dispatch" && detail?.output_preview != null && (
+                      <div className="trace__detail-row">
+                        <span className="trace__detail-key">输出</span>
+                        <span className="trace__detail-val trace__detail-val--mono">{String(detail.output_preview)}</span>
+                      </div>
+                    )}
+                    {s.kind === "escalation" && (
+                      <>
+                        {detail?.how != null && (
+                          <div className="trace__detail-row">
+                            <span className="trace__detail-key">如何</span>
+                            <span className="trace__detail-val">{String(detail.how)}</span>
+                          </div>
+                        )}
+                        {detail?.why != null && (
+                          <div className="trace__detail-row">
+                            <span className="trace__detail-key">为何</span>
+                            <span className="trace__detail-val">{String(detail.why)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </section>
 

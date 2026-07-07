@@ -243,9 +243,20 @@ button:disabled {
 
 .trace__row {
   display: flex;
+  flex-direction: column;
+  padding: 0.25rem 0;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.trace__row:hover {
+  background: var(--muted, rgba(255, 255, 255, 0.04));
+}
+
+.trace__summary {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem 0;
 }
 
 .trace__label {
@@ -302,6 +313,43 @@ button:disabled {
   text-align: right;
   flex-shrink: 0;
 }
+
+/* Expanded per-step detail (args_summary / summary / output_preview / how / why) */
+.trace__detail {
+  margin: 0.25rem 0 0.375rem 6.5rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--card, rgba(255, 255, 255, 0.03));
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.trace__detail-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.trace__detail-key {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.trace__detail-val {
+  color: var(--foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trace__detail-val--mono {
+  font-family: monospace;
+}
+
+.trace__ok--yes { color: var(--success, #3fb950); font-weight: 700; }
+.trace__ok--no  { color: var(--destructive, #f85149); font-weight: 700; }
 
 /* Eval section */
 .run-replay__eval {
