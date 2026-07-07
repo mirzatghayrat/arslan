@@ -80,6 +80,20 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
   const maxMs = run.steps.reduce((m, s) => Math.max(m, s.durationMs ?? 0), 0) || 1;
 
+  const routeMs = run.steps.filter((s) => s.kind === "route").reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
+  const toolsMs = run.steps.filter((s) => s.kind === "tool_call").reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
+  const dispatchMs = run.steps.filter((s) => s.kind === "dispatch").reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
+  const composeMs = Math.max(0, dispatchMs - toolsMs);
+  const breakdownTotal = routeMs + toolsMs + composeMs || 1;
+  const breakdownSegments = [
+    { key: "route", label: "路由", ms: routeMs, color: "var(--muted-foreground)" },
+    { key: "tools", label: "工具", ms: toolsMs, color: "var(--warning)" },
+    { key: "compose", label: "生成", ms: composeMs, color: "var(--primary)" },
+  ];
+
+  const outputPreview = run.steps.find((s) => s.kind === "dispatch" && s.detail?.output_preview != null)?.detail
+    ?.output_preview as string | undefined;
+
   return (
     <div className="run-replay" data-testid="run-replay">
       <header className="run-replay__head">
@@ -120,10 +134,91 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
       <section className="run-replay__trace">
         <h4>它做了什么</h4>
+
+        <div className="time-breakdown" data-testid="time-breakdown">
+          <div className="time-breakdown__bar">
+            {breakdownSegments.map((seg) =>
+              seg.ms > 0 ? (
+                <span
+                  key={seg.key}
+                  className="time-breakdown__seg"
+                  style={{ width: `${(seg.ms / breakdownTotal) * 100}%`, background: seg.color }}
+                  title={`${seg.label} ${seg.ms}ms`}
+                />
+              ) : null
+            )}
+          </div>
+          <div className="time-breakdown__legend">
+            {breakdownSegments.map((seg) => (
+              <span key={seg.key} className="time-breakdown__legend-item">
+                <span className="time-breakdown__swatch" style={{ background: seg.color }} />
+                {seg.label} {Math.round((seg.ms / breakdownTotal) * 100)}%
+              </span>
+            ))}
+          </div>
+        </div>
+
         <ul className="trace">
           {run.steps.map((s) => {
             const isOpen = openSteps.has(s.seq);
             const detail = s.detail;
+            if (s.kind === "tool_call") {
+              return (
+                <li
+                  key={s.seq}
+                  className={`trace__row tool-card${s.isSlowest ? " trace__row--slow" : ""}${isOpen ? " trace__row--open" : ""}`}
+                  data-testid="tool-card"
+                  onClick={() => toggleStep(s.seq)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="tool-card__summary">
+                    <span className="tool-card__icon" aria-hidden>🔧</span>
+                    <span className="tool-card__label">{s.label}</span>
+                    {s.ok != null && (
+                      <span className={`tool-card__status trace__ok--${s.ok ? "yes" : "no"}`}>
+                        {s.ok ? "✓" : "✗"}
+                      </span>
+                    )}
+                    <span className="trace__ms">{s.durationMs != null ? `${s.durationMs}ms` : ""}</span>
+                  </div>
+                  {isOpen && (
+                    <div className="trace__detail tool-card__body">
+                      {detail?.args_summary != null && (
+                        <div className="trace__detail-row">
+                          <span className="trace__detail-key">查询</span>
+                          <span className="trace__detail-val trace__detail-val--mono">{String(detail.args_summary)}</span>
+                        </div>
+                      )}
+                      {detail?.summary != null && (
+                        <div className="trace__detail-row">
+                          <span className="trace__detail-key">结果</span>
+                          <span className="trace__detail-val">{String(detail.summary)}</span>
+                        </div>
+                      )}
+                      {s.argsFull != null && (
+                        <div className="trace__detail-row trace__detail-row--block">
+                          <span className="trace__detail-key">完整入参</span>
+                          <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.argsFull}</pre>
+                        </div>
+                      )}
+                      {s.resultRaw != null && (
+                        <div className="trace__detail-row trace__detail-row--block">
+                          <span className="trace__detail-key">原始返回</span>
+                          <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.resultRaw}</pre>
+                        </div>
+                      )}
+                      {s.error != null && (
+                        <div className="trace__detail-row trace__detail-row--block">
+                          <span className="trace__detail-key">工具错误</span>
+                          <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre trace__detail-val--error">{s.error}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            }
             return (
               <li
                 key={s.seq}
@@ -141,48 +236,6 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
                 </div>
                 {isOpen && (
                   <div className="trace__detail">
-                    {s.kind === "tool_call" && (
-                      <>
-                        {s.ok != null && (
-                          <div className="trace__detail-row">
-                            <span className="trace__detail-key">状态</span>
-                            <span className={`trace__detail-val trace__ok--${s.ok ? "yes" : "no"}`}>
-                              {s.ok ? "✓" : "✗"}
-                            </span>
-                          </div>
-                        )}
-                        {detail?.args_summary != null && (
-                          <div className="trace__detail-row">
-                            <span className="trace__detail-key">查询</span>
-                            <span className="trace__detail-val trace__detail-val--mono">{String(detail.args_summary)}</span>
-                          </div>
-                        )}
-                        {detail?.summary != null && (
-                          <div className="trace__detail-row">
-                            <span className="trace__detail-key">结果</span>
-                            <span className="trace__detail-val">{String(detail.summary)}</span>
-                          </div>
-                        )}
-                        {s.argsFull != null && (
-                          <div className="trace__detail-row trace__detail-row--block">
-                            <span className="trace__detail-key">完整入参</span>
-                            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.argsFull}</pre>
-                          </div>
-                        )}
-                        {s.resultRaw != null && (
-                          <div className="trace__detail-row trace__detail-row--block">
-                            <span className="trace__detail-key">原始返回</span>
-                            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.resultRaw}</pre>
-                          </div>
-                        )}
-                        {s.error != null && (
-                          <div className="trace__detail-row trace__detail-row--block">
-                            <span className="trace__detail-key">工具错误</span>
-                            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre trace__detail-val--error">{s.error}</pre>
-                          </div>
-                        )}
-                      </>
-                    )}
                     {s.kind === "dispatch" && detail?.output_preview != null && (
                       <div className="trace__detail-row">
                         <span className="trace__detail-key">输出</span>
@@ -211,6 +264,13 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
             );
           })}
         </ul>
+
+        {outputPreview != null && (
+          <div className="output-preview">
+            <div className="output-preview__label">产出预览</div>
+            <p className="output-preview__text">{outputPreview}</p>
+          </div>
+        )}
       </section>
 
       <section className="run-replay__eval">

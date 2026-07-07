@@ -34,6 +34,27 @@ const scoredWithTool: RunDetailDto = {
   ],
 };
 
+const scoredWithBreakdown: RunDetailDto = {
+  ...scored,
+  steps: [
+    { seq: 0, kind: "route", ref: {}, detail: {}, duration_ms: 20 },
+    {
+      seq: 1,
+      kind: "tool_call",
+      ref: { tool: "web_search", ok: true },
+      detail: { args_summary: '{"query":"OKX"}', summary: "8 results" },
+      duration_ms: 1200,
+    },
+    {
+      seq: 2,
+      kind: "dispatch",
+      ref: {},
+      detail: { output_preview: "半导体 2025 调研…" },
+      duration_ms: 12700,
+    },
+  ],
+};
+
 const recording: RunDetailDto = {
   ...scored,
   run: { ...scored.run, status: "recorded", overall_score: null, overall_badge: null },
@@ -205,6 +226,18 @@ describe("RunReplay", () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(redacted);
     render(<RunReplay runId={7} onClose={() => {}} />);
     expect(await screen.findByText(/调试详情已清除/)).toBeTruthy();
+  });
+
+  it("shows a time-breakdown bar, tool cards with ✓, and the output preview", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithBreakdown);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByTestId("time-breakdown");
+    const card = screen.getByTestId("tool-card");
+    expect(card).toBeTruthy();
+    fireEvent.click(card);
+    expect(screen.getByText(/OKX/)).toBeTruthy();
+    expect(screen.getByText(/8 results/)).toBeTruthy();
+    expect(screen.getByText(/半导体 2025/)).toBeTruthy();
   });
 
   it("clear button calls redactRun after confirm", async () => {
