@@ -373,6 +373,48 @@ async def runs_anomalies(range: str = Query("1h"),
     return out
 
 
+N_TIMELINE_BUCKETS = 24
+
+
+# NOTE: must stay registered BEFORE /runs/{run_id} (path-param collision).
+@router.get("/runs/timeline", response_model=TimelineOut)
+async def runs_timeline(rng: str = Query("1h", alias="range"),
+                        db: AsyncSession = Depends(get_session)) -> TimelineOut:
+    start = _window_start(rng)
+    q = select(Run)
+    if start is not None:
+        q = q.where(Run.created_at >= start)
+    runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
+    edges = _bucket_bounds(start, runs, N_TIMELINE_BUCKETS)
+    by_spawn: dict[int | None, list[Run]] = {}
+    for r in runs:
+        by_spawn.setdefault(r.spawn_id, []).append(r)
+
+    spawns: list[TimelineSpawnOut] = []
+    for sid, rs in by_spawn.items():
+        buckets: list[list[Run]] = [[] for _ in range(N_TIMELINE_BUCKETS)]
+        for r in rs:
+            if r.created_at:
+                buckets[_bucket_index(r.created_at, edges)].append(r)
+        cells: list[TimelineCellOut] = []
+        for b in buckets:
+            if not b:
+                cells.append(TimelineCellOut(sev="none", count=0, errors=0))
+                continue
+            errs = sum(1 for r in b if r.error_kind)
+            scored = [r.overall_score for r in b if r.status == "scored" and r.overall_score is not None]
+            avg = sum(scored) / len(scored) if scored else None
+            pr = round(sum(1 for s in scored if s >= PASS_THRESHOLD) / len(scored) * 100) if scored else None
+            cells.append(TimelineCellOut(sev=_health(errs / len(b), avg, pr), count=len(b), errors=errs))
+        spawns.append(TimelineSpawnOut(
+            spawn_id=sid,
+            spawn_name=next((r.spawn_name for r in reversed(rs) if r.spawn_name), None),
+            cells=cells))
+    spawns.sort(key=lambda s: (-sum(c.sev == "red" for c in s.cells),
+                               -sum(c.sev == "amber" for c in s.cells)))
+    return TimelineOut(range=rng, buckets=[e.isoformat() for e in edges[:-1]], spawns=spawns)
+
+
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
 async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDetailOut:
     run = await db.get(Run, run_id)
