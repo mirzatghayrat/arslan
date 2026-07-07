@@ -61,6 +61,18 @@ async def test_ingest_file_unknown_ext_raises(memdb):
         await ingest.ingest_file(sid, "archive.zip", b"PK\x03\x04")
 
 
+def test_extract_file_html_strips_tags():
+    from server.services.ingest import _extract_file
+    out = _extract_file("page.html", b"<html><body><h1>Hi</h1><p>world text</p></body></html>")
+    assert "Hi" in out and "world text" in out
+    assert "<h1>" not in out and "<p>" not in out
+
+
+def test_extract_file_bad_html_no_raise():
+    from server.services.ingest import _extract_file
+    assert _extract_file("broken.htm", b"\xff\xfe not really html <<<") is not None  # no exception
+
+
 async def test_ingest_survives_orphan_fts_rowid(memdb):
     """A stale FTS row (rowid=1) left from a deleted chunk must not make the next
     ingest 500 with a rowid collision — knowledge_chunks ids restart at 1 when the

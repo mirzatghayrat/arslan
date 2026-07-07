@@ -89,6 +89,12 @@ def _extract_file(filename: str, data: bytes) -> str:
         import docx  # python-docx
         document = docx.Document(io.BytesIO(data))
         return "\n".join(p.text for p in document.paragraphs)
+    if name.endswith((".html", ".htm")):
+        import lxml.html  # available in the venv
+        try:
+            return lxml.html.fromstring(data).text_content()
+        except Exception:  # noqa: BLE001 — bad/empty HTML → no text (caller surfaces "no text")
+            return ""
     if _IMAGE_EXT_RE.search(name):
         # No text found / OCR unavailable → '' (caller surfaces "no text", never 500).
         return _ocr_image(data)
