@@ -1,7 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../api/client", () => ({ api: { createCollection: vi.fn().mockResolvedValue({ id: 1, name: "新建" }), ingestCollection: vi.fn(), listCollections: vi.fn().mockResolvedValue([]) } }));
+vi.mock("../../api/client", () => ({ api: {
+  createCollection: vi.fn().mockResolvedValue({ id: 1, name: "新建" }),
+  ingestCollection: vi.fn(),
+  listCollections: vi.fn().mockResolvedValue([]),
+  deleteCollection: vi.fn().mockResolvedValue({ deleted: true }),
+  patchCollection: vi.fn().mockResolvedValue({ id: 1, name: "改名" }),
+  deleteCollectionSource: vi.fn().mockResolvedValue({ deleted: true }),
+} }));
 import KnowledgeNav from "./KnowledgeNav";
 import { api } from "../../api/client";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
@@ -80,5 +87,57 @@ describe("KnowledgeNav", () => {
     const file = new File(["x"], "a.pdf");
     fireEvent.drop(row, { dataTransfer: { files: [file], types: ["Files"] } });
     await waitFor(() => expect(spy).toHaveBeenCalledWith(5, expect.any(File)));
+  });
+
+  it("disables 投喂到共享库 while the input is empty (no more silent no-op)", () => {
+    render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    const btn = screen.getByText(/投喂到共享库/).closest("button")!;
+    expect(btn).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText(/快速投喂/), { target: { value: "hello" } });
+    expect(btn).not.toBeDisabled();
+  });
+
+  it("the ＋ file button feeds picked files via feedFile (auto-bucket)", async () => {
+    const feed = await import("../../lib/feed");
+    const spy = vi.spyOn(feed, "feedFile").mockResolvedValue({ chunks_added: 1 } as any);
+    const { container } = render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "doc.pdf")] } });
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.any(File)));
+  });
+
+  it("collection row exposes rename → patchCollection with the new name", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("新名字");
+    render(<KnowledgeNav tree={tree} focusedId="coll:1" onFocus={() => {}} onChanged={() => {}} />);
+    fireEvent.click(screen.getByTitle("重命名库"));
+    await waitFor(() => expect(api.patchCollection).toHaveBeenCalledWith(1, { name: "新名字" }));
+  });
+
+  it("collection row exposes delete → deleteCollection after confirm", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<KnowledgeNav tree={tree} focusedId="coll:1" onFocus={() => {}} onChanged={() => {}} />);
+    fireEvent.click(screen.getByTitle("删除整个库"));
+    await waitFor(() => expect(api.deleteCollection).toHaveBeenCalledWith(1));
+  });
+
+  it("collection SOURCE leaf exposes delete → deleteCollectionSource(collId, source)", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<KnowledgeNav tree={tree} focusedId="src:coll:1:条款" onFocus={() => {}} onChanged={() => {}} />);
+    fireEvent.click(screen.getByText("保险资料"));            // expand the parent collection
+    fireEvent.click(screen.getByTitle("删除此来源"));
+    await waitFor(() => expect(api.deleteCollectionSource).toHaveBeenCalledWith(1, "条款.pdf"));
+  });
+
+  it("does NOT offer delete/rename on spawn-well or preference rows (different backend)", () => {
+    const t2: TreeNode = {
+      id: "root", name: "YOU", kind: "root", cat: "collection", value: 1, children: [
+        { id: "cat:spawn", name: "分身深井", kind: "category", cat: "spawn", value: 1, children: [
+          { id: "dom:research", name: "research", kind: "category", cat: "spawn", value: 1, children: [
+            { id: "spawn:7", name: "小美", kind: "spawn", cat: "spawn", value: 1, children: [] }] }] },
+      ],
+    };
+    render(<KnowledgeNav tree={t2} focusedId="spawn:7" onFocus={() => {}} onChanged={() => {}} />);
+    expect(screen.queryByTitle("删除整个库")).toBeNull();
+    expect(screen.queryByTitle("重命名库")).toBeNull();
   });
 });

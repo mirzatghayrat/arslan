@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Upload, Pencil, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
-import { feedTextOrUrl, feedFileInto } from "../../lib/feed";
+import { feedTextOrUrl, feedFile, feedFileInto } from "../../lib/feed";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { hueVar } from "./hues";
 
@@ -44,6 +45,46 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
     finally { setBusy(false); }
   };
 
+  // Click-to-pick file feed (same auto-bucket path as drag-drop) — some users won't drag.
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pickFiles = async (files: FileList | null) => {
+    const list = Array.from(files ?? []);
+    if (!list.length) return;
+    setBusy(true); setErr(null);
+    const failed: string[] = [];
+    for (const f of list) { try { await feedFile(f); } catch { failed.push(f.name); } }  // sequential: reuse just-made buckets
+    setBusy(false);
+    if (failed.length) setErr(`未识别/失败:${failed.join("、")}`);
+    onChanged();
+  };
+
+  // Manual delete/rename — shared collections only (spawn wells / preference facts are a
+  // different backend and are intentionally NOT mutated here). Reuse existing REST.
+  const removeCollection = async (id: number, name: string) => {
+    if (!window.confirm(`删除整个库「${name}」及其全部内容?此操作不可撤销。`)) return;
+    setBusy(true); setErr(null);
+    try { await api.deleteCollection(id); onChanged(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  const renameCollection = async (id: number, name: string) => {
+    const next = window.prompt("重命名库", name);
+    if (next == null) return;
+    const nn = next.trim();
+    if (!nn || nn === name) return;
+    setBusy(true); setErr(null);
+    try { await api.patchCollection(id, { name: nn }); onChanged(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  const removeSource = async (id: number, source: string) => {
+    if (!window.confirm(`删除来源「${source}」及其片段?`)) return;
+    setBusy(true); setErr(null);
+    try { await api.deleteCollectionSource(id, source); onChanged(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+
   const Row = ({ n, depth }: { n: TreeNode; depth: number }) => {
     if (!matches(n, ql)) return null;
     const on = focusedId === n.id;
@@ -51,6 +92,11 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
     const open = expanded.has(n.id) || (ql !== "" && (n.children ?? []).some((c) => matches(c, ql)));
     const isGroup = n.kind === "category" || n.kind === "collection";
     const collId = n.kind === "collection" ? Number(n.id.replace(/^coll:/, "")) : null;
+    // Collection-source leaf: parse the collection id from `src:coll:<id>:<source>`
+    // (only the numeric id — the source string may itself contain ":" e.g. a URL, so
+    // use n.name for the source, which the tree sets to the exact source string).
+    const srcCollMatch = n.kind === "source" && n.cat === "collection" ? /^src:coll:(\d+):/.exec(n.id) : null;
+    const srcCollId = srcCollMatch ? Number(srcCollMatch[1]) : null;
     return (
       <>
         <div
@@ -77,6 +123,18 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
           )}
           {isGroup && <span style={{ background: hueVar(n.hueKey ?? n.name), width: 9, height: 9, borderRadius: 2, flex: "none" }} />}
           <span className="flex-1 truncate text-foreground">{n.name}</span>
+          {on && collId != null && (
+            <span className="flex items-center gap-0.5 flex-none">
+              <button title="重命名库" onClick={(e) => { e.stopPropagation(); void renameCollection(collId, n.name); }}
+                className="p-0.5 text-subtle-foreground hover:text-foreground"><Pencil className="w-3 h-3" /></button>
+              <button title="删除整个库" onClick={(e) => { e.stopPropagation(); void removeCollection(collId, n.name); }}
+                className="p-0.5 text-subtle-foreground hover:text-danger"><Trash2 className="w-3 h-3" /></button>
+            </span>
+          )}
+          {on && srcCollId != null && (
+            <button title="删除此来源" onClick={(e) => { e.stopPropagation(); void removeSource(srcCollId, n.name); }}
+              className="p-0.5 flex-none text-subtle-foreground hover:text-danger"><Trash2 className="w-3 h-3" /></button>
+          )}
           <span className="font-mono text-[11px] text-subtle-foreground tabular-nums">{n.value}</span>
         </div>
         {open && (n.children ?? []).map((c) => <Row key={c.id} n={c} depth={depth + 1} />)}
@@ -103,10 +161,20 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
         <input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="贴文本 / URL 快速投喂…"
           onKeyDown={(e) => { if (e.key === "Enter") void quickFeed(); }}
           className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-[13px] text-foreground placeholder:text-subtle-foreground" />
-        <button disabled={busy} onClick={() => void quickFeed()}
-          className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[13.5px] font-medium disabled:opacity-50">
-          {busy ? "投喂中…" : "＋ 投喂到共享库"}
-        </button>
+        <div className="flex gap-2">
+          <button disabled={busy || !feed.trim()} onClick={() => void quickFeed()}
+            className="flex-1 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[13.5px] font-medium disabled:opacity-50">
+            {busy ? "投喂中…" : "＋ 投喂到共享库"}
+          </button>
+          <button type="button" disabled={busy} title="上传文件(自动按类型归库)"
+            onClick={() => fileRef.current?.click()}
+            className="px-3 py-2 rounded-lg border border-border text-foreground disabled:opacity-50 flex items-center">
+            <Upload className="w-4 h-4" />
+          </button>
+        </div>
+        <input ref={fileRef} type="file" multiple className="hidden"
+          accept=".pdf,.docx,.doc,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp"
+          onChange={(e) => { void pickFiles(e.target.files); e.target.value = ""; }} />
         {showNew ? (
           <div className="flex gap-2">
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="库名…"
