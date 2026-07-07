@@ -1,11 +1,67 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import { toUiRun } from "../api/adapters";
+import { toUiRun, DIMENSION_LABELS } from "../api/adapters";
+import type { RunListItem, RunSummary } from "../api/client.types";
 import type { UiRun } from "../types";
 import RunCompareChart from "./RunCompareChart";
+import EChart from "./EChart";
+import { triggerDownload } from "./MessageBody";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
 const BADGE_LABEL: Record<string, string> = { good: "好", ok: "一般", bad: "差" };
+
+// Fixed axis order for the this-run-vs-fleet radar, matching the backend judge dimensions.
+const RADAR_DIMENSIONS = ["routing", "fabrication", "identity", "completion"] as const;
+
+/** Human-readable md export of a run — KPIs, steps, dims/comments, prompt/kb. */
+function buildRunMarkdown(run: UiRun): string {
+  const lines: string[] = [];
+  lines.push(`# Run #${run.id}${run.spawnName ? ` · ${run.spawnName}` : ""}`);
+  lines.push("");
+  lines.push(`**用户消息**：${run.userMessage}`);
+  lines.push("");
+  lines.push("## KPI");
+  lines.push(`- 总耗时：${run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—"}`);
+  lines.push(`- 模型：${run.model ?? "—"}`);
+  lines.push(`- tokens：${run.taskTokens}${run.tokensEstimated ? "（约）" : ""}`);
+  lines.push(`- 评分：${run.scored && run.overallScore != null ? `${run.overallScore}/10` : "—"}`);
+  lines.push("");
+  lines.push("## 它做了什么");
+  for (const s of run.steps) {
+    const ms = s.durationMs != null ? `${s.durationMs}ms` : "—";
+    lines.push(`- [${s.kind}] ${s.label}（${ms}）`);
+  }
+  lines.push("");
+  lines.push("## 做得怎么样");
+  if (run.scored) {
+    lines.push(`总评：${BADGE_LABEL[run.overallBadge ?? "ok"]} · ${run.overallScore}/10`);
+    for (const d of run.dimensions) {
+      lines.push(`- ${d.label}（${Math.round(d.score * 10) / 10}/10）：${d.comment}`);
+    }
+  } else {
+    lines.push("评分中…");
+  }
+  if (run.injectedKbSources?.length) {
+    lines.push("");
+    lines.push("## 注入知识来源");
+    for (const src of run.injectedKbSources) lines.push(`- ${src}`);
+  }
+  if (run.systemPrompt != null) {
+    lines.push("");
+    lines.push("## 系统提示");
+    lines.push("```");
+    lines.push(run.systemPrompt);
+    lines.push("```");
+  }
+  if (run.injectedKb != null) {
+    lines.push("");
+    lines.push("## 注入知识");
+    lines.push("```");
+    lines.push(run.injectedKb);
+    lines.push("```");
+  }
+  return lines.join("\n");
+}
 
 interface Props {
   runId: number;
@@ -19,6 +75,8 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
   const [clearing, setClearing] = useState(false);
+  const [dimSummary, setDimSummary] = useState<RunSummary["dimension_averages"] | null>(null);
+  const [history, setHistory] = useState<RunListItem[] | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
 
@@ -53,6 +111,26 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, pollMs]);
+
+  // Dims radar data: fleet dimension averages, best-effort (skip radar on failure).
+  useEffect(() => {
+    if (!run?.scored) return;
+    let cancelled = false;
+    api.getRunsSummary()
+      .then((s) => { if (!cancelled) setDimSummary(s.dimension_averages); })
+      .catch(() => { /* radar is optional */ });
+    return () => { cancelled = true; };
+  }, [run?.scored]);
+
+  // Spawn history sparkline: recent scored runs for this spawn, best-effort.
+  useEffect(() => {
+    if (run?.spawnId == null) return;
+    let cancelled = false;
+    api.getRuns(run.spawnId, 12)
+      .then((items) => { if (!cancelled) setHistory(items); })
+      .catch(() => { /* sparkline is optional */ });
+    return () => { cancelled = true; };
+  }, [run?.spawnId]);
 
   async function handleClearThisRun() {
     if (!window.confirm("确定清除此 run 的调试详情吗？实际系统提示/注入知识/工具完整入参与原始返回将被清除，分数与耗时不受影响。此操作不可撤销。")) {
@@ -93,6 +171,45 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
   const outputPreview = run.steps.find((s) => s.kind === "dispatch" && s.detail?.output_preview != null)?.detail
     ?.output_preview as string | undefined;
+
+  // Dims radar: this run's dimension scores vs the fleet averages. Guarded — renders
+  // only once both the run is scored, has dimensions, and the summary fetch succeeded.
+  const scoreByDim: Record<string, number> = {};
+  for (const d of run.dimensions) scoreByDim[d.dimension] = d.score;
+  const showRadar = run.scored && run.dimensions.length > 0 && dimSummary != null;
+  const radarOption = showRadar
+    ? {
+        tooltip: {},
+        legend: { top: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 } },
+        radar: {
+          indicator: RADAR_DIMENSIONS.map((d) => ({ name: DIMENSION_LABELS[d] ?? d, max: 10, min: 0 })),
+          radius: "62%",
+        },
+        series: [
+          {
+            type: "radar",
+            data: [
+              {
+                name: "本次",
+                value: RADAR_DIMENSIONS.map((d) => scoreByDim[d] ?? 0),
+                areaStyle: { opacity: 0.18 },
+              },
+              {
+                name: "舰队平均",
+                value: RADAR_DIMENSIONS.map((d) => dimSummary?.[d] ?? 0),
+                lineStyle: { type: "dashed" as const },
+                areaStyle: { opacity: 0 },
+              },
+            ],
+          },
+        ],
+      }
+    : null;
+
+  // History sparkline: recent scored runs for this run's spawn, current run highlighted.
+  const historyScored = (history ?? []).filter((r) => r.overall_score != null);
+  const showSparkline = run.spawnId != null && historyScored.length > 0;
+  const sparkMax = showSparkline ? Math.max(...historyScored.map((r) => r.overall_score ?? 0), 10) : 1;
 
   return (
     <div className="run-replay" data-testid="run-replay">
@@ -297,6 +414,33 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
         )}
       </section>
 
+      {/* Per-dimension radar: this run vs the fleet average, on the same 4 axes.
+          Best-effort — hides silently if the summary fetch fails or there are no dims yet. */}
+      {showRadar && radarOption && (
+        <section className="run-replay__radar" data-testid="dims-radar">
+          <h4>本次 vs 舰队(雷达)</h4>
+          <EChart option={radarOption} height={200} />
+        </section>
+      )}
+
+      {/* Spawn history sparkline: recent scored runs for this spawn, current run highlighted.
+          Hides silently when the run has no spawn or there's no history yet. */}
+      {showSparkline && (
+        <section className="run-replay__history" data-testid="history-spark">
+          <h4>该分身近期评分</h4>
+          <div className="history-spark__bars">
+            {historyScored.map((r) => (
+              <span
+                key={r.id}
+                className={`history-spark__bar${r.id === run.id ? " history-spark__bar--current" : ""}`}
+                style={{ height: `${((r.overall_score ?? 0) / sparkMax) * 100}%` }}
+                title={`run #${r.id}: ${r.overall_score}/10`}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* This run against the fleet averages (self-hides when <2 scored runs
           or the summary fetch fails). Only meaningful once the run is scored. */}
       {run.scored && (
@@ -304,6 +448,14 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       )}
 
       <section className="run-replay__debug">
+        {run.injectedKbSources != null && run.injectedKbSources.length > 0 && (
+          <div className="kb-chips">
+            {run.injectedKbSources.map((src, i) => (
+              <span key={`${src}-${i}`} className="kb-chip">{src}</span>
+            ))}
+          </div>
+        )}
+
         <details className="run-replay__prompt-details">
           <summary>实际系统提示 / 注入的知识</summary>
           {hasDebugDetail ? (
@@ -326,14 +478,30 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           )}
         </details>
 
-        <button
-          type="button"
-          className="run-replay__clear-btn"
-          onClick={handleClearThisRun}
-          disabled={clearing}
-        >
-          {clearing ? "清除中…" : "清除此 run 调试详情"}
-        </button>
+        <div className="run-replay__actions">
+          <button
+            type="button"
+            className="run-replay__clear-btn"
+            onClick={handleClearThisRun}
+            disabled={clearing}
+          >
+            {clearing ? "清除中…" : "清除此 run 调试详情"}
+          </button>
+          <button
+            type="button"
+            className="run-replay__export-btn"
+            onClick={() => triggerDownload(`run-${run.id}.md`, buildRunMarkdown(run), "text/markdown;charset=utf-8")}
+          >
+            导出 md
+          </button>
+          <button
+            type="button"
+            className="run-replay__export-btn"
+            onClick={() => triggerDownload(`run-${run.id}.json`, JSON.stringify(run, null, 2), "application/json;charset=utf-8")}
+          >
+            导出 json
+          </button>
+        </div>
       </section>
     </div>
   );

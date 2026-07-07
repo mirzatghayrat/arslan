@@ -402,5 +402,7 @@ export function toUiRun(dto: RunDetailDto): UiRun {
     errorText: run.error_text ?? undefined,
     systemPrompt: run.system_prompt ?? undefined,
     injectedKb: run.injected_kb ?? undefined,
+    injectedKbSources: run.injected_kb_sources ?? undefined,
+    spawnId: run.spawn_id,
   };
 }

@@ -75,7 +75,8 @@ export function exportMarkdown(text: string): string {
   return stripped;
 }
 
-function triggerDownload(filename: string, content: string, mime: string) {
+/** Blob → object URL → synthetic-anchor download. Shared with RunReplay's md/json export. */
+export function triggerDownload(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

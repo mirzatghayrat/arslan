@@ -623,6 +623,110 @@ button:disabled {
   margin: 0;
 }
 
+/* Dims radar (this run vs fleet average, same header style as .run-replay__charts) */
+.run-replay__radar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-replay__radar h4 {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+/* Spawn history sparkline — a row of bars, current run highlighted */
+.run-replay__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-replay__history h4 {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+.history-spark__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25rem;
+  height: 40px;
+  padding: 0.25rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.history-spark__bar {
+  flex: 1 1 auto;
+  min-height: 2px;
+  min-width: 4px;
+  background: var(--muted-foreground);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.55;
+}
+
+.history-spark__bar--current {
+  background: var(--primary);
+  opacity: 1;
+}
+
+/* Injected-knowledge source chips (above the collapsible prompt/kb detail) */
+.kb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.kb-chip {
+  font-size: 0.625rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+/* Debug-section action row: clear + export buttons share one style family */
+.run-replay__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.run-replay__export-btn {
+  align-self: flex-start;
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.run-replay__export-btn:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-replay__export-btn {
+    transition: none;
+  }
+}
+
 .run-replay__pending {
   font-size: 0.6875rem;
   font-family: monospace;

@@ -163,6 +163,10 @@ export interface UiRun {
   systemPrompt?: string | null;
   /** SENSITIVE: injected knowledge — retention-governed, null once redacted. */
   injectedKb?: string | null;
+  /** Structured knowledge source labels injected into this run's prompt — retention-governed, null/empty once redacted. */
+  injectedKbSources?: string[];
+  /** The spawn this run belongs to (for the history sparkline). Null for orchestrator-level runs. */
+  spawnId?: number | null;
 }
 
 export interface AppSettings {
