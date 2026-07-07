@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, WebSocket
@@ -9,6 +10,8 @@ from server.api import health, settings as settings_api
 from server.auth import require_auth
 from server.db.models import Base
 from server.db.session import engine
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -89,6 +92,19 @@ async def lifespan(app: FastAPI):
         fact_classify.schedule(fact_classify.classify_missing())
     except Exception:  # noqa: BLE001 — boot backfill must never block/break startup
         pass
+
+    # Privacy retention sweep: redact sensitive/bulky run debug detail
+    # (system_prompt, injected_kb, per-step args_full/result_raw) for runs older
+    # than the configured retention window (default 30 days). Best-effort — a
+    # sweep failure must never block boot.
+    try:
+        from server.services import run_redact, settings_service
+
+        async with AsyncSessionLocal() as db:
+            retention_days = await settings_service.run_debug_retention_days(db)
+        await run_redact.sweep(retention_days)
+    except Exception as exc:  # noqa: BLE001 — retention sweep must never block boot
+        logger.warning("run debug retention sweep failed (non-fatal): %s", exc)
     yield
 
     from server.mcp.session import manager as _mcp_manager

@@ -135,3 +135,20 @@ async def shell_confirm_policy(session: AsyncSession) -> str:
     MEDIUM/HIGH. Any unrecognized value falls back to the safe 'ask_all'."""
     raw = await _get_raw(session, "shell_confirm_policy")
     return "ask_risky" if str(raw).strip().lower() == "ask_risky" else "ask_all"
+
+
+DEFAULT_RUN_DEBUG_RETENTION_DAYS = 30
+
+
+async def run_debug_retention_days(session: AsyncSession) -> int:
+    """Days a run's sensitive/bulky debug detail (system_prompt, injected_kb,
+    per-step args_full/result_raw) is kept before the boot sweep redacts it.
+    Default 30. A value of 0 (or an unparsable value) disables the sweep... except
+    unset (None) still means "use the default", not "disabled"."""
+    raw = await _get_raw(session, "run_debug_retention_days")
+    if raw is None:
+        return DEFAULT_RUN_DEBUG_RETENTION_DAYS
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_RUN_DEBUG_RETENTION_DAYS
