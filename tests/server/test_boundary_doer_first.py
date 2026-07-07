@@ -122,14 +122,17 @@ async def test_dual_track_grows_inferred_spawn(monkeypatch):
     monkeypatch.setattr(arslan.spawn_trust, "trust",
                         lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
     fired = []
-    monkeypatch.setattr(arslan, "_fire_dual_track", lambda sid, sig: fired.append((sid, sig)))
+    monkeypatch.setattr(arslan, "_fire_dual_track",
+                        lambda conv, sid, spawn_name, sig: fired.append((conv, sid, spawn_name, sig)))
 
     result = arslan.router.RouterResult(action="route", spawn_id=7, task_brief="梳理半导体")
     await arslan._handle_route("main", result, lambda e: None, user_message="帮我梳理半导体行业现状")
 
     assert fired, "dual-track must fire for a substantive inferred-route answer"
-    sid, sig = fired[-1]
+    conv, sid, spawn_name, sig = fired[-1]
+    assert conv == "main"
     assert sid == 7
+    assert spawn_name == "Research Analyst"
     assert "帮我梳理半导体行业现状" in sig
     assert "要点0内容详实一段" in sig
 
@@ -145,7 +148,8 @@ async def test_dual_track_skips_short_answer(monkeypatch):
     monkeypatch.setattr(arslan.spawn_trust, "trust",
                         lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
     fired = []
-    monkeypatch.setattr(arslan, "_fire_dual_track", lambda sid, sig: fired.append((sid, sig)))
+    monkeypatch.setattr(arslan, "_fire_dual_track",
+                        lambda conv, sid, spawn_name, sig: fired.append((conv, sid, spawn_name, sig)))
 
     result = arslan.router.RouterResult(action="route", spawn_id=7, task_brief="x")
     await arslan._handle_route("main", result, lambda e: None, user_message="随便聊聊")

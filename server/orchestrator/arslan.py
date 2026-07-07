@@ -404,6 +404,12 @@ async def handle_user_message(
             created = await memory.save_facts(result.new_facts)
             for fact in created:
                 emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
+            if created:
+                from server.services import recap_service
+                _fsummary = " · ".join(
+                    (getattr(f, "label", None) or f.content or "")[:24] for f in created[:3]
+                )
+                await recap_service.log_event(conversation_id, "memory", None, _fsummary)
 
         # B3/B4: while in a gather phase (clarifying or gathering a create), suppress
         # routing to an existing spawn — keep clarifying in Arslan's voice instead of
@@ -756,10 +762,15 @@ def _dual_track_signals(user_message: str, answer_text: str) -> str:
             f"用户需求:{user_message}\n\n产出:\n{answer_text[:_DUAL_TRACK_SIGNAL_CAP]}")
 
 
-def _fire_dual_track(spawn_id: int, signals: str) -> None:
-    """Component 5: grow the inferred spawn in the BACKGROUND from Arslan's own deliverable — fire-and-
-    forget (distill_from_signals is best-effort and never raises; never blocks the user's reply)."""
+def _fire_dual_track(conversation_id: str, spawn_id: int, spawn_name: str | None, signals: str) -> None:
+    """Component 5 + recap: background-distill the deliverable into the inferred spawn AND log a
+    distill growth event for the conversation recap. Fire-and-forget, never fatal."""
+    from server.services import recap_service
+
     asyncio.create_task(distill_service.distill_from_signals(spawn_id, signals))
+    asyncio.create_task(recap_service.log_event(
+        conversation_id, "distill", {"spawn_id": spawn_id, "spawn_name": spawn_name},
+        f"Arslan 亲自做 → 喂给 {spawn_name or '分身'} 学习"))
 
 
 async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
@@ -834,7 +845,9 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         # Dual-track growth (boundary component 5): Arslan just did an INFERRED spawn's job itself —
         # feed the deliverable to that spawn in the background so it learns without having acted.
         if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
-            _fire_dual_track(result.spawn_id, _dual_track_signals(user_message, answer_text))
+            _dual_track_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+            _fire_dual_track(conversation_id, result.spawn_id, _dual_track_spawn_name,
+                             _dual_track_signals(user_message, answer_text))
         async with db_session.AsyncSessionLocal() as _db:
             band = (await spawn_trust.trust(_db, result.spawn_id)).get("band")
         if band == "trusted":
@@ -845,6 +858,10 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
                 conversation_id, result.spawn_id,
                 task_brief=result.task_brief or "", user_message=user_message,
                 needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": spawn_name},
+                f"邀请 {spawn_name or '分身'} 加入")
             emit(protocol.propose_invite(result.spawn_id, reason))
         return
 
