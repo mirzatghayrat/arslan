@@ -112,3 +112,48 @@ async def test_specified_create_proposes(maker, monkeypatch):
     await arslan.handle_user_message("main", "audit my site", _events(events))
     types = [e["type"] for e in events]
     assert "suggest_create" in types
+
+
+@pytest.mark.asyncio
+async def test_explicit_at_mention_overrides_answer_to_route(maker, monkeypatch):
+    """Router defaults to `answer`, but the user @-named a real spawn → force the named route
+    so the SPAWN answers in its own identity, not Arslan impersonating it."""
+    from server.orchestrator import arslan, router
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    routed, answered = [], []
+    async def _route(conv, result, emit, **kw):
+        routed.append(result.spawn_id)
+    async def _answer(conv, msg, emit, **kw):
+        answered.append(msg)
+    monkeypatch.setattr(arslan, "_handle_route", _route)
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+
+    await arslan.handle_user_message("main", "@beauty-guru 你能给我干嘛", _events([]))
+    assert routed == [7]       # forced route to the @-named spawn (seeded id=7)
+    assert answered == []      # Arslan did NOT answer as itself
+
+
+@pytest.mark.asyncio
+async def test_bare_name_without_at_stays_answer(maker, monkeypatch):
+    """A bare spawn name (no @) must NOT hijack a normal answer turn."""
+    from server.orchestrator import arslan, router
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    routed, answered = [], []
+    async def _route(conv, result, emit, **kw):
+        routed.append(result.spawn_id)
+    async def _answer(conv, msg, emit, **kw):
+        answered.append(msg)
+    monkeypatch.setattr(arslan, "_handle_route", _route)
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+
+    await arslan.handle_user_message("main", "beauty-guru 是谁", _events([]))
+    assert routed == []
+    assert answered == ["beauty-guru 是谁"]

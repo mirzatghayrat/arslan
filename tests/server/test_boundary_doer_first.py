@@ -31,6 +31,23 @@ async def test_user_named_spawn_false_when_no_name(monkeypatch):
     assert await arslan._user_named_spawn("anything", 7) is False
 
 
+class _S:
+    def __init__(self, sid, name):
+        self.id, self.name = sid, name
+
+
+@pytest.mark.asyncio
+async def test_resolve_at_mentioned_spawn(monkeypatch):
+    """Only an explicit @name resolves; a bare name does not; longest match wins."""
+    monkeypatch.setattr(arslan.spawn_service, "load_all_spawns",
+                        lambda: _aw([_S(3, "Deck Master"), _S(9, "Deck Master Pro"), _S(7, "Research Analyst")]))
+    assert await arslan._resolve_at_mentioned_spawn("@Deck Master 你能干嘛") == 3
+    assert await arslan._resolve_at_mentioned_spawn("@Deck Master Pro do it") == 9   # longest wins
+    assert await arslan._resolve_at_mentioned_spawn("deck master 是谁") is None        # bare name, no @
+    assert await arslan._resolve_at_mentioned_spawn("just a question") is None
+    assert await arslan._resolve_at_mentioned_spawn("") is None
+
+
 @pytest.mark.asyncio
 async def test_inference_does_it_itself_and_chips_trusted(monkeypatch):
     answered, frames = [], []

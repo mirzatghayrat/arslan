@@ -420,6 +420,21 @@ async def handle_user_message(
             await memory.maybe_compact(conversation_id)
             return
 
+        # 3b. Explicit @-mention override. The LLM router frequently defaults capability/meta
+        # questions ("@Deck Master 你能给我干嘛") to `answer`, which makes Arslan reply AS the spawn
+        # under its OWN identity. When the user explicitly @-named a real spawn, force the named
+        # route so the SPAWN answers in its own identity — dispatch if a member, else a speak-first
+        # invite (both handled by _handle_route, which sees _user_named_spawn=True and skips doer-
+        # first). Deliberately narrow: only rescues the `answer` default (never touches route /
+        # suggest_* / clarify) and only on explicit @mentions; gather/proposing already returned above.
+        if not gathering and result.action == "answer":
+            _named_id = await _resolve_at_mentioned_spawn(user_message)
+            if _named_id is not None:
+                result.action = "route"
+                result.spawn_id = _named_id
+                if not result.task_brief:
+                    result.task_brief = user_message
+
         # 4. handle the action
         if result.action == "route" and result.spawn_id is not None:
             await _handle_route(conversation_id, result, emit, user_message=user_message,
@@ -756,6 +771,24 @@ async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
         return False
     msg = (user_message or "").lower()
     return f"@{name}" in msg or name in msg
+
+
+async def _resolve_at_mentioned_spawn(user_message: str) -> int | None:
+    """Resolve an EXPLICIT @-mention of a real spawn to its id. Requires the `@name` form
+    (not a bare name) so it only fires on unambiguous delegation intent and never hijacks a
+    normal answer turn that merely contains a spawn's name as a word. On multiple matches the
+    LONGEST name wins (so `@Deck Master Pro` beats `@Deck Master`). Deterministic."""
+    msg = (user_message or "").lower()
+    if "@" not in msg:
+        return None
+    spawns = await spawn_service.load_all_spawns()
+    best_id: int | None = None
+    best_len = 0
+    for s in spawns:
+        name = (getattr(s, "name", "") or "").strip().lower()
+        if name and f"@{name}" in msg and len(name) > best_len:
+            best_id, best_len = s.id, len(name)
+    return best_id
 
 
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
