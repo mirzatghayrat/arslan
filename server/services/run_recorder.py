@@ -157,9 +157,15 @@ class RunRecorder:
             s["seq"] = i
         return steps
 
-    async def finalize(self, *, summary_message_id: int | None, full_output: str) -> int:
+    async def finalize(self, *, summary_message_id: int | None, full_output: str,
+                        model: str | None = None, provider: str | None = None,
+                        tokens_in: int | None = None, tokens_out: int | None = None,
+                        tokens_estimated: bool = False,
+                        error_kind: str | None = None, error_text: str | None = None,
+                        system_prompt: str | None = None, injected_kb: str | None = None) -> int:
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
+        self._merge_tool_trace(steps)
         total_ms = int((ended - self.started_at).total_seconds() * 1000)
         tokens = usage_sink.total()
         async with db_session.AsyncSessionLocal() as db:
@@ -169,6 +175,15 @@ class RunRecorder:
                 run.total_ms = total_ms
                 run.task_tokens = tokens
                 run.status = "recorded"
+                run.model = model
+                run.provider = provider
+                run.tokens_in = tokens_in
+                run.tokens_out = tokens_out
+                run.tokens_estimated = tokens_estimated
+                run.error_kind = error_kind
+                run.error_text = (error_text[:RUN_ERR_CAP] if error_text else None)
+                run.system_prompt = system_prompt
+                run.injected_kb = injected_kb
                 for s in steps:
                     db.add(RunStep(run_id=self.run_id, **s))
                 if summary_message_id is not None:
@@ -184,3 +199,20 @@ class RunRecorder:
         except Exception as exc:  # noqa: BLE001 — scoring is best-effort
             logger.warning("schedule_scoring failed (non-fatal): %s", exc)
         return self.run_id
+
+    def _merge_tool_trace(self, steps: list[dict]) -> None:
+        """Fold the per-turn full tool trace (run_trace) into the derived tool_call steps,
+        pairing in order. Best-effort: extra/mismatched entries are ignored."""
+        from server.orchestrator import run_trace
+
+        trace = run_trace.snapshot()
+        it = iter(trace)
+        for s in steps:
+            if s["kind"] != "tool_call":
+                continue
+            entry = next(it, None)
+            if entry is None:
+                continue
+            s["detail"] = {**s["detail"], "args_full": entry["args_full"],
+                            "result_raw": entry["result_raw"], "error": entry.get("error")}
+            s["ref"] = {**s["ref"], "ok": entry["ok"]}
