@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 import DiagnosisCatalog from "./DiagnosisCatalog";
+import SpawnRunDetail from "./SpawnRunDetail";
 import RunReplay from "./RunReplay";
 
 interface Props {
@@ -24,7 +25,8 @@ interface Props {
  *      Shows a label + a mini stat (run count / avg score). Clicking toggles L2.
  *   2. SUMMARY (slides up) — clicking the bar slides a panel UP revealing the
  *      DiagnosisCatalog (RED fleet cards + worst-first per-spawn table). Clicking
- *      a spawn row drills into a per-spawn placeholder (DG-6 replaces with SpawnDetail).
+ *      a spawn row drills into SpawnRunDetail (per-spawn run list), whose rows
+ *      drill further into L3 RunReplay via setDetailRunId.
  *   3. DETAIL (expands left) — RunReplay as a panel anchored to the rail's left
  *      edge, growing leftward toward the chat. Back/close → L2.
  */
@@ -82,10 +84,17 @@ export default function EvalDock({ spawnId, conversationId }: Props) {
               spawnId={spawnId}
               conversationId={conversationId}
             />
+          ) : selSpawn.sid != null ? (
+            <SpawnRunDetail
+              spawnId={selSpawn.sid}
+              spawnName={selSpawn.name}
+              onBack={() => setSelSpawn(null)}
+              onSelectRun={(id) => setDetailRunId(id)}
+            />
           ) : (
             <div className="eval-dock__spawn-placeholder">
               <button onClick={() => setSelSpawn(null)}>← 诊断台</button>
-              <div>{selSpawn.name} · 详情(DG-6 接入)</div>
+              <div>{selSpawn.name} · 无法定位分身 id</div>
             </div>
           )}
         </div>

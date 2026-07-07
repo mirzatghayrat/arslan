@@ -2410,8 +2410,9 @@ button:disabled {
   gap: 0.75rem;
 }
 
-/* Spawn-detail placeholder shown when a DiagnosisCatalog row is selected
-   (DG-6 replaces this stopgap with a real <SpawnDetail>). */
+/* Fallback shown only when a selected catalog row has no resolvable spawn id
+   (e.g. an anomaly row with spawn_id null) — SpawnRunDetail can't list runs
+   without one, so this stopgap just offers a way back. */
 .eval-dock__spawn-placeholder {
   padding: 1rem 1.25rem;
   display: flex;
@@ -2429,6 +2430,89 @@ button:disabled {
 }
 .eval-dock__spawn-placeholder button:hover {
   color: var(--primary);
+}
+
+/* ============================================================
+   SpawnRunDetail — per-spawn run list (EvalDock L2 content when
+   a DiagnosisCatalog row is selected). Rows drill into L3 RunReplay.
+   ============================================================ */
+.spawn-run-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+.spawn-run-detail__crumb {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+.spawn-run-detail__back {
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+.spawn-run-detail__back:hover {
+  color: var(--primary);
+}
+.spawn-run-detail__name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.spawn-run-detail__empty {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  padding: 0.5rem 0;
+}
+.spawn-run-detail__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.spawn-run-detail__row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+}
+.spawn-run-detail__row:hover {
+  background: var(--surface-raised);
+}
+.spawn-run-detail__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.spawn-run-detail__time {
+  color: var(--muted-foreground);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+.spawn-run-detail__msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spawn-run-detail__ms {
+  color: var(--muted-foreground);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+.spawn-run-detail__score {
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 2ch;
+  text-align: right;
 }
 
 /* ============================================================
