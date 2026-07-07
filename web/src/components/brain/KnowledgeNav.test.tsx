@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../api/client", () => ({ api: { createCollection: vi.fn(), ingestCollection: vi.fn(), listCollections: vi.fn().mockResolvedValue([]) } }));
+vi.mock("../../api/client", () => ({ api: { createCollection: vi.fn().mockResolvedValue({ id: 1, name: "新建" }), ingestCollection: vi.fn(), listCollections: vi.fn().mockResolvedValue([]) } }));
 import KnowledgeNav from "./KnowledgeNav";
+import { api } from "../../api/client";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
 
 const tree: TreeNode = {
@@ -43,5 +44,22 @@ describe("KnowledgeNav", () => {
     render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "条款" } });
     expect(screen.getByText("条款.pdf")).toBeInTheDocument();
+  });
+
+  it("paste box feeds via bucketing (not a raw 快速收集 collection)", async () => {
+    const feed = await import("../../lib/feed");
+    const spy = vi.spyOn(feed, "feedTextOrUrl").mockResolvedValue({ chunks_added: 1 } as any);
+    render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/快速投喂/), { target: { value: "https://x.com" } });
+    fireEvent.click(screen.getByText(/投喂到共享库/));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("https://x.com"));
+  });
+
+  it("＋ 新建库 creates a named collection", async () => {
+    render(<KnowledgeNav tree={tree} focusedId={null} onFocus={() => {}} onChanged={() => {}} />);
+    fireEvent.click(screen.getByText(/新建库/));
+    fireEvent.change(screen.getByPlaceholderText(/库名/), { target: { value: "我的资料" } });
+    fireEvent.click(screen.getByText(/建立/));
+    await waitFor(() => expect(api.createCollection).toHaveBeenCalledWith("我的资料"));
   });
 });

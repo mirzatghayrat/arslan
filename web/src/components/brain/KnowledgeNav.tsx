@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "../../api/client";
+import { feedTextOrUrl } from "../../lib/feed";
 import type { TreeNode } from "../../hooks/useKnowledgeTree";
 import { hueVar } from "./hues";
 
@@ -26,11 +27,20 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
     if (!t) return;
     setBusy(true); setErr(null);
     try {
-      const col = await api.createCollection("快速收集");
-      const isUrl = /^https?:\/\//.test(t);
-      await api.ingestCollection(col.id, isUrl ? { url: t } : { source: "粘贴", text: t });
+      await feedTextOrUrl(t);
       setFeed(""); onChanged();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const [newName, setNewName] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const createNamed = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true); setErr(null);
+    try { await api.createCollection(name); setNewName(""); setShowNew(false); onChanged(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
 
@@ -83,6 +93,18 @@ export default function KnowledgeNav({ tree, focusedId, onFocus, onChanged }: Pr
           className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[13.5px] font-medium disabled:opacity-50">
           {busy ? "投喂中…" : "＋ 投喂到共享库"}
         </button>
+        {showNew ? (
+          <div className="flex gap-2">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="库名…"
+              onKeyDown={(e) => { if (e.key === "Enter") void createNamed(); }}
+              className="flex-1 px-3 py-2 rounded-lg bg-surface border border-border text-[13px] text-foreground placeholder:text-subtle-foreground" />
+            <button onClick={() => void createNamed()} disabled={busy}
+              className="px-3 py-2 rounded-lg border border-border text-[13px] text-foreground disabled:opacity-50">建立</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowNew(true)}
+            className="text-[12px] text-subtle-foreground hover:text-foreground text-left">＋ 新建库(命名)</button>
+        )}
       </div>
     </aside>
   );
