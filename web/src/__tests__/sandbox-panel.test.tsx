@@ -51,6 +51,31 @@ describe("SandboxPanel", () => {
       expect.objectContaining({ type: "confirm_merge", conversation_id: "main" }),
     );
   });
+
+  it("renders an HTML deliverable as a preview card, not raw source (parity with main chat)", () => {
+    render(
+      <SandboxPanel spawn={spawn} sessionId="s" seed={null} conversationId="main"
+        onClose={() => {}} onMerged={() => {}} />,
+    );
+    const html = "<!DOCTYPE html><html><head><title>t</title></head><body><h1>Hi</h1><p>report body</p></body></html>";
+    act(() => { sandboxFrameCb({ type: "stream_start" }); });
+    act(() => { sandboxFrameCb({ type: "stream_chunk", content: html }); });
+    act(() => { sandboxFrameCb({ type: "stream_end" }); });
+    // baked into the same sandboxed html-doc card as OrchestratorChat, not a raw <!DOCTYPE wall
+    expect(screen.getByTestId("html-doc-card")).toBeDefined();
+  });
+
+  it("shows a live thinking indicator during the pre-first-token gap (parity with main chat)", () => {
+    render(
+      <SandboxPanel spawn={spawn} sessionId="s" seed={null} conversationId="main"
+        onClose={() => {}} onMerged={() => {}} />,
+    );
+    act(() => { sandboxFrameCb({ type: "stream_start" }); });                    // stream open, no token yet
+    expect(screen.getByTestId("live-activity")).toBeDefined();
+    act(() => { sandboxFrameCb({ type: "stream_chunk", content: "DRAFT" }); });  // first token arrives
+    expect(screen.queryByTestId("live-activity")).toBeNull();                    // indicator gone …
+    expect(screen.getByText("DRAFT")).toBeDefined();                             // … content shows
+  });
 });
 
 const deliverable = { id: "d1", sender: "spawn", senderName: "小美", senderAvatar: "x", text: "OUT",

@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { Spawn } from '../types';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { SpawnAvatar } from './SpawnAvatar';
-import Markdown from './Markdown';
+import MessageBody from './MessageBody';
+import LiveActivity from './LiveActivity';
 
 interface SandboxPanelProps {
   spawn: Spawn;
@@ -25,6 +26,7 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const toolsRef = useRef<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -35,6 +37,7 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
       case 'stream_start':
         toolsRef.current = [];
         setStreaming(true);
+        setStartedAt(Date.now());
         setMessages((p) => [...p, { id: '__s__', role: 'spawn', text: '' }]);
         break;
       case 'stream_chunk':
@@ -116,7 +119,11 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
               : 'flex-1 text-xs text-foreground'}
               style={m.role === 'user' ? { background: 'rgba(120,140,170,0.10)', border: '1px solid rgba(255,255,255,0.08)' } : undefined}>
               {m.role === 'spawn'
-                ? <Markdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{m.text}</Markdown>
+                ? (m.id === '__s__' && !m.text
+                    ? <LiveActivity steps={[]} startedAt={startedAt}
+                        phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
+                    : <MessageBody text={m.text} streaming={m.id === '__s__'} hasMessageActions={false}
+                        className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />)
                 : m.text}
               {m.tools && m.tools.length > 0 && (
                 <div className="mt-2 text-[10px] font-mono text-muted-foreground border-l-2 border-primary pl-2">{m.tools.join('  ')}</div>
