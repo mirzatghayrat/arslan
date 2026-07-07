@@ -451,6 +451,46 @@ export interface RunSummary {
   recent: RunTrendPoint[];
 }
 
+/** Per-spawn RED aggregate row (GET /runs/catalog). */
+export interface CatalogSpawnDto {
+  spawn_id: number | null;
+  spawn_name: string | null;
+  model: string | null;
+  run_count: number;
+  error_ratio: number;
+  p95_ms: number | null;
+  pass_rate: number | null;
+  avg_score: number | null;
+  tokens_sum: number;
+  health: string;
+  score_trend: number[];
+}
+
+/** Response for GET /runs/catalog — per-spawn RED + fleet rollup, worst-first. */
+export interface RunCatalogDto {
+  range: string;
+  fleet: {
+    run_count: number;
+    error_ratio: number;
+    p95_ms: number | null;
+    pass_rate: number | null;
+    tokens_sum: number;
+  };
+  spawns: CatalogSpawnDto[];
+}
+
+/** One deterministic threshold-rule finding (GET /runs/anomalies). */
+export interface AnomalyDto {
+  severity: string;
+  kind: string;
+  spawn_id: number | null;
+  spawn_name: string | null;
+  title: string;
+  detail: string;
+  since: string | null;
+  run_id: number | null;
+}
+
 export interface McpServer {
   id: number;
   label: string;

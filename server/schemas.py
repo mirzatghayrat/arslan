@@ -463,6 +463,19 @@ class RunCatalogOut(BaseModel):
     spawns: list[CatalogSpawnOut]
 
 
+class AnomalyOut(BaseModel):
+    """One deterministic threshold-rule finding (GET /runs/anomalies)."""
+
+    severity: str
+    kind: str
+    spawn_id: int | None = None
+    spawn_name: str | None = None
+    title: str
+    detail: str
+    since: str | None = None
+    run_id: int | None = None
+
+
 class SkillForgeIn(BaseModel):
     key: str
     name: str

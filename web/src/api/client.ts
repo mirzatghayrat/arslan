@@ -1,5 +1,6 @@
 import { useAuthStore } from "../stores/authStore";
 import type {
+  AnomalyDto,
   AppSettings,
   CatalogEntry,
   CollectionOut,
@@ -13,6 +14,7 @@ import type {
   ProviderOption,
   RegistryCatalog,
   CuratorFlag,
+  RunCatalogDto,
   RunDetailDto,
   RunListItem,
   RunSummary,
@@ -143,6 +145,10 @@ export const api = {
   },
   /** Aggregates for the evaluation-summary charts. */
   getRunsSummary: () => request<RunSummary>("/runs/summary"),
+  /** Per-spawn RED aggregate + fleet rollup, worst-first (diagnosis dashboard). */
+  getRunCatalog: (range: string) => request<RunCatalogDto>(`/runs/catalog?range=${range}`),
+  /** Deterministic threshold-rule findings, severity-sorted (diagnosis dashboard). */
+  getRunAnomalies: (range: string) => request<AnomalyDto[]>(`/runs/anomalies?range=${range}`),
   /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
   redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
