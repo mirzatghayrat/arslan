@@ -192,6 +192,10 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     skill_body_map = await registry_service.skill_bodies([s["key"] for s in equipment["skills"]])
     system += _equipment_block_from(equipment, wired, skill_body_map)
     system += _SPAWN_TOOL_GUIDANCE
+
+    from server.orchestrator import run_trace
+    run_trace.record_prompt(system_prompt=system, injected_kb=None)
+
     return system, wired
 
 

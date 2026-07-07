@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from server.services.run_recorder import RUN_RAW_CAP
 
 _trace: ContextVar[list[dict] | None] = ContextVar("run_trace", default=None)
+_prompt: ContextVar[dict | None] = ContextVar("run_prompt", default=None)
 
 
 def _cap(s: str) -> str:
@@ -39,11 +40,27 @@ def snapshot() -> list[dict]:
     return list(_trace.get() or [])
 
 
+def record_prompt(*, system_prompt: str | None, injected_kb: str | None = None) -> None:
+    d = _prompt.get()
+    if d is None:
+        return
+    d["system_prompt"] = system_prompt
+    d["injected_kb"] = injected_kb
+
+
+def prompt() -> dict:
+    d = _prompt.get()
+    return dict(d) if d else {"system_prompt": None, "injected_kb": None}
+
+
 @contextmanager
 def collecting():
     buf: list[dict] = []
+    prompt_bucket = {"system_prompt": None, "injected_kb": None}
     token = _trace.set(buf)
+    ptoken = _prompt.set(prompt_bucket)
     try:
         yield buf
     finally:
         _trace.reset(token)
+        _prompt.reset(ptoken)

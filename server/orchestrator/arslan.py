@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
-from server.orchestrator import dispatcher, memory, router, tool_loop
+from server.orchestrator import dispatcher, memory, router, run_trace, tool_loop
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
@@ -1096,33 +1096,60 @@ async def _dispatch_spawn(  # noqa: ANN001
         tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
     tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
-    try:
-        out = await dispatcher.dispatch(
-            conversation_id, spawn_id=spawn_id, task_brief=task_brief,
-            on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
-            on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
-            attached_context=attached_context,
-        )
-    except Exception as exc:  # noqa: BLE001
-        tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
-        await recorder.finalize(summary_message_id=None, full_output="")
-        return
+    # run_trace.collecting() spans the dispatch call (and any escalation re-dispatch) AND
+    # every finalize() below, so tool_loop's run_trace.record(...) calls and the assembled
+    # system prompt (build_spawn_system → run_trace.record_prompt) are both still readable
+    # via snapshot()/prompt() at finalize time — draining happens inside RunRecorder.finalize
+    # (_merge_tool_trace calls run_trace.snapshot()), before this context exits.
+    with run_trace.collecting():
+        try:
+            out = await dispatcher.dispatch(
+                conversation_id, spawn_id=spawn_id, task_brief=task_brief,
+                on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
+                on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
+                attached_context=attached_context,
+            )
+        except Exception as exc:  # noqa: BLE001
+            tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
+            _usage = usage_sink.detail()
+            _prompt = run_trace.prompt()
+            await recorder.finalize(
+                summary_message_id=None, full_output="",
+                model=_usage["model"], provider=_usage["provider"],
+                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                tokens_estimated=(_usage["tokens_in"] is None),
+                error_kind=type(exc).__name__, error_text=str(exc),
+                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+            )
+            return
 
-    if out.get("escalation"):
-        esc_out = await _handle_escalation(
-            conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee,
-            run_id=recorder.run_id,
-        )
-        final = esc_out or out
+        if out.get("escalation"):
+            esc_out = await _handle_escalation(
+                conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee,
+                run_id=recorder.run_id,
+            )
+            final = esc_out or out
+            _usage = usage_sink.detail()
+            _prompt = run_trace.prompt()
+            await recorder.finalize(
+                summary_message_id=final.get("summary_message_id"),
+                full_output=final.get("full_output", ""),
+                model=_usage["model"], provider=_usage["provider"],
+                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                tokens_estimated=(_usage["tokens_in"] is None),
+                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+            )
+            return
+
+        _usage = usage_sink.detail()
+        _prompt = run_trace.prompt()
         await recorder.finalize(
-            summary_message_id=final.get("summary_message_id"),
-            full_output=final.get("full_output", ""),
+            summary_message_id=out["summary_message_id"], full_output=out["full_output"],
+            model=_usage["model"], provider=_usage["provider"],
+            tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+            tokens_estimated=(_usage["tokens_in"] is None),
+            system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
         )
-        return
-
-    await recorder.finalize(
-        summary_message_id=out["summary_message_id"], full_output=out["full_output"],
-    )
     tee({
         "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],
         "spawn_id": spawn_id, "spawn_name": spawn_name,
