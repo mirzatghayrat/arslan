@@ -34,7 +34,6 @@ def mcp_tool_key(server_id: int, name: str) -> str:
 
 def runtime_dict(srv) -> dict:
     """Decrypted, transport-aware server dict for the session manager."""
-    import json
 
     from server import crypto
     env = {}

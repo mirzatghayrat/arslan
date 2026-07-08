@@ -1,8 +1,6 @@
 """Tests for arslan.core.dialogue — Dialogue Engine requirement tree state machine."""
-import pytest
 
-from arslan.core.dialogue import DialogueEngine, DialogueState, NODE_ORDER, Question
-from arslan.models import DomainInfo, SpawnRequirements
+from arslan.core.dialogue import DialogueEngine, DialogueState, NODE_ORDER
 
 
 # ---------------------------------------------------------------------------

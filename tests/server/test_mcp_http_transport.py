@@ -22,8 +22,12 @@ def stub_sdk(monkeypatch):
     import mcp.client.stdio as sstdio
     import mcp.client.streamable_http as shttp
     calls = {}
-    def fake_stdio(params): calls["stdio"] = params; return _ACM(("r", "w"))
-    def fake_http(url, headers=None): calls["http"] = (url, headers); return _ACM(("r", "w", "sid"))
+    def fake_stdio(params):
+        calls["stdio"] = params
+        return _ACM(("r", "w"))
+    def fake_http(url, headers=None):
+        calls["http"] = (url, headers)
+        return _ACM(("r", "w", "sid"))
     monkeypatch.setattr(sstdio, "stdio_client", fake_stdio)
     monkeypatch.setattr(shttp, "streamablehttp_client", fake_http)
     monkeypatch.setattr(mcp, "ClientSession", _Sess)
@@ -50,7 +54,6 @@ def test_open_session_http_branch(stub_sdk):
 
 
 def test_runtime_dict_includes_transport_url(tmp_path, monkeypatch):
-    import server.db.session as db_session
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine, AsyncSession
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'rt.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -65,7 +68,8 @@ def test_runtime_dict_includes_transport_url(tmp_path, monkeypatch):
         async with m() as s:
             srv = MCPServer(id=3, label="h", transport="http", command="", args=[],
                             url="https://y/mcp", env=crypto.encrypt(json.dumps({"K": "V"})), status="registered")
-            s.add(srv); await s.commit()
+            s.add(srv)
+            await s.commit()
             return runtime_dict(srv)
     d = anyio.run(_run)
     assert d["transport"] == "http" and d["url"] == "https://y/mcp" and d["env"] == {"K": "V"}

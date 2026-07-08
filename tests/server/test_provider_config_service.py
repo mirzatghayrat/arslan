@@ -16,8 +16,8 @@ async def db():
 
 
 async def test_add_lists_masked_and_first_is_primary(db):
-    c = await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
-                             base_url="", api_key="sk-aaaa1111bbbb")
+    await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
+                         base_url="", api_key="sk-aaaa1111bbbb")
     rows = await svc.list_configs(db)
     assert len(rows) == 1
     assert rows[0]["is_primary"] is True

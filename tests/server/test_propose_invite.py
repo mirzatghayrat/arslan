@@ -203,7 +203,6 @@ async def test_invite_capability_summary_falls_back_to_capability(maker, monkeyp
     """When a spawn has no persona_role, the invite summary falls back to its
     first capability."""
     from server.orchestrator import router
-    from server.services import spawn_service
 
     # Drop persona_role so the fallback path is exercised.
     async with maker() as s:

@@ -1,4 +1,5 @@
-import pytest
+
+import anyio
 
 from server.orchestrator import dispatcher
 from server.services import compare_judge, evaluator
@@ -56,9 +57,6 @@ async def test_empty_replay_fails_gate(monkeypatch):
     _stub_compare(monkeypatch, [])
     out = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="C", replay_items=[])
     assert out["gate"]["passed"] is False
-
-
-import anyio
 
 
 def test_evaluate_uses_custom_scorer_and_dims(monkeypatch):

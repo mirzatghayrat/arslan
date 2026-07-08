@@ -1,5 +1,4 @@
 """Tests for ToolRegistry."""
-import pytest
 
 from arslan.tools.base import ArslanTool, ToolResult
 from arslan.tools.registry import ToolRegistry

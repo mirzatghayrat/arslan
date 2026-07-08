@@ -1,5 +1,4 @@
 """Tests for arslan.models — written TDD before implementation."""
-import pytest
 
 from arslan.models import (
     CapabilityProfile,

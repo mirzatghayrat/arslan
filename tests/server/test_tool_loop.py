@@ -1,4 +1,3 @@
-import pytest
 from server.orchestrator import tool_loop
 
 
@@ -8,7 +7,9 @@ class _Resp:
 
 class _ScriptedAdapter:
     """Returns queued responses; records the systems/users it saw."""
-    def __init__(self, replies): self._replies = list(replies); self.calls = []
+    def __init__(self, replies):
+        self._replies = list(replies)
+        self.calls = []
     async def chat_stream(self, system, user, history=None):
         self.calls.append({"system": system, "user": user, "history": history})
         yield self._replies.pop(0)
@@ -17,7 +18,9 @@ class _ScriptedAdapter:
 class _StreamAdapter:
     """chat_stream yields the response in small pieces."""
     def __init__(self, replies, piece_size=3):
-        self._replies = list(replies); self._ps = piece_size; self.calls = []
+        self._replies = list(replies)
+        self._ps = piece_size
+        self.calls = []
     async def chat_stream(self, system, user, history=None):
         self.calls.append({"system": system, "user": user})
         text = self._replies.pop(0)
@@ -473,7 +476,9 @@ async def test_force_tools_runs_web_search_first(monkeypatch):
     monkeypatch.setattr(tool_intent, "classify", fake_classify)
     seen = {}
     class _W:
-        async def execute(self, args): seen["q"] = args.get("query"); return {"ok": True, "results": [{"t": "x"}]}
+        async def execute(self, args):
+            seen["q"] = args.get("query")
+            return {"ok": True, "results": [{"t": "x"}]}
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
     events = []
     out = await tool_loop.run(system="S", user_content="chart tsla", history=[],
@@ -531,9 +536,9 @@ async def test_external_tool_result_still_wrapped(monkeypatch):
         async def execute(self, args):
             return {"ok": True, "results": [{"title": "t"}]}   # no 'external' key → defaults to wrapped
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Web())
-    out = await tool_loop.run(system="S", user_content="go", history=[],
-                              emit=lambda e: None, on_chunk=lambda c: None,
-                              resolve_tools=_tools("web_search"))
+    await tool_loop.run(system="S", user_content="go", history=[],
+                        emit=lambda e: None, on_chunk=lambda c: None,
+                        resolve_tools=_tools("web_search"))
     assert "EXTERNAL_WEB_CONTENT" in adapter.calls[1]["user"]   # external content still framed
 
 

@@ -1,4 +1,3 @@
-import anyio
 import httpx
 import pytest
 
@@ -31,7 +30,9 @@ def test_license_note():
 def _stub_client(monkeypatch, *, status, json_body=None, text=""):
     class _Resp:
         status_code = status
-        def __init__(self): self._j = json_body or {}; self.text = text
+        def __init__(self):
+            self._j = json_body or {}
+            self.text = text
         def json(self): return self._j
         def raise_for_status(self):
             if self.status_code >= 400:
@@ -40,7 +41,9 @@ def _stub_client(monkeypatch, *, status, json_body=None, text=""):
         def __init__(self, *a, **k): pass
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
-        async def get(self, url, headers=None): _Client.last = {"url": url, "headers": headers}; return _Resp()
+        async def get(self, url, headers=None):
+            _Client.last = {"url": url, "headers": headers}
+            return _Resp()
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
     return _Client
 

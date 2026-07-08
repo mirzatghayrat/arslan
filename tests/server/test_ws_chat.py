@@ -174,7 +174,8 @@ def test_chat_injects_kb(app_client, monkeypatch):
     captured = {}
     async def _s(*, spawn_id, system, user_content, history, current_turn,
                  emit, on_chunk, allow_escalation):
-        captured["system"] = system; captured["user"] = user_content
+        captured["system"] = system
+        captured["user"] = user_content
         on_chunk("ok")
         return {"final": "ok", "escalation": None, "tool_trace": []}
     monkeypatch.setattr(spawn_loop, "run", _s)
@@ -214,7 +215,9 @@ def test_chat_storage_intent_stores(app_client, monkeypatch):
     monkeypatch.setattr(storage_intent, "classify", fake_classify)
     seen = {}
     async def fake_ingest(spawn_id, source, text, *, compress=False):
-        seen["spawn_id"] = spawn_id; seen["text"] = text; return 4
+        seen["spawn_id"] = spawn_id
+        seen["text"] = text
+        return 4
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()  # history
@@ -240,7 +243,9 @@ def test_chat_store_uses_material_from_earlier_turn(app_client, monkeypatch):
     monkeypatch.setattr(storage_intent, "classify", fake_classify)
     seen = {}
     async def fake_ingest(spawn_id, source, text, *, compress=False):
-        seen["text"] = text; seen["spawn_id"] = spawn_id; return 2
+        seen["text"] = text
+        seen["spawn_id"] = spawn_id
+        return 2
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()  # history
@@ -264,7 +269,9 @@ def test_chat_no_store_when_intent_false(app_client, monkeypatch):
     async def fake_classify(msg, names, spawns): return StorageIntent(store=False, target=None)
     monkeypatch.setattr(storage_intent, "classify", fake_classify)
     called = {"ingest": False}
-    async def fake_ingest(*a, **k): called["ingest"] = True; return 1
+    async def fake_ingest(*a, **k):
+        called["ingest"] = True
+        return 1
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest)
     with app_client.websocket_connect("/ws/chat/1") as ws:
         ws.receive_json()

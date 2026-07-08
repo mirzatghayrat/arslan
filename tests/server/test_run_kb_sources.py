@@ -12,7 +12,8 @@ def test_0023_adds_column(tmp_path):
             await c.run_sync(Base.metadata.create_all)
             await c.run_sync(upgrade_sync)
             cols = await c.run_sync(lambda x: {col["name"] for col in inspect(x).get_columns("runs")})
-        await e.dispose(); return cols
+        await e.dispose()
+        return cols
     assert "injected_kb_sources" in anyio.run(_run)
 
 

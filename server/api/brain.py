@@ -187,9 +187,9 @@ async def brain_graph() -> dict:
 
     # 4) degree over everything built so far → orphan fallback to 「你」
     degree: dict[str, int] = {}
-    for l in links:
-        degree[l["source"]] = degree.get(l["source"], 0) + 1
-        degree[l["target"]] = degree.get(l["target"], 0) + 1
+    for edge in links:
+        degree[edge["source"]] = degree.get(edge["source"], 0) + 1
+        degree[edge["target"]] = degree.get(edge["target"], 0) + 1
 
     # 「你」 anchors every tag cluster …
     for tid in tag_ids.values():

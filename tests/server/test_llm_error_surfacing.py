@@ -182,7 +182,6 @@ def test_gemini_stream_uses_httpx_timeout_object():
     the read timeout can be set independently from the connect timeout.  A bare
     float sets all timeouts to the same value, which is too short for thinking
     models during the read phase."""
-    import httpx
     import inspect
     from arslan.llm.providers.gemini_provider import GeminiProvider
 

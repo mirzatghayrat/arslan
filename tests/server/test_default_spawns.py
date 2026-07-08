@@ -29,7 +29,9 @@ async def test_delete_rejects_builtin(maker):
     from server.services import spawn_service
     async with maker() as s:
         sp = Spawn(name="Built-In", domain_category="x", capabilities=[], system_prompt="x", is_default=True)
-        s.add(sp); await s.commit(); await s.refresh(sp)
+        s.add(sp)
+        await s.commit()
+        await s.refresh(sp)
         with pytest.raises(spawn_service.BuiltInSpawnError):
             await spawn_service.delete_spawn(s, sp.id)
         assert await s.get(Spawn, sp.id) is not None   # not deleted
@@ -40,7 +42,9 @@ async def test_delete_allows_normal_spawn(maker):
     from server.services import spawn_service
     async with maker() as s:
         sp = Spawn(name="Normal", domain_category="x", capabilities=[], system_prompt="x", is_default=False)
-        s.add(sp); await s.commit(); await s.refresh(sp)
+        s.add(sp)
+        await s.commit()
+        await s.refresh(sp)
         assert await spawn_service.delete_spawn(s, sp.id) is True
 
 

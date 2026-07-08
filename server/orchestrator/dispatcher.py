@@ -6,13 +6,13 @@ from collections.abc import Callable
 
 from sqlalchemy import select
 
-logger = logging.getLogger(__name__)
-
 from server.db import session as db_session
 from server.db.models import ChatMessage, Spawn
 from server.orchestrator import memory, spawn_loop
 from server.registry import service as registry_service
 from server.services.llm_factory import build_adapter
+
+logger = logging.getLogger(__name__)
 
 _SPAWN_HISTORY_LIMIT = 10  # recent spawn turns included for continuity
 _SKILL_BODY_LIMIT = 1500  # max chars of a skill body injected per technique (bounded)

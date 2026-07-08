@@ -47,7 +47,7 @@ def test_parse_links_and_backlinks():
 
 @pytest.mark.asyncio
 async def test_backlinks(maker):
-    a = await note_service.create("目标", "", [])
+    await note_service.create("目标", "", [])
     b = await note_service.create("来源", "引用 [[目标]]", [])
     bl = await note_service.backlinks("目标")
     assert any(x["id"] == b.id for x in bl)

@@ -156,7 +156,7 @@ def new(spawns_dir: str, runtime: str) -> None:
     manager = SpawnManager(Path(spawns_dir))
     try:
         spawn_path = _run_generator(manager, blueprint, runtime)
-        console.print(f"[bold green]✅ 分身已成功创建！[/bold green]")
+        console.print("[bold green]✅ 分身已成功创建！[/bold green]")
         console.print(f"[dim]路径: {spawn_path}[/dim]")
         console.print()
         console.print("启动你的分身：")
@@ -196,7 +196,7 @@ def run(name: str, spawns_dir: str, port: int) -> None:
 
     if spawn_path is None:
         console.print(f"[red]找不到分身 '[bold]{name}[/bold]'。[/red]")
-        console.print(f"[dim]请先运行 arslan new 创建分身，或检查 --spawns-dir 路径。[/dim]")
+        console.print("[dim]请先运行 arslan new 创建分身，或检查 --spawns-dir 路径。[/dim]")
         sys.exit(1)
 
     main_py = spawn_path / "main.py"

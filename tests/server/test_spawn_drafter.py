@@ -56,7 +56,8 @@ async def test_draft_refinement_passes_previous(monkeypatch):
     class _Cap:
         async def chat(self, *, system, user):
             captured["user"] = user
-            class R: content = json.dumps({"name": "x", "domain": "finance.quant", "capabilities": []})
+            class R:
+                content = json.dumps({"name": "x", "domain": "finance.quant", "capabilities": []})
             return R()
     monkeypatch.setattr(spawn_drafter, "_get_adapter", lambda: _Cap())
     await spawn_drafter.draft_from_text("make it quant-focused", previous={"name": "x", "domain": "finance.equity-research"})

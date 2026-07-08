@@ -19,9 +19,13 @@ class _FakeCallResult:
 
 
 class _FakeSession:
-    def __init__(self): self.closed_calls = 0; self.calls = []
+    def __init__(self):
+        self.closed_calls = 0
+        self.calls = []
     async def list_tools(self): return _FakeListResult([_FakeTool("read_file", "Read a file", {"type": "object"})])
-    async def call_tool(self, name, arguments): self.calls.append((name, arguments)); return _FakeCallResult([_FakeText("hello")])
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        return _FakeCallResult([_FakeText("hello")])
 
 
 class _FakeStack:
@@ -35,7 +39,9 @@ def _server(sid=1): return {"id": sid, "command": "x", "args": [], "env": {}}
 async def test_get_session_lazy_and_cached(monkeypatch):
     mgr = sess.MCPSessionManager()
     opened = []
-    async def fake_open(server): opened.append(server["id"]); return _FakeSession(), _FakeStack()
+    async def fake_open(server):
+        opened.append(server["id"])
+        return _FakeSession(), _FakeStack()
     monkeypatch.setattr(mgr, "_open_session", fake_open)
     s1 = await mgr.get_session(_server(1))
     s2 = await mgr.get_session(_server(1))
@@ -59,7 +65,10 @@ async def test_call_failure_drops_cached_session(monkeypatch):
     stacks = []
     class _BoomSession(_FakeSession):
         async def call_tool(self, name, arguments): raise RuntimeError("pipe broke")
-    async def fake_open(server): st = _FakeStack(); stacks.append(st); return _BoomSession(), st
+    async def fake_open(server):
+        st = _FakeStack()
+        stacks.append(st)
+        return _BoomSession(), st
     monkeypatch.setattr(mgr, "_open_session", fake_open)
     with pytest.raises(RuntimeError):
         await mgr.call_tool(_server(5), "x", {})

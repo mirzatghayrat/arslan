@@ -1,6 +1,6 @@
 import anyio
 import pytest
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -46,7 +46,8 @@ def seeded(tmp_path, monkeypatch):
             for slug, kw in [("game-economy-designer", "game economy balance monetization numerical"),
                              ("seo-copywriter", "seo content writing keywords marketing")]:
                 row = PersonaSeed(slug=slug, name=slug, raw=kw, source="x")
-                s.add(row); await s.flush()
+                s.add(row)
+                await s.flush()
                 await s.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r,:t)"),
                                 {"r": row.id, "t": kw})
             await s.commit()

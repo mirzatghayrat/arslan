@@ -1,7 +1,6 @@
 import anyio
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session

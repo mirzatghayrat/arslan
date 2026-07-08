@@ -6,7 +6,6 @@ from server.db import session as db_session
 from server.db.models import Base, Run, RunStep, Spawn
 from server.orchestrator import arslan, dispatcher, router, run_trace
 from server.services import run_recorder, roster_service
-from arslan.llm import usage_sink
 
 
 @pytest.fixture

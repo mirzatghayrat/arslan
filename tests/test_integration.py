@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 
 from arslan.core.dialogue import DialogueEngine
 from arslan.core.evolution import EvolutionEngine
@@ -45,7 +44,6 @@ class TestFullPipeline:
         library = TemplateLibrary()
         library.load_official()
 
-        domain_str = requirements.domain.full_domain  # e.g. "content-creator.xiaohongshu"
         matches = library.search_by_domain(requirements.domain.category)
         assert len(matches) >= 1, f"Expected at least 1 template for domain '{requirements.domain.category}'"
 

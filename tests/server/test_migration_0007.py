@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 
-from server.db.migrations.versions._0007_runs import downgrade_sync, upgrade_sync
+from server.db.migrations.versions._0007_runs import upgrade_sync
 
 
 def _existing_db_without_runs(conn):

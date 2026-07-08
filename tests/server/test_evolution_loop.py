@@ -30,7 +30,10 @@ async def _spawn(Session, prompt="ORIGINAL"):
 
 
 class _Spawn:
-    id = 1; name = "fin"; persona_role = "analyst"; persona_tone = "terse"
+    id = 1
+    name = "fin"
+    persona_role = "analyst"
+    persona_tone = "terse"
     system_prompt = "## Role\nYou are an analyst."
 
 

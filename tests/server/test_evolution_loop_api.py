@@ -1,7 +1,6 @@
 """Tests for POST /api/v1/spawns/{id}/evolve and /api/v1/evolution/proposals/{id}/confirm."""
 from __future__ import annotations
 
-import pytest
 
 from server.db.models import Spawn
 from server.services import evolution_loop

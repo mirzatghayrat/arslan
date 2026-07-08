@@ -31,8 +31,8 @@ async def test_graph_note_link_and_ghost(maker):
     kinds = {n["kind"] for n in g["nodes"]}
     assert "note" in kinds
     assert any(n["kind"] == "ghost" for n in g["nodes"])            # 不存在的 → ghost
-    assert any(l["type"] == "link" for l in g["links"])             # note→note resolved
-    assert any(str(l["target"]).startswith("ghost:") for l in g["links"])
+    assert any(edge["type"] == "link" for edge in g["links"])       # note→note resolved
+    assert any(str(edge["target"]).startswith("ghost:") for edge in g["links"])
 
 
 @pytest.mark.asyncio
@@ -50,15 +50,16 @@ async def test_graph_tag_nodes_link_shared(maker):
     await note_service.create("预算表", "内容", ["finance"])
     g = await brain_api.brain_graph()
     assert any(n["id"] == "tag:finance" and n["kind"] == "tag" for n in g["nodes"])
-    tag_edges = [l for l in g["links"] if l["type"] == "tag" and l["target"] == "tag:finance"]
+    tag_edges = [edge for edge in g["links"]
+                 if edge["type"] == "tag" and edge["target"] == "tag:finance"]
     assert len(tag_edges) == 2                                   # 两笔记各一条 → 同一标签
-    assert any(l["type"] == "hub" and l["source"] == "self" and l["target"] == "tag:finance"
-               for l in g["links"])                              # 你 → 标签簇
+    assert any(edge["type"] == "hub" and edge["source"] == "self" and edge["target"] == "tag:finance"
+               for edge in g["links"])                           # 你 → 标签簇
 
 
 @pytest.mark.asyncio
 async def test_graph_orphan_note_falls_back_to_self(maker):
     n = await note_service.create("孤儿笔记", "没有链接也没有标签", [])
     g = await brain_api.brain_graph()
-    assert any(l["type"] == "hub" and l["source"] == "self" and l["target"] == f"note:{n.id}"
-               for l in g["links"])
+    assert any(edge["type"] == "hub" and edge["source"] == "self" and edge["target"] == f"note:{n.id}"
+               for edge in g["links"])

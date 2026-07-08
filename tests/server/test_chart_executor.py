@@ -1,4 +1,3 @@
-import pytest
 from server.registry.executors import ChartExecutor
 
 

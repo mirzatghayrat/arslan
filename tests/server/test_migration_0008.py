@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 
-from server.db.migrations.versions._0008_evolution_proposals import downgrade_sync, upgrade_sync
+from server.db.migrations.versions._0008_evolution_proposals import upgrade_sync
 
 
 def test_upgrade_creates_table():

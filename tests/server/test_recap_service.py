@@ -12,7 +12,8 @@ def test_0024_creates_table(tmp_path):
         async with e.begin() as c:
             await c.run_sync(upgrade_sync)
             names = await c.run_sync(lambda x: set(inspect(x).get_table_names()))
-        await e.dispose(); return names
+        await e.dispose()
+        return names
     assert "conversation_events" in anyio.run(_run)
 
 

@@ -1,3 +1,4 @@
+import anyio
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -57,7 +58,7 @@ async def test_build_returns_scored_items(memdb):
 
 async def test_only_scored_and_cap_and_order(memdb):
     await _add_run(memdb, spawn_id=1, status="recorded", user_message="r", output="o", overall=None)
-    a = await _add_run(memdb, spawn_id=1, status="scored", user_message="a", output="oa", overall=8)
+    await _add_run(memdb, spawn_id=1, status="scored", user_message="a", output="oa", overall=8)
     b = await _add_run(memdb, spawn_id=1, status="scored", user_message="b", output="ob", overall=9)
     items = await replay_set.build(1, cap=1)
     assert len(items) == 1            # cap respected
@@ -69,9 +70,6 @@ async def test_skips_missing_output_and_handles_empty(memdb):
     await _add_run(memdb, spawn_id=2, status="scored", user_message="t2", output="", overall=8)
     assert await replay_set.build(2) == []   # both skipped → empty
     assert await replay_set.build(999) == []  # no runs → empty
-
-
-import anyio
 
 
 def test_split_interleaves_and_holds_out(monkeypatch):

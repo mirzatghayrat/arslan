@@ -4,7 +4,6 @@ import pytest_asyncio
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from server.db.migrations.versions import _0001_initial as m1
 from server.db.migrations.versions import _0002_orchestrator as m2
 
 NEW_TABLES = {"arslan_messages", "arslan_summaries", "user_facts", "router_decisions"}

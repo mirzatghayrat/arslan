@@ -2,6 +2,7 @@ import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import server.db.session as db_session_mod
 from server.db.models import Base, ChatMessage, Spawn
 
 
@@ -18,9 +19,6 @@ def test_chat_message_archived_defaults_false(tmp_path):
             row = (await s.execute(select(ChatMessage))).scalars().one()
             return row.archived
     assert anyio.run(_run) is False
-
-
-import server.db.session as db_session_mod
 
 
 def test_history_excludes_archived(tmp_path, monkeypatch):

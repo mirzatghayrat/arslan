@@ -1,4 +1,3 @@
-import anyio
 import httpx
 import pytest
 
@@ -8,7 +7,9 @@ from server.services import github_eval as ge
 def _stub_search(monkeypatch, *, status, json_body=None, text=""):
     class _Resp:
         status_code = status
-        def __init__(self): self._j = json_body or {}; self.text = text
+        def __init__(self):
+            self._j = json_body or {}
+            self.text = text
         def json(self): return self._j
         def raise_for_status(self):
             if self.status_code >= 400:
@@ -18,7 +19,8 @@ def _stub_search(monkeypatch, *, status, json_body=None, text=""):
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
         async def get(self, url, headers=None, params=None):
-            _Client.last = {"url": url, "params": params}; return _Resp()
+            _Client.last = {"url": url, "params": params}
+            return _Resp()
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
     return _Client
 

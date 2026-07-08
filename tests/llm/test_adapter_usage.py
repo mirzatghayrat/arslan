@@ -1,4 +1,3 @@
-import pytest
 
 from arslan.llm import usage_sink
 from arslan.llm.adapter import LLMAdapter

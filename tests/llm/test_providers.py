@@ -5,7 +5,6 @@ import pytest
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.llm.providers.openai_provider import OpenAIProvider
-from arslan.models import LLMResponse
 
 
 # ---------------------------------------------------------------------------

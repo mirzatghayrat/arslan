@@ -4,8 +4,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-import yaml
 
 from arslan.core.evolution import EvolutionEngine, FeedbackStore
 from arslan.models import EvolutionRule, FeedbackEntry
@@ -203,5 +201,5 @@ class TestEvolutionEngine:
 
     def test_creates_evolution_dir(self, tmp_path: Path):
         new_dir = tmp_path / "evolution" / "nested"
-        engine = EvolutionEngine(new_dir)
+        EvolutionEngine(new_dir)
         assert new_dir.exists()

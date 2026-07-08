@@ -1,7 +1,6 @@
 """Tests for TemplateConfig and TemplateLibrary."""
 from pathlib import Path
 
-import pytest
 import yaml
 
 from arslan.templates.library import TemplateConfig, TemplateLibrary

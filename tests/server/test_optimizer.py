@@ -15,7 +15,9 @@ class _Adapter:
 
 
 class _SpawnEdits:
-    name = "fin"; persona_role = "analyst"; persona_tone = "terse"
+    name = "fin"
+    persona_role = "analyst"
+    persona_tone = "terse"
     system_prompt = "## Role\nYou are an analyst."
 
 

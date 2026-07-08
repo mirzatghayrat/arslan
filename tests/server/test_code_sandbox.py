@@ -2,7 +2,6 @@
 
 Tests preset the interpreter cache to the test venv's python so no batteries env is built.
 """
-import os
 import sys
 
 import pytest

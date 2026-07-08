@@ -25,7 +25,7 @@ never automatic. Self-manages its own AsyncSessionLocal sessions, like the forge
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import select
 
