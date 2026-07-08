@@ -2679,6 +2679,28 @@ button:disabled {
 .brain-nav__generate-btn { flex-shrink: 0; padding: 6px 10px; border-radius: 8px; border: none; background: var(--primary); color: var(--primary-foreground); font-size: 12px; cursor: pointer; }
 .brain-nav__generate-btn:disabled { opacity: .5; }
 
+.brain-nav__tabs { display: flex; gap: 4px; padding: 8px 10px 4px; }
+.brain-nav__tab { flex: 1; padding: 5px 0; font-size: 12px; border-radius: 7px;
+  color: var(--muted-foreground); background: transparent; border: 1px solid transparent; }
+.brain-nav__tab.is-active { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.brain-nav__group { margin-left: 10px; }
+.brain-nav__group-head { display: flex; align-items: center; gap: 5px; padding: 3px 8px;
+  font-size: 11px; color: var(--subtle-foreground); cursor: pointer; }
+.brain-nav__group-label { flex: 1; }
+.brain-nav__tags { padding: 6px 10px; border-top: 1px solid var(--border); }
+.brain-nav__tags-head { font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--subtle-foreground); margin-bottom: 5px; }
+.brain-nav__tags-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.brain-nav__chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px;
+  font-size: 11px; border-radius: 999px; border: 1px solid var(--border);
+  color: var(--muted-foreground); background: var(--surface); }
+.brain-nav__chip:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, transparent); }
+.brain-nav__chip-count { color: var(--subtle-foreground); font-size: 9px; }
+.brain-nav__health { padding: 6px 10px 10px; border-top: 1px solid var(--border); }
+.brain-nav__health-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px;
+  color: var(--muted-foreground); background: transparent; }
+
 /* ============================================================
    Note editor — hand-written [[wikilink]] notes (dark-orange)
    ============================================================ */
