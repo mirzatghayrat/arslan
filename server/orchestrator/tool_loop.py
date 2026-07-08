@@ -231,7 +231,22 @@ def _fallback_with_digest(user_content: str, tool_trace: list) -> str:
     return f"{header}\n{digest}\n\n{base}"
 
 
-def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo) -> dict:
+# PB-3: turn-scoped MCP degradation. When an `mcp_*` tool fails this many times
+# CONSECUTIVELY within one run_native invocation, its recorded tool result gains a
+# deterministic hint steering the model to the equivalent BUILTIN tool. Guide, never
+# hard-switch — the model stays free to disagree. 条件2: the counter dict lives in
+# run_native's locals (a fresh invocation = a fresh turn = count 0), and a success
+# resets that tool's streak.
+_MCP_FAIL_HINT_AT = 2
+
+
+def _mcp_degrade_hint(n: int) -> str:
+    return (f"⚠ 此 MCP 工具本回合已连续失败 {n} 次。请改用等价的内置工具完成任务"
+            "(网页抓取用 web_extract,搜索用 web_search);不要再重试该 MCP 工具。")
+
+
+def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo,
+                        mcp_fail_counts: dict | None = None) -> dict:
     emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
           "summary": _summarize_result(result), "artifact": result.get("artifact")})
     tool_trace.append({"tool": tool_key, "args": args, "result": result})
@@ -241,14 +256,43 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     feedback = {k: v for k, v in result.items() if k != "artifact"}
     raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
     framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
+    # PB-3 degrade hint. Placement is deliberate: `framed` ends with DELIM_CLOSE, so the
+    # hint sits AFTER the wrap_external data frame — it is OUR trusted framing (like the
+    # "TOOL RESULT for X" header and the "Use this to continue" trailer), never inside
+    # the untrusted region the GUARD_NOTE tells the model to distrust.
+    hint = ""
+    if mcp_fail_counts is not None:
+        if result.get("ok"):
+            mcp_fail_counts.pop(tool_key, None)          # success resets the streak
+        elif tool_key.startswith("mcp_"):
+            n = mcp_fail_counts[tool_key] = mcp_fail_counts.get(tool_key, 0) + 1
+            if n >= _MCP_FAIL_HINT_AT:
+                hint = "\n" + _mcp_degrade_hint(n)
     convo.append({"role": "user",
-                  "content": f"TOOL RESULT for {tool_key}:\n{framed}"
+                  "content": f"TOOL RESULT for {tool_key}:\n{framed}{hint}"
                              "\nUse this to continue: call another tool, escalate, or give your final answer."})
     return result
 
 
+async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
+    """PB-3 observability: one conversation_events row the FIRST time the degrade hint
+    fires for a tool this turn (PB-4's warning wiring reads these). Fail-open — logging
+    must never touch the turn."""
+    try:
+        from server.services import recap_service
+        await recap_service.log_event(
+            conversation_id, "mcp_degrade_hint",
+            {"tool_key": tool_key, "count": count},
+            f"MCP 工具 {tool_key} 本回合连续失败 {count} 次,已提示改用内置等价工具")
+    except Exception:  # noqa: BLE001 — observability is never fatal
+        pass
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
-                         tool_timeout_s, tool_trace, convo, confirm_command=None) -> dict:
+                         tool_timeout_s, tool_trace, convo, confirm_command=None,
+                         mcp_fail_counts: dict | None = None,
+                         mcp_hint_logged: set | None = None,
+                         conversation_id: str | None = None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
     assistant turn + framed tool result into convo. Returns the raw result dict.
 
@@ -265,12 +309,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                       "error": "run_command requires user confirmation, which is not "
                                "available in this context"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo)
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
         approved = await confirm_command(command, argv)
         if not approved:
             result = {"ok": False, "error": "user declined this command"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo)
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
 
     live = {t["key"] for t in await resolve_tools()}
     executor = (await resolve_executor(tool_key)) if tool_key in live else None
@@ -284,8 +330,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
-    return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                               assistant_content, convo)
+    out = _record_tool_result(tool_key, args, result, emit, tool_trace,
+                              assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
+    if (mcp_fail_counts is not None and mcp_hint_logged is not None
+            and mcp_fail_counts.get(tool_key, 0) >= _MCP_FAIL_HINT_AT
+            and tool_key not in mcp_hint_logged):
+        mcp_hint_logged.add(tool_key)
+        await _log_degrade_hint(conversation_id, tool_key, mcp_fail_counts[tool_key])
+    return out
 
 
 async def run(
@@ -304,7 +356,11 @@ async def run(
 ) -> dict:
     """Run the loop. Returns {"final": str|None, "escalation": dict|None, "tool_trace": list}.
     Exactly one of final/escalation is non-None. resolve_tools() returns the currently
-    live tool descriptors [{"key","description"}] — re-awaited per call so grants can expire."""
+    live tool descriptors [{"key","description"}] — re-awaited per call so grants can expire.
+
+    PB-3 note: the MCP consecutive-failure degrade hint is wired in run_native ONLY —
+    every production path (Arslan answer path + spawn_loop) runs run_native; this legacy
+    text-protocol loop survives for its regression tests and stays byte-identical."""
     adapter = _get_adapter()
     a = await adapter if hasattr(adapter, "__await__") else adapter
 
@@ -812,6 +868,7 @@ async def run_native(
     tool_timeout_s: float = TOOL_TIMEOUT_S,
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
+    conversation_id: str | None = None,
 ) -> dict:
     """Native tool-calling twin of run(). Same signature, same return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -840,6 +897,12 @@ async def run_native(
     convo: list[dict] = list(history) + [{"role": "user", "content": user_content}]
     tool_trace: list[dict] = []
     searches_done = 0  # web_search count this turn — capped at _SEARCH_CAP to force convergence
+    # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
+    # run_native invocation — one invocation = one turn — so a new turn starts at zero by
+    # construction; nothing persists or is shared. mcp_hint_logged bounds the observability
+    # row to once per turn per tool.
+    mcp_fail_counts: dict[str, int] = {}
+    mcp_hint_logged: set[str] = set()
 
     # force_tools (spawn proactive web_search): deterministic pre-run, mirrors run().
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
@@ -854,7 +917,9 @@ async def run_native(
                 "web_search", {"query": q},
                 json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
-                tool_trace=tool_trace, convo=convo, confirm_command=confirm_command)
+                tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
+                mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
+                conversation_id=conversation_id)
             searches_done += 1
 
     for step in range(max_tool_calls + 1):
@@ -909,7 +974,8 @@ async def run_native(
                 await _dispatch_tool(
                     name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
-                    confirm_command=confirm_command)
+                    confirm_command=confirm_command, mcp_fail_counts=mcp_fail_counts,
+                    mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})

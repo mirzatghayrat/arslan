@@ -280,6 +280,7 @@ async def dispatch(
             emit=(on_event or (lambda e: None)),
             on_chunk=(on_chunk or (lambda c: None)),
             allow_escalation=allow_escalation,
+            conversation_id=conversation_id,
         )
         full = out_loop["final"] or ""
         escalation = out_loop["escalation"]

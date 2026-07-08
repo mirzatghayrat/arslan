@@ -23,9 +23,13 @@ async def run(
     emit: Callable[[dict], None],
     on_chunk: Callable[[str], None],
     allow_escalation: bool = True,
+    conversation_id: str | None = None,
 ) -> dict:
     """Run the loop for a spawn. Tools = the spawn's wired ∩ safe ∩ equipped set,
-    re-resolved per call (grants may expire). Returns tool_loop's result dict."""
+    re-resolved per call (grants may expire). Returns tool_loop's result dict.
+
+    conversation_id is observability-only (PB-3 mcp_degrade_hint events); callers
+    without one (spawn private chat / sandbox) pass None and logging no-ops."""
     async def _resolve():
         return await wired_tools_for_spawn(spawn_id, current_turn=current_turn)
 
@@ -35,4 +39,5 @@ async def run(
         system=system, user_content=user_content, history=history,
         emit=emit, on_chunk=on_chunk, resolve_tools=_resolve,
         allow_escalation=allow_escalation, force_tools=True,
+        conversation_id=conversation_id,
     )

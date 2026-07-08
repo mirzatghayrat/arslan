@@ -768,6 +768,7 @@ async def _handle_answer(
             resolve_tools=_arslan_tools,
             allow_escalation=False,
             confirm_command=confirm_command,
+            conversation_id=conversation_id,
         )
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
