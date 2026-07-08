@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import type { BrainLeaf } from "../../api/client";
-import { useBrainTree, brainBranchesToTree, recentIds } from "../../hooks/useBrainTree";
+import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
 import BrainNav from "./BrainNav";
+import BrainOrrery from "./BrainOrrery";
 import BrainPanels from "./BrainPanels";
-import KnowledgeSunburst from "./KnowledgeSunburst";
 
 export default function BrainSection() {
   // ONE data source for the whole Second Brain: the typed /brain/tree drives the
@@ -13,7 +13,6 @@ export default function BrainSection() {
   // a nav row lights up its wedge. (No more disconnected old collection tree.)
   const { branches, loading, error, refresh } = useBrainTree();
 
-  const brainTree = useMemo(() => brainBranchesToTree(branches), [branches]);
   const glowIds = useMemo(() => recentIds(branches), [branches]);
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -45,11 +44,11 @@ export default function BrainSection() {
       onDrop={(e) => void onDrop(e)}>
       <BrainNav branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={setPicked} onChanged={refresh} />
       <div className="flex-1 relative h-full flex flex-col overflow-hidden">
-        {/* A′: height-capped orrery on top, dense panels peeking below */}
+        {/* A′: height-capped star map on top, dense panels peeking below */}
         <div className="flex-none relative" style={{ maxHeight: "56%" }}>
           {error
             ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">加载知识图谱失败</div>
-            : <KnowledgeSunburst tree={brainTree} focusedId={focusedId} onFocus={setFocusedId} glowIds={glowIds} className="w-full h-full" />}
+            : <BrainOrrery branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={setPicked} glowIds={glowIds} className="w-full h-full" />}
           {loading && <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-subtle-foreground uppercase tracking-widest pointer-events-none">loading…</div>}
         </div>
         <div className="flex-1 overflow-auto pt-2">
