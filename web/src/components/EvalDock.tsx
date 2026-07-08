@@ -38,7 +38,7 @@ function fmtTime(iso: string | null | undefined): string {
  * In-rail conversation recap — the scoped timeline of THIS conversation's runs
  * (with scores) mixed with Arslan's growth events (蒸馏/记忆/技能/进化/邀请),
  * newest first. Replaces the earlier health pill; the full-width catalog/replay
- * drill-down still lives in the standalone DiagnosisView (诊断台 ↗ link).
+ * drill-down still lives in the standalone DiagnosisView (Diagnostics ↗ link).
  */
 export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
   const [recap, setRecap] = useState<RecapDto | null>(null);
@@ -80,7 +80,7 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
           className="recap-dock__link"
           onClick={(e) => { e.stopPropagation(); onOpenDiagnosis(); }}
         >
-          诊断台 ↗
+          Diagnostics ↗
         </button>
       </div>
       {open && (items.length === 0 ? (

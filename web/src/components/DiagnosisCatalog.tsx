@@ -30,7 +30,7 @@ function healthColor(health: string): string {
 }
 
 function fmtTokens(sum: number): string {
-  return sum >= 1000 ? `约 ${Math.round(sum / 1000)}k` : `约 ${sum}`;
+  return sum >= 1000 ? `≈ ${Math.round(sum / 1000)}k` : `≈ ${sum}`;
 }
 
 function fmtP95(ms: number | null): string {

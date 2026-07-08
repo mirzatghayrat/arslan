@@ -23,7 +23,7 @@ function buildRunMarkdown(run: UiRun): string {
   lines.push("## KPI");
   lines.push(`- 总耗时：${run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—"}`);
   lines.push(`- 模型：${run.model ?? "—"}`);
-  lines.push(`- tokens：${run.taskTokens}${run.tokensEstimated ? "（约）" : ""}`);
+  lines.push(`- tokens：${run.taskTokens}${run.tokensEstimated ? "（≈）" : ""}`);
   lines.push(`- 评分：${run.scored && run.overallScore != null ? `${run.overallScore}/10` : "—"}`);
   lines.push("");
   lines.push("## 它做了什么");
@@ -149,7 +149,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   if (!run) return <div className="run-replay run-replay--loading">…</div>;
 
   const tokensNode = run.tokensEstimated
-    ? `约 ${run.taskTokens}`
+    ? `≈ ${run.taskTokens}`
     : run.tokensIn != null || run.tokensOut != null
       ? `${run.tokensIn ?? "—"} / ${run.tokensOut ?? "—"}`
       : run.taskTokens;

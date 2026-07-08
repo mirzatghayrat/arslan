@@ -49,7 +49,7 @@ export default function DiagnosisView() {
       {sel != null && sel.runId === undefined && (
         <>
           <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
-            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>诊断台</span>
+            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
             <span>/</span>
             <span className="text-foreground">{sel.name}</span>
           </div>
@@ -65,7 +65,7 @@ export default function DiagnosisView() {
       {sel != null && sel.runId !== undefined && (
         <>
           <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
-            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>诊断台</span>
+            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
             <span>/</span>
             <span className="cursor-pointer hover:text-foreground" onClick={() => setSel({ spawnId: sel.spawnId, name: sel.name })}>{sel.name}</span>
             <span>/</span>

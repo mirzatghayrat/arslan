@@ -24,7 +24,7 @@ describe("EvalDock recap timeline", () => {
     fireEvent.click(screen.getByText(/本对话 · 回顾/));                    // expand
     expect(await screen.findByText(/Deck Master/)).toBeTruthy();          // run item now visible
     expect(screen.getByText(/Data Analyst/)).toBeTruthy();               // distill item
-    fireEvent.click(screen.getByText(/诊断台/));                          // link → standalone view
+    fireEvent.click(screen.getByText(/Diagnostics/));                    // link → standalone view
     expect(onOpen).toHaveBeenCalled();
   });
 

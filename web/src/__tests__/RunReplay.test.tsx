@@ -193,11 +193,11 @@ describe("RunReplay", () => {
     expect(screen.queryByText(/OKX/)).toBeNull();
   });
 
-  it("shows the model and an estimated-token '约' mark", async () => {
+  it("shows the model and an estimated-token '≈' mark", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
     render(<RunReplay runId={7} onClose={() => {}} />);
     expect(await screen.findByText(/gpt-x/)).toBeTruthy();
-    expect(screen.getByText(/约/)).toBeTruthy();
+    expect(screen.getByText(/≈/)).toBeTruthy();
   });
 
   it("shows a run-level error banner when error_text is present", async () => {

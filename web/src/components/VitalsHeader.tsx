@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { RunVitalsDto } from "../api/client.types";
+import { useThemeStore } from "../stores/themeStore";
 import EChart from "./EChart";
 
 interface Props {
   range: "1h" | "24h" | "all";
 }
+
+// heatmap ramp low→high. Dark mode: deep-navy base (blends into the dark bg) →
+// bright blue. Light mode: pale base (blends into the light bg) → deep blue, so
+// empty/low cells read light and busy buckets read dark (light→深).
+const HEAT_DARK = ["#0d2a44", "#12507f", "#2a78d6", "#5aa0e8", "#9cc7f2"];
+const HEAT_LIGHT = ["#eef4fb", "#c3dcf5", "#7db0e6", "#3a7bd0", "#0d3a63"];
 
 function fmtP95(ms: number | null): string {
   if (ms == null) return "—";
@@ -15,6 +22,7 @@ function fmtP95(ms: number | null): string {
 /** Bucketed run-rate + duration heatmap — a compact "vitals" strip above the fleet cards. */
 export default function VitalsHeader({ range }: Props) {
   const [vitals, setVitals] = useState<RunVitalsDto | null>(null);
+  const mode = useThemeStore((s) => s.mode);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +73,7 @@ export default function VitalsHeader({ range }: Props) {
       calculable: false,
       orient: "horizontal",
       bottom: 0,
-      inRange: { color: ["#0d2a44", "#12507f", "#2a78d6", "#5aa0e8", "#9cc7f2"] },
+      inRange: { color: mode === "light" ? HEAT_LIGHT : HEAT_DARK },
     },
     tooltip: {
       formatter: (p: { data: [number, number, number] }) => `${vitals.duration_bins[p.data[1]]}: ${p.data[2]} 次`,

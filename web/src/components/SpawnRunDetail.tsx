@@ -52,7 +52,7 @@ export default function SpawnRunDetail({ spawnId, spawnName, onBack, onSelectRun
     <div className="spawn-run-detail" data-testid="spawn-run-detail">
       <div className="spawn-run-detail__crumb">
         <button type="button" className="spawn-run-detail__back" onClick={onBack}>
-          ← 诊断台
+          ← Diagnostics
         </button>
         <span className="spawn-run-detail__name"> / {spawnName ?? "—"}</span>
       </div>

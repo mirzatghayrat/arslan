@@ -19,8 +19,8 @@ describe("DiagnosisView", () => {
     render(<DiagnosisView />);
     fireEvent.click((await screen.findByText("Bad")).closest("[data-testid='cat-row']")!);
     const bc = await screen.findByTestId("diag-breadcrumb");     // breadcrumb appears in spawn view
-    expect(bc.textContent).toContain("诊断台");
-    fireEvent.click(screen.getByText("诊断台"));                 // breadcrumb root → back to catalog
+    expect(bc.textContent).toContain("Diagnostics");
+    fireEvent.click(screen.getByText("Diagnostics"));           // breadcrumb root → back to catalog
     await waitFor(() => expect(screen.getByText("Bad")).toBeTruthy());
   });
 });

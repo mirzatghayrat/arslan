@@ -578,7 +578,7 @@ export default function App() {
                    activeSection === 'ledger' ? t('modal.workspace_ledger') :
                    activeSection === 'capabilities' ? t('modal.workspace_capabilities') :
                    activeSection === 'brain' ? t('modal.workspace_brain') :
-                   activeSection === 'diagnosis' ? '诊断台' : t('modal.workspace_settings')}
+                   activeSection === 'diagnosis' ? 'Diagnostics' : t('modal.workspace_settings')}
                 </span>
               </span>
             </div>
@@ -987,7 +987,7 @@ export default function App() {
             )}
 
             {/* Bottom-anchored evaluation health pill — a lightweight glance (anomaly
-                count) that opens the standalone DiagnosisView (top-level "诊断台" nav
+                count) that opens the standalone DiagnosisView (top-level "Diagnostics" nav
                 section) rather than hosting the catalog/replay drill-down inline. */}
             <EvalDock
               spawnId={

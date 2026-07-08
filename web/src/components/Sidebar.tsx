@@ -166,7 +166,7 @@ export default function Sidebar({
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <HeartPulse className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'diagnosis' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">诊断台</span>
+                  <span className="truncate font-sans font-medium">Diagnostics</span>
                 </div>
               </button>
 
