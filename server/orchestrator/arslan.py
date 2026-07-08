@@ -1085,6 +1085,7 @@ async def _handle_escalation(  # noqa: ANN001
         on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
         on_event=emit,
         allow_escalation=False,
+        run_id=run_id,
     )
     emit({
         "type": "spawn_meta",
@@ -1095,7 +1096,8 @@ async def _handle_escalation(  # noqa: ANN001
         "task_brief": task_brief,
         "run_id": run_id,
     })
-    emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+    emit({"type": "stream_end", "message_id": out["summary_message_id"],
+          **({"artifact": out["artifact"]} if out.get("artifact") else {})})
     return out
 
 
@@ -1168,7 +1170,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                 conversation_id, spawn_id=spawn_id, task_brief=task_brief,
                 on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
                 on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
-                attached_context=attached_context,
+                attached_context=attached_context, run_id=recorder.run_id,
             )
         except Exception as exc:  # noqa: BLE001
             tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
@@ -1220,7 +1222,10 @@ async def _dispatch_spawn(  # noqa: ANN001
         "assistant_message_id": out["assistant_message_id"],
         "task_brief": task_brief, "run_id": recorder.run_id,
     })
-    tee({"type": "stream_end", "message_id": out["summary_message_id"]})
+    # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
+    # store turns into the chat item) so the frontend can render the preview card live.
+    tee({"type": "stream_end", "message_id": out["summary_message_id"],
+         **({"artifact": out["artifact"]} if out.get("artifact") else {})})
 
     # Auto-continue: a round that ended with a findings digest made real progress but ran
     # out of tool budget — never park it on "回复'继续'" while budget remains. The digest
