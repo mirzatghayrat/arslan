@@ -3385,3 +3385,8 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   .shiny-text { animation: none; color: var(--primary); }
 }
+
+@keyframes brainPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.75; }
+}
