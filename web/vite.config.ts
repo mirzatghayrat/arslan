@@ -16,6 +16,9 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // Bind IPv4 explicitly: on this Node, host "localhost" resolves to ::1 only,
+      // and an IPv4 browser/probe then gets connection-refused on 127.0.0.1:5173.
+      host: '127.0.0.1',
       port: 5173,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
