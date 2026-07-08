@@ -19,12 +19,12 @@ def _iso(ts):
     return ts.isoformat() if hasattr(ts, "isoformat") else ts
 
 
-def _leaf(kind, ref_key, label, provenance, confidence, umap, weight=1):
+def _leaf(kind, ref_key, label, provenance, confidence, umap, weight=1, category=None, tags=None):
     """weight = content richness (material: chunk count; profile/learning: 1). The
-    sunburst angular size is weight + usage_count, so the map shows the SHAPE of the
-    brain (big fed docs vs many small facts) and grows further with use."""
+    sunburst angular size is weight + usage_count. category/tags are optional and only
+    emitted when present — they drive the left-nav sub-grouping + tag explorer."""
     u = umap.get((kind, ref_key), {})
-    return {
+    out = {
         "kind": kind, "ref": ref_key, "label": label, "provenance": provenance,
         "confidence": confidence,
         "usage_count": u.get("usage_count", 0),
@@ -32,6 +32,11 @@ def _leaf(kind, ref_key, label, provenance, confidence, umap, weight=1):
         "last_used_ref": u.get("last_used_ref"),
         "value": weight + u.get("usage_count", 0),
     }
+    if category is not None:
+        out["category"] = category
+    if tags is not None:
+        out["tags"] = tags
+    return out
 
 
 def _mat_ref(collection_id, spawn_id, source) -> str:
@@ -50,7 +55,7 @@ async def brain_tree() -> dict:
         learns = (await db.execute(sa_text(
             "SELECT id, content, label, source_kind, confidence FROM learnings ORDER BY id"))).all()
         notes = (await db.execute(sa_text(
-            "SELECT id, title FROM notes ORDER BY updated_at DESC"))).all()
+            "SELECT id, title, tags FROM notes ORDER BY updated_at DESC"))).all()
 
     keys: list[tuple[str, str]] = []
     keys += [("profile", f"fact:{r[0]}") for r in facts]
@@ -60,14 +65,23 @@ async def brain_tree() -> dict:
     umap = await brain_usage.usage_map(keys)
 
     profile_leaves = [
-        _leaf("profile", f"fact:{r[0]}", r[2] or r[1], r[4] or "auto", r[5], umap) for r in facts]
+        _leaf("profile", f"fact:{r[0]}", r[2] or r[1], r[4] or "auto", r[5], umap,
+              category=r[3]) for r in facts]
     material_leaves = [
         _leaf("material", _mat_ref(m[0], m[1], m[2]), m[2],
               ("投喂" if m[0] is not None else "分身"), None, umap, weight=m[3])
         for m in mats]
     learning_leaves = [
         _leaf("learning", f"learning:{r[0]}", r[2] or (r[1] or "")[:40], r[3], r[4], umap) for r in learns]
-    note_leaves = [_leaf("note", f"note:{r[0]}", r[1], "手写", None, umap) for r in notes]
+
+    import json as _json_tree
+    def _note_tags(raw):
+        try:
+            return raw if isinstance(raw, list) else _json_tree.loads(raw or "[]")
+        except Exception:  # noqa: BLE001
+            return []
+    note_leaves = [_leaf("note", f"note:{r[0]}", r[1], "手写", None, umap,
+                         tags=_note_tags(r[2])) for r in notes]
 
     return {"branches": [
         {"kind": "material", "label": "材料", "children": material_leaves},

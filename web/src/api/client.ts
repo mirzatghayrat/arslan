@@ -91,6 +91,8 @@ export interface BrainLeaf {
   last_used_ref: string | null;
   value: number;
   children?: BrainLeaf[];
+  category?: string | null;
+  tags?: string[];
 }
 export interface BrainBranch { kind: BrainLeaf["kind"]; label: string; children: BrainLeaf[]; }
 export interface GraphNodeDto { id: string; ref: string; kind: string; label: string; val: number }
