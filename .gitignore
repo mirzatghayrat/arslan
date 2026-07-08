@@ -18,8 +18,16 @@ htmlcov/
 .DS_Store
 *.log
 .env
+.env.*
+!.env.example
 spawns/*/
 !spawns/.gitkeep
+
+# secrets / key material — never commit
+*.pem
+*.key
+*.p12
+credentials*.json
 
 # Local runtime data (SQLite DB + generated spawns) — anchored to repo root so
 # source dirs like web/src/data/ are NOT ignored.
@@ -27,6 +35,8 @@ spawns/*/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
 
 # brainstorming visual-companion mockups
 .superpowers/
