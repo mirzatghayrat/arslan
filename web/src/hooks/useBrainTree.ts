@@ -10,9 +10,10 @@ export function brainBranchesToTree(branches: BrainBranch[]): TreeNode {
   const cats = branches.map((b): TreeNode => {
     const leaves = b.children.map((l): TreeNode => ({
       id: l.ref, name: l.label, kind: "source", cat: "collection",
-      // sqrt-temper the angular size so a heavily-used entry grows but never
-      // swallows the disk; the panel/detail still show the raw usage_count.
-      value: 1 + Math.sqrt(Math.max(0, l.value - 1)), hueKey: b.kind, full: l.provenance ?? l.label,
+      // sqrt-temper the angular size (value = content weight + usage) so a big fed
+      // doc or a heavily-used entry grows but never swallows the disk; the
+      // panel/detail still show the raw usage_count.
+      value: 1 + Math.sqrt(Math.max(0, l.value)), hueKey: b.kind, full: l.provenance ?? l.label,
     }));
     const bval = leaves.reduce((s, l) => s + l.value, 0);
     return {

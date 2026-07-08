@@ -19,7 +19,10 @@ def _iso(ts):
     return ts.isoformat() if hasattr(ts, "isoformat") else ts
 
 
-def _leaf(kind, ref_key, label, provenance, confidence, umap):
+def _leaf(kind, ref_key, label, provenance, confidence, umap, weight=1):
+    """weight = content richness (material: chunk count; profile/learning: 1). The
+    sunburst angular size is weight + usage_count, so the map shows the SHAPE of the
+    brain (big fed docs vs many small facts) and grows further with use."""
     u = umap.get((kind, ref_key), {})
     return {
         "kind": kind, "ref": ref_key, "label": label, "provenance": provenance,
@@ -27,8 +30,7 @@ def _leaf(kind, ref_key, label, provenance, confidence, umap):
         "usage_count": u.get("usage_count", 0),
         "last_used_at": _iso(u.get("last_used_at")),
         "last_used_ref": u.get("last_used_ref"),
-        # sunburst angular size grows with use but never collapses to zero
-        "value": 1 + u.get("usage_count", 0),
+        "value": weight + u.get("usage_count", 0),
     }
 
 
@@ -58,7 +60,7 @@ async def brain_tree() -> dict:
         _leaf("profile", f"fact:{r[0]}", r[2] or r[1], r[4] or "auto", r[5], umap) for r in facts]
     material_leaves = [
         _leaf("material", _mat_ref(m[0], m[1], m[2]), m[2],
-              ("投喂" if m[0] is not None else "分身"), None, umap)
+              ("投喂" if m[0] is not None else "分身"), None, umap, weight=m[3])
         for m in mats]
     learning_leaves = [
         _leaf("learning", f"learning:{r[0]}", r[2] or (r[1] or "")[:40], r[3], r[4], umap) for r in learns]
