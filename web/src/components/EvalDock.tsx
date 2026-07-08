@@ -1,52 +1,106 @@
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
-import type { AnomalyDto } from "../api/client.types";
+import type { RecapDto } from "../api/client.types";
 
 interface Props {
-  /** Backend numeric spawn id to scope runs to. Omit for all runs (orchestrator). */
+  /** Backend numeric spawn id (spawn section) — unused by the recap timeline. */
   spawnId?: number;
-  /** Active conversation id — currently unused by the pill itself but kept so
-   * callers don't need to branch; may inform a future scoped glance. */
+  /** Active conversation id — the recap is scoped to it. Empty → dock hidden. */
   conversationId?: string;
   /** Opens the standalone full-width DiagnosisView (top-level nav section). */
   onOpenDiagnosis: () => void;
 }
 
+const KIND_LABEL: Record<string, string> = {
+  distill: "蒸馏", memory: "记忆", skill: "技能", evolution: "进化", invite: "邀请",
+};
+
+function scoreColor(s: number | null | undefined): string {
+  if (s == null) return "var(--muted-foreground)";
+  if (s >= 7) return "var(--success)";
+  if (s >= 4) return "var(--warning)";
+  return "var(--danger)";
+}
+
+/** Skills/evolution read as "capability" changes → warning accent; the softer
+ * growth signals (distill/memory/invite) use the primary accent. */
+function kindColor(kind: string): string {
+  return kind === "skill" || kind === "evolution" ? "var(--warning)" : "var(--primary)";
+}
+
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 /**
- * Bottom-of-rail evaluation entry point — downgraded from a 3-level
- * progressive-disclosure dock (bar → slide-up catalog → expand-left replay) to
- * a lightweight health pill. The catalog/spawn-detail/replay drill-down now
- * lives entirely in the standalone DiagnosisView (top-level "诊断台" nav
- * section); this pill is just the at-a-glance signal + entry point into it.
+ * In-rail conversation recap — the scoped timeline of THIS conversation's runs
+ * (with scores) mixed with Arslan's growth events (蒸馏/记忆/技能/进化/邀请),
+ * newest first. Replaces the earlier health pill; the full-width catalog/replay
+ * drill-down still lives in the standalone DiagnosisView (诊断台 ↗ link).
  */
-export default function EvalDock({ conversationId: _conversationId, onOpenDiagnosis }: Props) {
-  const { t } = useTranslation();
-  const [anomalyCount, setAnomalyCount] = useState(0);
+export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
+  const [recap, setRecap] = useState<RecapDto | null>(null);
 
   useEffect(() => {
+    if (!conversationId) { setRecap(null); return; }
     let cancelled = false;
-    api.getRunAnomalies("1h")
-      .then((anomalies: AnomalyDto[]) => { if (!cancelled) setAnomalyCount(anomalies.length); })
-      .catch(() => { /* pill glance is best-effort */ });
+    api.getConversationRecap(conversationId)
+      .then((r) => { if (!cancelled) setRecap(r); })
+      .catch(() => { if (!cancelled) setRecap(null); });
     return () => { cancelled = true; };
-  }, []);
+  }, [conversationId]);
 
-  const hasAnomalies = anomalyCount > 0;
-  const label = hasAnomalies
-    ? `${t('rail.eval_label')} · ${anomalyCount} 异常`
-    : t('rail.eval_label');
+  if (!conversationId) return null;
+
+  const items = recap?.items ?? [];
+  const s = recap?.summary;
 
   return (
-    <div className="eval-dock">
-      <button
-        type="button"
-        className={`eval-dock__pill${hasAnomalies ? " eval-dock__pill--alert" : ""}`}
-        onClick={onOpenDiagnosis}
-      >
-        {hasAnomalies && <span className="eval-dock__pill-dot" aria-hidden="true" />}
-        <span className="eval-dock__pill-label">{label}</span>
-      </button>
+    <div className="recap-dock">
+      <div className="recap-dock__head">
+        <span className="recap-dock__title">本对话 · 回顾</span>
+        <button type="button" className="recap-dock__link" onClick={onOpenDiagnosis}>诊断台 ↗</button>
+      </div>
+      {s && (
+        <div className="recap-dock__summary">
+          {s.run_count} 运行 · 均分 {s.avg_score ?? "—"} · 成长 {s.growth_count}
+        </div>
+      )}
+      {items.length === 0 ? (
+        <div className="recap-dock__empty">本对话还没有运行 / 成长记录</div>
+      ) : (
+        <ul className="recap-timeline">
+          {items.map((it, i) => (
+            <li
+              key={i}
+              className="recap-item"
+              data-testid="recap-item"
+              onClick={it.kind === "run" ? onOpenDiagnosis : undefined}
+              style={{ cursor: it.kind === "run" ? "pointer" : "default" }}
+            >
+              {it.kind === "run" ? (
+                <div className="recap-item__body">
+                  <span className="recap-item__tag" style={{ color: scoreColor(it.overall_score) }}>
+                    运行 · {it.overall_score != null ? it.overall_score.toFixed(1) : "评分中"}
+                  </span>
+                  <span className="recap-item__title">{it.spawn_name ?? "分身"}</span>
+                  {it.user_message && <span className="recap-item__sub">{it.user_message}</span>}
+                </div>
+              ) : (
+                <div className="recap-item__body">
+                  <span className="recap-item__tag" style={{ color: kindColor(it.kind) }}>
+                    {KIND_LABEL[it.kind] ?? it.kind}
+                  </span>
+                  <span className="recap-item__title">{it.summary ?? ""}</span>
+                </div>
+              )}
+              <span className="recap-item__time">{fmtTime(it.created_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
