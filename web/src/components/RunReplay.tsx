@@ -196,10 +196,14 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const radarOption = showRadar
     ? {
         tooltip: {},
-        legend: { top: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 } },
+        // legend at the BOTTOM so it never collides with the top vertex's axis name
+        // (the "路由匹配" overlap); radar recentred up + smaller radius for label clearance.
+        legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 } },
         radar: {
           indicator: RADAR_DIMENSIONS.map((d) => ({ name: DIMENSION_LABELS[d] ?? d, max: 10, min: 0 })),
-          radius: "62%",
+          radius: "52%",
+          center: ["50%", "44%"],
+          axisName: { fontSize: 10 },
         },
         series: [
           {
@@ -458,7 +462,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       {showRadar && radarOption && (
         <section className="run-replay__radar" data-testid="dims-radar">
           <h4>本次 vs 舰队(雷达)</h4>
-          <EChart option={radarOption} height={200} />
+          <EChart option={radarOption} height={230} />
         </section>
       )}
 

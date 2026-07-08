@@ -7,11 +7,13 @@ interface Props {
   onSelectSpawn: (spawnId: number | null, name: string | null) => void;
 }
 
-function sevColor(sev: string): { background: string; border?: string } {
+function sevColor(sev: string): { background: string } {
   if (sev === "red") return { background: "var(--danger)" };
   if (sev === "amber") return { background: "var(--warning)" };
   if (sev === "green") return { background: "var(--success)" };
-  return { background: "transparent", border: "1px solid var(--border)" };
+  // "none" = no runs in this bucket: a faint recessive tint (NOT a bordered white
+  // box) that reads as empty in both light and dark mode.
+  return { background: "color-mix(in srgb, var(--muted-foreground) 14%, transparent)" };
 }
 
 function fmtHM(iso: string): string {
