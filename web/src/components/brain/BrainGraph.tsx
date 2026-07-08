@@ -131,9 +131,11 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
                   onMouseLeave={(e) => { onFocus(null); (e.currentTarget as SVGElement).style.transform = "scale(1)"; }}
                   onClick={() => { if (!ghost && !self && !tag) onPick({ kind: n.kind as BrainLeaf["kind"], ref: n.ref, label: n.label, provenance: null, confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: n.val }); }}
                   onDoubleClick={() => { if (ghost) onCreateNoteWithTitle(n.label); }}
-                  style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }} />
-                {/* No node labels at all — nodes are pure dots. Hover highlights
-                    (ring + lit edges); click opens the detail rail with the name. */}
+                  style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }}>
+                  {/* native <title> tooltip only — no custom on-hover label; name also
+                      shows in the right-rail detail on click. */}
+                  <title>{n.label}</title>
+                </circle>
               </g>
             );
           })}

@@ -22,12 +22,6 @@ export default function BrainSection() {
   // slides its detail in as the right rail over the graph — the graph stays visible.
   const pick = (l: BrainLeaf) => { if ((l.kind as string) === "ghost") return; setPicked(l); };
 
-  const createNote = async () => {
-    const n = await api.createNote({ title: "未命名笔记" });
-    refresh();
-    pick({ kind: "note", ref: `note:${n.id}`, label: n.title, provenance: "手写",
-      confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 });
-  };
   const createNoteWithTitle = async (title: string) => {
     const n = await api.createNote({ title });
     refresh();
@@ -63,7 +57,7 @@ export default function BrainSection() {
       onDrop={(e) => void onDrop(e)}>
       <BrainNav branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={pick} onChanged={refresh}
         onTagFilter={tagFilter} showTags={showTags} onToggleTags={() => setShowTags((v) => !v)}
-        onCreateNote={() => void createNote()} onGenerate={(t) => void generateFromTopic(t)} />
+        onGenerate={(t) => void generateFromTopic(t)} />
 
       <div className="flex-1 relative h-full overflow-hidden">
         {error

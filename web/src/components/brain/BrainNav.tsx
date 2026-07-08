@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Plus, Upload, UserRound } from "lucide-react";
+import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Upload, UserRound } from "lucide-react";
 import type { BrainBranch, BrainLeaf } from "../../api/client";
 import { feedFile, feedTextOrUrl } from "../../lib/feed";
 import BrainIndexHealth from "./BrainIndexHealth";
@@ -19,7 +19,6 @@ interface Props {
   onTagFilter: (tag: string) => void;
   showTags: boolean;
   onToggleTags: () => void;
-  onCreateNote?: () => void;
   onGenerate?: (topic: string) => void;
 }
 
@@ -28,13 +27,13 @@ interface Props {
  * graph), then a tidy multi-level collapsible tree (画像 grouped by category, 材料
  * by provenance); then create/generate/feed + a collapsed index-health strip.
  * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
-export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onTagFilter, showTags, onToggleTags, onCreateNote, onGenerate }: Props) {
+export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onTagFilter, showTags, onToggleTags, onGenerate }: Props) {
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // categories start collapsed → compact left column (chips + actions stay in view)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["material", "learning", "profile", "note"]));
+  // every level starts collapsed (expanded = the keys the user opened) → compact column
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [topic, setTopic] = useState("");
   const [generating, setGenerating] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
@@ -42,7 +41,7 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
   const ql = q.trim().toLowerCase();
 
   const toggle = (key: string) =>
-    setCollapsed((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+    setExpanded((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const matches = (l: BrainLeaf) =>
     !ql || l.label.toLowerCase().includes(ql) || (l.tags ?? []).some((t) => t.toLowerCase().includes(ql))
@@ -102,7 +101,7 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
 
       <div className="brain-nav__tree">
         {branches.map((b) => {
-          const open = !collapsed.has(b.kind) || ql !== "";
+          const open = expanded.has(b.kind) || ql !== "";
           const groups = subGroups(b);
           const flatKids = b.children.filter(matches);
           const Icon = KIND_ICON[b.kind] ?? Boxes;
@@ -113,19 +112,13 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
                 <Icon className="brain-nav__kind-icon" style={{ color: hueVar(b.kind) }} />
                 <span className="brain-nav__branch-label">{b.label}</span>
                 <span className="brain-nav__count">{b.children.length}</span>
-                {b.kind === "note" && onCreateNote && (
-                  <button type="button" className="brain-nav__branch-add" title="新建笔记"
-                    onClick={(e) => { e.stopPropagation(); onCreateNote(); }}>
-                    <Plus className="w-3 h-3" /> 新建
-                  </button>
-                )}
               </div>
               {open && groups
                 ? groups.map((g) => {
                     const kids = g.leaves.filter(matches);
                     if (!kids.length) return null;
                     const gkey = `${b.kind}:${g.key}`;
-                    const gopen = !collapsed.has(gkey) || ql !== "";
+                    const gopen = expanded.has(gkey) || ql !== "";
                     return (
                       <div key={gkey} className="brain-nav__group">
                         <div className="brain-nav__group-head" onClick={() => toggle(gkey)}>

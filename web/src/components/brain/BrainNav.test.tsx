@@ -41,11 +41,4 @@ describe("BrainNav", () => {
     fireEvent.click(screen.getByTitle("标签节点在图中显隐"));
     expect(onToggleTags).toHaveBeenCalled();
   });
-
-  it("reveals a 新建 button on the 笔记 branch that creates a note", () => {
-    const onCreateNote = vi.fn();
-    render(<BrainNav {...base} onCreateNote={onCreateNote} />);
-    fireEvent.click(screen.getByTitle("新建笔记"));
-    expect(onCreateNote).toHaveBeenCalled();
-  });
 });
