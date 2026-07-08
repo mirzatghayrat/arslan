@@ -1334,28 +1334,6 @@ button:disabled {
   font-family: monospace;
 }
 
-/* Entry button for SpawnDetail overlay */
-.spawn-detail-open-btn {
-  padding: 0.3125rem 0.75rem;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: 0.375rem;
-  color: var(--muted-foreground);
-  font-size: 0.625rem;
-  font-family: monospace;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  flex-shrink: 0;
-}
-.spawn-detail-open-btn:hover {
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
-  background: color-mix(in srgb, var(--primary) 8%, transparent);
-}
-
 /* ── SuggestCreateCard ──────────────────────────────────────────────────────── */
 
 /* Overlay wrapper: sits above the chat, below the top bar */
@@ -2403,25 +2381,6 @@ button:disabled {
 }
 .attach-add:disabled { opacity: 0.5; cursor: default; }
 
-.attach-url-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  background: transparent;
-  border: none;
-  border-radius: 0.375rem;
-  color: var(--subtle-foreground);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s, background 0.15s;
-}
-.attach-url-toggle:hover { color: var(--foreground); }
-.attach-url-toggle--on {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-}
 
 .attach-chips {
   display: flex;
@@ -2516,44 +2475,6 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.attach-url {
-  flex: 1;
-  min-width: 6rem;
-  max-width: 18rem;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  color: var(--foreground);
-  font-size: 0.6875rem;
-  padding: 0.3125rem 0.5rem;
-  outline: none;
-  transition: border-color 0.15s;
-  font-family: inherit;
-}
-.attach-url:focus {
-  border-color: var(--primary);
-}
-
-.attach-read {
-  padding: 0.3125rem 0.625rem;
-  background: var(--primary);
-  border: none;
-  border-radius: 0.375rem;
-  color: var(--primary-foreground);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: opacity 0.15s;
-}
-.attach-read:hover:not(:disabled) {
-  opacity: 0.88;
-}
-.attach-read:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .attach-error {
@@ -2856,56 +2777,6 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.eval-dock {
-  position: sticky;
-  bottom: 0;
-  margin-top: auto;
-  z-index: 5;
-  flex-shrink: 0;
-  background: var(--sidebar, var(--surface));
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-}
-
-/* Health pill — downgraded EvalDock: a lightweight glance + entry point into
-   the standalone DiagnosisView (which now hosts the catalog/spawn/replay
-   drill-down that used to live in this dock as a 3-level slide-up). */
-.eval-dock__pill {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 1.25rem;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  font-size: 0.625rem;
-  font-family: monospace;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted-foreground);
-  transition: background 0.15s, color 0.15s;
-}
-.eval-dock__pill:hover {
-  background: color-mix(in srgb, var(--primary) 6%, transparent);
-  color: var(--foreground);
-}
-.eval-dock__pill--alert {
-  color: var(--danger);
-}
-.eval-dock__pill-dot {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 999px;
-  background: var(--danger);
-  flex-shrink: 0;
-}
-.eval-dock__pill-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* EvalSummary rendered inline (used by DiagnosisView's SpawnRunDetail path):
    strip its panel chrome. */
