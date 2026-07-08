@@ -255,7 +255,29 @@ export const api = {
     request<EvolveProposal>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
   confirmProposal: (proposalId: number) =>
     request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
-  listMcpServers: () => request<Array<{ id: number; label: string; status?: string }>>("/mcp/servers"),
+  listMcpServers: () =>
+    request<
+      Array<{
+        id: number;
+        label: string;
+        status?: string;
+        health_status?: string | null;
+        last_error?: string | null;
+        last_checked_at?: string | null;
+      }>
+    >("/mcp/servers"),
+  /** PB-4 on-demand equipment health probe (bounded list_tools on the server side). */
+  checkMcpHealth: (id: number) =>
+    request<{
+      id: number;
+      label: string;
+      transport: string;
+      health_status: "ok" | "failing";
+      last_checked_at: string | null;
+      last_error: string | null;
+      tool_count: number | null;
+      proxy_source: string;
+    }>(`/mcp/${id}/health`, { method: "POST" }),
   // ── Skill Forge: self-authored skills → observe → gate → promote ──────────────
   /** Package a SKILL.md into a candidate. 400 (surfaced as ApiError.message) on invalid. */
   forgeSkill: (body: {

@@ -1,12 +1,17 @@
-"""MCP server config + connect/expose/wire endpoints."""
+"""MCP server config + connect/expose/wire/health endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from server.auth import require_auth
 from server.services import mcp_service
 
-router = APIRouter(prefix="/mcp", tags=["mcp"])
+# PB-4 条件3: the health probe must sit behind require_auth. The MCP router historically
+# carried NO auth dependency at all (unlike facts/create/skills/…), so we close the gap
+# router-wide — require_auth is a no-op when ARSLAN_API_TOKEN is unset, and the web client
+# always attaches the Bearer token, so existing callers are unaffected.
+router = APIRouter(prefix="/mcp", tags=["mcp"], dependencies=[Depends(require_auth)])
 
 
 class AddServerBody(BaseModel):
@@ -68,6 +73,15 @@ async def wire(tool_key: str, body: WireBody):
 async def set_host(tool_key: str, body: HostBody):
     await mcp_service.set_host_enabled(tool_key, body.enabled)
     return {"ok": True}
+
+
+@router.post("/{server_id}/health")
+async def check_health(server_id: int):
+    """PB-4 on-demand equipment health probe (bounded list_tools; writes status columns)."""
+    try:
+        return await mcp_service.check_health(server_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/servers/{server_id}/reconnect")

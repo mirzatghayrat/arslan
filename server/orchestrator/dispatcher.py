@@ -7,7 +7,7 @@ from collections.abc import Callable
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ChatMessage, Spawn
+from server.db.models import ChatMessage, MCPServer, Spawn
 from server.orchestrator import memory, spawn_loop
 from server.registry import service as registry_service
 from server.services.llm_factory import build_adapter
@@ -145,6 +145,38 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     return block
 
 
+async def _mcp_health_advisory(wired: list[dict]) -> str:
+    """PB-4: one advisory line when any wired mcp_* tool belongs to a server whose last
+    health probe failed — steers the spawn toward builtin equivalents up front instead of
+    letting it burn a turn on a known-bad server. Fail-open: any lookup error → no line."""
+    try:
+        by_server: dict[int, list[str]] = {}
+        for t in wired:
+            key = t.get("key") or ""
+            if not key.startswith("mcp_"):
+                continue
+            try:
+                sid = int(key.split("__", 1)[0].split("_", 1)[1])   # mcp_{sid}__{name}
+            except (ValueError, IndexError):
+                continue
+            by_server.setdefault(sid, []).append(key)
+        if not by_server:
+            return ""
+        async with db_session.AsyncSessionLocal() as db:
+            failing_ids = {r[0] for r in (await db.execute(
+                select(MCPServer.id).where(MCPServer.id.in_(by_server),
+                                           MCPServer.health_status == "failing")
+            )).all()}
+        failing_keys = sorted(k for sid in failing_ids for k in by_server[sid])
+        if not failing_keys:
+            return ""
+        return (f"\n\n注意:MCP 工具 {', '.join(failing_keys)} 所属服务最近体检失败,"
+                "优先使用等价内置工具。")
+    except Exception as exc:  # noqa: BLE001 — advisory is best-effort, never blocks dispatch
+        logger.warning("mcp health advisory lookup failed (non-fatal): %s", exc)
+        return ""
+
+
 async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
                              attached_context: str | None = None,
                              system_prompt_override: str | None = None) -> tuple[str, list[dict]]:
@@ -203,6 +235,7 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     wired = await registry_service.wired_tools_for_spawn(spawn.id, current_turn=current_turn)
     skill_body_map = await registry_service.skill_bodies([s["key"] for s in equipment["skills"]])
     system += _equipment_block_from(equipment, wired, skill_body_map)
+    system += await _mcp_health_advisory(wired)
     system += _SPAWN_TOOL_GUIDANCE
 
     from server.orchestrator import run_trace
