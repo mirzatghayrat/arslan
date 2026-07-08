@@ -49,12 +49,15 @@ async def test_brain_tree_three_branches_with_fields(maker):
             "INSERT INTO learnings (content, label, source_kind, source_ref, confidence, created_at) "
             "VALUES ('做deck先套暗色模板', 'deck心得', 'distill', '{\"conversation_id\":\"c\"}', 0.6, :ts)"),
             {"ts": now})
+        await db.execute(sa_text(
+            "INSERT INTO notes (title, content, tags, created_at, updated_at) "
+            "VALUES ('OKX 模板', '参见材料库', '[]', :ts, :ts)"), {"ts": now})
         await db.commit()
     await brain_usage.record("material", "material:coll:1:okx.pdf", used_ref="conv-x")
 
     body = await brain.brain_tree()
     kinds = {b["kind"] for b in body["branches"]}
-    assert kinds == {"material", "learning", "profile"}
+    assert kinds == {"material", "learning", "profile", "note"}
     for b in body["branches"]:
         for leaf in _leaves(b):
             assert "usage_count" in leaf and "provenance" in leaf

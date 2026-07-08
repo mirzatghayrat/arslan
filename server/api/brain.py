@@ -49,11 +49,14 @@ async def brain_tree() -> dict:
             "GROUP BY collection_id, spawn_id, source"))).all()
         learns = (await db.execute(sa_text(
             "SELECT id, content, label, source_kind, confidence FROM learnings ORDER BY id"))).all()
+        notes = (await db.execute(sa_text(
+            "SELECT id, title FROM notes ORDER BY updated_at DESC"))).all()
 
     keys: list[tuple[str, str]] = []
     keys += [("profile", f"fact:{r[0]}") for r in facts]
     keys += [("material", _mat_ref(m[0], m[1], m[2])) for m in mats]
     keys += [("learning", f"learning:{r[0]}") for r in learns]
+    keys += [("note", f"note:{r[0]}") for r in notes]
     umap = await brain_usage.usage_map(keys)
 
     profile_leaves = [
@@ -64,11 +67,13 @@ async def brain_tree() -> dict:
         for m in mats]
     learning_leaves = [
         _leaf("learning", f"learning:{r[0]}", r[2] or (r[1] or "")[:40], r[3], r[4], umap) for r in learns]
+    note_leaves = [_leaf("note", f"note:{r[0]}", r[1], "手写", None, umap) for r in notes]
 
     return {"branches": [
         {"kind": "material", "label": "材料", "children": material_leaves},
         {"kind": "learning", "label": "心得", "children": learning_leaves},
         {"kind": "profile", "label": "画像", "children": profile_leaves},
+        {"kind": "note", "label": "笔记", "children": note_leaves},
     ]}
 
 

@@ -105,6 +105,23 @@ async def _learnings_route(db, query: str, spawn_id: int | None) -> dict[int, st
         return {}
 
 
+async def _notes_route(db, query: str) -> dict[int, str]:
+    """FTS over hand-written notes. Notes are global — visible to Arslan AND every
+    spawn (human + agent shared). Any failure → {} (never fatal)."""
+    match = _safe_match_query(query)
+    if not match:
+        return {}
+    try:
+        rows = (await db.execute(sa_text(
+            "SELECT n.id, n.title, n.content FROM notes_fts f JOIN notes n ON n.id = f.rowid "
+            "WHERE f.text MATCH :q ORDER BY rank LIMIT :lim"),
+            {"q": match, "lim": CANDIDATES})).all()
+        return {r[0]: f"{r[1]}: {r[2]}" for r in rows}
+    except Exception as exc:  # noqa: BLE001 — notes route never fatal
+        logger.warning("notes route failed (non-fatal): %s", exc)
+        return {}
+
+
 async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[int], dict]:
     """Cosine top-CANDIDATES over the scope's vectors (active model only).
     Any failure or absence of provider/vectors → empty route (non-fatal)."""
@@ -165,11 +182,17 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
     # Fold in 心得 (top 2) — distilled know-how retrieved alongside material.
     async with db_session.AsyncSessionLocal() as db:
         learn = await _learnings_route(db, query, spawn_id)
+        note_hits = await _notes_route(db, query)
     learn_items = list(learn.items())[:2]
     for lid, _lt in learn_items:
         await brain_usage.record("learning", f"learning:{lid}", used_ref=used_ref)
     learn_chunks = [(f"心得#{lid}", ltext) for lid, ltext in learn_items]
-    return rerank(query, [(src, txt) for src, txt, _c, _s in hits] + learn_chunks)
+    # Fold in 笔记 (top 2) — hand-written notes are global (no spawn partition).
+    note_items = list(note_hits.items())[:2]
+    for nid, _nt in note_items:
+        await brain_usage.record("note", f"note:{nid}", used_ref=used_ref)
+    note_chunks = [(f"笔记:{txt.split(': ', 1)[0]}", txt.split(': ', 1)[-1]) for nid, txt in note_items]
+    return rerank(query, [(src, txt) for src, txt, _c, _s in hits] + learn_chunks + note_chunks)
 
 
 def knowledge_block(chunks: list[tuple[str, str]]) -> str:
