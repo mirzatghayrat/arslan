@@ -99,17 +99,6 @@ class Setting(Base):
     value = Column(Text, nullable=False)
 
 
-class BuildSession(Base):
-    """Persisted in-progress spawn-build dialogue; enables WebSocket resume."""
-
-    __tablename__ = "build_sessions"
-
-    session_id = Column(String(50), primary_key=True)
-    state_json = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
 class ArslanMessage(Base):
     """The orchestrator conversation (Layer 1). display != memory at the row level."""
 
