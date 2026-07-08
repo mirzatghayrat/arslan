@@ -301,6 +301,20 @@ function makeActions(set: SetState, get: GetState) {
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),
+            // 🔒 SECURITY: artifactHtml comes ONLY from the backend stream_end frame's
+            // artifact (HX-2 HTML deliverable channel — sniffed/stored server-side),
+            // NEVER from LLM message text. Same invariant as artifactSvg/Chart/Pptx.
+            ...(frame.artifact?.kind === "html" && frame.artifact.content
+              ? {
+                  artifactHtml: {
+                    title: frame.artifact.title ?? "HTML 文档",
+                    filename: frame.artifact.filename ?? "document.html",
+                    content: frame.artifact.content,
+                    complete: frame.artifact.complete ?? true,
+                    bytes: frame.artifact.bytes ?? frame.artifact.content.length,
+                  },
+                }
+              : {}),
           };
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
           if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];

@@ -12,7 +12,7 @@ import { Message, MessageAttachment, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
-import MessageBody from './MessageBody';
+import MessageBody, { HtmlDocCard } from './MessageBody';
 import CopyButton from './CopyButton';
 import WorkingPulse from './WorkingPulse';
 import LiveActivity from './LiveActivity';
@@ -703,6 +703,14 @@ export default function OrchestratorChat({
                     {/* 2. Tool-Activity Card — humanized headline, raw JSON behind 详情 (shared component) */}
                     {msg.toolActivity && <ToolActivityCard activity={msg.toolActivity} />}
 
+                    {/* 🔒 HTML deliverable card — artifactHtml comes ONLY from the backend
+                        stream_end frame's kind:"html" artifact (HX-2), never LLM text. */}
+                    {msg.artifactHtml && (
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                                   filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
+                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
+                    )}
+
                     {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}
                     {msg.escalation && (
                       <div className={`p-4 rounded-2xl border flex items-start gap-3.5 shadow-md ${
@@ -896,6 +904,15 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
+                  {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
+                  {msg.artifactHtml && (
+                    <div className="mt-4">
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                                   filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
+                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
+                    </div>
+                  )}
+
                   {/* Brutalist Escalation Panel */}
                   {msg.escalation && (
                     <div className="mt-4 border-2 border-danger bg-background p-3 text-[11px]">
@@ -1073,6 +1090,15 @@ export default function OrchestratorChat({
                   {msg.toolActivity && (
                     <div className="pl-5 pt-2">
                       <ToolActivityCard activity={msg.toolActivity} />
+                    </div>
+                  )}
+
+                  {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
+                  {msg.artifactHtml && (
+                    <div className="pl-5 pt-2">
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                                   filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
+                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
                     </div>
                   )}
 

@@ -716,6 +716,8 @@
     "download_html": "Als .html",
     "html_doc": "HTML-Dokument · {{kb}} KB",
     "html_preview": "HTML-Vorschau",
+    "html_truncated": "⚠ Ausgabe abgeschnitten",
+    "html_incomplete": "Dokument unvollständig (Ausgabe wurde abgeschnitten)",
     "preview": "Vorschau",
     "close": "Schließen"
   },

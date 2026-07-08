@@ -1,4 +1,4 @@
-import type { MessageAttachment } from "../types";
+import type { HtmlArtifact, MessageAttachment } from "../types";
 
 export interface EquipmentItem {
   key: string;
@@ -237,6 +237,9 @@ export interface ArslanThreadItem {
   equipment?: Equipment | null; // kind === "system" (spawn_created)
   intro?: string | null; // kind === "system" (spawn_created)
   toolSteps?: ToolStep[]; // spawn replies: folded tool activity
+  /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
+   *  🔒 Populated ONLY from the backend frame, NEVER from LLM message text. */
+  artifactHtml?: HtmlArtifact;
   escalation?: EscalationInfo; // kind === "escalation"
   /** True when this deliverable is a pending direction proposal (requires confirm_direction). */
   isProposal?: boolean;
@@ -270,7 +273,15 @@ export type ArslanServerMessage =
   | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
   | { type: "stream_chunk"; content: string }
-  | { type: "stream_end"; message_id: number | null }
+  // stream_end may carry an HTML deliverable packaged by the backend spawn-output
+  // exit (HX-2): {kind:"html", filename, title, bytes, complete, content}. It rides
+  // the SAME frame the store turns into the chat item. 🔒 Backend only.
+  | {
+      type: "stream_end";
+      message_id: number | null;
+      artifact?: { kind: string; filename?: string; title?: string; bytes?: number;
+                   complete?: boolean; content?: string };
+    }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
   | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string }

@@ -716,6 +716,8 @@
     "download_html": "下载 .html",
     "html_doc": "HTML 文档 · {{kb}} KB",
     "html_preview": "HTML 预览",
+    "html_truncated": "⚠ 输出被截断",
+    "html_incomplete": "文档不完整(输出被截断)",
     "preview": "预览",
     "close": "关闭"
   },

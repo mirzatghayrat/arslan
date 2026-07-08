@@ -302,6 +302,9 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         text: item.content,
         timestamp,
         toolActivity,
+        // 🔒 HTML deliverable card — set in arslanStore from the stream_end frame's
+        // kind:"html" artifact (HX-2 channel), NEVER from LLM message text.
+        artifactHtml: item.artifactHtml,
         // Pass through staged orchestration fields
         spawnId: item.spawnId != null ? String(item.spawnId) : undefined,
         isProposal: item.isProposal ?? undefined,
@@ -320,6 +323,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       senderAvatar: "🦁",
       text: item.content,
       timestamp,
+      // 🔒 stream_end html artifact can also ride an arslan-role turn (escalation path).
+      artifactHtml: item.artifactHtml,
     };
   });
 }

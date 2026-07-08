@@ -716,6 +716,8 @@
     "download_html": "Télécharger .html",
     "html_doc": "Document HTML · {{kb}} KB",
     "html_preview": "Aperçu HTML",
+    "html_truncated": "⚠ Sortie tronquée",
+    "html_incomplete": "Document incomplet (sortie tronquée)",
     "preview": "Aperçu",
     "close": "Fermer"
   },

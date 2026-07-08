@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import MessageBody from '../components/MessageBody';
+import MessageBody, { HtmlDocCard } from '../components/MessageBody';
 
 // i18n mock: titles render as their key so we can query by them.
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
@@ -78,8 +78,76 @@ describe("embedded HTML doc salvage (live incident: preamble + fence broke the c
     expect(screen.getByTestId("html-doc-card")).toBeTruthy();
   });
 
-  it("does not salvage incomplete docs (no </html>)", () => {
+  it("does not salvage short incomplete docs (no </html>, sub-2000 chars)", () => {
     render(<MessageBody text={"讲解一下 <!DOCTYPE html><html><body>片段"} />);
     expect(screen.queryByTestId("html-doc-card")).toBeNull();
+  });
+
+  it("closed-doc salvage is unchanged and carries NO truncation note", () => {
+    render(<MessageBody text={"前言\n" + DOC} />);
+    expect(screen.getByTestId("html-doc-card")).toBeTruthy();
+    expect(screen.queryByText("msg.html_incomplete")).toBeNull();
+    expect(screen.queryByText("msg.html_truncated")).toBeNull();
+  });
+
+  it("a fenced ```html snippet (teaching example) still renders as a normal code block", () => {
+    // Complete but tiny (< 400 chars) → "not a real document" → no card (acceptance #2 mirror).
+    const text =
+      "看这个教学示例:\n```html\n<!DOCTYPE html><html><body>hi</body></html>\n```\n以上就是最小骨架。";
+    render(<MessageBody text={text} />);
+    expect(screen.queryByTestId("html-doc-card")).toBeNull();
+  });
+});
+
+describe("TRUNCATED embedded doc salvage (live incident msg 465: 21K chars, no </html>)", () => {
+  // Shape of the incident: short preamble + <!DOCTYPE html> cut mid-CSS by max-tokens.
+  const TRUNCATED =
+    "好的,我为您生成了完整的演示文稿:\n\n<!DOCTYPE html>\n<html>\n<head><title>OKX 演示</title><style>body{" +
+    "margin:0;padding:0;".repeat(200); // ≥ 2000 chars after the doctype, no </html>
+
+  it("salvages the truncated doc into the card (not a code wall) with the incomplete note", () => {
+    render(<MessageBody text={TRUNCATED} />);
+    expect(screen.getByTestId("html-doc-card")).toBeTruthy();
+    // preamble survives as prose
+    expect(screen.getByText(/我为您生成了完整的演示文稿/)).toBeTruthy();
+    // 「文档不完整(输出被截断)」 note + badge (i18n mocked → keys render literally)
+    expect(screen.getByText("msg.html_incomplete")).toBeTruthy();
+    expect(screen.getByText("msg.html_truncated")).toBeTruthy();
+    // preview + download still offered
+    expect(screen.getByTitle("msg.preview")).toBeTruthy();
+    expect(screen.getByTitle("msg.download_html")).toBeTruthy();
+  });
+
+  it("a sub-2000-char unclosed doctype renders normally (no salvage)", () => {
+    const short = "介绍:\n<!DOCTYPE html>\n<html><head><style>" + "x".repeat(500);
+    render(<MessageBody text={short} />);
+    expect(screen.queryByTestId("html-doc-card")).toBeNull();
+  });
+});
+
+describe("HtmlDocCard artifact props (HX-3 stream_end kind:html deliverable card)", () => {
+  const content = "<!DOCTYPE html><html><head><title>OKX 演示</title></head><body>deck";
+
+  it("shows the artifact title + size, the 截断 badge when complete=false, and the download button", () => {
+    render(
+      <HtmlDocCard
+        html={content}
+        title="OKX 演示"
+        filename="run_68_okx-deck.html"
+        bytes={21628}
+        truncated
+      />,
+    );
+    expect(screen.getByText(/OKX 演示/)).toBeTruthy();
+    expect(screen.getByText(/21 KB/)).toBeTruthy();
+    expect(screen.getByText("msg.html_truncated")).toBeTruthy();
+    expect(screen.getByTitle("msg.download_html")).toBeTruthy();
+    expect(screen.getByTitle("msg.preview")).toBeTruthy();
+  });
+
+  it("shows no 截断 badge for a complete artifact", () => {
+    render(<HtmlDocCard html={content + "</body></html>"} title="OKX 演示" bytes={4096} />);
+    expect(screen.queryByText("msg.html_truncated")).toBeNull();
+    expect(screen.queryByText("msg.html_incomplete")).toBeNull();
   });
 });

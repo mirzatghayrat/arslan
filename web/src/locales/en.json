@@ -716,6 +716,8 @@
     "download_html": "Download .html",
     "html_doc": "HTML document · {{kb}} KB",
     "html_preview": "HTML preview",
+    "html_truncated": "⚠ Output truncated",
+    "html_incomplete": "Document incomplete (output was truncated)",
     "preview": "Preview",
     "close": "Close"
   },
