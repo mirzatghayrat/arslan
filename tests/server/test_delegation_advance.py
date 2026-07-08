@@ -223,6 +223,10 @@ async def test_turn2_short_confirm_advances_to_invite_no_second_answer(maker, mo
     _stub_answer_llm(monkeypatch)
     monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
     await arslan.handle_user_message("main", LONG_TASK_MSG, lambda e: None)  # turn 1: divert
+    # Turn 1's chip PARKED an invite; clear it so turn 2 exercises the ROUTE-advance
+    # path (chip ignored/expired). The parked-invite typed-accept path is covered by
+    # test_short_confirm_accepts_parked_invite.
+    await phase_service.clear("main")
 
     answered = []
 
@@ -258,7 +262,11 @@ async def test_turn2_short_confirm_roster_member_dispatches(maker, monkeypatch):
     _stub_answer_llm(monkeypatch)
     monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
     await roster_service.join("main", 6, via="invited")
-    await arslan.handle_user_message("main", LONG_TASK_MSG, lambda e: None)  # turn 1...
+    await arslan.handle_user_message("main", LONG_TASK_MSG, lambda e: None)
+    # Turn 1's chip parked an invite; clear it so turn 2 exercises the ROUTE-advance
+    # dispatch path (typed-accept of a parked invite is covered separately).
+    from server.services import phase_service
+    await phase_service.clear("main")  # turn 1...
 
     answered = []
 
@@ -291,6 +299,11 @@ async def test_consecutive_route_advances_without_short_confirm(maker, monkeypat
     _stub_answer_llm(monkeypatch)
     monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
     await arslan.handle_user_message("main", LONG_TASK_MSG, lambda e: None)  # turn 1: divert
+    # Turn 1's chip PARKED an invite; clear it so turn 2 exercises the ROUTE-advance
+    # path (chip ignored/expired). The parked-invite typed-accept path is covered by
+    # test_short_confirm_accepts_parked_invite.
+    from server.services import phase_service
+    await phase_service.clear("main")
 
     answered = []
 
@@ -384,6 +397,11 @@ async def test_short_confirm_advance_logs_repeated_confirmation(maker, monkeypat
     _stub_answer_llm(monkeypatch)
     monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
     await arslan.handle_user_message("main", LONG_TASK_MSG, lambda e: None)  # turn 1: divert
+    # Turn 1's chip PARKED an invite; clear it so turn 2 exercises the ROUTE-advance
+    # path (chip ignored/expired). The parked-invite typed-accept path is covered by
+    # test_short_confirm_accepts_parked_invite.
+    from server.services import phase_service
+    await phase_service.clear("main")
     await arslan.handle_user_message("main", "好", lambda e: None)           # turn 2: confirm
 
     rc = await _events_of_kind("repeated_confirmation")
@@ -418,3 +436,80 @@ async def test_answer_path_short_confirm_logs_repeated_confirmation_count(maker,
         evs = (await s.execute(select(ConversationEvent))).scalars().all()
     other = [e for e in evs if e.kind == "repeated_confirmation" and e.conversation_id == "other"]
     assert len(other) == 1 and other[0].ref["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Typing consent accepts a parked invite (PA-6 real-machine gap):
+# a pending inline invite + a short confirm must dispatch the parked brief —
+# exactly like clicking Accept. The router must never see the message.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_short_confirm_accepts_parked_invite(maker, monkeypatch):
+    import server.orchestrator.arslan as arslan_mod
+    from server.services import phase_service
+
+    await phase_service.set_inviting(
+        "conv-inv", 6, task_brief="做一份新能源简报", user_message="给我出一份简报PPT",
+        needs_proposal=False, announced=True)
+
+    calls: list[dict] = []
+
+    async def _spy_dispatch(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw):
+        calls.append({"conv": conversation_id, "spawn_id": spawn_id,
+                      "task_brief": task_brief, "needs_proposal": needs_proposal, **kw})
+
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _spy_dispatch)
+
+    async def _router_must_not_run(conv, msg):  # noqa: ANN001
+        raise AssertionError("router.route must not be called on a typed invite-accept")
+
+    monkeypatch.setattr(arslan_mod.router, "route", _router_must_not_run)
+
+    events: list[dict] = []
+    await arslan_mod.handle_user_message("conv-inv", "好", events.append)
+
+    assert len(calls) == 1
+    assert calls[0]["spawn_id"] == 6
+    assert calls[0]["task_brief"] == "做一份新能源简报"
+    assert calls[0]["announce"] is False          # Arslan spoke the brief before the card
+    assert await phase_service.get_pending_invite("conv-inv") is None   # phase cleared
+
+    rows = await _events_of_kind("delegation_advance")
+    assert any(r.conversation_id == "conv-inv" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_non_confirm_leaves_invite_parked(maker, monkeypatch):
+    import server.orchestrator.arslan as arslan_mod
+    from server.orchestrator.router import RouterResult
+    from server.services import phase_service
+
+    await phase_service.set_inviting(
+        "conv-inv2", 6, task_brief="brief", user_message="orig",
+        needs_proposal=False, announced=True)
+
+    dispatched: list[int] = []
+
+    async def _spy_dispatch(*a, **kw):  # noqa: ANN001
+        dispatched.append(1)
+
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _spy_dispatch)
+
+    async def _route_answer(conv, msg):  # noqa: ANN001
+        return RouterResult(action="answer", reason="test")
+
+    monkeypatch.setattr(arslan_mod.router, "route", _route_answer)
+
+    from tests.server.conftest import MockAdapter
+    adapter = MockAdapter(chat_content="收到,你想聚焦哪块?", stream_chunks=["收到,你想聚焦哪块?"])
+    monkeypatch.setattr(arslan_mod, "_get_adapter", lambda: adapter, raising=False)
+    from server.orchestrator import tool_loop as tl
+    monkeypatch.setattr(tl, "_get_adapter", lambda: adapter)
+
+    events: list[dict] = []
+    await arslan_mod.handle_user_message("conv-inv2", "换个主题,做人工智能方向的", events.append)
+
+    assert dispatched == []                                            # not treated as accept
+    assert await phase_service.get_pending_invite("conv-inv2") is not None   # invite stays parked

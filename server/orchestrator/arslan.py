@@ -378,6 +378,30 @@ async def handle_user_message(
         # 1. persist the user turn
         await memory.add_message(conversation_id, "user", user_message)
 
+        # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
+        # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
+        # in words — it must dispatch the parked brief exactly like clicking Accept.
+        # Without this, the router reads a post-card "好" as answer-thanks and the
+        # parked delegation silently dies (real-machine gap found in the PA-6 run).
+        pending_invite = await phase_service.get_pending_invite(conversation_id)
+        if pending_invite is not None and confirm_lexicon.is_short_confirm(user_message):
+            await phase_service.clear(conversation_id)
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "delegation_advance",
+                {"trigger": "invite_text_confirm", "spawn_id": pending_invite.get("spawn_id")},
+                "文字确认接受邀请 → 派发停放任务")
+            await dispatch_routed(
+                conversation_id, pending_invite["spawn_id"],
+                pending_invite.get("task_brief") or "",
+                bool(pending_invite.get("needs_proposal")), emit,
+                user_message=pending_invite.get("user_message") or user_message,
+                # Arslan already spoke its brief before the card — don't repeat it.
+                announce=not bool(pending_invite.get("announced")),
+            )
+            await memory.maybe_compact(conversation_id)
+            return
+
         # 1b. if a proposal is pending, classify the reply before routing
         pending = await phase_service.get_pending(conversation_id)
         if pending and pending["phase"] == "proposing":
