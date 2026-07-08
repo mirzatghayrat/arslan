@@ -9,7 +9,11 @@ the document is stored on disk (acceptance #3: retrievable), served via
 instead of the raw HTML.
 
 Boundary (acceptance #2): a doctype inside a markdown code fence (``` or ~~~) is
-teaching/example code and stays verbatim — never packaged.
+teaching/example code and stays verbatim — with ONE deterministic exception (PA-6
+real-machine finding, run 70): a fenced doc that is COMPLETE (</html>), ≥2000 chars,
+and ≥70% of the whole message is the deliverable itself merely wrapped in a fence by
+a disobedient model (the persona forbids fencing full documents; don't bet on model
+obedience) — that gets packaged. Fenced FRAGMENTS and teaching snippets stay verbatim.
 """
 from __future__ import annotations
 
@@ -26,6 +30,10 @@ MIN_TRUNCATED_CHARS = 2000
 # Frontend parity (MessageBody.extractEmbeddedHtmlDoc): a complete doc under 400 chars
 # is "not a real document".
 _MIN_COMPLETE_CHARS = 400
+# Fenced-deliverable exception: a FENCED doc is only a deliverable (not a protected
+# snippet) when complete AND at least this long AND covering this share of the message.
+_FENCED_DELIVERABLE_MIN_CHARS = 2000
+_FENCED_DELIVERABLE_MIN_RATIO = 0.7
 _SLUG_MAX = 40
 
 _DOCTYPE_RE = re.compile(r"<!doctype html", re.IGNORECASE)
@@ -87,7 +95,9 @@ def sniff_html_doc(text: str) -> dict | None:
         return None
     start = _first_unfenced_doctype(text)
     if start is None:
-        return None
+        start = _fenced_deliverable_doctype(text)
+        if start is None:
+            return None
     close = _HTML_CLOSE_RE.search(text, start)
     if close is not None:
         html = text[start:close.end()]
@@ -108,6 +118,32 @@ def sniff_html_doc(text: str) -> dict | None:
         pre = _DANGLING_FENCE_RE.sub("", pre)
     pre = pre.rstrip()
     return {"pre": pre, "html": html, "complete": complete, "title": _extract_title(html)}
+
+
+def _fenced_deliverable_doctype(text: str) -> int | None:
+    """PA-6 exception: offset of a FENCED doc that is really the deliverable.
+
+    All three must hold (deterministic, else None → fence stays respected):
+      • complete — a `</html>` follows the doctype;
+      • substantial — the doc is ≥ _FENCED_DELIVERABLE_MIN_CHARS;
+      • dominant — the doc is ≥ _FENCED_DELIVERABLE_MIN_RATIO of the whole message
+        (a teaching example buried in long prose never dominates).
+    The doc slice starts at the doctype, so the fence markers themselves are never
+    part of the packaged HTML; the opening fence left dangling in the preamble is
+    trimmed by the caller's existing dangling-fence logic.
+    """
+    m = _DOCTYPE_RE.search(text)
+    if m is None:
+        return None
+    close = _HTML_CLOSE_RE.search(text, m.start())
+    if close is None:
+        return None  # truncated-inside-fence stays the declared HX-2 gap
+    doc_len = close.end() - m.start()
+    if doc_len < _FENCED_DELIVERABLE_MIN_CHARS:
+        return None
+    if doc_len / max(len(text), 1) < _FENCED_DELIVERABLE_MIN_RATIO:
+        return None
+    return m.start()
 
 
 def artifacts_dir() -> Path:

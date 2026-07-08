@@ -89,6 +89,9 @@
     "draft": "下書き",
     "drafting": "作成中…"
   },
+  "clarify_card": {
+    "answered": "選択済み"
+  },
   "invite_card": {
     "heading": "{{reason}}のため、{{name}} を呼びますか？",
     "confirm": "確認",

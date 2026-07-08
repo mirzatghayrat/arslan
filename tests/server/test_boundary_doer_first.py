@@ -1,4 +1,9 @@
-"""组件2:doer-first 决策 — 点名才直派,推断则 Arslan 自己做 + 仅对 trusted 飘 chip。"""
+"""组件2:doer-first 决策 — 点名才直派,推断则 Arslan 自己做 + 飘"接手?"chip。
+
+PA-2 验收① updated the chip gate: it used to be trusted-only, which killed the live
+incident's only advancement channel (Deck Master wasn't trusted → no chip → infinite
+confirm loop). The chip is now emitted for EVERY band — propose_invite is itself the
+user-consent gate; trust band governs silent auto-join, not invitability."""
 import pytest
 
 from server.orchestrator import arslan
@@ -64,7 +69,7 @@ async def test_resolve_at_mentioned_spawn_prefix_ambiguity(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_inference_does_it_itself_and_chips_trusted(monkeypatch):
+async def test_inference_does_it_itself_and_chips(monkeypatch):
     answered, frames = [], []
 
     async def _answer(conv, msg, emit, **kw):
@@ -73,8 +78,6 @@ async def test_inference_does_it_itself_and_chips_trusted(monkeypatch):
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
-    monkeypatch.setattr(arslan.spawn_trust, "trust",
-                        lambda session, sid: _aw({"band": "trusted", "tasks": 5, "accept_rate": 0.9}))
 
     dispatched = []
     monkeypatch.setattr(arslan, "_dispatch_spawn", lambda *a, **k: dispatched.append(a))
@@ -92,7 +95,9 @@ async def test_inference_does_it_itself_and_chips_trusted(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_inference_green_no_chip(monkeypatch):
+async def test_inference_untrusted_band_also_gets_chip(monkeypatch):
+    """PA-2 验收①: a spawn with NO trust standing still gets the advancement chip —
+    the old trusted-only gate left non-trusted spawns with no escape from the divert."""
     frames = []
 
     async def _answer(conv, msg, emit, **kw):
@@ -100,12 +105,14 @@ async def test_inference_green_no_chip(monkeypatch):
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Newbie"))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
-    monkeypatch.setattr(arslan.spawn_trust, "trust",
-                        lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
+    parked = []
+    monkeypatch.setattr(arslan.phase_service, "set_inviting",
+                        lambda *a, **k: parked.append(k) or _aw(None))
 
     result = arslan.router.RouterResult(action="route", spawn_id=7, task_brief="做点 Y")
     await arslan._handle_route("main", result, frames.append, user_message="帮我做点 Y")
-    assert not any(f.get("type") == "propose_invite" for f in frames)
+    assert any(f.get("type") == "propose_invite" for f in frames)
+    assert parked and parked[-1].get("announced") is True
 
 
 @pytest.mark.asyncio
@@ -119,8 +126,7 @@ async def test_dual_track_grows_inferred_spawn(monkeypatch):
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
-    monkeypatch.setattr(arslan.spawn_trust, "trust",
-                        lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
+    monkeypatch.setattr(arslan.phase_service, "set_inviting", lambda *a, **k: _aw(None))
     fired = []
     monkeypatch.setattr(arslan, "_fire_dual_track",
                         lambda conv, sid, spawn_name, sig: fired.append((conv, sid, spawn_name, sig)))
@@ -145,8 +151,7 @@ async def test_dual_track_skips_short_answer(monkeypatch):
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
-    monkeypatch.setattr(arslan.spawn_trust, "trust",
-                        lambda session, sid: _aw({"band": "green", "tasks": 0, "accept_rate": 0.0}))
+    monkeypatch.setattr(arslan.phase_service, "set_inviting", lambda *a, **k: _aw(None))
     fired = []
     monkeypatch.setattr(arslan, "_fire_dual_track",
                         lambda conv, sid, spawn_name, sig: fired.append((conv, sid, spawn_name, sig)))

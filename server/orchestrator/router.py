@@ -80,7 +80,10 @@ _SYSTEM = (
     "A-share ETF flows'; 'summarize this article: ...'; 'write a product description for our oat milk'.\n"
     "When uncertain between route and answer/clarify, PREFER answer/clarify — Arslan confirms "
     "the need with the user before delegating to a spawn. Do not delegate prematurely.\n"
-    "new_facts: extract any durable user preferences/facts worth remembering (or []).\n"
+    "new_facts: extract any durable user preferences/facts worth remembering (or []). "
+    "Each fact's content MUST be written in the same language as the user's own messages "
+    "(事实条目必须使用用户消息所用的语言书写)— never translate the user's language into English: "
+    "the fact text is shown to the user verbatim in their chat.\n"
 )
 
 
@@ -182,6 +185,24 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
     )
     await _persist(conversation_id, user_message, action, result, _audit_payload(parsed, raw))
     return result
+
+
+async def previous_decision(conversation_id: str) -> RouterDecision | None:
+    """The RouterDecision persisted BEFORE the current turn's (PA-2 consecutive-route rule).
+
+    route() persists the current turn's row before the orchestration loop handles the
+    result, so by the time _handle_route consults this, the LATEST row for the
+    conversation is this very turn's own decision — the previous turn's decision is the
+    second-latest. Returns None when there is no earlier row."""
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.execute(
+            select(RouterDecision)
+            .where(RouterDecision.conversation_id == conversation_id)
+            .order_by(RouterDecision.id.desc())
+            .offset(1)
+            .limit(1)
+        )
+        return rows.scalars().first()
 
 
 async def _persist(

@@ -4,7 +4,7 @@ description: 头脑风暴 —— 任何创造性工作（做功能/搭组件/加
 version: 0.1.0
 authors:
   - Arslan
-source: adapted from obra/superpowers · brainstorming (MIT, © 2025 Jesse Vincent)
+source: adapted from github:obra/superpowers · skills/brainstorming/SKILL.md (MIT, © 2025 Jesse Vincent; upstream verified 2026-07-09 @ d884ae04edebef577e82ff7c4e143debd0bbec99)
 ---
 
 ## Trigger

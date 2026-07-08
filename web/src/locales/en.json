@@ -89,6 +89,9 @@
     "draft": "Draft",
     "drafting": "Drafting…"
   },
+  "clarify_card": {
+    "answered": "Choice sent"
+  },
   "invite_card": {
     "heading": "Pull {{name}} in because {{reason}}?",
     "confirm": "Confirm",

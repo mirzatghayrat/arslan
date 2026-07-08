@@ -65,6 +65,9 @@ interface ArslanState {
   // pendingRoute / pendingProposalSpawnId (execution-phase markers cleared on stream_end).
   dismissAllPending: () => void;
   markProposalConfirmed: (spawnId: number) => void;
+  // PA-3: flip a clarify card to its answered (disabled) state once the user picked
+  // an option — a stale re-click can never send a second user_message.
+  markClarifyAnswered: (itemId: number) => void;
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
   clearPendingStaffing: () => void;
@@ -156,6 +159,13 @@ function makeActions(set: SetState, get: GetState) {
         items: get().items.map((it) =>
           it.isProposal && Number(it.spawnId) === spawnId ? { ...it, isProposal: false } : it),
       }),
+    markClarifyAnswered: (itemId: number) =>
+      set({
+        items: get().items.map((it) =>
+          it.id === itemId && it.clarifyOptions && !it.clarifyOptions.answered
+            ? { ...it, clarifyOptions: { ...it.clarifyOptions, answered: true } }
+            : it),
+      }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingCommand: () => set({ pendingCommand: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
@@ -196,7 +206,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_staffing", "suggest_update", "spawn_updated"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -594,6 +604,26 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_invite":
           set({ pendingInvite: { spawnId: frame.spawn_id, reason: frame.reason } });
+          break;
+        case "clarify_options":
+          // PA-3 structured clarification card: rendered as a thread ITEM (question +
+          // one-click option buttons). A pick sends the label as a normal user_message
+          // and markClarifyAnswered disables the card. 🔒 question/options come ONLY
+          // from the backend clarify_options frame (validated/clamped 2-4 server-side),
+          // NEVER from LLM message text — same invariant as propose_invite/suggest_create.
+          set({
+            pending: false,
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "message",
+                role: "arslan",
+                content: frame.question,
+                clarifyOptions: { question: frame.question, options: frame.options, answered: false },
+              },
+            ],
+          });
           break;
         case "propose_run_command":
           set({ pendingCommand: { callId: frame.call_id, pretty: frame.pretty,

@@ -89,6 +89,9 @@
     "draft": "Borrador",
     "drafting": "Generando…"
   },
+  "clarify_card": {
+    "answered": "Elección enviada"
+  },
   "invite_card": {
     "heading": "¿Traer a {{name}} porque {{reason}}?",
     "confirm": "Confirmar",

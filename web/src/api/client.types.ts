@@ -222,6 +222,12 @@ export interface StaffingCandidate {
   why: string;
 }
 
+/** One option of a `clarify_options` frame (PA-3 structured clarification card). */
+export interface ClarifyOption {
+  label: string;
+  hint?: string;
+}
+
 /** A renderable item in the unified Arslan thread. */
 export interface ArslanThreadItem {
   id: number;
@@ -255,6 +261,10 @@ export interface ArslanThreadItem {
   /** role === "user": attachments sent with this message (session-only display echo —
    *  set client-side on send, never present on history-restored items). */
   attachments?: MessageAttachment[];
+  /** PA-3 structured clarification card (from a `clarify_options` frame): question +
+   *  2-4 one-click options. `answered` flips true once the user picks (disables the
+   *  card). Session-only — a history reload shows the persisted compact text instead. */
+  clarifyOptions?: { question: string; options: ClarifyOption[]; answered?: boolean };
 }
 
 /** A row from the server `history` frame. */
@@ -311,6 +321,7 @@ export type ArslanServerMessage =
   | { type: "roster_event"; action: string; spawn_id: number; spawn_name: string | null }
 | { type: "attachment_stored"; spawn_name: string | null; chunks: number }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
+  | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
       current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string }
   | { type: "spawn_updated"; spawn_id: number; spawn_name: string;

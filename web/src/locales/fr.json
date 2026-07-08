@@ -89,6 +89,9 @@
     "draft": "Brouillon",
     "drafting": "Génération…"
   },
+  "clarify_card": {
+    "answered": "Choix envoyé"
+  },
   "invite_card": {
     "heading": "Faire venir {{name}} car {{reason}} ?",
     "confirm": "Confirmer",

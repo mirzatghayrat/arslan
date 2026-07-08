@@ -211,3 +211,10 @@ async def test_router_filters_junk_new_facts(maker, monkeypatch):
     monkeypatch.setattr(router, "_get_adapter", lambda: _stub_adapter(raw))
     result = await router.route("main", "hi")
     assert result.new_facts == [{"content": "good fact"}]
+
+
+def test_pa4_new_facts_language_rule_in_prompt():
+    """PA-4: user_facts#51 was extracted in English into a Chinese chat and rendered
+    raw by fact_saved — the extraction prompt must force the user's own language."""
+    from server.orchestrator import router
+    assert "事实条目必须使用用户消息所用的语言书写" in router._SYSTEM

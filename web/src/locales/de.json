@@ -89,6 +89,9 @@
     "draft": "Entwurf",
     "drafting": "Wird erstellt …"
   },
+  "clarify_card": {
+    "answered": "Auswahl gesendet"
+  },
   "invite_card": {
     "heading": "{{name}} dazuholen, weil {{reason}}?",
     "confirm": "Bestätigen",

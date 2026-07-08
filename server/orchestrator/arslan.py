@@ -12,7 +12,15 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
-from server.orchestrator import dispatcher, memory, promise_guard, router, run_trace, tool_loop
+from server.orchestrator import (
+    confirm_lexicon,
+    dispatcher,
+    memory,
+    promise_guard,
+    router,
+    run_trace,
+    tool_loop,
+)
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
@@ -28,7 +36,6 @@ from server.services import (
     spawn_drafter,
     spawn_match_service,
     spawn_service,
-    spawn_trust,
     staffing_gather,
 )
 from server.services.llm_factory import build_adapter
@@ -228,6 +235,23 @@ _NO_BACKGROUND_EXEC = (
     "“正在/将要/已交给”;做不到就如实说明。"
 )
 
+# PA-3: when Arslan genuinely needs the user to choose between a few directions, it must
+# use the structured choice card (one click advances the conversation) — a free-text
+# counter-question restarts the confirm loop this PA round exists to kill.
+_CLARIFY_CHOICE_NUDGE = (
+    "\n\n需要用户在几个方向里选择时,调用 ask_user_choice 工具(给出 2-4 个具体选项),"
+    "不要用纯文本反问。"
+)
+
+# PA-4: no-repaste iron rule. Live incident (thread-1783523936187): the SAME deck
+# outline was re-pasted verbatim 3x across consecutive answer turns while the confirm
+# loop spun. Content already delivered in-history and unchanged must be REFERENCED,
+# not re-pasted. Kept as its own constant so tests can pin it (A3 pattern).
+_NO_REPASTE = (
+    "\n\n对话历史里已经完整给出过、且没有修改的内容(大纲/清单/代码等),不要整段重贴——"
+    "引用它(如“沿用上面那份大纲”)并只写新增或变化的部分。"
+)
+
 
 def _now_line() -> str:
     """Current server time injected into Arslan's prompt so date/time questions need no search."""
@@ -353,6 +377,30 @@ async def handle_user_message(
     with usage_sink.collecting():
         # 1. persist the user turn
         await memory.add_message(conversation_id, "user", user_message)
+
+        # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
+        # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
+        # in words — it must dispatch the parked brief exactly like clicking Accept.
+        # Without this, the router reads a post-card "好" as answer-thanks and the
+        # parked delegation silently dies (real-machine gap found in the PA-6 run).
+        pending_invite = await phase_service.get_pending_invite(conversation_id)
+        if pending_invite is not None and confirm_lexicon.is_short_confirm(user_message):
+            await phase_service.clear(conversation_id)
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "delegation_advance",
+                {"trigger": "invite_text_confirm", "spawn_id": pending_invite.get("spawn_id")},
+                "文字确认接受邀请 → 派发停放任务")
+            await dispatch_routed(
+                conversation_id, pending_invite["spawn_id"],
+                pending_invite.get("task_brief") or "",
+                bool(pending_invite.get("needs_proposal")), emit,
+                user_message=pending_invite.get("user_message") or user_message,
+                # Arslan already spoke its brief before the card — don't repeat it.
+                announce=not bool(pending_invite.get("announced")),
+            )
+            await memory.maybe_compact(conversation_id)
+            return
 
         # 1b. if a proposal is pending, classify the reply before routing
         pending = await phase_service.get_pending(conversation_id)
@@ -517,6 +565,12 @@ async def handle_user_message(
             # Router no longer sees create-intent — release any gather phase.
             if gathering:
                 await phase_service.clear(conversation_id)
+            # PA-4: a bare short-confirm the router classifies as plain `answer` never
+            # reaches the PA-2 advance machinery (that only runs on route) — log the
+            # cheap repeated_confirmation counter here so the loop stays visible even
+            # on answer-path turns (which have no run_eval today).
+            if confirm_lexicon.is_short_confirm(user_message):
+                await _log_repeated_confirmation(conversation_id, {"at": "answer"})
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
                                  confirm_command=confirm_command)
 
@@ -673,13 +727,18 @@ async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, confirm_command=None,
     intercept_spawn_name: str | None = None,
+    # PA-1: True ONLY when the calling turn actually delegated (a dispatch happened or a
+    # propose_invite frame was emitted) — the sole honest exemption for spawn-handoff
+    # promise language. No current caller delegates before/while answering, so the
+    # default is truthfully False everywhere; PA-2's dispatch/invite paths pass True.
+    turn_delegated: bool = False,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
     roster = await _team_roster()
     system = (
         _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
-        + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
+        + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )
@@ -713,16 +772,41 @@ async def _handle_answer(
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
         return
+    # PA-3: the model asked for a structured user choice — ask_user_choice is a
+    # TERMINAL tool, so the loop ended the turn with validated/clamped {question,
+    # options}. Persist a compact text twin (question + bulleted labels) so
+    # history/recap keep the context, close the stream WITHOUT a ghost bubble
+    # (message_id=None — the card is the visible element), and emit the card frame.
+    # No promise guard (nothing was promised) and no further LLM call.
+    clarify = result.get("clarify")
+    if clarify:
+        compact = clarify["question"] + "\n" + "\n".join(
+            f"- {o['label']}" for o in clarify["options"])
+        await memory.add_message(conversation_id, "arslan", compact)
+        emit({"type": "stream_end", "message_id": None})
+        emit(protocol.clarify_options(clarify["question"], clarify["options"]))
+        return compact
     full = result.get("final") or ""
-    # HX-1 A2 空头支票拦截: this turn dispatched nothing (the answer path never dispatches)
-    # — if it also called NO tool yet the final text promises in-progress/handed-off work,
-    # that claim is structurally false. Append a bounded honest correction to the SAME
-    # message (streamed live + persisted, so history stays honest) and log the audit
-    # event. tool_trace non-empty = real work was narrated → never triggers (acceptance
-    # #1's false-positive guard). Fail-open: guard errors never break the answer turn.
+    # HX-1 A2 空头支票拦截, exemptions SPLIT by PA-1 (second live incident: Arslan called
+    # web_search every turn while the final text claimed 「让 Deck Master 直接出PPT」 five
+    # turns in a row with zero dispatch — the old global `not tool_trace` gate skipped
+    # the guard 5/5 times; tool use is NOT delegation):
+    #   • spawn tier ("交给/让/派 <name>", active on the doer-first divert branch): exempt
+    #     ONLY when the turn actually delegated (turn_delegated=True — a real dispatch or
+    #     propose_invite). The divert branch self-answers by construction, so it always
+    #     passes False → a handoff claim there is structurally false and always corrected.
+    #   • generic tier (PROMISE_RE): keeps the `not tool_trace` exemption — a turn that
+    #     really searched may honestly narrate in-progress work (HX acceptance #1).
+    # A matched promise gets a bounded honest correction appended to the SAME message
+    # (streamed live + persisted, so history stays honest) plus the audit event.
+    # Fail-open: guard errors never break the answer turn.
     try:
-        if full and not result.get("tool_trace"):
-            outcome = await promise_guard.correct(full, spawn_name=intercept_spawn_name)
+        check_spawn = bool(intercept_spawn_name) and not turn_delegated
+        check_generic = not result.get("tool_trace")
+        if full and (check_spawn or check_generic):
+            outcome = await promise_guard.correct(
+                full, spawn_name=intercept_spawn_name if check_spawn else None,
+                check_generic=check_generic)
             if outcome is not None:
                 correction = outcome["correction"]
                 emit({"type": "stream_chunk", "content": "\n\n" + correction})
@@ -871,42 +955,110 @@ async def _resolve_at_mentioned_spawn(user_message: str) -> int | None:
     return best_id
 
 
+async def _delegation_advance_trigger(conversation_id, spawn_id, user_message) -> str | None:  # noqa: ANN001
+    """PA-2 deterministic advance rule (zero LLM): which trigger — if any — FORBIDS the
+    doer-first divert this turn. Returns "short_confirm" | "consecutive_route" | None.
+
+      - short_confirm: the user's message is a bare bilingual confirmation/impatience
+        token (好/可以/继续/go/do it/怎么还不…) — they are approving the delegation, not
+        adding spec; self-answering again would re-paste the same deliverable.
+      - consecutive_route: the PREVIOUS router decision in this conversation was already
+        route→this SAME spawn — the user has effectively confirmed once and the router
+        still wants the same specialist. Diverting again is the live incident's infinite
+        confirm loop (route(spawn 6) five consecutive times, outline re-pasted 3×).
+
+    None → neither fired; the old doer-first behavior stands."""
+    if confirm_lexicon.is_short_confirm(user_message):
+        return "short_confirm"
+    try:
+        prev = await router.previous_decision(conversation_id)
+    except Exception as exc:  # noqa: BLE001 — audit-table read must never break the turn
+        logger.warning("previous_decision lookup failed (advance rule degrades to divert): %s", exc)
+        return None
+    if prev is not None and prev.action == "route" and prev.spawn_id == spawn_id:
+        return "consecutive_route"
+    return None
+
+
+async def _log_repeated_confirmation(conversation_id, ref: dict | None = None) -> None:  # noqa: ANN001
+    """PA-4 cheap completion-degree signal: every short-confirm the user has to send is
+    one more lap of the loop. Logged as a countable conversation_events row (count =
+    prior repeated_confirmation events in this conversation + 1) so the recap timeline
+    shows the loop and future thresholds can read it. Best-effort, never fatal."""
+    from server.services import recap_service
+    count = await recap_service.count_events(conversation_id, "repeated_confirmation") + 1
+    await recap_service.log_event(
+        conversation_id, "repeated_confirmation",
+        {**(ref or {}), "count": count}, f"重复确认 ×{count}")
+
+
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
                         user_message: str = "", route_ms: int | None = None,
                         attached_context: str | None = None, confirm_command=None) -> None:
     # Doer-first (boundary component 2): if the user did NOT explicitly name this spawn, the router
-    # merely INFERRED it fits — do NOT silently dispatch. Arslan does the task ITSELF, then (only for
-    # a trusted specialist) floats a lightweight "让 X 接手更专业?" chip whose Accept dispatches the
-    # parked task. Explicit naming falls through to the existing dispatch/invite path below.
-    if not await _user_named_spawn(user_message, result.spawn_id):
+    # merely INFERRED it fits — do NOT silently dispatch. Arslan does the task ITSELF, then floats a
+    # lightweight "让 X 接手更专业?" chip whose Accept dispatches the parked task. Explicit naming
+    # falls through to the existing dispatch/invite path below.
+    #
+    # PA-2 hard limit on the divert: it may fire ONCE per delegation. When the user already
+    # confirmed (previous decision was route→the SAME spawn, or this message is a bare short
+    # confirm), diverting again is the incident's infinite confirm loop — the turn MUST take the
+    # same dispatch/invite path an explicit naming takes. Deterministic, zero LLM.
+    user_named = await _user_named_spawn(user_message, result.spawn_id)
+    advance = None
+    if not user_named:
+        advance = await _delegation_advance_trigger(conversation_id, result.spawn_id, user_message)
+        if advance is not None:
+            spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "delegation_advance",
+                {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "trigger": advance},
+                f"确认推进 → 交办 {spawn_name or '分身'}(触发:{advance})")
+            # PA-4: a short-confirm that fires the advance IS a repeated confirmation —
+            # count it (the answer-path site below catches the ones the router never
+            # routes; together they make the confirm loop countable in the recap).
+            if advance == "short_confirm":
+                await _log_repeated_confirmation(
+                    conversation_id,
+                    {"spawn_id": result.spawn_id, "spawn_name": spawn_name,
+                     "at": "delegation_advance"})
+    if not user_named and advance is None:
         # HX-1 A2 tier 1: this branch KNOWS the inferred spawn's name, so the promise
         # interceptor inside _handle_answer also gets the high-precision "交给/让/派 <name>"
         # pattern — the exact live-incident shape ("已交给 Deck Master 生成中" with zero runs).
         _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        # PA-1: the divert branch NEVER delegates — no dispatch, no propose_invite (the
+        # chip emitted below AFTER the answer is a user-consent question,
+        # not a delegation) — so turn_delegated is False by construction and any
+        # "交给/让/派 <name>" claim in the answer is always intercepted, tools or not.
         answer_text = await _handle_answer(conversation_id, user_message, emit,
                                            attached_context=attached_context, confirm_command=confirm_command,
-                                           intercept_spawn_name=_guard_spawn_name)
+                                           intercept_spawn_name=_guard_spawn_name,
+                                           turn_delegated=False)
         # Dual-track growth (boundary component 5): Arslan just did an INFERRED spawn's job itself —
         # feed the deliverable to that spawn in the background so it learns without having acted.
         if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
             _dual_track_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
             _fire_dual_track(conversation_id, result.spawn_id, _dual_track_spawn_name,
                              _dual_track_signals(user_message, answer_text))
-        async with db_session.AsyncSessionLocal() as _db:
-            band = (await spawn_trust.trust(_db, result.spawn_id)).get("band")
-        if band == "trusted":
-            spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-            reason = (f"让「{spawn_name}」接手更专业?" if _is_cjk(user_message)
-                      else f"Let {spawn_name} take this for more depth?")
-            await phase_service.set_inviting(
-                conversation_id, result.spawn_id,
-                task_brief=result.task_brief or "", user_message=user_message,
-                needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
-            from server.services import recap_service
-            await recap_service.log_event(
-                conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": spawn_name},
-                f"邀请 {spawn_name or '分身'} 加入")
-            emit(protocol.propose_invite(result.spawn_id, reason))
+        # 验收① (PA-2): this chip is the user's ONLY advancement channel after a doer-first
+        # self-answer, so EVERY trust band gets it. propose_invite is ITSELF the user-consent
+        # gate — trust band governs silent auto-join elsewhere, NOT invitability. The old
+        # `band == "trusted"` gate here is exactly what killed the live incident's escape
+        # hatch (Deck Master wasn't trusted → no chip → infinite confirm loop).
+        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        reason = (f"让「{spawn_name}」接手更专业?" if _is_cjk(user_message)
+                  else f"Let {spawn_name} take this for more depth?")
+        await phase_service.set_inviting(
+            conversation_id, result.spawn_id,
+            task_brief=result.task_brief or "", user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
+        from server.services import recap_service
+        await recap_service.log_event(
+            conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": spawn_name},
+            f"邀请 {spawn_name or '分身'} 加入")
+        emit(protocol.propose_invite(result.spawn_id, reason))
         return
 
     # Inline roster invite gates FIRST CONTACT — before the propose-vs-execute decision.
@@ -979,6 +1131,14 @@ async def _arslan_tools() -> list[dict]:
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
     }
     tools = [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
+    # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
+    # the turn and _handle_answer emits the clarify_options card). Registered here so
+    # Arslan's answer path can offer real choice buttons instead of a text counter-question.
+    tools.append({"key": "ask_user_choice",
+                  "description": "Ask the user to pick ONE of 2-4 concrete directions when you "
+                                 "genuinely cannot proceed without their choice. args: {question, "
+                                 "options: [{label, hint?}] (2-4 options)}. The user answers with "
+                                 "one click — NEVER ask a multiple-choice question in plain text."})
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "

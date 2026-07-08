@@ -325,6 +325,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       timestamp,
       // 🔒 stream_end html artifact can also ride an arslan-role turn (escalation path).
       artifactHtml: item.artifactHtml,
+      // PA-3 structured clarification card (🔒 backend clarify_options frames only).
+      clarifyOptions: item.clarifyOptions,
     };
   });
 }

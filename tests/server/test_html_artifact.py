@@ -48,12 +48,16 @@ def test_sniff_truncated_doc_hits_incomplete():
 
 def test_sniff_fenced_doc_returns_none():
     # (c) Acceptance #2: 用户要 HTML 示例代码 — fenced teaching code stays verbatim.
-    text = "HTML 文档的基本骨架长这样:\n\n```html\n" + _full_doc() + "\n```\n\n照着写就行。"
+    # Fixture is a true SNIPPET (< the 2000-char fenced-deliverable floor): the same
+    # doc unfenced WOULD package (complete ≥400), so this pins fence protection —
+    # while a fenced ≥2000-char message-dominating doc is the PA-6 deliverable
+    # exception, covered by test_fenced_complete_deliverable_is_packaged.
+    text = "HTML 文档的基本骨架长这样:\n\n```html\n" + _full_doc(body_chars=900) + "\n```\n\n照着写就行。"
     assert sniff_html_doc(text) is None
 
 
 def test_sniff_tilde_fenced_doc_returns_none():
-    text = "示例:\n\n~~~\n" + _full_doc() + "\n~~~\n"
+    text = "示例:\n\n~~~\n" + _full_doc(body_chars=900) + "\n~~~\n"
     assert sniff_html_doc(text) is None
 
 
@@ -230,3 +234,38 @@ async def test_route_flow_leaves_plain_text_untouched(maker, monkeypatch, tmp_pa
     assert summary_row.display_content == "Post 1. Post 2."  # unchanged behavior
     end = next(e for e in events if e.get("type") == "stream_end")
     assert "artifact" not in end
+
+
+# ---------------------------------------------------------------------------
+# Fenced DELIVERABLE vs fenced teaching snippet (PA-6 real-machine finding):
+# run 70 shipped its complete 16K doc wrapped in a ```html fence (disobeying the
+# persona) and the fence rule skipped packaging. A fenced doc is a deliverable —
+# not a protected snippet — only when ALL THREE hold: complete (</html>), ≥2000
+# chars, and ≥70% of the whole message. Snippets/teaching stay verbatim.
+# ---------------------------------------------------------------------------
+
+_BIG_DOC = ("<!DOCTYPE html>\n<html lang=\"zh\">\n<head><title>新能源简报</title></head>\n<body>"
+            + ("<div class=\"card\">数据卡片内容,暗色磨砂玻璃,金色点缀。</div>\n" * 80)
+            + "</body>\n</html>")
+
+
+def test_fenced_complete_deliverable_is_packaged():
+    text = "以下是您所需的简报HTML代码。\n\n```html\n" + _BIG_DOC + "\n```"
+    hit = sniff_html_doc(text)
+    assert hit is not None
+    assert hit["complete"] is True
+    assert hit["html"].startswith("<!DOCTYPE html>") and hit["html"].rstrip().endswith("</html>")
+    assert "```" not in hit["pre"]          # opening fence trimmed from the preamble
+    assert hit["title"] == "新能源简报"
+
+
+def test_fenced_short_snippet_stays_verbatim():
+    doc = "<!DOCTYPE html>\n<html><body><p>示例</p></body></html>"
+    text = "这是一个 HTML 结构的教学示例:\n\n```html\n" + doc + "\n```\n\n如上,DOCTYPE 声明放最前面。"
+    assert sniff_html_doc(text) is None   # < 2000 chars → snippet
+
+
+def test_fenced_doc_buried_in_long_prose_stays_verbatim():
+    prose = "下面我们逐段讲解这个页面的实现原理。" * 220   # long teaching context
+    text = prose + "\n完整代码如下:\n```html\n" + _BIG_DOC + "\n```\n" + prose
+    assert sniff_html_doc(text) is None   # ratio < 0.7 → teaching context

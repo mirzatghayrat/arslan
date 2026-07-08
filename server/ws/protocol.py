@@ -203,6 +203,20 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
             "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
 
 
+def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:
+    """Arslan needs the user to pick a direction (PA-3): a structured choice card.
+
+    `options` is 2-4 items of {label, hint} (already validated/clamped by the tool
+    loop). The frontend renders one-click buttons; a click sends the chosen label back
+    as a normal `user_message` — emitting this frame runs NOTHING by itself."""
+    return {
+        "type": "clarify_options",
+        "question": question,
+        "options": [{"label": str(o.get("label", "")), "hint": str(o.get("hint") or "")}
+                    for o in options],
+    }
+
+
 def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
     """Notify the client that a spawn joined or left the roster.
 
