@@ -42,6 +42,7 @@ function fmtTime(iso: string | null | undefined): string {
  */
 export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
   const [recap, setRecap] = useState<RecapDto | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!conversationId) { setRecap(null); return; }
@@ -58,17 +59,31 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
   const s = recap?.summary;
 
   return (
-    <div className="recap-dock">
-      <div className="recap-dock__head">
+    <div className={`recap-dock${open ? " recap-dock--open" : ""}`}>
+      <div
+        className="recap-dock__head"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((o) => !o); } }}
+      >
+        <span className="recap-dock__chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
         <span className="recap-dock__title">本对话 · 回顾</span>
-        <button type="button" className="recap-dock__link" onClick={onOpenDiagnosis}>诊断台 ↗</button>
+        {s && (
+          <span className="recap-dock__summary-inline">
+            {s.run_count} 运行 · 均分 {s.avg_score ?? "—"} · 成长 {s.growth_count}
+          </span>
+        )}
+        <button
+          type="button"
+          className="recap-dock__link"
+          onClick={(e) => { e.stopPropagation(); onOpenDiagnosis(); }}
+        >
+          诊断台 ↗
+        </button>
       </div>
-      {s && (
-        <div className="recap-dock__summary">
-          {s.run_count} 运行 · 均分 {s.avg_score ?? "—"} · 成长 {s.growth_count}
-        </div>
-      )}
-      {items.length === 0 ? (
+      {open && (items.length === 0 ? (
         <div className="recap-dock__empty">本对话还没有运行 / 成长记录</div>
       ) : (
         <ul className="recap-timeline">
@@ -100,7 +115,7 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
             </li>
           ))}
         </ul>
-      )}
+      ))}
     </div>
   );
 }

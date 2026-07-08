@@ -15,21 +15,25 @@ vi.mock("../api/client", () => ({ api: {
 import EvalDock from "../components/EvalDock";
 
 describe("EvalDock recap timeline", () => {
-  it("renders a scoped recap timeline (runs + growth) with summary", async () => {
+  it("collapsed by default; summary inline; expands to the timeline", async () => {
     const onOpen = vi.fn();
     render(<EvalDock conversationId="c" onOpenDiagnosis={onOpen} />);
-    expect(await screen.findByText(/Deck Master/)).toBeTruthy();          // run item
+    // summary shows collapsed (inline in the header); timeline is hidden until expand
+    expect(await screen.findByText(/7.8/)).toBeTruthy();
+    expect(screen.queryByText(/Deck Master/)).toBeNull();
+    fireEvent.click(screen.getByText(/本对话 · 回顾/));                    // expand
+    expect(await screen.findByText(/Deck Master/)).toBeTruthy();          // run item now visible
     expect(screen.getByText(/Data Analyst/)).toBeTruthy();               // distill item
-    expect(screen.getByText(/7.8/)).toBeTruthy();                        // avg in summary
     fireEvent.click(screen.getByText(/诊断台/));                          // link → standalone view
     expect(onOpen).toHaveBeenCalled();
   });
 
-  it("empty conversation shows an empty state", async () => {
+  it("empty conversation shows an empty state when expanded", async () => {
     const { api } = await import("../api/client");
     (api.getConversationRecap as any).mockResolvedValueOnce(
       { summary: { run_count: 0, avg_score: null, growth_count: 0 }, items: [] });
     render(<EvalDock conversationId="c2" onOpenDiagnosis={() => {}} />);
+    fireEvent.click(await screen.findByText(/本对话 · 回顾/));            // expand
     expect(await screen.findByText(/还没有运行|还没有.*记录/)).toBeTruthy();
   });
 
