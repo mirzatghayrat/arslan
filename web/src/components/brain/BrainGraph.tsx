@@ -17,11 +17,13 @@ const W = 620, H = 560;
 
 export default function BrainGraph({ focusedId, onFocus, onPick, glowIds, className }: Props) {
   const [data, setData] = useState<BrainGraphDto | null>(null);
-  const [, force] = useState(0);       // re-render on tick
+  // Nodes/links live in STATE (not refs) — the sim mutates these exact objects'
+  // x/y in place, and the tick counter forces a re-render that reads them.
+  const [nodes, setNodes] = useState<any[]>([]);
+  const [links, setLinks] = useState<any[]>([]);
+  const [, tick] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
-  const simNodes = useRef<any[]>([]);
-  const simLinks = useRef<any[]>([]);
 
   useEffect(() => { let ok = true; api.getBrainGraph().then((d) => ok && setData(d)).catch(() => ok && setData({ nodes: [], links: [] })); return () => { ok = false; }; }, []);
 
@@ -38,15 +40,15 @@ export default function BrainGraph({ focusedId, onFocus, onPick, glowIds, classN
 
   useEffect(() => {
     if (!data) return;
-    const nodes = data.nodes.map((n) => ({ ...n }));
-    const links = data.links.map((l) => ({ ...l }));
-    simNodes.current = nodes; simLinks.current = links;
-    const sim = forceSimulation(nodes as any)
-      .force("link", forceLink(links as any).id((d: any) => d.id).distance(70).strength(0.6))
+    const ns = data.nodes.map((n) => ({ ...n }));
+    const ls = data.links.map((l) => ({ ...l }));
+    setNodes(ns); setLinks(ls);
+    const sim = forceSimulation(ns as any)
+      .force("link", forceLink(ls as any).id((d: any) => d.id).distance(70).strength(0.6))
       .force("charge", forceManyBody().strength(-160))
       .force("center", forceCenter(W / 2, H / 2))
       .force("collide", forceCollide((d: any) => 4 + Math.sqrt(d.val) * 2 + 4))
-      .on("tick", () => force((x) => x + 1));
+      .on("tick", () => tick((x) => x + 1));
     // zoom/pan on the group
     if (svgRef.current && gRef.current) {
       select(svgRef.current).call(d3zoom<SVGSVGElement, unknown>().scaleExtent([0.3, 3])
@@ -60,7 +62,7 @@ export default function BrainGraph({ focusedId, onFocus, onPick, glowIds, classN
     if (!el) return;
     select(el).call(d3drag<SVGCircleElement, unknown>()
       .on("start", () => { node.fx = node.x; node.fy = node.y; })
-      .on("drag", (e) => { node.fx = e.x; node.fy = e.y; force((x) => x + 1); })
+      .on("drag", (e) => { node.fx = e.x; node.fy = e.y; tick((x) => x + 1); })
       .on("end", () => { node.fx = null; node.fy = null; }) as any);
   };
 
@@ -69,12 +71,12 @@ export default function BrainGraph({ focusedId, onFocus, onPick, glowIds, classN
     <div className={className} style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <svg ref={svgRef} data-testid="brain-graph" viewBox={`0 0 ${W} ${H}`} style={{ width: "min(620px,72vh)", height: "auto" }} role="img" aria-label="第二大脑关系图">
         <g ref={gRef}>
-          {simLinks.current.map((l: any, i) => (
+          {links.map((l: any, i) => (
             <line key={i} data-link x1={l.source?.x ?? 0} y1={l.source?.y ?? 0} x2={l.target?.x ?? 0} y2={l.target?.y ?? 0}
               stroke="color-mix(in srgb, var(--foreground) 14%, transparent)"
               strokeWidth={1} strokeDasharray={l.type === "provenance" ? "3 3" : undefined} />
           ))}
-          {simNodes.current.map((n: any) => {
+          {nodes.map((n: any) => {
             const dim = focusedId != null && focusedId !== n.id && !(nbr?.has(n.id));
             const r = Math.max(3, 3 + Math.sqrt(n.val) * 2) * (focusedId === n.id ? 1.5 : 1);
             const ghost = n.kind === "ghost";
