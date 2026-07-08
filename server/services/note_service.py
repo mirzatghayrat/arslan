@@ -133,3 +133,29 @@ async def suggest_links(note_id: int, candidate_labels: list[str]) -> dict:
     except Exception as exc:  # noqa: BLE001 — nothing beats a fabricated link
         logger.warning("suggest_links failed (non-fatal): %s", exc)
         return {"suggestions": [], "tags": []}
+
+
+_GEN_SYS = ("你是知识架构师。就给定主题生成 {n} 篇互链的中文笔记,每篇 title + content(markdown,"
+            "含标题/要点,至少 120 字,用 [[其它笔记标题]] 互相链接,每篇至少链 1 篇本批其它笔记)+ "
+            "2-3 个小写标签。严格输出 JSON:{{\"notes\":[{{\"title\":\"...\",\"content\":\"...\",\"tags\":[\"...\"]}}]}}。")
+
+
+async def generate_notes(topic: str, n: int = 4) -> list[dict]:
+    if not (topic or "").strip():
+        return []
+    try:
+        adapter = _get_adapter()
+        a = await adapter if hasattr(adapter, "__await__") else adapter
+        resp = await a.chat(system=_GEN_SYS.format(n=n), user=f"主题:{topic}")
+        data = json.loads((resp.content or "{}").strip())
+    except Exception as exc:  # noqa: BLE001 — nothing beats half-baked notes
+        logger.warning("generate_notes failed (non-fatal): %s", exc)
+        return []
+    made: list[dict] = []
+    for raw in data.get("notes", [])[:n]:
+        if not isinstance(raw, dict) or not raw.get("title"):
+            continue
+        row = await create(raw["title"], raw.get("content", ""),
+                           [t for t in (raw.get("tags") or []) if isinstance(t, str)])
+        made.append(_dump(row))
+    return made

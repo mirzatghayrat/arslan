@@ -118,6 +118,8 @@ export const api = {
     request<NoteDto>(`/brain/notes/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteNote: (id: number) => request<{ deleted: boolean }>(`/brain/notes/${id}`, { method: "DELETE" }),
   suggestNoteLinks: (id: number) => request<NoteSuggestDto>(`/brain/notes/${id}/suggest`, { method: "POST" }),
+  generateNotes: (topic: string) =>
+    request<{ created: NoteDto[] }>("/brain/notes/generate", { method: "POST", body: JSON.stringify({ topic }) }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
   draftSpawn: (description: string) =>
     request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),

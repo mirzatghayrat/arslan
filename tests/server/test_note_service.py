@@ -78,3 +78,26 @@ async def test_suggest_fail_open(maker, monkeypatch):
     n = await note_service.create("x", "y", [])
     out = await note_service.suggest_links(n.id, candidate_labels=["a"])
     assert out == {"suggestions": [], "tags": []}
+
+
+class _GenAdapter:
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        class R:
+            content = '{"notes":[{"title":"量子入门","content":"见 [[量子门]]","tags":["quantum"]},{"title":"量子门","content":"见 [[量子入门]]","tags":["quantum"]}]}'
+        return R()
+
+
+@pytest.mark.asyncio
+async def test_generate_notes(maker, monkeypatch):
+    monkeypatch.setattr(note_service, "_get_adapter", lambda: _GenAdapter())
+    made = await note_service.generate_notes("量子计算", n=2)
+    assert len(made) == 2 and made[0]["title"] == "量子入门"
+    assert len(await note_service.list_notes()) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_fail_open(maker, monkeypatch):
+    class _Boom:
+        async def chat(self, *a, **k): raise RuntimeError("down")
+    monkeypatch.setattr(note_service, "_get_adapter", lambda: _Boom())
+    assert await note_service.generate_notes("x") == []

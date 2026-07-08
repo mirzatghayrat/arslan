@@ -55,3 +55,10 @@ async def suggest(note_id: int) -> dict:
         facts = [r[0] for r in (await db.execute(sa_text("SELECT COALESCE(label, content) FROM user_facts"))).all()]
         srcs = [r[0] for r in (await db.execute(sa_text("SELECT DISTINCT source FROM knowledge_chunks"))).all()]
     return await note_service.suggest_links(note_id, candidate_labels=titles + labels + facts + srcs)
+
+
+@router.post("/brain/notes/generate")
+async def generate(request: Request) -> dict:
+    body = await request.json()
+    made = await note_service.generate_notes(body.get("topic", ""), int(body.get("n", 4)))
+    return {"created": made}
