@@ -20,14 +20,7 @@ const branches = [
 
 describe("BrainNav", () => {
   const base = { branches, focusedId: null, onFocus: vi.fn(), onPick: vi.fn(), onChanged: vi.fn(),
-    tab: "graph" as const, onTab: vi.fn(), onTagFilter: vi.fn() };
-
-  it("renders the graph/content tabs and switches", () => {
-    const onTab = vi.fn();
-    render(<BrainNav {...base} onTab={onTab} />);
-    fireEvent.click(screen.getByText("内容"));
-    expect(onTab).toHaveBeenCalledWith("content");
-  });
+    onTagFilter: vi.fn() };
 
   it("groups profile facts by category as a second level", () => {
     render(<BrainNav {...base} />);

@@ -11,18 +11,17 @@ interface Props {
   onFocus: (id: string | null) => void;
   onPick: (leaf: BrainLeaf) => void;
   onChanged: () => void;
-  tab: "graph" | "content";
-  onTab: (t: "graph" | "content") => void;
   onTagFilter: (tag: string) => void;
   onCreateNote?: () => void;
   onGenerate?: (topic: string) => void;
 }
 
-/** Second-Brain left column: a persistent navigator that drives BOTH the graph and
- * the content pane. Top = [图谱|内容] tab; then search; then a tidy multi-level
- * collapsible tree (画像 grouped by category, 材料 by provenance); then a tag
- * explorer; then create/generate/feed + a collapsed index-health strip. */
-export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, tab, onTab, onTagFilter, onCreateNote, onGenerate }: Props) {
+/** Second-Brain left column: a persistent navigator for the always-on graph.
+ * Search + a tag explorer up top (clicking a chip focuses that tag cluster in the
+ * graph), then a tidy multi-level collapsible tree (画像 grouped by category, 材料
+ * by provenance); then create/generate/feed + a collapsed index-health strip.
+ * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
+export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onTagFilter, onCreateNote, onGenerate }: Props) {
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,15 +87,24 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
 
   return (
     <aside className="brain-nav">
-      <div className="brain-nav__tabs">
-        <button className={`brain-nav__tab${tab === "graph" ? " is-active" : ""}`} onClick={() => onTab("graph")}>图谱</button>
-        <button className={`brain-nav__tab${tab === "content" ? " is-active" : ""}`} onClick={() => onTab("content")}>内容</button>
-      </div>
-
       <div className="brain-nav__search">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索笔记 / 标签 / 内容…"
           className="brain-nav__search-input" />
       </div>
+
+      {tagChips.length > 0 && (
+        <div className="brain-nav__tags">
+          <div className="brain-nav__tags-head">标签</div>
+          <div className="brain-nav__tags-chips">
+            {tagChips.map(([t, c]) => (
+              <button key={t} className={`brain-nav__chip${focusedId === `tag:${t.toLowerCase()}` ? " is-active" : ""}`}
+                onClick={() => onTagFilter(t)}>
+                #{t}<span className="brain-nav__chip-count">{c}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="brain-nav__tree">
         {branches.map((b) => {
@@ -134,19 +142,6 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
           );
         })}
       </div>
-
-      {tagChips.length > 0 && (
-        <div className="brain-nav__tags">
-          <div className="brain-nav__tags-head">标签</div>
-          <div className="brain-nav__tags-chips">
-            {tagChips.map(([t, c]) => (
-              <button key={t} className="brain-nav__chip" onClick={() => onTagFilter(t)}>
-                #{t}<span className="brain-nav__chip-count">{c}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {onCreateNote && (
         <div className="brain-nav__create">

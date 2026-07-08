@@ -5,10 +5,13 @@ vi.mock("../../api/client", () => ({ api: {
   getBrainTree: vi.fn().mockResolvedValue({ branches: [
     { kind: "material", label: "材料", children: [] },
     { kind: "learning", label: "心得", children: [] },
-    { kind: "profile", label: "画像", children: [] },
+    { kind: "profile", label: "画像", children: [
+      { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "身份背景",
+        confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
     { kind: "note", label: "笔记", children: [] },
   ] }),
-  getBrainEntry: vi.fn(),
+  getBrainEntry: vi.fn().mockResolvedValue({ kind: "profile", ref: "fact:1", label: "北京",
+    provenance: "auto", excerpt: "在北京工作", usage_count: 0, last_used_at: null, last_used_ref: null }),
   getBrainGraph: vi.fn().mockResolvedValue({ nodes: [{ id: "self", ref: "self", kind: "self", label: "你", val: 3 }], links: [] }),
   embeddingStatus: vi.fn().mockResolvedValue(null),
   createNote: vi.fn(),
@@ -19,18 +22,18 @@ vi.mock("./BrainIndexHealth", () => ({ default: () => <div /> }));
 import BrainSection from "./BrainSection";
 
 describe("BrainSection", () => {
-  it("defaults to the graph tab (full-height graph)", async () => {
+  it("always mounts the graph as the main canvas (no tabs)", async () => {
     render(<BrainSection />);
     await waitFor(() => expect(screen.getByTestId("brain-graph")).toBeTruthy());
-    expect(screen.getByText("图谱")).toBeTruthy();
-    expect(screen.getByText("内容")).toBeTruthy();
+    expect(screen.queryByText("内容")).toBeNull();   // the graph/content tabs are gone
   });
 
-  it("switching to 内容 with nothing picked shows the empty hint", async () => {
+  it("clicking a tree row opens its detail rail while the graph stays mounted", async () => {
     render(<BrainSection />);
-    await waitFor(() => expect(screen.getByText("内容")).toBeTruthy());
-    fireEvent.click(screen.getByText("内容"));
-    expect(screen.getByText(/从左侧选一个条目/)).toBeTruthy();
+    const row = await screen.findByTestId("brain-nav-row");
+    fireEvent.click(row);
+    await waitFor(() => expect(screen.getByText("在北京工作")).toBeTruthy());  // detail rail excerpt
+    expect(screen.getByTestId("brain-graph")).toBeTruthy();                    // graph still there
   });
 
   it("feeds dropped files then refreshes", async () => {

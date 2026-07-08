@@ -152,12 +152,14 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
                   style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }}>
                   <title>{n.label}</title>
                 </circle>
-                <text x={n.x ?? 0} y={(n.y ?? 0) - r - 3} textAnchor="middle" fontSize={self ? 11 : 9}
-                  fontWeight={self || focused ? 700 : 400}
-                  fill={self || focused ? "var(--foreground)" : "var(--muted-foreground)"}
-                  style={{ pointerEvents: "none" }}>
-                  {tag ? `#${n.label}` : String(n.label).slice(0, 12)}
-                </text>
+                {/* Labels declutter: only the 你 hub stays lit; every other node
+                    reveals its name on hover/focus (the left tree names the rest). */}
+                {(self || focused) && (
+                  <text x={n.x ?? 0} y={(n.y ?? 0) - r - 3} textAnchor="middle" fontSize={self ? 11 : 9}
+                    fontWeight={700} fill="var(--foreground)" style={{ pointerEvents: "none" }}>
+                    {tag ? `#${n.label}` : String(n.label).slice(0, 16)}
+                  </text>
+                )}
               </g>
             );
           })}
