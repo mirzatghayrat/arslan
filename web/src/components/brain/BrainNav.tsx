@@ -166,6 +166,9 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
         </div>
       )}
 
+      {/* spacer pushes the ingest group (feed + index health) to the bottom, split off from the chips above */}
+      <div className="brain-nav__spacer" />
+
       <div className="brain-nav__feed">
         {err && <div className="brain-nav__err">{err}</div>}
         <input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="贴文本 / URL 快速投喂…"
