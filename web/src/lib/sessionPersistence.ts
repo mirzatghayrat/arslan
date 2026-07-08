@@ -65,7 +65,7 @@ export function persistThreads(
 }
 
 /** Build a single fresh thread (used on first run / post-wipe). */
-export function makeFreshThread(): PersistedThread {
+function makeFreshThread(): PersistedThread {
   return {
     id: `thread-${Date.now()}`,
     title: "New Session",

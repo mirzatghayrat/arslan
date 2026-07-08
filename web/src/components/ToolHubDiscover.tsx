@@ -17,7 +17,7 @@ export type { McpPrefill };
 // Read-only discovery; all "add" actions live on the dossier and reuse locked paths.
 
 const REPO_REF = /^(?:https?:\/\/(?:www\.)?github\.com\/)?[\w.-]+\/[\w.-]+\/?$/;
-export const looksLikeRepoRef = (s: string): boolean =>
+const looksLikeRepoRef = (s: string): boolean =>
   REPO_REF.test(s.trim()) || /github\.com\//i.test(s);
 
 export default function ToolHubDiscover({ onMcpAdded }: { onMcpAdded?: () => void } = {}) {

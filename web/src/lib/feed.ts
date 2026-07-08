@@ -40,8 +40,3 @@ export async function feedTextOrUrl(input: string) {
   const id = await bucketCollectionId(web ? BUCKET.web : BUCKET.text);
   return api.ingestCollection(id, web ? { url: t } : { source: "粘贴", text: t });
 }
-
-/** Feed a file into a SPECIFIC collection (manual target — row drop). */
-export async function feedFileInto(collectionId: number, file: File) {
-  return api.ingestCollectionFile(collectionId, file);
-}

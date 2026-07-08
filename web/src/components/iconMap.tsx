@@ -127,8 +127,3 @@ export function getIcon(key: string, className = 'w-4 h-4'): React.ReactElement 
       return <Box className={className} />;
   }
 }
-
-/** Convenience component wrapper around getIcon(). */
-export function IconFor({ iconKey, className }: { iconKey: string; className?: string }) {
-  return getIcon(iconKey, className);
-}
