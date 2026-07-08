@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import type { BrainLeaf } from "../../api/client";
+import { api, type BrainLeaf } from "../../api/client";
 import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
 import BrainNav from "./BrainNav";
 import BrainOrrery from "./BrainOrrery";
 import BrainPanels from "./BrainPanels";
+import NoteEditor from "./NoteEditor";
 
 export default function BrainSection() {
   // ONE data source for the whole Second Brain: the typed /brain/tree drives the
@@ -14,11 +15,26 @@ export default function BrainSection() {
   const { branches, loading, error, refresh } = useBrainTree();
 
   const glowIds = useMemo(() => recentIds(branches), [branches]);
+  // Every leaf label across all four branches feeds the [[wikilink autocomplete
+  // in NoteEditor — notes should be able to link to material/learning/profile too.
+  const allLabels = useMemo(() => branches.flatMap((b) => b.children.map((l) => l.label)), [branches]);
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [picked, setPicked] = useState<BrainLeaf | null>(null);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+
+  const createNote = async () => {
+    const n = await api.createNote({ title: "未命名笔记" });
+    refresh();
+    setPicked({ kind: "note", ref: `note:${n.id}`, label: n.title, provenance: "手写",
+      confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 });
+  };
+
+  const generateFromTopic = async (topic: string) => {
+    await api.generateNotes(topic);
+    refresh();
+  };
 
   const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
@@ -42,7 +58,8 @@ export default function BrainSection() {
       onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => void onDrop(e)}>
-      <BrainNav branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={setPicked} onChanged={refresh} />
+      <BrainNav branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={setPicked} onChanged={refresh}
+        onCreateNote={() => void createNote()} onGenerate={(topic) => void generateFromTopic(topic)} />
       <div className="flex-1 relative h-full flex flex-col overflow-hidden">
         {/* A′: height-capped star map on top, dense panels peeking below */}
         <div className="flex-none relative" style={{ maxHeight: "56%" }}>
@@ -54,7 +71,12 @@ export default function BrainSection() {
         <div className="flex-1 overflow-auto pt-2">
           <BrainPanels branches={branches} onPick={setPicked} />
         </div>
-        {picked && <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} />}
+        {picked && picked.kind === "note" ? (
+          <NoteEditor noteId={Number(picked.ref.split(":")[1])} onClose={() => setPicked(null)}
+            onChanged={refresh} allLabels={allLabels} />
+        ) : picked ? (
+          <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} />
+        ) : null}
       </div>
       {status && <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 text-[12px] px-3 py-1.5 rounded-lg bg-surface border border-border text-foreground">{status}</div>}
       {dragging && (

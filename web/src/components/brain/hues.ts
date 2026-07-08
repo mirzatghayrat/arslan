@@ -18,6 +18,7 @@ const TYPE_HUE: Record<string, string> = {
   material: "var(--hue-6)",
   learning: "var(--hue-5)",
   profile: "var(--hue-8)",
+  note: "var(--hue-4)",
 };
 
 export function hueVar(key: string): string {

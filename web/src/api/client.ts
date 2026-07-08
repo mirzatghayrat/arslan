@@ -81,7 +81,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 }
 
 export interface BrainLeaf {
-  kind: "material" | "learning" | "profile";
+  kind: "material" | "learning" | "profile" | "note";
   ref: string;
   label: string;
   provenance: string | null;

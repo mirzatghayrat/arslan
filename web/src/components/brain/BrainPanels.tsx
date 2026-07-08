@@ -5,7 +5,7 @@ import { hueVar } from "./hues";
  * profile, each row surfacing provenance · usage · confidence. Click → detail. */
 export default function BrainPanels({ branches, onPick }: { branches: BrainBranch[]; onPick: (l: BrainLeaf) => void }) {
   return (
-    <div className="grid grid-cols-3 gap-3 px-4 pb-4">
+    <div className="grid grid-cols-4 gap-3 px-4 pb-4">
       {branches.map((b) => (
         <div key={b.kind} className="rounded-xl bg-surface border border-border overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border"

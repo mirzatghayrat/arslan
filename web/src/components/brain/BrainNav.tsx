@@ -11,18 +11,23 @@ interface Props {
   onFocus: (id: string | null) => void;
   onPick: (leaf: BrainLeaf) => void;
   onChanged: () => void;
+  onCreateNote?: () => void;
+  onGenerate?: (topic: string) => void;
 }
 
-/** The Second Brain's left panel — ONE tree over the SAME three types as the
- * orrery + panels (材料/心得/画像). Hovering a row focuses the matching sunburst
+/** The Second Brain's left panel — ONE tree over the SAME four types as the
+ * orrery + panels (材料/心得/画像/笔记). Hovering a row focuses the matching sunburst
  * wedge (shared focusedId); clicking opens its detail. Feed + index-health live
- * at the bottom, so ingest / structure / health are one integrated surface. */
-export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged }: Props) {
+ * at the bottom, so ingest / structure / health are one integrated surface.
+ * Notes additionally get a quick-create button + an AI-topic-generate input. */
+export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onCreateNote, onGenerate }: Props) {
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [topic, setTopic] = useState("");
+  const [generating, setGenerating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const ql = q.trim().toLowerCase();
 
@@ -47,6 +52,14 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
     setBusy(false);
     if (failed.length) setErr(`未识别/失败:${failed.join("、")}`);
     onChanged();
+  };
+
+  const runGenerate = async () => {
+    const t = topic.trim();
+    if (!t || !onGenerate) return;
+    setGenerating(true);
+    try { onGenerate(t); setTopic(""); }
+    finally { setGenerating(false); }
   };
 
   return (
@@ -86,6 +99,21 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
           );
         })}
       </div>
+
+      {onCreateNote && (
+        <div className="brain-nav__create">
+          <button type="button" className="brain-nav__create-btn" onClick={onCreateNote}>＋ 新建笔记</button>
+        </div>
+      )}
+      {onGenerate && (
+        <div className="brain-nav__generate">
+          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="AI 主题生成笔记…"
+            onKeyDown={(e) => { if (e.key === "Enter") void runGenerate(); }}
+            className="brain-nav__generate-input" />
+          <button type="button" disabled={generating || !topic.trim()} onClick={() => void runGenerate()}
+            className="brain-nav__generate-btn">{generating ? "生成中…" : "生成"}</button>
+        </div>
+      )}
 
       <BrainIndexHealth />
 

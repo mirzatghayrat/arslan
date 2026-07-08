@@ -2670,6 +2670,57 @@ button:disabled {
 .brain-nav__feed-upload { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); color: var(--foreground); background: none; cursor: pointer; display: flex; align-items: center; }
 .brain-nav__feed-upload:disabled { opacity: .5; }
 
+.brain-nav__create { display: flex; gap: 8px; padding: 8px 12px 0; }
+.brain-nav__create-btn { flex-shrink: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--foreground); font-size: 12px; cursor: pointer; }
+.brain-nav__create-btn:hover { border-color: var(--primary); color: var(--primary); }
+.brain-nav__generate { display: flex; gap: 6px; padding: 8px 12px 0; }
+.brain-nav__generate-input { flex: 1; padding: 6px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--foreground); font-size: 12px; }
+.brain-nav__generate-input::placeholder { color: var(--subtle-foreground); }
+.brain-nav__generate-btn { flex-shrink: 0; padding: 6px 10px; border-radius: 8px; border: none; background: var(--primary); color: var(--primary-foreground); font-size: 12px; cursor: pointer; }
+.brain-nav__generate-btn:disabled { opacity: .5; }
+
+/* ============================================================
+   Note editor — hand-written [[wikilink]] notes (dark-orange)
+   ============================================================ */
+.note-editor { display: flex; flex-direction: column; gap: 12px; }
+.note-editor__head { display: flex; align-items: center; gap: 8px; }
+.note-editor__title { flex: 1; padding: 6px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--foreground); font-size: 14px; font-weight: 500; }
+.note-editor__close { color: var(--subtle-foreground); background: none; border: none; cursor: pointer; }
+.note-editor__close:hover { color: var(--foreground); }
+.note-editor__textarea-wrap { position: relative; }
+.note-editor__textarea { width: 100%; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--foreground); font-size: 13px; line-height: 1.6; font-family: var(--font-mono, monospace); resize: vertical; }
+.note-editor__textarea::placeholder { color: var(--subtle-foreground); }
+.note-editor__wikilink-dropdown { position: absolute; left: 8px; right: 8px; bottom: 8px; max-height: 160px; overflow-y: auto; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 5; }
+.note-editor__wikilink-item { display: block; width: 100%; text-align: left; padding: 6px 10px; background: none; border: none; color: var(--foreground); font-size: 12.5px; cursor: pointer; }
+.note-editor__wikilink-item:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.note-editor__tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.note-editor__tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 14%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); font-size: 11.5px; }
+.note-editor__tag button { background: none; border: none; color: inherit; cursor: pointer; font-size: 12px; line-height: 1; }
+.note-editor__tag-input { flex: 1; min-width: 80px; padding: 4px 8px; border-radius: 999px; background: var(--surface); border: 1px dashed var(--border); color: var(--foreground); font-size: 11.5px; }
+.note-editor__tag-input::placeholder { color: var(--subtle-foreground); }
+.note-editor__actions { display: flex; gap: 8px; }
+.note-editor__save { padding: 7px 14px; border-radius: 8px; border: none; background: var(--primary); color: var(--primary-foreground); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.note-editor__save:disabled { opacity: .5; }
+.note-editor__delete { padding: 7px 14px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); background: none; color: var(--danger); font-size: 12.5px; cursor: pointer; }
+.note-editor__delete:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.note-editor__ai { margin-left: auto; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--foreground); font-size: 12.5px; cursor: pointer; }
+.note-editor__ai:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.note-editor__ai:disabled { opacity: .5; }
+.note-editor__suggestions { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
+.note-editor__sugg { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.note-editor__sugg:last-child { border-bottom: none; padding-bottom: 0; }
+.note-editor__sugg-head { display: flex; align-items: center; gap: 6px; }
+.note-editor__sugg-target { font-size: 12.5px; font-weight: 500; color: var(--foreground); }
+.note-editor__sugg-kind { font-family: var(--font-mono, monospace); font-size: 10.5px; color: var(--subtle-foreground); }
+.note-editor__sugg-reason { font-size: 11.5px; color: var(--muted-foreground); }
+.note-editor__sugg-insert { align-self: flex-start; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--primary); font-size: 11px; cursor: pointer; }
+.note-editor__sugg-insert:hover { border-color: var(--primary); }
+.note-editor__sugg-tag { align-self: flex-start; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); background: none; color: var(--primary); font-size: 11px; cursor: pointer; margin-right: 6px; }
+.note-editor__backlinks { display: flex; flex-direction: column; gap: 4px; }
+.note-editor__backlinks-label { font-size: 11px; color: var(--subtle-foreground); text-transform: uppercase; letter-spacing: .04em; }
+.note-editor__backlink { font-size: 12.5px; color: var(--foreground); padding: 4px 0; border-bottom: 1px solid var(--border); }
+.note-editor__empty { font-size: 11px; color: var(--subtle-foreground); }
+
 .recap-dock {
   margin-top: auto;
   flex-shrink: 0;
