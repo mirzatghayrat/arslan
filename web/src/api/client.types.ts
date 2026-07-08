@@ -508,6 +508,23 @@ export interface RunVitalsDto {
   duration_matrix: number[][];
 }
 
+/** GET /conversations/{id}/recap — runs + growth events on one timeline, desc. */
+export interface RecapItemDto {
+  kind: string;                 // run | distill | memory | skill | evolution | invite
+  created_at: string | null;
+  run_id?: number | null;
+  spawn_name?: string | null;
+  user_message?: string | null;
+  overall_score?: number | null;
+  total_ms?: number | null;
+  ref?: Record<string, unknown> | null;
+  summary?: string | null;
+}
+export interface RecapDto {
+  summary: { run_count: number; avg_score: number | null; growth_count: number };
+  items: RecapItemDto[];
+}
+
 /** GET /runs/timeline — per-spawn severity bands over time. */
 export interface TimelineCellDto { sev: string; count: number; errors: number }
 export interface TimelineSpawnDto { spawn_id: number | null; spawn_name: string | null; cells: TimelineCellDto[] }

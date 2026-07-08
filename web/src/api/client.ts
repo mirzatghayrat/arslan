@@ -17,6 +17,7 @@ import type {
   RunCatalogDto,
   RunVitalsDto,
   RunTimelineDto,
+  RecapDto,
   RunDetailDto,
   RunListItem,
   RunSummary,
@@ -183,6 +184,8 @@ export const api = {
   getRunVitals: (range: string) => request<RunVitalsDto>(`/runs/vitals?range=${range}`),
   /** Per-spawn severity bands over time (anomaly timeline). */
   getRunTimeline: (range: string) => request<RunTimelineDto>(`/runs/timeline?range=${range}`),
+  /** This conversation's recap timeline — runs + growth events merged, newest first. */
+  getConversationRecap: (id: string) => request<RecapDto>(`/conversations/${id}/recap`),
   /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
   redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */

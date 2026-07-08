@@ -523,6 +523,35 @@ class TimelineOut(BaseModel):
     spawns: list[TimelineSpawnOut]
 
 
+class RecapItemOut(BaseModel):
+    """One item on the conversation recap timeline — a run OR a growth event."""
+
+    kind: str                       # run|distill|memory|skill|evolution|invite
+    created_at: str | None = None
+    # run fields
+    run_id: int | None = None
+    spawn_name: str | None = None
+    user_message: str | None = None
+    overall_score: float | None = None
+    total_ms: int | None = None
+    # growth-event fields
+    ref: dict | None = None
+    summary: str | None = None
+
+
+class RecapSummaryOut(BaseModel):
+    run_count: int
+    avg_score: float | None = None
+    growth_count: int
+
+
+class RecapOut(BaseModel):
+    """Response for GET /conversations/{id}/recap — runs + growth events, desc."""
+
+    summary: RecapSummaryOut
+    items: list[RecapItemOut]
+
+
 class SkillForgeIn(BaseModel):
     key: str
     name: str
