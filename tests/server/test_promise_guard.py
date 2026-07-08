@@ -521,3 +521,33 @@ def test_a3_iron_rule_constant():
     from server.orchestrator import arslan
     assert "没有后台执行" in arslan._NO_BACKGROUND_EXEC
     assert "如实说明" in arslan._NO_BACKGROUND_EXEC
+
+
+# ---------------------------------------------------------------------------
+# PA-4: no-repaste iron rule (constant pin + built-prompt flow assert, A3 pattern)
+# ---------------------------------------------------------------------------
+
+
+def test_pa4_no_repaste_rule_constant():
+    from server.orchestrator import arslan
+    assert "不要整段重贴" in arslan._NO_REPASTE
+    assert "沿用上面那份大纲" in arslan._NO_REPASTE
+
+
+@pytest.mark.asyncio
+async def test_pa4_answer_system_prompt_carries_no_repaste_rule(maker, monkeypatch):
+    """PA-4: the converse system prompt must carry the no-repaste rule — the live
+    incident re-pasted the SAME outline verbatim 3x across consecutive answer turns."""
+    from server.orchestrator import arslan, router, tool_loop
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    honest_long = "这是一段普通的、不含任何承诺语言、也不重贴旧内容的长回答,用来验证系统提示词。" * 5
+    adapter = _SeqAdapter([honest_long])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    await arslan.handle_user_message("main", "随便聊聊", lambda e: None)
+
+    assert "不要整段重贴" in adapter.chat_calls[0]["system"]

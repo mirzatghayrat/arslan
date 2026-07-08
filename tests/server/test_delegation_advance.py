@@ -367,3 +367,54 @@ async def test_neither_trigger_preserves_doer_first_divert(maker, monkeypatch):
     assert dispatched == []                   # no dispatch
     assert any(e.get("type") == "propose_invite" for e in events)  # chip still floats (验收①)
     assert await _events_of_kind("delegation_advance") == []
+
+
+# ---------------------------------------------------------------------------
+# PA-4: repeated_confirmation completion-degree signal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_short_confirm_advance_logs_repeated_confirmation(maker, monkeypatch):
+    """PA-4: a short-confirm that fires the PA-2 advance IS a repeated confirmation —
+    the advance site also logs a countable repeated_confirmation event (count=1)."""
+    from server.orchestrator import arslan
+
+    _stub_route(monkeypatch)
+    _stub_answer_llm(monkeypatch)
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
+    await arslan.handle_user_message("main", LONG_TASK_MSG, lambda e: None)  # turn 1: divert
+    await arslan.handle_user_message("main", "好", lambda e: None)           # turn 2: confirm
+
+    rc = await _events_of_kind("repeated_confirmation")
+    assert len(rc) == 1
+    assert rc[0].ref["count"] == 1
+    assert rc[0].ref["spawn_id"] == 6
+    assert "×1" in rc[0].summary
+    # the long turn-1 task message never logs one
+    assert all("半导体" not in (e.summary or "") for e in rc)
+
+
+@pytest.mark.asyncio
+async def test_answer_path_short_confirm_logs_repeated_confirmation_count(maker, monkeypatch):
+    """PA-4: a short-confirm the router classifies as plain `answer` (no advance
+    machinery runs) still logs repeated_confirmation, with a running per-conversation
+    count — the cheap completion-degree signal for answer-path turns."""
+    from server.orchestrator import arslan
+
+    _stub_answer_llm(monkeypatch)
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
+    _stub_route(monkeypatch, action="answer")
+
+    await arslan.handle_user_message("main", "好", lambda e: None)       # count 1
+    await arslan.handle_user_message("main", "继续", lambda e: None)     # count 2
+    await arslan.handle_user_message("main", "先随便聊聊半导体行业", lambda e: None)  # NOT a confirm
+
+    rc = await _events_of_kind("repeated_confirmation")
+    assert [e.ref["count"] for e in rc] == [1, 2]
+    # counts are per-conversation: another conversation starts at 1
+    await arslan.handle_user_message("other", "好", lambda e: None)
+    async with db_session.AsyncSessionLocal() as s:
+        evs = (await s.execute(select(ConversationEvent))).scalars().all()
+    other = [e for e in evs if e.kind == "repeated_confirmation" and e.conversation_id == "other"]
+    assert len(other) == 1 and other[0].ref["count"] == 1

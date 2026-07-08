@@ -80,7 +80,10 @@ _SYSTEM = (
     "A-share ETF flows'; 'summarize this article: ...'; 'write a product description for our oat milk'.\n"
     "When uncertain between route and answer/clarify, PREFER answer/clarify — Arslan confirms "
     "the need with the user before delegating to a spawn. Do not delegate prematurely.\n"
-    "new_facts: extract any durable user preferences/facts worth remembering (or []).\n"
+    "new_facts: extract any durable user preferences/facts worth remembering (or []). "
+    "Each fact's content MUST be written in the same language as the user's own messages "
+    "(事实条目必须使用用户消息所用的语言书写)— never translate the user's language into English: "
+    "the fact text is shown to the user verbatim in their chat.\n"
 )
 
 

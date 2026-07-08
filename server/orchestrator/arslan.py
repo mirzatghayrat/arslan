@@ -243,6 +243,15 @@ _CLARIFY_CHOICE_NUDGE = (
     "不要用纯文本反问。"
 )
 
+# PA-4: no-repaste iron rule. Live incident (thread-1783523936187): the SAME deck
+# outline was re-pasted verbatim 3x across consecutive answer turns while the confirm
+# loop spun. Content already delivered in-history and unchanged must be REFERENCED,
+# not re-pasted. Kept as its own constant so tests can pin it (A3 pattern).
+_NO_REPASTE = (
+    "\n\n对话历史里已经完整给出过、且没有修改的内容(大纲/清单/代码等),不要整段重贴——"
+    "引用它(如“沿用上面那份大纲”)并只写新增或变化的部分。"
+)
+
 
 def _now_line() -> str:
     """Current server time injected into Arslan's prompt so date/time questions need no search."""
@@ -532,6 +541,12 @@ async def handle_user_message(
             # Router no longer sees create-intent — release any gather phase.
             if gathering:
                 await phase_service.clear(conversation_id)
+            # PA-4: a bare short-confirm the router classifies as plain `answer` never
+            # reaches the PA-2 advance machinery (that only runs on route) — log the
+            # cheap repeated_confirmation counter here so the loop stays visible even
+            # on answer-path turns (which have no run_eval today).
+            if confirm_lexicon.is_short_confirm(user_message):
+                await _log_repeated_confirmation(conversation_id, {"at": "answer"})
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
                                  confirm_command=confirm_command)
 
@@ -699,7 +714,7 @@ async def _handle_answer(
     roster = await _team_roster()
     system = (
         _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
-        + _CLARIFY_CHOICE_NUDGE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
+        + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )
@@ -941,6 +956,18 @@ async def _delegation_advance_trigger(conversation_id, spawn_id, user_message) -
     return None
 
 
+async def _log_repeated_confirmation(conversation_id, ref: dict | None = None) -> None:  # noqa: ANN001
+    """PA-4 cheap completion-degree signal: every short-confirm the user has to send is
+    one more lap of the loop. Logged as a countable conversation_events row (count =
+    prior repeated_confirmation events in this conversation + 1) so the recap timeline
+    shows the loop and future thresholds can read it. Best-effort, never fatal."""
+    from server.services import recap_service
+    count = await recap_service.count_events(conversation_id, "repeated_confirmation") + 1
+    await recap_service.log_event(
+        conversation_id, "repeated_confirmation",
+        {**(ref or {}), "count": count}, f"重复确认 ×{count}")
+
+
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
                         user_message: str = "", route_ms: int | None = None,
                         attached_context: str | None = None, confirm_command=None) -> None:
@@ -964,6 +991,14 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
                 conversation_id, "delegation_advance",
                 {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "trigger": advance},
                 f"确认推进 → 交办 {spawn_name or '分身'}(触发:{advance})")
+            # PA-4: a short-confirm that fires the advance IS a repeated confirmation —
+            # count it (the answer-path site below catches the ones the router never
+            # routes; together they make the confirm loop countable in the recap).
+            if advance == "short_confirm":
+                await _log_repeated_confirmation(
+                    conversation_id,
+                    {"spawn_id": result.spawn_id, "spawn_name": spawn_name,
+                     "at": "delegation_advance"})
     if not user_named and advance is None:
         # HX-1 A2 tier 1: this branch KNOWS the inferred spawn's name, so the promise
         # interceptor inside _handle_answer also gets the high-precision "交给/让/派 <name>"

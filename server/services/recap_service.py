@@ -22,6 +22,25 @@ async def log_event(conversation_id: str | None, kind: str, ref: dict | None, su
         logger.warning("recap log_event failed (non-fatal): %s", exc)
 
 
+async def count_events(conversation_id: str | None, kind: str) -> int:
+    """Cheap SELECT COUNT of a conversation's events of one kind (0 on any error) —
+    PA-4 uses it for the repeated_confirmation running counter."""
+    if not conversation_id:
+        return 0
+    try:
+        from sqlalchemy import func, select
+
+        async with db_session.AsyncSessionLocal() as db:
+            n = (await db.execute(
+                select(func.count()).select_from(ConversationEvent).where(
+                    ConversationEvent.conversation_id == conversation_id,
+                    ConversationEvent.kind == kind))).scalar()
+        return int(n or 0)
+    except Exception as exc:  # noqa: BLE001 — counting is never fatal
+        logger.warning("recap count_events failed (non-fatal): %s", exc)
+        return 0
+
+
 async def get_recap(conversation_id: str) -> dict:
     """Merge this conversation's runs (from the runs table) and growth events into
     one timeline, newest first, with a small summary. Runs are NOT duplicated into
