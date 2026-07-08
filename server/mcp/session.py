@@ -6,6 +6,8 @@ import asyncio
 import logging
 import os
 
+from server.mcp import proxy_resolve
+
 logger = logging.getLogger(__name__)
 
 _CONNECT_TIMEOUT = 30.0
@@ -15,6 +17,11 @@ class MCPSessionManager:
     def __init__(self) -> None:
         self._sessions: dict[int, tuple[object, object]] = {}   # server_id -> (session, stack)
         self._lock = asyncio.Lock()
+        self._proxy_sources: dict[int, str] = {}                # server_id -> PB-1 proxy source
+
+    def proxy_source(self, server_id: int) -> str | None:
+        """Which link of the PB-1 proxy chain hit for this server's last stdio launch."""
+        return self._proxy_sources.get(server_id)
 
     async def _open_session(self, server: dict):
         """Open the MCP session for this server's transport. SDK-only seam (overridden in tests)."""
@@ -34,9 +41,15 @@ class MCPSessionManager:
             else:
                 from mcp import StdioServerParameters
                 from mcp.client.stdio import stdio_client
+                server_env = server.get("env") or {}
+                additions, source = proxy_resolve.resolve_proxy(server_env)
+                self._proxy_sources[server["id"]] = source
+                logger.info(
+                    "MCP stdio %s proxy source: %s", server.get("label") or server["id"], source
+                )
                 params = StdioServerParameters(
                     command=server["command"], args=list(server.get("args") or []),
-                    env={**os.environ, **(server.get("env") or {})},
+                    env={**os.environ, **additions, **server_env},   # explicit server env wins
                 )
                 read, write = await stack.enter_async_context(stdio_client(params))
             client = await stack.enter_async_context(ClientSession(read, write))
