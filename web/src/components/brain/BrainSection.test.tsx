@@ -10,6 +10,7 @@ vi.mock("../../api/client", () => ({ api: {
     { kind: "profile", label: "画像", children: [] },
   ] }),
   getBrainEntry: vi.fn(),
+  getBrainGraph: vi.fn().mockResolvedValue({ nodes: [], links: [] }),
   embeddingStatus: vi.fn().mockResolvedValue(null),
 } }));
 vi.mock("../../lib/feed", () => ({ feedFile: vi.fn(), feedTextOrUrl: vi.fn() }));
@@ -25,6 +26,8 @@ describe("BrainSection (integrated)", () => {
     expect(screen.getAllByText("画像").length).toBeGreaterThan(0);
     // the unified left nav renders a synced row
     expect(screen.getAllByTestId("brain-nav-row").length).toBeGreaterThan(0);
+    // the force graph replaces the orrery
+    expect(screen.getByTestId("brain-graph")).toBeTruthy();
   });
 
   it("drops files → feeds each via feedFile then refreshes", async () => {

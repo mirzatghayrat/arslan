@@ -3,8 +3,8 @@ import { api, type BrainLeaf } from "../../api/client";
 import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
+import BrainGraph from "./BrainGraph";
 import BrainNav from "./BrainNav";
-import BrainOrrery from "./BrainOrrery";
 import BrainPanels from "./BrainPanels";
 import NoteEditor from "./NoteEditor";
 
@@ -21,6 +21,9 @@ export default function BrainSection() {
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [picked, setPicked] = useState<BrainLeaf | null>(null);
+  // BrainGraph never emits ghost picks (it skips them itself), but guard here too
+  // since ghost refs have no /brain/entry to open in BrainEntryDetail.
+  const onGraphPick = (l: BrainLeaf) => { if ((l.kind as string) === "ghost") return; setPicked(l); };
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -65,7 +68,7 @@ export default function BrainSection() {
         <div className="flex-none relative" style={{ maxHeight: "56%" }}>
           {error
             ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">加载知识图谱失败</div>
-            : <BrainOrrery branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={setPicked} glowIds={glowIds} className="w-full h-full" />}
+            : <BrainGraph focusedId={focusedId} onFocus={setFocusedId} onPick={onGraphPick} glowIds={glowIds} className="w-full h-full" />}
           {loading && <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-subtle-foreground uppercase tracking-widest pointer-events-none">loading…</div>}
         </div>
         <div className="flex-1 overflow-auto pt-2">
