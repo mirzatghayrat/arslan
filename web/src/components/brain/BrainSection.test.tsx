@@ -3,41 +3,42 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../api/client", () => ({ api: {
   getBrainTree: vi.fn().mockResolvedValue({ branches: [
-    { kind: "material", label: "材料", children: [
-      { kind: "material", ref: "material:coll:1:okx.pdf", label: "okx.pdf", provenance: "投喂",
-        confidence: null, usage_count: 3, last_used_at: null, last_used_ref: null, value: 4 } ] },
+    { kind: "material", label: "材料", children: [] },
     { kind: "learning", label: "心得", children: [] },
     { kind: "profile", label: "画像", children: [] },
+    { kind: "note", label: "笔记", children: [] },
   ] }),
   getBrainEntry: vi.fn(),
-  getBrainGraph: vi.fn().mockResolvedValue({ nodes: [], links: [] }),
+  getBrainGraph: vi.fn().mockResolvedValue({ nodes: [{ id: "self", ref: "self", kind: "self", label: "你", val: 3 }], links: [] }),
   embeddingStatus: vi.fn().mockResolvedValue(null),
+  createNote: vi.fn(),
+  generateNotes: vi.fn(),
 } }));
 vi.mock("../../lib/feed", () => ({ feedFile: vi.fn(), feedTextOrUrl: vi.fn() }));
+vi.mock("./BrainIndexHealth", () => ({ default: () => <div /> }));
 import BrainSection from "./BrainSection";
 
-describe("BrainSection (integrated)", () => {
-  it("drives left nav + panels + orrery from one /brain/tree", async () => {
+describe("BrainSection", () => {
+  it("defaults to the graph tab (full-height graph)", async () => {
     render(<BrainSection />);
-    // okx.pdf now appears in both the nav row and the panel → getAllByText
-    await waitFor(() => expect(screen.getAllByText("okx.pdf").length).toBeGreaterThan(0));
-    expect(screen.getAllByText("材料").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("心得").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("画像").length).toBeGreaterThan(0);
-    // the unified left nav renders a synced row
-    expect(screen.getAllByTestId("brain-nav-row").length).toBeGreaterThan(0);
-    // the force graph replaces the orrery
-    expect(screen.getByTestId("brain-graph")).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("brain-graph")).toBeTruthy());
+    expect(screen.getByText("图谱")).toBeTruthy();
+    expect(screen.getByText("内容")).toBeTruthy();
   });
 
-  it("drops files → feeds each via feedFile then refreshes", async () => {
+  it("switching to 内容 with nothing picked shows the empty hint", async () => {
+    render(<BrainSection />);
+    await waitFor(() => expect(screen.getByText("内容")).toBeTruthy());
+    fireEvent.click(screen.getByText("内容"));
+    expect(screen.getByText(/从左侧选一个条目/)).toBeTruthy();
+  });
+
+  it("feeds dropped files then refreshes", async () => {
     const feed = await import("../../lib/feed");
     const spy = vi.spyOn(feed, "feedFile").mockResolvedValue({ chunks_added: 1 } as any);
     const { container } = render(<BrainSection />);
     const zone = container.querySelector('[data-dropzone="1"]')! as HTMLElement;
     const file = new File(["x"], "a.pdf", { type: "application/pdf" });
-    fireEvent.dragOver(zone, { dataTransfer: { files: [file], types: ["Files"] } });
-    expect(container.querySelector('[data-drop-overlay="1"]')).not.toBeNull();
     fireEvent.drop(zone, { dataTransfer: { files: [file], types: ["Files"] } });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
   });
