@@ -131,17 +131,9 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
                   onMouseLeave={(e) => { onFocus(null); (e.currentTarget as SVGElement).style.transform = "scale(1)"; }}
                   onClick={() => { if (!ghost && !self && !tag) onPick({ kind: n.kind as BrainLeaf["kind"], ref: n.ref, label: n.label, provenance: null, confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: n.val }); }}
                   onDoubleClick={() => { if (ghost) onCreateNoteWithTitle(n.label); }}
-                  style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }}>
-                  <title>{n.label}</title>
-                </circle>
-                {/* No always-on labels — every node (你 included) reveals its name
-                    only on hover/focus; the left tree names the rest. */}
-                {focused && (
-                  <text x={n.x ?? 0} y={(n.y ?? 0) - r - 3} textAnchor="middle" fontSize={self ? 11 : 9}
-                    fontWeight={700} fill="var(--foreground)" style={{ pointerEvents: "none" }}>
-                    {tag ? `#${n.label}` : String(n.label).slice(0, 16)}
-                  </text>
-                )}
+                  style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }} />
+                {/* No node labels at all — nodes are pure dots. Hover highlights
+                    (ring + lit edges); click opens the detail rail with the name. */}
               </g>
             );
           })}
