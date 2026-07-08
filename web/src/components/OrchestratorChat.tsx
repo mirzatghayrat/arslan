@@ -741,11 +741,15 @@ export default function OrchestratorChat({
                     {msg.toolActivity && <ToolActivityCard activity={msg.toolActivity} />}
 
                     {/* 🔒 HTML deliverable card — artifactHtml comes ONLY from the backend
-                        stream_end frame's kind:"html" artifact (HX-2), never LLM text. */}
+                        stream_end frame's kind:"html" artifact (HX-2), never LLM text.
+                        Keep the card's own copy button here: the message row copies the
+                        SUMMARY (display_content), not the source — without card-copy the
+                        source would be un-copyable. (hasMessageActions only suppresses
+                        card-copy on the salvage path, where row copy == card copy.) */}
                     {msg.artifactHtml && (
                       <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
                                    filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
-                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
+                                   truncated={!msg.artifactHtml.complete} />
                     )}
 
                     {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}

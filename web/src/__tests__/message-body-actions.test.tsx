@@ -150,4 +150,17 @@ describe("HtmlDocCard artifact props (HX-3 stream_end kind:html deliverable card
     expect(screen.queryByText("msg.html_truncated")).toBeNull();
     expect(screen.queryByText("msg.html_incomplete")).toBeNull();
   });
+
+  it("keeps the copy-source button on the artifact card (row copy only copies the summary)", () => {
+    // Artifact path: display_content is a one-line summary, so the message row's copy
+    // does NOT copy the source — the card's own copy must stay visible (the salvage
+    // path suppresses it via hasMessageActions, where row copy == card copy).
+    render(<HtmlDocCard html={content + "</body></html>"} title="OKX 演示" bytes={4096} />);
+    expect(screen.getByTitle("msg.copy")).toBeTruthy();
+  });
+
+  it("suppresses card-copy only when the surrounding row has identical copy (salvage path)", () => {
+    render(<HtmlDocCard html={content + "</body></html>"} hasMessageActions />);
+    expect(screen.queryByTitle("msg.copy")).toBeNull();
+  });
 });
