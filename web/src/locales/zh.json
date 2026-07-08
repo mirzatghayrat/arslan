@@ -89,6 +89,9 @@
     "draft": "生成草稿",
     "drafting": "生成中…"
   },
+  "clarify_card": {
+    "answered": "已选择"
+  },
   "invite_card": {
     "heading": "因为{{reason}}，把 {{name}} 拉进来？",
     "confirm": "确认",

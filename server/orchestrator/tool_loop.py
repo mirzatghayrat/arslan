@@ -542,7 +542,53 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                     "body": {"type": "string"}}},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
+    "ask_user_choice": {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string"},
+            "options": {"type": "array", "minItems": 2, "maxItems": 4,
+                        "items": {"type": "object",
+                                  "properties": {"label": {"type": "string"},
+                                                 "hint": {"type": "string"}},
+                                  "required": ["label"]}},
+        },
+        "required": ["question", "options"],
+    },
 }
+
+# PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call
+# ends the turn — the caller renders a structured choice card (`clarify_options`) and
+# the user's click advances the conversation. Validation is recoverable: a malformed
+# call gets a tool error the model can react to (retry with 2-4 options, or answer).
+CLARIFY_MIN_OPTIONS = 2
+CLARIFY_MAX_OPTIONS = 4
+
+
+def _parse_clarify_args(args: dict) -> tuple[dict | None, str | None]:
+    """Validate + clamp ask_user_choice args.
+
+    Returns ({question, options: [{label, hint}] (2-4)}, None) on success, or
+    (None, recoverable-error-text) when the question is missing or fewer than
+    2 distinct labelled options survive cleaning. Over-long lists clamp to 4."""
+    question = str(args.get("question") or "").strip()
+    options: list[dict] = []
+    raw = args.get("options")
+    if isinstance(raw, list):
+        for o in raw:
+            if isinstance(o, str):                 # some models send bare strings
+                label, hint = o.strip(), ""
+            elif isinstance(o, dict):
+                label = str(o.get("label") or "").strip()
+                hint = str(o.get("hint") or "").strip()
+            else:
+                continue
+            if label and not any(x["label"] == label for x in options):
+                options.append({"label": label, "hint": hint})
+    if not question or len(options) < CLARIFY_MIN_OPTIONS:
+        return None, ("ask_user_choice needs a question plus 2-4 DISTINCT options "
+                      "(each {label, hint?}). Give at least 2 real options, or just "
+                      "answer the user directly.")
+    return {"question": question, "options": options[:CLARIFY_MAX_OPTIONS]}, None
 
 _ESCALATE_SCHEMA = {
     "type": "function",
@@ -836,6 +882,19 @@ async def run_native(
                                            "context": str(args.get("context") or "").strip()}}
                 # assistant_content is a JSON string of the call so trace/convo read like run().
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
+                # PA-3 terminal tool: a VALID ask_user_choice call ends the turn — the
+                # caller emits the clarify_options card and waits for the user's click.
+                # Gated on the RESOLVED toolset so loops that don't wire it (spawns)
+                # fall through to the normal "tool not available" dispatch error.
+                if name == "ask_user_choice" and "ask_user_choice" in wired_keys:
+                    clarify, err = _parse_clarify_args(args)
+                    if err is not None:
+                        _record_tool_result(
+                            name, args, {"ok": False, "external": False, "error": err},
+                            emit, tool_trace, assistant_content, convo)
+                        continue
+                    return {"final": None, "escalation": None, "clarify": clarify,
+                            "tool_trace": tool_trace}
                 # Convergence cap: after _SEARCH_CAP searches, refuse more web_search and push the
                 # model to extract a source or answer — deterministically ends the snippet spiral.
                 if name == "web_search":

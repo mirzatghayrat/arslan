@@ -24,6 +24,7 @@ import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
+import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 import { activeMention, filterRoster, insertMention } from '../lib/mentions';
@@ -504,6 +505,28 @@ export default function OrchestratorChat({
                     {msg.rosterAction === 'joined' ? '🔗' : '✕'} {label}
                   </span>
                   <div className="flex-1 h-px bg-border/60" />
+                </div>
+              );
+            }
+
+            // PA-3 structured clarification card: Arslan needs the user to pick ONE of
+            // 2-4 directions. Picking sends the option's LABEL as a normal user_message
+            // over the same send path the composer uses, then flips the card to its
+            // answered (disabled) state via the store — one click, one shot.
+            if (msg.clarifyOptions) {
+              const co = msg.clarifyOptions;
+              return (
+                <div key={msg.id} className="flex gap-3 items-start py-2">
+                  <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark mt-0.5" draggable={false} />
+                  <ClarifyOptionsCard
+                    question={co.question}
+                    options={co.options}
+                    answered={co.answered}
+                    onPick={(label) => {
+                      useArslanStore.getState().markClarifyAnswered(Number(msg.id));
+                      onSendMessage?.(label);
+                    }}
+                  />
                 </div>
               );
             }

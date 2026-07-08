@@ -235,6 +235,14 @@ _NO_BACKGROUND_EXEC = (
     "“正在/将要/已交给”;做不到就如实说明。"
 )
 
+# PA-3: when Arslan genuinely needs the user to choose between a few directions, it must
+# use the structured choice card (one click advances the conversation) — a free-text
+# counter-question restarts the confirm loop this PA round exists to kill.
+_CLARIFY_CHOICE_NUDGE = (
+    "\n\n需要用户在几个方向里选择时,调用 ask_user_choice 工具(给出 2-4 个具体选项),"
+    "不要用纯文本反问。"
+)
+
 
 def _now_line() -> str:
     """Current server time injected into Arslan's prompt so date/time questions need no search."""
@@ -691,7 +699,7 @@ async def _handle_answer(
     roster = await _team_roster()
     system = (
         _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
-        + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
+        + _CLARIFY_CHOICE_NUDGE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )
@@ -725,6 +733,20 @@ async def _handle_answer(
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
         return
+    # PA-3: the model asked for a structured user choice — ask_user_choice is a
+    # TERMINAL tool, so the loop ended the turn with validated/clamped {question,
+    # options}. Persist a compact text twin (question + bulleted labels) so
+    # history/recap keep the context, close the stream WITHOUT a ghost bubble
+    # (message_id=None — the card is the visible element), and emit the card frame.
+    # No promise guard (nothing was promised) and no further LLM call.
+    clarify = result.get("clarify")
+    if clarify:
+        compact = clarify["question"] + "\n" + "\n".join(
+            f"- {o['label']}" for o in clarify["options"])
+        await memory.add_message(conversation_id, "arslan", compact)
+        emit({"type": "stream_end", "message_id": None})
+        emit(protocol.clarify_options(clarify["question"], clarify["options"]))
+        return compact
     full = result.get("final") or ""
     # HX-1 A2 空头支票拦截, exemptions SPLIT by PA-1 (second live incident: Arslan called
     # web_search every turn while the final text claimed 「让 Deck Master 直接出PPT」 five
@@ -1050,6 +1072,14 @@ async def _arslan_tools() -> list[dict]:
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
     }
     tools = [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
+    # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
+    # the turn and _handle_answer emits the clarify_options card). Registered here so
+    # Arslan's answer path can offer real choice buttons instead of a text counter-question.
+    tools.append({"key": "ask_user_choice",
+                  "description": "Ask the user to pick ONE of 2-4 concrete directions when you "
+                                 "genuinely cannot proceed without their choice. args: {question, "
+                                 "options: [{label, hint?}] (2-4 options)}. The user answers with "
+                                 "one click — NEVER ask a multiple-choice question in plain text."})
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "

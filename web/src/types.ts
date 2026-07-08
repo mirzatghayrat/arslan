@@ -107,6 +107,9 @@ export interface Message {
   /** HTML deliverable card data (kind:"html" stream_end artifact). 🔒 Backend frames only. */
   artifactHtml?: HtmlArtifact;
   escalation?: Escalation;
+  /** PA-3 structured clarification card: question + 2-4 one-click options.
+   *  🔒 Backend clarify_options frames only — never parsed from LLM message text. */
+  clarifyOptions?: { question: string; options: { label: string; hint?: string }[]; answered?: boolean };
 }
 
 export interface Spawn {
