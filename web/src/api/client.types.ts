@@ -597,3 +597,13 @@ export interface McpTool {
   suggested_tier: string; // safe|orchestrator (UI hint)
   host_enabled: boolean; // Arslan (host) may use this MCP tool
 }
+
+export interface NoteDto {
+  id: number; title: string; content: string; tags: string[];
+  created_at: string | null; updated_at: string | null;
+  backlinks?: { id: number; title: string }[];
+}
+export interface NoteSuggestDto {
+  suggestions: { target: string; kind: string; reason: string }[];
+  tags: string[];
+}

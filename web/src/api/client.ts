@@ -10,6 +10,8 @@ import type {
   EvolveProposal,
   IngestResult,
   KnowledgeSource,
+  NoteDto,
+  NoteSuggestDto,
   ProviderConfig,
   ProviderOption,
   RegistryCatalog,
@@ -108,6 +110,13 @@ export const api = {
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
   getBrainEntry: (kind: string, ref: string) =>
     request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),
+  listNotes: () => request<NoteDto[]>("/brain/notes"),
+  getNote: (id: number) => request<NoteDto>(`/brain/notes/${id}`),
+  createNote: (b: { title: string; content?: string; tags?: string[] }) =>
+    request<NoteDto>("/brain/notes", { method: "POST", body: JSON.stringify(b) }),
+  updateNote: (id: number, b: { title?: string; content?: string; tags?: string[] }) =>
+    request<NoteDto>(`/brain/notes/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deleteNote: (id: number) => request<{ deleted: boolean }>(`/brain/notes/${id}`, { method: "DELETE" }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
   draftSpawn: (description: string) =>
     request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
