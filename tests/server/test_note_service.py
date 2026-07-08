@@ -51,3 +51,30 @@ async def test_backlinks(maker):
     b = await note_service.create("来源", "引用 [[目标]]", [])
     bl = await note_service.backlinks("目标")
     assert any(x["id"] == b.id for x in bl)
+
+
+class _FakeAdapter:
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        class R:
+            content = '{"suggestions":[{"target":"材料库","kind":"material","reason":"同讲 OKX"}],"tags":["okx","deck"]}'
+        return R()
+
+
+@pytest.mark.asyncio
+async def test_suggest_links(maker, monkeypatch):
+    monkeypatch.setattr(note_service, "_get_adapter", lambda: _FakeAdapter())
+    n = await note_service.create("OKX 笔记", "关于 OKX 永续合约", [])
+    out = await note_service.suggest_links(n["id"] if isinstance(n, dict) else n.id,
+                                           candidate_labels=["材料库", "别的"])
+    assert out["suggestions"][0]["target"] == "材料库"
+    assert "okx" in out["tags"]
+
+
+@pytest.mark.asyncio
+async def test_suggest_fail_open(maker, monkeypatch):
+    class _Boom:
+        async def chat(self, *a, **k): raise RuntimeError("llm down")
+    monkeypatch.setattr(note_service, "_get_adapter", lambda: _Boom())
+    n = await note_service.create("x", "y", [])
+    out = await note_service.suggest_links(n.id, candidate_labels=["a"])
+    assert out == {"suggestions": [], "tags": []}

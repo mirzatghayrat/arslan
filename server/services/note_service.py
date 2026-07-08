@@ -2,6 +2,7 @@
 helpers (suggest/generate) are added in NT-4/NT-5. FTS row = title + "\n" + content."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime
@@ -10,10 +11,16 @@ from sqlalchemy import select, text as sa_text
 
 from server.db import session as db_session
 from server.db.models import Note
+from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
 
 WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+_SUGGEST_SYS = ("你是知识库助手。只从给到的候选清单里选出与这篇笔记语义相关、该建 [[链接]] 的条目"
+                "(不要选笔记自己),每条给一句理由;再给 3-5 个小写标签。严格输出 JSON,"
+                "形如 {\"suggestions\":[{\"target\":\"...\",\"kind\":\"...\",\"reason\":\"...\"}],\"tags\":[\"...\"]}。"
+                "target 必须来自候选清单原文,不要编造。")
 
 
 def parse_links(content: str) -> list[str]:
@@ -101,3 +108,28 @@ async def backlinks(title: str) -> list[dict]:
         rows = (await db.execute(select(Note))).scalars().all()
     return [{"id": n.id, "title": n.title} for n in rows
             if target in [t.lower() for t in parse_links(n.content)]]
+
+
+def _get_adapter():
+    return build_adapter(role="summarize")
+
+
+async def suggest_links(note_id: int, candidate_labels: list[str]) -> dict:
+    n = await get(note_id)
+    if n is None:
+        return {"suggestions": [], "tags": []}
+    cand = "\n".join(f"- {c}" for c in candidate_labels if c and c != n["title"])
+    user = f"笔记标题:{n['title']}\n笔记内容:\n{n['content']}\n\n候选条目:\n{cand}"
+    try:
+        adapter = _get_adapter()
+        a = await adapter if hasattr(adapter, "__await__") else adapter
+        resp = await a.chat(system=_SUGGEST_SYS, user=user)
+        data = json.loads((resp.content or "{}").strip())
+        allowed = {c for c in candidate_labels}
+        sugg = [s for s in data.get("suggestions", [])
+                if isinstance(s, dict) and s.get("target") in allowed]
+        tags = [t for t in data.get("tags", []) if isinstance(t, str)][:5]
+        return {"suggestions": sugg, "tags": tags}
+    except Exception as exc:  # noqa: BLE001 — nothing beats a fabricated link
+        logger.warning("suggest_links failed (non-fatal): %s", exc)
+        return {"suggestions": [], "tags": []}

@@ -43,3 +43,15 @@ async def update_note(note_id: int, request: Request) -> dict:
 @router.delete("/brain/notes/{note_id}")
 async def delete_note(note_id: int) -> dict:
     return {"deleted": await note_service.delete(note_id)}
+
+
+@router.post("/brain/notes/{note_id}/suggest")
+async def suggest(note_id: int) -> dict:
+    from server.db import session as db_session
+    from sqlalchemy import text as sa_text
+    async with db_session.AsyncSessionLocal() as db:
+        titles = [r[0] for r in (await db.execute(sa_text("SELECT title FROM notes"))).all()]
+        labels = [r[0] for r in (await db.execute(sa_text("SELECT label FROM learnings WHERE label IS NOT NULL"))).all()]
+        facts = [r[0] for r in (await db.execute(sa_text("SELECT COALESCE(label, content) FROM user_facts"))).all()]
+        srcs = [r[0] for r in (await db.execute(sa_text("SELECT DISTINCT source FROM knowledge_chunks"))).all()]
+    return await note_service.suggest_links(note_id, candidate_labels=titles + labels + facts + srcs)

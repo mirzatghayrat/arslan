@@ -117,6 +117,7 @@ export const api = {
   updateNote: (id: number, b: { title?: string; content?: string; tags?: string[] }) =>
     request<NoteDto>(`/brain/notes/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteNote: (id: number) => request<{ deleted: boolean }>(`/brain/notes/${id}`, { method: "DELETE" }),
+  suggestNoteLinks: (id: number) => request<NoteSuggestDto>(`/brain/notes/${id}/suggest`, { method: "POST" }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
   draftSpawn: (description: string) =>
     request<SuggestDraft>("/spawns/draft", { method: "POST", body: JSON.stringify({ description }) }),
