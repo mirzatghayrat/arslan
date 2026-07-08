@@ -1,19 +1,17 @@
 import { useMemo, useState } from "react";
 import type { BrainLeaf } from "../../api/client";
-import { useKnowledgeTree } from "../../hooks/useKnowledgeTree";
 import { useBrainTree, brainBranchesToTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
+import BrainNav from "./BrainNav";
 import BrainPanels from "./BrainPanels";
-import KnowledgeNav from "./KnowledgeNav";
 import KnowledgeSunburst from "./KnowledgeSunburst";
 
 export default function BrainSection() {
-  // Left nav keeps the collection-management tree (feed / delete / rename); the
-  // right side (orrery + panels) reads the new typed /brain/tree with usage.
-  const { tree, refresh: refreshNav } = useKnowledgeTree();
-  const { branches, loading, error, refresh: refreshBrain } = useBrainTree();
-  const refresh = () => { refreshNav(); refreshBrain(); };
+  // ONE data source for the whole Second Brain: the typed /brain/tree drives the
+  // left nav, the orrery, and the panels alike — they share focusedId so hovering
+  // a nav row lights up its wedge. (No more disconnected old collection tree.)
+  const { branches, loading, error, refresh } = useBrainTree();
 
   const brainTree = useMemo(() => brainBranchesToTree(branches), [branches]);
   const glowIds = useMemo(() => recentIds(branches), [branches]);
@@ -45,7 +43,7 @@ export default function BrainSection() {
       onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => void onDrop(e)}>
-      <KnowledgeNav tree={tree} focusedId={focusedId} onFocus={setFocusedId} onChanged={refresh} />
+      <BrainNav branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={setPicked} onChanged={refresh} />
       <div className="flex-1 relative h-full flex flex-col overflow-hidden">
         {/* A′: height-capped orrery on top, dense panels peeking below */}
         <div className="flex-none relative" style={{ maxHeight: "56%" }}>

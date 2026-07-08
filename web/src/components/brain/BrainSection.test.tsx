@@ -2,10 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../api/client", () => ({ api: {
-  listSpawns: vi.fn().mockResolvedValue([]), listFacts: vi.fn().mockResolvedValue([]),
-  listCollections: vi.fn().mockResolvedValue([{ id: 1, name: "保险资料", chunks: 6, sources: 1, spawn_ids: [] }]),
-  getKnowledge: vi.fn().mockResolvedValue([]), getCollectionKnowledge: vi.fn().mockResolvedValue([{ source: "条款.pdf", chunks: 6 }]),
-  createCollection: vi.fn(), ingestCollection: vi.fn(),
   getBrainTree: vi.fn().mockResolvedValue({ branches: [
     { kind: "material", label: "材料", children: [
       { kind: "material", ref: "material:coll:1:okx.pdf", label: "okx.pdf", provenance: "投喂",
@@ -14,19 +10,21 @@ vi.mock("../../api/client", () => ({ api: {
     { kind: "profile", label: "画像", children: [] },
   ] }),
   getBrainEntry: vi.fn(),
+  embeddingStatus: vi.fn().mockResolvedValue(null),
 } }));
-vi.mock("../../lib/feed", () => ({ feedFile: vi.fn() }));
+vi.mock("../../lib/feed", () => ({ feedFile: vi.fn(), feedTextOrUrl: vi.fn() }));
 import BrainSection from "./BrainSection";
 
-describe("BrainSection (A′)", () => {
-  it("renders the three brain panels driven by /brain/tree", async () => {
+describe("BrainSection (integrated)", () => {
+  it("drives left nav + panels + orrery from one /brain/tree", async () => {
     render(<BrainSection />);
-    await waitFor(() => expect(screen.getByText("okx.pdf")).toBeInTheDocument());
-    // labels appear in both the panel headers and the sunburst titles → use getAllByText
+    // okx.pdf now appears in both the nav row and the panel → getAllByText
+    await waitFor(() => expect(screen.getAllByText("okx.pdf").length).toBeGreaterThan(0));
     expect(screen.getAllByText("材料").length).toBeGreaterThan(0);
     expect(screen.getAllByText("心得").length).toBeGreaterThan(0);
     expect(screen.getAllByText("画像").length).toBeGreaterThan(0);
-    expect(screen.getByText(/用过 3/)).toBeInTheDocument();
+    // the unified left nav renders a synced row
+    expect(screen.getAllByTestId("brain-nav-row").length).toBeGreaterThan(0);
   });
 
   it("drops files → feeds each via feedFile then refreshes", async () => {
@@ -36,7 +34,7 @@ describe("BrainSection (A′)", () => {
     const zone = container.querySelector('[data-dropzone="1"]')! as HTMLElement;
     const file = new File(["x"], "a.pdf", { type: "application/pdf" });
     fireEvent.dragOver(zone, { dataTransfer: { files: [file], types: ["Files"] } });
-    expect(container.querySelector('[data-drop-overlay="1"]')).not.toBeNull(); // overlay shows
+    expect(container.querySelector('[data-drop-overlay="1"]')).not.toBeNull();
     fireEvent.drop(zone, { dataTransfer: { files: [file], types: ["Files"] } });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
   });

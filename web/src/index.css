@@ -2580,6 +2580,96 @@ button:disabled {
    ============================================================ */
 
 /* Dock root: pinned to the bottom of the (scrollable) rail. */
+.brain-nav {
+  width: 340px;
+  flex-shrink: 0;
+  height: 100%;
+  border-right: 1px solid var(--border);
+  background: var(--sidebar);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+.brain-nav__search { padding: 12px; }
+.brain-nav__search-input,
+.brain-nav__feed-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 13px;
+}
+.brain-nav__search-input::placeholder,
+.brain-nav__feed-input::placeholder { color: var(--subtle-foreground); }
+.brain-nav__tree { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.brain-nav__branch { margin-bottom: 4px; }
+.brain-nav__branch-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.brain-nav__branch-head:hover { background: color-mix(in srgb, var(--foreground) 3%, transparent); }
+.brain-nav__caret { font-size: 10px; color: var(--subtle-foreground); width: 10px; }
+.brain-nav__dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.brain-nav__branch-label { flex: 1; font-size: 12px; font-weight: 500; color: var(--foreground); }
+.brain-nav__count { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--subtle-foreground); }
+.brain-nav__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.brain-nav__row:hover,
+.brain-nav__row.is-focused { background: color-mix(in srgb, var(--foreground) 5%, transparent); border-color: var(--border); }
+.brain-nav__row-label { flex: 1; min-width: 0; font-size: 13px; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brain-nav__row-usage { font-family: var(--font-mono, monospace); font-size: 10.5px; color: var(--subtle-foreground); flex-shrink: 0; }
+.brain-nav__empty { font-size: 11px; color: var(--subtle-foreground); padding: 4px 24px; }
+
+.brain-health {
+  margin: 0 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brain-health__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.brain-health__title { font-size: 12px; font-weight: 500; color: var(--foreground); }
+.brain-health__model { font-family: var(--font-mono, monospace); font-size: 10.5px; color: var(--subtle-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brain-health__bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--foreground) 8%, transparent); overflow: hidden; }
+.brain-health__fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width .3s; }
+.brain-health__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.brain-health__meta { font-family: var(--font-mono, monospace); font-size: 10.5px; color: var(--muted-foreground); }
+.brain-health__reindex {
+  font-size: 11px;
+  color: var(--primary);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.brain-health__reindex:hover:not(:disabled) { border-color: var(--primary); }
+.brain-health__reindex:disabled { opacity: .5; }
+
+.brain-nav__feed { border-top: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.brain-nav__err { font-size: 12px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 8px; padding: 6px 10px; }
+.brain-nav__feed-btns { display: flex; gap: 8px; }
+.brain-nav__feed-primary { flex: 1; padding: 8px 12px; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); font-size: 13.5px; font-weight: 500; border: none; cursor: pointer; }
+.brain-nav__feed-primary:disabled { opacity: .5; }
+.brain-nav__feed-upload { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); color: var(--foreground); background: none; cursor: pointer; display: flex; align-items: center; }
+.brain-nav__feed-upload:disabled { opacity: .5; }
+
 .recap-dock {
   margin-top: auto;
   flex-shrink: 0;
