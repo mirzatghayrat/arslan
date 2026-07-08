@@ -26,25 +26,38 @@ function isFullHtmlDoc(s: string): boolean {
   return /^<!doctype html/i.test(t) || (/^<html[\s>]/i.test(t) && /<\/html>/i.test(s));
 }
 
+// A doc cut by max-tokens has no </html>; only salvage it as a deliverable when there
+// is substantial content after the doctype (backend parity: html_artifact.MIN_TRUNCATED_CHARS).
+const MIN_TRUNCATED_CHARS = 2000;
+
 /**
- * Deterministic salvage for a complete HTML document EMBEDDED in a reply (live incident:
+ * Deterministic salvage for an HTML document EMBEDDED in a reply (live incident:
  * the skill mandates a bare `<!DOCTYPE html` reply, but the model prefixed "以下是…完整
  * HTML 代码" + a ```html fence — so the doc rendered as a code wall instead of the
  * preview/download card). Don't bet on model obedience: if the text contains a
- * substantial `<!doctype html … </html>` block anywhere (fenced or not), split it out.
- * Returns null when there is no complete embedded doc (then normal rendering applies).
+ * substantial `<!doctype html …` block anywhere (fenced or not), split it out:
+ *   • closed (`</html>` present, ≥ 400 chars) → complete doc, unchanged behavior;
+ *   • UNCLOSED with ≥ 2000 chars after the doctype → TRUNCATED doc (max-tokens cut it —
+ *     msg 465 shape), salvaged to the end of the text with truncated: true. This is the
+ *     rescue path for already-persisted history rows that predate the HX-2 backend channel.
+ * Returns null when there is no salvageable doc (then normal rendering applies).
  */
-function extractEmbeddedHtmlDoc(s: string): { pre: string; html: string } | null {
+function extractEmbeddedHtmlDoc(s: string): { pre: string; html: string; truncated: boolean } | null {
   const start = s.search(/<!doctype html/i);
   if (start < 0) return null;
-  const endMatch = /<\/html>/i.exec(s.slice(start));
-  if (!endMatch) return null;
-  const end = start + endMatch.index + endMatch[0].length;
-  const html = s.slice(start, end);
-  if (html.length < 400) return null; // not a real document
   // Preamble: text before the doc, minus a dangling opening fence (```html / ~~~).
   const pre = s.slice(0, start).replace(/(^|\n)\s*(`{3,}|~{3,})[a-z]*\s*$/i, "").trimEnd();
-  return { pre, html };
+  const endMatch = /<\/html>/i.exec(s.slice(start));
+  if (endMatch) {
+    const end = start + endMatch.index + endMatch[0].length;
+    const html = s.slice(start, end);
+    if (html.length < 400) return null; // not a real document (fenced teaching snippet etc.)
+    return { pre, html, truncated: false };
+  }
+  // No </html>: the doc was cut by max-tokens. Sub-threshold → a small unclosed
+  // snippet, leave the message alone.
+  if (s.length - start < MIN_TRUNCATED_CHARS) return null;
+  return { pre, html: s.slice(start), truncated: true };
 }
 
 /**
@@ -121,11 +134,39 @@ function ActionButton({ onClick, title, children }: { onClick: () => void; title
   );
 }
 
-function HtmlDocCard({ html, indent, hasMessageActions }: { html: string; indent: boolean; hasMessageActions: boolean }) {
+/**
+ * Shared HTML-deliverable card: compact row + sandboxed-iframe preview + .html download.
+ * Used for (a) full/embedded HTML docs detected in message text (this file) and
+ * (b) the live kind:"html" stream_end artifact (HX-2 channel, OrchestratorChat).
+ * `truncated` marks a max-tokens-cut doc: 「⚠ 输出被截断」 badge + incomplete note.
+ * 🔒 `html` comes only from THIS message's text or a backend artifact frame — the
+ * iframe stays sandbox="" (no scripts, no same-origin) in both cases.
+ */
+export function HtmlDocCard({
+  html,
+  indent = false,
+  hasMessageActions = false,
+  title,
+  filename,
+  bytes,
+  truncated = false,
+}: {
+  html: string;
+  indent?: boolean;
+  hasMessageActions?: boolean;
+  /** Artifact title (kind:"html" frame) — shown instead of the generic label. */
+  title?: string;
+  /** Server-side artifact filename — used as the download name when present. */
+  filename?: string;
+  /** Stored size in bytes (artifact frame); falls back to html.length. */
+  bytes?: number;
+  /** True when the doc was cut by max-tokens (no </html>). */
+  truncated?: boolean;
+}) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState(false);
   const [copied, setCopied] = useState(false);
-  const kb = Math.max(1, Math.round(html.length / 1024));
+  const kb = Math.max(1, Math.round((bytes ?? html.length) / 1024));
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(html).then(() => {
@@ -139,7 +180,12 @@ function HtmlDocCard({ html, indent, hasMessageActions }: { html: string; indent
       <div className="flex items-center gap-2.5 max-w-md border border-border-strong bg-background/60 rounded-lg px-3 py-2.5">
         <FileCode className="w-4 h-4 text-primary shrink-0" />
         <span className="text-[11.5px] text-foreground font-medium flex-1">
-          {t('msg.html_doc', { kb })}
+          {title ? `${title} · ${kb} KB` : t('msg.html_doc', { kb })}
+          {truncated && (
+            <span className="ml-2 text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-warning/15 text-warning align-middle">
+              {t('msg.html_truncated')}
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-0.5 text-[10.5px] font-mono">
           <ActionButton onClick={() => setPreview(true)} title={t('msg.preview')}>
@@ -154,13 +200,19 @@ function HtmlDocCard({ html, indent, hasMessageActions }: { html: string; indent
             </ActionButton>
           )}
           <ActionButton
-            onClick={() => triggerDownload(`document-${Date.now()}.html`, html, 'text/html;charset=utf-8')}
+            onClick={() => triggerDownload(filename ?? `document-${Date.now()}.html`, html, 'text/html;charset=utf-8')}
             title={t('msg.download_html')}
           >
             <Download className="w-3 h-3" /> .html
           </ActionButton>
         </div>
       </div>
+
+      {truncated && (
+        <div className="mt-1 text-[10px] font-mono text-warning/90">
+          {t('msg.html_incomplete')}
+        </div>
+      )}
 
       {preview && (
         <div
@@ -318,7 +370,10 @@ interface Props {
 
 export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false }: Props) {
   if (!streaming && isFullHtmlDoc(text)) {
-    return <HtmlDocCard html={text} indent={indent} hasMessageActions={hasMessageActions} />;
+    // A bare doc that starts with the doctype but lost its </html> to max-tokens is
+    // still shown as a card — honestly labeled truncated.
+    return <HtmlDocCard html={text} indent={indent} hasMessageActions={hasMessageActions}
+                        truncated={!/<\/html>/i.test(text)} />;
   }
   // Embedded doc (preamble/fence despite the skill contract) → salvage: short intro as
   // prose, the document as the preview/download card. 🔒 The card srcdoc comes only from
@@ -332,7 +387,8 @@ export default function MessageBody({ text, className, indent = false, streaming
             <ProseBody text={embedded.pre} className={className} indent={indent}
                        streaming={false} hasMessageActions={true} />
           )}
-          <HtmlDocCard html={embedded.html} indent={indent} hasMessageActions={hasMessageActions} />
+          <HtmlDocCard html={embedded.html} indent={indent} hasMessageActions={hasMessageActions}
+                       truncated={embedded.truncated} />
         </div>
       );
     }

@@ -54,6 +54,20 @@ def test_build_spawn_system_has_language_directive(maker):
     assert "not instructions about what language" in low            # facts are background, not a lang order
 
 
+def test_build_spawn_system_has_html_delivery_guardrail(maker):
+    """HX-5 B2(a): every spawn is told how to deliver full HTML documents — brief intro
+    then the document body, relying on the system's auto-packaging (HX-2 artifact
+    channel); never dump long code as chat prose or fence the full document."""
+    from server.orchestrator.dispatcher import build_spawn_system
+    async def _run():
+        async with maker() as s:
+            spawn = await s.get(Spawn, 7)
+        return await build_spawn_system(spawn, retrieval_query="x", current_turn=1)
+    system, _ = anyio.run(_run)
+    assert "系统会自动将完整 HTML 打包为可下载工件" in system
+    assert "不要用代码围栏包裹完整文档" in system
+
+
 def test_build_spawn_system_override(maker):
     from server.orchestrator.dispatcher import build_spawn_system
     async def _run():

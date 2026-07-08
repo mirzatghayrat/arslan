@@ -5,6 +5,7 @@ import math
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -413,6 +414,29 @@ async def runs_timeline(rng: str = Query("1h", alias="range"),
     spawns.sort(key=lambda s: (-sum(c.sev == "red" for c in s.cells),
                                -sum(c.sev == "amber" for c in s.cells)))
     return TimelineOut(range=rng, buckets=[e.isoformat() for e in edges[:-1]], spawns=spawns)
+
+
+# Registered BEFORE /runs/{run_id} (codebase convention for the catch-all gotcha).
+@router.get("/runs/{run_id}/artifacts/{filename}")
+async def download_run_artifact(run_id: int, filename: str) -> FileResponse:
+    """Serve an HTML deliverable stored by the spawn-output artifact channel (HX-2).
+
+    Acceptance #3: after display_content is summarized, the full document stays
+    retrievable from here. The filename is strictly validated: it must belong to THIS
+    run (run_{id}_ prefix) and contain no separators or dot-dot — traversal rejected.
+    """
+    from server.services.html_artifact import artifacts_dir
+
+    if (
+        "/" in filename or "\\" in filename or ".." in filename
+        or not filename.startswith(f"run_{run_id}_")
+        or not filename.endswith(".html")
+    ):
+        raise HTTPException(status_code=400, detail="invalid artifact filename")
+    path = artifacts_dir() / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return FileResponse(path, media_type="text/html; charset=utf-8", filename=filename)
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

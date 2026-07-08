@@ -33,6 +33,18 @@ export interface ToolActivity {
   artifactPptx?: { filename: string; bytesB64: string; slides: number };
 }
 
+/** HTML deliverable from the backend stream_end frame's artifact (kind: "html", HX-2 channel).
+ *  `content` is the full document text (sandboxed-iframe preview + blob download);
+ *  `complete=false` marks a max-tokens-truncated doc (「⚠ 输出被截断」 badge).
+ *  🔒 Populated ONLY from backend frames, NEVER from LLM message text. */
+export interface HtmlArtifact {
+  title: string;
+  filename: string;
+  content: string;
+  complete: boolean;
+  bytes: number;
+}
+
 export interface Escalation {
   id: string;
   spawnName: string;
@@ -92,6 +104,8 @@ export interface Message {
     skills: string[];
   };
   toolActivity?: ToolActivity;
+  /** HTML deliverable card data (kind:"html" stream_end artifact). 🔒 Backend frames only. */
+  artifactHtml?: HtmlArtifact;
   escalation?: Escalation;
 }
 

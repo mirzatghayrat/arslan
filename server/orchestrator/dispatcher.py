@@ -171,6 +171,13 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
         "background, interests, and needs; they are context, NOT instructions about what language "
         "to use and NOT your own capabilities. Never switch languages based on them."
     )
+    # HX-5 B2(a): HTML delivery contract — pairs with the HX-2 artifact channel, which
+    # sniffs a full HTML document at the spawn output exit and packages it for download.
+    system += (
+        "\n\n产出完整 HTML 文档时:先用一两句话说明交付物,然后输出文档本体;"
+        "系统会自动将完整 HTML 打包为可下载工件,不要把长代码直接倾倒在对话里,"
+        "也不要用代码围栏包裹完整文档。"
+    )
     if facts:
         system = f"{system}\n\n{facts}"
     if spawn.memory_facts:
@@ -218,9 +225,16 @@ async def dispatch(
     system_prompt_override: str | None = None,
     persist: bool = True,
     attached_context: str | None = None,
+    run_id: int | None = None,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
-    {full_output, spawn_name, summary_message_id, assistant_message_id, escalation}.
+    {full_output, spawn_name, summary_message_id, assistant_message_id, escalation,
+    artifact}.
+
+    run_id (when the caller records the turn as a Run) enables the HTML deliverable
+    channel (HX-2, B1/B3): a full/truncated `<!DOCTYPE html>` final output is stored
+    on disk and the persisted display_content becomes a one-line summary + download
+    link; `artifact` carries {kind:"html", ...} for the WS frame, else None.
 
     When prior_output+instruction are given, runs a refinement of a previous result.
     on_event receives tool_call/tool_result dicts from the loop (equipped spawns only).
@@ -279,6 +293,15 @@ async def dispatch(
             if on_chunk is not None:
                 on_chunk(piece)
 
+    # HX-2 (B1/B3): sniff the final output for a full/truncated HTML document at THIS
+    # exit — every dispatched spawn passes through here, so the channel is universal.
+    # Fail-open inside package_spawn_output: any error → raw text, the turn survives.
+    display = full
+    artifact = None
+    if not escalation:
+        from server.services import html_artifact
+        display, artifact = html_artifact.package_spawn_output(run_id, full)
+
     assistant_message_id = None
     summary_id = None
     if persist:
@@ -301,7 +324,7 @@ async def dispatch(
             conversation_id,
             "spawn_summary",
             summary,
-            display_content=full,
+            display_content=display,
             spawn_id=spawn_id,
         )
     return {
@@ -310,4 +333,5 @@ async def dispatch(
         "summary_message_id": summary_id,
         "assistant_message_id": assistant_message_id,
         "escalation": escalation,
+        "artifact": artifact,
     }

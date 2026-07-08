@@ -13,7 +13,7 @@ import type { ToolStep } from '../api/client.types';
 export type TranslateFn = (k: string, o?: Record<string, unknown>) => string;
 
 /** Best-effort pull of a human-meaningful bit out of the raw argsSummary JSON. */
-export function argBit(argsSummary: string | undefined, key: string): string {
+function argBit(argsSummary: string | undefined, key: string): string {
   if (!argsSummary) return '';
   try {
     const v = JSON.parse(argsSummary)?.[key];
@@ -21,7 +21,7 @@ export function argBit(argsSummary: string | undefined, key: string): string {
   } catch { return ''; }
 }
 
-export function hostOf(url: string): string {
+function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 

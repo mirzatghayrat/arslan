@@ -98,13 +98,18 @@ def spawn_created(
     spawn_name: str,
     equipment: dict[str, Any] | None = None,
     intro: str | None = None,
+    capability_warnings: list[str] | None = None,
 ) -> dict[str, Any]:
+    # capability_warnings (HX-6/P2): advisory persona-vs-equipment delivery lint —
+    # non-empty when the persona promises a format the spawn's tools/system channels
+    # cannot actually deliver. Never blocks creation.
     return {
         "type": "spawn_created",
         "spawn_id": spawn_id,
         "spawn_name": spawn_name,
         "equipment": equipment or {"toolsets": [], "skills": []},
         "intro": intro,
+        "capability_warnings": capability_warnings or [],
     }
 
 
@@ -159,13 +164,17 @@ def propose_invite(spawn_id: int, reason: str) -> dict[str, Any]:
 
 
 def suggest_update(spawn_id: int, spawn_name: str, current: dict[str, Any],
-                   changes: dict[str, Any], reason: str = "") -> dict[str, Any]:
+                   changes: dict[str, Any], reason: str = "",
+                   capability_warnings: list[str] | None = None) -> dict[str, Any]:
     """Arslan proposes CHANGES to an existing spawn (persona/tone/capabilities/equipment).
 
     Like suggest_create, emitting this frame changes NOTHING — the frontend renders a
-    confirm card showing before→after; only the user's `confirm_update` applies it."""
+    confirm card showing before→after; only the user's `confirm_update` applies it.
+    capability_warnings (HX-6/P2): advisory delivery lint on the PROPOSED persona vs
+    the resulting equipment, so the confirm card can surface the mismatch pre-apply."""
     return {"type": "suggest_update", "spawn_id": spawn_id, "spawn_name": spawn_name,
-            "current": current, "changes": changes, "reason": reason}
+            "current": current, "changes": changes, "reason": reason,
+            "capability_warnings": capability_warnings or []}
 
 
 def spawn_updated(spawn_id: int, spawn_name: str, applied: dict[str, Any],

@@ -4,7 +4,7 @@ import { API_BASE } from "./client";
 const NO_RECONNECT_CODES = new Set([1000, 4001, 4004]);
 
 /** Exponential backoff with ±20% jitter, capped at 30s. Deterministic mid-range. */
-export function backoffDelay(attempt: number): number {
+function backoffDelay(attempt: number): number {
   const base = Math.min(1000 * 2 ** attempt, 30000);
   const jitter = base * 0.2 * (Math.random() * 2 - 1);
   return Math.max(0, base + jitter);

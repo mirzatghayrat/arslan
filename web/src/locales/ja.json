@@ -716,6 +716,8 @@
     "download_html": ".html をダウンロード",
     "html_doc": "HTML ドキュメント · {{kb}} KB",
     "html_preview": "HTML プレビュー",
+    "html_truncated": "⚠ 出力が途中で切れました",
+    "html_incomplete": "ドキュメントが不完全です(出力が途中で切れました)",
     "preview": "プレビュー",
     "close": "閉じる"
   },
@@ -738,7 +740,8 @@
     "summon": "Summoning specialist…",
     "context": "Assembling context & skills…",
     "tools": "Dispatching tools…",
-    "compose": "Composing the answer…"
+    "compose": "Composing the answer…",
+    "stalled": "中断されました"
   },
   "eval": {
     "scope_conversation": "This chat",

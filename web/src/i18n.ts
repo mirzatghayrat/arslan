@@ -9,7 +9,7 @@ import fr from "./locales/fr.json";
 import ja from "./locales/ja.json";
 import zh from "./locales/zh.json";
 
-export const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
+const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
 export type Lang = (typeof SUPPORTED_LANGUAGES)[number];
 
 void i18n

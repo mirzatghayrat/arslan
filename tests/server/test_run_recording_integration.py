@@ -41,7 +41,8 @@ async def test_routed_turn_creates_run_with_steps(memdb, monkeypatch):
 
     async def fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                             on_event=None, prior_output=None, instruction=None,
-                            allow_escalation=True, mode="execute", attached_context=None):
+                            allow_escalation=True, mode="execute", attached_context=None,
+                            run_id=None):
         if on_chunk:
             on_chunk("done")
         sid = await _memory.add_message(
@@ -92,7 +93,8 @@ async def test_dispatch_records_system_prompt_and_estimated_tokens(memdb, monkey
 
     async def fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                             on_event=None, prior_output=None, instruction=None,
-                            allow_escalation=True, mode="execute", attached_context=None):
+                            allow_escalation=True, mode="execute", attached_context=None,
+                            run_id=None):
         # Mirrors what the real dispatcher.build_spawn_system does mid-dispatch.
         run_trace.record_prompt(system_prompt="SYSTEM PROMPT FOR SPAWN", injected_kb=None)
         if on_chunk:
@@ -128,7 +130,8 @@ async def test_dispatch_exception_path_records_error_kind_and_text(memdb, monkey
 
     async def failing_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                                on_event=None, prior_output=None, instruction=None,
-                               allow_escalation=True, mode="execute", attached_context=None):
+                               allow_escalation=True, mode="execute", attached_context=None,
+                               run_id=None):
         raise RuntimeError("boom-explosion")
     monkeypatch.setattr(dispatcher, "dispatch", failing_dispatch)
 

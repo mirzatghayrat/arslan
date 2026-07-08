@@ -38,10 +38,10 @@ export interface Attachment {
 }
 
 /** Accept list for the native picker: existing doc types + images. */
-export const ATTACH_ACCEPT = ".pdf,.docx,.txt,.md,.html,.htm,image/*";
+const ATTACH_ACCEPT = ".pdf,.docx,.txt,.md,.html,.htm,image/*";
 const DOC_EXT = /\.(pdf|docx|txt|md|html?)$/i;
 /** Per-message budget, borrowed from Kimi/DeepSeek (surface caps on reject). */
-export const MAX_ATTACHMENTS = 9;
+const MAX_ATTACHMENTS = 9;
 /** 30 MB/file, matching the Claude reference in the design doc. */
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
 /** Explicit-scheme URLs with a TLD-like dot. Bare domains are intentionally NOT

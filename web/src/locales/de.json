@@ -716,6 +716,8 @@
     "download_html": "Als .html",
     "html_doc": "HTML-Dokument · {{kb}} KB",
     "html_preview": "HTML-Vorschau",
+    "html_truncated": "⚠ Ausgabe abgeschnitten",
+    "html_incomplete": "Dokument unvollständig (Ausgabe wurde abgeschnitten)",
     "preview": "Vorschau",
     "close": "Schließen"
   },
@@ -738,7 +740,8 @@
     "summon": "Summoning specialist…",
     "context": "Assembling context & skills…",
     "tools": "Dispatching tools…",
-    "compose": "Composing the answer…"
+    "compose": "Composing the answer…",
+    "stalled": "Unterbrochen"
   },
   "eval": {
     "scope_conversation": "This chat",

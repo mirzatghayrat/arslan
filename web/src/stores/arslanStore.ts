@@ -45,6 +45,14 @@ interface ArslanState {
   thinking: boolean;
   // Timestamp of the current turn's start (send/confirm) — drives the LiveActivity timer.
   workStartedAt: number | null;
+  // ── HX-4 / A1 · stall watchdog ─────────────────────────────────────────────
+  // Working indicators are driven ONLY by runtime WS frames — never by message
+  // text. lastFrameAt is refreshed on EVERY incoming frame (and on turn start);
+  // checkStall() flips `stalled` when a turn is active but no frame has arrived
+  // for > STALL_MS, so the UI shows a static 「已中断」 instead of an infinite
+  // spinner. Any new frame un-stalls; stream_end/error end the turn entirely.
+  lastFrameAt: number | null;
+  stalled: boolean;
 
   setSpawnNames: (map: Record<number, string>) => void;
   setThinking: (v: boolean) => void;
@@ -62,7 +70,15 @@ interface ArslanState {
   clearPendingStaffing: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
+  // Watchdog tick: marks the current turn `stalled` if it is active and no frame
+  // has arrived for > STALL_MS. No-op on an idle store. Called on an interval by
+  // the chat view while a turn is running.
+  checkStall: () => void;
 }
+
+// A turn is "stalled" (server went quiet mid-turn) after this many ms without
+// any incoming frame. Indicators then show 「已中断」 instead of animating.
+export const STALL_MS = 90_000;
 
 // Negative, decrementing ids for client-only items (user echoes, fact chips)
 // so they never collide with server message ids.
@@ -98,6 +114,8 @@ function initialData() {
     pendingUpdate: null as { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null,
     thinking: false,
     workStartedAt: null as number | null,
+    lastFrameAt: null as number | null,
+    stalled: false,
   };
 }
 
@@ -106,7 +124,10 @@ type GetState = () => ArslanState;
 
 function makeActions(set: SetState, get: GetState) {
   return {
-    setThinking: (v: boolean) => set(v ? { thinking: true, workStartedAt: Date.now() } : { thinking: false }),
+    // Turn start also arms the stall watchdog (lastFrameAt baseline) so a
+    // dispatch that never produces a single frame still times out into 「已中断」.
+    setThinking: (v: boolean) =>
+      set(v ? { thinking: true, workStartedAt: Date.now(), lastFrameAt: Date.now(), stalled: false } : { thinking: false }),
 
     setSpawnNames: (map: Record<number, string>) =>
       set({ spawnNames: { ...get().spawnNames, ...map } }),
@@ -118,6 +139,8 @@ function makeActions(set: SetState, get: GetState) {
         items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content, ...(attachments?.length ? { attachments } : {}) }],
         pending: true,
         workStartedAt: Date.now(),
+        lastFrameAt: Date.now(),
+        stalled: false,
       }),
 
     dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
@@ -142,8 +165,26 @@ function makeActions(set: SetState, get: GetState) {
     // conversation_id repopulates from scratch with no stale carry-over.
     resetForNewConversation: () => set({ ...initialData() }),
 
+    checkStall: () => {
+      const s = get();
+      // "Active" = any runtime-frame-driven working flag. Message text NEVER
+      // counts (A1 invariant) — an idle store can never stall.
+      const active = s.thinking || s.streaming || s.pending || s.pendingRoute != null;
+      if (!active) {
+        if (s.stalled) set({ stalled: false });
+        return;
+      }
+      if (!s.stalled && s.lastFrameAt != null && Date.now() - s.lastFrameAt > STALL_MS) {
+        set({ stalled: true });
+      }
+    },
+
     handleFrame: (frame: ArslanServerMessage) => {
       const state = get();
+      // Every incoming frame proves the server is alive: refresh the watchdog
+      // baseline and un-stall. stream_end/error additionally clear the activity
+      // flags below, ending the turn entirely.
+      set({ lastFrameAt: Date.now(), stalled: false });
       // Clear thinking on the first frame that signals Arslan is responding with
       // real content or a card. Intermediate dispatch frames ("routing",
       // "roster_event", "spawn_meta") are NOT included here — they fire during
@@ -301,6 +342,20 @@ function makeActions(set: SetState, get: GetState) {
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),
+            // 🔒 SECURITY: artifactHtml comes ONLY from the backend stream_end frame's
+            // artifact (HX-2 HTML deliverable channel — sniffed/stored server-side),
+            // NEVER from LLM message text. Same invariant as artifactSvg/Chart/Pptx.
+            ...(frame.artifact?.kind === "html" && frame.artifact.content
+              ? {
+                  artifactHtml: {
+                    title: frame.artifact.title ?? "HTML 文档",
+                    filename: frame.artifact.filename ?? "document.html",
+                    content: frame.artifact.content,
+                    complete: frame.artifact.complete ?? true,
+                    bytes: frame.artifact.bytes ?? frame.artifact.content.length,
+                  },
+                }
+              : {}),
           };
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
           if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];

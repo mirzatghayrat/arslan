@@ -9,7 +9,6 @@ EXPECTED_TABLES = {
     "chat_messages",
     "feedback",
     "settings",
-    "build_sessions",
 }
 
 

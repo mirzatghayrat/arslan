@@ -16,14 +16,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create tables and prune stale build sessions on startup."""
-    from datetime import datetime, timedelta
+    """Create tables and run boot migrations/backfills on startup."""
     from pathlib import Path
 
-    from sqlalchemy import delete
-
     from server.config import settings
-    from server.db.models import BuildSession
     from server.db.session import AsyncSessionLocal
 
     # Ensure data + spawns dirs exist before the DB file is created on first
@@ -85,13 +81,6 @@ async def lifespan(app: FastAPI):
     from server.services.default_spawns import seed_default_spawns
 
     await seed_default_spawns()
-
-    cutoff = datetime.utcnow() - timedelta(hours=24)
-    async with AsyncSessionLocal() as db:
-        await db.execute(
-            delete(BuildSession).where(BuildSession.updated_at < cutoff)
-        )
-        await db.commit()
 
     # Non-blocking boot backfill for any fact left with category=NULL (write-time
     # classify failed / process died mid-flight / pre-existing rows). Fire-and-forget;
@@ -212,12 +201,6 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
-
-    from server.ws.build import build_endpoint
-
-    @app.websocket("/ws/build/{session_id}")
-    async def _ws_build(websocket: WebSocket, session_id: str):  # noqa: ANN202
-        await build_endpoint(websocket, session_id)
 
     from server.ws.chat import chat_endpoint
 

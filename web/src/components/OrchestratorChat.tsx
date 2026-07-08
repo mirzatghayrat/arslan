@@ -12,7 +12,7 @@ import { Message, MessageAttachment, Spawn, Tool, Skill } from '../types';
 import { TOOLS, SKILLS } from '../data';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
-import MessageBody from './MessageBody';
+import MessageBody, { HtmlDocCard } from './MessageBody';
 import CopyButton from './CopyButton';
 import WorkingPulse from './WorkingPulse';
 import LiveActivity from './LiveActivity';
@@ -106,6 +106,18 @@ export default function OrchestratorChat({
   const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
   const streaming = useArslanStore((s) => s.streaming);
+  // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
+  // never message text), tick checkStall() so a turn whose frames stop arriving
+  // for >90s renders a static 「已中断」 instead of an infinite pulse. Any new
+  // frame un-stalls (handled in the store).
+  const pendingSend = useArslanStore((s) => s.pending);
+  const stalled = useArslanStore((s) => s.stalled);
+  const turnActive = thinking || liveStreaming || pendingSend || pendingRoute != null;
+  useEffect(() => {
+    if (!turnActive) return;
+    const iv = setInterval(() => useArslanStore.getState().checkStall(), 5_000);
+    return () => clearInterval(iv);
+  }, [turnActive]);
   const llmError = useArslanStore((s) => s.error);
   const clearLlmError = useArslanStore((s) => s.clearError);
   const [inputValue, setInputValue] = useState('');
@@ -305,8 +317,10 @@ export default function OrchestratorChat({
               const isSplitActive = activeSandboxSpawnId === spawn.id;
               const isOpen = openSandboxes.some((s) => s.spawnId === spawn.id);
               // spawn.id is a string; pendingRoute.spawnId / streamSpawnId are numbers → coerce.
-              const running = (pendingRoute?.spawnId != null && String(pendingRoute.spawnId) === spawn.id)
-                || (streamSpawnId != null && String(streamSpawnId) === spawn.id);
+              // HX-4/A1: shimmer stops when the turn is stalled — no animation may
+              // outlive the runtime frames that justify it.
+              const running = !stalled && ((pendingRoute?.spawnId != null && String(pendingRoute.spawnId) === spawn.id)
+                || (streamSpawnId != null && String(streamSpawnId) === spawn.id));
 
               // Indicator: spawns with an open sandbox get a solid primary dot (the
               // active one pulses); spawns with no sandbox get a quiet green idle dot.
@@ -703,6 +717,14 @@ export default function OrchestratorChat({
                     {/* 2. Tool-Activity Card — humanized headline, raw JSON behind 详情 (shared component) */}
                     {msg.toolActivity && <ToolActivityCard activity={msg.toolActivity} />}
 
+                    {/* 🔒 HTML deliverable card — artifactHtml comes ONLY from the backend
+                        stream_end frame's kind:"html" artifact (HX-2), never LLM text. */}
+                    {msg.artifactHtml && (
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                                   filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
+                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
+                    )}
+
                     {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}
                     {msg.escalation && (
                       <div className={`p-4 rounded-2xl border flex items-start gap-3.5 shadow-md ${
@@ -896,6 +918,15 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
+                  {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
+                  {msg.artifactHtml && (
+                    <div className="mt-4">
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                                   filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
+                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
+                    </div>
+                  )}
+
                   {/* Brutalist Escalation Panel */}
                   {msg.escalation && (
                     <div className="mt-4 border-2 border-danger bg-background p-3 text-[11px]">
@@ -1076,6 +1107,15 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
+                  {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
+                  {msg.artifactHtml && (
+                    <div className="pl-5 pt-2">
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                                   filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
+                                   truncated={!msg.artifactHtml.complete} hasMessageActions />
+                    </div>
+                  )}
+
                   {/* Linear Minimal Escalation status */}
                   {msg.escalation && (
                     <div className="pl-5 pt-2">
@@ -1193,7 +1233,15 @@ export default function OrchestratorChat({
             {/* LiveActivity carries its own motion (✳ pulse + per-step spinner) — the old
                 bouncing-dots trio beside it was redundant noise (user-flagged). */}
             <div className="px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
-              <LiveActivity steps={liveSteps} startedAt={workStartedAt} phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
+              {stalled ? (
+                /* HX-4/A1: >90s without any runtime frame — everything goes still.
+                   Static muted marker, no spinner/pulse/scramble. */
+                <span data-testid="stalled-indicator" className="text-[11px] font-mono text-danger/80 select-none">
+                  ⏸ {t('working.stalled')}
+                </span>
+              ) : (
+                <LiveActivity steps={liveSteps} startedAt={workStartedAt} phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
+              )}
             </div>
           </div>
         )}

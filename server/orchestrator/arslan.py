@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
-from server.orchestrator import dispatcher, memory, router, run_trace, tool_loop
+from server.orchestrator import dispatcher, memory, promise_guard, router, run_trace, tool_loop
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
@@ -216,6 +216,16 @@ _CAPABILITY_SELF = (
     "凭空捏造不存在的分身或工具。"
     "\n想知道你到底装了哪些 MCP/额外工具时,调用 list_my_capabilities,用它返回的真实清单回答——"
     "别再说「我不知道我装了啥」。"
+)
+
+
+# HX-1 A3 iron rule: the system has NO background execution. A live incident had the
+# answer LLM claim "已交给 Deck Master 生成中" on a turn that dispatched nothing — the
+# deterministic interceptor (promise_guard) catches it after the fact; this line attacks
+# the fabrication at the source. Kept as its own constant so tests can pin it.
+_NO_BACKGROUND_EXEC = (
+    "\n\n系统没有后台执行。凡本回合未通过工具调用或真实派发完成的事,一律不得描述为"
+    "“正在/将要/已交给”;做不到就如实说明。"
 )
 
 
@@ -662,12 +672,14 @@ async def _staffing_match_and_propose(  # noqa: ANN001
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, confirm_command=None,
+    intercept_spawn_name: str | None = None,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
     roster = await _team_roster()
     system = (
-        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
+        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
+        + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
         + f"\n\nYour team:\n{roster}"
         + (f"\n\n{facts}" if facts else "")
     )
@@ -702,6 +714,29 @@ async def _handle_answer(
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
         return
     full = result.get("final") or ""
+    # HX-1 A2 空头支票拦截: this turn dispatched nothing (the answer path never dispatches)
+    # — if it also called NO tool yet the final text promises in-progress/handed-off work,
+    # that claim is structurally false. Append a bounded honest correction to the SAME
+    # message (streamed live + persisted, so history stays honest) and log the audit
+    # event. tool_trace non-empty = real work was narrated → never triggers (acceptance
+    # #1's false-positive guard). Fail-open: guard errors never break the answer turn.
+    try:
+        if full and not result.get("tool_trace"):
+            outcome = await promise_guard.correct(full, spawn_name=intercept_spawn_name)
+            if outcome is not None:
+                correction = outcome["correction"]
+                emit({"type": "stream_chunk", "content": "\n\n" + correction})
+                full = f"{full}\n\n{correction}"
+                tier = "doer_first" if intercept_spawn_name else "answer"
+                from server.services import recap_service
+                await recap_service.log_event(
+                    conversation_id, "promise_intercept",
+                    {"tier": tier, "pattern": outcome["pattern"],
+                     "corrected": outcome["corrected"]},
+                    f"空头支票拦截:命中「{outcome['pattern']}」→ "
+                    f"{'重合成更正' if outcome['corrected'] else '模板更正'}")
+    except Exception as exc:  # noqa: BLE001 — interception is never fatal
+        logger.warning("promise interception failed (fail-open, answer kept): %s", exc)
     msg_id = await memory.add_message(conversation_id, "arslan", full)
     emit({"type": "stream_end", "message_id": msg_id})
     return full
@@ -844,8 +879,13 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     # a trusted specialist) floats a lightweight "让 X 接手更专业?" chip whose Accept dispatches the
     # parked task. Explicit naming falls through to the existing dispatch/invite path below.
     if not await _user_named_spawn(user_message, result.spawn_id):
+        # HX-1 A2 tier 1: this branch KNOWS the inferred spawn's name, so the promise
+        # interceptor inside _handle_answer also gets the high-precision "交给/让/派 <name>"
+        # pattern — the exact live-incident shape ("已交给 Deck Master 生成中" with zero runs).
+        _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
         answer_text = await _handle_answer(conversation_id, user_message, emit,
-                                           attached_context=attached_context, confirm_command=confirm_command)
+                                           attached_context=attached_context, confirm_command=confirm_command,
+                                           intercept_spawn_name=_guard_spawn_name)
         # Dual-track growth (boundary component 5): Arslan just did an INFERRED spawn's job itself —
         # feed the deliverable to that spawn in the background so it learns without having acted.
         if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
@@ -1045,6 +1085,7 @@ async def _handle_escalation(  # noqa: ANN001
         on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
         on_event=emit,
         allow_escalation=False,
+        run_id=run_id,
     )
     emit({
         "type": "spawn_meta",
@@ -1055,7 +1096,8 @@ async def _handle_escalation(  # noqa: ANN001
         "task_brief": task_brief,
         "run_id": run_id,
     })
-    emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+    emit({"type": "stream_end", "message_id": out["summary_message_id"],
+          **({"artifact": out["artifact"]} if out.get("artifact") else {})})
     return out
 
 
@@ -1128,7 +1170,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                 conversation_id, spawn_id=spawn_id, task_brief=task_brief,
                 on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
                 on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
-                attached_context=attached_context,
+                attached_context=attached_context, run_id=recorder.run_id,
             )
         except Exception as exc:  # noqa: BLE001
             tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
@@ -1180,7 +1222,10 @@ async def _dispatch_spawn(  # noqa: ANN001
         "assistant_message_id": out["assistant_message_id"],
         "task_brief": task_brief, "run_id": recorder.run_id,
     })
-    tee({"type": "stream_end", "message_id": out["summary_message_id"]})
+    # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
+    # store turns into the chat item) so the frontend can render the preview card live.
+    tee({"type": "stream_end", "message_id": out["summary_message_id"],
+         **({"artifact": out["artifact"]} if out.get("artifact") else {})})
 
     # Auto-continue: a round that ended with a findings digest made real progress but ran
     # out of tool budget — never park it on "回复'继续'" while budget remains. The digest

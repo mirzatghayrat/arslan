@@ -716,6 +716,8 @@
     "download_html": "下载 .html",
     "html_doc": "HTML 文档 · {{kb}} KB",
     "html_preview": "HTML 预览",
+    "html_truncated": "⚠ 输出被截断",
+    "html_incomplete": "文档不完整(输出被截断)",
     "preview": "预览",
     "close": "关闭"
   },
@@ -738,7 +740,8 @@
     "summon": "正在召唤分身…",
     "context": "组装上下文与技能…",
     "tools": "调度工具中…",
-    "compose": "整理结论中…"
+    "compose": "整理结论中…",
+    "stalled": "已中断"
   },
   "eval": {
     "scope_conversation": "本会话",

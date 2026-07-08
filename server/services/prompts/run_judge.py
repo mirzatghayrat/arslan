@@ -21,9 +21,19 @@ JUDGE_SYSTEM = (
 )
 
 
+# HX-5 A4: deterministic pre-check line injected when the run's final output carries
+# promise language (promise_guard.PROMISE_RE) but the run recorded zero tool_call steps.
+FABRICATION_PRECHECK_LINE = (
+    "确定性预检: 输出宣称正在进行的工作,但本次运行没有任何对应工具调用/派发 — "
+    "fabrication 风险,评分时应扣分。"
+)
+
+
 def build_prompt(*, user_message: str, spawn_name: str | None, roster: str,
-                 persona: str, output: str) -> str:
+                 persona: str, output: str, fabrication_signal: bool = False) -> str:
+    precheck = f"{FABRICATION_PRECHECK_LINE}\n\n" if fabrication_signal else ""
     return (
+        f"{precheck}"
         f"User request:\n{user_message}\n\n"
         f"Chosen spawn: {spawn_name or '(none)'}\n\n"
         f"Available roster:\n{roster}\n\n"
