@@ -501,6 +501,20 @@ class Learning(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Note(Base):
+    """A hand-written markdown note — the human-authored Second-Brain type. Linked
+    to other entries via [[wiki links]] parsed at read time (no link table)."""
+
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False, default="")
+    tags = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BrainUsage(Base):
     """Unified cross-cutting usage for the Second Brain: one row per used entity
     (material/learning/profile), incremented when retrieval injects it."""
