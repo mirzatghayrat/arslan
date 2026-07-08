@@ -79,22 +79,25 @@ async def brain_tree() -> dict:
 
 @router.get("/brain/graph")
 async def brain_graph() -> dict:
-    """Force-graph data: every entry (4 types) as a node, edges from note [[links]]
-    (unresolved → ghost node) + best-effort 心得→spawn-well-material provenance."""
+    """Force-graph data. Every entry (4 types) is a node; edges come from note
+    [[links]] (unresolved → ghost), 心得→spawn-well-material provenance, note/fact
+    tags (shared tag → tag node), and a synthetic 「你」 hub that anchors every tag
+    cluster and catches any otherwise-orphaned entry — so the whole brain is ONE
+    connected constellation centered on you."""
     import json as _json
 
     from server.services import note_service
 
     async with db_session.AsyncSessionLocal() as db:
         facts = (await db.execute(sa_text(
-            "SELECT id, content, label FROM user_facts ORDER BY id"))).all()
+            "SELECT id, content, label, category FROM user_facts ORDER BY id"))).all()
         mats = (await db.execute(sa_text(
             "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
             "GROUP BY collection_id, spawn_id, source"))).all()
         learns = (await db.execute(sa_text(
             "SELECT id, content, label, source_ref FROM learnings ORDER BY id"))).all()
         notes = (await db.execute(sa_text(
-            "SELECT id, title, content FROM notes ORDER BY id"))).all()
+            "SELECT id, title, content, tags FROM notes ORDER BY id"))).all()
 
     keys: list[tuple[str, str]] = []
     keys += [("profile", f"fact:{r[0]}") for r in facts]
@@ -117,7 +120,9 @@ async def brain_graph() -> dict:
     by_label = {n["label"].lower(): n["id"] for n in nodes if n["label"]}
     links: list[dict] = []
     ghosts: dict[str, dict] = {}
-    for nid, _title, content in notes:
+
+    # 1) note [[links]] → resolved link / ghost node
+    for nid, _title, content, _tags in notes:
         src = f"note:{nid}"
         for target in note_service.parse_links(content):
             tid = by_label.get(target.lower())
@@ -128,6 +133,7 @@ async def brain_graph() -> dict:
                 ghosts.setdefault(gid, {"id": gid, "ref": gid, "kind": "ghost", "label": target, "val": 0.5})
                 links.append({"source": src, "target": gid, "type": "link"})
 
+    # 2) 心得 → spawn-well material provenance
     mat_by_spawn: dict[int, list[str]] = {}
     for m in mats:
         if m[1] is not None:
@@ -140,8 +146,49 @@ async def brain_graph() -> dict:
         for mref in mat_by_spawn.get(ref.get("spawn_id"), []):
             links.append({"source": f"learning:{lid}", "target": mref, "type": "provenance"})
 
-    nodes += list(ghosts.values())
-    return {"nodes": nodes, "links": links}
+    # 3) tag nodes: note tags ∪ fact category. Shared tag → items connect through it.
+    tag_ids: dict[str, str] = {}   # lower-name → node id
+
+    def _tag_node(name: str) -> str:
+        key = name.strip().lower()
+        tid = f"tag:{key}"
+        if key and tid not in tag_ids:
+            tag_ids[key] = tid
+        return tid
+
+    for nid, _title, _content, tags in notes:
+        try:
+            tag_list = tags if isinstance(tags, list) else _json.loads(tags or "[]")
+        except Exception:  # noqa: BLE001
+            tag_list = []
+        for t in tag_list:
+            if isinstance(t, str) and t.strip():
+                links.append({"source": f"note:{nid}", "target": _tag_node(t), "type": "tag"})
+    for fid, _content, _label, category in facts:
+        if category and str(category).strip():
+            links.append({"source": f"fact:{fid}", "target": _tag_node(category), "type": "tag"})
+
+    tag_nodes = [{"id": tid, "ref": tid, "kind": "tag", "label": tid[4:], "val": 1}
+                 for tid in tag_ids.values()]
+
+    # 4) degree over everything built so far → orphan fallback to 「你」
+    degree: dict[str, int] = {}
+    for l in links:
+        degree[l["source"]] = degree.get(l["source"], 0) + 1
+        degree[l["target"]] = degree.get(l["target"], 0) + 1
+
+    # 「你」 anchors every tag cluster …
+    for tid in tag_ids.values():
+        links.append({"source": "self", "target": tid, "type": "hub"})
+    # … and catches any real node with no edge yet (profile w/o category included)
+    for n in nodes:
+        if degree.get(n["id"], 0) == 0:
+            links.append({"source": "self", "target": n["id"], "type": "hub"})
+
+    max_val = max((n["val"] for n in nodes), default=1)
+    self_node = {"id": "self", "ref": "self", "kind": "self", "label": "你", "val": max_val + 2}
+
+    return {"nodes": [self_node, *nodes, *tag_nodes, *ghosts.values()], "links": links}
 
 
 @router.get("/brain/entry/{kind}/{ref:path}")

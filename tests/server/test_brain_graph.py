@@ -36,6 +36,29 @@ async def test_graph_note_link_and_ghost(maker):
 
 
 @pytest.mark.asyncio
-async def test_graph_empty(maker):
+async def test_graph_has_self_hub_when_empty(maker):
     g = await brain_api.brain_graph()
-    assert g == {"nodes": [], "links": []}
+    assert g["links"] == []
+    assert len(g["nodes"]) == 1
+    assert g["nodes"][0]["id"] == "self"
+    assert g["nodes"][0]["kind"] == "self"
+
+
+@pytest.mark.asyncio
+async def test_graph_tag_nodes_link_shared(maker):
+    await note_service.create("报销单", "内容", ["finance"])
+    await note_service.create("预算表", "内容", ["finance"])
+    g = await brain_api.brain_graph()
+    assert any(n["id"] == "tag:finance" and n["kind"] == "tag" for n in g["nodes"])
+    tag_edges = [l for l in g["links"] if l["type"] == "tag" and l["target"] == "tag:finance"]
+    assert len(tag_edges) == 2                                   # 两笔记各一条 → 同一标签
+    assert any(l["type"] == "hub" and l["source"] == "self" and l["target"] == "tag:finance"
+               for l in g["links"])                              # 你 → 标签簇
+
+
+@pytest.mark.asyncio
+async def test_graph_orphan_note_falls_back_to_self(maker):
+    n = await note_service.create("孤儿笔记", "没有链接也没有标签", [])
+    g = await brain_api.brain_graph()
+    assert any(l["type"] == "hub" and l["source"] == "self" and l["target"] == f"note:{n.id}"
+               for l in g["links"])
