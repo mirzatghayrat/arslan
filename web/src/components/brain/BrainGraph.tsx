@@ -2,11 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from "d3-force";
 import { select } from "d3-selection";
 import { drag as d3drag } from "d3-drag";
-import { zoom as d3zoom, zoomIdentity } from "d3-zoom";
-// side-effect import: augments d3-selection's Selection type with .transition()
-// (used by zoomBy/zoomReset below for smooth animated zoom steps)
-import "d3-transition";
-import { ZoomIn, ZoomOut, RotateCcw, Tag } from "lucide-react";
+import { zoom as d3zoom } from "d3-zoom";
 import { api, type BrainLeaf, type BrainGraphDto } from "../../api/client";
 import { hueVar } from "./hues";
 
@@ -15,23 +11,21 @@ interface Props {
   onFocus: (id: string | null) => void;
   onPick: (leaf: BrainLeaf) => void;
   onCreateNoteWithTitle: (title: string) => void;
+  showTags: boolean;   // tag-node show/hide, driven from the left nav's 标签 header
   glowIds?: Set<string>;
   className?: string;
 }
 const W = 760, H = 620;
+const CHARGE = -160, DISTANCE = 70;   // fixed physics (tuning sliders removed)
 
-export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWithTitle, glowIds, className }: Props) {
+export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWithTitle, showTags, glowIds, className }: Props) {
   const [data, setData] = useState<BrainGraphDto | null>(null);
   const [nodes, setNodes] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
   const [, tick] = useState(0);
-  const [showTags, setShowTags] = useState(true);
-  const [charge, setCharge] = useState(-160);
-  const [distance, setDistance] = useState(70);
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const simRef = useRef<any>(null);
-  const zoomRef = useRef<any>(null);
 
   useEffect(() => { let ok = true; api.getBrainGraph().then((d) => ok && setData(d)).catch(() => ok && setData({ nodes: [], links: [] })); return () => { ok = false; }; }, []);
 
@@ -65,8 +59,8 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
     const ls = view.links.map((l) => ({ ...l }));
     setNodes(ns); setLinks(ls);
     const sim = forceSimulation(ns as any)
-      .force("link", forceLink(ls as any).id((d: any) => d.id).distance(distance).strength(0.55))
-      .force("charge", forceManyBody().strength(charge))
+      .force("link", forceLink(ls as any).id((d: any) => d.id).distance(DISTANCE).strength(0.55))
+      .force("charge", forceManyBody().strength(CHARGE))
       .force("center", forceCenter(W / 2, H / 2))
       .force("collide", forceCollide((d: any) => 4 + Math.sqrt(d.val) * 2 + 6))
       .on("tick", () => tick((x) => x + 1));
@@ -74,7 +68,6 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
     if (svgRef.current && gRef.current) {
       const z = d3zoom<SVGSVGElement, unknown>().scaleExtent([0.2, 4])
         .on("zoom", (e) => { if (gRef.current) gRef.current.setAttribute("transform", e.transform.toString()); });
-      zoomRef.current = z;
       // d3-zoom binds its own native dblclick.zoom handler on the <svg> that calls
       // stopImmediatePropagation, which swallows the event before it bubbles to
       // React's root listener — breaking ghost-node double-click-to-create. Disable
@@ -83,14 +76,6 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
     }
     return () => { sim.stop(); };
   }, [view, data]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  // live-tune forces without rebuilding the sim
-  useEffect(() => {
-    const sim = simRef.current; if (!sim) return;
-    sim.force("charge").strength(charge);
-    sim.force("link").distance(distance);
-    sim.alpha(0.5).restart();
-  }, [charge, distance]);
 
   const radius = (n: any) => {
     if (n.kind === "self") return 16;
@@ -104,9 +89,6 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
       .on("drag", (e) => { node.fx = e.x; node.fy = e.y; })
       .on("end", () => { simRef.current?.alphaTarget(0); node.fx = null; node.fy = null; }) as any);
   };
-
-  const zoomBy = (k: number) => { if (svgRef.current && zoomRef.current) select(svgRef.current).transition().duration(250).call(zoomRef.current.scaleBy, k); };
-  const zoomReset = () => { if (svgRef.current && zoomRef.current) select(svgRef.current).transition().duration(250).call(zoomRef.current.transform, zoomIdentity); };
 
   const nbr = focusedId ? neighbors.get(focusedId) : null;
   const isLit = (l: any) => {
@@ -152,9 +134,9 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
                   style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }}>
                   <title>{n.label}</title>
                 </circle>
-                {/* Labels declutter: only the 你 hub stays lit; every other node
-                    reveals its name on hover/focus (the left tree names the rest). */}
-                {(self || focused) && (
+                {/* No always-on labels — every node (你 included) reveals its name
+                    only on hover/focus; the left tree names the rest. */}
+                {focused && (
                   <text x={n.x ?? 0} y={(n.y ?? 0) - r - 3} textAnchor="middle" fontSize={self ? 11 : 9}
                     fontWeight={700} fill="var(--foreground)" style={{ pointerEvents: "none" }}>
                     {tag ? `#${n.label}` : String(n.label).slice(0, 16)}
@@ -165,27 +147,6 @@ export default function BrainGraph({ focusedId, onFocus, onPick, onCreateNoteWit
           })}
         </g>
       </svg>
-
-      {/* floating controls (Arslan theme) */}
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-surface-raised/80 px-2.5 py-1.5 text-xs backdrop-blur">
-        <div className="flex items-center gap-1 border-r border-border pr-2">
-          <button title="放大" onClick={() => zoomBy(1.3)} className="rounded p-1 hover:bg-surface"><ZoomIn className="h-3.5 w-3.5" /></button>
-          <button title="缩小" onClick={() => zoomBy(1 / 1.3)} className="rounded p-1 hover:bg-surface"><ZoomOut className="h-3.5 w-3.5" /></button>
-          <button title="重置视图" onClick={zoomReset} className="rounded p-1 hover:bg-surface"><RotateCcw className="h-3.5 w-3.5" /></button>
-        </div>
-        <button title="标签节点显隐" onClick={() => setShowTags((v) => !v)}
-          className={`flex items-center gap-1 rounded px-1.5 py-1 ${showTags ? "text-primary" : "text-subtle-foreground"}`}>
-          <Tag className="h-3 w-3" /><span className="text-[10px]">标签</span>
-        </button>
-        <label className="flex flex-col leading-tight">
-          <span className="text-[8px] uppercase tracking-wider text-subtle-foreground">引力</span>
-          <input type="range" min={-300} max={-50} step={10} value={charge} onChange={(e) => setCharge(Number(e.target.value))} className="h-1 w-16 cursor-pointer" />
-        </label>
-        <label className="flex flex-col leading-tight">
-          <span className="text-[8px] uppercase tracking-wider text-subtle-foreground">距离</span>
-          <input type="range" min={50} max={150} step={10} value={distance} onChange={(e) => setDistance(Number(e.target.value))} className="h-1 w-16 cursor-pointer" />
-        </label>
-      </div>
 
       <div className="absolute bottom-2 left-2 z-10 rounded bg-surface-raised/70 px-2 py-1 font-mono text-[9px] text-subtle-foreground backdrop-blur">
         拖拽整理 · 双击幽灵点生成笔记 · 滚轮缩放

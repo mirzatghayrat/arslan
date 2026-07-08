@@ -1,9 +1,14 @@
 import { useMemo, useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Plus, Upload, UserRound } from "lucide-react";
 import type { BrainBranch, BrainLeaf } from "../../api/client";
 import { feedFile, feedTextOrUrl } from "../../lib/feed";
 import BrainIndexHealth from "./BrainIndexHealth";
 import { hueVar } from "./hues";
+
+// small per-type icon before each tree category (tinted with the type's hue)
+const KIND_ICON: Record<string, typeof Boxes> = {
+  material: Boxes, learning: Lightbulb, profile: UserRound, note: NotebookPen,
+};
 
 interface Props {
   branches: BrainBranch[];
@@ -12,6 +17,8 @@ interface Props {
   onPick: (leaf: BrainLeaf) => void;
   onChanged: () => void;
   onTagFilter: (tag: string) => void;
+  showTags: boolean;
+  onToggleTags: () => void;
   onCreateNote?: () => void;
   onGenerate?: (topic: string) => void;
 }
@@ -21,12 +28,13 @@ interface Props {
  * graph), then a tidy multi-level collapsible tree (画像 grouped by category, 材料
  * by provenance); then create/generate/feed + a collapsed index-health strip.
  * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
-export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onTagFilter, onCreateNote, onGenerate }: Props) {
+export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onTagFilter, showTags, onToggleTags, onCreateNote, onGenerate }: Props) {
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // categories start collapsed → compact left column (chips + actions stay in view)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["material", "learning", "profile", "note"]));
   const [topic, setTopic] = useState("");
   const [generating, setGenerating] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
@@ -92,32 +100,25 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
           className="brain-nav__search-input" />
       </div>
 
-      {tagChips.length > 0 && (
-        <div className="brain-nav__tags">
-          <div className="brain-nav__tags-head">标签</div>
-          <div className="brain-nav__tags-chips">
-            {tagChips.map(([t, c]) => (
-              <button key={t} className={`brain-nav__chip${focusedId === `tag:${t.toLowerCase()}` ? " is-active" : ""}`}
-                onClick={() => onTagFilter(t)}>
-                #{t}<span className="brain-nav__chip-count">{c}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="brain-nav__tree">
         {branches.map((b) => {
           const open = !collapsed.has(b.kind) || ql !== "";
           const groups = subGroups(b);
           const flatKids = b.children.filter(matches);
+          const Icon = KIND_ICON[b.kind] ?? Boxes;
           return (
             <div key={b.kind} className="brain-nav__branch">
               <div className="brain-nav__branch-head" onClick={() => toggle(b.kind)}>
                 <span className="brain-nav__caret">{open ? "▾" : "▸"}</span>
-                <span className="brain-nav__dot" style={{ background: hueVar(b.kind) }} />
+                <Icon className="brain-nav__kind-icon" style={{ color: hueVar(b.kind) }} />
                 <span className="brain-nav__branch-label">{b.label}</span>
                 <span className="brain-nav__count">{b.children.length}</span>
+                {b.kind === "note" && onCreateNote && (
+                  <button type="button" className="brain-nav__branch-add" title="新建笔记"
+                    onClick={(e) => { e.stopPropagation(); onCreateNote(); }}>
+                    <Plus className="w-3 h-3" /> 新建
+                  </button>
+                )}
               </div>
               {open && groups
                 ? groups.map((g) => {
@@ -143,11 +144,26 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
         })}
       </div>
 
-      {onCreateNote && (
-        <div className="brain-nav__create">
-          <button type="button" className="brain-nav__create-btn" onClick={onCreateNote}>＋ 新建笔记</button>
+      {tagChips.length > 0 && (
+        <div className="brain-nav__tags">
+          <div className="brain-nav__tags-head">
+            <span>标签</span>
+            <button type="button" className="brain-nav__tags-toggle" title="标签节点在图中显隐"
+              onClick={onToggleTags}>
+              {showTags ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            </button>
+          </div>
+          <div className="brain-nav__tags-chips">
+            {tagChips.map(([t, c]) => (
+              <button key={t} className={`brain-nav__chip${focusedId === `tag:${t.toLowerCase()}` ? " is-active" : ""}`}
+                onClick={() => onTagFilter(t)}>
+                #{t}<span className="brain-nav__chip-count">{c}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
+
       {onGenerate && (
         <div className="brain-nav__generate">
           <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="AI 主题生成笔记…"

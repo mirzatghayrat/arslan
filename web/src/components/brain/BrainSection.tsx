@@ -16,6 +16,7 @@ export default function BrainSection() {
   const [picked, setPicked] = useState<BrainLeaf | null>(null);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [showTags, setShowTags] = useState(true);   // tag-node visibility, toggled from BrainNav's 标签 header
 
   // The graph is ALWAYS the main canvas; picking anything (tree row or graph node)
   // slides its detail in as the right rail over the graph — the graph stays visible.
@@ -61,14 +62,14 @@ export default function BrainSection() {
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => void onDrop(e)}>
       <BrainNav branches={branches} focusedId={focusedId} onFocus={setFocusedId} onPick={pick} onChanged={refresh}
-        onTagFilter={tagFilter}
+        onTagFilter={tagFilter} showTags={showTags} onToggleTags={() => setShowTags((v) => !v)}
         onCreateNote={() => void createNote()} onGenerate={(t) => void generateFromTopic(t)} />
 
       <div className="flex-1 relative h-full overflow-hidden">
         {error
           ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">加载知识图谱失败</div>
           : <BrainGraph focusedId={focusedId} onFocus={setFocusedId} onPick={pick}
-              onCreateNoteWithTitle={(t) => void createNoteWithTitle(t)} glowIds={glowIds} className="w-full h-full" />}
+              onCreateNoteWithTitle={(t) => void createNoteWithTitle(t)} showTags={showTags} glowIds={glowIds} className="w-full h-full" />}
         {loading && <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-subtle-foreground uppercase tracking-widest pointer-events-none">loading…</div>}
 
         {/* picked entry slides in as the right rail OVER the graph (both are absolute right-0) */}

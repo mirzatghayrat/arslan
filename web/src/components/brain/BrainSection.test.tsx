@@ -30,6 +30,7 @@ describe("BrainSection", () => {
 
   it("clicking a tree row opens its detail rail while the graph stays mounted", async () => {
     render(<BrainSection />);
+    fireEvent.click(await screen.findByText("画像"));   // categories start collapsed → expand first
     const row = await screen.findByTestId("brain-nav-row");
     fireEvent.click(row);
     await waitFor(() => expect(screen.getByText("在北京工作")).toBeTruthy());  // detail rail excerpt

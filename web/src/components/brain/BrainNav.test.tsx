@@ -20,10 +20,11 @@ const branches = [
 
 describe("BrainNav", () => {
   const base = { branches, focusedId: null, onFocus: vi.fn(), onPick: vi.fn(), onChanged: vi.fn(),
-    onTagFilter: vi.fn() };
+    onTagFilter: vi.fn(), showTags: true, onToggleTags: vi.fn() };
 
-  it("groups profile facts by category as a second level", () => {
+  it("groups profile facts by category as a second level (once expanded)", () => {
     render(<BrainNav {...base} />);
+    fireEvent.click(screen.getByText("画像"));   // categories start collapsed
     expect(screen.getByText("身份背景")).toBeTruthy();
   });
 
@@ -32,5 +33,19 @@ describe("BrainNav", () => {
     render(<BrainNav {...base} onTagFilter={onTagFilter} />);
     fireEvent.click(screen.getByText("#finance"));
     expect(onTagFilter).toHaveBeenCalledWith("finance");
+  });
+
+  it("toggles tag-node visibility from the 标签 header", () => {
+    const onToggleTags = vi.fn();
+    render(<BrainNav {...base} onToggleTags={onToggleTags} />);
+    fireEvent.click(screen.getByTitle("标签节点在图中显隐"));
+    expect(onToggleTags).toHaveBeenCalled();
+  });
+
+  it("reveals a 新建 button on the 笔记 branch that creates a note", () => {
+    const onCreateNote = vi.fn();
+    render(<BrainNav {...base} onCreateNote={onCreateNote} />);
+    fireEvent.click(screen.getByTitle("新建笔记"));
+    expect(onCreateNote).toHaveBeenCalled();
   });
 });
