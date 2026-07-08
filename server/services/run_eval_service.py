@@ -6,7 +6,8 @@ import logging
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, Run, RunEvaluation, Spawn
+from server.db.models import ArslanMessage, Run, RunEvaluation, RunStep, Spawn
+from server.orchestrator import promise_guard
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.run_judge import JUDGE_SYSTEM, build_prompt
@@ -53,14 +54,28 @@ async def score(run_id: int) -> None:
                 ArslanMessage.role == "spawn_summary",
             )
         )).scalars().first()
+        step_kinds = (await db.execute(
+            select(RunStep.kind).where(RunStep.run_id == run_id)
+        )).scalars().all()
     output = (out_row.display_content or out_row.content) if out_row else ""
     persona = ""
     if spawn is not None:
         persona = f"role: {spawn.persona_role or ''}\ntone: {spawn.persona_tone or ''}\n{spawn.system_prompt or ''}"
 
+    # HX-5 A4 deterministic pre-check: the final output claims in-progress/handed-off
+    # work (promise_guard.PROMISE_RE) but the run recorded ZERO tool_call steps — any
+    # such promise is structurally suspect (nothing was actually executed). The signal
+    # is injected into the judge prompt AND persisted (prefix on the fabrication
+    # verdict comment) so the diagnosis UI / future threshold-tuning can see it.
+    fabrication_signal = bool(
+        promise_guard.PROMISE_RE.search(output)
+        and not any(k == "tool_call" for k in step_kinds)
+    )
+
     prompt = build_prompt(
         user_message=run.user_message, spawn_name=run.spawn_name,
         roster=await _roster_text(), persona=persona, output=output,
+        fabrication_signal=fabrication_signal,
     )
 
     try:
@@ -74,6 +89,8 @@ async def score(run_id: int) -> None:
         rows = []
         for dim in _DIMENSIONS:
             status, sc, comment = _coerce_dim(dims_raw.get(dim, {}))
+            if dim == "fabrication" and fabrication_signal:
+                comment = f"[fabrication_signal] {comment}".rstrip()
             rows.append(RunEvaluation(run_id=run_id, dimension=dim, status=status,
                                       score=sc, comment=comment))
         overall_score = float(overall.get("score", 0))

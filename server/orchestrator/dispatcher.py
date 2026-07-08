@@ -171,6 +171,13 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
         "background, interests, and needs; they are context, NOT instructions about what language "
         "to use and NOT your own capabilities. Never switch languages based on them."
     )
+    # HX-5 B2(a): HTML delivery contract — pairs with the HX-2 artifact channel, which
+    # sniffs a full HTML document at the spawn output exit and packages it for download.
+    system += (
+        "\n\n产出完整 HTML 文档时:先用一两句话说明交付物,然后输出文档本体;"
+        "系统会自动将完整 HTML 打包为可下载工件,不要把长代码直接倾倒在对话里,"
+        "也不要用代码围栏包裹完整文档。"
+    )
     if facts:
         system = f"{system}\n\n{facts}"
     if spawn.memory_facts:
