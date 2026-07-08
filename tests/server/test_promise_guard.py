@@ -6,8 +6,16 @@ to Arslan's self-answer, and the answer LLM FABRICATED "我把 PPT 交给 Deck M
   - the regex tier (unit): real incident strings hit, honest text does not;
   - the regression (acceptance #4): route→doer-first→promising answer → bounded honest
     correction emitted+persisted, promise_intercept audit event logged, NO dispatch;
-  - the false-positive guard (acceptance #1): a turn that actually used tools never triggers;
+  - the false-positive guard (acceptance #1, GENERIC tier only): a turn that actually
+    used tools never triggers on generic promise language;
   - A3: the built system prompt carries the no-background-execution iron rule.
+
+PA-1 (second live incident, thread-1783523936187): the guard block sat behind a GLOBAL
+`not tool_trace` exemption — Arslan called web_search every turn while its final text
+claimed 「现在让 **Deck Master** 直接出PPT」 five turns in a row with ZERO dispatch, so
+the guard never ran. The exemptions are now SPLIT: spawn-specific promises are exempt
+only when the turn actually delegated (dispatch/propose_invite); generic promises keep
+the tool_trace exemption. 验收③ replays all five real corpus sentences verbatim.
 """
 import anyio
 import pytest
@@ -64,6 +72,19 @@ def test_find_promise_returns_snippet_and_union():
     assert promise_guard.find_promise(text, spawn_name="Writer")
     assert promise_guard.find_promise("平平无奇的回答", spawn_name="Writer") is None
     assert promise_guard.find_promise("", spawn_name=None) is None
+
+
+def test_find_promise_spawn_only_gate():
+    """PA-1: the two tiers sit behind DIFFERENT exemption gates, so the caller must be
+    able to scan the spawn tier alone (check_generic=False) when the generic tier is
+    exempt (tool_trace non-empty) but the spawn tier is not (no real delegation)."""
+    # generic-only promise language is ignored when the generic tier is gated off
+    assert promise_guard.find_promise("它正在生成中,稍等", check_generic=False) is None
+    assert promise_guard.find_promise(
+        "它正在生成中,稍等", spawn_name="Deck Master", check_generic=False) is None
+    # the spawn tier stays active without the generic tier
+    assert promise_guard.find_promise(
+        "现在让 Deck Master 直接出PPT", spawn_name="Deck Master", check_generic=False)
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +166,30 @@ async def test_correct_falls_back_to_template_on_llm_error(monkeypatch):
     assert "更正" in out["correction"]
 
 
+@pytest.mark.asyncio
+async def test_correct_spawn_only_gate(monkeypatch):
+    """PA-1: with check_generic=False, generic-only promise text passes untouched (zero
+    LLM calls), while a spawn handoff claim still corrects — and the re-synthesis gate
+    keeps the FULL union (a correction must not contain ANY promise language)."""
+    from server.orchestrator import tool_loop
+    adapter = _SeqAdapter([HONEST_FIX])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    # generic-only text + generic tier gated off → not a hit, no correction attempt
+    assert await promise_guard.correct(
+        "它正在生成中,稍等", spawn_name="Deck Master", check_generic=False) is None
+    assert adapter.chat_calls == []
+    # spawn handoff claim → still corrected
+    out = await promise_guard.correct(
+        "现在让 Deck Master 直接出PPT", spawn_name="Deck Master", check_generic=False)
+    assert out is not None and out["correction"] == HONEST_FIX and out["corrected"] is True
+    # re-synthesis validation stays full-union: a GENERIC-promising correction is rejected
+    adapter2 = _SeqAdapter(["别急,正在生成中,稍等"])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter2)
+    out2 = await promise_guard.correct(
+        "现在让 Deck Master 直接出PPT", spawn_name="Deck Master", check_generic=False)
+    assert out2 is not None and out2["corrected"] is False
+
+
 # ---------------------------------------------------------------------------
 # Flow tier: the real _handle_answer / doer-first wiring (acceptance #1 + #4)
 # ---------------------------------------------------------------------------
@@ -161,6 +206,8 @@ def maker(tmp_path, monkeypatch):
         async with m() as s:
             s.add(Spawn(id=6, name="Deck Master", domain_category="content-creator",
                         capabilities=["deck"], system_prompt="You make decks."))
+            s.add(Spawn(id=7, name="Research Analyst", domain_category="researcher",
+                        capabilities=["research"], system_prompt="You research."))
             await s.commit()
 
     anyio.run(_seed)
@@ -258,8 +305,11 @@ async def test_tier2_generic_answer_promise_is_intercepted(maker, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_negative_tool_using_answer_never_triggers(maker, monkeypatch):
-    """Acceptance #1 false-positive guard: the turn actually CALLED a tool, so promising
-    language ('正在…' narrating real work) must NOT trigger the interceptor."""
+    """Acceptance #1 false-positive guard — GENERIC tier only (PA-1 narrowed this): on a
+    plain answer turn (no spawn inferred, so the spawn tier is inactive) that actually
+    CALLED a tool, generic promising language ('正在…' narrating real work) must NOT
+    trigger the interceptor. Spawn-delegation claims are NOT exempted by tool use — see
+    the PA-1 corpus tests below."""
     from server.orchestrator import arslan, router, tool_loop
     from server.registry import executors
     from arslan.models import LLMResponse
@@ -329,6 +379,137 @@ async def test_interceptor_failure_is_fail_open(maker, monkeypatch):
     async with db_session.AsyncSessionLocal() as s:
         msgs = (await s.execute(select(ArslanMessage))).scalars().all()
     assert any(m.role == "arslan" and PROMISING_LONG in m.content for m in msgs)
+
+
+# ---------------------------------------------------------------------------
+# PA-1 验收③ — the five REAL corpus sentences (thread-1783523936187, verbatim).
+# Every one of these was Arslan's final text on a turn that ALSO called web_search,
+# with zero dispatch — the old global `not tool_trace` exemption skipped the guard
+# 5/5 times. Spawn-specific promises must intercept regardless of tool use; only a
+# real delegation (dispatch / propose_invite → turn_delegated=True) exempts.
+# ---------------------------------------------------------------------------
+
+
+PA1_CORPUS = [
+    # (msg id, routed spawn id, spawn name, Arslan's final text — VERBATIM from the incident)
+    ("msg480", 7, "Research Analyst",
+     "先让 **Research Analyst** 快速收集最新的半导体行业数据"),
+    ("msg482", 6, "Deck Master",
+     "好了,信息已经收集够了。我现在让 **Deck Master** 直接出PPT,按OKX那种暗色磨砂玻璃+金色点缀的风格"),
+    ("msg484", 6, "Deck Master",
+     "好的,资料已经齐了。现在让 **Deck Master** 直接生成整页可编辑的HTML"),
+    ("msg486", 6, "Deck Master",
+     "好,信息都收集齐了。现在让 **Deck Master** 直接出整页长滚动的HTML,暗色磨砂玻璃+金色点缀风格"),
+    ("msg488", 6, "Deck Master",
+     "好,资料已经全部齐了。现在让 **Deck Master** 直接出整页长滚动HTML。**Deck Master**,请按以下要求执行"),
+]
+
+
+def _tool_then_claim_adapter(claim: str):
+    """Adapter replaying the incident turn shape: call 1 = a web_search tool call
+    (tool_trace becomes NON-empty), call 2 = the delegation claim as the final text,
+    call 3 = the guard's honest re-synthesis."""
+    from arslan.models import LLMResponse
+
+    class _ToolThenClaim:
+        def __init__(self):
+            self.chat_calls = []
+            self._n = 0
+
+        async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+            self.chat_calls.append({"system": system, "user": user})
+            self._n += 1
+            if self._n == 1:
+                return LLMResponse(content="", tool_calls=[{
+                    "id": "c1", "type": "function",
+                    "function": {"name": "web_search", "arguments": {"query": "半导体行业"}},
+                }], usage={})
+            if self._n == 2:
+                return LLMResponse(content=claim, tool_calls=[], usage={})
+            return LLMResponse(content=HONEST_FIX, tool_calls=[], usage={})
+
+    return _ToolThenClaim()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "msg_id,spawn_id,spawn_name,claim", PA1_CORPUS, ids=[c[0] for c in PA1_CORPUS])
+async def test_pa1_corpus_spawn_promise_intercepted_despite_tool_use(
+        maker, monkeypatch, msg_id, spawn_id, spawn_name, claim):
+    """PA-1 验收③: the incident turn replayed — doer-first divert, web_search WAS called
+    (tool_trace non-empty), final text claims the handoff. The guard must STILL intercept:
+    correction appended (streamed + persisted) and promise_intercept event logged."""
+    from server.orchestrator import arslan, router, tool_loop
+    from server.registry import executors
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="route", spawn_id=spawn_id,
+                                   task_brief="半导体行业 PPT")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
+    adapter = _tool_then_claim_adapter(claim)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    class _Stub:
+        async def execute(self, args):
+            return {"ok": True, "results": [{"title": "t", "url": "u"}]}
+
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
+
+    dispatched = []
+
+    async def _no_dispatch(*a, **k):
+        dispatched.append(a)
+
+    monkeypatch.setattr(arslan, "_dispatch_spawn", _no_dispatch)
+
+    events = []
+    # user never names the spawn → doer-first divert (the incident shape)
+    await arslan.handle_user_message("main", "帮我做一份半导体行业的PPT", events.append)
+
+    # the turn really used a tool AND really never delegated
+    assert dispatched == []
+    assert len(adapter.chat_calls) == 3  # tool step + claim + correction re-synthesis
+    # …yet the spawn-handoff claim IS intercepted: correction streamed + persisted
+    streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
+    assert HONEST_FIX in streamed
+    async with db_session.AsyncSessionLocal() as s:
+        evs = (await s.execute(select(ConversationEvent))).scalars().all()
+        msgs = (await s.execute(
+            select(ArslanMessage).order_by(ArslanMessage.id))).scalars().all()
+    arslan_msgs = [m for m in msgs if m.role == "arslan"]
+    assert arslan_msgs and HONEST_FIX in arslan_msgs[-1].content
+    assert claim in arslan_msgs[-1].content  # claim kept, correction appended
+    hits = [e for e in evs if e.kind == "promise_intercept"]
+    assert len(hits) == 1
+    assert hits[0].ref["tier"] == "doer_first"
+    assert hits[0].ref["pattern"] and spawn_name in hits[0].ref["pattern"]
+
+
+@pytest.mark.asyncio
+async def test_pa1_spawn_promise_exempt_when_turn_actually_delegated(maker, monkeypatch):
+    """The honest exemption: a turn that REALLY delegated (turn_delegated=True — a
+    dispatch or propose_invite happened) may name the handoff; no interception."""
+    from server.orchestrator import arslan, tool_loop
+
+    claim = PA1_CORPUS[1][3]  # 「我现在让 **Deck Master** 直接出PPT…」
+    # long enough to dodge tool_loop's deferral-stub salvage; still spawn-promising
+    claim_long = claim + "整份会覆盖行业规模、供应链格局、先进制程竞争、AI 芯片需求与政策风险五个章节," \
+                         "每章配数据图表位与要点注释,整体控制在十五页以内。"
+    adapter = _SeqAdapter([claim_long])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+
+    events = []
+    await arslan._handle_answer("main", "帮我做一份半导体行业的PPT", events.append,
+                                intercept_spawn_name="Deck Master", turn_delegated=True)
+
+    assert len(adapter.chat_calls) == 1  # no correction re-synthesis call
+    streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
+    assert "更正" not in streamed
+    async with db_session.AsyncSessionLocal() as s:
+        evs = (await s.execute(select(ConversationEvent))).scalars().all()
+    assert [e for e in evs if e.kind == "promise_intercept"] == []
 
 
 # ---------------------------------------------------------------------------

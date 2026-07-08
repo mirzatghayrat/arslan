@@ -6,8 +6,11 @@ self-answer, and the answer LLM fabricated "我把 PPT 交给 Deck Master 来生
 
 This module is the deterministic catch: regexes that flag "claimed-but-never-dispatched
 handoff / background work" language in a FINAL answer, plus ONE bounded correction step.
-The caller (arslan._handle_answer) applies it only when the turn's runtime state shows
-no dispatch and no tool_call, so honest narration of real work never trips it.
+The caller (arslan._handle_answer) gates the two tiers SEPARATELY (PA-1): the generic
+tier runs only when the turn called no tool (honest narration of real work never trips
+it), while the spawn-handoff tier runs whenever the turn did not actually delegate —
+tool use is NOT delegation (second live incident: web_search every turn while the text
+claimed 「让 Deck Master 直接出PPT」 five turns in a row, zero dispatch).
 
 Bounded by construction: at most one LLM re-synthesis attempt; if that attempt ALSO
 promises, a fixed honest template is used. Never loops. Fail-open: any error inside the
@@ -44,10 +47,14 @@ def spawn_promise_re(spawn_name: str) -> re.Pattern[str]:
     )
 
 
-def find_promise(text: str, spawn_name: str | None = None) -> str | None:
-    """The matched promise snippet in `text` (PROMISE_RE ∪ spawn_promise_re), or None."""
+def find_promise(text: str, spawn_name: str | None = None, *,
+                 check_generic: bool = True) -> str | None:
+    """The matched promise snippet in `text` (PROMISE_RE ∪ spawn_promise_re), or None.
+    check_generic=False limits the scan to the spawn tier — PA-1: the caller's two
+    exemption gates differ, so a tool-using turn (generic tier exempt) must still be
+    scannable for an undelegated spawn-handoff claim."""
     t = text or ""
-    m = PROMISE_RE.search(t)
+    m = PROMISE_RE.search(t) if check_generic else None
     if m is None and spawn_name:
         m = spawn_promise_re(spawn_name).search(t)
     return m.group(0) if m else None
@@ -83,12 +90,17 @@ def _fallback_template(spawn_name: str | None) -> str:
             "上面的内容是我自己作答的。")
 
 
-async def correct(full_text: str, *, spawn_name: str | None = None) -> dict | None:
+async def correct(full_text: str, *, spawn_name: str | None = None,
+                  check_generic: bool = True) -> dict | None:
     """Detect + bounded-correct. Returns None when `full_text` carries no promise
     language; otherwise {"correction": str, "pattern": matched snippet, "corrected":
     bool} where corrected=True means the LLM re-synthesis passed the same regex gate
-    (False = deterministic template). At most ONE extra LLM call, never loops."""
-    snippet = find_promise(full_text, spawn_name)
+    (False = deterministic template). At most ONE extra LLM call, never loops.
+
+    check_generic=False (PA-1) restricts DETECTION to the spawn tier; the re-synthesis
+    validation below deliberately keeps the full union — a correction must not contain
+    ANY promise language, whichever tier tripped it."""
+    snippet = find_promise(full_text, spawn_name, check_generic=check_generic)
     if snippet is None:
         return None
     try:

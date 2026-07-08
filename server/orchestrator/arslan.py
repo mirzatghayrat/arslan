@@ -673,6 +673,11 @@ async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, confirm_command=None,
     intercept_spawn_name: str | None = None,
+    # PA-1: True ONLY when the calling turn actually delegated (a dispatch happened or a
+    # propose_invite frame was emitted) — the sole honest exemption for spawn-handoff
+    # promise language. No current caller delegates before/while answering, so the
+    # default is truthfully False everywhere; PA-2's dispatch/invite paths pass True.
+    turn_delegated: bool = False,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
@@ -714,15 +719,26 @@ async def _handle_answer(
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
         return
     full = result.get("final") or ""
-    # HX-1 A2 空头支票拦截: this turn dispatched nothing (the answer path never dispatches)
-    # — if it also called NO tool yet the final text promises in-progress/handed-off work,
-    # that claim is structurally false. Append a bounded honest correction to the SAME
-    # message (streamed live + persisted, so history stays honest) and log the audit
-    # event. tool_trace non-empty = real work was narrated → never triggers (acceptance
-    # #1's false-positive guard). Fail-open: guard errors never break the answer turn.
+    # HX-1 A2 空头支票拦截, exemptions SPLIT by PA-1 (second live incident: Arslan called
+    # web_search every turn while the final text claimed 「让 Deck Master 直接出PPT」 five
+    # turns in a row with zero dispatch — the old global `not tool_trace` gate skipped
+    # the guard 5/5 times; tool use is NOT delegation):
+    #   • spawn tier ("交给/让/派 <name>", active on the doer-first divert branch): exempt
+    #     ONLY when the turn actually delegated (turn_delegated=True — a real dispatch or
+    #     propose_invite). The divert branch self-answers by construction, so it always
+    #     passes False → a handoff claim there is structurally false and always corrected.
+    #   • generic tier (PROMISE_RE): keeps the `not tool_trace` exemption — a turn that
+    #     really searched may honestly narrate in-progress work (HX acceptance #1).
+    # A matched promise gets a bounded honest correction appended to the SAME message
+    # (streamed live + persisted, so history stays honest) plus the audit event.
+    # Fail-open: guard errors never break the answer turn.
     try:
-        if full and not result.get("tool_trace"):
-            outcome = await promise_guard.correct(full, spawn_name=intercept_spawn_name)
+        check_spawn = bool(intercept_spawn_name) and not turn_delegated
+        check_generic = not result.get("tool_trace")
+        if full and (check_spawn or check_generic):
+            outcome = await promise_guard.correct(
+                full, spawn_name=intercept_spawn_name if check_spawn else None,
+                check_generic=check_generic)
             if outcome is not None:
                 correction = outcome["correction"]
                 emit({"type": "stream_chunk", "content": "\n\n" + correction})
@@ -883,9 +899,14 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         # interceptor inside _handle_answer also gets the high-precision "交给/让/派 <name>"
         # pattern — the exact live-incident shape ("已交给 Deck Master 生成中" with zero runs).
         _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        # PA-1: the divert branch NEVER delegates — no dispatch, no propose_invite (the
+        # trusted-band chip emitted below AFTER the answer is a user-consent question,
+        # not a delegation) — so turn_delegated is False by construction and any
+        # "交给/让/派 <name>" claim in the answer is always intercepted, tools or not.
         answer_text = await _handle_answer(conversation_id, user_message, emit,
                                            attached_context=attached_context, confirm_command=confirm_command,
-                                           intercept_spawn_name=_guard_spawn_name)
+                                           intercept_spawn_name=_guard_spawn_name,
+                                           turn_delegated=False)
         # Dual-track growth (boundary component 5): Arslan just did an INFERRED spawn's job itself —
         # feed the deliverable to that spawn in the background so it learns without having acted.
         if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
