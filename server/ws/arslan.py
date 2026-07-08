@@ -255,8 +255,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         )
                         continue
                 spawn_id, spawn_name, equipment, intro = await _create_from_draft(draft, differentiation)
+                # HX-6/P2: advisory persona-vs-equipment delivery lint (fail-open, never blocks).
+                from server.services import persona_lint
+                capability_warnings = await persona_lint.lint_spawn(spawn_id)
                 await ws.send_json(protocol.spawn_created(spawn_id, spawn_name,
-                                                          equipment=equipment, intro=intro))
+                                                          equipment=equipment, intro=intro,
+                                                          capability_warnings=capability_warnings))
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="created")
                 if newly_joined:
                     await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))

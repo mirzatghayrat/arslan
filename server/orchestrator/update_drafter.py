@@ -17,6 +17,7 @@ from server.db import session as db_session
 from server.db.models import Spawn
 from server.orchestrator.json_protocol import parse_json_object
 from server.registry import service as registry_service
+from server.services import persona_lint
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -115,5 +116,23 @@ async def draft_update(spawn_id: int, request_text: str) -> dict[str, Any] | Non
 
     if not changes:
         return None
+
+    # HX-6/P2: advisory delivery lint on the PROPOSED persona vs the RESULTING
+    # equipment (equipped − removes + adds), so the confirm card can warn when the
+    # new persona promises a format the spawn still couldn't deliver. Fail-open.
+    persona_text = " ".join(filter(None, [
+        changes.get("persona_role") or current["persona_role"],
+        changes.get("persona_tone") or current["persona_tone"],
+    ]))
+    resulting_ts = [k for k in equipped_ts if k not in set(changes.get("remove_toolsets") or [])]
+    resulting_ts += [k for k in changes.get("add_toolsets") or [] if k not in resulting_ts]
+    try:
+        tool_keys = await persona_lint.tool_keys_for_toolsets(resulting_ts)
+        capability_warnings = persona_lint.lint_delivery_claims(persona_text, tool_keys)
+    except Exception as exc:  # noqa: BLE001 — advisory, never blocks the proposal
+        logger.warning("persona lint failed in draft_update: %s", exc)
+        capability_warnings = []
+
     return {"spawn_id": spawn.id, "spawn_name": spawn.name, "current": current,
-            "changes": changes, "reason": str(parsed.get("reason") or "")}
+            "changes": changes, "reason": str(parsed.get("reason") or ""),
+            "capability_warnings": capability_warnings}
