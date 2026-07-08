@@ -93,6 +93,9 @@ export interface BrainLeaf {
   children?: BrainLeaf[];
 }
 export interface BrainBranch { kind: BrainLeaf["kind"]; label: string; children: BrainLeaf[]; }
+export interface GraphNodeDto { id: string; ref: string; kind: string; label: string; val: number }
+export interface GraphLinkDto { source: string; target: string; type: string }
+export interface BrainGraphDto { nodes: GraphNodeDto[]; links: GraphLinkDto[] }
 export interface BrainEntry {
   kind: string;
   ref: string;
@@ -110,6 +113,7 @@ export const api = {
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
   getBrainEntry: (kind: string, ref: string) =>
     request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),
+  getBrainGraph: () => request<BrainGraphDto>("/brain/graph"),
   listNotes: () => request<NoteDto[]>("/brain/notes"),
   getNote: (id: number) => request<NoteDto>(`/brain/notes/${id}`),
   createNote: (b: { title: string; content?: string; tags?: string[] }) =>

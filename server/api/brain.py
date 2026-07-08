@@ -77,6 +77,73 @@ async def brain_tree() -> dict:
     ]}
 
 
+@router.get("/brain/graph")
+async def brain_graph() -> dict:
+    """Force-graph data: every entry (4 types) as a node, edges from note [[links]]
+    (unresolved → ghost node) + best-effort 心得→spawn-well-material provenance."""
+    import json as _json
+
+    from server.services import note_service
+
+    async with db_session.AsyncSessionLocal() as db:
+        facts = (await db.execute(sa_text(
+            "SELECT id, content, label FROM user_facts ORDER BY id"))).all()
+        mats = (await db.execute(sa_text(
+            "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
+            "GROUP BY collection_id, spawn_id, source"))).all()
+        learns = (await db.execute(sa_text(
+            "SELECT id, content, label, source_ref FROM learnings ORDER BY id"))).all()
+        notes = (await db.execute(sa_text(
+            "SELECT id, title, content FROM notes ORDER BY id"))).all()
+
+    keys: list[tuple[str, str]] = []
+    keys += [("profile", f"fact:{r[0]}") for r in facts]
+    keys += [("material", _mat_ref(m[0], m[1], m[2])) for m in mats]
+    keys += [("learning", f"learning:{r[0]}") for r in learns]
+    keys += [("note", f"note:{r[0]}") for r in notes]
+    umap = await brain_usage.usage_map(keys)
+
+    def _gnode(kind, ref, label, weight=1):
+        u = umap.get((kind, ref), {})
+        return {"id": ref, "ref": ref, "kind": kind,
+                "label": label or "", "val": weight + u.get("usage_count", 0)}
+
+    nodes = []
+    nodes += [_gnode("profile", f"fact:{r[0]}", r[2] or r[1]) for r in facts]
+    nodes += [_gnode("material", _mat_ref(m[0], m[1], m[2]), m[2], weight=m[3]) for m in mats]
+    nodes += [_gnode("learning", f"learning:{r[0]}", r[2] or (r[1] or "")[:40]) for r in learns]
+    nodes += [_gnode("note", f"note:{r[0]}", r[1]) for r in notes]
+
+    by_label = {n["label"].lower(): n["id"] for n in nodes if n["label"]}
+    links: list[dict] = []
+    ghosts: dict[str, dict] = {}
+    for nid, _title, content in notes:
+        src = f"note:{nid}"
+        for target in note_service.parse_links(content):
+            tid = by_label.get(target.lower())
+            if tid and tid != src:
+                links.append({"source": src, "target": tid, "type": "link"})
+            elif not tid:
+                gid = f"ghost:{target}"
+                ghosts.setdefault(gid, {"id": gid, "ref": gid, "kind": "ghost", "label": target, "val": 0.5})
+                links.append({"source": src, "target": gid, "type": "link"})
+
+    mat_by_spawn: dict[int, list[str]] = {}
+    for m in mats:
+        if m[1] is not None:
+            mat_by_spawn.setdefault(m[1], []).append(_mat_ref(m[0], m[1], m[2]))
+    for lid, _c, _lbl, sref in learns:
+        try:
+            ref = sref if isinstance(sref, dict) else _json.loads(sref or "{}")
+        except Exception:  # noqa: BLE001
+            ref = {}
+        for mref in mat_by_spawn.get(ref.get("spawn_id"), []):
+            links.append({"source": f"learning:{lid}", "target": mref, "type": "provenance"})
+
+    nodes += list(ghosts.values())
+    return {"nodes": nodes, "links": links}
+
+
 @router.get("/brain/entry/{kind}/{ref:path}")
 async def brain_entry(kind: str, ref: str) -> dict:
     async with db_session.AsyncSessionLocal() as db:
