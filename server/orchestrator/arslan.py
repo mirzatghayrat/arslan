@@ -12,7 +12,15 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
-from server.orchestrator import dispatcher, memory, promise_guard, router, run_trace, tool_loop
+from server.orchestrator import (
+    confirm_lexicon,
+    dispatcher,
+    memory,
+    promise_guard,
+    router,
+    run_trace,
+    tool_loop,
+)
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
@@ -28,7 +36,6 @@ from server.services import (
     spawn_drafter,
     spawn_match_service,
     spawn_service,
-    spawn_trust,
     staffing_gather,
 )
 from server.services.llm_factory import build_adapter
@@ -887,20 +894,61 @@ async def _resolve_at_mentioned_spawn(user_message: str) -> int | None:
     return best_id
 
 
+async def _delegation_advance_trigger(conversation_id, spawn_id, user_message) -> str | None:  # noqa: ANN001
+    """PA-2 deterministic advance rule (zero LLM): which trigger — if any — FORBIDS the
+    doer-first divert this turn. Returns "short_confirm" | "consecutive_route" | None.
+
+      - short_confirm: the user's message is a bare bilingual confirmation/impatience
+        token (好/可以/继续/go/do it/怎么还不…) — they are approving the delegation, not
+        adding spec; self-answering again would re-paste the same deliverable.
+      - consecutive_route: the PREVIOUS router decision in this conversation was already
+        route→this SAME spawn — the user has effectively confirmed once and the router
+        still wants the same specialist. Diverting again is the live incident's infinite
+        confirm loop (route(spawn 6) five consecutive times, outline re-pasted 3×).
+
+    None → neither fired; the old doer-first behavior stands."""
+    if confirm_lexicon.is_short_confirm(user_message):
+        return "short_confirm"
+    try:
+        prev = await router.previous_decision(conversation_id)
+    except Exception as exc:  # noqa: BLE001 — audit-table read must never break the turn
+        logger.warning("previous_decision lookup failed (advance rule degrades to divert): %s", exc)
+        return None
+    if prev is not None and prev.action == "route" and prev.spawn_id == spawn_id:
+        return "consecutive_route"
+    return None
+
+
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
                         user_message: str = "", route_ms: int | None = None,
                         attached_context: str | None = None, confirm_command=None) -> None:
     # Doer-first (boundary component 2): if the user did NOT explicitly name this spawn, the router
-    # merely INFERRED it fits — do NOT silently dispatch. Arslan does the task ITSELF, then (only for
-    # a trusted specialist) floats a lightweight "让 X 接手更专业?" chip whose Accept dispatches the
-    # parked task. Explicit naming falls through to the existing dispatch/invite path below.
-    if not await _user_named_spawn(user_message, result.spawn_id):
+    # merely INFERRED it fits — do NOT silently dispatch. Arslan does the task ITSELF, then floats a
+    # lightweight "让 X 接手更专业?" chip whose Accept dispatches the parked task. Explicit naming
+    # falls through to the existing dispatch/invite path below.
+    #
+    # PA-2 hard limit on the divert: it may fire ONCE per delegation. When the user already
+    # confirmed (previous decision was route→the SAME spawn, or this message is a bare short
+    # confirm), diverting again is the incident's infinite confirm loop — the turn MUST take the
+    # same dispatch/invite path an explicit naming takes. Deterministic, zero LLM.
+    user_named = await _user_named_spawn(user_message, result.spawn_id)
+    advance = None
+    if not user_named:
+        advance = await _delegation_advance_trigger(conversation_id, result.spawn_id, user_message)
+        if advance is not None:
+            spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "delegation_advance",
+                {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "trigger": advance},
+                f"确认推进 → 交办 {spawn_name or '分身'}(触发:{advance})")
+    if not user_named and advance is None:
         # HX-1 A2 tier 1: this branch KNOWS the inferred spawn's name, so the promise
         # interceptor inside _handle_answer also gets the high-precision "交给/让/派 <name>"
         # pattern — the exact live-incident shape ("已交给 Deck Master 生成中" with zero runs).
         _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
         # PA-1: the divert branch NEVER delegates — no dispatch, no propose_invite (the
-        # trusted-band chip emitted below AFTER the answer is a user-consent question,
+        # chip emitted below AFTER the answer is a user-consent question,
         # not a delegation) — so turn_delegated is False by construction and any
         # "交给/让/派 <name>" claim in the answer is always intercepted, tools or not.
         answer_text = await _handle_answer(conversation_id, user_message, emit,
@@ -913,21 +961,23 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
             _dual_track_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
             _fire_dual_track(conversation_id, result.spawn_id, _dual_track_spawn_name,
                              _dual_track_signals(user_message, answer_text))
-        async with db_session.AsyncSessionLocal() as _db:
-            band = (await spawn_trust.trust(_db, result.spawn_id)).get("band")
-        if band == "trusted":
-            spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-            reason = (f"让「{spawn_name}」接手更专业?" if _is_cjk(user_message)
-                      else f"Let {spawn_name} take this for more depth?")
-            await phase_service.set_inviting(
-                conversation_id, result.spawn_id,
-                task_brief=result.task_brief or "", user_message=user_message,
-                needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
-            from server.services import recap_service
-            await recap_service.log_event(
-                conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": spawn_name},
-                f"邀请 {spawn_name or '分身'} 加入")
-            emit(protocol.propose_invite(result.spawn_id, reason))
+        # 验收① (PA-2): this chip is the user's ONLY advancement channel after a doer-first
+        # self-answer, so EVERY trust band gets it. propose_invite is ITSELF the user-consent
+        # gate — trust band governs silent auto-join elsewhere, NOT invitability. The old
+        # `band == "trusted"` gate here is exactly what killed the live incident's escape
+        # hatch (Deck Master wasn't trusted → no chip → infinite confirm loop).
+        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        reason = (f"让「{spawn_name}」接手更专业?" if _is_cjk(user_message)
+                  else f"Let {spawn_name} take this for more depth?")
+        await phase_service.set_inviting(
+            conversation_id, result.spawn_id,
+            task_brief=result.task_brief or "", user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
+        from server.services import recap_service
+        await recap_service.log_event(
+            conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": spawn_name},
+            f"邀请 {spawn_name or '分身'} 加入")
+        emit(protocol.propose_invite(result.spawn_id, reason))
         return
 
     # Inline roster invite gates FIRST CONTACT — before the propose-vs-execute decision.

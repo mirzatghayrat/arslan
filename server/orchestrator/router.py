@@ -184,6 +184,24 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
     return result
 
 
+async def previous_decision(conversation_id: str) -> RouterDecision | None:
+    """The RouterDecision persisted BEFORE the current turn's (PA-2 consecutive-route rule).
+
+    route() persists the current turn's row before the orchestration loop handles the
+    result, so by the time _handle_route consults this, the LATEST row for the
+    conversation is this very turn's own decision — the previous turn's decision is the
+    second-latest. Returns None when there is no earlier row."""
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.execute(
+            select(RouterDecision)
+            .where(RouterDecision.conversation_id == conversation_id)
+            .order_by(RouterDecision.id.desc())
+            .offset(1)
+            .limit(1)
+        )
+        return rows.scalars().first()
+
+
 async def _persist(
     conversation_id: str,
     user_message: str,
