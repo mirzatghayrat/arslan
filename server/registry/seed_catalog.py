@@ -101,6 +101,10 @@ TOOLSETS: list[dict] = [
              "No network (fetch data via web_search/web_extract first, embed it in the code); "
              "numpy/pandas/matplotlib preinstalled; ~15s limit; files written land in a "
              "throwaway dir (names reported).", "safe", "wired"),
+            ("read_skill", "Read the full body (or one section) of a skill you're equipped with. "
+             "Pass {key:'<skill-key>'} for the whole thing, or {key, section:'## Heading'} for one "
+             "section. Use this when an injected technique block is summarized/truncated.",
+             "safe", "wired"),
         ],
     },
     {

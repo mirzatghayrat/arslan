@@ -481,9 +481,57 @@ class RunCommandExecutor:
                 **result}
 
 
+class ReadSkillExecutor:
+    """safe-tier read-only: read one registered skill's body (optionally one section).
+    Caged to the registry — reads ONLY SkillPack.body by validated key, never the
+    filesystem. A no-section full-text over the cap returns the first half + TOC to
+    steer the spawn toward segmented reads."""
+    key = "read_skill"
+    _READ_SKILL_CAP = 8000
+
+    async def execute(self, args: dict) -> dict:
+        import re as _re
+        from server.db import session as _db
+        from server.db.models import SkillPack
+        skey = (args.get("key") or "").strip()
+        if not _re.fullmatch(r"[a-z0-9-]+", skey):
+            return {"ok": False, "external": False, "error": "invalid skill key"}
+        async with _db.AsyncSessionLocal() as db:
+            row = await db.get(SkillPack, skey)
+        if row is None or not (row.body or "").strip():
+            return {"ok": False, "external": False, "error": f"skill not found or empty: {skey}"}
+        body = row.body.strip()
+        section = (args.get("section") or "").strip()
+        if section:
+            lines = body.splitlines()
+            out, capturing = [], False
+            for ln in lines:
+                s = ln.strip()
+                if _re.match(r"#{2,3}\s+\S", s):
+                    if capturing:
+                        break
+                    if s == section or s.lstrip("# ").strip() == section.lstrip("# ").strip():
+                        capturing = True
+                if capturing:
+                    out.append(ln)
+            if not out:
+                return {"ok": False, "external": False, "error": f"section not found: {section}"}
+            return {"ok": True, "external": False, "body": "\n".join(out),
+                    "summary": f"技能 {skey} · {section}"}
+        if len(body) <= self._READ_SKILL_CAP:
+            return {"ok": True, "external": False, "body": body, "summary": f"技能 {skey}(全文)"}
+        toc = [ln.strip() for ln in body.splitlines() if _re.match(r"#{2,3}\s+\S", ln.strip())]
+        head = body[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
+        note = ("\n\n[正文过长, 以上为前半。请按章节读取: read_skill(key, section='## 标题')。目录:\n"
+                + "\n".join(f"- {t}" for t in toc) + "]")
+        return {"ok": True, "external": False, "body": head + note,
+                "summary": f"技能 {skey}(前半+目录)"}
+
+
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
+    ReadSkillExecutor(),
 )}
 
 
