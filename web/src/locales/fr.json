@@ -635,6 +635,26 @@
       "loading": "Chargement des spawns…",
       "empty": "Aucun spawn pour l'instant.",
       "error": "Échec de l'équipement — modification annulée."
+    },
+    "compat": {
+      "full": "complète",
+      "partial": "partielle",
+      "text": "texte seul",
+      "full_hint": "Texte pur, ou tous les scripts sont des .py exécutables dans le bac à sable",
+      "partial_hint": "Contient des références, ou scripts limités (non .py ou nécessite réseau/CLI)",
+      "text_hint": "Corps de méthode uniquement — sans scripts ni références"
+    },
+    "skill_health": {
+      "check": "Diagnostic",
+      "unknown": "Pas encore vérifié",
+      "ok": "État OK",
+      "degraded": "Problèmes détectés",
+      "sandbox_unavailable": "Aucun backend sandbox sur cet hôte — les scripts ne peuvent pas être marqués exécutables",
+      "storage": "Stockage",
+      "scripts": "Scripts",
+      "references": "Références",
+      "missing": "Fichiers manquants",
+      "orphaned": "Fichiers orphelins"
     }
   },
   "forge": {

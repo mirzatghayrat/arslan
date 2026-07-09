@@ -635,6 +635,26 @@
       "loading": "Spawns werden geladen…",
       "empty": "Noch keine Spawns.",
       "error": "Ausrüsten fehlgeschlagen — Änderung zurückgesetzt."
+    },
+    "compat": {
+      "full": "voll",
+      "partial": "teilweise",
+      "text": "nur Text",
+      "full_hint": "Reiner Text oder alle Skripte sind sandbox-lauffähige .py",
+      "partial_hint": "Enthält Referenzen oder eingeschränkte Skripte (nicht .py oder Netzwerk/CLI nötig)",
+      "text_hint": "Nur Methodentext — keine Skripte, keine Referenzen"
+    },
+    "skill_health": {
+      "check": "Diagnose",
+      "unknown": "Noch nicht geprüft",
+      "ok": "Zustand OK",
+      "degraded": "Probleme gefunden",
+      "sandbox_unavailable": "Kein Sandbox-Backend auf diesem Host — Skripte nicht als lauffähig markierbar",
+      "storage": "Speicher",
+      "scripts": "Skripte",
+      "references": "Referenzen",
+      "missing": "Fehlende Dateien",
+      "orphaned": "Verwaiste Dateien"
     }
   },
   "forge": {

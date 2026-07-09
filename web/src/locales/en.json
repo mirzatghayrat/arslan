@@ -635,6 +635,26 @@
       "loading": "Loading spawns…",
       "empty": "No spawns yet.",
       "error": "Equip failed — change rolled back."
+    },
+    "compat": {
+      "full": "full",
+      "partial": "partial",
+      "text": "text-only",
+      "full_hint": "Pure text, or all bundled scripts are sandbox-runnable .py",
+      "partial_hint": "Ships references, or scripts are constrained (non-.py or needs network/CLI)",
+      "text_hint": "Method body only — no scripts, no references"
+    },
+    "skill_health": {
+      "check": "Health",
+      "unknown": "Not checked yet",
+      "ok": "Health OK",
+      "degraded": "Health issues",
+      "sandbox_unavailable": "No sandbox backend on this host — scripts can't be marked runnable",
+      "storage": "Storage",
+      "scripts": "Scripts",
+      "references": "References",
+      "missing": "Missing files",
+      "orphaned": "Orphaned files"
     }
   },
   "forge": {

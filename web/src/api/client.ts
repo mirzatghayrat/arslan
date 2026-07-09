@@ -15,6 +15,7 @@ import type {
   ProviderConfig,
   ProviderOption,
   RegistryCatalog,
+  SkillHealth,
   CuratorFlag,
   RunCatalogDto,
   RunVitalsDto,
@@ -170,6 +171,10 @@ export const api = {
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   getRegistry: () => request<RegistryCatalog>("/registry"),
+  /** PC-5 on-demand skill health probe (bounded storage + script-runnability check on the
+   * server; never executes skill code). Mirrors checkMcpHealth. */
+  checkSkillHealth: (key: string) =>
+    request<SkillHealth>(`/registry/skills/${encodeURIComponent(key)}/health`, { method: "POST" }),
   updateEquipment: (id: number, body: { toolsets: string[]; skills: string[] }) =>
     request<SpawnDetail>(`/spawns/${id}/equipment`, { method: "PUT", body: JSON.stringify(body) }),
   listFacts: () => request<UserFact[]>("/facts"),

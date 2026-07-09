@@ -7,8 +7,9 @@
 // Infeasible items stay hidden entirely (existing behavior).
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Stethoscope } from "lucide-react";
 import { api } from "../api/client";
-import type { RegistryCatalog, RegistrySkill, RegistryToolset } from "../api/client.types";
+import type { RegistryCatalog, RegistrySkill, RegistryToolset, SkillHealth } from "../api/client.types";
 import FilterChips from "./FilterChips";
 import EquipPopover from "./EquipPopover";
 
@@ -212,26 +213,164 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
 function SkillRow({ s }: { s: RegistrySkill }) {
   const { t } = useTranslation();
   const avail = classify(s);
+  // PC-5 health: probe on demand (mirrors RailMcpList's 体检). null = never checked.
+  const [health, setHealth] = useState<SkillHealth | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      const r = await api.checkSkillHealth(s.key);
+      setHealth(r);
+      setOpen(true);
+    } catch {
+      // fail-open: endpoint unreachable → keep whatever we knew before
+    }
+    setChecking(false);
+  };
+
+  // Dot colour mirrors the MCP health dot: ok → success, degraded → danger, unchecked → muted.
+  // A degraded run whose ONLY problem is an unavailable sandbox reads as warning (honest amber)
+  // rather than danger — nothing is broken, the host just can't run scripts.
+  const sandboxOnly = health != null && health.status === "degraded"
+    && !health.sandbox_available && health.storage.ok
+    && health.references.every((r) => r.readable);
+  const dotClass = health == null ? "bg-subtle-foreground"
+    : health.status === "ok" ? "bg-success"
+    : sandboxOnly ? "bg-warning" : "bg-danger";
+  const dotTitle = health == null ? t("capabilities.skill_health.unknown")
+    : health.status === "ok" ? t("capabilities.skill_health.ok")
+    : sandboxOnly ? t("capabilities.skill_health.sandbox_unavailable")
+    : t("capabilities.skill_health.degraded");
+
   return (
     <div
-      className={`bg-surface/40 border border-border/60 rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap ${
+      className={`bg-surface/40 border border-border/60 rounded-lg px-3 py-2 flex flex-col gap-1 ${
         avail === "unimplemented" ? "opacity-60" : ""
       }`}
     >
-      <span className="text-xs font-medium text-foreground">{s.name}</span>
-      <span className="text-[11px] text-subtle-foreground">{s.description}</span>
-      <Badge tier={s.tier} status={s.status} assignable={s.assignable} />
-      {avail === "usable" && (
-        <span className="ml-auto">
-          <EquipPopover kind="skill" capKey={s.key} />
-        </span>
-      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-foreground">{s.name}</span>
+        <span className="text-[11px] text-subtle-foreground">{s.description}</span>
+        <CompatBadge compatibility={s.compatibility} />
+        <Badge tier={s.tier} status={s.status} assignable={s.assignable} />
+        <span
+          data-testid={`skill-health-dot-${s.key}`}
+          title={dotTitle}
+          className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
+        />
+        <button
+          type="button"
+          onClick={() => (health ? setOpen((o) => !o) : runCheck())}
+          disabled={checking}
+          title={t("capabilities.skill_health.check")}
+          data-testid={`skill-health-check-${s.key}`}
+          className="flex items-center gap-0.5 text-[9px] font-mono text-subtle-foreground hover:text-info disabled:opacity-50"
+        >
+          <Stethoscope className="w-2.5 h-2.5" />
+          {t("capabilities.skill_health.check")}
+        </button>
+        {avail === "usable" && (
+          <span className="ml-auto">
+            <EquipPopover kind="skill" capKey={s.key} />
+          </span>
+        )}
+      </div>
       {avail === "unimplemented" && (
         <span className="w-full text-[10px] text-muted-foreground font-mono">
           {t("capabilities.catalog.unimplemented_note")}
         </span>
       )}
+      {open && health && <SkillHealthPanel health={health} />}
     </div>
+  );
+}
+
+// PC-5 health breakdown: storage integrity + per-script runnability + references, with the
+// honest reasons the backend returns verbatim (e.g. "sandbox unavailable", "requires network").
+function SkillHealthPanel({ health }: { health: SkillHealth }) {
+  const { t } = useTranslation();
+  const row = (label: string, ok: boolean, reason: string, key: string) => (
+    <li key={key} className="flex items-baseline gap-1.5">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 translate-y-[3px] ${ok ? "bg-success" : "bg-warning"}`} />
+      <span className="font-mono text-foreground">{label}</span>
+      <span className="text-subtle-foreground">— {reason}</span>
+    </li>
+  );
+  return (
+    <div
+      data-testid={`skill-health-panel-${health.key}`}
+      className="mt-1 rounded-md bg-surface-raised/60 border border-border/50 px-2.5 py-2 text-[10px] space-y-1.5"
+    >
+      {!health.sandbox_available && (
+        <p data-testid="skill-health-sandbox-warning" className="text-warning font-mono">
+          {t("capabilities.skill_health.sandbox_unavailable")} (backend={health.sandbox_backend})
+        </p>
+      )}
+      {health.error && <p className="text-danger font-mono">{health.error}</p>}
+      {/* storage */}
+      <div>
+        <div className="font-mono uppercase tracking-wider text-muted-foreground">
+          {t("capabilities.skill_health.storage")}
+          <span className={health.storage.ok ? "text-success ml-1" : "text-warning ml-1"}>
+            {health.storage.ok ? t("capabilities.skill_health.ok") : t("capabilities.skill_health.degraded")}
+          </span>
+        </div>
+        {health.storage.missing.length > 0 && (
+          <p className="text-warning font-mono">
+            {t("capabilities.skill_health.missing")}: {health.storage.missing.join(", ")}
+          </p>
+        )}
+        {health.storage.orphaned.length > 0 && (
+          <p className="text-subtle-foreground font-mono">
+            {t("capabilities.skill_health.orphaned")}: {health.storage.orphaned.join(", ")}
+          </p>
+        )}
+      </div>
+      {/* scripts */}
+      {health.scripts.length > 0 && (
+        <div>
+          <div className="font-mono uppercase tracking-wider text-muted-foreground">
+            {t("capabilities.skill_health.scripts")}
+          </div>
+          <ul className="space-y-0.5">
+            {health.scripts.map((sc) => row(sc.name, sc.runnable, sc.reason, sc.name))}
+          </ul>
+        </div>
+      )}
+      {/* references */}
+      {health.references.length > 0 && (
+        <div>
+          <div className="font-mono uppercase tracking-wider text-muted-foreground">
+            {t("capabilities.skill_health.references")}
+          </div>
+          <ul className="space-y-0.5">
+            {health.references.map((rf) => row(rf.name, rf.readable, rf.reason, rf.name))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// PC-4: honest sandbox-compatibility pill on each skill row. full=全兼容 (positive),
+// partial=部分 (warning), text=仅文本 (muted). Semantic tokens only, matching the Badge style.
+function CompatBadge({ compatibility }: { compatibility?: "full" | "partial" | "text" }) {
+  const { t } = useTranslation();
+  const compat = compatibility ?? "text";
+  const cls =
+    compat === "full" ? "bg-success/15 text-success"
+    : compat === "partial" ? "bg-warning/15 text-warning"
+    : "bg-surface-raised text-muted-foreground";
+  return (
+    <span
+      data-testid={`skill-compat-${compat}`}
+      title={t(`capabilities.compat.${compat}_hint`)}
+      className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${cls}`}
+    >
+      {t(`capabilities.compat.${compat}`)}
+    </span>
   );
 }
 

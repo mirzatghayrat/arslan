@@ -25,6 +25,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import SkillCandidate, Spawn, SkillPack
 from server.orchestrator import dispatcher
+from server.registry import service as registry_service
 from server.services import evaluator, replay_set
 
 logger = logging.getLogger(__name__)
@@ -95,11 +96,10 @@ async def create_candidate(
     return cand
 
 
-# Skill-body limit + framing mirror server/orchestrator/dispatcher.py:_equipment_block_from
-# (the `### {name}\n{body[:1500]}` technique block under a "Your techniques:" header).
 # We inject the CANDIDATE body the SAME way an equipped skill's body reaches a spawn's
-# system prompt, so evaluate_candidate is a true equip-this-skill vs not counterfactual.
-_SKILL_BODY_LIMIT = dispatcher._SKILL_BODY_LIMIT
+# system prompt — via the SHARED dispatcher._skill_technique_block (see _inject_skill_body
+# below) — so evaluate_candidate is a true equip-this-skill vs not counterfactual and the
+# two injection points never drift.
 
 
 def _persona(spawn: Spawn) -> str:
@@ -108,15 +108,25 @@ def _persona(spawn: Spawn) -> str:
             f"{spawn.system_prompt or ''}")
 
 
-def _inject_skill_body(base_prompt: str, name: str, body: str) -> str:
+def _inject_skill_body(base_prompt: str, name: str, body: str, *,
+                       key: str | None = None, has_scripts: bool = False) -> str:
     """Append `body` to `base_prompt` exactly as an equipped skill reaches the system
-    prompt in dispatcher._equipment_block_from: as a `### {name}\\n{body[:LIMIT]}`
-    block under a "Your techniques:" header. Mirroring the real injection makes the
-    skill-on eval a faithful counterfactual of really equipping this skill."""
+    prompt in dispatcher._equipment_block_from: the SHARED _skill_technique_block under a
+    "Your techniques:" header (short skills inline whole; long skills get summary + TOC +
+    read_skill hint bounded by _SKILL_BLOCK_LIMIT; script-bearing skills get a run hint).
+    Reusing the one helper keeps the eval-injection and the real dispatch-injection from
+    drifting — the skill-on eval stays a faithful counterfactual of really equipping this."""
     body = (body or "").strip()
     if not body:
         return base_prompt
-    return f"{base_prompt}\n\nYour techniques:\n### {name}\n{body[:_SKILL_BODY_LIMIT]}"
+    # Candidate-eval context has NO wired-toolset view (we only inject the skill body, not the
+    # spawn's final wired tools), so we can't know if read_skill/run_python are reachable here.
+    # Pass availability=False → the shared helper uses honest fallback wording that never points
+    # at a tool the spawn may not have, rather than fabricating a wired set.
+    block = dispatcher._skill_technique_block(
+        name, body, has_scripts=has_scripts, key=key or name,
+        read_skill_available=False, run_python_available=False)
+    return f"{base_prompt}\n\nYour techniques:\n{block}"
 
 
 async def _val_outputs(spawn_id: int, system_prompt_override: str, val: list[dict]) -> dict:
@@ -181,7 +191,9 @@ async def evaluate_candidate(candidate_id: int, target_spawn_id: int, *,
                          "reason": f"insufficient real samples (have {len(val)}, need {min_samples})",
                          "aggregate": None}}
 
-    skill_on_prompt = _inject_skill_body(skill_off_prompt, cand_name, cand_body)
+    skill_on_prompt = _inject_skill_body(
+        skill_off_prompt, cand_name, cand_body,
+        key=cand_key, has_scripts=registry_service.skill_has_scripts(cand_key))
 
     # Faithful counterfactual: skill-off baseline outputs vs skill-on candidate, over the
     # SAME held-out val runs. Degrade to a not-passed gate on any dispatch/eval failure.

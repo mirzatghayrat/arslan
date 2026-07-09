@@ -22,6 +22,15 @@ from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
 
+
+class _NotUtf8(Exception):
+    """A staged skill file could not be decoded as UTF-8 — turned into an honest {ok:False}."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(name)
+
+
 _EXTRACT_CHAR_LIMIT = 12_000
 # Fail fast on a slow page: the mini agent-loop has a small tool budget, so a page that hangs
 # should surrender quickly (leaving budget + wall-clock for synthesis) rather than consuming the
@@ -399,36 +408,102 @@ class RunPythonExecutor:
 
     key = "run_python"
 
+    # PC-3 ① fail-closed marker convention: a skill script may DECLARE an execution need
+    # the sandbox cannot satisfy via a front-matter comment on any line, e.g.
+    #   # requires: network      →  needs outbound network (denied by the sandbox)
+    #   # requires: cli          →  shells out to an external CLI (not available)
+    # We reject BEFORE touching the sandbox with an honest "疑似需…未执行" message. This is a
+    # deterministic, author-declared signal (no code analysis, no false positives).
+    # IMPORTANT — this marker is an ADVISORY PRE-FLIGHT check, NOT the security boundary. The
+    # REAL enforcement is the sandbox itself: seatbelt denies all network, and a script that
+    # LIES about (omits) its `# requires:` marker still fails closed at runtime (its socket /
+    # subprocess call is blocked by the kernel). The marker only turns an otherwise silent /
+    # confusing runtime failure into an explicit, honest {ok:False, error:…} up front.
     @staticmethod
-    def _load_skill_script(ref: str) -> tuple[str, dict[str, str]] | str:
+    def _scan_requires(src: str) -> tuple[str, str] | None:
+        """Return (人类可读需求, 原始声明) if the source declares an unsupported need, else None."""
+        import re as _re
+        for line in src.splitlines():
+            mm = _re.match(r"#\s*requires:\s*(.+)", line.strip(), _re.IGNORECASE)
+            if not mm:
+                continue
+            raw = mm.group(1).strip()
+            vals = {v.strip().lower() for v in _re.split(r"[,\s]+", raw) if v.strip()}
+            if "network" in vals or "net" in vals:
+                return "网络", raw
+            if "cli" in vals or "shell" in vals or "subprocess" in vals:
+                return "CLI", raw
+        return None
+
+    @staticmethod
+    def _load_skill_script(ref: str) -> tuple[str, dict[str, str], dict[str, str]] | str:
         """Resolve "<skill_key>/<file>.py" inside data_dir/skill_scripts with traversal
-        protection. Returns (entry_code, sibling_files) or an error string."""
+        protection. Returns (entry_code, sibling_files, references) or an error string.
+        `references` are the skill's bundled read-only docs (PC-2 storage,
+        data_dir/skill_scripts/<key>/references/*.{md,txt}); the sandbox mounts them
+        READ-ONLY so a script can read but never mutate them (PC-3 ②).
+
+        Fail-closed (PC-3 ①): a well-formed ref whose entry is NOT .py, or a .py entry that
+        declares a network/CLI need (`# requires:` marker), is REFUSED here with an honest
+        error — the sandbox is never invoked (execute() returns on the error string)."""
         import os as _os
         import re as _re
         from pathlib import Path as _Path
-        m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.py)", (ref or "").strip())
+        # Accept any well-formed "<key>/<file>.<ext>" so a non-.py entry produces the honest
+        # "只支持 .py" message rather than a confusing generic "invalid format".
+        m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.[A-Za-z0-9]+)", (ref or "").strip())
         if not m:
             return "invalid 'skill_script' — expected '<skill-key>/<file>.py'"
+        ext = "." + m.group(2).rsplit(".", 1)[-1].lower()
+        if ext != ".py":
+            return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
         root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts").resolve()
         skill_dir = (root / m.group(1)).resolve()
         entry = (skill_dir / m.group(2)).resolve()
         if not str(entry).startswith(str(root) + "/") or not entry.is_file():
             return f"skill script not found: {ref}"
-        siblings = {p.name: p.read_text(encoding="utf-8")
-                    for p in skill_dir.iterdir()
-                    if p.is_file() and p.suffix == ".py" and p != entry}
-        return entry.read_text(encoding="utf-8"), siblings
+
+        # Honest read: a non-UTF-8 file must return {ok:False} (via the error string), never
+        # raise UnicodeDecodeError to an unhandled crash. Returns text or an error string.
+        def _read(p) -> str:
+            try:
+                return p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                raise _NotUtf8(p.name) from None
+
+        try:
+            entry_code = _read(entry)
+            need = RunPythonExecutor._scan_requires(entry_code)
+            if need:
+                kind, raw = need
+                return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
+            siblings = {p.name: _read(p)
+                        for p in skill_dir.iterdir()
+                        if p.is_file() and p.suffix == ".py" and p != entry}
+            # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
+            # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
+            # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
+            ref_dir = (skill_dir / "references")
+            references = {p.name: _read(p)
+                          for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
+                          if p.is_file() and p.suffix in (".md", ".txt")}
+        except _NotUtf8 as exc:
+            return f"技能文件不是有效 UTF-8:{exc.name},未执行"
+        return entry_code, siblings, references
 
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
         extra_files: dict[str, str] | None = None
+        read_only_files: dict[str, str] | None = None
         code = args.get("code") or ""
         if args.get("skill_script"):
             loaded = self._load_skill_script(str(args["skill_script"]))
             if isinstance(loaded, str):
                 return {"ok": False, "external": False, "error": loaded}
-            code, extra_files = loaded
-        result = await code_sandbox.run_python(code, extra_files=extra_files)
+            code, extra_files, references = loaded
+            read_only_files = references or None
+        result = await code_sandbox.run_python(
+            code, extra_files=extra_files, read_only_files=read_only_files)
         if not result.get("ok"):
             # Keep `sandboxed`/`network_isolated` on the failure path too, so a refused or
             # unsandboxed run is auditable in the run trace / RunStep detail (P0-1 决定①a).
@@ -481,9 +556,82 @@ class RunCommandExecutor:
                 **result}
 
 
+class ReadSkillExecutor:
+    """safe-tier read-only: read one registered skill's body (optionally one section).
+    Caged to the registry — reads ONLY SkillPack.body by validated key, never the
+    filesystem. A no-section full-text over the cap returns the first half + TOC to
+    steer the spawn toward segmented reads."""
+    key = "read_skill"
+    _READ_SKILL_CAP = 8000
+
+    async def execute(self, args: dict) -> dict:
+        import re as _re
+        from server.db import session as _db
+        from server.db.models import SkillPack
+        skey = (args.get("key") or "").strip()
+        if not _re.fullmatch(r"[a-z0-9-]+", skey):
+            return {"ok": False, "external": False, "error": "invalid skill key"}
+        async with _db.AsyncSessionLocal() as db:
+            row = await db.get(SkillPack, skey)
+        if row is None or not (row.body or "").strip():
+            return {"ok": False, "external": False, "error": f"skill not found or empty: {skey}"}
+        body = row.body.strip()
+        section = (args.get("section") or "").strip()
+        if section.startswith("references/"):
+            # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
+            # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
+            import os as _os
+            from pathlib import Path as _Path
+            fname = section[len("references/"):]
+            if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
+                return {"ok": False, "external": False, "error": "invalid reference filename"}
+            root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data"))
+                    / "skill_scripts" / skey / "references").resolve()
+            target = (root / fname).resolve()
+            if not str(target).startswith(str(root) + "/") or not target.is_file():
+                return {"ok": False, "external": False, "error": f"reference not found: {section}"}
+            # Honest read: a non-UTF-8 reference must not crash — replace undecodable bytes
+            # rather than raise UnicodeDecodeError (mirrors _load_skill_script._read's guard).
+            try:
+                text = target.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                text = target.read_text(encoding="utf-8", errors="replace")
+            return {"ok": True, "external": False, "body": text[:self._READ_SKILL_CAP],
+                    "summary": f"技能 {skey} · {section}"}
+        if section:
+            lines = body.splitlines()
+            out, capturing = [], False
+            for ln in lines:
+                s = ln.strip()
+                if _re.match(r"#{2,3}\s+\S", s):
+                    if capturing:
+                        break
+                    if s == section or s.lstrip("# ").strip() == section.lstrip("# ").strip():
+                        capturing = True
+                if capturing:
+                    out.append(ln)
+            if not out:
+                return {"ok": False, "external": False, "error": f"section not found: {section}"}
+            sect = "\n".join(out)
+            if len(sect) > self._READ_SKILL_CAP:  # cap like the other branches
+                sect = (sect[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
+                        + "\n\n[本节过长已截断,用更细 section 读取]")
+            return {"ok": True, "external": False, "body": sect,
+                    "summary": f"技能 {skey} · {section}"}
+        if len(body) <= self._READ_SKILL_CAP:
+            return {"ok": True, "external": False, "body": body, "summary": f"技能 {skey}(全文)"}
+        toc = [ln.strip() for ln in body.splitlines() if _re.match(r"#{2,3}\s+\S", ln.strip())]
+        head = body[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
+        note = ("\n\n[正文过长, 以上为前半。请按章节读取: read_skill(key, section='## 标题')。目录:\n"
+                + "\n".join(f"- {t}" for t in toc) + "]")
+        return {"ok": True, "external": False, "body": head + note,
+                "summary": f"技能 {skey}(前半+目录)"}
+
+
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
+    ReadSkillExecutor(),
 )}
 
 

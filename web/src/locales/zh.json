@@ -635,6 +635,26 @@
       "loading": "加载分身…",
       "empty": "还没有分身。",
       "error": "装备失败——已回滚。"
+    },
+    "compat": {
+      "full": "全兼容",
+      "partial": "部分兼容",
+      "text": "仅文本",
+      "full_hint": "纯文本或自带脚本全为可在沙箱运行的 .py",
+      "partial_hint": "自带参考资料或脚本受限(非 .py 或声明需网络/CLI)",
+      "text_hint": "仅方法正文,无脚本、无参考资料"
+    },
+    "skill_health": {
+      "check": "体检",
+      "unknown": "尚未体检",
+      "ok": "体检正常",
+      "degraded": "体检有问题",
+      "sandbox_unavailable": "本机无沙箱后端,脚本无法标记为可运行",
+      "storage": "存储",
+      "scripts": "脚本",
+      "references": "参考资料",
+      "missing": "缺失文件",
+      "orphaned": "游离文件"
     }
   },
   "forge": {

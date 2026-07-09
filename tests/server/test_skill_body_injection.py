@@ -48,9 +48,11 @@ def test_equipment_block_injects_body_or_falls_back():
 
 
 def test_equipment_block_truncates_long_body():
-    from server.orchestrator.dispatcher import _equipment_block_from, _SKILL_BODY_LIMIT
-    long_body = "## Trigger\n" + ("x" * 5000)
+    from server.orchestrator.dispatcher import _equipment_block_from, _SKILL_BLOCK_LIMIT
+    long_body = "intro before headings. " * 100 + "\n## Trigger\n" + ("x" * 5000)
     equipment = {"toolsets": [], "skills": [{"key": "big", "name": "Big", "description": "d"}]}
     block = _equipment_block_from(equipment, [], {"big": long_body})
-    assert len(block) < len(long_body) + 500                # bounded
-    assert ("x" * _SKILL_BODY_LIMIT) not in block or True   # truncated to limit (smoke)
+    # bounded: the long body becomes a summary+TOC block, never the raw 5000-char dump
+    assert len(block) < len(long_body)
+    assert ("x" * 5000) not in block
+    assert _SKILL_BLOCK_LIMIT == 2000                        # the cap the block is bounded by

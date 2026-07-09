@@ -238,6 +238,9 @@ class SkillPackOut(BaseModel):
     tier: str
     status: str
     assignable: bool
+    # PC-4: sandbox-compatibility class — "full" | "partial" | "text". Deterministic,
+    # computed from real bundle signals (see registry.service.skill_compatibility).
+    compatibility: str = "text"
 
 
 class RegistryOut(BaseModel):
