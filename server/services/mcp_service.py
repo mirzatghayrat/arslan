@@ -1,7 +1,10 @@
-"""CRUD + connect/expose/wire for MCP servers. env stored encrypted, masked on read."""
+"""CRUD + connect/expose/wire + health probe for MCP servers. env stored encrypted, masked on read."""
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -10,6 +13,11 @@ from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
 from server.services.settings_service import mask_secret
+
+logger = logging.getLogger(__name__)
+
+_HEALTH_PROBE_TIMEOUT = 10.0   # 条件3: the probe is bounded — it must never become a hang point
+_STORED_ERROR_CAP = 500        # matches executor._STORED_ERROR_CAP (PB-2 shape)
 
 
 def _mask_env(env: dict) -> dict:
@@ -25,7 +33,9 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
             env = {}
     return {"id": srv.id, "label": srv.label, "command": srv.command, "args": srv.args or [],
             "url": srv.url, "env": _mask_env(env) if mask else env, "status": srv.status,
-            "last_error": srv.last_error, "transport": srv.transport}
+            "last_error": srv.last_error, "transport": srv.transport,
+            "health_status": srv.health_status,
+            "last_checked_at": srv.last_checked_at.isoformat() if srv.last_checked_at else None}
 
 
 async def add_server(label: str, command: str, args: list[str], env: dict,
@@ -113,6 +123,76 @@ async def set_host_enabled(tool_key: str, enabled: bool) -> None:
             raise ValueError("not an MCP tool")
         tool.host_enabled = enabled
         await db.commit()
+
+
+async def check_health(server_id: int) -> dict:
+    """PB-4 on-demand equipment health probe: list_tools with a hard 10s bound.
+
+    Writes health_status ("ok"|"failing") + last_checked_at; failures also land in
+    last_error (PB-2 shape: timestamp + context + upstream text). Zero side effects on
+    the server's tools — v1 never test-calls anything.
+    """
+    from server.mcp.discovery import runtime_dict
+    from server.mcp.session import manager
+
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+        if srv is None:
+            raise ValueError(f"mcp server {server_id} not found")
+        server = runtime_dict(srv)
+        label, transport = srv.label, (srv.transport or "stdio")
+
+    tool_count: int | None = None
+    err_text: str | None = None
+    try:
+        listed = await asyncio.wait_for(manager.list_tools(server), timeout=_HEALTH_PROBE_TIMEOUT)
+        tool_count = len(listed.tools)
+        health = "ok"
+    except TimeoutError:
+        # wait_for cancels the probe with CancelledError (BaseException), which
+        # list_tools' `except Exception` does NOT catch — drop the cached session
+        # explicitly so a wedged subprocess can't poison later calls.
+        await manager._drop(server_id)
+        health = "failing"
+        err_text = f"health probe timed out after {_HEALTH_PROBE_TIMEOUT:g}s"
+    except Exception as exc:  # noqa: BLE001 — any probe failure = failing, never a 500
+        health = "failing"
+        err_text = str(exc)[:_STORED_ERROR_CAP]
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)   # naive UTC, matches DateTime columns
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+        if srv is not None:
+            srv.health_status = health
+            srv.last_checked_at = now
+            if err_text is not None:
+                srv.last_error = f"{stamp} health probe list_tools: {err_text}"   # PB-2 shape
+            elif srv.last_error is not None:
+                srv.last_error = None          # column reflects the LATEST state (executor semantics)
+            last_error = srv.last_error
+            await db.commit()
+        else:
+            last_error = err_text
+
+    proxy = manager.proxy_source(server_id)    # PB-1 context; None = never launched this process
+    return {"id": server_id, "label": label, "transport": transport,
+            "health_status": health, "last_checked_at": now.isoformat(),
+            "last_error": last_error, "tool_count": tool_count,
+            "proxy_source": proxy or "unknown"}
+
+
+async def check_health_all() -> None:
+    """Boot-time sweep (ARSLAN_MCP_HEALTH_ON_BOOT=1): probe every registered server once,
+    sequentially, each with the same 10s bound. Fail-open — one bad server never blocks
+    the next, and callers wrap the whole sweep so boot can never fail on it."""
+    async with db_session.AsyncSessionLocal() as db:
+        ids = [r[0] for r in (await db.execute(select(MCPServer.id).order_by(MCPServer.id))).all()]
+    for sid in ids:
+        try:
+            await check_health(sid)
+        except Exception as exc:  # noqa: BLE001 — sweep is best-effort
+            logger.warning("mcp boot health probe failed for server %s: %s", sid, exc)
 
 
 async def reconnect(server_id: int) -> None:

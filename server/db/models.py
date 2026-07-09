@@ -289,6 +289,8 @@ class MCPServer(Base):
     url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
     status = Column(String(20), nullable=False, default="registered")  # registered|connected|error
     last_error = Column(Text, nullable=True)
+    last_checked_at = Column(DateTime, nullable=True)    # PB-4: last on-demand health probe
+    health_status = Column(String(20), nullable=True)    # PB-4: ok|failing|NULL=never checked
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

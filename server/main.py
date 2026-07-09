@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and run boot migrations/backfills on startup."""
+    import os
     from pathlib import Path
 
     from server.config import settings
@@ -73,6 +74,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_sb_rebuild_upgrade)
         from server.db.migrations.versions._0026_notes import upgrade_sync as _notes_upgrade
         await conn.run_sync(_notes_upgrade)
+        from server.db.migrations.versions._0027_mcp_health import upgrade_sync as _mcp_health_upgrade
+        await conn.run_sync(_mcp_health_upgrade)
 
     from server.registry.seeder import seed_registry
 
@@ -81,6 +84,16 @@ async def lifespan(app: FastAPI):
     from server.services.default_spawns import seed_default_spawns
 
     await seed_default_spawns()
+
+    # PB-4 opt-in boot health sweep: probe every registered MCP server once (sequential,
+    # 10s bound each). Default OFF; no background timers. Fail-open — never blocks boot.
+    if os.environ.get("ARSLAN_MCP_HEALTH_ON_BOOT") == "1":
+        try:
+            from server.services import mcp_service
+
+            await mcp_service.check_health_all()
+        except Exception as exc:  # noqa: BLE001 — boot sweep must never break startup
+            logger.warning("MCP boot health sweep failed (non-fatal): %s", exc)
 
     # Non-blocking boot backfill for any fact left with category=NULL (write-time
     # classify failed / process died mid-flight / pre-existing rows). Fire-and-forget;
