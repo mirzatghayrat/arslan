@@ -576,7 +576,8 @@
       "empty": "Nothing here yet.",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "Not implemented — catalog placeholder only, cannot be equipped.",
-      "orchestrator_note": "For safety, these are usable only by Arslan (the orchestrator) and cannot be equipped to spawns."
+      "orchestrator_note": "For safety, these are usable only by Arslan (the orchestrator) and cannot be equipped to spawns.",
+      "degraded": "UNSANDBOXED"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",

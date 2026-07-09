@@ -17,6 +17,19 @@ class Settings:
     static_dir: str = ""
     app_version: str = "0.1.0"
     attach_extract_char_limit: int = 12000
+    # Deployment mode. Code default is "dev" so local zero-config still boots.
+    # Release artifacts (Dockerfile / docker-compose) pin ARSLAN_ENV=prod, which
+    # turns missing-secret from a warning into a boot-fatal refusal.
+    env: str = "dev"
+    # Advisory default bind host. The *true* bind is decided by the launcher's
+    # `uvicorn --host`; this value only feeds launch scripts/docs and the
+    # startup bind advisory — the app cannot force it.
+    bind_host: str = "127.0.0.1"
+
+    @property
+    def is_prod(self) -> bool:
+        """True when running in production mode (ARSLAN_ENV=prod)."""
+        return self.env == "prod"
 
     @property
     def db_url(self) -> str:
@@ -37,6 +50,8 @@ def load_settings() -> Settings:
         spawns_dir=spawns_dir,
         static_dir=static_dir,
         attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "12000")),
+        env=os.environ.get("ARSLAN_ENV", "dev").lower(),
+        bind_host=os.environ.get("ARSLAN_BIND_HOST", "127.0.0.1"),
     )
 
 

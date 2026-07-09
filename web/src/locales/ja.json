@@ -576,7 +576,8 @@
       "empty": "Nothing here yet.",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "未実装——カタログ上の項目のみで、装備できません。",
-      "orchestrator_note": "安全のためオーケストレーターのArslan専用です。分身には装備できません。"
+      "orchestrator_note": "安全のためオーケストレーターのArslan専用です。分身には装備できません。",
+      "degraded": "サンドボックス無効"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",

@@ -1,6 +1,8 @@
 """Catalog endpoint: full transparency, assignable flag derived from tier+status."""
 import pytest
 
+from server.services import code_sandbox
+
 
 @pytest.mark.asyncio
 async def test_registry_lists_catalog_with_assignable_flags(client):
@@ -19,6 +21,21 @@ async def test_registry_lists_catalog_with_assignable_flags(client):
     ws_tools = {t["key"]: t for t in toolsets["file_operations"]["tools"]}
     assert ws_tools["read_file"]["tier"] == "safe"
     assert ws_tools["write_file"]["tier"] == "orchestrator"
+
+
+@pytest.mark.asyncio
+async def test_registry_badges_code_sandbox_when_unsandboxed(client, monkeypatch):
+    # P0-1 决定①b: when run_python is degraded to unsandboxed, the code_sandbox toolset
+    # carries degraded=True + a warning so the capability page can badge it.
+    monkeypatch.setattr(code_sandbox, "unsandboxed_active", lambda: True)
+    body = (await client.get("/api/v1/registry")).json()
+    cs = {t["key"]: t for t in body["toolsets"]}["code_sandbox"]
+    assert cs["degraded"] is True and cs["warning"]
+
+    monkeypatch.setattr(code_sandbox, "unsandboxed_active", lambda: False)
+    body = (await client.get("/api/v1/registry")).json()
+    cs = {t["key"]: t for t in body["toolsets"]}["code_sandbox"]
+    assert cs["degraded"] is False and cs["warning"] is None
 
 
 @pytest.mark.asyncio

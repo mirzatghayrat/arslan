@@ -121,6 +121,18 @@ function ToolCard({ ts }: { ts: RegistryToolset }) {
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-bold text-foreground">{ts.name ?? ts.key}</span>
         <Badge tier={ts.tier} status={ts.status} assignable={ts.assignable} />
+        {ts.degraded && (
+          // P0-1 决定①b: reuse the PB-4 health-dot pattern — an amber dot + warning tooltip
+          // so the user always sees when run_python is running UNSANDBOXED.
+          <span
+            data-testid={`toolset-degraded-${ts.key}`}
+            title={ts.warning ?? t("capabilities.catalog.degraded")}
+            className="flex items-center gap-1 text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-danger/15 text-danger"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+            {t("capabilities.catalog.degraded")}
+          </span>
+        )}
         {avail === "usable" && (
           <span className="ml-auto">
             <EquipPopover kind="toolset" capKey={ts.key} />
@@ -128,6 +140,9 @@ function ToolCard({ ts }: { ts: RegistryToolset }) {
         )}
       </div>
       <p className="text-[11px] text-subtle-foreground mt-0.5">{ts.description}</p>
+      {ts.degraded && ts.warning && (
+        <p className="text-[10px] text-danger font-mono mt-1">{ts.warning}</p>
+      )}
       {avail === "unimplemented" && (
         <p className="text-[10px] text-muted-foreground font-mono mt-1">
           {t("capabilities.catalog.unimplemented_note")}
@@ -136,6 +151,8 @@ function ToolCard({ ts }: { ts: RegistryToolset }) {
     </div>
   );
 }
+
+export { ToolCard };
 
 function SkillsView({ skills }: { skills: RegistrySkill[] }) {
   const { t } = useTranslation();

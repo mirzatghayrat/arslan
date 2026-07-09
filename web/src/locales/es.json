@@ -576,7 +576,8 @@
       "empty": "Nothing here yet.",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "No implementado — solo marcador de catálogo, no se puede equipar.",
-      "orchestrator_note": "Por seguridad, solo Arslan (el orquestador) puede usarlos; no se pueden equipar a los spawns."
+      "orchestrator_note": "Por seguridad, solo Arslan (el orquestador) puede usarlos; no se pueden equipar a los spawns.",
+      "degraded": "SIN SANDBOX"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",

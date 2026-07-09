@@ -11,6 +11,7 @@ from server.db.models import SkillPack, Tool, Toolset
 from server.db.session import get_session
 from server.registry.service import skill_is_assignable, toolset_is_assignable
 from server.schemas import RegistryOut, SkillPackOut, ToolOut, ToolsetOut
+from server.services import code_sandbox
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -26,6 +27,9 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
         by_ts.setdefault(t.toolset_key, []).append(
             ToolOut(key=t.key, description=t.description, tier=t.tier, status=t.status)
         )
+    # P0-1 决定①b: the code_sandbox toolset (run_python) is DEGRADED when the escape valve is
+    # open on a host with no isolation backend — surface it so the capability page badges it.
+    py_degraded = code_sandbox.unsandboxed_active()
     return RegistryOut(
         toolsets=[
             ToolsetOut(
@@ -37,6 +41,9 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
                     has_wired_tool=any(x.tier == "safe" and x.status == "wired"
                                        for x in by_ts.get(t.key, []))),
                 tools=by_ts.get(t.key, []),
+                degraded=(t.key == "code_sandbox" and py_degraded),
+                warning=("run_python 正在无沙箱裸跑(ARSLAN_ALLOW_UNSANDBOXED_PY=1):无隔离,"
+                         "代码以完整主机权限运行" if (t.key == "code_sandbox" and py_degraded) else None),
             )
             for t in toolsets
         ],

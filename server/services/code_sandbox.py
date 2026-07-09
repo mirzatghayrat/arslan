@@ -111,6 +111,86 @@ def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
     return ["/usr/bin/sandbox-exec", "-p", profile or _SEATBELT_PROFILE]
 
 
+# ── Pluggable sandbox backends ──────────────────────────────────────────────────
+# A backend answers two questions: is a real OS-level isolation mechanism available
+# here, and (if so) how do we wrap the child process to enforce it. run_python selects
+# one per run and FAILS CLOSED when none is available (unless the visible escape valve is
+# set). run_command already refuses on no-wrapper; this aligns run_python to the same bar.
+
+class SandboxBackend:
+    """Isolation mechanism interface. `available()` must be honest — return True only when
+    the wrapper will actually enforce isolation on this host."""
+
+    name: str = "abstract"
+
+    def available(self) -> bool:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def wrapper(self, profile: str | None = None) -> list[str] | None:  # pragma: no cover
+        raise NotImplementedError
+
+
+class SeatbeltBackend(SandboxBackend):
+    """macOS seatbelt (`sandbox-exec`, kernel-enforced). The only real isolation v1 ships."""
+
+    name = "seatbelt"
+
+    def available(self) -> bool:
+        return sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").exists()
+
+    def wrapper(self, profile: str | None = None) -> list[str] | None:
+        return _seatbelt_wrapper(profile)
+
+
+class BubblewrapBackend(SandboxBackend):
+    """Linux bubblewrap (`bwrap`) namespace sandbox — NOT YET IMPLEMENTED. Stub kept so the
+    registry has a Linux slot to fill; until then it reports unavailable so run_python fails
+    closed on Linux rather than running unsandboxed by default."""
+
+    name = "bubblewrap"
+
+    def available(self) -> bool:
+        # TODO(P0-followup): implement Linux bubblewrap sandbox (bwrap unshare + net-deny).
+        return False
+
+    def wrapper(self, profile: str | None = None) -> list[str] | None:  # pragma: no cover - stub
+        return None
+
+
+class NullBackend(SandboxBackend):
+    """No isolation available. Present so run_python can detect 'no backend' and refuse."""
+
+    name = "null"
+
+    def available(self) -> bool:
+        return False
+
+    def wrapper(self, profile: str | None = None) -> list[str] | None:
+        return None
+
+
+def _select_backend() -> SandboxBackend:
+    """Pick the isolation backend for this host: darwin → seatbelt, else → null (fail closed).
+    The Linux bubblewrap slot exists (BubblewrapBackend) but is unavailable until implemented."""
+    if sys.platform == "darwin":
+        return SeatbeltBackend()
+    return NullBackend()
+
+
+def _unsandboxed_valve_open() -> bool:
+    """The deliberate, VISIBLE escape valve: ARSLAN_ALLOW_UNSANDBOXED_PY truthy lets run_python
+    execute WITHOUT isolation (pure-stdlib no-net compute is real before bubblewrap lands)."""
+    return os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def unsandboxed_active() -> bool:
+    """Is run_python currently running UNSANDBOXED? Drives the capability-page warning badge.
+    darwin → always False (seatbelt works); elsewhere → True only when the escape valve is open
+    (valve off = we refuse, so no unsandboxed runs happen)."""
+    return (not _select_backend().available()) and _unsandboxed_valve_open()
+
+
 def _truncate(s: str) -> str:
     if len(s) <= MAX_OUTPUT_CHARS:
         return s
@@ -127,6 +207,21 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         return {"ok": False, "error": "missing 'code'"}
     if len(code) > MAX_CODE_CHARS:
         return {"ok": False, "error": f"code too large (max {MAX_CODE_CHARS} chars)"}
+
+    # Fail closed: if no real isolation backend is available (non-darwin until bubblewrap
+    # lands, or a broken seatbelt), REFUSE — unless the deliberate, visible escape valve is
+    # set. This aligns run_python with run_command (command_sandbox refuses on no-wrapper).
+    backend = _select_backend()
+    if not backend.available():
+        if not _unsandboxed_valve_open():
+            return {"ok": False, "sandboxed": False,
+                    "error": "沙箱不可用(需 macOS seatbelt),已拒绝执行 run_python;"
+                             "设 ARSLAN_ALLOW_UNSANDBOXED_PY=1 可强制裸跑(不安全)"}
+        logger.warning("⚠ UNSANDBOXED run_python (ARSLAN_ALLOW_UNSANDBOXED_PY=1): "
+                       "no isolation — code ran with full host access")
+        sandboxed = False
+    else:
+        sandboxed = True
 
     python, env_note = await _sandbox_python()
     tmp = Path(tempfile.mkdtemp(prefix="arslan-sbx-"))
@@ -149,7 +244,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             "PYTHONDONTWRITEBYTECODE": "1", "LC_ALL": "en_US.UTF-8",
         }
         argv = [python, str(script)]
-        wrapper = _seatbelt_wrapper()
+        wrapper = backend.wrapper() if sandboxed else None
         network_isolated = wrapper is not None
         if wrapper:
             argv = [*wrapper, *argv]
@@ -171,12 +266,14 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
                 proc.kill()
             await proc.wait()
             return {"ok": False, "error": f"execution timed out after {int(timeout_s)}s",
+                    "sandboxed": sandboxed,
                     "network_isolated": network_isolated, "env_note": env_note}
 
         # Nested-sandbox environments refuse sandbox-exec itself (exit 65/71 before user code
-        # runs). Retry WITHOUT the wrapper and report isolation honestly.
+        # runs). Retry WITHOUT the wrapper and report isolation honestly (sandboxed→False too).
         if wrapper and proc.returncode != 0 and b"sandbox-exec" in (err_b or b""):
             network_isolated = False
+            sandboxed = False
             proc = await _spawn([python, str(script)])
             try:
                 out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
@@ -187,6 +284,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
                     proc.kill()
                 await proc.wait()
                 return {"ok": False, "error": f"execution timed out after {int(timeout_s)}s",
+                        "sandboxed": sandboxed,
                         "network_isolated": network_isolated, "env_note": env_note}
 
         stdout = _truncate((out_b or b"").decode("utf-8", errors="replace"))
@@ -201,6 +299,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             "ok": proc.returncode == 0,
             "exit_code": proc.returncode,
             "stdout": stdout, "stderr": stderr, "files": files,
+            "sandboxed": sandboxed,
             "network_isolated": network_isolated, "env_note": env_note,
         }
         if proc.returncode != 0:
