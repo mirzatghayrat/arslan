@@ -6,6 +6,9 @@ Layer 3: wired_tools_for_spawn() — the only tool resolution the loop may call.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,9 +62,25 @@ def _toolset_dict(t: Toolset) -> dict:
             "tier": t.tier, "status": t.status}
 
 
+def skill_has_scripts(key: str) -> bool:
+    """True iff data_dir/skill_scripts/<key>/ exists and holds >=1 .py file.
+
+    Mirrors RunPythonExecutor._load_skill_script's resolution root (executors.py) so the
+    injected run-hint line fires exactly when a bundled script is actually loadable via
+    run_python(skill_script="<key>/<file>.py"). Fail-closed on any FS error → False."""
+    if not key:
+        return False
+    root = Path(os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts" / key
+    try:
+        return any(p.is_file() and p.suffix == ".py" for p in root.iterdir())
+    except OSError:
+        return False
+
+
 def _skill_dict(s: SkillPack) -> dict:
     return {"key": s.key, "name": s.name, "description": s.description,
-            "category": s.category, "tier": s.tier, "status": s.status}
+            "category": s.category, "tier": s.tier, "status": s.status,
+            "has_scripts": skill_has_scripts(s.key)}
 
 
 async def safe_menu() -> dict:
