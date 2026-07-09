@@ -22,6 +22,15 @@ from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
 
+
+class _NotUtf8(Exception):
+    """A staged skill file could not be decoded as UTF-8 — turned into an honest {ok:False}."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(name)
+
+
 _EXTRACT_CHAR_LIMIT = 12_000
 # Fail fast on a slow page: the mini agent-loop has a small tool budget, so a page that hangs
 # should surrender quickly (leaving budget + wall-clock for synthesis) rather than consuming the
@@ -404,8 +413,12 @@ class RunPythonExecutor:
     #   # requires: network      →  needs outbound network (denied by the sandbox)
     #   # requires: cli          →  shells out to an external CLI (not available)
     # We reject BEFORE touching the sandbox with an honest "疑似需…未执行" message. This is a
-    # deterministic, author-declared signal (no code analysis, no false positives) — the point
-    # is to replace a SILENT/confusing failure with an explicit {ok:False, error:…}.
+    # deterministic, author-declared signal (no code analysis, no false positives).
+    # IMPORTANT — this marker is an ADVISORY PRE-FLIGHT check, NOT the security boundary. The
+    # REAL enforcement is the sandbox itself: seatbelt denies all network, and a script that
+    # LIES about (omits) its `# requires:` marker still fails closed at runtime (its socket /
+    # subprocess call is blocked by the kernel). The marker only turns an otherwise silent /
+    # confusing runtime failure into an explicit, honest {ok:False, error:…} up front.
     @staticmethod
     def _scan_requires(src: str) -> tuple[str, str] | None:
         """Return (人类可读需求, 原始声明) if the source declares an unsupported need, else None."""
@@ -449,21 +462,33 @@ class RunPythonExecutor:
         entry = (skill_dir / m.group(2)).resolve()
         if not str(entry).startswith(str(root) + "/") or not entry.is_file():
             return f"skill script not found: {ref}"
-        entry_code = entry.read_text(encoding="utf-8")
-        need = RunPythonExecutor._scan_requires(entry_code)
-        if need:
-            kind, raw = need
-            return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
-        siblings = {p.name: p.read_text(encoding="utf-8")
-                    for p in skill_dir.iterdir()
-                    if p.is_file() and p.suffix == ".py" and p != entry}
-        # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
-        # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
-        # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
-        ref_dir = (skill_dir / "references")
-        references = {p.name: p.read_text(encoding="utf-8")
-                      for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
-                      if p.is_file() and p.suffix in (".md", ".txt")}
+
+        # Honest read: a non-UTF-8 file must return {ok:False} (via the error string), never
+        # raise UnicodeDecodeError to an unhandled crash. Returns text or an error string.
+        def _read(p) -> str:
+            try:
+                return p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                raise _NotUtf8(p.name) from None
+
+        try:
+            entry_code = _read(entry)
+            need = RunPythonExecutor._scan_requires(entry_code)
+            if need:
+                kind, raw = need
+                return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
+            siblings = {p.name: _read(p)
+                        for p in skill_dir.iterdir()
+                        if p.is_file() and p.suffix == ".py" and p != entry}
+            # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
+            # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
+            # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
+            ref_dir = (skill_dir / "references")
+            references = {p.name: _read(p)
+                          for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
+                          if p.is_file() and p.suffix in (".md", ".txt")}
+        except _NotUtf8 as exc:
+            return f"技能文件不是有效 UTF-8:{exc.name},未执行"
         return entry_code, siblings, references
 
     async def execute(self, args: dict) -> dict:

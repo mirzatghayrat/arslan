@@ -103,6 +103,17 @@ def net_profile(proxy_port: int) -> str:
             f'(allow network-outbound (remote tcp "localhost:{proxy_port}"))\n')
 
 
+def readonly_profile(ro_subpath: str) -> str:
+    """Deny-all-network PLUS a kernel-enforced deny on WRITES to the staged references dir
+    (PC-3 ②). `file-write*` covers write-data, unlink, AND chmod (file-write-mode), so a
+    same-uid script CANNOT chmod-then-write its way past the advisory 0o444/0o555 mode bits —
+    the kernel refuses regardless of POSIX owner perms. Seatbelt matches on REALPATH, so
+    `ro_subpath` MUST already be the resolved (symlink-free) absolute path of the run's
+    references/ subdir. macOS-only enforcement; on Linux run_python is fail-closed (no run)."""
+    return (f"(version 1)\n(allow default)\n(deny network*)\n"
+            f'(deny file-write* (subpath "{ro_subpath}"))\n')
+
+
 def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
     """The seatbelt wrapper, when usable. Probed once per process. `profile` overrides the default
     deny-all-network one (e.g. net_profile(port) to allow ONLY the local credential proxy)."""
@@ -205,12 +216,17 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
     sibling imports/data files work.
 
     `read_only_files` (name → content) are the skill's bundled references (PC-3 ②): their
-    CONTENT is copied into a `references/` subdir of the ephemeral run tmpdir and placed
-    READ-ONLY — each file mode 0o444 inside a 0o555 directory, so the sandboxed script can
-    read them but cannot write, unlink, or replace them. The stored originals are never
-    handed in (only their text crosses the boundary), so no in-sandbox action can touch the
-    originals. Isolation guarantee: read-only placement of an ephemeral per-run copy — not a
-    bind-mount of the stored file (which is stronger: even the copy is unmutable in-sandbox).
+    CONTENT is copied into a `references/` subdir of the ephemeral run tmpdir so a script can
+    READ them. Enforcement of read-only is PER PLATFORM (be precise about the source):
+      • macOS: a seatbelt rule `(deny file-write* (subpath <references realpath>))` makes the
+        references genuinely read-only — the kernel refuses write/unlink/chmod even to the
+        same-uid owner, so a chmod-then-write bypass of the advisory 0o444/0o555 mode bits is
+        DENIED. This is the real guarantee. (The 0o444/0o555 bits are belt-and-suspenders.)
+      • Linux/other: run_python is FAIL-CLOSED above (no isolation backend → refuses), so
+        skill-script execution does not run there at all — the deny rule does NOT protect
+        Linux because nothing executes there. Do not imply otherwise.
+    Independently of platform, the STORED originals are never handed to the sandbox (only
+    their text crosses the boundary), so no in-sandbox action can affect the stored files.
 
     Returns {ok, stdout, stderr, exit_code, files, network_isolated, env_note} — plus error
     when not ok."""
@@ -247,9 +263,10 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
                 continue
             (tmp / fname).write_text(str(content), encoding="utf-8")
             extra_names.add(fname)
-        # Read-only references (PC-3 ②): copy CONTENT into references/, then lock it down —
-        # files 0o444 + the dir 0o555 so the sandboxed child can read but not write/unlink/
-        # replace them. Perms are restored in `finally` so cleanup (rmtree) still works.
+        # Read-only references (PC-3 ②): copy CONTENT into references/. The REAL read-only
+        # enforcement is the seatbelt deny rule below (applied to the realpath of this dir);
+        # the 0o444/0o555 mode bits are belt-and-suspenders (advisory against the owner).
+        # Perms are restored in `finally` so cleanup (rmtree) still works.
         ro_dir = tmp / "references"
         wrote_ro = False
         for fname, content in (read_only_files or {}).items():
@@ -262,7 +279,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             fp.write_text(str(content), encoding="utf-8")
             fp.chmod(0o444)
         if wrote_ro:
-            ro_dir.chmod(0o555)  # deny create/unlink inside the dir (dir write bit off)
+            ro_dir.chmod(0o555)
         # Scrubbed env: NOTHING from the server process leaks into the child.
         env = {
             "PATH": "/usr/bin:/bin",
@@ -271,7 +288,13 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             "PYTHONDONTWRITEBYTECODE": "1", "LC_ALL": "en_US.UTF-8",
         }
         argv = [python, str(script)]
-        wrapper = backend.wrapper() if sandboxed else None
+        # When references are staged, tighten the seatbelt profile with a kernel write-deny on
+        # their REALPATH (resolve symlinks — seatbelt matches realpath; /var → /private/var on
+        # macOS). Only emit the rule when the dir exists, and never loosen the base profile.
+        profile = None
+        if sandboxed and wrote_ro:
+            profile = readonly_profile(str(ro_dir.resolve()))
+        wrapper = backend.wrapper(profile) if sandboxed else None
         network_isolated = wrapper is not None
         if wrapper:
             argv = [*wrapper, *argv]

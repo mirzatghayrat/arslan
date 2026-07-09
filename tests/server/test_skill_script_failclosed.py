@@ -150,3 +150,81 @@ async def test_references_readonly_end_to_end(skill_root, monkeypatch):
     assert "DENIED=" in out["stdout"] and "WROTE" not in out["stdout"]  # write refused
     # stored original untouched
     assert (d / "references" / "data.txt").read_text() == original
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="REAL seatbelt: proves the POSIX chmod-then-WRITE bypass of the advisory mode bits "
+    "is DENIED by the kernel `(deny file-write* ...)` rule. Linux run_python is fail-closed.",
+)
+async def test_references_chmod_write_bypass_denied(skill_root, monkeypatch):
+    from server.services import code_sandbox
+    monkeypatch.setattr(code_sandbox, "_env_cache", (sys.executable, "test-env"))
+    d = skill_root("handoff")
+    original = "gold reference body\n"
+    (d / "references").mkdir()
+    (d / "references" / "data.txt").write_text(original)
+    # Same-uid owner tries to chmod BOTH the dir and the file back to writable, then write —
+    # the classic bypass of 0o444/0o555. The seatbelt deny must refuse it at the kernel.
+    (d / "main.py").write_text(
+        "import os\n"
+        "for t, m in (('references', 0o755), ('references/data.txt', 0o644)):\n"
+        "    try:\n"
+        "        os.chmod(t, m)\n"
+        "    except OSError as e:\n"
+        "        print('CHMOD_DENIED=' + t)\n"
+        "try:\n"
+        "    open('references/data.txt', 'w').write('HACKED')\n"
+        "    print('WROTE')\n"
+        "except OSError as e:\n"
+        "    print('WRITE_DENIED=' + type(e).__name__)\n"
+        "print('CONTENT=' + open('references/data.txt').read().strip())\n"
+    )
+    out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
+    assert out["ok"] is True, out
+    assert "WROTE" not in out["stdout"]  # write bypass refused
+    assert "WRITE_DENIED=" in out["stdout"]
+    assert "CONTENT=gold reference body" in out["stdout"]  # in-sandbox copy unchanged
+    assert (d / "references" / "data.txt").read_text() == original  # stored original unchanged
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="REAL seatbelt: proves the POSIX chmod-then-UNLINK bypass is DENIED. "
+    "Linux run_python is fail-closed.",
+)
+async def test_references_chmod_unlink_bypass_denied(skill_root, monkeypatch):
+    from server.services import code_sandbox
+    monkeypatch.setattr(code_sandbox, "_env_cache", (sys.executable, "test-env"))
+    d = skill_root("handoff")
+    original = "gold reference body\n"
+    (d / "references").mkdir()
+    (d / "references" / "data.txt").write_text(original)
+    (d / "main.py").write_text(
+        "import os\n"
+        "try:\n"
+        "    os.chmod('references', 0o755)\n"
+        "except OSError:\n"
+        "    pass\n"
+        "try:\n"
+        "    os.remove('references/data.txt')\n"
+        "    print('REMOVED')\n"
+        "except OSError as e:\n"
+        "    print('UNLINK_DENIED=' + type(e).__name__)\n"
+        "print('EXISTS=' + str(os.path.exists('references/data.txt')))\n"
+    )
+    out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
+    assert out["ok"] is True, out
+    assert "REMOVED" not in out["stdout"]  # unlink bypass refused
+    assert "UNLINK_DENIED=" in out["stdout"]
+    assert "EXISTS=True" in out["stdout"]  # in-sandbox copy still present
+    assert (d / "references" / "data.txt").read_text() == original  # stored original unchanged
+
+
+async def test_non_utf8_file_returns_honest_error(skill_root, no_sandbox):
+    d = skill_root("handoff")
+    (d / "main.py").write_bytes(b"# valid start\n\xff\xfe not utf-8\nprint('x')\n")
+    out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
+    assert out["ok"] is False and out["external"] is False
+    assert "UTF-8" in out["error"] and "未执行" in out["error"]
+    assert no_sandbox == []  # crashed cleanly, sandbox never invoked
