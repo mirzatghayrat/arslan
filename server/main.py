@@ -14,6 +14,57 @@ from server.db.session import engine
 logger = logging.getLogger(__name__)
 
 
+def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
+    """Boot-fatal + advisory checks on effective settings.
+
+    Called at lifespan startup so it raises BEFORE the server serves any
+    request. Guarantees for P0-2:
+      - prod + missing ARSLAN_SECRET_KEY -> refuse to boot (RuntimeError).
+        The message names only what is missing; it never echoes any configured
+        secret value.
+      - dev + missing secret -> keep booting; crypto.py supplies a deterministic
+        dev fallback key, so we only warn once.
+      - missing ARSLAN_API_TOKEN -> startup banner (all API/WS unauthenticated).
+      - 0.0.0.0 bind (best-effort) + no token -> loud network-exposure advisory.
+    """
+    import os
+
+    if cfg.is_prod and not cfg.secret_key:
+        # NOTE: do not interpolate any configured secret (api_token/secret_key/
+        # etc.) into this message — only name what is missing.
+        raise RuntimeError(
+            "ARSLAN_ENV=prod requires ARSLAN_SECRET_KEY (a long random value); "
+            "refusing to start. Set it in the environment."
+        )
+
+    if not cfg.secret_key:
+        log.warning(
+            "ARSLAN_SECRET_KEY not set: using an insecure fixed dev key. Stored "
+            "LLM keys are only weakly protected — set ARSLAN_SECRET_KEY (a long "
+            "random value) before any non-local deployment."
+        )
+
+    if not cfg.api_token:
+        log.warning(
+            "⚠ ARSLAN_API_TOKEN not set: ALL API/WS endpoints are "
+            "UNAUTHENTICATED — intended for localhost only."
+        )
+        if cfg.is_prod:
+            log.warning(
+                "⚠ ARSLAN_ENV=prod with no ARSLAN_API_TOKEN: this deployment "
+                "is fully open to anyone who can reach it. Set ARSLAN_API_TOKEN now."
+            )
+
+    # Bind advisory. The real bind host is the launcher's `uvicorn --host`; the
+    # app cannot force it, so this is best-effort from ARSLAN_BIND_HOST/HOST.
+    effective_host = os.environ.get("HOST") or cfg.bind_host
+    if effective_host == "0.0.0.0" and not cfg.api_token:  # noqa: S104 — advisory check, not a bind
+        log.warning(
+            "⚠ Binding 0.0.0.0 with no API token — the API is exposed to the "
+            "network with no auth. Set ARSLAN_API_TOKEN or bind 127.0.0.1."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and run boot migrations/backfills on startup."""
@@ -22,6 +73,9 @@ async def lifespan(app: FastAPI):
 
     from server.config import settings
     from server.db.session import AsyncSessionLocal
+
+    # Boot-fatal secret/auth validation must run before anything is served.
+    _validate_settings(settings)
 
     # Ensure data + spawns dirs exist before the DB file is created on first
     # connect (SQLite will not create missing parent directories).

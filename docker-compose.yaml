@@ -7,8 +7,11 @@ services:
     volumes:
       - arslan-data:/app/data
     environment:
+      # Production mode: the server refuses to boot without ARSLAN_SECRET_KEY.
+      # Supply it via a .env file or the shell environment (${ARSLAN_SECRET_KEY}).
+      - ARSLAN_ENV=prod
       - ARSLAN_API_TOKEN=${ARSLAN_API_TOKEN:-}
-      - ARSLAN_SECRET_KEY=${ARSLAN_SECRET_KEY:-}
+      - ARSLAN_SECRET_KEY=${ARSLAN_SECRET_KEY:?ARSLAN_SECRET_KEY must be set for prod}
       - ARSLAN_DB_PATH=/app/data/arslan.db
       - ARSLAN_SPAWNS_DIR=/app/data/spawns
     restart: unless-stopped
