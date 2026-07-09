@@ -188,9 +188,17 @@ def create_app() -> FastAPI:
     app.include_router(spawns_api.router, prefix="/api/v1")
 
     # Test-only helper to seed a spawn without going through the build socket.
+    # It creates a spawn with NO auth, so gate it twice: it must be explicitly
+    # opted in via ARSLAN_TEST_ROUTES=1 AND never register in prod — even if the
+    # flag leaks into a prod deployment (defense in depth, P0-3).
     import os
 
-    if os.environ.get("ARSLAN_TEST_ROUTES") == "1":
+    from server.config import settings as _test_route_settings
+
+    if (
+        os.environ.get("ARSLAN_TEST_ROUTES") == "1"
+        and not _test_route_settings.is_prod
+    ):
         _register_test_routes(app)
 
     from server.api import templates as templates_api
