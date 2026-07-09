@@ -1,10 +1,6 @@
 """Shared fixtures for server tests."""
 from __future__ import annotations
 
-import importlib
-import sys
-
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,31 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
-
-
-@pytest.fixture(autouse=True)
-def _isolate_core_module_reloads():
-    """Whole-suite isolation guard for tests that `importlib.reload(server.main)`.
-
-    `server/main.py` ends with a module-level `app = create_app()`, and a few tests
-    (e.g. test_auth) reload server.config/auth/main in place to exercise env-dependent
-    behavior. `reload()` re-executes the module, so the re-run `server.main` — and its
-    freshly-built module-level `app` — persists for every *later* test. That leak is
-    what left `create_app()` on Linux CI registering none of its `include_router`
-    routes (recap endpoint missing), a bug invisible on macOS.
-
-    Detect a main reload by the identity of `server.main.app`; if it changed during the
-    test, restore a clean baseline by reloading config -> auth -> main in dependency
-    order. By teardown, monkeypatch has already reverted any env the test set, so the
-    reload rebuilds against the pristine environment.
-    """
-    import server.main as _main
-    baseline_app_id = id(_main.app)
-    yield
-    if id(sys.modules["server.main"].app) != baseline_app_id:
-        importlib.reload(sys.modules["server.config"])
-        importlib.reload(sys.modules["server.auth"])
-        importlib.reload(sys.modules["server.main"])
 
 
 @pytest_asyncio.fixture
