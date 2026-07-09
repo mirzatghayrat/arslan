@@ -643,6 +643,18 @@
       "full_hint": "純テキスト、または同梱スクリプトが全てサンドボックス実行可能な .py",
       "partial_hint": "参考資料同梱、またはスクリプトに制約(.py 以外/ネットワーク・CLI 必要)",
       "text_hint": "本文のみ — スクリプト・参考資料なし"
+    },
+    "skill_health": {
+      "check": "点検",
+      "unknown": "未点検",
+      "ok": "状態は正常",
+      "degraded": "問題あり",
+      "sandbox_unavailable": "このホストにサンドボックスバックエンドがありません — スクリプトを実行可能とマークできません",
+      "storage": "ストレージ",
+      "scripts": "スクリプト",
+      "references": "参考資料",
+      "missing": "欠落ファイル",
+      "orphaned": "孤立ファイル"
     }
   },
   "forge": {

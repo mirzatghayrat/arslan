@@ -643,6 +643,18 @@
       "full_hint": "Texto puro, o todos los scripts son .py ejecutables en el sandbox",
       "partial_hint": "Incluye referencias, o scripts limitados (no .py o requiere red/CLI)",
       "text_hint": "Solo cuerpo del método — sin scripts ni referencias"
+    },
+    "skill_health": {
+      "check": "Diagnóstico",
+      "unknown": "Sin revisar",
+      "ok": "Estado correcto",
+      "degraded": "Problemas detectados",
+      "sandbox_unavailable": "Sin backend de sandbox en este host — los scripts no pueden marcarse como ejecutables",
+      "storage": "Almacenamiento",
+      "scripts": "Scripts",
+      "references": "Referencias",
+      "missing": "Archivos faltantes",
+      "orphaned": "Archivos huérfanos"
     }
   },
   "forge": {

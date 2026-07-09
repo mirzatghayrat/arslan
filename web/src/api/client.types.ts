@@ -30,6 +30,33 @@ export interface RegistrySkill {
 }
 export interface RegistryCatalog { toolsets: RegistryToolset[]; skills: RegistrySkill[]; }
 
+/** PC-5 per-skill health report (POST /registry/skills/{key}/health). Mirrors the PB-4
+ * MCP health shape: a structured storage/scripts/references breakdown + an honest roll-up.
+ * `sandbox_available` is the read-only backend probe — a script is never "runnable" when
+ * it is false. */
+export interface SkillHealth {
+  key: string;
+  status: "ok" | "degraded";
+  ok: boolean;
+  sandbox_available: boolean;
+  sandbox_backend: string;
+  compatibility?: "full" | "partial" | "text";
+  storage: {
+    ok: boolean;
+    body_present: boolean;
+    declared_scripts: string[];
+    declared_references: string[];
+    disk_scripts: string[];
+    disk_references: string[];
+    missing: string[];
+    orphaned: string[];
+  };
+  scripts: Array<{ name: string; runnable: boolean; reason: string }>;
+  references: Array<{ name: string; readable: boolean; reason: string }>;
+  timed_out?: boolean;
+  error?: string;
+}
+
 /** One step of a spawn's tool loop, paired from tool_call/tool_result frames. */
 export interface ToolStep {
   tool: string;
