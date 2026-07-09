@@ -1,10 +1,13 @@
+import dataclasses
 import datetime as dt
 
 import anyio
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import server.config as config
 import server.db.session as db_session
 from server.api import brain
 from server.db.models import Base
@@ -81,3 +84,28 @@ async def test_brain_entry_material_excerpt(maker):
     entry = await brain.brain_entry("material", "material:coll:2:doc.pdf")
     assert "CHUNK ONE" in entry["excerpt"]
     assert entry["provenance"] == "投喂"
+
+
+# --- auth gating (brain reads user profile/facts/notes structure) ----------
+# require_auth reads config.settings at call time, so swapping the frozen
+# Settings for one with a token set (auto-restored by monkeypatch) exercises
+# the "token configured" path without importlib.reload contaminating globals.
+
+
+@pytest.mark.asyncio
+async def test_brain_requires_auth_when_token_set(maker, monkeypatch):
+    monkeypatch.setattr(config, "settings",
+                        dataclasses.replace(config.settings, api_token="secret-tok"))
+    from server.main import app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/api/v1/brain/tree")
+    assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_brain_open_when_token_unset(maker):
+    # Default test env leaves ARSLAN_API_TOKEN unset -> require_auth is a no-op.
+    from server.main import app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/api/v1/brain/tree")
+    assert r.status_code == 200

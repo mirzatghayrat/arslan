@@ -3,12 +3,13 @@ Persists ONLY the curated catalog (discovery_candidates); ingestion stays P2b ad
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from server.auth import require_auth
 from server.services import discovery_service, github_eval
 
-router = APIRouter(prefix="/discovery", tags=["discovery"])
+router = APIRouter(prefix="/discovery", tags=["discovery"], dependencies=[Depends(require_auth)])
 
 
 class EvaluateBody(BaseModel):

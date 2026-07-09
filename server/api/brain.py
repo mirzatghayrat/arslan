@@ -2,13 +2,14 @@
 every leaf carries provenance/confidence/usage from one authoritative place."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text as sa_text
 
+from server.auth import require_auth
 from server.db import session as db_session
 from server.services import brain_usage
 
-router = APIRouter(tags=["brain"])
+router = APIRouter(tags=["brain"], dependencies=[Depends(require_auth)])
 
 
 def _iso(ts):
