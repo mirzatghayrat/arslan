@@ -8,7 +8,7 @@
   --background: #FAFBFC; --surface: #FFFFFF; --surface-raised: #F5F7FA; --sidebar: #FAFBFC;
   --foreground: #0F172A; --muted-foreground: #64748B; --subtle-foreground: #94A3B8;
   --border: #E2E8F0; --border-strong: #CBD5E1; --ring: rgba(229,125,27,0.28);
-  --primary: #E57D1B; --primary-hover: #C2640C; --primary-foreground: #1A0E00;
+  --primary: #D9741A; --primary-hover: #C2640C; --primary-foreground: #FFFFFF;
   --hub: #B45309;
   --success: #059669; --danger: #DC2626; --warning: #B45309; --info: #2563EB;
   /* Second-brain hue palette — a curated categorical set, warm-led to harmonize with
@@ -25,7 +25,7 @@
   --background: #0A0C10; --surface: #121622; --surface-raised: #1A1C22; --sidebar: #0D0F15;
   --foreground: #FFFFFF; --muted-foreground: #94A3B8; --subtle-foreground: #6B7280;
   --border: #1E2330; --border-strong: #23293E; --ring: rgba(255,142,36,0.20);
-  --primary: #FF8E24; --primary-hover: #FF9C3A; --primary-foreground: #1A0E00;
+  --primary: #D9741A; --primary-hover: #C2640C; --primary-foreground: #FFFFFF;
   --hub: #FFC773;
   --success: #10B981; --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6;
   /* Second-brain hue palette — dark set (luminous, not neon, for contrast on charcoal). */

@@ -13,6 +13,7 @@ const baseProps = {
   threads: [], activeThreadId: "", onSelectThread: () => {}, onAddThread: () => {},
   spawns, activeSpawnChatId: "", onSelectSpawnChat: () => {}, activeSection: "arslan" as const,
   onChangeSection: () => {}, onCompleteChat: vi.fn(),
+  onDistillThread: vi.fn(), onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(), onDeleteThread: vi.fn(),
   backendStatus: "online" as const,
 } as any;
 

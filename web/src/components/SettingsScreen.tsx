@@ -13,6 +13,7 @@ import ProviderConfigList from './ProviderConfigList';
 import { AppearanceSettings } from './AppearanceSettings';
 import EmbeddingSettings from './EmbeddingSettings';
 import Select from './Select';
+import { LANGUAGE_OPTIONS, normalizeLanguage } from '../lib/languages';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -27,7 +28,7 @@ interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange }: SettingsScreenProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -191,16 +192,17 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               </label>
               <Select
                 id="settings-language"
-                value={localSettings.language}
-                onChange={(v) => setLocalSettings(prev => ({ ...prev, language: v }))}
-                options={[
-                  { value: 'English (US)', label: 'English (US) - Standard' },
-                  { value: 'Chinese (Simplified)', label: '简体中文 (Simplified Chinese)' },
-                  { value: 'Japanese', label: '日本語 (Japanese)' },
-                  { value: 'German', label: 'Deutsch (German)' },
-                ]}
+                value={normalizeLanguage(localSettings.language)}
+                onChange={(code) => {
+                  setLocalSettings(prev => ({ ...prev, language: code }));
+                  i18n.changeLanguage(code);
+                }}
+                options={LANGUAGE_OPTIONS.map((o) => ({ value: o.code, label: o.label }))}
                 ariaLabel={t('settings.labelLanguage')}
               />
+              <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+                {t('settings.language_i18n_note')}
+              </p>
             </div>
 
             {/* Appearance — palette picker + mode toggle */}

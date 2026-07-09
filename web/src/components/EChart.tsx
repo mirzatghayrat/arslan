@@ -28,7 +28,7 @@ function cssVar(styles: CSSStyleDeclaration, name: string, fallback: string): st
 function buildArslanTheme(): Record<string, unknown> {
   const styles = getComputedStyle(document.documentElement);
 
-  const primary = cssVar(styles, "--color-primary", "#FF8E24");
+  const primary = cssVar(styles, "--color-primary", "#D9741A");
   const foreground = cssVar(styles, "--color-foreground", "#FFFFFF");
   const muted = cssVar(styles, "--color-muted-foreground", "#94A3B8");
   const border = cssVar(styles, "--color-border", "#1E2330");

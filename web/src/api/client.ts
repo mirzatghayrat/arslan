@@ -17,6 +17,8 @@ import type {
   RegistryCatalog,
   SkillHealth,
   CuratorFlag,
+  DistillResult,
+  DeleteResult,
   RunCatalogDto,
   RunVitalsDto,
   RunTimelineDto,
@@ -406,6 +408,16 @@ export const suggestPrimary = () =>
 
 export const getCatalog = () =>
   request<CatalogEntry[]>("/settings/catalog");
+
+// ── Conversation actions: distill (harvest spawn chats) + delete ──────────────
+
+/** Distill a conversation's spawn chats into memory. Returns how many were distilled. */
+export const distillConversation = (id: string) =>
+  request<DistillResult>(`/conversations/${id}/distill`, { method: "POST" });
+
+/** Permanently delete a conversation + its rows. Returns per-table delete counts. */
+export const deleteConversation = (id: string) =>
+  request<DeleteResult>(`/conversations/${id}`, { method: "DELETE" });
 
 // ── LLM connection test endpoints (UX1) ───────────────────────────────────────
 

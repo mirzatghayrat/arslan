@@ -296,6 +296,7 @@
     "labelSearchProvider": "Search provider",
     "sectionInterface": "Interface",
     "labelLanguage": "Language",
+    "language_i18n_note": "インターフェースは順次多言語化を進めており、一部のテキストはまだ翻訳されていません。",
     "labelTheme": "Theme",
     "labelTelemetry": "Diagnostic telemetry",
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
@@ -388,7 +389,18 @@
     "capabilities": "Capabilities",
     "complete_chat": "Complete",
     "complete_confirm": "Completing this chat will distill the conversation into long-term memory and archive it. The spawn will still remember everything next time. Continue?",
-    "new_chat": "New chat"
+    "new_chat": "New chat",
+    "thread_menu": "Conversation actions",
+    "distill": "Distill",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "delete": "Delete",
+    "delete_confirm_body": "Deleting removes this conversation's content (messages, events). Diagnostics and routing-audit history are retained by design. This cannot be undone.",
+    "delete_confirm_ok": "Delete",
+    "archived_section": "Archived",
+    "distilled_toast": "{{count}} 個のエージェントをメモリに蒸留しました",
+    "distilled_none": "蒸留できる内容がありません",
+    "distill_failed": "Distill failed"
   },
   "orchestrator": {
     "sandbox_label": "Interactive Spawner Sandbox:",

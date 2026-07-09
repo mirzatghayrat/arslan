@@ -96,9 +96,11 @@ async def distill_meta_upflow(db, spawn, new_facts: list[str]) -> str | None:
         return None
 
 
-async def distill_session(conversation_id: str) -> None:
+async def distill_session(conversation_id: str) -> int:
     """Distill every spawn that produced a deliverable in this conversation. Idempotent
-    per (conversation, spawn). Never raises."""
+    per (conversation, spawn). Never raises. Returns the number of spawns ACTUALLY
+    distilled this call (idle/already-distilled/failed spawns are skipped and NOT counted)
+    — so callers (e.g. the manual REST trigger) can report an honest count."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             spawn_ids = (await db.execute(
@@ -108,22 +110,29 @@ async def distill_session(conversation_id: str) -> None:
                     ArslanMessage.spawn_id.isnot(None),
                 ).distinct()
             )).scalars().all()
+        n = 0
         for spawn_id in spawn_ids:
-            await _distill_one(conversation_id, int(spawn_id))
+            if await _distill_one(conversation_id, int(spawn_id)):
+                n += 1
+        return n
     except Exception as exc:  # noqa: BLE001
         logger.warning("distill_session(%s) failed: %s", conversation_id, exc)
+        return 0
 
 
-async def _distill_one(conversation_id: str, spawn_id: int) -> None:
+async def _distill_one(conversation_id: str, spawn_id: int) -> bool:
+    """Distill one spawn's material for this conversation. Returns True iff facts were
+    actually written (and the idempotency marker persisted); False when skipped —
+    already-distilled, spawn gone, nothing to distill, or LLM failure."""
     async with db_session.AsyncSessionLocal() as db:
         already = (await db.execute(select(DistilledSession).where(
             DistilledSession.conversation_id == conversation_id,
             DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
         if already is not None:
-            return
+            return False
         spawn = await db.get(Spawn, spawn_id)
         if spawn is None:
-            return
+            return False
         deliverables = (await db.execute(select(ArslanMessage.display_content).where(
             ArslanMessage.conversation_id == conversation_id,
             ArslanMessage.role == "spawn_summary",
@@ -144,11 +153,11 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> None:
               "\n\n分身产出:\n" + "\n".join(d for d in deliverables if d) + \
               feedback_line
     if not deliverables and not user_msgs:
-        return  # nothing to distill
+        return False  # nothing to distill
 
     new_facts = await distill_facts(existing, signals)
     if new_facts is None:
-        return  # distillation failed — write nothing + no marker, so it retries next session
+        return False  # distillation failed — write nothing + no marker, so it retries next session
 
     async with db_session.AsyncSessionLocal() as db:
         spawn = await db.get(Spawn, spawn_id)
@@ -159,6 +168,7 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> None:
             await distill_meta_upflow(db, spawn, new_facts)
         db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
+    return True
 
 
 async def distill_from_signals(spawn_id: int, signals: str) -> None:

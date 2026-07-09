@@ -296,6 +296,7 @@
     "labelSearchProvider": "搜索服务",
     "sectionInterface": "界面设置",
     "labelLanguage": "界面语言",
+    "language_i18n_note": "界面正在逐步国际化，部分文案暂未翻译。",
     "labelTheme": "主题",
     "labelTelemetry": "诊断遥测",
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
@@ -388,7 +389,18 @@
     "capabilities": "能力库",
     "complete_chat": "完结",
     "complete_confirm": "完结会把这次对话蒸馏成长期偏好后归档收起；重开仍记得。继续？",
-    "new_chat": "新会话"
+    "new_chat": "新会话",
+    "thread_menu": "对话操作",
+    "distill": "蒸馏",
+    "archive": "归档",
+    "unarchive": "取消归档",
+    "delete": "删除",
+    "delete_confirm_body": "删除会移除这个对话的内容（消息、事件）。诊断与路由审计历史按设计保留。此操作不可撤销。",
+    "delete_confirm_ok": "删除",
+    "archived_section": "已归档",
+    "distilled_toast": "已蒸馏 {{count}} 个分身的对话",
+    "distilled_none": "没有可蒸馏的内容",
+    "distill_failed": "蒸馏失败"
   },
   "orchestrator": {
     "sandbox_label": "交互式分身沙盒：",

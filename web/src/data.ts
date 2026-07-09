@@ -93,7 +93,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   searchProvider: 'tavily',
   apiKeySearch: '••••••••••••••••••••••••',
   githubToken: '',
-  language: 'English (US)',
+  language: 'en',
   theme: 'dark',
   telemetry: false,
   spawnMode: 'interactive',
