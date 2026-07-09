@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 
 from sqlalchemy import select
@@ -112,6 +113,48 @@ async def _spawn_history(spawn_id: int) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
+_SKILL_BLOCK_LIMIT = 1500   # 约束①: cap of one skill's injected block (header+summary+TOC)
+
+
+def _skill_toc(body: str) -> list[str]:
+    """Markdown ##/### heading lines, in order."""
+    return [ln.strip() for ln in body.splitlines() if re.match(r"#{2,3}\s+\S", ln.strip())]
+
+
+def _skill_technique_block(name: str, body: str, *, has_scripts: bool, key: str) -> str:
+    """One skill's injected block. Short skills inline whole; long skills = intro summary +
+    a section table-of-contents (## headings only) + a read_skill hint, total length bounded
+    by _SKILL_BLOCK_LIMIT. The intro summary is the prose *before the first heading* so the
+    injected block never re-dumps section bodies or ### subheadings."""
+    body = (body or "").strip()
+    header = f"### {name}\n"
+    run_hint = (f"\n\n运行本技能脚本: 用 run_python 的 skill_script 参数, 路径 `{key}/<file>.py`。"
+                if has_scripts else "")
+    whole = header + body + run_hint
+    if len(whole) <= _SKILL_BLOCK_LIMIT:
+        return whole
+    hint = (f"\n\n[本技能正文 {len(body)} 字, 已省略。用 read_skill(key='{key}') 读全文, "
+            f"或 read_skill(key='{key}', section='## 标题') 读某章。]" + run_hint)
+    toc_all = _skill_toc(body)
+    h2 = [t for t in toc_all if t.startswith("## ")]
+    toc_lines = list(h2)
+    if len(h2) < len(toc_all):  # deeper (###) sections omitted → point at read_skill
+        toc_lines.append("(更细章节见 read_skill)")
+    m = re.search(r"(?m)^#{2,3}\s+\S", body)
+    intro = (body[:m.start()] if m else body).strip()
+
+    def _assemble(lines: list[str]) -> str:
+        toc = ("\n目录:\n" + "\n".join(f"- {t}" for t in lines)) if lines else ""
+        budget = _SKILL_BLOCK_LIMIT - len(header) - len(toc) - len(hint)
+        summary = intro[:max(0, budget)].rsplit("\n", 1)[0] if budget > 0 else ""
+        return header + summary + toc + hint
+
+    block = _assemble(toc_lines)
+    if len(block) > _SKILL_BLOCK_LIMIT:  # too many ## headings → truncate the TOC too
+        block = _assemble(h2[:10] + ["(更多章节见 read_skill)"])
+    return block[:_SKILL_BLOCK_LIMIT]
+
+
 def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict[str, str | None] | None = None) -> str:
     """Build the equipment section given precomputed equipment + wired tool dicts.
 
@@ -131,7 +174,9 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     for sk in equipment["skills"]:
         body = (skill_bodies.get(sk["key"]) or "").strip()
         if body:
-            technique_blocks.append(f"### {sk['name']}\n{body[:_SKILL_BODY_LIMIT]}")
+            technique_blocks.append(
+                _skill_technique_block(sk["name"], body,
+                                       has_scripts=bool(sk.get("has_scripts")), key=sk["key"]))
         else:
             lines.append(f"- TECHNIQUE {sk['name']}: {sk['description']}")
     lines.append(
