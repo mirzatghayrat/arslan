@@ -129,3 +129,45 @@ def test_localhost_bind_no_exposure_warning(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         main._validate_settings(cfg)
     assert not any("exposed to the network" in r.message for r in caplog.records)
+
+
+# --- test-route prod gate (P0-3) --------------------------------------------
+# The `/api/v1/_test/seed_spawn` helper creates a spawn with NO auth. It is
+# env-gated behind ARSLAN_TEST_ROUTES=1, but if that flag ever leaks into a
+# prod deployment the endpoint would let anyone forge spawns. Defense in depth:
+# refuse to register it whenever ARSLAN_ENV=prod, regardless of the flag.
+
+_SEED_ROUTE = "/api/v1/_test/seed_spawn"
+
+
+def _app_paths(monkeypatch, **env):
+    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
+    config = _reload_config(monkeypatch, **env)
+    # _reload_config clears ARSLAN_ENV et al but leaves ARSLAN_TEST_ROUTES.
+    import server.main as main
+
+    app = main.create_app()
+    return {getattr(r, "path", None) for r in app.routes}, config.settings
+
+
+def test_seed_spawn_route_registered_in_dev(monkeypatch):
+    paths, cfg = _app_paths(monkeypatch)  # dev + ARSLAN_TEST_ROUTES=1
+    assert cfg.is_prod is False
+    assert _SEED_ROUTE in paths
+
+
+def test_seed_spawn_route_absent_in_prod(monkeypatch):
+    paths, cfg = _app_paths(
+        monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32
+    )
+    assert cfg.is_prod is True
+    assert _SEED_ROUTE not in paths
+
+
+def test_seed_spawn_route_absent_without_flag(monkeypatch):
+    monkeypatch.delenv("ARSLAN_TEST_ROUTES", raising=False)
+    _reload_config(monkeypatch)  # dev, no flag
+    import server.main as main
+
+    paths = {getattr(r, "path", None) for r in main.create_app().routes}
+    assert _SEED_ROUTE not in paths
