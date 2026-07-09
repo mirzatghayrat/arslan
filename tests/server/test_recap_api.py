@@ -60,9 +60,30 @@ def test_recap_endpoint_registered():
     app = create_app()
     paths = {r.path for r in app.routes if hasattr(r, "path")}
     if "/api/v1/conversations/{conversation_id}/recap" not in paths:  # DIAGNOSTIC (temp)
-        conv_paths = [getattr(r, "path", None) for r in conv_mod.router.routes]
-        print(f"\n[recap-diag] total app.routes={len(app.routes)}", file=sys.stderr)
-        print(f"[recap-diag] conv_mod.__file__={conv_mod.__file__}", file=sys.stderr)
-        print(f"[recap-diag] conv router route paths={conv_paths}", file=sys.stderr)
-        print(f"[recap-diag] all app paths={sorted(str(p) for p in paths)}", file=sys.stderr)
+        try:
+            import fastapi
+            import fastapi.routing
+            from server.api import health as health_mod
+            fastapi_in_globals = create_app.__globals__["FastAPI"]
+            probe = fastapi_in_globals(title="probe")
+            before = len(probe.routes)
+            probe.include_router(conv_mod.router, prefix="/probe")
+            after = len(probe.routes)
+            conv_route_cls = type(conv_mod.router.routes[0])
+            print(f"\n[recap-diag] app.routes={len(app.routes)} "
+                  f"include_router={type(app.include_router)}", file=sys.stderr)
+            print(f"[recap-diag] fastapi.__file__={fastapi.__file__} "
+                  f"ver={getattr(fastapi, '__version__', '?')}", file=sys.stderr)
+            print(f"[recap-diag] FastAPI(create_app globals) id={id(fastapi_in_globals)} "
+                  f"is fastapi.FastAPI={fastapi_in_globals is fastapi.FastAPI} "
+                  f"app class id={id(type(app))}", file=sys.stderr)
+            print(f"[recap-diag] health.router routes={len(health_mod.router.routes)} "
+                  f"conv.router routes={len(conv_mod.router.routes)}", file=sys.stderr)
+            print(f"[recap-diag] LIVE probe include_router {before}->{after} | "
+                  f"conv route cls={conv_route_cls.__module__}.{conv_route_cls.__qualname__} "
+                  f"id={id(conv_route_cls)} | app APIRoute id={id(fastapi.routing.APIRoute)} "
+                  f"same={conv_route_cls is fastapi.routing.APIRoute}", file=sys.stderr)
+            print(f"[recap-diag] all app paths={sorted(str(p) for p in paths)}", file=sys.stderr)
+        except Exception as _diag_exc:  # noqa: BLE001 — diagnostics must not mask the assert
+            print(f"[recap-diag] diag error: {_diag_exc!r}", file=sys.stderr)
     assert "/api/v1/conversations/{conversation_id}/recap" in paths
