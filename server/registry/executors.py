@@ -502,6 +502,22 @@ class ReadSkillExecutor:
             return {"ok": False, "external": False, "error": f"skill not found or empty: {skey}"}
         body = row.body.strip()
         section = (args.get("section") or "").strip()
+        if section.startswith("references/"):
+            # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
+            # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
+            import os as _os
+            from pathlib import Path as _Path
+            fname = section[len("references/"):]
+            if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
+                return {"ok": False, "external": False, "error": "invalid reference filename"}
+            root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data"))
+                    / "skill_scripts" / skey / "references").resolve()
+            target = (root / fname).resolve()
+            if not str(target).startswith(str(root) + "/") or not target.is_file():
+                return {"ok": False, "external": False, "error": f"reference not found: {section}"}
+            text = target.read_text(encoding="utf-8")
+            return {"ok": True, "external": False, "body": text[:self._READ_SKILL_CAP],
+                    "summary": f"技能 {skey} · {section}"}
         if section:
             lines = body.splitlines()
             out, capturing = [], False

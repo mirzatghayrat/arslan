@@ -36,6 +36,9 @@ _TIMEOUT = 15.0
 _MAX_SKILLS_PER_SCAN = 25
 _MAX_SCRIPTS = 10
 _MAX_SCRIPT_BYTES = 100_000
+# References mirror the script caps exactly: a malicious skill must not write unbounded data.
+_MAX_REFERENCES = 10
+_MAX_REFERENCE_BYTES = 100_000
 
 # Permissive licenses we may redistribute with attribution. Copyleft and "NONE" are refused.
 ALLOWED_LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC",
@@ -111,6 +114,14 @@ def _scripts_for(skill_md_path: str, all_paths: list[str]) -> list[str]:
     return sorted(p for p in all_paths if p.startswith(prefix) and p.endswith(".py"))
 
 
+def _references_for(skill_md_path: str, all_paths: list[str]) -> list[str]:
+    """Bundled text references living beside this SKILL.md (references/ subdir, .md/.txt only).
+    startswith(prefix) also picks up nested references/**/… paths; storage flattens to basename."""
+    base = skill_md_path.rsplit("/", 1)[0] if "/" in skill_md_path else ""
+    prefix = f"{base}/references/" if base else "references/"
+    return sorted(p for p in all_paths if p.startswith(prefix) and p.endswith((".md", ".txt")))
+
+
 async def scan_skills(ref: str, subpath: str = "") -> dict:
     """Find standard SKILL.md skills in a repo and report per-skill importability.
     The license gate applies to the WHOLE scan (repo-level license, like github_eval)."""
@@ -134,7 +145,8 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
     for p in skill_paths:
         raw = await _fetch_raw(owner, repo, p)
         info = parse_skill_md(raw)
-        entry: dict = {"path": p, "scripts": _scripts_for(p, paths)}
+        entry: dict = {"path": p, "scripts": _scripts_for(p, paths),
+                       "references": _references_for(p, paths)}
         if info is None:
             entry.update(importable=False, reason="not a valid SKILL.md (frontmatter name+description required)")
         else:
@@ -196,6 +208,25 @@ async def import_skill(ref: str, path: str) -> dict:
             (script_dir / fname).write_text(content, encoding="utf-8")
             stored.append(fname)
 
+    # bundled references → data_dir/skill_scripts/<key>/references/ (flat basenames,
+    # .md/.txt only, same per-file + per-skill caps as scripts; PC-3 mounts these read-only).
+    ref_paths = _references_for(path, paths)[:_MAX_REFERENCES]
+    stored_refs: list[str] = []
+    if ref_paths:
+        ref_dir = _data_dir() / "skill_scripts" / key / "references"
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        for rp in ref_paths:
+            content = await _fetch_raw(owner, repo, rp)
+            if len(content.encode("utf-8")) > _MAX_REFERENCE_BYTES:
+                continue
+            fname = rp.rsplit("/", 1)[-1]
+            if not re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
+                continue
+            if fname in stored_refs:  # basename collision from a nested ref — keep the first
+                continue
+            (ref_dir / fname).write_text(content, encoding="utf-8")
+            stored_refs.append(fname)
+
     today = datetime.now(timezone.utc).date().isoformat()
     attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} "
                    f"({meta['license']}) on {today}.\n\n")
@@ -205,6 +236,11 @@ async def import_skill(ref: str, path: str) -> dict:
                  "Run inside the sandbox via the run_python tool with "
                  f'{{"skill_script": "{key}/<file>"}} (no network; results via print):\n'
                  + "\n".join(f"- `{key}/{f}`" for f in stored))
+    if stored_refs:
+        body += ("\n\n## Bundled references\n"
+                 "Reference docs shipped with this skill. Read one via the read_skill tool with "
+                 '{"key": "' + key + '", "section": "references/<file>"}:\n'
+                 + "\n".join(f"- `references/{f}`" for f in stored_refs))
 
     async with db_session.AsyncSessionLocal() as db:
         row = SkillPack(key=key, name=info["name"], category="imported",
@@ -213,4 +249,4 @@ async def import_skill(ref: str, path: str) -> dict:
         db.add(row)
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],
-            "scripts": stored, "license": meta["license"]}
+            "scripts": stored, "references": stored_refs, "license": meta["license"]}
