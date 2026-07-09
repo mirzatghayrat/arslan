@@ -39,6 +39,25 @@ def test_equipment_block_run_hint_fires_for_script_bearing_skill(tmp_path, monke
         service._skill_dict(_pack("plain")),     # no dir → False
     ]}
     bodies = {"handoff": "## X\nrun it", "plain": "## X\njust prose"}
-    block = _equipment_block_from(equipment, [], bodies)
+    # run_python wired → the run hint fires for the script skill.
+    wired = [{"key": "run_python", "description": "run python"}]
+    block = _equipment_block_from(equipment, wired, bodies)
     assert "skill_script" in block and "handoff/" in block   # run hint for the script skill
     assert "plain/`" not in block                            # no run-hint path for the scriptless one
+
+
+def test_equipment_block_run_hint_gated_off_when_run_python_unwired(tmp_path, monkeypatch):
+    """PC compat fix: without run_python wired, the script skill gets an honest 'needs Code
+    Sandbox' note instead of a dead-end run_python pointer."""
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    d = tmp_path / "skill_scripts" / "handoff"
+    d.mkdir(parents=True)
+    (d / "run.py").write_text("print('hi')", encoding="utf-8")
+
+    equipment = {"toolsets": [], "skills": [service._skill_dict(_pack("handoff"))]}
+    bodies = {"handoff": "## X\nrun it"}
+    block = _equipment_block_from(equipment, [], bodies)   # nothing wired
+    # the actionable run pointer is gone (the preamble may still name the tool generically)
+    assert "skill_script" not in block
+    assert "handoff/" not in block
+    assert "跑脚本需装备 Code Sandbox 工具集" in block

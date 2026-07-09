@@ -16,7 +16,6 @@ from server.services.llm_factory import build_adapter
 logger = logging.getLogger(__name__)
 
 _SPAWN_HISTORY_LIMIT = 10  # recent spawn turns included for continuity
-_SKILL_BODY_LIMIT = 1500  # max chars of a skill body injected per technique (bounded)
 
 _SPAWN_TOOL_GUIDANCE = (
     "\n\nUSE YOUR TOOLS — do not narrate or fabricate:\n"
@@ -118,7 +117,7 @@ _SKILL_BLOCK_LIMIT = 2000   # 约束①: cap of one skill's injected block (head
 # PC-4: single anti-fabrication line prepended ONCE above the per-skill technique blocks.
 _TECHNIQUE_HONESTY_PREAMBLE = (
     "技法说明:以下技能正文可能是摘要。引用的脚本/文件若不在你的工具清单内,不得假装执行或编造其输出;"
-    "需要全文就用 read_skill,需要跑脚本就用 run_python 的 skill_script 参数,拿不到就如实说明,不要虚构结果。"
+    "若已装备 read_skill/run_python(Code Sandbox 工具集)可读全文或跑脚本,没有就如实说明,不要虚构结果。"
 )
 
 
@@ -127,25 +126,43 @@ def _skill_toc(body: str) -> list[str]:
     return [ln.strip() for ln in body.splitlines() if re.match(r"#{2,3}\s+\S", ln.strip())]
 
 
-def _skill_technique_block(name: str, body: str, *, has_scripts: bool, key: str) -> str:
+def _skill_technique_block(name: str, body: str, *, has_scripts: bool, key: str,
+                           read_skill_available: bool = False,
+                           run_python_available: bool = False) -> str:
     """One skill's injected block. Short skills inline whole; long skills = intro summary +
-    a section table-of-contents (## headings only) + a read_skill hint, total length bounded
-    by _SKILL_BLOCK_LIMIT. The intro summary is the prose *before the first heading* so the
+    a section table-of-contents (## headings only) + (when read_skill is wired) a read_skill
+    hint, total length bounded by _SKILL_BLOCK_LIMIT.
+
+    PC compat fix: read_skill / run_python live ONLY in the code_sandbox toolset, so a spawn
+    can be equipped with a skill WITHOUT them. We emit those hints ONLY when the spawn actually
+    has the tool wired; otherwise we fall back to honest wording that never points the spawn at
+    a tool it cannot call. The intro summary is the prose *before the first heading* so the
     injected block never re-dumps section bodies or ### subheadings."""
     body = (body or "").strip()
     header = f"### {name}\n"
-    run_hint = (f"\n\n运行本技能脚本: 用 run_python 的 skill_script 参数, 路径 `{key}/<file>.py`。"
-                if has_scripts else "")
+    if has_scripts and run_python_available:
+        run_hint = f"\n\n运行本技能脚本: 用 run_python 的 skill_script 参数, 路径 `{key}/<file>.py`。"
+    elif has_scripts:
+        run_hint = "\n\n(本技能附带脚本, 跑脚本需装备 Code Sandbox 工具集)"
+    else:
+        run_hint = ""
     whole = header + body + run_hint
     if len(whole) <= _SKILL_BLOCK_LIMIT:
         return whole
-    hint = (f"\n\n[本技能正文 {len(body)} 字, 已省略。用 read_skill(key='{key}') 读全文, "
-            f"或 read_skill(key='{key}', section='## 标题') 读某章。]" + run_hint)
+    if read_skill_available:
+        hint = (f"\n\n[本技能正文 {len(body)} 字, 已省略。用 read_skill(key='{key}') 读全文, "
+                f"或 read_skill(key='{key}', section='## 标题') 读某章。]" + run_hint)
+        more = "read_skill"
+    else:
+        # No read_skill wired → never point at it; be honest the full text isn't reachable.
+        hint = (f"\n\n[本技能正文 {len(body)} 字, 此处为摘要+目录;读全文需装备 Code Sandbox 工具集]"
+                + run_hint)
+        more = None
     toc_all = _skill_toc(body)
     h2 = [t for t in toc_all if t.startswith("## ")]
     toc_lines = list(h2)
-    if len(h2) < len(toc_all):  # deeper (###) sections omitted → point at read_skill
-        toc_lines.append("(更细章节见 read_skill)")
+    if len(h2) < len(toc_all):  # deeper (###) sections omitted
+        toc_lines.append(f"(更细章节见 {more})" if more else "(更细章节略)")
     m = re.search(r"(?m)^#{2,3}\s+\S", body)
     intro = (body[:m.start()] if m else body).strip()
 
@@ -157,7 +174,8 @@ def _skill_technique_block(name: str, body: str, *, has_scripts: bool, key: str)
 
     block = _assemble(toc_lines)
     if len(block) > _SKILL_BLOCK_LIMIT:  # too many ## headings → truncate the TOC too
-        block = _assemble(h2[:10] + ["(更多章节见 read_skill)"])
+        overflow = f"(更多章节见 {more})" if more else "(更多章节略)"
+        block = _assemble(h2[:10] + [overflow])
     return block[:_SKILL_BLOCK_LIMIT]
 
 
@@ -171,6 +189,11 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     skill_bodies = skill_bodies or {}
     lines: list[str] = []
     wired_keys = {t["key"] for t in wired}
+    # read_skill / run_python are the two tools in the code_sandbox toolset; a spawn only has
+    # them if that toolset is wired. Gate the read_skill/run_python skill hints on their real
+    # presence so we never point a spawn at a tool it cannot call (PC compat fix).
+    read_skill_available = "read_skill" in wired_keys
+    run_python_available = "run_python" in wired_keys
     for t in wired:
         lines.append(f"- TOOL {t['key']} (live): {t['description']}")
     for ts in equipment["toolsets"]:
@@ -182,7 +205,9 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
         if body:
             technique_blocks.append(
                 _skill_technique_block(sk["name"], body,
-                                       has_scripts=bool(sk.get("has_scripts")), key=sk["key"]))
+                                       has_scripts=bool(sk.get("has_scripts")), key=sk["key"],
+                                       read_skill_available=read_skill_available,
+                                       run_python_available=run_python_available))
         else:
             lines.append(f"- TECHNIQUE {sk['name']}: {sk['description']}")
     lines.append(

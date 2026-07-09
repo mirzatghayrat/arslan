@@ -119,7 +119,13 @@ def _inject_skill_body(base_prompt: str, name: str, body: str, *,
     body = (body or "").strip()
     if not body:
         return base_prompt
-    block = dispatcher._skill_technique_block(name, body, has_scripts=has_scripts, key=key or name)
+    # Candidate-eval context has NO wired-toolset view (we only inject the skill body, not the
+    # spawn's final wired tools), so we can't know if read_skill/run_python are reachable here.
+    # Pass availability=False → the shared helper uses honest fallback wording that never points
+    # at a tool the spawn may not have, rather than fabricating a wired set.
+    block = dispatcher._skill_technique_block(
+        name, body, has_scripts=has_scripts, key=key or name,
+        read_skill_available=False, run_python_available=False)
     return f"{base_prompt}\n\nYour techniques:\n{block}"
 
 

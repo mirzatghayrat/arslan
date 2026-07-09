@@ -590,7 +590,12 @@ class ReadSkillExecutor:
             target = (root / fname).resolve()
             if not str(target).startswith(str(root) + "/") or not target.is_file():
                 return {"ok": False, "external": False, "error": f"reference not found: {section}"}
-            text = target.read_text(encoding="utf-8")
+            # Honest read: a non-UTF-8 reference must not crash — replace undecodable bytes
+            # rather than raise UnicodeDecodeError (mirrors _load_skill_script._read's guard).
+            try:
+                text = target.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                text = target.read_text(encoding="utf-8", errors="replace")
             return {"ok": True, "external": False, "body": text[:self._READ_SKILL_CAP],
                     "summary": f"技能 {skey} · {section}"}
         if section:
@@ -607,7 +612,11 @@ class ReadSkillExecutor:
                     out.append(ln)
             if not out:
                 return {"ok": False, "external": False, "error": f"section not found: {section}"}
-            return {"ok": True, "external": False, "body": "\n".join(out),
+            sect = "\n".join(out)
+            if len(sect) > self._READ_SKILL_CAP:  # cap like the other branches
+                sect = (sect[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
+                        + "\n\n[本节过长已截断,用更细 section 读取]")
+            return {"ok": True, "external": False, "body": sect,
                     "summary": f"技能 {skey} · {section}"}
         if len(body) <= self._READ_SKILL_CAP:
             return {"ok": True, "external": False, "body": body, "summary": f"技能 {skey}(全文)"}

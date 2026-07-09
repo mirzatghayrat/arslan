@@ -52,3 +52,27 @@ async def test_unknown_key_fails(seeded):
     from server.registry.executors import ReadSkillExecutor
     out = await ReadSkillExecutor().execute({"key": "../etc/passwd"})
     assert out["ok"] is False
+
+
+async def test_section_read_is_capped(seeded):
+    """FIX 3: a single very large ## section must be capped like the other branches
+    (writing-plans '## Second' body is ~20k chars of 'beta ')."""
+    from server.registry.executors import ReadSkillExecutor
+    out = await ReadSkillExecutor().execute({"key": "writing-plans", "section": "## Second"})
+    assert out["ok"]
+    assert len(out["body"]) <= ReadSkillExecutor._READ_SKILL_CAP + 60
+    assert "已截断" in out["body"]
+
+
+async def test_non_utf8_reference_does_not_crash(seeded, tmp_path, monkeypatch):
+    """FIX 4: a non-UTF-8 bundled reference must return an honest ok result with replaced
+    bytes, never raise UnicodeDecodeError."""
+    from server.registry.executors import ReadSkillExecutor
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    refs = tmp_path / "skill_scripts" / "writing-plans" / "references"
+    refs.mkdir(parents=True)
+    (refs / "bad.md").write_bytes(b"ok text \xff\xfe more")
+    out = await ReadSkillExecutor().execute(
+        {"key": "writing-plans", "section": "references/bad.md"})
+    assert out["ok"] is True
+    assert "ok text" in out["body"]        # readable prefix survives (errors='replace')
