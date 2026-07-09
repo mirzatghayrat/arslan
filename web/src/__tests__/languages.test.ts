@@ -1,3 +1,4 @@
+import { test, expect } from 'vitest'
 import { LANGUAGE_OPTIONS, normalizeLanguage } from '../lib/languages'
 
 test('exposes all 6 supported languages with native labels', () => {
