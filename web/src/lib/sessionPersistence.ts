@@ -22,6 +22,7 @@ export interface PersistedThread {
   title: string;
   history: [];
   memberSpawnIds?: string[];
+  archived?: boolean;
 }
 
 export interface RestoredThreads {
@@ -39,6 +40,7 @@ interface ThreadLike {
   title: string;
   history?: unknown[];
   memberSpawnIds?: string[];
+  archived?: boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export function persistThreads(
       title: t.title,
       history: [],
       ...(t.memberSpawnIds ? { memberSpawnIds: t.memberSpawnIds } : {}),
+      ...(t.archived ? { archived: true } : {}),
     }));
     localStorage.setItem(THREADS_KEY, JSON.stringify(slim));
     localStorage.setItem(ACTIVE_THREAD_KEY, activeThreadId);
@@ -89,7 +92,7 @@ export function restoreThreads(): RestoredThreads {
       if (Array.isArray(parsed)) {
         threads = parsed
           .filter(
-            (t): t is { id: string; title: string; memberSpawnIds?: string[] } =>
+            (t): t is { id: string; title: string; memberSpawnIds?: string[]; archived?: boolean } =>
               !!t && typeof t.id === "string" && typeof t.title === "string",
           )
           .map((t) => ({
@@ -99,6 +102,7 @@ export function restoreThreads(): RestoredThreads {
             ...(Array.isArray(t.memberSpawnIds)
               ? { memberSpawnIds: t.memberSpawnIds }
               : {}),
+            ...(t.archived === true ? { archived: true } : {}),
           }));
       }
     }

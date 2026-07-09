@@ -47,6 +47,21 @@ describe("persist/restore round-trip", () => {
     expect(raw[0].history).toEqual([]);
     expect(localStorage.getItem(ACTIVE_THREAD_KEY)).toBe("t");
   });
+
+  it("round-trips the archived flag", () => {
+    persistThreads(
+      [
+        { id: "t-arch", title: "Archived", history: [], archived: true },
+        { id: "t-live", title: "Live", history: [] },
+      ],
+      "t-live",
+    );
+    const restored = restoreThreads();
+    const arch = restored.threads.find((t) => t.id === "t-arch");
+    const live = restored.threads.find((t) => t.id === "t-live");
+    expect(arch?.archived).toBe(true);
+    expect(live?.archived).toBeUndefined();
+  });
 });
 
 describe("restoreThreads first-run / fallback", () => {

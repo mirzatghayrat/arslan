@@ -657,6 +657,11 @@ export interface NoteDto {
   created_at: string | null; updated_at: string | null;
   backlinks?: { id: number; title: string }[];
 }
+
+/** Result of POST /conversations/{id}/distill — how many spawn chats were distilled. */
+export interface DistillResult { ok: boolean; distilled_spawns: number }
+/** Result of DELETE /conversations/{id} — per-table row counts removed. */
+export interface DeleteResult { ok: boolean; deleted: Record<string, number> }
 export interface NoteSuggestDto {
   suggestions: { target: string; kind: string; reason: string }[];
   tags: string[];

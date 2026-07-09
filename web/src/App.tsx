@@ -42,6 +42,7 @@ interface ArslanThread {
   title: string;
   history: Message[];
   memberSpawnIds?: string[];
+  archived?: boolean;
 }
 
 const toolDetails: Record<string, { name: string; emoji: string }> = {
