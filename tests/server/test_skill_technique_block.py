@@ -17,7 +17,7 @@ def test_long_skill_gets_summary_toc_and_read_hint():
 
 
 def test_toc_overflow_lists_only_h2_and_notes_more():
-    body = "x " * 100 + "\n" + "\n".join(f"## Sec{i}\nbody\n### Deep{i}\nd" for i in range(60))
+    body = "intro. " * 60 + "\n" + "\n".join(f"## Sec{i}\n{'body '*40}\n### Deep{i}\ndetail" for i in range(60))
     blk = _skill_technique_block("designed-html-report", body, has_scripts=False, key="designed-html-report")
     assert len(blk) <= _SKILL_BLOCK_LIMIT
     assert "### Deep0" not in blk

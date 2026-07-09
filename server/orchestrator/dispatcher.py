@@ -113,7 +113,7 @@ async def _spawn_history(spawn_id: int) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
-_SKILL_BLOCK_LIMIT = 1500   # 约束①: cap of one skill's injected block (header+summary+TOC)
+_SKILL_BLOCK_LIMIT = 2000   # 约束①: cap of one skill's injected block (header+summary+TOC)
 
 
 def _skill_toc(body: str) -> list[str]:
