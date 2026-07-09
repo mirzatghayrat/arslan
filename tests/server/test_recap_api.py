@@ -53,8 +53,16 @@ async def test_recap_empty(maker):
 
 def test_recap_endpoint_registered():
     import os
+    import sys
     os.environ.setdefault("ARSLAN_SECRET_KEY", "dev")
+    import server.api.conversations as conv_mod
     from server.main import create_app
     app = create_app()
     paths = {r.path for r in app.routes if hasattr(r, "path")}
+    if "/api/v1/conversations/{conversation_id}/recap" not in paths:  # DIAGNOSTIC (temp)
+        conv_paths = [getattr(r, "path", None) for r in conv_mod.router.routes]
+        print(f"\n[recap-diag] total app.routes={len(app.routes)}", file=sys.stderr)
+        print(f"[recap-diag] conv_mod.__file__={conv_mod.__file__}", file=sys.stderr)
+        print(f"[recap-diag] conv router route paths={conv_paths}", file=sys.stderr)
+        print(f"[recap-diag] all app paths={sorted(str(p) for p in paths)}", file=sys.stderr)
     assert "/api/v1/conversations/{conversation_id}/recap" in paths

@@ -131,6 +131,11 @@ async def test_import_stores_scripts_and_notes_them(maker, monkeypatch, tmp_path
     assert "## Bundled scripts" in row.body and "handoff/main_calc.py" in row.body
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="executes the skill script in a REAL sandbox (macOS seatbelt); Linux run_python "
+    "is fail-closed (refusal path covered in test_code_sandbox.py)",
+)
 async def test_skill_script_runs_with_siblings(maker, monkeypatch, tmp_path):
     # store a two-file script set, then run the entry via the executor's skill_script path
     from server.registry.executors import RunPythonExecutor

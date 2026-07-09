@@ -11,12 +11,23 @@ from server.services import code_sandbox
 
 pytestmark = pytest.mark.asyncio
 
+# The happy-path tests below exercise a REAL, available sandbox backend, which v1 only
+# ships on macOS (seatbelt). On Linux `run_python` is deliberately fail-closed (P0-1), so
+# these would fail there — the correct Linux behavior (refusal) is asserted separately and
+# UNconditionally by the refusal tests further down, which run on every platform incl. CI.
+_NEEDS_REAL_SANDBOX = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="run_python happy-path needs a real sandbox backend (macOS seatbelt); "
+    "Linux is fail-closed and covered by the refusal tests",
+)
+
 
 @pytest.fixture(autouse=True)
 def _fast_env(monkeypatch):
     monkeypatch.setattr(code_sandbox, "_env_cache", (sys.executable, "test-env"))
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_happy_path_stdout():
     r = await code_sandbox.run_python("print(21 * 2)")
     assert r["ok"] is True and r["exit_code"] == 0
@@ -24,17 +35,20 @@ async def test_happy_path_stdout():
     assert r["env_note"] == "test-env"
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_failing_script_surfaces_traceback():
     r = await code_sandbox.run_python("raise ValueError('boom')")
     assert r["ok"] is False and r["exit_code"] != 0
     assert "boom" in r["stderr"] and "boom" in r["error"]
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_timeout_kills_process_group():
     r = await code_sandbox.run_python("import time; time.sleep(60)", timeout_s=1.5)
     assert r["ok"] is False and "timed out" in r["error"]
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_env_is_scrubbed(monkeypatch):
     # The server process holds secrets; the child must never see them.
     monkeypatch.setenv("ARSLAN_SECRET_KEY", "super-secret")
@@ -47,6 +61,7 @@ async def test_env_is_scrubbed(monkeypatch):
     assert "ARSLAN_SECRET_KEY" not in r["stdout"] and "OPENAI_API_KEY" not in r["stdout"]
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_output_truncated():
     r = await code_sandbox.run_python("print('x' * 100_000)")
     assert r["ok"] is True
@@ -54,6 +69,7 @@ async def test_output_truncated():
     assert "truncated" in r["stdout"]
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_created_files_listed():
     r = await code_sandbox.run_python(
         "open('result.csv', 'w').write('a,b\\n1,2\\n'); print('done')"
@@ -67,6 +83,7 @@ async def test_code_validation():
     assert "too large" in (await code_sandbox.run_python("x" * 200_000))["error"]
 
 
+@_NEEDS_REAL_SANDBOX
 async def test_isolation_state_reported_honestly():
     # Whatever environment the suite runs in, the flag must be present and boolean —
     # never silently absent (the honesty contract: report isolation, don't assume it).
@@ -76,6 +93,7 @@ async def test_isolation_state_reported_honestly():
 
 # ── executor layer ─────────────────────────────────────────────────────────────
 
+@_NEEDS_REAL_SANDBOX
 async def test_executor_registered_and_wraps_result():
     assert "run_python" in EXECUTORS
     out = await RunPythonExecutor().execute({"code": "print('ok')"})
@@ -114,6 +132,25 @@ async def test_unsandboxed_active_truth_table(monkeypatch):
     assert code_sandbox.unsandboxed_active() is True
     monkeypatch.delenv("ARSLAN_ALLOW_UNSANDBOXED_PY", raising=False)
     assert code_sandbox.unsandboxed_active() is False
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="asserts the REAL non-macOS fail-closed refusal; macOS ships a working seatbelt "
+    "sandbox so run_python does not refuse there",
+)
+async def test_real_platform_fail_closed_when_no_sandbox(monkeypatch):
+    # P0-1 security posture, guarded on the REAL platform (no monkeypatch): on any host
+    # without an available backend (e.g. Linux CI), run_python must refuse fail-closed with
+    # the valve OFF. This runs on Linux CI and actively defends the posture — the happy-path
+    # tests skip there, so without this the refusal would go untested on the platform that
+    # actually fails closed.
+    monkeypatch.delenv("ARSLAN_ALLOW_UNSANDBOXED_PY", raising=False)
+    assert code_sandbox._select_backend().available() is False   # real host, no backend
+    r = await code_sandbox.run_python("print('must not run')")
+    assert r["ok"] is False and r["sandboxed"] is False
+    assert "exit_code" not in r                                   # refusal, not an execution
+    assert "拒绝执行" in r["error"] and "ARSLAN_ALLOW_UNSANDBOXED_PY" in r["error"]
 
 
 async def test_no_backend_valve_off_refuses_without_running(monkeypatch):
