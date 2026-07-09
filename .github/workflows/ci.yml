@@ -25,11 +25,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        # setup-uv@v5 with python-version already provisions a .venv, so a bare
-        # `uv venv` fails with "already exists". --clear makes it idempotent.
-        run: |
-          uv venv --clear
-          uv pip install -e ".[dev,server]"
+        # Install from the committed uv.lock for reproducible builds — no version
+        # drift (unpinned installs previously drifted to fastapi 0.139/starlette 1.3
+        # and silently broke routing). --frozen fails if the lock is stale.
+        run: uv sync --frozen --extra dev --extra server
 
       - name: Ruff
         run: .venv/bin/ruff check server/ arslan/ tests/ scripts/
