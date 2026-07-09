@@ -430,9 +430,13 @@ class RunPythonExecutor:
             code, extra_files = loaded
         result = await code_sandbox.run_python(code, extra_files=extra_files)
         if not result.get("ok"):
+            # Keep `sandboxed`/`network_isolated` on the failure path too, so a refused or
+            # unsandboxed run is auditable in the run trace / RunStep detail (P0-1 决定①a).
             return {"ok": False, "external": False,
                     "error": result.get("error") or "execution failed",
-                    **{k: result[k] for k in ("stdout", "stderr", "exit_code") if k in result}}
+                    **{k: result[k]
+                       for k in ("stdout", "stderr", "exit_code", "sandboxed", "network_isolated")
+                       if k in result}}
         n_files = len(result.get("files") or [])
         summary = (f"已执行 Python:exit 0,stdout {len(result.get('stdout') or '')} 字"
                    + (f",生成 {n_files} 个文件" if n_files else "")

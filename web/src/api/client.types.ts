@@ -18,6 +18,9 @@ export interface RegistryTool { key: string; description: string; tier: string; 
 export interface RegistryToolset {
   key: string; name: string; description: string; tier: string; status: string;
   assignable: boolean; tools: RegistryTool[];
+  /** P0-1 决定①b: run-time degradation (e.g. run_python running UNSANDBOXED via the escape
+   * valve). When true, the capability page badges the toolset with `warning`. */
+  degraded?: boolean; warning?: string | null;
 }
 export interface RegistrySkill {
   key: string; name: string; category: string; description: string;

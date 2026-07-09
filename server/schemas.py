@@ -224,6 +224,10 @@ class ToolsetOut(BaseModel):
     status: str
     assignable: bool
     tools: list[ToolOut] = []
+    # P0-1 决定①b: run-time degradation signal (e.g. code_sandbox running UNSANDBOXED via the
+    # escape valve). Lets the capability page badge the toolset. Default False = normal.
+    degraded: bool = False
+    warning: str | None = None
 
 
 class SkillPackOut(BaseModel):

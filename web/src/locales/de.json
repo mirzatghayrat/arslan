@@ -576,7 +576,8 @@
       "empty": "Nothing here yet.",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "Nicht implementiert — nur Katalog-Platzhalter, nicht ausrüstbar.",
-      "orchestrator_note": "Aus Sicherheitsgründen nur für Arslan (den Orchestrator) nutzbar — nicht an Spawns ausrüstbar."
+      "orchestrator_note": "Aus Sicherheitsgründen nur für Arslan (den Orchestrator) nutzbar — nicht an Spawns ausrüstbar.",
+      "degraded": "OHNE SANDBOX"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",

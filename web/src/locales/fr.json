@@ -576,7 +576,8 @@
       "empty": "Nothing here yet.",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "Non implémenté — simple entrée de catalogue, ne peut pas être équipé.",
-      "orchestrator_note": "Par sécurité, réservés à Arslan (l'orchestrateur) — non équipables sur les spawns."
+      "orchestrator_note": "Par sécurité, réservés à Arslan (l'orchestrateur) — non équipables sur les spawns.",
+      "degraded": "SANS SANDBOX"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",

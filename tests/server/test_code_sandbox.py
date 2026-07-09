@@ -86,3 +86,84 @@ async def test_executor_registered_and_wraps_result():
 async def test_executor_missing_code():
     out = await RunPythonExecutor().execute({})
     assert out["ok"] is False and "code" in out["error"]
+
+
+# ── P0-1: fail-closed + visible escape valve ─────────────────────────────────────
+
+async def test_backend_registry_selects_by_platform(monkeypatch):
+    monkeypatch.setattr(code_sandbox.sys, "platform", "darwin")
+    monkeypatch.setattr(code_sandbox.Path, "exists", lambda self: True)
+    assert code_sandbox._select_backend().name == "seatbelt"
+    monkeypatch.setattr(code_sandbox.sys, "platform", "linux")
+    assert code_sandbox._select_backend().name == "null"
+
+
+async def test_bubblewrap_backend_is_stub_unavailable():
+    # Left as a stub this round — must report unavailable so Linux fails closed.
+    assert code_sandbox.BubblewrapBackend().available() is False
+
+
+async def test_unsandboxed_active_truth_table(monkeypatch):
+    # darwin: seatbelt works → never unsandboxed, regardless of the valve.
+    monkeypatch.setattr(code_sandbox.sys, "platform", "darwin")
+    monkeypatch.setattr(code_sandbox.Path, "exists", lambda self: True)
+    monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
+    assert code_sandbox.unsandboxed_active() is False
+    # non-darwin: unsandboxed ONLY when the valve is open.
+    monkeypatch.setattr(code_sandbox.sys, "platform", "linux")
+    assert code_sandbox.unsandboxed_active() is True
+    monkeypatch.delenv("ARSLAN_ALLOW_UNSANDBOXED_PY", raising=False)
+    assert code_sandbox.unsandboxed_active() is False
+
+
+async def test_no_backend_valve_off_refuses_without_running(monkeypatch):
+    # Non-darwin + valve OFF → refuse, and NEVER spawn a subprocess.
+    monkeypatch.setattr(code_sandbox.sys, "platform", "linux")
+    monkeypatch.delenv("ARSLAN_ALLOW_UNSANDBOXED_PY", raising=False)
+
+    async def _boom(*a, **k):  # pragma: no cover - must not be reached
+        raise AssertionError("subprocess must NOT be spawned when the sandbox is unavailable")
+
+    monkeypatch.setattr(code_sandbox.asyncio, "create_subprocess_exec", _boom)
+    r = await code_sandbox.run_python("print('should not run')")
+    assert r["ok"] is False and r["sandboxed"] is False
+    assert "拒绝执行" in r["error"] and "ARSLAN_ALLOW_UNSANDBOXED_PY" in r["error"]
+
+
+async def test_no_backend_valve_on_runs_unsandboxed_with_banner(monkeypatch, caplog):
+    monkeypatch.setattr(code_sandbox.sys, "platform", "linux")
+    monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
+    with caplog.at_level("WARNING"):
+        r = await code_sandbox.run_python("print('valve open')")
+    assert r["ok"] is True and r["sandboxed"] is False
+    assert "valve open" in r["stdout"]
+    assert any("UNSANDBOXED run_python" in rec.message for rec in caplog.records)
+
+
+async def test_darwin_path_reports_sandboxed_true(monkeypatch):
+    # When a backend IS available the result carries sandboxed=True (env preset skips seatbelt
+    # wrapping via a stub backend so the test runs on any host).
+    class _Avail(code_sandbox.SandboxBackend):
+        name = "test-avail"
+
+        def available(self):
+            return True
+
+        def wrapper(self, profile=None):
+            return None  # no real wrapper needed for the flag assertion
+
+    monkeypatch.setattr(code_sandbox, "_select_backend", lambda: _Avail())
+    r = await code_sandbox.run_python("print('ok')")
+    assert r["ok"] is True and r["sandboxed"] is True
+
+
+async def test_executor_propagates_sandboxed(monkeypatch):
+    # The `sandboxed` field must survive the executor so it reaches the run trace / RunStep.
+    monkeypatch.setattr(code_sandbox.sys, "platform", "linux")
+    monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
+    out = await RunPythonExecutor().execute({"code": "print('trace me')"})
+    assert out["ok"] is True and out["sandboxed"] is False
+    # Refused runs expose it too (valve off).
+    monkeypatch.delenv("ARSLAN_ALLOW_UNSANDBOXED_PY", raising=False)
+    refused = await RunPythonExecutor().execute({"code": "print('nope')"})
+    assert refused["ok"] is False and refused["sandboxed"] is False

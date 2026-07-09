@@ -576,7 +576,8 @@
       "empty": "这里还没有内容。",
       "equip_hint": "从分身的菜单中装配这些能力。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
-      "orchestrator_note": "出于安全仅主脑可用,不能装备给分身。"
+      "orchestrator_note": "出于安全仅主脑可用,不能装备给分身。",
+      "degraded": "裸跑·无沙箱"
     },
     "hero": {
       "placeholder": "贴一个 GitHub 链接，或搜索…",
