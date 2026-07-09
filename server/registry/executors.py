@@ -399,25 +399,62 @@ class RunPythonExecutor:
 
     key = "run_python"
 
+    # PC-3 ① fail-closed marker convention: a skill script may DECLARE an execution need
+    # the sandbox cannot satisfy via a front-matter comment on any line, e.g.
+    #   # requires: network      →  needs outbound network (denied by the sandbox)
+    #   # requires: cli          →  shells out to an external CLI (not available)
+    # We reject BEFORE touching the sandbox with an honest "疑似需…未执行" message. This is a
+    # deterministic, author-declared signal (no code analysis, no false positives) — the point
+    # is to replace a SILENT/confusing failure with an explicit {ok:False, error:…}.
+    @staticmethod
+    def _scan_requires(src: str) -> tuple[str, str] | None:
+        """Return (人类可读需求, 原始声明) if the source declares an unsupported need, else None."""
+        import re as _re
+        for line in src.splitlines():
+            mm = _re.match(r"#\s*requires:\s*(.+)", line.strip(), _re.IGNORECASE)
+            if not mm:
+                continue
+            raw = mm.group(1).strip()
+            vals = {v.strip().lower() for v in _re.split(r"[,\s]+", raw) if v.strip()}
+            if "network" in vals or "net" in vals:
+                return "网络", raw
+            if "cli" in vals or "shell" in vals or "subprocess" in vals:
+                return "CLI", raw
+        return None
+
     @staticmethod
     def _load_skill_script(ref: str) -> tuple[str, dict[str, str]] | str:
         """Resolve "<skill_key>/<file>.py" inside data_dir/skill_scripts with traversal
-        protection. Returns (entry_code, sibling_files) or an error string."""
+        protection. Returns (entry_code, sibling_files) or an error string.
+
+        Fail-closed (PC-3 ①): a well-formed ref whose entry is NOT .py, or a .py entry that
+        declares a network/CLI need (`# requires:` marker), is REFUSED here with an honest
+        error — the sandbox is never invoked (execute() returns on the error string)."""
         import os as _os
         import re as _re
         from pathlib import Path as _Path
-        m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.py)", (ref or "").strip())
+        # Accept any well-formed "<key>/<file>.<ext>" so a non-.py entry produces the honest
+        # "只支持 .py" message rather than a confusing generic "invalid format".
+        m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.[A-Za-z0-9]+)", (ref or "").strip())
         if not m:
             return "invalid 'skill_script' — expected '<skill-key>/<file>.py'"
+        ext = "." + m.group(2).rsplit(".", 1)[-1].lower()
+        if ext != ".py":
+            return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
         root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts").resolve()
         skill_dir = (root / m.group(1)).resolve()
         entry = (skill_dir / m.group(2)).resolve()
         if not str(entry).startswith(str(root) + "/") or not entry.is_file():
             return f"skill script not found: {ref}"
+        entry_code = entry.read_text(encoding="utf-8")
+        need = RunPythonExecutor._scan_requires(entry_code)
+        if need:
+            kind, raw = need
+            return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
         siblings = {p.name: p.read_text(encoding="utf-8")
                     for p in skill_dir.iterdir()
                     if p.is_file() and p.suffix == ".py" and p != entry}
-        return entry.read_text(encoding="utf-8"), siblings
+        return entry_code, siblings
 
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
