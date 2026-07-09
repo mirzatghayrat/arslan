@@ -423,9 +423,12 @@ class RunPythonExecutor:
         return None
 
     @staticmethod
-    def _load_skill_script(ref: str) -> tuple[str, dict[str, str]] | str:
+    def _load_skill_script(ref: str) -> tuple[str, dict[str, str], dict[str, str]] | str:
         """Resolve "<skill_key>/<file>.py" inside data_dir/skill_scripts with traversal
-        protection. Returns (entry_code, sibling_files) or an error string.
+        protection. Returns (entry_code, sibling_files, references) or an error string.
+        `references` are the skill's bundled read-only docs (PC-2 storage,
+        data_dir/skill_scripts/<key>/references/*.{md,txt}); the sandbox mounts them
+        READ-ONLY so a script can read but never mutate them (PC-3 ②).
 
         Fail-closed (PC-3 ①): a well-formed ref whose entry is NOT .py, or a .py entry that
         declares a network/CLI need (`# requires:` marker), is REFUSED here with an honest
@@ -454,18 +457,28 @@ class RunPythonExecutor:
         siblings = {p.name: p.read_text(encoding="utf-8")
                     for p in skill_dir.iterdir()
                     if p.is_file() and p.suffix == ".py" and p != entry}
-        return entry_code, siblings
+        # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
+        # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
+        # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
+        ref_dir = (skill_dir / "references")
+        references = {p.name: p.read_text(encoding="utf-8")
+                      for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
+                      if p.is_file() and p.suffix in (".md", ".txt")}
+        return entry_code, siblings, references
 
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
         extra_files: dict[str, str] | None = None
+        read_only_files: dict[str, str] | None = None
         code = args.get("code") or ""
         if args.get("skill_script"):
             loaded = self._load_skill_script(str(args["skill_script"]))
             if isinstance(loaded, str):
                 return {"ok": False, "external": False, "error": loaded}
-            code, extra_files = loaded
-        result = await code_sandbox.run_python(code, extra_files=extra_files)
+            code, extra_files, references = loaded
+            read_only_files = references or None
+        result = await code_sandbox.run_python(
+            code, extra_files=extra_files, read_only_files=read_only_files)
         if not result.get("ok"):
             # Keep `sandboxed`/`network_isolated` on the failure path too, so a refused or
             # unsandboxed run is auditable in the run trace / RunStep detail (P0-1 决定①a).

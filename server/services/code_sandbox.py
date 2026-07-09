@@ -198,11 +198,22 @@ def _truncate(s: str) -> str:
 
 
 async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
-                     extra_files: dict[str, str] | None = None) -> dict:
+                     extra_files: dict[str, str] | None = None,
+                     read_only_files: dict[str, str] | None = None) -> dict:
     """Execute `code` in the sandbox. `extra_files` (name → content, flat safe names) are
     written beside main.py before exec — used for imported skills' bundled scripts so
-    sibling imports/data files work. Returns
-    {ok, stdout, stderr, exit_code, files, network_isolated, env_note} — plus error when not ok."""
+    sibling imports/data files work.
+
+    `read_only_files` (name → content) are the skill's bundled references (PC-3 ②): their
+    CONTENT is copied into a `references/` subdir of the ephemeral run tmpdir and placed
+    READ-ONLY — each file mode 0o444 inside a 0o555 directory, so the sandboxed script can
+    read them but cannot write, unlink, or replace them. The stored originals are never
+    handed in (only their text crosses the boundary), so no in-sandbox action can touch the
+    originals. Isolation guarantee: read-only placement of an ephemeral per-run copy — not a
+    bind-mount of the stored file (which is stronger: even the copy is unmutable in-sandbox).
+
+    Returns {ok, stdout, stderr, exit_code, files, network_isolated, env_note} — plus error
+    when not ok."""
     if not isinstance(code, str) or not code.strip():
         return {"ok": False, "error": "missing 'code'"}
     if len(code) > MAX_CODE_CHARS:
@@ -236,6 +247,22 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
                 continue
             (tmp / fname).write_text(str(content), encoding="utf-8")
             extra_names.add(fname)
+        # Read-only references (PC-3 ②): copy CONTENT into references/, then lock it down —
+        # files 0o444 + the dir 0o555 so the sandboxed child can read but not write/unlink/
+        # replace them. Perms are restored in `finally` so cleanup (rmtree) still works.
+        ro_dir = tmp / "references"
+        wrote_ro = False
+        for fname, content in (read_only_files or {}).items():
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", fname):
+                continue
+            if not wrote_ro:
+                ro_dir.mkdir()
+                wrote_ro = True
+            fp = ro_dir / fname
+            fp.write_text(str(content), encoding="utf-8")
+            fp.chmod(0o444)
+        if wrote_ro:
+            ro_dir.chmod(0o555)  # deny create/unlink inside the dir (dir write bit off)
         # Scrubbed env: NOTHING from the server process leaks into the child.
         env = {
             "PATH": "/usr/bin:/bin",
@@ -293,6 +320,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             f"{p.relative_to(tmp)} ({p.stat().st_size}B)"
             for p in tmp.rglob("*")
             if p.is_file() and p != script and ".mpl" not in p.parts
+            and "references" not in p.parts  # read-only inputs we staged, not code outputs
             and p.name not in extra_names  # inputs we staged, not outputs the code produced
         )
         result = {
@@ -306,4 +334,14 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             result["error"] = f"exit {proc.returncode}: {stderr[-500:] or 'no stderr'}"
         return result
     finally:
+        # Restore write perms on the locked-down references/ so rmtree can clean it up
+        # (a 0o555 dir / 0o444 files would otherwise leak the tmpdir).
+        ro_dir = tmp / "references"
+        if ro_dir.is_dir():
+            try:
+                ro_dir.chmod(0o755)
+                for p in ro_dir.iterdir():
+                    p.chmod(0o644)
+            except OSError:
+                pass
         shutil.rmtree(tmp, ignore_errors=True)
