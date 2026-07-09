@@ -31,6 +31,7 @@ vi.mock("../api/client", () => ({
     getPreferences: (...args: unknown[]) => mockGetPreferences(...args),
     deletePreference: (...args: unknown[]) => mockDeletePreference(...args),
     getKnowledge: vi.fn().mockResolvedValue([]),
+    embeddingStatus: vi.fn().mockResolvedValue(null),
   },
   API_BASE: "",
   suggestPrimary: vi.fn().mockResolvedValue(null),

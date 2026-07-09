@@ -27,6 +27,9 @@ const mockUpdateSettings = vi.fn().mockResolvedValue({});
 vi.mock("../api/client", () => ({
   api: {
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
+    // SettingsScreen renders <EmbeddingSettings/>, which calls api.embeddingStatus()
+    // in an effect. Without this the call throws (undefined) → unhandled rejection.
+    embeddingStatus: vi.fn().mockResolvedValue(null),
   },
   API_BASE: "",
   suggestPrimary: vi.fn().mockResolvedValue(null),
