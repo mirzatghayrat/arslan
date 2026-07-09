@@ -84,6 +84,14 @@ def test_recap_endpoint_registered():
                   f"id={id(conv_route_cls)} | app APIRoute id={id(fastapi.routing.APIRoute)} "
                   f"same={conv_route_cls is fastapi.routing.APIRoute}", file=sys.stderr)
             print(f"[recap-diag] all app paths={sorted(str(p) for p in paths)}", file=sys.stderr)
+            import importlib
+            import server.main as _main_mod
+            importlib.reload(_main_mod)
+            app2 = _main_mod.create_app()
+            p2 = {r.path for r in app2.routes if hasattr(r, "path")}
+            print(f"[recap-diag] after reload(server.main): app2.routes={len(app2.routes)} "
+                  f"recap_present={'/api/v1/conversations/{conversation_id}/recap' in p2}",
+                  file=sys.stderr)
         except Exception as _diag_exc:  # noqa: BLE001 — diagnostics must not mask the assert
             print(f"[recap-diag] diag error: {_diag_exc!r}", file=sys.stderr)
     assert "/api/v1/conversations/{conversation_id}/recap" in paths
