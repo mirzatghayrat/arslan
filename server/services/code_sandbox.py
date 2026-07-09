@@ -202,6 +202,22 @@ def unsandboxed_active() -> bool:
     return (not _select_backend().available()) and _unsandboxed_valve_open()
 
 
+def backend_available() -> bool:
+    """PC-5 honest, read-only probe: is a real OS-level isolation backend usable on THIS host?
+
+    Selects the backend for this platform and asks its `available()` — it NEVER executes any
+    code. Skill health uses it to decide whether a bundled script is truly runnable (a `.py`
+    that is otherwise clean is only "runnable" when isolation is actually available; on a host
+    with no backend the honest verdict is "sandbox unavailable")."""
+    return _select_backend().available()
+
+
+def backend_name() -> str:
+    """Name of the isolation backend selected on this host ("seatbelt"/"bubblewrap"/"null").
+    Reported alongside the skill-health verdict so the reason is auditable."""
+    return _select_backend().name
+
+
 def _truncate(s: str) -> str:
     if len(s) <= MAX_OUTPUT_CHARS:
         return s
