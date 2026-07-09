@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import distinct, select
+from sqlalchemy import delete, distinct, select
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import ArslanMessage, ConversationSpawn
+from server.db.models import (
+    ArslanMessage,
+    ArslanSummary,
+    ConversationEvent,
+    ConversationSpawn,
+    DistilledSession,
+    SpawnPhase,
+)
 from server.schemas import RecapOut
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -62,3 +69,26 @@ async def conversation_distill(conversation_id: str) -> dict:
     await recap_service.log_event(
         conversation_id, "distill", {"manual": True}, f"手动蒸馏 {n} 个分身")
     return {"ok": True, "distilled_spawns": n}
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str) -> dict:
+    """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
+    Deliberately KEEPS `runs` + `router_decisions` (audit/diagnosis data must
+    survive conversation deletion, mirroring how audit rows survive spawn deletion).
+    Auth-gated (inherited from the router-level require_auth dependency)."""
+    deleted: dict[str, int] = {}
+    async with db_session.AsyncSessionLocal() as db:
+        for model in (
+            ArslanMessage,
+            ArslanSummary,
+            ConversationEvent,
+            ConversationSpawn,
+            SpawnPhase,
+            DistilledSession,
+        ):
+            res = await db.execute(
+                delete(model).where(model.conversation_id == conversation_id))
+            deleted[model.__tablename__] = res.rowcount or 0
+        await db.commit()
+    return {"ok": True, "deleted": deleted}
