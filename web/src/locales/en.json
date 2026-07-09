@@ -635,6 +635,14 @@
       "loading": "Loading spawns…",
       "empty": "No spawns yet.",
       "error": "Equip failed — change rolled back."
+    },
+    "compat": {
+      "full": "full",
+      "partial": "partial",
+      "text": "text-only",
+      "full_hint": "Pure text, or all bundled scripts are sandbox-runnable .py",
+      "partial_hint": "Ships references, or scripts are constrained (non-.py or needs network/CLI)",
+      "text_hint": "Method body only — no scripts, no references"
     }
   },
   "forge": {

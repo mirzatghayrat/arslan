@@ -635,6 +635,14 @@
       "loading": "Cargando spawns…",
       "empty": "Aún no hay spawns.",
       "error": "Error al equipar — cambio revertido."
+    },
+    "compat": {
+      "full": "completa",
+      "partial": "parcial",
+      "text": "solo texto",
+      "full_hint": "Texto puro, o todos los scripts son .py ejecutables en el sandbox",
+      "partial_hint": "Incluye referencias, o scripts limitados (no .py o requiere red/CLI)",
+      "text_hint": "Solo cuerpo del método — sin scripts ni referencias"
     }
   },
   "forge": {

@@ -25,6 +25,8 @@ export interface RegistryToolset {
 export interface RegistrySkill {
   key: string; name: string; category: string; description: string;
   tier: string; status: string; assignable: boolean;
+  /** PC-4: honest sandbox-compatibility class — "full" | "partial" | "text". */
+  compatibility?: "full" | "partial" | "text";
 }
 export interface RegistryCatalog { toolsets: RegistryToolset[]; skills: RegistrySkill[]; }
 

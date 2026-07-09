@@ -145,3 +145,42 @@ describe("CapabilityCatalog — usable-first availability chips", () => {
     expect(screen.queryByText("Dead")).not.toBeInTheDocument();
   });
 });
+
+describe("CapabilityCatalog — PC-4 compatibility pill", () => {
+  const COMPAT_CATALOG = {
+    toolsets: [],
+    skills: [
+      { key: "full-sk", name: "FullSkill", category: "content", description: "d", tier: "safe", status: "registered", assignable: true, compatibility: "full" },
+      { key: "partial-sk", name: "PartialSkill", category: "content", description: "d", tier: "safe", status: "registered", assignable: true, compatibility: "partial" },
+      { key: "text-sk", name: "TextSkill", category: "content", description: "d", tier: "safe", status: "registered", assignable: true, compatibility: "text" },
+    ],
+  };
+
+  beforeEach(() => {
+    m.getRegistry.mockResolvedValue(COMPAT_CATALOG);
+    m.listSpawns.mockResolvedValue([]);
+  });
+
+  it("renders the right pill label + testid for each compatibility value", async () => {
+    render(<CapabilityCatalog kind="skills" />);
+    await screen.findByText("FullSkill");
+    // testid encodes the class, label is the i18n key (t() passthrough)
+    expect(screen.getByTestId("skill-compat-full")).toHaveTextContent("capabilities.compat.full");
+    expect(screen.getByTestId("skill-compat-partial")).toHaveTextContent("capabilities.compat.partial");
+    expect(screen.getByTestId("skill-compat-text")).toHaveTextContent("capabilities.compat.text");
+    // semantic tokens: full=success, partial=warning, text=muted
+    expect(screen.getByTestId("skill-compat-full").className).toContain("text-success");
+    expect(screen.getByTestId("skill-compat-partial").className).toContain("text-warning");
+    expect(screen.getByTestId("skill-compat-text").className).toContain("text-muted-foreground");
+  });
+
+  it("defaults a skill with no compatibility field to the muted text pill", async () => {
+    m.getRegistry.mockResolvedValue({
+      toolsets: [],
+      skills: [{ key: "legacy", name: "Legacy", category: "content", description: "d", tier: "safe", status: "registered", assignable: true }],
+    });
+    render(<CapabilityCatalog kind="skills" />);
+    await screen.findByText("Legacy");
+    expect(screen.getByTestId("skill-compat-text")).toHaveTextContent("capabilities.compat.text");
+  });
+});

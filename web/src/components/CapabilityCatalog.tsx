@@ -220,6 +220,7 @@ function SkillRow({ s }: { s: RegistrySkill }) {
     >
       <span className="text-xs font-medium text-foreground">{s.name}</span>
       <span className="text-[11px] text-subtle-foreground">{s.description}</span>
+      <CompatBadge compatibility={s.compatibility} />
       <Badge tier={s.tier} status={s.status} assignable={s.assignable} />
       {avail === "usable" && (
         <span className="ml-auto">
@@ -232,6 +233,26 @@ function SkillRow({ s }: { s: RegistrySkill }) {
         </span>
       )}
     </div>
+  );
+}
+
+// PC-4: honest sandbox-compatibility pill on each skill row. full=全兼容 (positive),
+// partial=部分 (warning), text=仅文本 (muted). Semantic tokens only, matching the Badge style.
+function CompatBadge({ compatibility }: { compatibility?: "full" | "partial" | "text" }) {
+  const { t } = useTranslation();
+  const compat = compatibility ?? "text";
+  const cls =
+    compat === "full" ? "bg-success/15 text-success"
+    : compat === "partial" ? "bg-warning/15 text-warning"
+    : "bg-surface-raised text-muted-foreground";
+  return (
+    <span
+      data-testid={`skill-compat-${compat}`}
+      title={t(`capabilities.compat.${compat}_hint`)}
+      className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${cls}`}
+    >
+      {t(`capabilities.compat.${compat}`)}
+    </span>
   );
 }
 
