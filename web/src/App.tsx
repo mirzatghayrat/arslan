@@ -11,7 +11,7 @@ import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/s
 import { normalizeLanguage } from './lib/languages';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
-import { listProviderConfigs } from './api/client';
+import { listProviderConfigs, distillConversation, deleteConversation } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import Sidebar from './components/Sidebar';
@@ -85,6 +85,15 @@ export default function App() {
   const restoredInit = useRef(restoreThreads()).current;
   const [threads, setThreads] = useState<ArslanThread[]>(restoredInit.threads);
   const [activeThreadId, setActiveThreadId] = useState<string>(restoredInit.activeThreadId);
+
+  // Lightweight transient toast (no toast component exists yet) — used for the
+  // distill result confirmation. Auto-clears after a few seconds.
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const h = window.setTimeout(() => setToast(null), 3200);
+    return () => window.clearTimeout(h);
+  }, [toast]);
 
   // ── Session-ephemeral roster: detect a FRESH app session (absent on a brand-new
   // tab/app launch, present across same-tab reloads). Computed exactly once.
@@ -388,6 +397,72 @@ export default function App() {
     setPanelView('default');
   };
 
+  // ── Conversation row overflow actions (Distill / Archive / Delete) ──────────
+
+  // Distill: harvest this conversation's spawn chats into memory (backend call),
+  // then surface how many were distilled via the transient toast.
+  const handleDistillThread = async (id: string) => {
+    try {
+      const res = await distillConversation(id);
+      setToast(t('sidebar.distilled_toast', { count: res.distilled_spawns }));
+    } catch {
+      setToast(t('sidebar.distill_failed'));
+    }
+  };
+
+  // Archive is purely client-side (persisted via sessionPersistence). If the
+  // archived thread was active, hop to the first remaining non-archived thread
+  // so we never leave an active-but-hidden conversation.
+  const handleArchiveThread = (id: string) => {
+    setThreads((prev) => prev.map((th) => (th.id === id ? { ...th, archived: true } : th)));
+    if (id === activeThreadId) {
+      const next = threads.find((th) => th.id !== id && !th.archived);
+      if (next) {
+        useArslanStore.getState().resetForNewConversation();
+        setActiveThreadId(next.id);
+        setActiveSection('arslan');
+        setPanelView('default');
+      }
+    }
+  };
+
+  const handleUnarchiveThread = (id: string) => {
+    setThreads((prev) => prev.map((th) => (th.id === id ? { ...th, archived: false } : th)));
+  };
+
+  // Delete: remove the thread locally + fire the backend delete (fire-and-forget,
+  // best-effort like other calls). If it was the active thread, select the first
+  // remaining non-archived thread; if none remain, mint a fresh session. The
+  // persisted active-thread key is rewritten by the persistThreads effect.
+  const handleDeleteThread = (id: string) => {
+    const remaining = threads.filter((th) => th.id !== id);
+    const wasActive = id === activeThreadId;
+    deleteConversation(id).catch(() => {
+      /* best-effort — the row is already gone from the UI */
+    });
+    if (wasActive) {
+      useArslanStore.getState().resetForNewConversation();
+      const next = remaining.find((th) => !th.archived);
+      if (next) {
+        setThreads(remaining);
+        setActiveThreadId(next.id);
+      } else {
+        const fresh: ArslanThread = {
+          id: `thread-${Date.now()}`,
+          title: 'New Session',
+          memberSpawnIds: [],
+          history: [],
+        };
+        setThreads([...remaining, fresh]);
+        setActiveThreadId(fresh.id);
+      }
+      setActiveSection('arslan');
+      setPanelView('default');
+    } else {
+      setThreads(remaining);
+    }
+  };
+
   // Live updater that routes SetStateAction into the currently selected Arslan thread
   const setChatHistoryForActiveThread = (valueOrFn: React.SetStateAction<Message[]>) => {
     setThreads(prevThreads => {
@@ -562,6 +637,10 @@ export default function App() {
           const freshSpawns = await api.listSpawns();
           setSpawns(freshSpawns.map(toUiSpawn));
         }}
+        onDistillThread={handleDistillThread}
+        onArchiveThread={handleArchiveThread}
+        onUnarchiveThread={handleUnarchiveThread}
+        onDeleteThread={handleDeleteThread}
         backendStatus={backendStatus}
       />
 
@@ -1250,6 +1329,16 @@ export default function App() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Transient toast (distill confirmation / failure). */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised border border-border-strong rounded-xl shadow-2xl shadow-primary/10 select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+            <span className="text-xs font-sans text-foreground">{toast}</span>
           </div>
         </div>
       )}

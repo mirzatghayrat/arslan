@@ -39,6 +39,10 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     activeSection: "arslan" as const,
     onChangeSection: vi.fn(),
     onCompleteChat: vi.fn(),
+    onDistillThread: vi.fn(),
+    onArchiveThread: vi.fn(),
+    onUnarchiveThread: vi.fn(),
+    onDeleteThread: vi.fn(),
     backendStatus: "online" as const,
     ...overrides,
   };

@@ -388,7 +388,17 @@
     "capabilities": "Capabilities",
     "complete_chat": "Complete",
     "complete_confirm": "Completing this chat will distill the conversation into long-term memory and archive it. The spawn will still remember everything next time. Continue?",
-    "new_chat": "New chat"
+    "new_chat": "New chat",
+    "thread_menu": "Conversation actions",
+    "distill": "Distill",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "delete": "Delete",
+    "delete_confirm_body": "Deleting removes this conversation's content (messages, events). Diagnostics and routing-audit history are retained by design. This cannot be undone.",
+    "delete_confirm_ok": "Delete",
+    "archived_section": "Archived",
+    "distilled_toast": "Distilled — {{count}} added to memory",
+    "distill_failed": "Distill failed"
   },
   "orchestrator": {
     "sandbox_label": "Interactive Spawner Sandbox:",

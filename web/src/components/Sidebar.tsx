@@ -2,18 +2,20 @@ import React, { useState } from 'react';
 import {
   MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
   Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
-  ChevronDown, ChevronUp, Boxes, Orbit, HeartPulse
+  ChevronDown, ChevronUp, Boxes, Orbit, HeartPulse, Archive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { Spawn } from '../types';
 import { SpawnAvatar } from './SpawnAvatar';
+import ThreadRowMenu from './ThreadRowMenu';
 import { BUILD_TAG } from '../buildInfo';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface ArslanThread {
   id: string;
   title: string;
+  archived?: boolean;
 }
 
 interface SidebarProps {
@@ -32,6 +34,12 @@ interface SidebarProps {
   /** Called when the user completes (完结) a direct chat with a spawn */
   onCompleteChat: (id: string) => void;
 
+  /** Conversation-row overflow actions (Distill / Archive / Delete + unarchive). */
+  onDistillThread: (id: string) => void;
+  onArchiveThread: (id: string) => void;
+  onUnarchiveThread: (id: string) => void;
+  onDeleteThread: (id: string) => void;
+
   /** Real backend reachability signal from useBackendStatus */
   backendStatus: BackendStatus;
 }
@@ -47,12 +55,59 @@ export default function Sidebar({
   activeSection,
   onChangeSection,
   onCompleteChat,
+  onDistillThread,
+  onArchiveThread,
+  onUnarchiveThread,
+  onDeleteThread,
   backendStatus,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
   const [picking, setPicking] = useState(false);
-  
+  const [archivedOpen, setArchivedOpen] = useState(false);
+
+  const activeThreads = threads.filter((th) => !th.archived);
+  const archivedThreads = threads.filter((th) => th.archived);
+
+  // Shared renderer for a conversation row (active + archived sections).
+  const renderThreadRow = (thread: ArslanThread, isArchived: boolean) => {
+    const isActive = activeSection === 'arslan' && activeThreadId === thread.id;
+    return (
+      <div
+        key={thread.id}
+        id={`active-thread-btn-${thread.id}`}
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          onSelectThread(thread.id);
+          onChangeSection('arslan');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            onSelectThread(thread.id);
+            onChangeSection('arslan');
+          }
+        }}
+        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left cursor-pointer group ${
+          isActive
+            ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary shadow-sm shadow-primary/5'
+            : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
+        }`}
+      >
+        <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-muted-foreground'}`} />
+        <span className="truncate flex-1 pr-1 font-sans">{thread.title}</span>
+        <ThreadRowMenu
+          threadId={thread.id}
+          archived={isArchived}
+          onDistill={onDistillThread}
+          onArchive={onArchiveThread}
+          onUnarchive={onUnarchiveThread}
+          onDelete={onDeleteThread}
+        />
+      </div>
+    );
+  };
+
   return (
     <aside className="w-64 bg-sidebar/95 border-r border-border flex flex-col justify-between select-none h-full relative z-40">
       {/* Top Portion of the Sidebar */}
@@ -181,32 +236,35 @@ export default function Sidebar({
                 {t('sidebar.active_chats')}
               </span>
               <span className="text-[8.5px] text-primary font-mono bg-primary/10 rounded px-2 py-0.5 select-none font-bold">
-                {t('sidebar.chats_count', { count: threads.length })}
+                {t('sidebar.chats_count', { count: activeThreads.length })}
               </span>
             </div>
 
             <div className="space-y-1 pr-1 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-              {threads.map((thread) => {
-                const isActive = activeSection === 'arslan' && activeThreadId === thread.id;
-                return (
+              {activeThreads.map((thread) => renderThreadRow(thread, false))}
+
+              {/* Collapsible "Archived" section — client-side archived threads. */}
+              {archivedThreads.length > 0 && (
+                <div className="pt-2 mt-1 border-t border-border/40">
                   <button
-                    key={thread.id}
-                    id={`active-thread-btn-${thread.id}`}
-                    onClick={() => {
-                      onSelectThread(thread.id);
-                      onChangeSection('arslan');
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left truncate group ${
-                      isActive
-                        ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary shadow-sm shadow-primary/5'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
-                    }`}
+                    id="btn-toggle-archived-threads"
+                    onClick={() => setArchivedOpen((o) => !o)}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[9.5px] font-mono text-subtle-foreground hover:text-foreground uppercase tracking-widest font-bold transition-all"
                   >
-                    <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-muted-foreground'}`} />
-                    <span className="truncate flex-1 pr-1 font-sans">{thread.title}</span>
+                    <span className="flex items-center gap-1.5">
+                      <Archive className="w-3 h-3" />
+                      {t('sidebar.archived_section')}
+                      <span className="text-primary">({archivedThreads.length})</span>
+                    </span>
+                    {archivedOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                   </button>
-                );
-              })}
+                  {archivedOpen && (
+                    <div className="space-y-1 mt-1">
+                      {archivedThreads.map((thread) => renderThreadRow(thread, true))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
