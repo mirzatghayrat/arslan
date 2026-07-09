@@ -10,12 +10,7 @@ from server.db.models import Base, UserFact
 
 @pytest.fixture
 def maker(tmp_path, monkeypatch):
-    # busy_timeout: these tests drive several add_manual_fact/save_facts calls across
-    # separate anyio.run() loops against one file DB; brief write-lock contention made
-    # CI flake with "database is locked". Tell SQLite to wait for the lock (30s) instead
-    # of erroring immediately, so transient contention resolves rather than fails.
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'d.db'}",
-                                 connect_args={"timeout": 30})
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'d.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async def _seed():
         async with engine.begin() as conn:
