@@ -85,7 +85,10 @@ def test_dev_missing_secret_does_not_raise_and_warns(monkeypatch, caplog):
 
 
 def test_prod_with_secret_does_not_raise(monkeypatch):
-    main, cfg = _validate(monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32)
+    # prod also needs a token now (item c), so supply both to isolate the secret check.
+    main, cfg = _validate(
+        monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32, ARSLAN_API_TOKEN="tok"
+    )
     main._validate_settings(cfg)  # must not raise
 
 
@@ -106,13 +109,31 @@ def test_api_token_set_no_banner(monkeypatch, caplog):
     assert not any("ARSLAN_API_TOKEN not set" in r.message for r in caplog.records)
 
 
-def test_prod_no_token_adds_stern_line(monkeypatch, caplog):
+def test_prod_missing_token_refuses_boot(monkeypatch):
+    """item c: prod + empty ARSLAN_API_TOKEN -> refuse to boot, like SECRET_KEY."""
     main, cfg = _validate(monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32)
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(RuntimeError) as exc:
         main._validate_settings(cfg)
-    assert any(
-        "ARSLAN_ENV=prod with no ARSLAN_API_TOKEN" in r.message for r in caplog.records
+    msg = str(exc.value)
+    assert "ARSLAN_API_TOKEN" in msg
+    assert "refusing to start" in msg
+
+
+def test_prod_token_refuse_message_does_not_echo_secrets(monkeypatch):
+    """The token-refusal message must not leak the configured secret_key value."""
+    main, cfg = _validate(
+        monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="leakysecretvalue123456789012"
     )
+    with pytest.raises(RuntimeError) as exc:
+        main._validate_settings(cfg)
+    assert "leakysecretvalue123456789012" not in str(exc.value)
+
+
+def test_prod_with_token_does_not_raise(monkeypatch):
+    main, cfg = _validate(
+        monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="x" * 32, ARSLAN_API_TOKEN="tok"
+    )
+    main._validate_settings(cfg)  # must not raise
 
 
 def test_bind_0000_no_token_warns(monkeypatch, caplog):

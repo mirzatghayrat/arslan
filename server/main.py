@@ -24,7 +24,10 @@ def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
         secret value.
       - dev + missing secret -> keep booting; crypto.py supplies a deterministic
         dev fallback key, so we only warn once.
-      - missing ARSLAN_API_TOKEN -> startup banner (all API/WS unauthenticated).
+      - prod + missing ARSLAN_API_TOKEN -> refuse to boot (RuntimeError); an empty
+        token leaves every endpoint open, so prod is held to the same bar as
+        SECRET_KEY. The message names only what is missing.
+      - dev + missing ARSLAN_API_TOKEN -> startup banner (all API/WS unauthenticated).
       - 0.0.0.0 bind (best-effort) + no token -> loud network-exposure advisory.
     """
     import os
@@ -37,6 +40,16 @@ def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
             "refusing to start. Set it in the environment."
         )
 
+    # item c: prod must not run fully open. An empty ARSLAN_API_TOKEN leaves every
+    # API/WS endpoint unauthenticated, so in prod we refuse to boot — same posture
+    # as the missing-SECRET_KEY check above. The message names only what is missing
+    # and never echoes any configured secret value.
+    if cfg.is_prod and not cfg.api_token:
+        raise RuntimeError(
+            "ARSLAN_ENV=prod requires ARSLAN_API_TOKEN (a long random value); "
+            "refusing to start. Set it in the environment."
+        )
+
     if not cfg.secret_key:
         log.warning(
             "ARSLAN_SECRET_KEY not set: using an insecure fixed dev key. Stored "
@@ -45,15 +58,11 @@ def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
         )
 
     if not cfg.api_token:
+        # Only reachable in dev now — prod with an empty token already refused above.
         log.warning(
             "⚠ ARSLAN_API_TOKEN not set: ALL API/WS endpoints are "
             "UNAUTHENTICATED — intended for localhost only."
         )
-        if cfg.is_prod:
-            log.warning(
-                "⚠ ARSLAN_ENV=prod with no ARSLAN_API_TOKEN: this deployment "
-                "is fully open to anyone who can reach it. Set ARSLAN_API_TOKEN now."
-            )
 
     # Bind advisory. The real bind host is the launcher's `uvicorn --host`; the
     # app cannot force it, so this is best-effort from ARSLAN_BIND_HOST/HOST.
