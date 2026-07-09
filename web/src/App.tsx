@@ -8,6 +8,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/sessionPersistence';
+import { normalizeLanguage } from './lib/languages';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
 import { listProviderConfigs } from './api/client';
@@ -61,7 +62,7 @@ const skillDetails: Record<string, { name: string; emoji: string }> = {
 };
 
 export default function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
 
@@ -281,6 +282,9 @@ export default function App() {
     api.getSettings().then((backendSettings) => {
       const mapped = toUiSettings(backendSettings);
       setSettings((prev) => ({ ...prev, ...mapped }));
+      // Apply the saved UI language on load — reconciles any legacy label value
+      // stored before the selector switched to i18next codes.
+      i18n.changeLanguage(normalizeLanguage(mapped.language));
       // Also push into settingsStore so child components can read live settings
       useSettingsStore.getState().setSettings(backendSettings);
     }).catch(() => {
