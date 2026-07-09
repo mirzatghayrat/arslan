@@ -3,7 +3,6 @@ import anyio
 import pytest
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 import server.db.session as db_session
 from server.db.models import Base, UserFact
@@ -11,10 +10,12 @@ from server.db.models import Base, UserFact
 
 @pytest.fixture
 def maker(tmp_path, monkeypatch):
-    # NullPool: the fail-open tests raise mid-operation; with a pooled connection the
-    # aborted transaction can linger and later writes hit "database is locked" under CI
-    # load (flaky). A fresh connection per use releases the file lock deterministically.
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'d.db'}", poolclass=NullPool)
+    # busy_timeout: these tests drive several add_manual_fact/save_facts calls across
+    # separate anyio.run() loops against one file DB; brief write-lock contention made
+    # CI flake with "database is locked". Tell SQLite to wait for the lock (30s) instead
+    # of erroring immediately, so transient contention resolves rather than fails.
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'d.db'}",
+                                 connect_args={"timeout": 30})
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async def _seed():
         async with engine.begin() as conn:
