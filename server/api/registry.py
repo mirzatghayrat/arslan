@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.models import SkillPack, Tool, Toolset
 from server.db.session import get_session
-from server.registry.service import skill_is_assignable, toolset_is_assignable
+from server.registry.service import (
+    skill_compatibility,
+    skill_is_assignable,
+    toolset_is_assignable,
+)
 from server.schemas import RegistryOut, SkillPackOut, ToolOut, ToolsetOut
 from server.services import code_sandbox
 
@@ -53,6 +57,8 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
                 tier=s.tier, status=s.status,
                 # assignable = has a real method body (no-body entries are catalog-only)
                 assignable=skill_is_assignable(s.tier, s.status, s.body),
+                # PC-4: honest sandbox-compatibility badge (full/partial/text)
+                compatibility=skill_compatibility(s.key, s.body),
             )
             for s in skills
         ],

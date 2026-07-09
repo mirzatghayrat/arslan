@@ -77,10 +77,79 @@ def skill_has_scripts(key: str) -> bool:
         return False
 
 
+def skill_has_references(key: str) -> bool:
+    """True iff data_dir/skill_scripts/<key>/references/ exists and holds >=1 file.
+
+    Mirrors skill_has_scripts for the bundled read-only docs PC-2 stores (only .md/.txt
+    are mounted, but any file present means the skill ships reference material).
+    Fail-closed on any FS error → False."""
+    if not key:
+        return False
+    root = (Path(os.environ.get("ARSLAN_DATA_DIR", "data"))
+            / "skill_scripts" / key / "references")
+    try:
+        return any(p.is_file() for p in root.iterdir())
+    except OSError:
+        return False
+
+
+def _skill_script_paths(key: str) -> list[Path]:
+    """Top-level (non-references/) files bundled under skill_scripts/<key>/."""
+    if not key:
+        return []
+    root = Path(os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts" / key
+    try:
+        return [p for p in root.iterdir() if p.is_file()]
+    except OSError:
+        return []
+
+
+def skill_compatibility(key: str, body: str | None) -> str:
+    """Deterministic per-skill sandbox-compatibility class from REAL bundle signals.
+
+    HONEST by construction: never returns "full" unless every bundled capability is
+    runnable in the sandbox exactly as shipped (all .py, none declaring an unsupported
+    `# requires:` need). When a script can't be read or verified, we downgrade to
+    "partial" rather than overclaim.
+
+    Rule (first match wins):
+      • no bundled scripts AND no references            → "text"    (仅文本: body-only)
+      • bundled scripts present:
+          - any non-.py entry                           → "partial" (sandbox runs .py only)
+          - any .py entry unreadable / not UTF-8        → "partial" (can't stand behind full)
+          - any .py entry with a `# requires: net|cli`  → "partial" (sandbox denies, fails closed)
+          - otherwise (all .py, all clean)              → "full"    (scripts run; bundled refs,
+                                                                      if any, mount read-only)
+      • no scripts but bundled references               → "partial" (material fetched via
+                                                                      read_skill, not inlined)
+
+    `body` is accepted so the classifier owns the full skill picture; a skill with neither
+    scripts nor references is "text" regardless of body length (body-only == pure text).
+    """
+    from server.registry.executors import RunPythonExecutor  # lazy: avoid import cycle
+    scripts = _skill_script_paths(key)
+    has_refs = skill_has_references(key)
+    if not scripts and not has_refs:
+        return "text"
+    if scripts:
+        if any(p.suffix != ".py" for p in scripts):
+            return "partial"
+        for p in scripts:
+            try:
+                src = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return "partial"
+            if RunPythonExecutor._scan_requires(src):
+                return "partial"
+        return "full"
+    return "partial"  # references only
+
+
 def _skill_dict(s: SkillPack) -> dict:
     return {"key": s.key, "name": s.name, "description": s.description,
             "category": s.category, "tier": s.tier, "status": s.status,
-            "has_scripts": skill_has_scripts(s.key)}
+            "has_scripts": skill_has_scripts(s.key),
+            "compatibility": skill_compatibility(s.key, s.body)}
 
 
 async def safe_menu() -> dict:

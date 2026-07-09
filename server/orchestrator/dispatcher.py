@@ -115,6 +115,12 @@ async def _spawn_history(spawn_id: int) -> list[dict]:
 
 _SKILL_BLOCK_LIMIT = 2000   # 约束①: cap of one skill's injected block (header+summary+TOC)
 
+# PC-4: single anti-fabrication line prepended ONCE above the per-skill technique blocks.
+_TECHNIQUE_HONESTY_PREAMBLE = (
+    "技法说明:以下技能正文可能是摘要。引用的脚本/文件若不在你的工具清单内,不得假装执行或编造其输出;"
+    "需要全文就用 read_skill,需要跑脚本就用 run_python 的 skill_script 参数,拿不到就如实说明,不要虚构结果。"
+)
+
 
 def _skill_toc(body: str) -> list[str]:
     """Markdown ##/### heading lines, in order."""
@@ -186,7 +192,11 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     )
     block = "\n\nYour equipment:\n" + "\n".join(lines)
     if technique_blocks:
-        block += "\n\nYour techniques:\n" + "\n\n".join(technique_blocks)
+        # PC-4 (承接 HX 轮 fabrication 护栏): ONE honesty preamble at the top of the
+        # techniques section — injected skill bodies may be summaries, and any referenced
+        # script/file not in the live tool list must never be faked or its output invented.
+        block += "\n\nYour techniques:\n" + _TECHNIQUE_HONESTY_PREAMBLE + "\n\n" + \
+            "\n\n".join(technique_blocks)
     return block
 
 
