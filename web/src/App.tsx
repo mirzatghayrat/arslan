@@ -8,6 +8,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/sessionPersistence';
+import { firstLiveThread } from './lib/threadLifecycle';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
@@ -404,7 +405,13 @@ export default function App() {
   const handleDistillThread = async (id: string) => {
     try {
       const res = await distillConversation(id);
-      setToast(t('sidebar.distilled_toast', { count: res.distilled_spawns }));
+      // `distilled_spawns` is a count of AGENTS folded into memory, NOT memory items.
+      // Zero producing spawns → a truthful no-op message instead of "distilled 0".
+      setToast(
+        res.distilled_spawns > 0
+          ? t('sidebar.distilled_toast', { count: res.distilled_spawns })
+          : t('sidebar.distilled_none'),
+      );
     } catch {
       setToast(t('sidebar.distill_failed'));
     }
@@ -416,13 +423,24 @@ export default function App() {
   const handleArchiveThread = (id: string) => {
     setThreads((prev) => prev.map((th) => (th.id === id ? { ...th, archived: true } : th)));
     if (id === activeThreadId) {
-      const next = threads.find((th) => th.id !== id && !th.archived);
+      useArslanStore.getState().resetForNewConversation();
+      const next = firstLiveThread(threads, id);
       if (next) {
-        useArslanStore.getState().resetForNewConversation();
         setActiveThreadId(next.id);
-        setActiveSection('arslan');
-        setPanelView('default');
+      } else {
+        // Archived the only non-archived thread — mirror delete's "nothing left" case
+        // and mint a fresh session so the main pane never shows an archived thread.
+        const fresh: ArslanThread = {
+          id: `thread-${Date.now()}`,
+          title: 'New Session',
+          memberSpawnIds: [],
+          history: [],
+        };
+        setThreads((prev) => [...prev, fresh]);
+        setActiveThreadId(fresh.id);
       }
+      setActiveSection('arslan');
+      setPanelView('default');
     }
   };
 
@@ -437,12 +455,14 @@ export default function App() {
   const handleDeleteThread = (id: string) => {
     const remaining = threads.filter((th) => th.id !== id);
     const wasActive = id === activeThreadId;
-    deleteConversation(id).catch(() => {
-      /* best-effort — the row is already gone from the UI */
+    deleteConversation(id).catch((err) => {
+      // Best-effort — the row is already gone from the UI, but a failed server-side
+      // purge must be observable rather than silently swallowed.
+      console.error(`[deleteConversation] backend purge failed for ${id}`, err);
     });
     if (wasActive) {
       useArslanStore.getState().resetForNewConversation();
-      const next = remaining.find((th) => !th.archived);
+      const next = firstLiveThread(remaining, id);
       if (next) {
         setThreads(remaining);
         setActiveThreadId(next.id);

@@ -296,6 +296,7 @@
     "labelSearchProvider": "Search provider",
     "sectionInterface": "Interface",
     "labelLanguage": "Language",
+    "language_i18n_note": "La interfaz se está internacionalizando progresivamente; algunos textos aún no están traducidos.",
     "labelTheme": "Theme",
     "labelTelemetry": "Diagnostic telemetry",
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
@@ -397,7 +398,8 @@
     "delete_confirm_body": "Deleting removes this conversation's content (messages, events). Diagnostics and routing-audit history are retained by design. This cannot be undone.",
     "delete_confirm_ok": "Delete",
     "archived_section": "Archived",
-    "distilled_toast": "Distilled — {{count}} added to memory",
+    "distilled_toast": "Se destilaron {{count}} agente(s) en la memoria",
+    "distilled_none": "Nada que destilar",
     "distill_failed": "Distill failed"
   },
   "orchestrator": {

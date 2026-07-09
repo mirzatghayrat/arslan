@@ -201,7 +201,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
                 ariaLabel={t('settings.labelLanguage')}
               />
               <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-                界面正在逐步国际化，部分文案暂未翻译。
+                {t('settings.language_i18n_note')}
               </p>
             </div>
 
