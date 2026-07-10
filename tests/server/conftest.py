@@ -1,6 +1,10 @@
 """Shared fixtures for server tests."""
 from __future__ import annotations
 
+import importlib
+import os
+
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -8,6 +12,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
+
+
+@pytest.fixture(autouse=True)
+def _restore_config_after_test():
+    """Guard against cross-test ``server.config`` pollution.
+
+    Several tests reload ``server.config`` with a mutated environment (e.g. an *unset*
+    ``ARSLAN_SECRET_KEY`` for the middleware-security suite) and never reload it back.
+    That was harmless until ``crypto.encrypt()`` began failing closed under an empty
+    secret (S1 OSS-safety): a later test that calls ``crypto.encrypt()`` directly would
+    then hit the insecure-default refusal purely because of test ordering.
+
+    As an autouse teardown, this runs *after* ``monkeypatch`` has restored the ambient
+    environment; if the live config's secret has drifted from that environment, it
+    reloads config back to the ambient baseline. It is a cheap no-op when there is no
+    drift (the overwhelming majority of tests).
+    """
+    yield
+    import server.config as _cfg
+
+    if (_cfg.settings.secret_key or "") != (os.environ.get("ARSLAN_SECRET_KEY", "") or ""):
+        importlib.reload(_cfg)
 
 
 @pytest_asyncio.fixture

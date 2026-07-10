@@ -196,6 +196,19 @@ def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     app = FastAPI(title="Arslan Server", version="0.1.0", lifespan=lifespan)
 
+    # S1 OSS safety: any secret-write path (provider api_key, settings secrets, MCP
+    # env) that would encrypt under the PUBLIC dev fallback key raises
+    # InsecureSecretStoreError from crypto.encrypt(). Map it to a clean 400 with the
+    # actionable guidance so the client never sees an opaque 500. Covers every write
+    # endpoint uniformly (fail-closed at the crypto source, translated here).
+    from fastapi.responses import JSONResponse
+
+    from server.crypto import InsecureSecretStoreError
+
+    @app.exception_handler(InsecureSecretStoreError)
+    async def _insecure_secret_store_handler(_request, exc: InsecureSecretStoreError):  # noqa: ANN202
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
     # S1 OSS safety: a localhost-bound service with no Host validation is reachable
     # by any web page the user visits (DNS rebinding), and browsers can open
     # cross-site WebSockets. Install the two edge middlewares here; the WS handlers
