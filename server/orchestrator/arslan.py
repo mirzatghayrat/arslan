@@ -1309,6 +1309,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     attached_context: str | None = None,
     announce: bool = True,
     _auto_continues: int = MAX_AUTO_CONTINUES,
+    _continuation: bool = False,
 ) -> None:
     """Run one spawn turn, recording it as a Run for replay + evaluation.
 
@@ -1316,7 +1317,11 @@ async def _dispatch_spawn(  # noqa: ANN001
     through the recursion — no shared/module state). When a round ends with a
     findings digest and budget remains, the same spawn is re-dispatched on the same
     direction; the digest message is already in its history, so the next round
-    builds on the evidence instead of the user having to type 继续."""
+    builds on the evidence instead of the user having to type 继续.
+
+    _continuation: True only on those auto-continue re-dispatches (E1). The recorder
+    marks the Run so the judge scores completion against this round's incremental
+    goal — a middle round judged against the FULL request skews completion down."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
     if spawn_name is None:
         # The spawn no longer exists (deleted mid-conversation, or a stale id from any
@@ -1330,6 +1335,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     recorder = await run_recorder.RunRecorder.start(
         conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
         user_message=user_message or task_brief, route_ms=route_ms,
+        continuation=_continuation,
     )
     tee = recorder.tee(emit)
 
@@ -1445,6 +1451,7 @@ async def _dispatch_spawn(  # noqa: ANN001
             conversation_id, spawn_id, task_brief, emit,
             mode=mode, user_message=user_message, attached_context=attached_context,
             _auto_continues=_auto_continues - 1,
+            _continuation=True,
         )
 
 

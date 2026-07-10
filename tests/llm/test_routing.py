@@ -14,6 +14,16 @@ def test_judgment_role_always_primary():
         assert routing.select("critical", strat, CFGS, "en")["id"] == 1
 
 
+def test_judge_roles_pinned_to_primary():
+    """E1: the actually-used judge/optimizer roles ("judge" in run_eval_service /
+    compare_judge, "judgment" in optimizer) must ALWAYS route to the primary config —
+    under strategy="cost" a worker role would pick the cheapest (id 3), so primary
+    (id 1) here proves the pin."""
+    for strat in ("cost", "balanced", "performance"):
+        assert routing.select("judge", strat, CFGS, "en")["id"] == 1
+        assert routing.select("judgment", strat, CFGS, "en")["id"] == 1
+
+
 def test_single_strategy_always_primary():
     assert routing.select("execute", "single", CFGS, "en")["id"] == 1
 

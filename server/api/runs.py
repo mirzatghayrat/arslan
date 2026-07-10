@@ -471,6 +471,23 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
     )
 
 
+@router.post("/runs/{run_id}/rescore")
+async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """Manually re-enqueue judge scoring for one run (E1). 404 on unknown run.
+
+    Auth: covered by the router-level require_auth dependency.
+    NOTE(E2): once `runs.kind` exists this must reject kind != 'live' (replay runs
+    end in terminal status 'replayed' and are never judged).
+    """
+    from server.services import run_recorder
+
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    run_recorder.schedule_scoring(run_id)
+    return {"enqueued": True}
+
+
 @router.post("/runs/{run_id}/redact")
 async def redact_run_endpoint(run_id: int) -> dict:
     """Manually clear sensitive/bulky debug detail for one run. No-op if it doesn't exist."""

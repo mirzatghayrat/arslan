@@ -36,14 +36,28 @@ def _default_schedule(run_id: int) -> None:
 # Module-level indirection so tests can stub scheduling.
 schedule_scoring: Callable[[int], None] = _default_schedule
 
+# E1 continuation registry (in-memory until the E2 `runs.continuation` column lands):
+# an auto-continue re-dispatch marks its Run here so the judge can score completion
+# against THIS round's incremental goal instead of the full original request.
+# Process-local by design — a restart loses the marks, which E2 fixes by persisting
+# the flag on the Run row. Entries are tiny (one int per run) and never removed
+# within a process lifetime so reaper/rescore re-judging still sees them.
+_continuation_run_ids: set[int] = set()
+
+
+def is_continuation(run_id: int) -> bool:
+    """True when this run was recorded as an auto-continue (continuation) round."""
+    return run_id in _continuation_run_ids
+
 
 class RunRecorder:
     def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
-                 spawn_name: str | None = None) -> None:
+                 spawn_name: str | None = None, continuation: bool = False) -> None:
         self.run_id = run_id
         self.started_at = started_at
         self.route_ms = route_ms
         self.spawn_name = spawn_name
+        self.continuation = continuation
         self._events: list[tuple[datetime, dict]] = []
 
     @classmethod
@@ -55,6 +69,7 @@ class RunRecorder:
         spawn_name: str | None,
         user_message: str,
         route_ms: int | None = None,
+        continuation: bool = False,
     ) -> "RunRecorder":
         started = datetime.utcnow()
         async with db_session.AsyncSessionLocal() as db:
@@ -71,7 +86,9 @@ class RunRecorder:
             await db.commit()
             await db.refresh(run)
             run_id = run.id
-        return cls(run_id, started, route_ms, spawn_name)
+        if continuation:
+            _continuation_run_ids.add(run_id)
+        return cls(run_id, started, route_ms, spawn_name, continuation)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
