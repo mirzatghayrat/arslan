@@ -30,6 +30,9 @@ vi.mock("../api/client", () => ({
     // SettingsScreen renders <EmbeddingSettings/>, which calls api.embeddingStatus()
     // in an effect. Without this the call throws (undefined) → unhandled rejection.
     embeddingStatus: vi.fn().mockResolvedValue(null),
+    // SettingsScreen renders <AccessTokenSettings/>, which calls api.getAccessToken().
+    getAccessToken: vi.fn().mockResolvedValue({ token_required: false, token: null }),
+    resetAccessToken: vi.fn().mockResolvedValue({ token: "new-token" }),
   },
   API_BASE: "",
   suggestPrimary: vi.fn().mockResolvedValue(null),
@@ -42,7 +45,11 @@ vi.mock("../api/client", () => ({
 
 // ── auth store mock (api/client imports authStore) ─────────────────────────────
 vi.mock("../stores/authStore", () => ({
-  useAuthStore: { getState: () => ({ token: null }) },
+  useAuthStore: Object.assign(
+    (sel: (s: { token: string; setToken: (t: string) => void }) => unknown) =>
+      sel({ token: "", setToken: () => {} }),
+    { getState: () => ({ token: "", setToken: () => {} }) },
+  ),
 }));
 
 import SettingsScreen from "../components/SettingsScreen";

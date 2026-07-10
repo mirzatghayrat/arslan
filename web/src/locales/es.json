@@ -353,7 +353,25 @@
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
     "labelShellConfirmPolicy": "Confirm policy",
     "shellPolicyAskAll": "Confirm every command",
-    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)"
+    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)",
+    "accessToken": {
+      "section": "Token de acceso",
+      "checking": "Comprobando el estado del token…",
+      "notRequired": "No se requiere token (desarrollo local)",
+      "yourToken": "Tu token de acceso",
+      "hide": "Ocultar",
+      "reveal": "Mostrar",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "shownHint": "Mantén este token en privado: cualquiera que lo tenga puede acceder a esta instancia.",
+      "reset": "Restablecer token",
+      "resetting": "Restableciendo…",
+      "resetError": "No se pudo restablecer: solo la máquina local puede rotar el token.",
+      "pasteLabel": "Pega tu token de acceso",
+      "placeholder": "Pega el token…",
+      "save": "Guardar",
+      "requiredHint": "Este servidor requiere un token para las conexiones de API y en vivo. Pega el token emitido para esta instancia."
+    }
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -801,5 +819,27 @@
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell"
+  },
+  "errorBoundary": {
+    "title": "Algo salió mal",
+    "description": "La aplicación tuvo un error inesperado. Recargar suele solucionarlo.",
+    "reload": "Recargar"
+  },
+  "firstRun": {
+    "title": "Bienvenido a Arslan",
+    "welcomeBody": "Uno se convierte en muchos: coordina un equipo de especialistas de IA desde una sola conversación.",
+    "getStarted": "Comenzar",
+    "skip": "Omitir",
+    "back": "Atrás",
+    "next": "Siguiente",
+    "finish": "Finalizar",
+    "addLater": "Añadir después",
+    "stepLanguage": "Elige tu idioma",
+    "stepLanguageHint": "Puedes cambiarlo cuando quieras en Ajustes.",
+    "stepKey": "Conecta un modelo",
+    "stepKeyHint": "Arslan usa tus propias claves de API. Pega una clave de al menos un proveedor para empezar.",
+    "providerLabel": "Proveedor",
+    "keyPlaceholder": "Pega la clave de API…",
+    "stepOf": "Paso {{current}} de {{total}}"
   }
 }

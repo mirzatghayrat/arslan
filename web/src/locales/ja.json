@@ -353,7 +353,25 @@
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
     "labelShellConfirmPolicy": "Confirm policy",
     "shellPolicyAskAll": "Confirm every command",
-    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)"
+    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)",
+    "accessToken": {
+      "section": "アクセストークン",
+      "checking": "トークンの状態を確認中…",
+      "notRequired": "トークンは不要です（ローカル開発）",
+      "yourToken": "あなたのアクセストークン",
+      "hide": "隠す",
+      "reveal": "表示",
+      "copy": "コピー",
+      "copied": "コピーしました",
+      "shownHint": "このトークンは非公開に保ってください。持っている人は誰でもこのインスタンスにアクセスできます。",
+      "reset": "トークンをリセット",
+      "resetting": "リセット中…",
+      "resetError": "リセットできません。トークンを更新できるのはローカルのマシンだけです。",
+      "pasteLabel": "アクセストークンを貼り付け",
+      "placeholder": "トークンを貼り付け…",
+      "save": "保存",
+      "requiredHint": "このサーバーは API とライブ接続にトークンを必要とします。このインスタンス用に発行されたトークンを貼り付けてください。"
+    }
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -801,5 +819,27 @@
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell"
+  },
+  "errorBoundary": {
+    "title": "問題が発生しました",
+    "description": "予期しないエラーが発生しました。再読み込みで解決することがほとんどです。",
+    "reload": "再読み込み"
+  },
+  "firstRun": {
+    "title": "Arslan へようこそ",
+    "welcomeBody": "一は多となる——ひとつの会話から AI スペシャリストのチームを指揮しましょう。",
+    "getStarted": "はじめる",
+    "skip": "スキップ",
+    "back": "戻る",
+    "next": "次へ",
+    "finish": "完了",
+    "addLater": "後で追加",
+    "stepLanguage": "言語を選択",
+    "stepLanguageHint": "設定からいつでも変更できます。",
+    "stepKey": "モデルを接続",
+    "stepKeyHint": "Arslan はご自身の API キーを使用します。少なくとも 1 つのプロバイダーのキーを貼り付けて開始してください。",
+    "providerLabel": "プロバイダー",
+    "keyPlaceholder": "API キーを貼り付け…",
+    "stepOf": "ステップ {{current}} / {{total}}"
   }
 }

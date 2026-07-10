@@ -353,7 +353,25 @@
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
     "labelShellConfirmPolicy": "Confirm policy",
     "shellPolicyAskAll": "Confirm every command",
-    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)"
+    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)",
+    "accessToken": {
+      "section": "Jeton d'accès",
+      "checking": "Vérification de l'état du jeton…",
+      "notRequired": "Aucun jeton requis (dév. local)",
+      "yourToken": "Votre jeton d'accès",
+      "hide": "Masquer",
+      "reveal": "Afficher",
+      "copy": "Copier",
+      "copied": "Copié",
+      "shownHint": "Gardez ce jeton privé — quiconque le possède peut accéder à cette instance.",
+      "reset": "Réinitialiser le jeton",
+      "resetting": "Réinitialisation…",
+      "resetError": "Réinitialisation impossible — seule la machine locale peut renouveler le jeton.",
+      "pasteLabel": "Collez votre jeton d'accès",
+      "placeholder": "Collez le jeton…",
+      "save": "Enregistrer",
+      "requiredHint": "Ce serveur exige un jeton pour les connexions API et en direct. Collez le jeton émis pour cette instance."
+    }
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -801,5 +819,27 @@
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell"
+  },
+  "errorBoundary": {
+    "title": "Une erreur est survenue",
+    "description": "L'application a rencontré une erreur inattendue. Recharger règle généralement le problème.",
+    "reload": "Recharger"
+  },
+  "firstRun": {
+    "title": "Bienvenue sur Arslan",
+    "welcomeBody": "Un devient plusieurs — orchestrez une équipe de spécialistes IA depuis une seule conversation.",
+    "getStarted": "Commencer",
+    "skip": "Ignorer",
+    "back": "Retour",
+    "next": "Suivant",
+    "finish": "Terminer",
+    "addLater": "Ajouter plus tard",
+    "stepLanguage": "Choisissez votre langue",
+    "stepLanguageHint": "Vous pouvez le changer à tout moment dans les Paramètres.",
+    "stepKey": "Connecter un modèle",
+    "stepKeyHint": "Arslan utilise vos propres clés API. Collez une clé pour au moins un fournisseur pour démarrer.",
+    "providerLabel": "Fournisseur",
+    "keyPlaceholder": "Collez la clé API…",
+    "stepOf": "Étape {{current}} sur {{total}}"
   }
 }

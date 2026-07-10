@@ -10,6 +10,7 @@ import {
   Info, AlertCircle, WifiOff, Search, Palette
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
+import AccessTokenSettings from './AccessTokenSettings';
 import { AppearanceSettings } from './AppearanceSettings';
 import EmbeddingSettings from './EmbeddingSettings';
 import Select from './Select';
@@ -235,6 +236,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             </div>
           </div>
         </div>
+
+        {/* Access token Card — token-entry / copy / reset (packaged builds) */}
+        <AccessTokenSettings backendStatus={backendStatus} />
 
         {/* LLM Configuration Card */}
         <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">

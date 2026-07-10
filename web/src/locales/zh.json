@@ -353,7 +353,25 @@
     "orchestratorShellDesc": "允许 Arslan 运行白名单内的命令行。仅 Arslan · 每条命令按风险确认 · 默认关。",
     "labelShellConfirmPolicy": "确认策略",
     "shellPolicyAskAll": "每条命令都确认",
-    "shellPolicyAskRisky": "仅高风险命令确认(只读自动跑)"
+    "shellPolicyAskRisky": "仅高风险命令确认(只读自动跑)",
+    "accessToken": {
+      "section": "访问令牌",
+      "checking": "正在检查令牌状态…",
+      "notRequired": "无需令牌（本地开发）",
+      "yourToken": "你的访问令牌",
+      "hide": "隐藏",
+      "reveal": "显示",
+      "copy": "复制",
+      "copied": "已复制",
+      "shownHint": "请妥善保管此令牌——任何持有者都能访问该实例。",
+      "reset": "重置令牌",
+      "resetting": "正在重置…",
+      "resetError": "无法重置——只有本机可以轮换令牌。",
+      "pasteLabel": "粘贴你的访问令牌",
+      "placeholder": "粘贴令牌…",
+      "save": "保存",
+      "requiredHint": "此服务器的 API 与实时连接需要令牌。请粘贴为该实例签发的令牌。"
+    }
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -801,5 +819,27 @@
     "run": "运行",
     "cancel": "取消",
     "pillLabel": "命令行"
+  },
+  "errorBoundary": {
+    "title": "出了点问题",
+    "description": "应用遇到意外错误。重新加载通常即可恢复。",
+    "reload": "重新加载"
+  },
+  "firstRun": {
+    "title": "欢迎使用 Arslan",
+    "welcomeBody": "一生多——在同一段对话里指挥一支 AI 专家团队。",
+    "getStarted": "开始",
+    "skip": "跳过",
+    "back": "上一步",
+    "next": "下一步",
+    "finish": "完成",
+    "addLater": "稍后添加",
+    "stepLanguage": "选择语言",
+    "stepLanguageHint": "随时可在设置中更改。",
+    "stepKey": "连接模型",
+    "stepKeyHint": "Arslan 使用你自己的 API 密钥。粘贴至少一个供应商的密钥即可开始。",
+    "providerLabel": "供应商",
+    "keyPlaceholder": "粘贴 API 密钥…",
+    "stepOf": "第 {{current}} / {{total}} 步"
   }
 }

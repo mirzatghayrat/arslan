@@ -38,6 +38,8 @@ import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
 import BrainSection from './components/brain/BrainSection';
 import DiagnosisView from './components/DiagnosisView';
+import FirstRunWizard from './components/FirstRunWizard';
+import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 
 interface ArslanThread {
   id: string;
@@ -266,6 +268,11 @@ export default function App() {
   const [llmProviders, setLlmProviders] = useState<ProviderOption[]>([]);
   const [searchProviders, setSearchProviders] = useState<string[]>([]);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
+  // First-run onboarding: only decide once the provider list has actually loaded
+  // (avoids a wizard flash before the backend responds) and the wizard hasn't
+  // been seen/dismissed before.
+  const [providerConfigsReady, setProviderConfigsReady] = useState(false);
+  const [firstRunSeen, setFirstRunSeenState] = useState<boolean>(getFirstRunSeen());
 
   // Stage B: wire Spawns Ledger and Settings to live backend on mount
   useEffect(() => {
@@ -295,8 +302,14 @@ export default function App() {
     // Load search provider catalog
     api.listSearchProviders().then(setSearchProviders).catch(() => {});
 
-    // Load multi-model provider configs
-    listProviderConfigs().then(setProviderConfigs).catch(() => {});
+    // Load multi-model provider configs. Mark "ready" only on success so the
+    // first-run wizard never shows while the backend is unreachable.
+    listProviderConfigs()
+      .then((cfgs) => {
+        setProviderConfigs(cfgs);
+        setProviderConfigsReady(true);
+      })
+      .catch(() => {});
   }, []);
 
   // MCP servers state — fetched once on mount, used in the diagnostics rail
@@ -1094,6 +1107,23 @@ export default function App() {
         )}
       </div>
       </main>
+
+      {/* First-run onboarding — shown once when no provider/model is configured.
+          The bare NoModelHint remains the inline nudge for later visits. */}
+      {firstRunShouldShow({
+        ready: providerConfigsReady,
+        hasProvider: providerConfigs.length > 0,
+        seen: firstRunSeen,
+      }) && (
+        <FirstRunWizard
+          llmProviders={llmProviders}
+          onAdded={(cfg) => setProviderConfigs((prev) => [...prev, cfg])}
+          onClose={() => {
+            setFirstRunSeen();
+            setFirstRunSeenState(true);
+          }}
+        />
+      )}
 
       {/* Spawn Studio — roomy create/configure panel (Ledger + right-rail entry). */}
       {studio && (

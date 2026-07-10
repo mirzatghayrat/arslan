@@ -28,6 +28,8 @@ const mockDeleteProviderConfig = vi.fn().mockResolvedValue({ ok: true });
 vi.mock("../api/client", () => ({
   api: {
     updateSettings: vi.fn().mockResolvedValue({}),
+    getAccessToken: vi.fn().mockResolvedValue({ token_required: false, token: null }),
+    resetAccessToken: vi.fn().mockResolvedValue({ token: "new-token" }),
   },
   API_BASE: "",
   addProviderConfig: (...args: unknown[]) => mockAddProviderConfig(...args),
@@ -41,7 +43,11 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../stores/authStore", () => ({
-  useAuthStore: { getState: () => ({ token: null }) },
+  useAuthStore: Object.assign(
+    (sel: (s: { token: string; setToken: (t: string) => void }) => unknown) =>
+      sel({ token: "", setToken: () => {} }),
+    { getState: () => ({ token: "", setToken: () => {} }) },
+  ),
 }));
 
 import ProviderConfigList from "../components/ProviderConfigList";

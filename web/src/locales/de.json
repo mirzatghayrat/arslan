@@ -353,7 +353,25 @@
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
     "labelShellConfirmPolicy": "Confirm policy",
     "shellPolicyAskAll": "Confirm every command",
-    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)"
+    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)",
+    "accessToken": {
+      "section": "Zugriffstoken",
+      "checking": "Token-Status wird geprüft…",
+      "notRequired": "Kein Token erforderlich (lokale Entwicklung)",
+      "yourToken": "Dein Zugriffstoken",
+      "hide": "Verbergen",
+      "reveal": "Anzeigen",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "shownHint": "Halte dieses Token geheim – wer es hat, kann auf diese Instanz zugreifen.",
+      "reset": "Token zurücksetzen",
+      "resetting": "Wird zurückgesetzt…",
+      "resetError": "Zurücksetzen fehlgeschlagen – nur der lokale Rechner kann das Token rotieren.",
+      "pasteLabel": "Füge dein Zugriffstoken ein",
+      "placeholder": "Token einfügen…",
+      "save": "Speichern",
+      "requiredHint": "Dieser Server benötigt ein Token für API- und Live-Verbindungen. Füge das für diese Instanz ausgestellte Token ein."
+    }
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -801,5 +819,27 @@
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell"
+  },
+  "errorBoundary": {
+    "title": "Etwas ist schiefgelaufen",
+    "description": "Die App ist auf einen unerwarteten Fehler gestoßen. Ein Neuladen behebt das meist.",
+    "reload": "Neu laden"
+  },
+  "firstRun": {
+    "title": "Willkommen bei Arslan",
+    "welcomeBody": "Aus einem werden viele – orchestriere ein Team von KI-Spezialisten aus einer einzigen Unterhaltung.",
+    "getStarted": "Loslegen",
+    "skip": "Überspringen",
+    "back": "Zurück",
+    "next": "Weiter",
+    "finish": "Fertig",
+    "addLater": "Später hinzufügen",
+    "stepLanguage": "Sprache wählen",
+    "stepLanguageHint": "Du kannst dies jederzeit in den Einstellungen ändern.",
+    "stepKey": "Modell verbinden",
+    "stepKeyHint": "Arslan nutzt deine eigenen API-Schlüssel. Füge einen Schlüssel für mindestens einen Anbieter ein, um zu starten.",
+    "providerLabel": "Anbieter",
+    "keyPlaceholder": "API-Schlüssel einfügen…",
+    "stepOf": "Schritt {{current}} von {{total}}"
   }
 }

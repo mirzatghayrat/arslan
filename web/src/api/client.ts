@@ -1,5 +1,6 @@
 import { useAuthStore } from "../stores/authStore";
 import type {
+  AccessTokenInfo,
   AnomalyDto,
   AppSettings,
   CatalogEntry,
@@ -168,6 +169,11 @@ export const api = {
     }),
   listTemplates: () => request<TemplateInfo[]>("/templates"),
   getSettings: () => request<AppSettings>("/settings"),
+  /** Whether the server gates on a bearer token + (localhost-only) the token itself. */
+  getAccessToken: () => request<AccessTokenInfo>("/settings/access-token"),
+  /** Rotate the access token (localhost-gated). Returns the freshly minted token. */
+  resetAccessToken: () =>
+    request<{ token: string }>("/settings/access-token/reset", { method: "POST" }),
   listProviders: () => request<ProviderOption[]>("/settings/providers"),
   listSearchProviders: () => request<string[]>("/settings/search-providers"),
   updateSettings: (body: Partial<AppSettings>) =>
