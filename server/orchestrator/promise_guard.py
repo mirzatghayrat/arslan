@@ -116,3 +116,92 @@ async def correct(full_text: str, *, spawn_name: str | None = None,
         logger.warning("promise correction re-synthesis failed (using template): %s", exc)
     return {"correction": _fallback_template(spawn_name), "pattern": snippet,
             "corrected": False}
+
+
+# ---------------------------------------------------------------------------
+# S0 hemostasis — zero-tool (persona-only) final-answer honesty pass
+# ---------------------------------------------------------------------------
+# A zero-tool spawn has NO tools, so ANY final-answer claim of a produced deliverable —
+# a deck "已生成PPT并交付" (tool_loop._claims_deck), a search result "我搜索了/查到了"
+# (tool_loop._claims_search), OR a forward-promise / background handoff "正在生成中,稍等"
+# / "交给 X 来生成" (find_promise) — is structurally false: no tool ran and none can. The
+# dispatcher's zero-tool branch used to stream such output RAW, bypassing every honesty
+# guard the equipped/answer paths run. This pass closes that gap by REUSING the exact same
+# detectors + the same bounded-correction pattern (one LLM re-synthesis, template fallback),
+# never a weaker parallel copy. The find_promise/correct primitives used by arslan.py stay
+# untouched, so the equipped/answer paths are byte-identical.
+#
+# _claims_chart is deliberately EXCLUDED: its regex carries the broad "已为您生成" alternative,
+# which would false-positive on legitimate persona text ("已为你生成三版文案") — a tool-less
+# copywriter producing prose is honest. deck/search claims and forward-promises are unambiguous
+# fabrications for a spawn with zero tools, and low false-positive.
+def _zero_tool_fabrication(text: str, spawn_name: str | None = None) -> str | None:
+    """The fabrication snippet / claim-kind in a ZERO-TOOL spawn's final answer, or None.
+    Reuses promise_guard.find_promise ∪ tool_loop._claims_deck/_claims_search verbatim."""
+    snippet = find_promise(text, spawn_name, check_generic=True)
+    if snippet:
+        return snippet
+    from server.orchestrator import tool_loop
+    t = text or ""
+    if tool_loop._claims_deck(t):
+        return "claims:deck"
+    if tool_loop._claims_search(t):
+        return "claims:search"
+    return None
+
+
+_ZERO_TOOL_TRUTH = (
+    "你没有配备任何工具,本回合没有真正生成、检索或交付任何东西——上面那段话里的"
+    "“已生成/已检索/已交付/正在生成/已交给某某生成”都是不实的"
+)
+
+_ZERO_TOOL_CORRECTION_SYS = (
+    "你是一个没有配备任何工具的分身。你上一条回复向用户虚报了成果:声称已生成/检索/交付了某个"
+    "东西,或说正在后台生成、已交给别人处理——但你没有工具、也没有后台执行,这些都是不实的,"
+    "需要立刻更正。只输出一段简短(一两句)的诚实更正,用用户的语言;绝不要再出现“已生成/"
+    "已交付/已检索/正在/稍等/已交给某某生成”这类说法;如实说明你无法自己产出该文件或数据,"
+    "可以把内容以结构化文本直接给出,并建议用户改用配备相应能力的分身。"
+)
+
+
+def _zero_tool_correction_user(full_text: str) -> str:
+    return (
+        f"事实:{_ZERO_TOOL_TRUTH}。\n\n"
+        f"你刚才的回复原文:\n{(full_text or '')[:2000]}\n\n"
+        "请输出更正:如实说明上面的成果并不存在(你没有工具产出它),没有任何东西在后台生成,"
+        "也没有把任务交给任何人;如果用户确实需要该产物,建议改用配备相应能力的分身。"
+        "只输出更正文本本身,不要解释。"
+    )
+
+
+def _zero_tool_fallback_template() -> str:
+    # NOTE: deliberately avoids every trigger phrase (no 已生成/正在/稍等/deck-noun/搜索),
+    # so the template itself never re-trips _zero_tool_fabrication.
+    return (
+        "更正:我没有配备相应工具,无法自己产出这个文件或数据。刚才那段“已完成/已交付”的说法"
+        "并不属实——本回合没有真正做出任何东西,也没有把任务交给谁。需要真的做出来,"
+        "请改用配备相应能力的分身。"
+    )
+
+
+async def correct_zero_tool(full_text: str, *, spawn_name: str | None = None) -> dict | None:
+    """Zero-tool final-answer honesty pass. Returns None when `full_text` carries no
+    fabrication; otherwise {"correction": str, "pattern": matched snippet/kind, "corrected":
+    bool} where corrected=True means the LLM re-synthesis passed the same detector gate
+    (False = deterministic template). At most ONE extra LLM call, never loops. Fail-open:
+    any error inside the re-synthesis degrades to the template."""
+    snippet = _zero_tool_fabrication(full_text, spawn_name)
+    if snippet is None:
+        return None
+    try:
+        from server.orchestrator import tool_loop
+        adapter = tool_loop._get_adapter()
+        a = await adapter if hasattr(adapter, "__await__") else adapter
+        resp = await a.chat(_ZERO_TOOL_CORRECTION_SYS, _zero_tool_correction_user(full_text))
+        candidate = (getattr(resp, "content", None) or "").strip()
+        if candidate and _zero_tool_fabrication(candidate, spawn_name) is None:
+            return {"correction": candidate, "pattern": snippet, "corrected": True}
+        logger.warning("zero-tool correction re-synthesis also fabricated — using template")
+    except Exception as exc:  # noqa: BLE001 — correction must never break the turn
+        logger.warning("zero-tool correction re-synthesis failed (using template): %s", exc)
+    return {"correction": _zero_tool_fallback_template(), "pattern": snippet, "corrected": False}
