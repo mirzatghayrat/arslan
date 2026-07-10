@@ -73,6 +73,7 @@ class RunRecorder:
         user_message: str,
         route_ms: int | None = None,
         continuation: bool = False,
+        kind: str = "live",
     ) -> "RunRecorder":
         started = datetime.utcnow()
         async with db_session.AsyncSessionLocal() as db:
@@ -86,8 +87,10 @@ class RunRecorder:
                 task_tokens=0,
                 # E2: this is the live path — quarantine old data via epoch, mark real turns
                 # kind='live', and persist the continuation flag on the row (authoritative;
-                # score() reads run.continuation directly).
-                kind="live",
+                # score() reads run.continuation directly). E3: kind='replay' marks a hermetic
+                # evolution arm — epoch stays 1 but the terminal status ('replayed', set in
+                # finalize) keeps it out of every scoring/reaper query.
+                kind=kind,
                 epoch=1,
                 continuation=continuation,
             )
@@ -189,7 +192,15 @@ class RunRecorder:
                         tokens_estimated: bool = False,
                         error_kind: str | None = None, error_text: str | None = None,
                         system_prompt: str | None = None, injected_kb: str | None = None,
-                        injected_kb_sources: list | None = None) -> int:
+                        injected_kb_sources: list | None = None,
+                        replay: bool = False) -> int:
+        """Persist steps + run metadata and (for live runs only) schedule judge scoring.
+
+        replay=True (S2 E3 hermetic replay): terminal status is 'replayed' (never
+        'recorded'/'score_failed', so no scoring/reaper query ever matches it),
+        kind='replay', the arm's output is stored in final_output for judge-comparison
+        and trace, and schedule_scoring is NOT called — a replay is evaluated by the
+        paired ReplayGate (E4), not the per-run judge."""
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
         self._merge_tool_trace(steps)
@@ -201,13 +212,17 @@ class RunRecorder:
                 run.ended_at = ended
                 run.total_ms = total_ms
                 run.task_tokens = tokens
-                run.status = "recorded"
                 # E2: belt-and-suspenders — the live recorder always finalizes a live run at
                 # epoch 1 and persists the continuation flag on the row (start() already set
                 # them; re-affirm here so no live finalize path can leave the columns unset).
-                run.kind = "live"
+                # E3: a replay run finalizes to the quarantine terminal status + kind and
+                # persists its output on the row for judge-comparison/trace.
+                run.status = "replayed" if replay else "recorded"
+                run.kind = "replay" if replay else "live"
                 run.epoch = 1
                 run.continuation = self.continuation
+                if replay:
+                    run.final_output = full_output
                 run.model = model
                 run.provider = provider
                 run.tokens_in = tokens_in
@@ -225,6 +240,8 @@ class RunRecorder:
                     if msg is not None:
                         msg.run_id = self.run_id
             await db.commit()
+        if replay:
+            return self.run_id  # hermetic replay is scored by the paired gate, never here
         try:
             # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
             # scheduling. The judge task inherits this context's bucket via create_task, but
