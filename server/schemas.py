@@ -398,6 +398,21 @@ class EstimateOut(BaseModel):
     lower_bound: bool = True
 
 
+class BaselineDeclareOut(BaseModel):
+    """POST /evolution/baseline/declare — the just-declared clean-corpus start (ISO-8601 UTC)."""
+
+    baseline_started_at: str
+
+
+class BaselineStatusOut(BaseModel):
+    """GET /evolution/baseline — the declared clean-corpus start (null if never declared) plus
+    how many clean-corpus (kind='live', epoch>=1, created_at>=baseline) runs have accumulated
+    since, so the developer can watch the real corpus fill up (spec §E9)."""
+
+    baseline_started_at: str | None = None
+    epoch1_runs_after: int = 0
+
+
 class ProposalListItemOut(BaseModel):
     """One row of the evolution inbox (GET /evolution/proposals)."""
 

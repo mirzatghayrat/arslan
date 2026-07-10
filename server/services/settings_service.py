@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import select
@@ -168,6 +169,43 @@ async def evolution_max_est_tokens(session: AsyncSession) -> int | None:
         return int(str(raw).strip())
     except ValueError:
         return None
+
+
+# S2 E9 — the developer-declared clean-corpus start (spec §E9 / audit #12).
+EVOLUTION_BASELINE_STARTED_AT_KEY = "evolution_baseline_started_at"
+
+
+def _parse_iso_utc(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp to a NAIVE-UTC datetime — matching Run.created_at, which
+    is written via datetime.utcnow(). A tz-aware value is converted to UTC and stripped of
+    tzinfo so it compares directly against the naive DB column. Unparsable → None."""
+    if not value:
+        return None
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+async def get_baseline_started_at(session: AsyncSession) -> datetime | None:
+    """The clean-corpus start declared in E9. None = never declared → build_corpus /
+    replay_set apply no created_at floor (back-compat: every epoch>=1 live run is eligible)."""
+    return _parse_iso_utc(await _get_raw(session, EVOLUTION_BASELINE_STARTED_AT_KEY))
+
+
+async def set_baseline_started_at(session: AsyncSession, dt: datetime) -> None:
+    """Persist the clean-corpus start as an ISO-8601 string, stored naive-UTC (a tz-aware
+    dt is normalized first) so the round-trip and the DB comparison stay consistent."""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    await _set_raw(session, EVOLUTION_BASELINE_STARTED_AT_KEY, dt.isoformat())
+    await session.commit()
 
 
 DEFAULT_RUN_DEBUG_RETENTION_DAYS = 30

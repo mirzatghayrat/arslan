@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
-from server.db.models import EvolutionAttempt, EvolutionProposal, Feedback, Spawn
+from server.db.models import EvolutionAttempt, EvolutionProposal, Feedback, Run, Spawn
 from server.db.session import get_session
 from server.schemas import (
+    BaselineDeclareOut,
+    BaselineStatusOut,
     ConfirmProposalOut,
     EstimateOut,
     EvolutionOut,
@@ -26,6 +29,7 @@ from server.services import (
     evolution_loop,
     evolution_service,
     evolution_watcher,
+    settings_service,
     skill_doc,
     spawn_service,
 )
@@ -101,6 +105,38 @@ async def evolve_spawn(spawn_id: int) -> EvolveEnqueuedOut:
     respects the budget cap + concurrency=1."""
     attempt_id = await evolution_watcher.enqueue_attempt(spawn_id, manual=True)
     return EvolveEnqueuedOut(attempt_id=attempt_id)
+
+
+@router.post("/evolution/baseline/declare", response_model=BaselineDeclareOut)
+async def declare_baseline(
+    session: AsyncSession = Depends(get_session),
+) -> BaselineDeclareOut:
+    """E9 step 1: the developer declares NOW as the clean-corpus start. From here on
+    build_corpus/replay_set floor real runs at this timestamp, so S2 dev/testing runs (which
+    are epoch=1 too, since E1..E8 landed on this branch) never pollute the corpus (audit #12)."""
+    now = datetime.utcnow()
+    await settings_service.set_baseline_started_at(session, now)
+    return BaselineDeclareOut(baseline_started_at=now.isoformat())
+
+
+@router.get("/evolution/baseline", response_model=BaselineStatusOut)
+async def get_baseline(
+    session: AsyncSession = Depends(get_session),
+) -> BaselineStatusOut:
+    """Report the declared clean-corpus start and how many clean-corpus (kind='live',
+    epoch>=1, created_at>=baseline) runs have arrived since — so the developer can watch the
+    real corpus accumulate before the first real promotion."""
+    baseline = await settings_service.get_baseline_started_at(session)
+    count = 0
+    if baseline is not None:
+        count = (await session.execute(
+            select(func.count()).select_from(Run).where(
+                Run.kind == "live", Run.epoch >= 1, Run.created_at >= baseline)
+        )).scalar() or 0
+    return BaselineStatusOut(
+        baseline_started_at=baseline.isoformat() if baseline else None,
+        epoch1_runs_after=count,
+    )
 
 
 @router.get("/evolution/proposals", response_model=list[ProposalListItemOut])

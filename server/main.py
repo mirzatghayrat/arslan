@@ -217,6 +217,22 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
 
+    # E9 baseline canary: once the developer has declared a clean-corpus baseline, count LIVE
+    # runs created after it that STILL carry epoch=0. A non-zero count means some run-creation
+    # path is missing the epoch=1 stamp — those runs will never enter the corpus, silently
+    # starving evolution. Log a WARNING so the missed path is visible. Best-effort; never blocks.
+    try:
+        from server.services import replay_gate
+
+        async with AsyncSessionLocal() as db:
+            starved = await replay_gate.count_epoch0_after_baseline(db)
+        if starved > 0:
+            logger.warning(
+                "evolution canary: %d live runs created after baseline carry epoch=0 — a "
+                "run-creation path is missing epoch=1; corpus may be starved", starved)
+    except Exception as exc:  # noqa: BLE001 — canary must never block boot
+        logger.warning("evolution baseline canary failed (non-fatal): %s", exc)
+
     # E5 evolution watcher: a supervised background loop that, per spawn, checks the
     # trigger (new replayable runs since the last attempt >= the backoff threshold), runs
     # attempts within the token budget, and refreshes living proposals. Best-effort start —

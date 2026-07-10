@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunEvaluation
+from server.services import settings_service
 
 _DIMENSIONS = ("fabrication", "identity", "completion")
 
@@ -22,14 +23,20 @@ async def build(spawn_id: int, *, cap: int = 20) -> list[dict]:
     """
     items: list[dict] = []
     async with db_session.AsyncSessionLocal() as db:
-        runs = (await db.execute(
+        # E9: additionally floor real runs at the developer-declared clean-corpus start so
+        # S2 dev/testing runs (also epoch=1) never enter the corpus (spec §E9 / audit #12).
+        baseline = await settings_service.get_baseline_started_at(db)
+        q = (
             select(Run)
             # E2: only clean-corpus live runs — replay arms (kind='replay') and pre-baseline
             # rows (epoch=0) are permanently excluded from the evaluation corpus.
             .where(Run.spawn_id == spawn_id, Run.status == "scored",
                    Run.kind == "live", Run.epoch >= 1)
-            .order_by(Run.id.desc())
-            .limit(cap)
+        )
+        if baseline is not None:
+            q = q.where(Run.created_at >= baseline)
+        runs = (await db.execute(
+            q.order_by(Run.id.desc()).limit(cap)
         )).scalars().all()
 
         for run in runs:

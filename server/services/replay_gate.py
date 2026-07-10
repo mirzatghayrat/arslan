@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 
 from server.db.models import Run, SyntheticTask
-from server.services import binom, compare_judge, replay_run
+from server.services import binom, compare_judge, replay_run, settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,13 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
     STORED split_side (a holdout task's variant can never leak into propose — spec CRITICAL-8).
 
     Each pairtask: {task, corpus_label:'real'|'synthetic', source_ref, split_side}. The
-    number of runs dropped as non-replayable is on the returned Corpus's `.excluded`."""
+    number of runs dropped as non-replayable is on the returned Corpus's `.excluded`.
+
+    E9: `baseline_started_at=None` (the default) means READ the developer-declared baseline
+    from settings; an explicit value (the living-proposal `since`) overrides it. When no
+    baseline is declared, no created_at floor applies (back-compat)."""
+    if baseline_started_at is None:
+        baseline_started_at = await settings_service.get_baseline_started_at(db)
     pairs: Corpus = Corpus()
     excluded = 0
 
@@ -240,6 +246,19 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
 
     pairs.excluded = excluded
     return pairs
+
+
+async def count_epoch0_after_baseline(db) -> int:
+    """Boot canary (spec §E9): count LIVE runs created AFTER the declared baseline that still
+    carry epoch=0 — a run-creation path that never got the epoch=1 stamp. >0 means the real
+    corpus is being starved by a missed recorder path. Returns 0 when no baseline is declared."""
+    baseline = await settings_service.get_baseline_started_at(db)
+    if baseline is None:
+        return 0
+    return (await db.execute(
+        select(func.count()).select_from(Run).where(
+            Run.epoch == 0, Run.kind == "live", Run.created_at > baseline)
+    )).scalar() or 0
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────────────
