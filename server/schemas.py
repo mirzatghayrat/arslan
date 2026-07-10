@@ -36,6 +36,18 @@ class SettingsOut(BaseModel):
     run_debug_retention_days: int = 30
 
 
+class AccessTokenOut(BaseModel):
+    """GET /settings/access-token — S1-3 token view.
+
+    ``token`` is populated ONLY for a localhost caller so a packaged user can copy
+    it from the app on the same machine; a remote/cross-origin caller learns that
+    auth is required but never the value.
+    """
+
+    token_required: bool
+    token: str | None = None
+
+
 class ProviderOption(BaseModel):
     """One entry in the Settings provider dropdown (Tier-0 preset or native)."""
 

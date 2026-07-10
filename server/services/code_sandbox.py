@@ -47,9 +47,12 @@ _env_cache: tuple[str, str] | None = None
 
 
 def _data_dir() -> Path:
-    # resolve(): run_python spawns with cwd=tmpdir, so a relative interpreter path would be
-    # (wrongly) resolved inside the tmpdir. The sandbox env must be addressed absolutely.
-    return Path(os.environ.get("ARSLAN_DATA_DIR", "data")).resolve()
+    # Single resolved root (config.data_dir()): unset ARSLAN_DATA_DIR -> the platform
+    # app-data dir, NOT CWD/data — so sandbox_env co-locates with the brain instead of
+    # splitting off. Already absolute+resolved: run_python spawns with cwd=tmpdir, so a
+    # relative interpreter path would be (wrongly) resolved inside the tmpdir.
+    from server import config
+    return config.data_dir()
 
 
 def _create_batteries_env(venv_dir: Path) -> tuple[str, str]:

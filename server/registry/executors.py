@@ -11,16 +11,27 @@ import base64
 import ipaddress
 import logging
 import socket
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
 import trafilatura
 
+from server import config
 from server.db.session import AsyncSessionLocal
 from server.registry.search_providers import get_provider
 from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
+
+
+def _skill_scripts_root() -> Path:
+    """Root for bundled skill scripts/references: ``<data_dir>/skill_scripts``.
+
+    Resolved from the single ``config.data_dir()`` root (unset ARSLAN_DATA_DIR -> the
+    platform app-data dir, NOT CWD/data) so scripts co-locate with the brain. Mirrored
+    by ``server.registry.service._skill_scripts_root`` (same value, kept in lockstep)."""
+    return config.data_dir() / "skill_scripts"
 
 
 class _NotUtf8(Exception):
@@ -446,9 +457,7 @@ class RunPythonExecutor:
         Fail-closed (PC-3 ①): a well-formed ref whose entry is NOT .py, or a .py entry that
         declares a network/CLI need (`# requires:` marker), is REFUSED here with an honest
         error — the sandbox is never invoked (execute() returns on the error string)."""
-        import os as _os
         import re as _re
-        from pathlib import Path as _Path
         # Accept any well-formed "<key>/<file>.<ext>" so a non-.py entry produces the honest
         # "只支持 .py" message rather than a confusing generic "invalid format".
         m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.[A-Za-z0-9]+)", (ref or "").strip())
@@ -457,7 +466,7 @@ class RunPythonExecutor:
         ext = "." + m.group(2).rsplit(".", 1)[-1].lower()
         if ext != ".py":
             return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
-        root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts").resolve()
+        root = _skill_scripts_root().resolve()
         skill_dir = (root / m.group(1)).resolve()
         entry = (skill_dir / m.group(2)).resolve()
         if not str(entry).startswith(str(root) + "/") or not entry.is_file():
@@ -580,13 +589,10 @@ class ReadSkillExecutor:
         if section.startswith("references/"):
             # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
             # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
-            import os as _os
-            from pathlib import Path as _Path
             fname = section[len("references/"):]
             if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
                 return {"ok": False, "external": False, "error": "invalid reference filename"}
-            root = (_Path(_os.environ.get("ARSLAN_DATA_DIR", "data"))
-                    / "skill_scripts" / skey / "references").resolve()
+            root = (_skill_scripts_root() / skey / "references").resolve()
             target = (root / fname).resolve()
             if not str(target).startswith(str(root) + "/") or not target.is_file():
                 return {"ok": False, "external": False, "error": f"reference not found: {section}"}

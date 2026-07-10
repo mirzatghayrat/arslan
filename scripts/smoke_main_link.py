@@ -54,11 +54,20 @@ def wait_ready(port: int, log_path: Path) -> dict:
 
 
 async def ws_turn(port: int) -> dict:
-    """Send one user message over /ws/arslan/main; collect stream frames."""
+    """Send one user message over /ws/arslan/main; collect stream frames.
+
+    Connects with the real vite dev origin (`http://localhost:5173`) so the smoke
+    exercises the daily dev flow THROUGH the new TrustedHost + WS Origin checks:
+    proves a foreign-host reject didn't also kill the legitimate dev browser origin.
+    """
     import websockets
 
     out = {"stream_start": False, "chunks": [], "stream_end": False, "errors": [], "other": []}
-    async with websockets.connect(f"ws://127.0.0.1:{port}/ws/arslan/main", open_timeout=10) as ws:
+    async with websockets.connect(
+        f"ws://127.0.0.1:{port}/ws/arslan/main",
+        open_timeout=10,
+        origin="http://localhost:5173",  # the vite dev origin — must pass the Origin check
+    ) as ws:
         await ws.send(json.dumps({"type": "user_message", "content": "冒烟测试:请确认主链路正常。"}))
         deadline = time.time() + TURN_TIMEOUT_S
         while time.time() < deadline:

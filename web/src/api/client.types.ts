@@ -154,6 +154,14 @@ export interface ProviderOption {
   models: string[];
 }
 
+/** GET /settings/access-token — whether the server gates on a bearer token, and
+ *  (only when the caller is localhost) the bootstrapped token itself so the local
+ *  operator can see/copy it. `token` is null for non-localhost callers. */
+export interface AccessTokenInfo {
+  token_required: boolean;
+  token: string | null;
+}
+
 export interface ProviderConfig {
   id: number;
   label: string;

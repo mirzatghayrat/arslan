@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
+from server import security
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
@@ -90,6 +91,11 @@ async def _last_spawn_output(spawn_id: int) -> str | None:
 
 
 async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
+    # Reject a cross-site WebSocket open BEFORE accept (fail-closed): a browser page
+    # on another origin must not drive spawn dispatch / roster edits over this socket.
+    if not security.ws_origin_allowed(ws.headers.get("origin"), ws.headers.get("host")):
+        await ws.close(code=4403)
+        return
     if not is_ws_token_valid(ws.query_params.get("token")):
         await ws.close(code=4001)
         return

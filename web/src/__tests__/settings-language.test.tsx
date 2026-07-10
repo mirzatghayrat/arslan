@@ -25,6 +25,8 @@ vi.mock("../api/client", () => ({
   api: {
     updateSettings: vi.fn().mockResolvedValue({}),
     embeddingStatus: vi.fn().mockResolvedValue(null),
+    getAccessToken: vi.fn().mockResolvedValue({ token_required: false, token: null }),
+    resetAccessToken: vi.fn().mockResolvedValue({ token: "new-token" }),
   },
   API_BASE: "",
   suggestPrimary: vi.fn().mockResolvedValue(null),
@@ -36,7 +38,11 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../stores/authStore", () => ({
-  useAuthStore: { getState: () => ({ token: null }) },
+  useAuthStore: Object.assign(
+    (sel: (s: { token: string; setToken: (t: string) => void }) => unknown) =>
+      sel({ token: "", setToken: () => {} }),
+    { getState: () => ({ token: "", setToken: () => {} }) },
+  ),
 }));
 
 import SettingsScreen from "../components/SettingsScreen";

@@ -353,7 +353,25 @@
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
     "labelShellConfirmPolicy": "Confirm policy",
     "shellPolicyAskAll": "Confirm every command",
-    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)"
+    "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)",
+    "accessToken": {
+      "section": "Access token",
+      "checking": "Checking token status…",
+      "notRequired": "No token required (local dev)",
+      "yourToken": "Your access token",
+      "hide": "Hide",
+      "reveal": "Reveal",
+      "copy": "Copy",
+      "copied": "Copied",
+      "shownHint": "Keep this token private — anyone with it can reach this instance.",
+      "reset": "Reset token",
+      "resetting": "Resetting…",
+      "resetError": "Couldn't reset — only the local machine can rotate the token.",
+      "pasteLabel": "Paste your access token",
+      "placeholder": "Paste token…",
+      "save": "Save",
+      "requiredHint": "This server requires a token for API and live connections. Paste the token issued for this instance."
+    }
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -801,5 +819,27 @@
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "The app ran into an unexpected error. Reloading usually fixes it.",
+    "reload": "Reload"
+  },
+  "firstRun": {
+    "title": "Welcome to Arslan",
+    "welcomeBody": "One becomes many — orchestrate a team of AI specialists from a single conversation.",
+    "getStarted": "Get started",
+    "skip": "Skip",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish",
+    "addLater": "Add later",
+    "stepLanguage": "Choose your language",
+    "stepLanguageHint": "You can change this anytime in Settings.",
+    "stepKey": "Connect a model",
+    "stepKeyHint": "Arslan uses your own API keys. Paste a key for at least one provider to get started.",
+    "providerLabel": "Provider",
+    "keyPlaceholder": "Paste API key…",
+    "stepOf": "Step {{current}} of {{total}}"
   }
 }
