@@ -4,7 +4,31 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from server.db import session as db_session
 from server.db.models import Base, EvolutionProposal, Spawn
-from server.services import evolution_loop, optimizer, evaluator, replay_set
+from server.services import evolution_loop, optimizer, evaluator, replay_gate, replay_set
+
+
+def _gate_result(passed):
+    """A stub GateResult standing in for the paired ReplayGate final decision."""
+    empty = {"wins": 0, "losses": 0, "ties": 0, "n": 0,
+             "win_rate": 0.0, "p_value": 1.0, "ci95": [0.0, 0.0]}
+    real = {"wins": 11, "losses": 0, "ties": 0, "n": 11,
+            "win_rate": 1.0, "p_value": 0.0004, "ci95": [0.7, 1.0]}
+    return replay_gate.GateResult(
+        passed=passed, reason=("pass" if passed else "holdout_winrate"), flags=[],
+        real_delta=(real if passed else empty), synthetic_delta=dict(empty),
+        evidence_tier=("strong" if passed else "weak"), pairs=[],
+        excluded_count=0, protected_run_ids=[101, 102])
+
+
+def _patch_gate(monkeypatch, *, passed):
+    """Stub build_corpus + run_gate so the loop's FINAL decision is deterministic."""
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None):
+        return replay_gate.Corpus()
+    async def fake_run_gate(db, *, spawn_id, candidate_prompt, baseline_prompt, corpus,
+                            persona="", changed_fields=None, excluded=0):
+        return _gate_result(passed)
+    monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
+    monkeypatch.setattr(replay_gate, "run_gate", fake_run_gate)
 
 
 @pytest.fixture
@@ -80,10 +104,22 @@ def test_loop_accepts_improving_edit_and_proposes(monkeypatch, memdb):
         return {"items": [], "aggregate": {"overall": o, "dims": {}},
                 "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
     monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+    _patch_gate(monkeypatch, passed=True)          # ReplayGate passes on holdout
     _seed_spawn(memdb, _Spawn)
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
     assert res["proposal_id"] is not None
+    assert res["gate"]["passed"] is True
     assert res["evidence"]["diff"] == [{"op": "add", "section": "Style", "content": "Be terse."}]
+    # The persisted proposal is a LIVING one: status='open', base_prompt_sha pinned,
+    # gate evidence (protected_run_ids) carried on it for E2's redact exemption.
+    async def _read():
+        async with memdb() as db:
+            return await db.get(EvolutionProposal, res["proposal_id"])
+    prop = anyio.run(_read)
+    assert prop.status == "open"
+    assert prop.base_prompt_sha and len(prop.base_prompt_sha) == 64
+    assert prop.evidence["protected_run_ids"] == [101, 102]
+    assert "real_delta" in prop.evidence and "synthetic_delta" in prop.evidence
 
 
 def test_loop_rejects_and_buffers(monkeypatch, memdb):
@@ -108,18 +144,22 @@ def test_loop_no_op_on_insufficient(monkeypatch, memdb):
     assert res["proposal_id"] is None and res["gate"]["passed"] is False
 
 
-def test_loop_final_guard_vs_original(monkeypatch, memdb):
+def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
+    # An edit is accepted against the running-best propose signal, but the paired
+    # ReplayGate FAILS on holdout → no proposal (the gate, not the optimizer, decides).
     _patch_common(monkeypatch, split=_split(),
                   edits_by_epoch=[[{"op": "add", "section": "Style", "content": "Be terse."}], []])
     async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
-        passed = baseline_outputs is not None   # running-best: pass; final vs original: fail
-        o = {"better": 1, "worse": 0, "tie": 0} if passed else {"better": 0, "worse": 1, "tie": 0}
+        better = "Be terse." in candidate_prompt
+        o = {"better": 1, "worse": 0, "tie": 0} if better else {"better": 0, "worse": 0, "tie": 1}
         return {"items": [], "aggregate": {"overall": o, "dims": {}},
-                "gate": {"passed": passed, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
+                "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
     monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+    _patch_gate(monkeypatch, passed=False)         # ReplayGate FAILS on holdout
     _seed_spawn(memdb, _Spawn)
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
-    assert res["proposal_id"] is None   # accepted vs running-best, but no net gain over original
+    assert res["proposal_id"] is None
+    assert res["gate"]["passed"] is False and res["gate"]["reason"] == "holdout_winrate"
 
 
 def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):

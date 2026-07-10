@@ -3,6 +3,7 @@ confirm) promote it. Self-manages DB sessions like run_eval_service.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 
@@ -10,9 +11,13 @@ from arslan.core.param_registry import DEFAULT_REGISTRY
 from server.db import session as db_session
 from server.db.models import EvolutionProposal, Spawn
 from server.orchestrator import dispatcher
-from server.services import evaluator, optimizer, replay_set, skill_doc
+from server.services import evaluator, optimizer, replay_gate, replay_set, skill_doc
 
 logger = logging.getLogger(__name__)
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
 def _persona(spawn: Spawn) -> str:
@@ -100,43 +105,63 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
             else:
                 rejected.append(edit)
 
-    # final guard: must beat the ORIGINAL on held-out val
-    try:
-        final = await evaluator.evaluate(spawn_id=spawn_id, persona=persona, candidate_prompt=doc,
-                                         replay_items=split["val"])
-    except Exception as exc:  # noqa: BLE001  -- I1: degrade to no-op, keep accumulated evidence
-        logger.warning("evolution final guard eval failed: %s", exc)
-        return {"proposal_id": None, "candidate_prompt": doc,
-                "gate": {"passed": False, "reason": f"final eval failed: {exc}", "aggregate": None},
-                "evidence": {"diff": accepted, "per_epoch": per_epoch}}
-    gate = final["gate"]
-    if not accepted or not gate["passed"]:
+    # The optimizer loop above is only the CANDIDATE GENERATOR (its accept/reject signal is
+    # the propose-set iteration, spec §E4 internal_signal). The real PASS decision is the
+    # paired ReplayGate on the HOLDOUT split — real+synthetic, position-swapped, per-dim +
+    # real-floor. No accepted edit at all → nothing to gate.
+    if not accepted or doc == original:
         return {"proposal_id": None, "candidate_prompt": doc,
                 "gate": {"passed": False, "reason": "no accepted edit beats the original",
-                         "aggregate": gate["aggregate"]},
-                "evidence": {"diff": accepted, "per_epoch": per_epoch, "final": final}}
+                         "aggregate": None},
+                "evidence": {"diff": accepted, "per_epoch": per_epoch}}
 
+    # baseline_started_at is wired to the developer's declared clean-corpus start in E9;
+    # for E4 it defaults to None (all epoch>=1 live runs are eligible).
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            corpus = await replay_gate.build_corpus(db, spawn_id, baseline_started_at=None)
+            gate = await replay_gate.run_gate(
+                db, spawn_id=spawn_id, candidate_prompt=doc, baseline_prompt=original,
+                corpus=corpus, persona=persona)
+    except Exception as exc:  # noqa: BLE001  -- I1: degrade to no-op, keep accumulated evidence
+        logger.warning("evolution ReplayGate failed: %s", exc)
+        return {"proposal_id": None, "candidate_prompt": doc,
+                "gate": {"passed": False, "reason": f"gate failed: {exc}", "aggregate": None},
+                "evidence": {"diff": accepted, "per_epoch": per_epoch}}
+
+    uf = gate.user_facing()
+    if not gate.passed:
+        return {"proposal_id": None, "candidate_prompt": doc,
+                "gate": {"passed": False, "reason": gate.reason, "aggregate": uf},
+                "evidence": {"diff": accepted, "per_epoch": per_epoch, "gate": uf}}
+
+    # PASS. Persist a LIVING proposal (status='open', spec §E4) whose evidence is the
+    # holdout-only GateResult — including protected_run_ids so E2's redact sweep exempts
+    # the two arms' replay Runs. base_prompt_sha pins the baseline the gate ran against.
     async with db_session.AsyncSessionLocal() as db:
         prop = EvolutionProposal(spawn_id=spawn_id, candidate_prompt=doc, gate_passed=True,
-                                 evidence={"diff": accepted, "per_epoch": per_epoch, "final": final},
-                                 status="proposed")
+                                 evidence=uf, status="open", base_prompt_sha=_sha(original))
         db.add(prop)
         await db.commit()
         await db.refresh(prop)
         proposal_id = prop.id
 
-    return {"proposal_id": proposal_id, "candidate_prompt": doc, "gate": gate,
-            "evidence": {"diff": accepted, "per_epoch": per_epoch}}
+    return {"proposal_id": proposal_id, "candidate_prompt": doc,
+            "gate": {"passed": True, "reason": gate.reason, "aggregate": uf},
+            "evidence": {"diff": accepted, "per_epoch": per_epoch, "gate": uf}}
 
 
 async def confirm_proposal(proposal_id: int) -> dict:
     """Promote a proposed candidate iff its gate passed. Stores the old prompt in
-    spawn.config['prompt_history'] for rollback, bumps generation_level."""
+    spawn.config['prompt_history'] for rollback, bumps generation_level.
+
+    Accepts both the legacy 'proposed' status and the S2 living-proposal 'open' status;
+    any other status (promoted/rejected/stale) refuses."""
     async with db_session.AsyncSessionLocal() as db:
         prop = await db.get(EvolutionProposal, proposal_id)
         if prop is None:
             return {"ok": False, "reason": "proposal not found"}
-        if prop.status != "proposed":
+        if prop.status not in ("proposed", "open"):
             return {"ok": False, "reason": f"already {prop.status}"}
         if not prop.gate_passed:
             return {"ok": False, "reason": "gate not passed; refusing to promote"}
