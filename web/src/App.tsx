@@ -5,6 +5,7 @@ import { Spawn, Message, MessageAttachment, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
 import { useSettingsStore } from './stores/settingsStore';
+import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/sessionPersistence';
@@ -46,25 +47,11 @@ interface ArslanThread {
   archived?: boolean;
 }
 
-const toolDetails: Record<string, { name: string; emoji: string }> = {
-  'web-search': { name: 'Web Search', emoji: '🔍' },
-  'stock-data': { name: 'Stock Sandbox', emoji: '📈' },
-  'py-exec': { name: 'PyExec Sandbox', emoji: '🐍' },
-  'canvas-render': { name: 'SVGRenderer', emoji: '🎨' },
-  'gmail-broker': { name: 'Gmail Broker', emoji: '📧' },
-  'spanner-db': { name: 'Cloud Spanner', emoji: '🧱' },
-};
-
-const skillDetails: Record<string, { name: string; emoji: string }> = {
-  'seo-opt': { name: 'SEO Copywriting', emoji: '✍️' },
-  'financial-res': { name: 'Financial Research', emoji: '📊' },
-  'infographic-design': { name: 'Infographic Layout', emoji: '📘' },
-  'stat-analysis': { name: 'Statistical Forecasting', emoji: '📉' },
-  'vuln-test': { name: 'Security Auditing', emoji: '🛡️' },
-};
-
 export default function App() {
   const { t, i18n } = useTranslation();
+  // Resolve equipped-capability keys to their REAL registry names (raw key when unknown).
+  const capabilityLabel = useCapabilityLabel();
+  const loadRegistry = useRegistryStore((s) => s.loadRegistry);
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
 
@@ -315,6 +302,10 @@ export default function App() {
   // MCP servers state — fetched once on mount, used in the diagnostics rail
   const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([]);
   useEffect(() => { api.listMcpServers().then(setMcpServers).catch(() => setMcpServers([])); }, []);
+
+  // Real capability display-name map — fetched once so equipped-capability chips
+  // resolve keys to their true names instead of fabricated placeholders.
+  useEffect(() => { loadRegistry(); }, [loadRegistry]);
 
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
 
@@ -957,19 +948,16 @@ export default function App() {
                     <p className="text-[9px] font-mono text-subtle-foreground italic">{t('rail.dialogue_tools_empty')}</p>
                   ) : (
                     <div className="flex flex-wrap gap-1">
-                      {currentCaps.tools.map((tId) => {
-                        const details = toolDetails[tId] || { name: tId, emoji: '🔧' };
-                        return (
+                      {currentCaps.tools.map((tId) => (
                           <div
                             key={tId}
                             className="px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none bg-surface text-info"
                             title={`Tool: ${tId}`}
                           >
                             {getIcon(tId, 'w-3 h-3')}
-                            <span className="text-[10px] font-medium">{details.name}</span>
+                            <span className="text-[10px] font-medium">{capabilityLabel(tId)}</span>
                           </div>
-                        );
-                      })}
+                      ))}
                     </div>
                   )}
                 </div>
@@ -981,19 +969,16 @@ export default function App() {
                     <p className="text-[9px] font-mono text-subtle-foreground italic">{t('rail.dialogue_skills_empty')}</p>
                   ) : (
                     <div className="flex flex-wrap gap-1">
-                      {currentCaps.skills.map((sId) => {
-                        const details = skillDetails[sId] || { name: sId, emoji: '🎓' };
-                        return (
+                      {currentCaps.skills.map((sId) => (
                           <div
                             key={sId}
                             className="bg-warning/10 text-warning px-2 py-1 rounded text-[10px] font-mono flex items-center gap-1 select-none"
-                            title={details.name}
+                            title={capabilityLabel(sId)}
                           >
                             {getIcon(sId, 'w-3 h-3')}
-                            <span className="text-[10px] font-medium">{details.name}</span>
+                            <span className="text-[10px] font-medium">{capabilityLabel(sId)}</span>
                           </div>
-                        );
-                      })}
+                      ))}
                     </div>
                   )}
                 </div>

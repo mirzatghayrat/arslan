@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Spawn } from '../types';
-import { TOOLS, SKILLS } from '../data';
+import { useCapabilityLabel } from '../stores/registryStore';
 import SpawnDetail from './SpawnDetail';
 import {
   Sliders, Activity, Cpu, WifiOff
@@ -37,6 +37,7 @@ export default function SpawnsDashboard({
   backendStatus,
 }: SpawnsDashboardProps) {
   const { t } = useTranslation();
+  const capabilityLabel = useCapabilityLabel();
   const [detailSpawnId, setDetailSpawnId] = useState<string | null>(null);
   return (
     <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
@@ -154,22 +155,16 @@ export default function SpawnsDashboard({
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
-                      {spawn.tools.slice(0, 2).map(id => {
-                        const meta = TOOLS.find(t => t.id === id);
-                        return (
+                      {spawn.tools.slice(0, 2).map(id => (
                           <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-surface text-muted-foreground px-2 py-0.5 rounded-md">
-                            {getIcon(id, 'w-3 h-3')} {meta?.name || id}
+                            {getIcon(id, 'w-3 h-3')} {capabilityLabel(id)}
                           </span>
-                        );
-                      })}
-                      {spawn.skills.slice(0, 2).map(id => {
-                        const meta = SKILLS.find(s => s.id === id);
-                        return (
+                      ))}
+                      {spawn.skills.slice(0, 2).map(id => (
                           <span key={id} className="inline-flex items-center gap-1 text-[10px] font-mono bg-warning/10 text-warning px-2 py-0.5 rounded-md">
-                            {getIcon(id, 'w-3 h-3')} {meta?.name || id}
+                            {getIcon(id, 'w-3 h-3')} {capabilityLabel(id)}
                           </span>
-                        );
-                      })}
+                      ))}
                       {spawn.tools.length + spawn.skills.length > 4 && (
                         <span className="text-[10px] text-subtle-foreground font-mono px-1">
                           +{spawn.tools.length + spawn.skills.length - 4} more
