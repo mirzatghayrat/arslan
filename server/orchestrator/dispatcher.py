@@ -197,7 +197,12 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     for t in wired:
         lines.append(f"- TOOL {t['key']} (live): {t['description']}")
     for ts in equipment["toolsets"]:
-        if ts["status"] != "wired" or ts["key"] not in wired_keys:
+        # A toolset is live iff its own status is "wired" — that is the same liveness signal
+        # the TOOL lines above use (Tool.status == "wired"). Do NOT cross-check ts["key"]
+        # against wired_keys: wired_keys holds individual TOOL keys (e.g. "render_chart"),
+        # while ts["key"] is a TOOLSET key (e.g. "charting") — never a member — so that clause
+        # was always true and wrongly stamped every live toolset "(not yet live)".
+        if ts["status"] != "wired":
             lines.append(f"- {ts['name']} (not yet live)")
     technique_blocks: list[str] = []
     for sk in equipment["skills"]:
