@@ -1196,7 +1196,10 @@ async def _arslan_tools() -> list[dict]:
             select(Tool).where(Tool.toolset_key.like("mcp_%"),
                                Tool.status == "wired", Tool.host_enabled.is_(True))
         )).scalars().all()
-    tools += [{"key": t.key, "description": t.description} for t in rows]
+    # Carry input_schema through so `_native_tool_schemas` (in run_native) hands the model the
+    # real JSON Schema captured at MCP discovery — instead of a permissive {} it must guess against.
+    tools += [{"key": t.key, "description": t.description, "input_schema": t.input_schema or {}}
+              for t in rows]
     return tools
 
 
