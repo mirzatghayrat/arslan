@@ -884,6 +884,8 @@
       "flag_synthetic_driven": "synthetic-driven",
       "flag_no_longer_passing": "no longer passing",
       "flag_routing_uncheckable": "routing uncheckable",
+      "flag_sequential_uncorrected": "sequential updates",
+      "tier_sequential_note": "Accumulated over repeated updates; confidence not corrected for multiple looks.",
       "confirm": "Promote",
       "reject": "Reject",
       "rollback": "Roll back to previous gen",

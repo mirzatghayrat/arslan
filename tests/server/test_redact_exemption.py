@@ -64,3 +64,45 @@ async def test_sweep_exempts_protected_replay_run(memdb):
         assert (await db.get(Run, unref_id)).system_prompt is None              # redacted
         assert (await db.get(Run, rejected_ref_id)).system_prompt is None       # not exempt
     assert redacted == 2  # only the two non-protected runs were touched
+
+
+@pytest.mark.asyncio
+async def test_sweep_exempts_pairs_and_skill_samples(memdb):
+    """FIX 3: the exemption set must also cover (a) runs cited only inside
+    evidence['pairs'] (refresh_proposal accumulates pairs there without re-listing them in
+    protected_run_ids) and (b) a non-'rejected' SkillCandidate's samples. A run cited only by
+    a REJECTED proposal's pairs is still NOT exempt."""
+    from server.services import run_redact
+    from server.db.models import SkillCandidate
+
+    async with memdb() as db:
+        spawn = Spawn(name="Bot", domain_category="research", system_prompt="p")
+        db.add(spawn)
+        await db.commit()
+        await db.refresh(spawn)
+
+        pair_only_id = await _old_replay_run(db, spawn.id)      # cited only in evidence['pairs']
+        skill_sample_id = await _old_replay_run(db, spawn.id)   # cited by a skill candidate's samples
+        rejected_pair_id = await _old_replay_run(db, spawn.id)  # cited only by a REJECTED proposal
+        unref_id = await _old_replay_run(db, spawn.id)          # cited by nobody
+
+        db.add(EvolutionProposal(
+            spawn_id=spawn.id, candidate_prompt="c", gate_passed=True, status="open",
+            evidence={"protected_run_ids": [],
+                      "pairs": [{"baseline_run_id": pair_only_id, "candidate_run_id": None}]}))
+        db.add(EvolutionProposal(
+            spawn_id=spawn.id, candidate_prompt="c", gate_passed=False, status="rejected",
+            evidence={"pairs": [{"baseline_run_id": rejected_pair_id, "candidate_run_id": None}]}))
+        db.add(SkillCandidate(
+            key="k", name="K", category="c", description="d", body="## Trigger\nbody",
+            status="proposed", samples=[skill_sample_id]))
+        await db.commit()
+
+    redacted = await run_redact.sweep(retention_days=30)
+
+    async with memdb() as db:
+        assert (await db.get(Run, pair_only_id)).system_prompt == "SECRET SYS"     # exempt (pairs)
+        assert (await db.get(Run, skill_sample_id)).system_prompt == "SECRET SYS"  # exempt (samples)
+        assert (await db.get(Run, rejected_pair_id)).system_prompt is None         # NOT exempt
+        assert (await db.get(Run, unref_id)).system_prompt is None                 # redacted
+    assert redacted == 2   # only the two non-exempt old runs were touched

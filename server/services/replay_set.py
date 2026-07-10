@@ -69,22 +69,3 @@ async def build(spawn_id: int, *, cap: int = 20) -> list[dict]:
                 "baseline_dims": baseline_dims,
             })
     return items
-
-
-async def build_split(spawn_id: int, *, train_cap: int = 12, val_cap: int = 6,
-                      min_val: int = 3) -> dict:
-    """Split the newest scored-Run replay items into a held-out train/val set.
-
-    Deterministic interleave by position (every 3rd item -> val) so both splits span
-    the same time range (no recency skew, no RNG). Returns {"train": [...], "val": [...]}.
-    If fewer than `min_val` items would land in val, returns empty splits (insufficient).
-    """
-    items = await build(spawn_id, cap=train_cap + val_cap)
-    train, val = [], []
-    for idx, it in enumerate(items):
-        (val if idx % 3 == 2 else train).append(it)
-    val = val[:val_cap]
-    train = train[:train_cap]
-    if len(val) < min_val:
-        return {"train": [], "val": []}
-    return {"train": train, "val": val}

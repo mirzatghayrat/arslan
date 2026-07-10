@@ -884,6 +884,8 @@
       "flag_synthetic_driven": "synthetisch getrieben",
       "flag_no_longer_passing": "besteht nicht mehr",
       "flag_routing_uncheckable": "Routing nicht prüfbar",
+      "flag_sequential_uncorrected": "sequenzielle Updates",
+      "tier_sequential_note": "Über wiederholte Updates akkumuliert; Konfidenz nicht für mehrfaches Testen korrigiert.",
       "confirm": "Befördern",
       "reject": "Ablehnen",
       "rollback": "Auf vorige Gen zurücksetzen",

@@ -171,9 +171,19 @@ export default function PromotionCard({ proposal, onOpenRun, onActionDone }: Pro
             </span>
           )}
         </div>
-        <span className={`text-[11px] font-mono uppercase tracking-wider ${tierTone}`} data-testid="tier-badge">
-          {t("evolution.card.tier_label")}: {tierLabel}
-        </span>
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
+          <span className={`text-[11px] font-mono uppercase tracking-wider ${tierTone}`} data-testid="tier-badge">
+            {t("evolution.card.tier_label")}: {tierLabel}
+          </span>
+          {flags.includes("sequential_uncorrected") && (
+            <span
+              className="text-[10px] font-mono text-muted-foreground text-right max-w-[220px] leading-tight"
+              data-testid="sequential-note"
+            >
+              {t("evolution.card.tier_sequential_note")}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ③ prominent synthetic-driven banner (real corpus too thin) */}

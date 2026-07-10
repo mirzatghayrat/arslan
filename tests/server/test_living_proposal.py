@@ -90,6 +90,35 @@ async def test_accumulation_flips_gate_but_stays_open(db, monkeypatch):
     assert prop.evidence["real_delta"]["n"] == 24
 
 
+async def test_refresh_flags_sequential_uncorrected(db, monkeypatch):
+    # FIX 4b: a living-proposal refresh re-looks at the accumulated p-value with no
+    # multiple-comparison correction (optional stopping). Any refresh must set the
+    # 'sequential_uncorrected' flag and bump a refresh_count so the card can say so.
+    sid = await _spawn(db)
+    pid = await _open_proposal(db, sid, old_pairs=[_pair("b") for _ in range(12)])
+
+    async def fake_corpus(db_, spawn_id, *, baseline_started_at=None):
+        return [{"corpus_label": "real", "split_side": "holdout", "task": f"t{i}"}
+                for i in range(6)]                        # 6 NEW real tasks (>= 5)
+    async def fake_run_gate(db_, **k):
+        return _empty_gate([_pair("b") for _ in range(6)])   # still winning
+    monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
+    monkeypatch.setattr(replay_gate, "run_gate", fake_run_gate)
+
+    res = await evolution_loop.refresh_proposal(db, pid)
+    assert res["refreshed"] is True
+    prop = await db.get(EvolutionProposal, pid)
+    assert "sequential_uncorrected" in prop.evidence["flags"]
+    assert prop.evidence["refresh_count"] == 1
+    assert res["flags"].count("sequential_uncorrected") == 1
+
+    # a SECOND refresh bumps the counter; the flag is present exactly once (not duplicated).
+    await evolution_loop.refresh_proposal(db, pid)
+    prop2 = await db.get(EvolutionProposal, pid)
+    assert prop2.evidence["refresh_count"] == 2
+    assert prop2.evidence["flags"].count("sequential_uncorrected") == 1
+
+
 async def test_prompt_drift_marks_stale(db, monkeypatch):
     sid = await _spawn(db, prompt=PROMPT)
     pid = await _open_proposal(db, sid, prompt=PROMPT, old_pairs=[_pair("b") for _ in range(12)])

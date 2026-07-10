@@ -91,12 +91,49 @@ def _tally(pairs: list[dict], key: str = "overall") -> tuple[int, int, int]:
     return wins, losses, ties
 
 
+def _effective_counts(pairs: list[dict]) -> tuple[int, int]:
+    """Collapse CORRELATED trials for the p-value/tier (statistical honesty, spec §4
+    独立性). A real task and its synthetic variants share the same `source_run_id`; they
+    are NOT independent observations, so counting each as a separate binomial trial
+    inflates significance. Group pairs by their root source (`source_run_id`; a domain
+    synthetic or an ungrouped pair with no source is its own root) and let each group cast
+    ONE effective vote by majority (wins vs losses within the group; a tie group is
+    excluded from N, matching how ties drop out of the raw binomial N).
+
+    Returns (effective_wins, effective_n) — the numbers the exact binomial p-value / tier
+    are computed over. Raw wins/losses/ties are still displayed unchanged; only the
+    significance math uses these deduplicated counts."""
+    groups: dict = {}
+    for i, p in enumerate(pairs):
+        srid = p.get("source_run_id")
+        key = ("root", srid) if srid is not None else ("solo", p.get("task_hash") or i)
+        g = groups.setdefault(key, [0, 0])
+        v = (p.get("overall") or "tie")
+        if v == "b":
+            g[0] += 1
+        elif v == "a":
+            g[1] += 1
+    eff_wins = eff_losses = 0
+    for w, losses in groups.values():
+        if w > losses:
+            eff_wins += 1
+        elif losses > w:
+            eff_losses += 1
+        # w == losses (includes all-tie groups) → not a decided trial, excluded from N
+    return eff_wins, eff_wins + eff_losses
+
+
 def _delta(pairs: list[dict], *, enforce_holdout: bool) -> dict:
-    """Win/loss/tie + win-rate + exact p-value + Wilson CI over `pairs`.
+    """Win/loss/tie + win-rate + Wilson CI (all on RAW counts) + exact p-value on the
+    EFFECTIVE independent N over `pairs`.
 
     enforce_holdout=True (every user-facing delta) raises HoldoutViolation on any pair
     whose split_side != 'holdout'. enforce_holdout=False is ONLY for the propose-set
-    internal signal, which is never rendered."""
+    internal signal, which is never rendered.
+
+    Honest counts stay raw (wins/losses/ties/win_rate/ci95); the p-value collapses a real
+    task and its variants into one effective trial (`_effective_counts`) so correlated
+    trials cannot inflate significance."""
     if enforce_holdout:
         for p in pairs:
             if p.get("split_side") != "holdout":
@@ -108,9 +145,11 @@ def _delta(pairs: list[dict], *, enforce_holdout: bool) -> dict:
     n = wins + losses
     win_rate = wins / n if n else 0.0
     lo, hi = binom.wilson_ci95(wins, n)
+    eff_wins, eff_n = _effective_counts(pairs)
     return {
         "wins": wins, "losses": losses, "ties": ties, "n": n,
-        "win_rate": win_rate, "p_value": binom.p_value(wins, n), "ci95": [lo, hi],
+        "win_rate": win_rate, "p_value": binom.p_value(eff_wins, eff_n),
+        "ci95": [lo, hi], "effective_n": eff_n,
     }
 
 
@@ -121,7 +160,7 @@ def compute_delta(pairs: list[dict]) -> dict:
 
 def _empty_delta() -> dict:
     return {"wins": 0, "losses": 0, "ties": 0, "n": 0,
-            "win_rate": 0.0, "p_value": 1.0, "ci95": [0.0, 0.0]}
+            "win_rate": 0.0, "p_value": 1.0, "ci95": [0.0, 0.0], "effective_n": 0}
 
 
 def _tier(p: float) -> str:
@@ -223,6 +262,7 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
             continue
         pairs.append({
             "task": task, "corpus_label": "real", "source_ref": run.id,
+            "source_run_id": run.id,   # a real task is its own independence root
             "split_side": _split_side(spawn_id, task),
         })
 
@@ -241,6 +281,8 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
             pairs.append({
                 "task": st.task, "corpus_label": "synthetic",
                 "source_ref": {"synth_id": st.id, "version": st.version},
+                # a variant's independence root is its SOURCE real run; a domain synth is None
+                "source_run_id": st.source_run_id,
                 "split_side": st.split_side,
             })
 
@@ -310,6 +352,7 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
             "task_hash": _task_hash(spawn_id, pt["task"]),
             "corpus_label": pt["corpus_label"],
             "source_ref": pt.get("source_ref"),
+            "source_run_id": pt.get("source_run_id"),  # independence root for effective-N
             "split_side": pt["split_side"],
             "baseline_run_id": base.get("run_id"),
             "candidate_run_id": cand.get("run_id"),
@@ -329,9 +372,13 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
     synthetic_delta = compute_delta(synth_holdout)
 
     # Combined HOLDOUT counts — internal only (thresholds 1-3 pass decision + tier label).
+    # Thresholds 1-3 use the RAW non-tie N (the win-rate is a raw observed rate); the
+    # evidence-TIER p-value, being a significance claim, uses the EFFECTIVE independent N so
+    # correlated variants of one real task cannot manufacture a "strong" label.
     h_wins, h_losses, _ = _tally(holdout)
     h_n = h_wins + h_losses
-    tier = _tier(binom.p_value(h_wins, h_n))
+    eff_wins, eff_n = _effective_counts(holdout)
+    tier = _tier(binom.p_value(eff_wins, eff_n))
 
     protected = [p["baseline_run_id"] for p in pairs] + [p["candidate_run_id"] for p in pairs]
     protected = [r for r in protected if r is not None]
@@ -426,7 +473,8 @@ def recompute_verdict(holdout_pairs: list[dict]) -> dict:
 
     h_wins, h_losses, _ = _tally(holdout_pairs)
     h_n = h_wins + h_losses
-    tier = _tier(binom.p_value(h_wins, h_n))
+    eff_wins, eff_n = _effective_counts(holdout_pairs)
+    tier = _tier(binom.p_value(eff_wins, eff_n))
 
     flags: list[str] = []
     reason: str | None = None

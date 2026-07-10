@@ -106,7 +106,10 @@ async def list_runs(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
-    q = select(Run).order_by(Run.id.desc()).limit(limit)
+    # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
+    # surface in the runs list. get_run detail stays unfiltered so the card can link into a
+    # specific replay run's trace.
+    q = select(Run).where(Run.kind == "live").order_by(Run.id.desc()).limit(limit)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:

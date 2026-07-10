@@ -884,6 +884,8 @@
       "flag_synthetic_driven": "合成驱动",
       "flag_no_longer_passing": "不再过门",
       "flag_routing_uncheckable": "路由无法核验",
+      "flag_sequential_uncorrected": "多次累积更新",
+      "tier_sequential_note": "多次累积更新,置信度未做多重检验校正",
       "confirm": "采纳晋升",
       "reject": "拒绝",
       "rollback": "回滚到上一代",

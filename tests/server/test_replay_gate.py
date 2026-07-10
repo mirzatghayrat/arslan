@@ -230,6 +230,73 @@ async def test_evidence_tier_boundaries(monkeypatch):
     assert weak.evidence_tier == "weak"
 
 
+# ── FIX 4a: effective-N dedupe of correlated trials (a real task + its variants = 1 trial) ──
+
+def test_effective_counts_collapses_variants():
+    from server.services.replay_gate import _effective_counts
+    # a real task R + 2 synthetic variants of R (same source_run_id), all candidate wins:
+    # correlated → ONE effective win over N=1 (not 3).
+    pairs = [
+        {"overall": "b", "source_run_id": 42, "task_hash": "r"},
+        {"overall": "b", "source_run_id": 42, "task_hash": "v1"},
+        {"overall": "b", "source_run_id": 42, "task_hash": "v2"},
+    ]
+    assert _effective_counts(pairs) == (1, 1)
+    # + one independent real win (own root) + one domain synth win (source_run_id=None):
+    # now 3 effective wins over N=3 (raw would be 5).
+    pairs += [
+        {"overall": "b", "source_run_id": 7, "task_hash": "x"},
+        {"overall": "b", "source_run_id": None, "task_hash": "domain"},
+    ]
+    assert _effective_counts(pairs) == (3, 3)
+    # a split group (2 win / 1 loss on the same root) collapses to ONE win by majority.
+    split = [
+        {"overall": "b", "source_run_id": 9, "task_hash": "a"},
+        {"overall": "b", "source_run_id": 9, "task_hash": "b"},
+        {"overall": "a", "source_run_id": 9, "task_hash": "c"},
+    ]
+    assert _effective_counts(split) == (1, 1)
+
+
+async def test_effective_n_dedupes_variant_p_value(monkeypatch):
+    # 2 synthetic variants of the SAME real source (source_run_id=42), both candidate wins.
+    # RAW counts stay honest (wins=2, n=2) but the p-value must use the EFFECTIVE N=1 so
+    # correlated variants can't manufacture significance.
+    corpus = [
+        {"task": "v0", "corpus_label": "synthetic", "split_side": "holdout",
+         "source_ref": {"synth_id": 1, "version": 1}, "source_run_id": 42,
+         "_verdict": "b", "_dims": {d: "b" for d in DIMENSIONS}, "_ps": False},
+        {"task": "v1", "corpus_label": "synthetic", "split_side": "holdout",
+         "source_ref": {"synth_id": 2, "version": 1}, "source_run_id": 42,
+         "_verdict": "b", "_dims": {d: "b" for d in DIMENSIONS}, "_ps": False},
+    ]
+    res = await _gate(corpus, monkeypatch)
+    sd = res.synthetic_delta
+    assert sd["wins"] == 2 and sd["losses"] == 0 and sd["n"] == 2   # raw counts unchanged
+    assert sd["effective_n"] == 1                                    # collapsed to one trial
+    assert sd["p_value"] == binom.p_value(1, 1)                      # p uses the SMALLER N
+    assert sd["p_value"] != binom.p_value(2, 2)                      # not the inflated raw p
+
+
+async def test_effective_n_dedupes_variants_in_combined_tier(monkeypatch):
+    # 1 real task R + 2 variants of R (all wins) + 9 independent real wins.
+    # Raw combined N = 12; effective N = 10 (the 3 correlated pairs collapse to 1 trial).
+    def _v(label, tid, srid):
+        return {"task": tid, "corpus_label": label, "split_side": "holdout",
+                "source_ref": srid, "source_run_id": srid,
+                "_verdict": "b", "_dims": {d: "b" for d in DIMENSIONS}, "_ps": False}
+    corpus = ([_v("real", "R", 500)]
+              + [_v("synthetic", f"var{i}", 500) for i in range(2)]
+              + [_v("real", f"i{i}", 600 + i) for i in range(9)])
+    res = await _gate(corpus, monkeypatch)
+    from server.services.replay_gate import _effective_counts, _tier
+    # the collapsed count is 10 (1 group + 9 independent), and the tier is computed on it.
+    assert _effective_counts(res.pairs) == (10, 10)
+    assert res.evidence_tier == _tier(binom.p_value(10, 10))
+    # the real corpus displays raw honest counts (10 real pairs: R + 9 independent).
+    assert res.real_delta["wins"] == 10 and res.real_delta["n"] == 10
+
+
 async def test_tier_exact_boundaries():
     from server.services.replay_gate import _tier
     assert _tier(0.04) == "strong"

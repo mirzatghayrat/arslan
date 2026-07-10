@@ -884,6 +884,8 @@
       "flag_synthetic_driven": "synthetic-driven",
       "flag_no_longer_passing": "ゲート不通過",
       "flag_routing_uncheckable": "ルーティング検証不可",
+      "flag_sequential_uncorrected": "累積更新",
+      "tier_sequential_note": "累積的な複数回更新のため、多重比較の補正は行っていません。",
       "confirm": "採用して昇格",
       "reject": "却下",
       "rollback": "前世代へロールバック",
