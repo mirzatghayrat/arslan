@@ -2,8 +2,36 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def _default_data_dir() -> Path:
+    """Per-platform application-data directory used when ``ARSLAN_DATA_DIR`` is unset.
+
+    The old default was the CWD-relative ``Path("data")``, so the SQLite "brain"
+    resolved against whatever directory uvicorn was launched from. A stranger who
+    packaged the app and launched it elsewhere silently got a fresh empty DB and
+    thought their data was lost. Anchoring the default to a stable OS location keeps
+    ONE brain regardless of the launch directory:
+
+      • macOS   -> ``~/Library/Application Support/Arslan``
+      • Windows -> ``%APPDATA%/Arslan`` (fallback ``~/AppData/Roaming/Arslan``)
+      • Linux/* -> ``${XDG_DATA_HOME:-~/.local/share}/Arslan``
+
+    Pure/side-effect-free: it only *computes* the path (no mkdir); the directory is
+    created at boot in ``server.main`` like before.
+    """
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    return base / "Arslan"
 
 
 @dataclass(frozen=True)
@@ -50,7 +78,13 @@ class Settings:
 
 def load_settings() -> Settings:
     """Build a Settings instance from current environment variables."""
-    data_dir = Path(os.environ.get("ARSLAN_DATA_DIR", "data"))
+    # Root data dir. UNSET -> stable per-platform app-data dir (so a stranger keeps
+    # ONE brain regardless of the launch directory). SET (incl. the dev flow's
+    # "data") -> honored verbatim; only expanded (~/$VAR) and resolved to an
+    # absolute path for stable file I/O + a meaningful boot log — never relocated.
+    raw_data_dir = os.environ.get("ARSLAN_DATA_DIR")
+    data_dir = Path(raw_data_dir) if raw_data_dir else _default_data_dir()
+    data_dir = Path(os.path.expandvars(os.path.expanduser(str(data_dir)))).resolve()
     db_path = os.environ.get("ARSLAN_DB_PATH", str(data_dir / "arslan.db"))
     spawns_dir = Path(os.environ.get("ARSLAN_SPAWNS_DIR", str(data_dir / "spawns")))
     static_dir = os.environ.get("ARSLAN_STATIC_DIR", str(Path(__file__).parent / "static"))

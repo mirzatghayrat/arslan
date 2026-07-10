@@ -73,6 +73,22 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
         )
 
 
+def _log_data_location(cfg, *, log: logging.Logger = logger) -> None:
+    """Info-level boot line naming the RESOLVED ABSOLUTE data/db location.
+
+    The default data dir is a stable per-platform app-data path now (not the old
+    CWD-relative ``./data``), so logging the absolute location lets a stranger see
+    exactly where their brain lives regardless of where uvicorn was launched from.
+    """
+    from pathlib import Path
+
+    log.info(
+        "Arslan data dir: %s  (db: %s)",
+        cfg.data_dir,
+        Path(cfg.db_path).resolve(),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and run boot migrations/backfills on startup."""
@@ -96,6 +112,8 @@ async def lifespan(app: FastAPI):
     # connect (SQLite will not create missing parent directories).
     Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
     settings.spawns_dir.mkdir(parents=True, exist_ok=True)
+
+    _log_data_location(settings)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
