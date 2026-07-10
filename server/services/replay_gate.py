@@ -388,3 +388,58 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
 
 def _task_hash(spawn_id: int, task: str) -> str:
     return hashlib.sha256(f"{spawn_id}::{task}".encode("utf-8")).hexdigest()[:16]
+
+
+def recompute_verdict(holdout_pairs: list[dict]) -> dict:
+    """Re-apply thresholds 1-4 to an ALREADY-ASSEMBLED holdout pair list — the living
+    proposal's accumulation path (spec §E4 / decision B.2). Given the union of a proposal's
+    stored holdout pairs and freshly replayed ones, recompute the pass decision, the split
+    real/synthetic deltas, the evidence tier, and any real-floor flag.
+
+    Mirrors run_gate's threshold 1-4 math exactly (it reuses the same _tally/_delta/_tier
+    helpers and the module thresholds) but takes pairs directly instead of replaying — so a
+    refresh never re-runs the arms it already has. compute_delta still enforces that every
+    pair is a holdout pair (a propose pair here raises HoldoutViolation)."""
+    real_holdout = [p for p in holdout_pairs if p.get("corpus_label") == "real"]
+    synth_holdout = [p for p in holdout_pairs if p.get("corpus_label") == "synthetic"]
+    real_delta = compute_delta(real_holdout)
+    synthetic_delta = compute_delta(synth_holdout)
+
+    h_wins, h_losses, _ = _tally(holdout_pairs)
+    h_n = h_wins + h_losses
+    tier = _tier(binom.p_value(h_wins, h_n))
+
+    flags: list[str] = []
+    reason: str | None = None
+    if h_n < MIN_HOLDOUT_N:
+        reason = "insufficient_holdout"
+    elif (h_wins / h_n) < WIN_RATE_MIN:
+        reason = "holdout_winrate"
+    else:
+        for d in DIMENSIONS:
+            dw, dl, _ = _tally(holdout_pairs, key=d)
+            if dw < dl:
+                reason = f"dim_regressed:{d}"
+                break
+
+    if reason is None:
+        if real_delta["n"] >= REAL_FLOOR_MIN_N:
+            real_dims_ok = True
+            for d in DIMENSIONS:
+                rw, rl, _ = _tally(real_holdout, key=d)
+                if rl > rw:
+                    real_dims_ok = False
+                    break
+            if real_delta["win_rate"] < REAL_FLOOR_WINRATE or not real_dims_ok:
+                reason = "real_floor"
+        else:
+            flags.append("synthetic_driven")
+
+    return {
+        "passed": reason is None,
+        "reason": reason or "pass",
+        "flags": flags,
+        "real_delta": real_delta,
+        "synthetic_delta": synthetic_delta,
+        "evidence_tier": tier,
+    }

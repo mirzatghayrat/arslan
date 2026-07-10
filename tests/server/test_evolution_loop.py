@@ -217,6 +217,25 @@ async def test_confirm_refuses_when_gate_failed(memdb, monkeypatch):
     assert s.system_prompt == "ORIGINAL"
 
 
+async def test_confirm_refuses_stale(memdb, monkeypatch):
+    # A stale living proposal (base prompt drifted) must never be promoted — confirm refuses
+    # with an 'already stale' reason (the API maps this to 409).
+    sid = await _spawn(memdb, prompt="ORIGINAL")
+    async with memdb() as db:
+        p = EvolutionProposal(spawn_id=sid, candidate_prompt="NEWP", gate_passed=True,
+                              evidence={}, status="stale")
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        pid = p.id
+    res = await evolution_loop.confirm_proposal(pid)
+    assert res["ok"] is False
+    assert "stale" in res["reason"]
+    async with memdb() as db:
+        s = await db.get(Spawn, sid)
+    assert s.system_prompt == "ORIGINAL"   # not promoted
+
+
 async def test_confirm_twice_is_noop(memdb, monkeypatch):
     sid = await _spawn(memdb, prompt="ORIGINAL")
     async with memdb() as db:

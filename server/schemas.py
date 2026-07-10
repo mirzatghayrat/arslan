@@ -19,6 +19,8 @@ class SettingsIn(BaseModel):
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     run_debug_retention_days: int | None = None
+    evolution_auto: str | None = None
+    evolution_max_est_tokens: int | None = None
 
 
 class SettingsOut(BaseModel):
@@ -34,6 +36,8 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     run_debug_retention_days: int = 30
+    evolution_auto: str = "on"
+    evolution_max_est_tokens: int | None = None
 
 
 class AccessTokenOut(BaseModel):
@@ -372,6 +376,55 @@ class ConfirmProposalOut(BaseModel):
     reason: str | None = None
     spawn_id: int | None = None
     generation_level: int | None = None
+
+
+class EvolveEnqueuedOut(BaseModel):
+    """202 response for POST /spawns/{id}/evolve — the manual trigger is now a background
+    job (the old sync button was guaranteed to time out). attempt_id is None only when an
+    attempt is already running for this spawn (concurrency = 1)."""
+
+    attempt_id: int | None = None
+
+
+class EstimateOut(BaseModel):
+    """Honest lower-bound cost estimate (GET /spawns/{id}/evolve/estimate)."""
+
+    pairs: int
+    dispatches: int
+    judge_calls: int
+    optimizer_calls: int
+    synth_calls: int
+    est_tokens: int
+    lower_bound: bool = True
+
+
+class ProposalListItemOut(BaseModel):
+    """One row of the evolution inbox (GET /evolution/proposals)."""
+
+    id: int
+    spawn_id: int
+    status: str
+    gate_passed: bool
+    base_prompt_sha: str | None = None
+    real_delta: dict | None = None
+    synthetic_delta: dict | None = None
+    evidence_tier: str | None = None
+    flags: list[str] = []
+    created_at: str | None = None
+    promoted_at: str | None = None
+
+
+class RefreshProposalOut(BaseModel):
+    """Response for POST /evolution/proposals/{id}/refresh."""
+
+    ok: bool
+    status: str | None = None
+    refreshed: bool = False
+    gate_passed: bool | None = None
+    flags: list[str] = []
+    reason: str | None = None
+    proposal_id: int | None = None
+    new_tasks: int | None = None
 
 
 class KnowledgeIn(BaseModel):

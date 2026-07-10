@@ -216,7 +216,25 @@ async def lifespan(app: FastAPI):
         await run_reaper.reap_stuck_runs()
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
+
+    # E5 evolution watcher: a supervised background loop that, per spawn, checks the
+    # trigger (new replayable runs since the last attempt >= the backoff threshold), runs
+    # attempts within the token budget, and refreshes living proposals. Best-effort start —
+    # never blocks boot; a long interval keeps it idle-cheap.
+    try:
+        from server.services import evolution_watcher
+
+        evolution_watcher.start()
+    except Exception as exc:  # noqa: BLE001 — watcher start must never block boot
+        logger.warning("evolution watcher start failed (non-fatal): %s", exc)
     yield
+
+    try:
+        from server.services import evolution_watcher as _evo_watcher
+
+        await _evo_watcher.stop()
+    except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
+        logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
 
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()

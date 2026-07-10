@@ -2,13 +2,28 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
-from server.db.models import Feedback
+from server.db.models import EvolutionProposal, Feedback
 from server.db.session import get_session
-from server.schemas import ConfirmProposalOut, EvolutionOut, EvolveProposalOut, FeedbackIn
-from server.services import evolution_loop, evolution_service, spawn_service
+from server.schemas import (
+    ConfirmProposalOut,
+    EstimateOut,
+    EvolutionOut,
+    EvolveEnqueuedOut,
+    FeedbackIn,
+    ProposalListItemOut,
+    RefreshProposalOut,
+)
+from server.services import (
+    evolution_estimate,
+    evolution_loop,
+    evolution_service,
+    evolution_watcher,
+    spawn_service,
+)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -57,13 +72,68 @@ async def submit_feedback(
     return {"ok": True}
 
 
-@router.post("/spawns/{spawn_id}/evolve", response_model=EvolveProposalOut)
-async def evolve_spawn(spawn_id: int) -> EvolveProposalOut:
-    result = await evolution_loop.propose_improvement(spawn_id)
-    return EvolveProposalOut(**result)
+@router.get("/spawns/{spawn_id}/evolve/estimate", response_model=EstimateOut)
+async def evolve_estimate(
+    spawn_id: int, session: AsyncSession = Depends(get_session)
+) -> EstimateOut:
+    """Honest lower-bound cost estimate for ONE evolution attempt on this spawn."""
+    est = await evolution_estimate.estimate(session, spawn_id)
+    return EstimateOut(**est)
+
+
+@router.post(
+    "/spawns/{spawn_id}/evolve", status_code=status.HTTP_202_ACCEPTED,
+    response_model=EvolveEnqueuedOut,
+)
+async def evolve_spawn(spawn_id: int) -> EvolveEnqueuedOut:
+    """Manual trigger — now a BACKGROUND job (202). The old sync run replayed every pair +
+    judge inline and was guaranteed to time out. Creates an EvolutionAttempt and enqueues a
+    supervised runner; returns immediately. Bypasses the run-count threshold but still
+    respects the budget cap + concurrency=1."""
+    attempt_id = await evolution_watcher.enqueue_attempt(spawn_id, manual=True)
+    return EvolveEnqueuedOut(attempt_id=attempt_id)
+
+
+@router.get("/evolution/proposals", response_model=list[ProposalListItemOut])
+async def list_proposals(
+    status: str | None = None, session: AsyncSession = Depends(get_session)
+) -> list[ProposalListItemOut]:
+    """The evolution inbox backend: proposals + their split evidence deltas/tier/status."""
+    q = select(EvolutionProposal).order_by(EvolutionProposal.id.desc())
+    if status:
+        q = q.where(EvolutionProposal.status == status)
+    rows = (await session.execute(q)).scalars().all()
+    out: list[ProposalListItemOut] = []
+    for p in rows:
+        ev = p.evidence or {}
+        out.append(ProposalListItemOut(
+            id=p.id, spawn_id=p.spawn_id, status=p.status, gate_passed=bool(p.gate_passed),
+            base_prompt_sha=p.base_prompt_sha,
+            real_delta=ev.get("real_delta"), synthetic_delta=ev.get("synthetic_delta"),
+            evidence_tier=ev.get("evidence_tier"), flags=list(ev.get("flags", []) or []),
+            created_at=p.created_at.isoformat() if p.created_at else None,
+            promoted_at=p.promoted_at.isoformat() if p.promoted_at else None,
+        ))
+    return out
+
+
+@router.post("/evolution/proposals/{proposal_id}/refresh", response_model=RefreshProposalOut)
+async def refresh_proposal(
+    proposal_id: int, session: AsyncSession = Depends(get_session)
+) -> RefreshProposalOut:
+    """Living-proposal refresh: accumulate new holdout pairs, recompute the verdict, and
+    flip gate_passed / flag 'no_longer_passing' if the evidence weakened (status stays open).
+    A drifted base prompt marks the proposal 'stale'."""
+    result = await evolution_loop.refresh_proposal(session, proposal_id)
+    return RefreshProposalOut(**result)
 
 
 @router.post("/evolution/proposals/{proposal_id}/confirm", response_model=ConfirmProposalOut)
 async def confirm_proposal(proposal_id: int) -> ConfirmProposalOut:
     result = await evolution_loop.confirm_proposal(proposal_id)
+    # A stale proposal (base prompt drifted from the gate's baseline) must be re-gated before
+    # promotion — reject with 409 rather than silently promoting against a moved baseline.
+    if not result.get("ok") and "stale" in (result.get("reason") or ""):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="proposal is stale; re-run the gate before promoting")
     return ConfirmProposalOut(**result)

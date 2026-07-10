@@ -151,6 +151,87 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
             "evidence": {"diff": accepted, "per_epoch": per_epoch, "gate": uf}}
 
 
+REFRESH_MIN_NEW_TASKS = 5
+
+
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+async def refresh_proposal(db, proposal_id: int) -> dict:
+    """Keep a living proposal honest (spec §E4 decision B.2). For a status='open' proposal:
+
+      1. If the spawn's CURRENT prompt drifted from `base_prompt_sha` → mark it 'stale' (the
+         gate ran against a prompt that no longer exists; a human re-runs it).
+      2. Else, once >=REFRESH_MIN_NEW_TASKS new replayable REAL tasks have arrived since the
+         last refresh, replay the NEW real pairs, ACCUMULATE them with the proposal's stored
+         holdout pairs, and recompute the verdict/deltas/tier over the union. If the
+         accumulated evidence now drops below threshold, flip `gate_passed=False` and flag
+         `no_longer_passing` — but the status stays 'open' (the human decides去留).
+
+    `db` is the caller's session (endpoint or watcher). Synthetic tasks are already captured
+    in the stored pairs, so only NEW real pairs are replayed — no double counting."""
+    prop = await db.get(EvolutionProposal, proposal_id)
+    if prop is None:
+        return {"ok": False, "reason": "proposal not found"}
+    if prop.status != "open":
+        return {"ok": False, "reason": f"not open (status={prop.status})", "status": prop.status}
+    spawn = await db.get(Spawn, prop.spawn_id)
+    if spawn is None:
+        return {"ok": False, "reason": "spawn not found"}
+
+    original = skill_doc.apply_edits(spawn.system_prompt or "", [])
+    if prop.base_prompt_sha and _sha(original) != prop.base_prompt_sha:
+        prop.status = "stale"
+        await db.commit()
+        return {"ok": True, "status": "stale", "refreshed": False,
+                "reason": "base prompt drifted", "proposal_id": proposal_id}
+
+    ev = dict(prop.evidence or {})
+    since = _parse_dt(ev.get("last_refreshed_at")) or prop.created_at
+    corpus = await replay_gate.build_corpus(db, prop.spawn_id, baseline_started_at=since)
+    new_real = [c for c in corpus if c.get("corpus_label") == "real"]
+    if len(new_real) < REFRESH_MIN_NEW_TASKS:
+        return {"ok": True, "status": prop.status, "refreshed": False,
+                "reason": "insufficient_new_tasks", "new_tasks": len(new_real),
+                "proposal_id": proposal_id}
+
+    persona = _persona(spawn)
+    gate = await replay_gate.run_gate(
+        db, spawn_id=prop.spawn_id, candidate_prompt=prop.candidate_prompt,
+        baseline_prompt=original, corpus=new_real, persona=persona)
+
+    accumulated = list(ev.get("pairs", [])) + list(gate.pairs)
+    verdict = replay_gate.recompute_verdict(accumulated)
+
+    flags = list(verdict.get("flags", []))
+    if not verdict["passed"] and "no_longer_passing" not in flags:
+        flags.append("no_longer_passing")
+
+    ev.update({
+        "pairs": accumulated,
+        "real_delta": verdict["real_delta"],
+        "synthetic_delta": verdict["synthetic_delta"],
+        "evidence_tier": verdict["evidence_tier"],
+        "passed": verdict["passed"],
+        "reason": verdict["reason"],
+        "flags": flags,
+        "last_refreshed_at": datetime.utcnow().isoformat(),
+    })
+    prop.evidence = ev
+    prop.gate_passed = bool(verdict["passed"])
+    # status STAYS 'open' — a no-longer-passing living proposal is surfaced, not auto-killed.
+    await db.commit()
+    return {"ok": True, "status": prop.status, "refreshed": True,
+            "gate_passed": prop.gate_passed, "flags": flags,
+            "reason": verdict["reason"], "proposal_id": proposal_id}
+
+
 async def confirm_proposal(proposal_id: int) -> dict:
     """Promote a proposed candidate iff its gate passed. Stores the old prompt in
     spawn.config['prompt_history'] for rollback, bumps generation_level.

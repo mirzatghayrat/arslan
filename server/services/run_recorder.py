@@ -55,12 +55,14 @@ def is_continuation(run_id: int) -> bool:
 
 class RunRecorder:
     def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
-                 spawn_name: str | None = None, continuation: bool = False) -> None:
+                 spawn_name: str | None = None, continuation: bool = False,
+                 spawn_id: int | None = None) -> None:
         self.run_id = run_id
         self.started_at = started_at
         self.route_ms = route_ms
         self.spawn_name = spawn_name
         self.continuation = continuation
+        self.spawn_id = spawn_id
         self._events: list[tuple[datetime, dict]] = []
 
     @classmethod
@@ -100,7 +102,7 @@ class RunRecorder:
             run_id = run.id
         if continuation:
             _continuation_run_ids.add(run_id)
-        return cls(run_id, started, route_ms, spawn_name, continuation)
+        return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
@@ -249,6 +251,16 @@ class RunRecorder:
             schedule_scoring(self.run_id)
         except Exception as exc:  # noqa: BLE001 — scoring is best-effort
             logger.warning("schedule_scoring failed (non-fatal): %s", exc)
+        # E5: nudge the evolution watcher that this spawn got fresh activity so a newly
+        # eligible spawn doesn't wait for the next 5-min tick. No-op unless the watch loop
+        # is running (the loop is the backstop); best-effort + non-blocking.
+        try:
+            if self.spawn_id is not None:
+                from server.services import evolution_watcher
+
+                evolution_watcher.notify_spawn(self.spawn_id)
+        except Exception as exc:  # noqa: BLE001 — the ping is never fatal
+            logger.warning("evolution notify failed (non-fatal): %s", exc)
         return self.run_id
 
     def _merge_tool_trace(self, steps: list[dict]) -> None:
