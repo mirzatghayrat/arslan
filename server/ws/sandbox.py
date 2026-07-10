@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from server import security
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import Spawn
@@ -33,6 +34,10 @@ def _signals(transcript: list[dict]) -> str:
 
 
 async def sandbox_endpoint(ws: WebSocket, spawn_id: int) -> None:
+    # Reject a cross-site WebSocket open BEFORE accept (fail-closed).
+    if not security.ws_origin_allowed(ws.headers.get("origin"), ws.headers.get("host")):
+        await ws.close(code=4403)
+        return
     if not is_ws_token_valid(ws.query_params.get("token")):
         await ws.close(code=4001)
         return

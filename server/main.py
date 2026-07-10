@@ -189,6 +189,32 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     app = FastAPI(title="Arslan Server", version="0.1.0", lifespan=lifespan)
+
+    # S1 OSS safety: a localhost-bound service with no Host validation is reachable
+    # by any web page the user visits (DNS rebinding), and browsers can open
+    # cross-site WebSockets. Install the two edge middlewares here; the WS handlers
+    # add the per-connection Origin check (CORS does not cover the WS handshake).
+    from starlette.middleware.cors import CORSMiddleware
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    from server import security
+
+    # add_middleware wraps in reverse order → TrustedHost (added last) is outermost,
+    # so a foreign Host is rejected before CORS/routing runs. CORS uses an explicit
+    # allowlist (dev: the vite dev server; prod: ARSLAN_ALLOWED_ORIGINS) — never
+    # '*' with credentials.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=security.cors_allow_origins(),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=security.trusted_allowed_hosts(),
+    )
+
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
 
