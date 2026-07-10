@@ -1,20 +1,51 @@
 """Settings REST endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arslan.llm.catalog import CATALOG
 from arslan.llm.presets import provider_options
+from server import auth, config, token_bootstrap
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import CatalogEntryOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+from server.schemas import AccessTokenOut, CatalogEntryOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
 from server.services import provider_config_service, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+# S1-3: the access-token view/reset endpoints must be reachable BEFORE the caller
+# knows the token (a packaged user has to discover it), so they live on a router
+# with NO require_auth dependency and are gated on the *client host* instead: only
+# a loopback caller (same machine) may read or rotate the token. A remote caller
+# gets `token_required` but never the value, and cannot reset (403). This closes
+# the "packaged user locked out" gap without opening the token to the network.
+access_token_router = APIRouter()
+
+
+def _client_is_localhost(request: Request) -> bool:
+    client = request.client
+    return bool(client) and token_bootstrap.is_loopback_host(client.host)
+
+
+@access_token_router.get("/settings/access-token", response_model=AccessTokenOut)
+async def get_access_token(request: Request) -> AccessTokenOut:
+    """Report whether auth is required, and (localhost only) the active token."""
+    active = auth.active_token()
+    token = active if (active and _client_is_localhost(request)) else None
+    return AccessTokenOut(token_required=bool(active), token=token)
+
+
+@access_token_router.post("/settings/access-token/reset", response_model=AccessTokenOut)
+async def reset_access_token(request: Request) -> AccessTokenOut:
+    """Rotate the access token (localhost only). The old token stops working."""
+    if not _client_is_localhost(request):
+        raise HTTPException(status_code=403, detail="access-token reset is localhost-only")
+    token = token_bootstrap.reset_api_token(config.settings)
+    return AccessTokenOut(token_required=True, token=token)
 
 
 @router.get("/settings/providers", response_model=list[ProviderOption])

@@ -14,39 +14,37 @@ from server.db.session import engine
 logger = logging.getLogger(__name__)
 
 
-def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
+def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Logger = logger) -> None:
     """Boot-fatal + advisory checks on effective settings.
 
     Called at lifespan startup so it raises BEFORE the server serves any
-    request. Guarantees for P0-2:
+    request. Guarantees:
       - prod + missing ARSLAN_SECRET_KEY -> refuse to boot (RuntimeError).
         The message names only what is missing; it never echoes any configured
         secret value.
       - dev + missing secret -> keep booting; crypto.py supplies a deterministic
         dev fallback key, so we only warn once.
-      - prod + missing ARSLAN_API_TOKEN -> refuse to boot (RuntimeError); an empty
-        token leaves every endpoint open, so prod is held to the same bar as
-        SECRET_KEY. The message names only what is missing.
-      - dev + missing ARSLAN_API_TOKEN -> startup banner (all API/WS unauthenticated).
-      - 0.0.0.0 bind (best-effort) + no token -> loud network-exposure advisory.
+      - no ACTIVE token -> startup banner (all API/WS unauthenticated). In prod /
+        packaged / non-loopback binds ``server.token_bootstrap`` mints one before
+        this runs, so the banner only shows for the dev+localhost zero-friction
+        flow. (Prod used to refuse boot on an empty token; that hard failure is
+        superseded by the S1-3 bootstrap, which auto-generates + enforces one.)
+      - 0.0.0.0 bind (best-effort) + no active token -> network-exposure advisory.
+
+    ``active_token`` is the effective token after bootstrap (explicit env token or
+    a boot-minted one). It defaults to ``cfg.api_token`` so direct unit callers see
+    the raw explicit-token behaviour.
     """
     import os
+
+    if active_token is None:
+        active_token = cfg.api_token
 
     if cfg.is_prod and not cfg.secret_key:
         # NOTE: do not interpolate any configured secret (api_token/secret_key/
         # etc.) into this message — only name what is missing.
         raise RuntimeError(
             "ARSLAN_ENV=prod requires ARSLAN_SECRET_KEY (a long random value); "
-            "refusing to start. Set it in the environment."
-        )
-
-    # item c: prod must not run fully open. An empty ARSLAN_API_TOKEN leaves every
-    # API/WS endpoint unauthenticated, so in prod we refuse to boot — same posture
-    # as the missing-SECRET_KEY check above. The message names only what is missing
-    # and never echoes any configured secret value.
-    if cfg.is_prod and not cfg.api_token:
-        raise RuntimeError(
-            "ARSLAN_ENV=prod requires ARSLAN_API_TOKEN (a long random value); "
             "refusing to start. Set it in the environment."
         )
 
@@ -57,8 +55,9 @@ def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
             "random value) before any non-local deployment."
         )
 
-    if not cfg.api_token:
-        # Only reachable in dev now — prod with an empty token already refused above.
+    if not active_token:
+        # Only reachable in dev+localhost now — prod/packaged/non-loopback boots
+        # mint a token in token_bootstrap before this runs.
         log.warning(
             "⚠ ARSLAN_API_TOKEN not set: ALL API/WS endpoints are "
             "UNAUTHENTICATED — intended for localhost only."
@@ -67,7 +66,7 @@ def _validate_settings(cfg, *, log: logging.Logger = logger) -> None:
     # Bind advisory. The real bind host is the launcher's `uvicorn --host`; the
     # app cannot force it, so this is best-effort from ARSLAN_BIND_HOST/HOST.
     effective_host = os.environ.get("HOST") or cfg.bind_host
-    if effective_host == "0.0.0.0" and not cfg.api_token:  # noqa: S104 — advisory check, not a bind
+    if effective_host == "0.0.0.0" and not active_token:  # noqa: S104 — advisory check, not a bind
         log.warning(
             "⚠ Binding 0.0.0.0 with no API token — the API is exposed to the "
             "network with no auth. Set ARSLAN_API_TOKEN or bind 127.0.0.1."
@@ -80,11 +79,18 @@ async def lifespan(app: FastAPI):
     import os
     from pathlib import Path
 
+    from server import auth, token_bootstrap
     from server.config import settings
     from server.db.session import AsyncSessionLocal
 
+    # S1-3: mint/load an access token when this deployment must be authenticated
+    # (prod / packaged / non-loopback bind) and no explicit ARSLAN_API_TOKEN was
+    # given. Dev+localhost stays zero-friction (no token, no file). Runs BEFORE
+    # validation so the banner/advisory below reflect the effective token.
+    token_bootstrap.bootstrap_api_token(settings)
+
     # Boot-fatal secret/auth validation must run before anything is served.
-    _validate_settings(settings)
+    _validate_settings(settings, active_token=auth.active_token())
 
     # Ensure data + spawns dirs exist before the DB file is created on first
     # connect (SQLite will not create missing parent directories).
@@ -217,6 +223,9 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
+    # S1-3: access-token view/reset — NO require_auth (a packaged user must be able
+    # to discover the token), localhost-gated inside the handlers instead.
+    app.include_router(settings_api.access_token_router, prefix="/api/v1")
 
     from server.api import spawns as spawns_api
 

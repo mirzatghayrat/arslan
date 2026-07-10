@@ -14,6 +14,10 @@ class Settings:
     secret_key: str
     db_path: str
     spawns_dir: Path
+    # Root data directory (ARSLAN_DATA_DIR). Holds the SQLite db, spawns, and the
+    # bootstrapped access-token file (see server.token_bootstrap). Kept explicit so
+    # the token bootstrap doesn't have to re-derive it from db_path.
+    data_dir: Path = Path("data")
     static_dir: str = ""
     app_version: str = "0.1.0"
     attach_extract_char_limit: int = 12000
@@ -84,6 +88,7 @@ def load_settings() -> Settings:
         secret_key=os.environ.get("ARSLAN_SECRET_KEY", ""),
         db_path=db_path,
         spawns_dir=spawns_dir,
+        data_dir=data_dir,
         static_dir=static_dir,
         attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "12000")),
         env=env,
