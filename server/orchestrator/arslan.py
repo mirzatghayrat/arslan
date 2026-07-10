@@ -384,23 +384,32 @@ async def handle_user_message(
         # Without this, the router reads a post-card "好" as answer-thanks and the
         # parked delegation silently dies (real-machine gap found in the PA-6 run).
         pending_invite = await phase_service.get_pending_invite(conversation_id)
-        if pending_invite is not None and confirm_lexicon.is_short_confirm(user_message):
+        if pending_invite is not None:
+            if confirm_lexicon.is_short_confirm(user_message):
+                await phase_service.clear(conversation_id)
+                from server.services import recap_service
+                await recap_service.log_event(
+                    conversation_id, "delegation_advance",
+                    {"trigger": "invite_text_confirm", "spawn_id": pending_invite.get("spawn_id")},
+                    "文字确认接受邀请 → 派发停放任务")
+                await dispatch_routed(
+                    conversation_id, pending_invite["spawn_id"],
+                    pending_invite.get("task_brief") or "",
+                    bool(pending_invite.get("needs_proposal")), emit,
+                    user_message=pending_invite.get("user_message") or user_message,
+                    # Arslan already spoke its brief before the card — don't repeat it.
+                    announce=not bool(pending_invite.get("announced")),
+                )
+                await memory.maybe_compact(conversation_id)
+                return
+            # Bug B (stale parked-invite mis-fire): a parked invite is honored ONLY as the
+            # IMMEDIATE next user action. This turn is NOT that bare confirm — the user
+            # ignored the chip and moved on (the frontend already implicitly dismissed the
+            # chip UI on send via dismissAllPending, but sent no dismiss_invite). Clear the
+            # stale invite here so a LATER bare 「好」 (e.g. agreeing with something else N
+            # turns on) can't deterministically mis-dispatch the aged task. Then fall
+            # through to normal routing/answer for this turn.
             await phase_service.clear(conversation_id)
-            from server.services import recap_service
-            await recap_service.log_event(
-                conversation_id, "delegation_advance",
-                {"trigger": "invite_text_confirm", "spawn_id": pending_invite.get("spawn_id")},
-                "文字确认接受邀请 → 派发停放任务")
-            await dispatch_routed(
-                conversation_id, pending_invite["spawn_id"],
-                pending_invite.get("task_brief") or "",
-                bool(pending_invite.get("needs_proposal")), emit,
-                user_message=pending_invite.get("user_message") or user_message,
-                # Arslan already spoke its brief before the card — don't repeat it.
-                announce=not bool(pending_invite.get("announced")),
-            )
-            await memory.maybe_compact(conversation_id)
-            return
 
         # 1b. if a proposal is pending, classify the reply before routing
         pending = await phase_service.get_pending(conversation_id)
@@ -690,7 +699,29 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     band, payload = spawn_match_service.classify_band(ranked)
 
     if band == "invite_one":
-        emit(protocol.propose_invite(payload["spawn_id"], payload["why"]))
+        # Bug A (staffing ready-path dropped the task): PARK the gathered first_task so
+        # Accept / typed-「好」 dispatches it — mirroring _handle_route's non-member branch.
+        # Without set_inviting the chip fires but nothing is parked, so on Accept the WS
+        # roster_invite handler reads get_pending_invite() == None and only joins the spawn
+        # to the roster: the whole 4-slot gather (its first_task) silently dies. Carry
+        # `needs_proposal` so the accept handler re-makes the same propose-vs-execute call.
+        # `announced=False`: unlike the route branch, this band streams no brief before the
+        # card, so the post-accept dispatch (announce=True) speaks the handoff.
+        invite_spawn_id = payload["spawn_id"]
+        invite_task_brief = slots.get("first_task") or getattr(result, "task_brief", None) or ""
+        await phase_service.set_inviting(
+            conversation_id, invite_spawn_id,
+            task_brief=invite_task_brief, user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)),
+            announced=False,
+        )
+        from server.services import recap_service
+        invite_spawn_name = await dispatcher.get_spawn_name(invite_spawn_id)
+        await recap_service.log_event(
+            conversation_id, "invite",
+            {"spawn_id": invite_spawn_id, "spawn_name": invite_spawn_name},
+            f"邀请 {invite_spawn_name or '分身'} 加入")
+        emit(protocol.propose_invite(invite_spawn_id, payload["why"]))
         return
 
     if band == "picker":

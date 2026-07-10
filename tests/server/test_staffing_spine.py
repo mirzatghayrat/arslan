@@ -227,6 +227,56 @@ async def test_ready_strong_match_emits_propose_invite(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ready_strong_match_parks_gathered_task_for_accept(maker, monkeypatch):
+    """Bug A: the staffing ready-path invite_one band must PARK the gathered first_task
+    (set_inviting) so Accept / typed-「好」 dispatches it. Before the fix the chip fired
+    but nothing was parked, so on Accept the WS roster_invite handler found no pending
+    invite and only joined — the entire 4-slot gather silently died."""
+    from server.orchestrator import arslan, router
+
+    _stub_ready_route(monkeypatch, arslan, router)
+
+    async def _fake_score(need, spawns):
+        return [{"spawn_id": 7, "name": "seo-auditor", "score": 0.95, "why": "domain 1.0, coverage 0.9"}]
+
+    monkeypatch.setattr(arslan.spawn_match_service, "score_spawns", _fake_score)
+    monkeypatch.setattr(arslan.spawn_match_service, "classify_band",
+                        lambda ranked: ("invite_one",
+                                        {"spawn_id": 7, "name": "seo-auditor", "why": "strong"}))
+    monkeypatch.setattr(arslan.equipment_service, "curate", _fake_curate)
+
+    events = []
+    await arslan.handle_user_message("main", "I need an SEO auditor", _events(events))
+
+    # the chip fired ...
+    assert any(e["type"] == "propose_invite" for e in events)
+    # ... AND the gathered first_task is parked (this is what the WS Accept handler and
+    # the typed-consent path both read back). Bug A: previously None → task dropped.
+    invite = await phase_service.get_pending_invite("main")
+    assert invite is not None, "staffing ready-path must park the invite (Bug A)"
+    assert invite["spawn_id"] == 7
+    assert invite["task_brief"] == "audit acme.com keywords"
+
+    # End-to-end: a typed 「好」 accepts the parked invite and dispatches the gathered brief.
+    calls: list[dict] = []
+
+    async def _spy_dispatch(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw):
+        calls.append({"spawn_id": spawn_id, "task_brief": task_brief,
+                      "announce": kw.get("announce")})
+
+    monkeypatch.setattr(arslan, "dispatch_routed", _spy_dispatch)
+
+    async def _router_must_not_run(conv, msg):  # noqa: ANN001
+        raise AssertionError("router.route must not run on a typed invite-accept")
+
+    monkeypatch.setattr(arslan.router, "route", _router_must_not_run)
+
+    await arslan.handle_user_message("main", "好", _events([]))
+    assert calls == [{"spawn_id": 7, "task_brief": "audit acme.com keywords", "announce": True}]
+    assert await phase_service.get_pending_invite("main") is None   # consumed
+
+
+@pytest.mark.asyncio
 async def test_ready_ambiguous_emits_propose_staffing(maker, monkeypatch):
     """Ready slots + two comparable mids → propose_staffing with both candidates + a create_draft."""
     from server.orchestrator import arslan, router
