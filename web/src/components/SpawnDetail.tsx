@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
-import type { EvolveProposal, KnowledgeSource } from "../api/client.types";
+import type { EvolveEstimate, KnowledgeSource } from "../api/client.types";
 
 interface Props {
   spawnId: number;
@@ -19,8 +19,8 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
   const [compress, setCompress] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [proposal, setProposal] = useState<EvolveProposal | null>(null);
-  const [promoted, setPromoted] = useState<number | null>(null);
+  const [estimate, setEstimate] = useState<EvolveEstimate | null>(null);
+  const [enqueued, setEnqueued] = useState<string | null>(null);
 
   async function loadSources() {
     try {
@@ -115,12 +115,14 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     }
   }
 
-  async function propose() {
+  // Evolution is a background job now (spec §E5/E7): show the honest cost estimate first,
+  // then enqueue. The gate + human promotion happen on the "进化" inbox card, not here.
+  async function loadEstimate() {
     setBusy(true);
     setError(null);
-    setPromoted(null);
+    setEnqueued(null);
     try {
-      setProposal(await api.evolveSpawn(spawnId));
+      setEstimate(await api.getEvolveEstimate(spawnId));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -128,25 +130,23 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     }
   }
 
-  async function confirm() {
-    if (!proposal?.proposal_id) return;
+  async function enqueueEvolve() {
     setBusy(true);
+    setError(null);
     try {
-      const res = await api.confirmProposal(proposal.proposal_id);
-      if (res.ok) setPromoted(res.generation_level ?? null);
-      else setError(res.reason ?? "promote failed");
+      const res = await api.runEvolve(spawnId);
+      setEnqueued(
+        res.attempt_id != null
+          ? t("evolution.inbox.enqueued", { id: res.attempt_id })
+          : t("evolution.inbox.already_running"),
+      );
+      setEstimate(null);
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
   }
-
-  const agg = proposal?.gate.aggregate as
-    | { overall?: { better: number; worse: number; tie: number } }
-    | null
-    | undefined;
-  const overall = agg?.overall;
 
   return (
     <div className="spawn-detail" data-testid="spawn-detail">
@@ -214,30 +214,31 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
       </section>
 
       <section className="spawn-detail__section">
-        <h4>进化</h4>
-        <button className="evo-propose" disabled={busy} onClick={propose}>提出进化提案</button>
-        {proposal && (
+        <h4>{t("evolution.inbox.tab")}</h4>
+        <p className="spawn-detail__empty">{t("evolution.inbox.spawn_hint")}</p>
+        <button className="evo-propose" disabled={busy} onClick={loadEstimate}>
+          {t("evolution.inbox.estimate_title")}
+        </button>
+        {estimate && (
           <div className="evo-result">
-            <div className={`evo-badge evo-badge--${proposal.gate.passed ? "pass" : "fail"}`}>
-              {proposal.gate.passed ? "通过" : "未通过"} · {proposal.gate.reason}
+            <div className="evo-counts">
+              {t("evolution.card.estimate_line", {
+                judge: estimate.judge_calls,
+                tokens: estimate.est_tokens,
+              })}
             </div>
-            {overall && (
-              <div className="evo-counts">
-                更好 {overall.better} · 更差 {overall.worse} · 持平 {overall.tie}
-              </div>
-            )}
-            {proposal.candidate_prompt && (
-              <details className="evo-candidate">
-                <summary>候选 system prompt</summary>
-                <pre>{proposal.candidate_prompt.slice(0, 400)}{proposal.candidate_prompt.length > 400 ? "…" : ""}</pre>
-              </details>
-            )}
-            {proposal.gate.passed && proposal.proposal_id != null && promoted == null && (
-              <button className="evo-confirm" disabled={busy} onClick={confirm}>采纳</button>
-            )}
-            {promoted != null && <div className="evo-promoted">已采纳 · 第 {promoted} 代</div>}
+            <div className="evo-counts">
+              {t("evolution.inbox.estimate_detail", {
+                pairs: estimate.pairs,
+                dispatches: estimate.dispatches,
+              })}
+            </div>
+            <button className="evo-confirm" disabled={busy} onClick={enqueueEvolve}>
+              {t("evolution.inbox.enqueue")}
+            </button>
           </div>
         )}
+        {enqueued && <div className="evo-promoted">{enqueued}</div>}
       </section>
     </div>
   );

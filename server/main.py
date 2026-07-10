@@ -163,6 +163,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_notes_upgrade)
         from server.db.migrations.versions._0027_mcp_health import upgrade_sync as _mcp_health_upgrade
         await conn.run_sync(_mcp_health_upgrade)
+        from server.db.migrations.versions._0028_evolution_real import upgrade_sync as _evolution_real_upgrade
+        await conn.run_sync(_evolution_real_upgrade)
 
     from server.registry.seeder import seed_registry
 
@@ -204,7 +206,51 @@ async def lifespan(app: FastAPI):
         await run_redact.sweep(retention_days)
     except Exception as exc:  # noqa: BLE001 — retention sweep must never block boot
         logger.warning("run debug retention sweep failed (non-fatal): %s", exc)
+
+    # E1 reaper: re-enqueue judge scoring for runs stuck in 'recorded'/'score_failed'
+    # for >10 minutes (process died around the fire-and-forget scoring task). The judge
+    # must see every live run or the evolution corpus silently starves. Best-effort.
+    try:
+        from server.services import run_reaper
+
+        await run_reaper.reap_stuck_runs()
+    except Exception as exc:  # noqa: BLE001 — reaper must never block boot
+        logger.warning("run reaper failed (non-fatal): %s", exc)
+
+    # E9 baseline canary: once the developer has declared a clean-corpus baseline, count LIVE
+    # runs created after it that STILL carry epoch=0. A non-zero count means some run-creation
+    # path is missing the epoch=1 stamp — those runs will never enter the corpus, silently
+    # starving evolution. Log a WARNING so the missed path is visible. Best-effort; never blocks.
+    try:
+        from server.services import replay_gate
+
+        async with AsyncSessionLocal() as db:
+            starved = await replay_gate.count_epoch0_after_baseline(db)
+        if starved > 0:
+            logger.warning(
+                "evolution canary: %d live runs created after baseline carry epoch=0 — a "
+                "run-creation path is missing epoch=1; corpus may be starved", starved)
+    except Exception as exc:  # noqa: BLE001 — canary must never block boot
+        logger.warning("evolution baseline canary failed (non-fatal): %s", exc)
+
+    # E5 evolution watcher: a supervised background loop that, per spawn, checks the
+    # trigger (new replayable runs since the last attempt >= the backoff threshold), runs
+    # attempts within the token budget, and refreshes living proposals. Best-effort start —
+    # never blocks boot; a long interval keeps it idle-cheap.
+    try:
+        from server.services import evolution_watcher
+
+        evolution_watcher.start()
+    except Exception as exc:  # noqa: BLE001 — watcher start must never block boot
+        logger.warning("evolution watcher start failed (non-fatal): %s", exc)
     yield
+
+    try:
+        from server.services import evolution_watcher as _evo_watcher
+
+        await _evo_watcher.stop()
+    except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
+        logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
 
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()

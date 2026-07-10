@@ -292,7 +292,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                          mcp_fail_counts: dict | None = None,
                          mcp_hint_logged: set | None = None,
-                         conversation_id: str | None = None) -> dict:
+                         conversation_id: str | None = None,
+                         log_events: bool = True) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
     assistant turn + framed tool result into convo. Returns the raw result dict.
 
@@ -332,9 +333,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
     out = _record_tool_result(tool_key, args, result, emit, tool_trace,
                               assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
-    if (mcp_fail_counts is not None and mcp_hint_logged is not None
+    if (log_events and mcp_fail_counts is not None and mcp_hint_logged is not None
             and mcp_fail_counts.get(tool_key, 0) >= _MCP_FAIL_HINT_AT
             and tool_key not in mcp_hint_logged):
+        # log_events=False (E3 hermetic replay): the degrade counter still advances (the
+        # guard runs), only the ConversationEvent write is suppressed. In replay MCP tools
+        # are filtered out anyway, so this is belt-and-suspenders against a hallucinated key.
         mcp_hint_logged.add(tool_key)
         await _log_degrade_hint(conversation_id, tool_key, mcp_fail_counts[tool_key])
     return out
@@ -893,6 +897,7 @@ async def run_native(
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
     conversation_id: str | None = None,
+    log_events: bool = True,
 ) -> dict:
     """Native tool-calling twin of run(). Same signature, same return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -943,7 +948,7 @@ async def run_native(
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id)
+                conversation_id=conversation_id, log_events=log_events)
             searches_done += 1
 
     for step in range(max_tool_calls + 1):
@@ -999,7 +1004,8 @@ async def run_native(
                     name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
                     confirm_command=confirm_command, mcp_fail_counts=mcp_fail_counts,
-                    mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id)
+                    mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
+                    log_events=log_events)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})

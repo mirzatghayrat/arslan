@@ -106,7 +106,10 @@ async def list_runs(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
-    q = select(Run).order_by(Run.id.desc()).limit(limit)
+    # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
+    # surface in the runs list. get_run detail stays unfiltered so the card can link into a
+    # specific replay run's trace.
+    q = select(Run).where(Run.kind == "live").order_by(Run.id.desc()).limit(limit)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
@@ -201,7 +204,7 @@ N_CATALOG_TREND = 12
 async def runs_catalog(rng: str = Query("1h", alias="range"),
                        db: AsyncSession = Depends(get_session)) -> RunCatalogOut:
     start = _window_start(rng)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -267,7 +270,7 @@ N_VITALS_BUCKETS = 30
 async def runs_vitals(rng: str = Query("1h", alias="range"),
                       db: AsyncSession = Depends(get_session)) -> VitalsOut:
     start = _window_start(rng)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -306,7 +309,7 @@ async def runs_vitals(rng: str = Query("1h", alias="range"),
 async def runs_anomalies(range: str = Query("1h"),
                          db: AsyncSession = Depends(get_session)) -> list[AnomalyOut]:
     start = _window_start(range)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -382,7 +385,7 @@ N_TIMELINE_BUCKETS = 24
 async def runs_timeline(rng: str = Query("1h", alias="range"),
                         db: AsyncSession = Depends(get_session)) -> TimelineOut:
     start = _window_start(rng)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -469,6 +472,25 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
         evaluations=[RunEvaluationOut(dimension=e.dimension, status=e.status,
                                       score=e.score, comment=e.comment) for e in evals],
     )
+
+
+@router.post("/runs/{run_id}/rescore")
+async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """Manually re-enqueue judge scoring for one run (E1). 404 on unknown run.
+
+    Auth: covered by the router-level require_auth dependency.
+    E2: rejects kind != 'live' with 409 — replay runs end in terminal status 'replayed'
+    and are never judged, so re-enqueueing one is a client error, not a no-op.
+    """
+    from server.services import run_recorder
+
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run.kind != "live":
+        raise HTTPException(status_code=409, detail="only live runs can be rescored")
+    run_recorder.schedule_scoring(run_id)
+    return {"enqueued": True}
 
 
 @router.post("/runs/{run_id}/redact")

@@ -264,13 +264,25 @@ async def _mcp_health_advisory(wired: list[dict]) -> str:
 
 async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
                              attached_context: str | None = None,
-                             system_prompt_override: str | None = None) -> tuple[str, list[dict]]:
+                             system_prompt_override: str | None = None,
+                             replay: bool = False,
+                             ambient: dict | None = None) -> tuple[str, list[dict]]:
     """Full spawn system prompt (base + anti-fab + facts + evolution + KB + attached +
-    equipment block + tool guidance) + the live wired tools. Shared by dispatch() and /ws/chat."""
+    equipment block + tool guidance) + the live wired tools. Shared by dispatch() and /ws/chat().
+
+    replay=True (S2 E3 hermetic replay): retrieval records NO brain_usage, and the wired
+    tool set is narrowed to the replay-safe builtins (every MCP tool dropped — the model
+    sees none). The Tier-1 evolution suffix is still appended AFTER the base override, so a
+    candidate and a baseline arm remain structurally identical to production and to each other.
+
+    ambient (S2 E3): a pre-captured snapshot {facts, kb_block, kb_sources} from
+    replay_run.snapshot_ambient. When given, facts + KB are taken from the snapshot instead
+    of re-fetched, so a pair's two arms are byte-identical outside the base-prompt diff even
+    if the DB changes between them."""
     from server.services import evolution_service
     from server.services import knowledge as _knowledge
 
-    facts = await memory.facts_text()
+    facts = ambient["facts"] if ambient is not None else await memory.facts_text()
     base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
     system = base_prompt
     system += (
@@ -301,23 +313,38 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
         prefs = "\n- ".join(str(f) for f in spawn.memory_facts if str(f).strip())
         if prefs:
             system += f"\n\n[关于如何为这位用户工作,你已学到的偏好]\n- {prefs}"
+    # Tier-1 evolution suffix — appended AFTER the base (override or persona) for EVERY arm,
+    # so a replay candidate and baseline both carry it exactly as production does (spec §E3).
     suffix = evolution_service.prompt_suffix(spawn.name)
     if suffix:
         system = f"{system}\n\n{suffix}"
     _kb_sources = None
-    try:
-        # used_ref=None: build_spawn_system has no conversation_id in scope; usage
-        # count still accrues per material hit, the "最近用于" ref is filled by the
-        # Arslan direct-chat path which does carry conversation_id.
-        _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id, used_ref=None)
-        system += _knowledge.knowledge_block(_kb)
-        _kb_sources = [src for src, _ in _kb] or None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
+    if ambient is not None:
+        # E3: inject the pre-captured KB snapshot (no retrieval, no usage write) so both arms
+        # of a pair see byte-identical knowledge.
+        system += ambient["kb_block"]
+        _kb_sources = ambient["kb_sources"]
+    else:
+        try:
+            # used_ref=None: build_spawn_system has no conversation_id in scope; usage
+            # count still accrues per material hit, the "最近用于" ref is filled by the
+            # Arslan direct-chat path which does carry conversation_id. record_usage=False
+            # in replay: retrieve identically but never touch brain_usage counters.
+            _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
+                                                   used_ref=None, record_usage=not replay)
+            system += _knowledge.knowledge_block(_kb)
+            _kb_sources = [src for src, _ in _kb] or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("knowledge retrieve failed (non-fatal): %s", exc)
     if attached_context:
         system += f"\n\n[用户附带的临时材料]\n{attached_context}"
     equipment = await registry_service.equipment_for_spawn(spawn.id)
     wired = await registry_service.wired_tools_for_spawn(spawn.id, current_turn=current_turn)
+    if replay:
+        # Narrow to replay-safe builtins: the model must neither SEE nor be able to invoke an
+        # MCP (or other side-effecting) tool inside a hermetic replay.
+        from server.services.replay_safety import filter_replay_tools
+        wired = filter_replay_tools(wired)
     skill_body_map = await registry_service.skill_bodies([s["key"] for s in equipment["skills"]])
     system += _equipment_block_from(equipment, wired, skill_body_map)
     system += await _mcp_health_advisory(wired)
@@ -331,12 +358,15 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
 
 async def _apply_zero_tool_honesty(
     full: str, spawn_name: str | None, conversation_id: str,
-    on_chunk: Callable[[str], None] | None,
+    on_chunk: Callable[[str], None] | None, *, log_events: bool = True,
 ) -> str:
     """S0: run the zero-tool spawn's final answer through the shared honesty pass. On a
     fabrication hit, append the bounded honest correction (streamed live via on_chunk +
     returned so it persists) and log a promise_intercept(tier=zero_tool) audit event.
-    Fail-open: any error keeps the original answer and the turn survives."""
+    Fail-open: any error keeps the original answer and the turn survives.
+
+    log_events=False (S2 E3 hermetic replay): the guard STILL runs and the correction is
+    STILL applied to the output — only the ConversationEvent audit write is skipped."""
     if not full:
         return full
     try:
@@ -347,6 +377,8 @@ async def _apply_zero_tool_honesty(
             if on_chunk is not None:
                 on_chunk("\n\n" + correction)
             full = f"{full}\n\n{correction}"
+            if not log_events:
+                return full  # replay: correction applied, audit event suppressed
             try:
                 from server.services import recap_service
                 await recap_service.log_event(
@@ -360,6 +392,127 @@ async def _apply_zero_tool_honesty(
     except Exception as exc:  # noqa: BLE001 — honesty pass never breaks the turn
         logger.warning("zero-tool honesty pass failed (fail-open, answer kept): %s", exc)
     return full
+
+
+async def _run_model(
+    spawn, system: str, wired: list[dict], user_content: str, history: list[dict],
+    current_turn: int, conversation_id: str,
+    on_chunk: Callable[[str], None] | None, emit: Callable[[dict], None] | None,
+    allow_escalation: bool, *, replay: bool = False,
+) -> tuple[str, dict | None]:
+    """Run the spawn's model turn and return (full_output, escalation). Shared by the live
+    and replay dispatch paths so replay reuses the EXACT equipped/zero-tool branching (only
+    the replay flags differ). Returns escalation=None for the zero-tool path."""
+    if wired:
+        # Equipped path: bounded native tool loop (gate-per-call).
+        out_loop = await spawn_loop.run(
+            spawn_id=spawn.id,
+            system=system,
+            user_content=user_content,
+            history=history,
+            current_turn=current_turn,
+            emit=(emit or (lambda e: None)),
+            on_chunk=(on_chunk or (lambda c: None)),
+            allow_escalation=allow_escalation,
+            conversation_id=conversation_id,
+            replay=replay,
+        )
+        return out_loop["final"] or "", out_loop["escalation"]
+    # Zero-tool path: plain chat_stream (a persona-only spawn has no wired tools, so it
+    # cannot run the native tool-loop). It still streams live, but its FINAL answer is run
+    # through the SAME honesty detectors the equipped/answer paths use — closing the S0 gap
+    # where a tool-less spawn could fabricate "已生成PPT并交付" / "正在生成中,稍等" unchecked.
+    adapter = _get_adapter()
+    a = await adapter if hasattr(adapter, "__await__") else adapter
+    full = ""
+    async for piece in a.chat_stream(system, user_content, history=history):
+        full += piece
+        if on_chunk is not None:
+            on_chunk(piece)
+    full = await _apply_zero_tool_honesty(full, spawn.name, conversation_id, on_chunk,
+                                          log_events=not replay)
+    return full, None
+
+
+async def _dispatch_replay(
+    conversation_id: str, *, spawn, task_brief: str,
+    on_chunk: Callable[[str], None] | None, on_event: Callable[[dict], None] | None,
+    prior_output: str | None, instruction: str | None, allow_escalation: bool,
+    mode: str, system_prompt_override: str | None, attached_context: str | None,
+    ambient: dict | None,
+) -> dict:
+    """Hermetic replay dispatch (S2 E3). Owns the replay Run end-to-end: create the
+    kind='replay' recorder, scope usage/trace collection, run the model with the replay
+    flags (no brain_usage, no MCP tools, no ConversationEvent, no persisted artifact),
+    finalize to status='replayed' with the output persisted, and return result['run_id'].
+    Never persists ChatMessage/ArslanMessage. Reused by evaluator/replay_run/skill_forge."""
+    from arslan.llm import usage_sink
+    from server.orchestrator import run_trace
+    from server.services.run_recorder import RunRecorder
+
+    recorder = await RunRecorder.start(
+        conversation_id=conversation_id, spawn_id=spawn.id, spawn_name=spawn.name,
+        user_message=task_brief, kind="replay")
+    emit = recorder.tee(on_event or (lambda e: None))
+
+    full = ""
+    escalation: dict | None = None
+    # usage_sink + run_trace scoped HERE (replay callers dispatch directly, not via the
+    # orchestrator), so the replay Run captures its own model/provider/tokens + full tool
+    # trace + assembled system prompt (drained inside finalize before this context exits).
+    with usage_sink.collecting(), run_trace.collecting():
+        try:
+            current_turn = await memory.user_turn_count(conversation_id)
+            system, wired = await build_spawn_system(
+                spawn, retrieval_query=task_brief, current_turn=current_turn,
+                attached_context=attached_context,
+                system_prompt_override=system_prompt_override,
+                replay=True, ambient=ambient)
+            history = await _spawn_history(spawn.id)
+            if instruction:
+                user_content = (
+                    f"{task_brief}\n\nYour previous result:\n{prior_output or ''}\n\n"
+                    f"Apply this refinement and return the full revised result:\n{instruction}")
+            else:
+                user_content = _frame_brief(task_brief, mode=mode, proposed_direction=prior_output)
+            # stream_start opens the dispatch step; finalize's fallback closes it (no spawn_meta).
+            emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn.id})
+            full, escalation = await _run_model(
+                spawn, system, wired, user_content, history, current_turn, conversation_id,
+                on_chunk, emit, allow_escalation, replay=True)
+        except Exception as exc:  # noqa: BLE001 — record the failed replay Run, then re-raise
+            _usage = usage_sink.detail()
+            _prompt = run_trace.prompt()
+            await recorder.finalize(
+                replay=True, summary_message_id=None, full_output="",
+                model=_usage["model"], provider=_usage["provider"],
+                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                tokens_estimated=(_usage["tokens_in"] is None),
+                error_kind=type(exc).__name__, error_text=str(exc),
+                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                injected_kb_sources=_prompt.get("injected_kb_sources"))
+            raise
+        # Deliberately DO NOT call html_artifact.package_spawn_output with a real run_id: a
+        # replay writes no HTML file / no downloadable Run-linked artifact (deck returns base64
+        # in-memory; nothing lands on disk).
+        _usage = usage_sink.detail()
+        _prompt = run_trace.prompt()
+        await recorder.finalize(
+            replay=True, summary_message_id=None, full_output=full,
+            model=_usage["model"], provider=_usage["provider"],
+            tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+            tokens_estimated=(_usage["tokens_in"] is None),
+            system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+            injected_kb_sources=_prompt.get("injected_kb_sources"))
+    return {
+        "full_output": full,
+        "spawn_name": spawn.name,
+        "summary_message_id": None,
+        "assistant_message_id": None,
+        "escalation": escalation,
+        "artifact": None,
+        "run_id": recorder.run_id,
+    }
 
 
 async def dispatch(
@@ -377,10 +530,12 @@ async def dispatch(
     persist: bool = True,
     attached_context: str | None = None,
     run_id: int | None = None,
+    replay: bool = False,
+    ambient: dict | None = None,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
     {full_output, spawn_name, summary_message_id, assistant_message_id, escalation,
-    artifact}.
+    artifact} (replay adds run_id).
 
     run_id (when the caller records the turn as a Run) enables the HTML deliverable
     channel (HX-2, B1/B3): a full/truncated `<!DOCTYPE html>` final output is stored
@@ -391,6 +546,14 @@ async def dispatch(
     on_event receives tool_call/tool_result dicts from the loop (equipped spawns only).
     escalation is None for normal completions; a dict for escalating spawns.
 
+    replay=True (S2 E3 hermetic replay): the axis is SEPARATE from `mode` (which is the
+    execute/propose framing). A replay runs the spawn WITHOUT touching real state — no
+    brain_usage, no ConversationEvent (honesty guards still execute), no MCP tools, no
+    persistent artifact, persist forced off — but DOES record a `kind='replay'` Run
+    (status='replayed', final_output set, full trace) that this call owns end-to-end and
+    whose id it returns as result["run_id"]. `ambient` is the per-pair snapshot shared by
+    both arms (see build_spawn_system / replay_run.snapshot_ambient).
+
     Design: current_turn and wired are computed once here and shared between the
     equipment block builder and the spawn_loop call, avoiding duplicate DB queries.
     Equipment is fetched first (cheap); wired is skipped entirely for unequipped
@@ -399,6 +562,15 @@ async def dispatch(
     spawn = await _load_spawn(spawn_id)
     if spawn is None:
         raise ValueError(f"spawn {spawn_id} not found")
+
+    if replay:
+        return await _dispatch_replay(
+            conversation_id, spawn=spawn, task_brief=task_brief, on_chunk=on_chunk,
+            on_event=on_event, prior_output=prior_output, instruction=instruction,
+            allow_escalation=allow_escalation, mode=mode,
+            system_prompt_override=system_prompt_override,
+            attached_context=attached_context, ambient=ambient,
+        )
 
     current_turn = await memory.user_turn_count(conversation_id)
     system, wired = await build_spawn_system(
@@ -417,36 +589,10 @@ async def dispatch(
         # In execute_confirmed mode, prior_output carries the spawn's proposed direction.
         user_content = _frame_brief(task_brief, mode=mode, proposed_direction=prior_output)
 
-    full = ""
-    escalation = None
-
-    if wired:
-        # Equipped path: bounded tool loop (JSON protocol, gate-per-call).
-        out_loop = await spawn_loop.run(
-            spawn_id=spawn_id,
-            system=system,
-            user_content=user_content,
-            history=history,
-            current_turn=current_turn,
-            emit=(on_event or (lambda e: None)),
-            on_chunk=(on_chunk or (lambda c: None)),
-            allow_escalation=allow_escalation,
-            conversation_id=conversation_id,
-        )
-        full = out_loop["final"] or ""
-        escalation = out_loop["escalation"]
-    else:
-        # Zero-tool path: plain chat_stream (a persona-only spawn has no wired tools, so it
-        # cannot run the native tool-loop). It still streams live, but its FINAL answer is run
-        # through the SAME honesty detectors the equipped/answer paths use — closing the S0 gap
-        # where a tool-less spawn could fabricate "已生成PPT并交付" / "正在生成中,稍等" unchecked.
-        adapter = _get_adapter()
-        a = await adapter if hasattr(adapter, "__await__") else adapter
-        async for piece in a.chat_stream(system, user_content, history=history):
-            full += piece
-            if on_chunk is not None:
-                on_chunk(piece)
-        full = await _apply_zero_tool_honesty(full, spawn.name, conversation_id, on_chunk)
+    full, escalation = await _run_model(
+        spawn, system, wired, user_content, history, current_turn, conversation_id,
+        on_chunk, on_event, allow_escalation,
+    )
 
     # HX-2 (B1/B3): sniff the final output for a full/truncated HTML document at THIS
     # exit — every dispatched spawn passes through here, so the channel is universal.

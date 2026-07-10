@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from arslan.llm.catalog import CAPABILITY_DIMENSIONS, capabilities_for, language_fit
 
-JUDGMENT_ROLES = frozenset({"router", "converse", "critical"})
+# "judge" (run_eval_service/compare_judge) and "judgment" (optimizer) are pinned here
+# (E1): evaluation/optimization must ALWAYS run on the primary config — never drift to
+# a cheaper model under strategy routing.
+JUDGMENT_ROLES = frozenset({"router", "converse", "critical", "judge", "judgment"})
 # WORKER_ROLES is illustrative/documentation only — not used in routing logic.
 # It documents the intended set of worker roles that ARE eligible for
 # strategy-based routing (i.e. roles NOT in JUDGMENT_ROLES).

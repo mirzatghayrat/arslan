@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunEvaluation
+from server.services import settings_service
 
 _DIMENSIONS = ("fabrication", "identity", "completion")
 
@@ -22,11 +23,20 @@ async def build(spawn_id: int, *, cap: int = 20) -> list[dict]:
     """
     items: list[dict] = []
     async with db_session.AsyncSessionLocal() as db:
-        runs = (await db.execute(
+        # E9: additionally floor real runs at the developer-declared clean-corpus start so
+        # S2 dev/testing runs (also epoch=1) never enter the corpus (spec §E9 / audit #12).
+        baseline = await settings_service.get_baseline_started_at(db)
+        q = (
             select(Run)
-            .where(Run.spawn_id == spawn_id, Run.status == "scored")
-            .order_by(Run.id.desc())
-            .limit(cap)
+            # E2: only clean-corpus live runs — replay arms (kind='replay') and pre-baseline
+            # rows (epoch=0) are permanently excluded from the evaluation corpus.
+            .where(Run.spawn_id == spawn_id, Run.status == "scored",
+                   Run.kind == "live", Run.epoch >= 1)
+        )
+        if baseline is not None:
+            q = q.where(Run.created_at >= baseline)
+        runs = (await db.execute(
+            q.order_by(Run.id.desc()).limit(cap)
         )).scalars().all()
 
         for run in runs:
@@ -59,22 +69,3 @@ async def build(spawn_id: int, *, cap: int = 20) -> list[dict]:
                 "baseline_dims": baseline_dims,
             })
     return items
-
-
-async def build_split(spawn_id: int, *, train_cap: int = 12, val_cap: int = 6,
-                      min_val: int = 3) -> dict:
-    """Split the newest scored-Run replay items into a held-out train/val set.
-
-    Deterministic interleave by position (every 3rd item -> val) so both splits span
-    the same time range (no recency skew, no RNG). Returns {"train": [...], "val": [...]}.
-    If fewer than `min_val` items would land in val, returns empty splits (insufficient).
-    """
-    items = await build(spawn_id, cap=train_cap + val_cap)
-    train, val = [], []
-    for idx, it in enumerate(items):
-        (val if idx % 3 == 2 else train).append(it)
-    val = val[:val_cap]
-    train = train[:train_cap]
-    if len(val) < min_val:
-        return {"train": [], "val": []}
-    return {"train": train, "val": val}

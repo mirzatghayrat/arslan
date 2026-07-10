@@ -4,7 +4,30 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from server.db import session as db_session
 from server.db.models import Base, EvolutionProposal, Spawn
-from server.services import evolution_loop, optimizer, evaluator, replay_set
+from server.services import evolution_loop, optimizer, evaluator, replay_gate, replay_set
+
+
+def _gate_result(passed):
+    """A stub GateResult standing in for the paired ReplayGate final decision."""
+    empty = {"wins": 0, "losses": 0, "ties": 0, "n": 0,
+             "win_rate": 0.0, "p_value": 1.0, "ci95": [0.0, 0.0]}
+    real = {"wins": 11, "losses": 0, "ties": 0, "n": 11,
+            "win_rate": 1.0, "p_value": 0.0004, "ci95": [0.7, 1.0]}
+    return replay_gate.GateResult(
+        passed=passed, reason=("pass" if passed else "holdout_winrate"), flags=[],
+        real_delta=(real if passed else empty), synthetic_delta=dict(empty),
+        evidence_tier=("strong" if passed else "weak"), pairs=[],
+        excluded_count=0, protected_run_ids=[101, 102])
+
+
+def _patch_gate(monkeypatch, *, passed):
+    """Stub the FINAL run_gate so the loop's certifying decision is deterministic.
+    build_corpus is stubbed by _patch_common (the loop now builds the corpus once, up front,
+    and reuses it for the gate), so this only fixes the gate verdict."""
+    async def fake_run_gate(db, *, spawn_id, candidate_prompt, baseline_prompt, corpus,
+                            persona="", changed_fields=None, excluded=0):
+        return _gate_result(passed)
+    monkeypatch.setattr(replay_gate, "run_gate", fake_run_gate)
 
 
 @pytest.fixture
@@ -51,15 +74,31 @@ def _seed_spawn(Session, spawn_like):
     return anyio.run(_ins)
 
 
-def _split():
-    return {"train": [{"run_id": 1, "task": "t1", "baseline_output": "b1"}],
-            "val": [{"run_id": 2, "task": "t2", "baseline_output": "b2",
-                     "baseline_overall": 6, "baseline_dims": {}}]}
+def _corpus(*, propose_n=3, holdout_n=2):
+    """A ReplayGate corpus with a known propose/holdout partition. The optimizer must only
+    ever see the PROPOSE tasks; the holdout tasks (source_run_id 200+) certify the gate."""
+    c = replay_gate.Corpus()
+    for i in range(propose_n):
+        c.append({"task": f"p{i}", "corpus_label": "real", "source_ref": 100 + i,
+                  "source_run_id": 100 + i, "split_side": "propose"})
+    for i in range(holdout_n):
+        c.append({"task": f"h{i}", "corpus_label": "real", "source_ref": 200 + i,
+                  "source_run_id": 200 + i, "split_side": "holdout"})
+    return c
 
 
-def _patch_common(monkeypatch, *, split, edits_by_epoch):
-    async def fake_split(spawn_id, **k): return split
-    monkeypatch.setattr(replay_set, "build_split", fake_split)
+def _rich(propose_n=3):
+    """Stored judge evidence for the propose real runs (joined by run id in the loop)."""
+    return [{"run_id": 100 + i, "task": f"p{i}", "baseline_output": f"b{i}",
+             "baseline_overall": 6, "baseline_dims": {}} for i in range(propose_n)]
+
+
+def _patch_common(monkeypatch, *, edits_by_epoch, corpus=None, rich=None):
+    the_corpus = corpus if corpus is not None else _corpus()
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None): return the_corpus
+    monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
+    async def fake_build(spawn_id, **k): return rich if rich is not None else _rich()
+    monkeypatch.setattr(replay_set, "build", fake_build)
     async def fake_val_outputs(spawn_id, doc, val): return {it["run_id"]: "best" for it in val}
     monkeypatch.setattr(evolution_loop, "_val_outputs", fake_val_outputs)
     seq = list(edits_by_epoch)
@@ -72,7 +111,7 @@ def _patch_common(monkeypatch, *, split, edits_by_epoch):
 
 
 def test_loop_accepts_improving_edit_and_proposes(monkeypatch, memdb):
-    _patch_common(monkeypatch, split=_split(),
+    _patch_common(monkeypatch,
                   edits_by_epoch=[[{"op": "add", "section": "Style", "content": "Be terse."}], []])
     async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
         better = "Be terse." in candidate_prompt
@@ -80,14 +119,26 @@ def test_loop_accepts_improving_edit_and_proposes(monkeypatch, memdb):
         return {"items": [], "aggregate": {"overall": o, "dims": {}},
                 "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
     monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+    _patch_gate(monkeypatch, passed=True)          # ReplayGate passes on holdout
     _seed_spawn(memdb, _Spawn)
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
     assert res["proposal_id"] is not None
+    assert res["gate"]["passed"] is True
     assert res["evidence"]["diff"] == [{"op": "add", "section": "Style", "content": "Be terse."}]
+    # The persisted proposal is a LIVING one: status='open', base_prompt_sha pinned,
+    # gate evidence (protected_run_ids) carried on it for E2's redact exemption.
+    async def _read():
+        async with memdb() as db:
+            return await db.get(EvolutionProposal, res["proposal_id"])
+    prop = anyio.run(_read)
+    assert prop.status == "open"
+    assert prop.base_prompt_sha and len(prop.base_prompt_sha) == 64
+    assert prop.evidence["protected_run_ids"] == [101, 102]
+    assert "real_delta" in prop.evidence and "synthetic_delta" in prop.evidence
 
 
 def test_loop_rejects_and_buffers(monkeypatch, memdb):
-    seen_avoid = _patch_common(monkeypatch, split=_split(),
+    seen_avoid = _patch_common(monkeypatch,
                                edits_by_epoch=[[{"op": "add", "section": "X", "content": "bad"}],
                                                [{"op": "add", "section": "Y", "content": "also"}]])
     async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
@@ -102,36 +153,38 @@ def test_loop_rejects_and_buffers(monkeypatch, memdb):
 
 
 def test_loop_no_op_on_insufficient(monkeypatch, memdb):
-    async def fake_split(spawn_id, **k): return {"train": [], "val": []}
-    monkeypatch.setattr(replay_set, "build_split", fake_split)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
-    assert res["proposal_id"] is None and res["gate"]["passed"] is False
-
-
-def test_loop_final_guard_vs_original(monkeypatch, memdb):
-    _patch_common(monkeypatch, split=_split(),
-                  edits_by_epoch=[[{"op": "add", "section": "Style", "content": "Be terse."}], []])
-    async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
-        passed = baseline_outputs is not None   # running-best: pass; final vs original: fail
-        o = {"better": 1, "worse": 0, "tie": 0} if passed else {"better": 0, "worse": 1, "tie": 0}
-        return {"items": [], "aggregate": {"overall": o, "dims": {}},
-                "gate": {"passed": passed, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
-    monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None): return replay_gate.Corpus()
+    monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
+    async def fake_build(spawn_id, **k): return []
+    monkeypatch.setattr(replay_set, "build", fake_build)
     _seed_spawn(memdb, _Spawn)
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
-    assert res["proposal_id"] is None   # accepted vs running-best, but no net gain over original
+    assert res["proposal_id"] is None and res["gate"]["passed"] is False
+    assert res["gate"]["reason"] == "insufficient scored runs"
+
+
+def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
+    # An edit is accepted against the running-best propose signal, but the paired
+    # ReplayGate FAILS on holdout → no proposal (the gate, not the optimizer, decides).
+    _patch_common(monkeypatch,
+                  edits_by_epoch=[[{"op": "add", "section": "Style", "content": "Be terse."}], []])
+    async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
+        better = "Be terse." in candidate_prompt
+        o = {"better": 1, "worse": 0, "tie": 0} if better else {"better": 0, "worse": 0, "tie": 1}
+        return {"items": [], "aggregate": {"overall": o, "dims": {}},
+                "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
+    monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+    _patch_gate(monkeypatch, passed=False)         # ReplayGate FAILS on holdout
+    _seed_spawn(memdb, _Spawn)
+    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    assert res["proposal_id"] is None
+    assert res["gate"]["passed"] is False and res["gate"]["reason"] == "holdout_winrate"
 
 
 def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
-    async def fake_split(spawn_id, **k): return _split()
-    monkeypatch.setattr(replay_set, "build_split", fake_split)
+    _patch_common(monkeypatch, edits_by_epoch=[[{"op": "add", "section": "X", "content": "c"}]])
     async def boom(spawn_id, doc, val): raise RuntimeError("dispatch down")
     monkeypatch.setattr(evolution_loop, "_val_outputs", boom)
-    async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
-        o = {"better": 0, "worse": 0, "tie": 1}
-        return {"items": [], "aggregate": {"overall": o, "dims": {}},
-                "gate": {"passed": False, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
-    monkeypatch.setattr(evaluator, "evaluate", fake_eval)
     _seed_spawn(memdb, _Spawn)
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))  # must not raise
     assert res["proposal_id"] is None
@@ -175,6 +228,57 @@ async def test_confirm_refuses_when_gate_failed(memdb, monkeypatch):
     async with memdb() as db:
         s = await db.get(Spawn, sid)
     assert s.system_prompt == "ORIGINAL"
+
+
+async def test_confirm_refuses_stale(memdb, monkeypatch):
+    # A stale living proposal (base prompt drifted) must never be promoted — confirm refuses
+    # with an 'already stale' reason (the API maps this to 409).
+    sid = await _spawn(memdb, prompt="ORIGINAL")
+    async with memdb() as db:
+        p = EvolutionProposal(spawn_id=sid, candidate_prompt="NEWP", gate_passed=True,
+                              evidence={}, status="stale")
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        pid = p.id
+    res = await evolution_loop.confirm_proposal(pid)
+    assert res["ok"] is False
+    assert "stale" in res["reason"]
+    async with memdb() as db:
+        s = await db.get(Spawn, sid)
+    assert s.system_prompt == "ORIGINAL"   # not promoted
+
+
+async def test_confirm_refuses_when_base_prompt_drifted(memdb, monkeypatch):
+    # FIX 2 (spec §E7 audit #14): an OPEN proposal whose gate ran against a baseline that has
+    # since drifted (another proposal for the same spawn was promoted first) must NOT be
+    # promoted — that would silently revert the earlier change against a baseline that no
+    # longer exists. confirm re-checks base_prompt_sha, refuses, and marks the proposal stale.
+    from server.services import skill_doc
+    sid = await _spawn(memdb, prompt="ORIGINAL")
+    base_sha = evolution_loop._sha(skill_doc.apply_edits("ORIGINAL", []))
+    async with memdb() as db:
+        a = EvolutionProposal(spawn_id=sid, candidate_prompt="PROMPT_A", gate_passed=True,
+                              evidence={}, status="open", base_prompt_sha=base_sha)
+        b = EvolutionProposal(spawn_id=sid, candidate_prompt="PROMPT_B", gate_passed=True,
+                              evidence={}, status="open", base_prompt_sha=base_sha)
+        db.add_all([a, b])
+        await db.commit()
+        await db.refresh(a)
+        await db.refresh(b)
+        aid, bid = a.id, b.id
+
+    first = await evolution_loop.confirm_proposal(aid)     # promote A → spawn prompt drifts
+    assert first["ok"] is True
+
+    second = await evolution_loop.confirm_proposal(bid)    # B is now stale vs the live prompt
+    assert second["ok"] is False
+    assert "stale" in second["reason"]
+    async with memdb() as db:
+        s = await db.get(Spawn, sid)
+        pb = await db.get(EvolutionProposal, bid)
+    assert s.system_prompt == "PROMPT_A"   # B did NOT overwrite A's promotion
+    assert pb.status == "stale"
 
 
 async def test_confirm_twice_is_noop(memdb, monkeypatch):

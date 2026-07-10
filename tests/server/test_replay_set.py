@@ -1,4 +1,3 @@
-import anyio
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -19,9 +18,10 @@ async def memdb(monkeypatch):
 
 async def _add_run(Session, *, spawn_id, status, user_message, output, overall, with_eval=True):
     async with Session() as db:
+        # E2: the corpus is live epoch>=1 runs only (what the recorder now writes).
         run = Run(conversation_id="c", spawn_id=spawn_id, spawn_name="X",
                   user_message=user_message, status=status, task_tokens=0,
-                  overall_score=overall)
+                  overall_score=overall, kind="live", epoch=1)
         db.add(run)
         await db.commit()
         await db.refresh(run)
@@ -71,29 +71,6 @@ async def test_skips_missing_output_and_handles_empty(memdb):
     assert await replay_set.build(2) == []   # both skipped → empty
     assert await replay_set.build(999) == []  # no runs → empty
 
-
-def test_split_interleaves_and_holds_out(monkeypatch):
-    # 6 fake items (ids 6..1, newest first as build returns them)
-    fake = [{"run_id": i, "task": f"t{i}", "baseline_output": f"o{i}",
-             "baseline_overall": 7, "baseline_dims": {}} for i in (6, 5, 4, 3, 2, 1)]
-
-    async def fake_build(spawn_id, *, cap):
-        return fake[:cap]
-    monkeypatch.setattr(replay_set, "build", fake_build)
-
-    split = anyio.run(lambda: replay_set.build_split(1, train_cap=4, val_cap=2, min_val=1))
-    train_ids = [it["run_id"] for it in split["train"]]
-    val_ids = [it["run_id"] for it in split["val"]]
-    # deterministic interleave: every 3rd (index 2,5...) -> val; rest -> train
-    assert val_ids == [4, 1]
-    assert train_ids == [6, 5, 3, 2]
-    assert not (set(train_ids) & set(val_ids))  # held out, no overlap
-
-
-def test_split_insufficient_returns_empty(monkeypatch):
-    async def fake_build(spawn_id, *, cap):
-        return [{"run_id": 1, "task": "t", "baseline_output": "o",
-                 "baseline_overall": 7, "baseline_dims": {}}]
-    monkeypatch.setattr(replay_set, "build", fake_build)
-    split = anyio.run(lambda: replay_set.build_split(1, train_cap=4, val_cap=2, min_val=3))
-    assert split == {"train": [], "val": []}
+# NOTE (FIX 1): replay_set.build_split (position-based train/val split) was removed — the
+# evolution loop now derives train/val from the ReplayGate PROPOSE partition so the optimizer
+# can never train on a certifying holdout task. Its two split tests were removed with it.

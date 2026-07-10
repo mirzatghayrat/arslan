@@ -92,6 +92,31 @@ async def test_list_runs_combines_spawn_and_conversation_filters(client):
     assert [item["user_message"] for item in r.json()] == ["match"]
 
 
+async def test_list_runs_excludes_replay_runs(client):
+    """FIX 5 (E2): GET /runs lists only kind='live' runs; replay runs are the gate's internal
+    two-arm evidence and never surface in the list. get_run detail stays reachable for them."""
+    async with client.db_maker() as db:
+        live = Run(conversation_id="c", spawn_id=1, spawn_name="S1", user_message="live task",
+                   status="scored", kind="live", epoch=1, task_tokens=0, total_ms=100,
+                   overall_score=8.0, overall_badge="good")
+        replay = Run(conversation_id="c", spawn_id=1, spawn_name="S1", user_message="replay arm",
+                     status="replayed", kind="replay", epoch=1, task_tokens=0, total_ms=100)
+        db.add_all([live, replay])
+        await db.commit()
+        await db.refresh(replay)
+        replay_id = replay.id
+
+    body = (await client.get("/api/v1/runs")).json()
+    msgs = [item["user_message"] for item in body]
+    assert "live task" in msgs
+    assert "replay arm" not in msgs          # replay run excluded from the list
+
+    # but the replay run's detail is still directly retrievable (card links into it)
+    detail = await client.get(f"/api/v1/runs/{replay_id}")
+    assert detail.status_code == 200
+    assert detail.json()["run"]["user_message"] == "replay arm"
+
+
 async def test_runs_summary_route_order(client):
     """GET /runs/summary must hit the summary route, not /runs/{run_id} (422)."""
     resp = await client.get("/api/v1/runs/summary")

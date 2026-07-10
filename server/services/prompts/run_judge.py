@@ -28,15 +28,38 @@ FABRICATION_PRECHECK_LINE = (
     "fabrication 风险,评分时应扣分。"
 )
 
+# E1: instruction attached to the step-evidence block — fabrication is judged as the
+# diff between what the output CLAIMS was done/delivered and the tool_calls that were
+# ACTUALLY recorded in the trace below.
+FABRICATION_EVIDENCE_LINE = (
+    "fabrication 按宣称交付物 vs 实际 tool_call 的 diff 判:输出中宣称完成/产出/查证过的内容,"
+    "必须能对应到上方步骤证据里真实记录的工具调用或派发;宣称了却没有对应记录 → 编造,扣分。"
+)
+
+# E1: auto-continue rounds are each recorded as their own Run; judging their
+# completion against the FULL original request systematically skews the score down.
+CONTINUATION_LINE = (
+    "这是多轮任务的中间轮,completion 按本轮增量目标评,不按完整请求评。"
+)
+
 
 def build_prompt(*, user_message: str, spawn_name: str | None, roster: str,
-                 persona: str, output: str, fabrication_signal: bool = False) -> str:
+                 persona: str, output: str, fabrication_signal: bool = False,
+                 evidence: str = "", continuation: bool = False) -> str:
     precheck = f"{FABRICATION_PRECHECK_LINE}\n\n" if fabrication_signal else ""
+    cont = f"{CONTINUATION_LINE}\n\n" if continuation else ""
+    # No recorded steps → no evidence section at all (never fabricate evidence).
+    evidence_block = (
+        f"\nStep evidence (本次运行真实记录的执行步骤):\n{evidence}\n"
+        f"{FABRICATION_EVIDENCE_LINE}\n"
+        if evidence else ""
+    )
     return (
-        f"{precheck}"
+        f"{precheck}{cont}"
         f"User request:\n{user_message}\n\n"
         f"Chosen spawn: {spawn_name or '(none)'}\n\n"
         f"Available roster:\n{roster}\n\n"
         f"Chosen spawn persona:\n{persona}\n\n"
         f"Spawn final output:\n{output}\n"
+        f"{evidence_block}"
     )

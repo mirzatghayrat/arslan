@@ -19,6 +19,8 @@ class SettingsIn(BaseModel):
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     run_debug_retention_days: int | None = None
+    evolution_auto: str | None = None
+    evolution_max_est_tokens: int | None = None
 
 
 class SettingsOut(BaseModel):
@@ -34,6 +36,8 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     run_debug_retention_days: int = 30
+    evolution_auto: str = "on"
+    evolution_max_est_tokens: int | None = None
 
 
 class AccessTokenOut(BaseModel):
@@ -374,6 +378,105 @@ class ConfirmProposalOut(BaseModel):
     generation_level: int | None = None
 
 
+class EvolveEnqueuedOut(BaseModel):
+    """202 response for POST /spawns/{id}/evolve — the manual trigger is now a background
+    job (the old sync button was guaranteed to time out). attempt_id is None only when an
+    attempt is already running for this spawn (concurrency = 1)."""
+
+    attempt_id: int | None = None
+
+
+class EstimateOut(BaseModel):
+    """Honest lower-bound cost estimate (GET /spawns/{id}/evolve/estimate)."""
+
+    pairs: int
+    dispatches: int
+    judge_calls: int
+    optimizer_calls: int
+    synth_calls: int
+    est_tokens: int
+    lower_bound: bool = True
+
+
+class BaselineDeclareOut(BaseModel):
+    """POST /evolution/baseline/declare — the just-declared clean-corpus start (ISO-8601 UTC)."""
+
+    baseline_started_at: str
+
+
+class BaselineStatusOut(BaseModel):
+    """GET /evolution/baseline — the declared clean-corpus start (null if never declared) plus
+    how many clean-corpus (kind='live', epoch>=1, created_at>=baseline) runs have accumulated
+    since, so the developer can watch the real corpus fill up (spec §E9)."""
+
+    baseline_started_at: str | None = None
+    epoch1_runs_after: int = 0
+
+
+class ProposalListItemOut(BaseModel):
+    """One row of the evolution inbox (GET /evolution/proposals)."""
+
+    id: int
+    spawn_id: int
+    status: str
+    gate_passed: bool
+    base_prompt_sha: str | None = None
+    real_delta: dict | None = None
+    synthetic_delta: dict | None = None
+    evidence_tier: str | None = None
+    flags: list[str] = []
+    created_at: str | None = None
+    promoted_at: str | None = None
+
+
+class RefreshProposalOut(BaseModel):
+    """Response for POST /evolution/proposals/{id}/refresh."""
+
+    ok: bool
+    status: str | None = None
+    refreshed: bool = False
+    gate_passed: bool | None = None
+    flags: list[str] = []
+    reason: str | None = None
+    proposal_id: int | None = None
+    new_tasks: int | None = None
+
+
+class ProposalDetailOut(BaseModel):
+    """Full evidence for ONE proposal (GET /evolution/proposals/{id}) — the E7 promotion-card
+    payload. `evidence` is the holdout-only GateResult.user_facing() (real_delta/synthetic_delta
+    NEVER merged, pairs, excluded_count, flags, tier). `base_prompt` is the spawn's CURRENT
+    canonicalized system_prompt — the honest baseline the diff renders against; when `is_stale`
+    the gate's baseline (base_prompt_sha) has drifted from it, so the card must warn. estimate/
+    actual come from the matching EvolutionAttempt (None when there is no linked attempt)."""
+
+    id: int
+    spawn_id: int
+    spawn_name: str | None = None
+    status: str
+    gate_passed: bool
+    generation_level: int | None = None
+    base_prompt_sha: str | None = None
+    base_prompt: str | None = None
+    candidate_prompt: str
+    is_stale: bool = False
+    evidence: dict = {}
+    estimate: dict | None = None
+    actual: dict | None = None
+    created_at: str | None = None
+    promoted_at: str | None = None
+
+
+class RollbackProposalOut(BaseModel):
+    """Response for POST /evolution/proposals/{id}/rollback — revert a promoted proposal to the
+    previous generation (restores spawn.config['prompt_history'][-1], adjusts generation_level)."""
+
+    ok: bool
+    reason: str | None = None
+    spawn_id: int | None = None
+    generation_level: int | None = None
+
+
 class KnowledgeIn(BaseModel):
     source: str | None = None
     text: str | None = None
@@ -581,8 +684,10 @@ class SkillForgeIn(BaseModel):
 
 
 class SkillEvaluateIn(BaseModel):
+    # E8: min_samples removed — the candidate now runs the shared holdout ReplayGate
+    # (skill-ON vs skill-OFF), not a private min-samples observation gate. Pydantic
+    # ignores a stale `min_samples` field if an old client still sends one.
     target_spawn_id: int
-    min_samples: int = 8
 
 
 class SkillCandidateOut(BaseModel):

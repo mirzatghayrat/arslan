@@ -29,13 +29,16 @@ def _degraded() -> dict:
     }
 
 
-async def _judge_once(adapter, *, task: str, persona: str, first: str, second: str) -> dict | None:
-    """One judge pass; 'first'/'second' are shown as 输出① / 输出②.
-    Returns the parsed dict (values in "1"/"2"/"tie"), or None on failure."""
+async def _judge_once(adapter, *, task: str, persona: str, first: str, second: str,
+                      first_evidence: str = "", second_evidence: str = "") -> dict | None:
+    """One judge pass; 'first'/'second' are shown as 输出① / 输出② (each with ITS OWN
+    step-evidence block). Returns the parsed dict (values in "1"/"2"/"tie"), or None
+    on failure."""
     try:
         resp = await adapter.chat(
             system=COMPARE_SYSTEM,
-            user=build_prompt(task=task, persona=persona, first=first, second=second),
+            user=build_prompt(task=task, persona=persona, first=first, second=second,
+                              first_evidence=first_evidence, second_evidence=second_evidence),
         )
         parsed = parse_json_object(resp.content or "")
         if not isinstance(parsed, dict) or "dimensions" not in parsed or "overall" not in parsed:
@@ -69,14 +72,25 @@ def _to_ab(pass_: dict, *, slot1: str, slot2: str) -> tuple[dict, str, float]:
     return dims, overall, margin
 
 
-async def compare(*, task: str, persona: str, output_a: str, output_b: str, item=None) -> dict:
+async def compare(*, task: str, persona: str, output_a: str, output_b: str, item=None,
+                  evidence_a: str = "", evidence_b: str = "") -> dict:
     """Compare output_a vs output_b. Returns:
       {"dimensions": {dim: "a"|"b"|"tie"}, "overall": "a"|"b"|"tie",
        "margin": float, "position_sensitive": bool, "reason": str}
+
+    evidence_a/evidence_b (E1, audit CRITICAL-2): each arm's step-evidence block
+    (trace_evidence.build_evidence of its replay Run). BOTH position-swap passes see
+    BOTH arms' evidence, and the evidence swaps WITH its arm — so fabrication can be
+    judged as claimed-deliverables vs actual tool_calls per arm. Defaults ("") keep
+    the legacy trace-free behavior.
     """
     adapter = await build_adapter(role="judge")
-    p1 = await _judge_once(adapter, task=task, persona=persona, first=output_a, second=output_b)
-    p2 = await _judge_once(adapter, task=task, persona=persona, first=output_b, second=output_a)
+    p1 = await _judge_once(adapter, task=task, persona=persona,
+                           first=output_a, second=output_b,
+                           first_evidence=evidence_a, second_evidence=evidence_b)
+    p2 = await _judge_once(adapter, task=task, persona=persona,
+                           first=output_b, second=output_a,
+                           first_evidence=evidence_b, second_evidence=evidence_a)
     if p1 is None or p2 is None:
         return _degraded()
 

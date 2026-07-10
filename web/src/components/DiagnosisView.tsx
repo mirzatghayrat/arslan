@@ -1,21 +1,32 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import DiagnosisCatalog from "./DiagnosisCatalog";
 import SpawnRunDetail from "./SpawnRunDetail";
 import RunReplay from "./RunReplay";
+import EvolutionInbox from "./EvolutionInbox";
 
 type Selection =
   | null
   | { spawnId: number; name: string | null; runId?: undefined }
   | { spawnId: number; name: string | null; runId: number };
 
+type Tab = "diag" | "evolution";
+
 const NARROW_BREAKPOINT = 700;
 
 /**
  * Standalone full-width diagnosis section (catalog → spawn → run) mounted as a
- * top-level nav section, separate from the conversation-rail EvalDock dock.
+ * top-level nav section, separate from the conversation-rail EvalDock dock. The
+ * "进化" tab hosts the S2 evolution inbox + promotion cards (spec §E7); a pair's
+ * "查看重放" opens the same RunReplay this view already uses.
  */
 export default function DiagnosisView() {
+  const { t } = useTranslation();
+  const [tab, setTab] = useState<Tab>("diag");
   const [sel, setSel] = useState<Selection>(null);
+  // A replay opened from the evolution inbox (a proposal pair's run id). Kept
+  // separate from the catalog drill `sel` so it overlays either tab cleanly.
+  const [evoRun, setEvoRun] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [narrow, setNarrow] = useState(false);
 
@@ -36,45 +47,86 @@ export default function DiagnosisView() {
     return () => ro.disconnect();
   }, []);
 
+  const tabBtn = (id: Tab, label: string) => (
+    <button
+      type="button"
+      className={
+        tab === id
+          ? "px-3 py-1.5 text-[12px] font-mono uppercase tracking-wider rounded-lg bg-primary text-primary-foreground"
+          : "px-3 py-1.5 text-[12px] font-mono uppercase tracking-wider rounded-lg text-muted-foreground hover:text-foreground"
+      }
+      onClick={() => {
+        setTab(id);
+        setEvoRun(null);
+      }}
+      data-testid={`diag-tab-${id}`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div ref={containerRef} className="flex-1 h-full overflow-auto p-6">
-      {sel == null && (
-        <DiagnosisCatalog
-          onClose={() => {}}
-          onSelectSpawn={(spawnId, name) => setSel({ spawnId: spawnId ?? 0, name })}
-          narrow={narrow}
-        />
-      )}
+      <div className="flex items-center gap-1.5 mb-4">
+        {tabBtn("diag", t("evolution.inbox.diag_tab"))}
+        {tabBtn("evolution", t("evolution.inbox.tab"))}
+      </div>
 
-      {sel != null && sel.runId === undefined && (
+      {/* A replay opened from the evolution inbox overlays everything. */}
+      {evoRun != null ? (
         <>
-          <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
-            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
+          <div className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
+            <span className="cursor-pointer hover:text-foreground" onClick={() => setEvoRun(null)}>
+              {t("evolution.inbox.tab")}
+            </span>
             <span>/</span>
-            <span className="text-foreground">{sel.name}</span>
+            <span className="text-foreground">run #{evoRun}</span>
           </div>
-          <SpawnRunDetail
-            spawnId={sel.spawnId}
-            spawnName={sel.name}
-            onBack={() => setSel(null)}
-            onSelectRun={(runId) => setSel({ runId, spawnId: sel.spawnId, name: sel.name })}
-          />
+          <RunReplay runId={evoRun} onClose={() => setEvoRun(null)} />
         </>
-      )}
-
-      {sel != null && sel.runId !== undefined && (
+      ) : tab === "evolution" ? (
+        <EvolutionInbox onOpenRun={(runId) => setEvoRun(runId)} />
+      ) : (
         <>
-          <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
-            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
-            <span>/</span>
-            <span className="cursor-pointer hover:text-foreground" onClick={() => setSel({ spawnId: sel.spawnId, name: sel.name })}>{sel.name}</span>
-            <span>/</span>
-            <span className="text-foreground">run #{sel.runId}</span>
-          </div>
-          <RunReplay
-            runId={sel.runId}
-            onClose={() => setSel({ spawnId: sel.spawnId, name: sel.name })}
-          />
+          {sel == null && (
+            <DiagnosisCatalog
+              onClose={() => {}}
+              onSelectSpawn={(spawnId, name) => setSel({ spawnId: spawnId ?? 0, name })}
+              narrow={narrow}
+            />
+          )}
+
+          {sel != null && sel.runId === undefined && (
+            <>
+              <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
+                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
+                <span>/</span>
+                <span className="text-foreground">{sel.name}</span>
+              </div>
+              <SpawnRunDetail
+                spawnId={sel.spawnId}
+                spawnName={sel.name}
+                onBack={() => setSel(null)}
+                onSelectRun={(runId) => setSel({ runId, spawnId: sel.spawnId, name: sel.name })}
+              />
+            </>
+          )}
+
+          {sel != null && sel.runId !== undefined && (
+            <>
+              <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
+                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
+                <span>/</span>
+                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel({ spawnId: sel.spawnId, name: sel.name })}>{sel.name}</span>
+                <span>/</span>
+                <span className="text-foreground">run #{sel.runId}</span>
+              </div>
+              <RunReplay
+                runId={sel.runId}
+                onClose={() => setSel({ spawnId: sel.spawnId, name: sel.name })}
+              />
+            </>
+          )}
         </>
       )}
     </div>

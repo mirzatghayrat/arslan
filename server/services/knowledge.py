@@ -155,11 +155,15 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
 
 
 async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
-                          used_ref: str | None = None) -> list[tuple[str, str]]:
+                          used_ref: str | None = None,
+                          record_usage: bool = True) -> list[tuple[str, str]]:
     """Return up to k (source, text) chunks for the query within the caller's
     partition. This is the single retrieval entry point for dispatch (live +
     eval) and Arslan direct chat alike. Records material usage on each hit
-    (best-effort — usage never affects what's returned)."""
+    (best-effort — usage never affects what's returned).
+
+    record_usage=False (S2 E3 hermetic replay): retrieve identically but write NO
+    brain_usage rows — a replay must not mutate the Second Brain's usage counters."""
     async with db_session.AsyncSessionLocal() as db:
         coll_ids = await _bound_collection_ids(db, spawn_id) if spawn_id is not None else []
         where, params = _scope_clause(spawn_id, coll_ids)
@@ -178,19 +182,22 @@ async def retrieve_scoped(query: str, *, spawn_id: int | None, k: int = 5,
         if ref_key in seen_refs:
             continue
         seen_refs.add(ref_key)
-        await brain_usage.record("material", ref_key, used_ref=used_ref)
+        if record_usage:
+            await brain_usage.record("material", ref_key, used_ref=used_ref)
     # Fold in 心得 (top 2) — distilled know-how retrieved alongside material.
     async with db_session.AsyncSessionLocal() as db:
         learn = await _learnings_route(db, query, spawn_id)
         note_hits = await _notes_route(db, query)
     learn_items = list(learn.items())[:2]
-    for lid, _lt in learn_items:
-        await brain_usage.record("learning", f"learning:{lid}", used_ref=used_ref)
+    if record_usage:
+        for lid, _lt in learn_items:
+            await brain_usage.record("learning", f"learning:{lid}", used_ref=used_ref)
     learn_chunks = [(f"心得#{lid}", ltext) for lid, ltext in learn_items]
     # Fold in 笔记 (top 2) — hand-written notes are global (no spawn partition).
     note_items = list(note_hits.items())[:2]
-    for nid, _nt in note_items:
-        await brain_usage.record("note", f"note:{nid}", used_ref=used_ref)
+    if record_usage:
+        for nid, _nt in note_items:
+            await brain_usage.record("note", f"note:{nid}", used_ref=used_ref)
     note_chunks = [(f"笔记:{txt.split(': ', 1)[0]}", txt.split(': ', 1)[-1]) for nid, txt in note_items]
     return rerank(query, [(src, txt) for src, txt, _c, _s in hits] + learn_chunks + note_chunks)
 

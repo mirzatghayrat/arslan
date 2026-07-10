@@ -36,14 +36,33 @@ def _default_schedule(run_id: int) -> None:
 # Module-level indirection so tests can stub scheduling.
 schedule_scoring: Callable[[int], None] = _default_schedule
 
+# E2: the `runs.continuation` column is now authoritative — start() persists the flag on the
+# Run row and score() reads run.continuation directly (no extra query; the row is already loaded).
+# This registry is retained only as a transitional in-memory mirror for any synchronous caller
+# of is_continuation() (a run_id can be checked without a DB round-trip). start() keeps it in sync.
+_continuation_run_ids: set[int] = set()
+
+
+def is_continuation(run_id: int) -> bool:
+    """True when this run was recorded as an auto-continue (continuation) round.
+
+    Transitional sync shim. The authoritative source is the `runs.continuation` column,
+    which score() reads directly; this mirror only exists for sync callers that hold a
+    run_id but no DB session.
+    """
+    return run_id in _continuation_run_ids
+
 
 class RunRecorder:
     def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
-                 spawn_name: str | None = None) -> None:
+                 spawn_name: str | None = None, continuation: bool = False,
+                 spawn_id: int | None = None) -> None:
         self.run_id = run_id
         self.started_at = started_at
         self.route_ms = route_ms
         self.spawn_name = spawn_name
+        self.continuation = continuation
+        self.spawn_id = spawn_id
         self._events: list[tuple[datetime, dict]] = []
 
     @classmethod
@@ -55,6 +74,8 @@ class RunRecorder:
         spawn_name: str | None,
         user_message: str,
         route_ms: int | None = None,
+        continuation: bool = False,
+        kind: str = "live",
     ) -> "RunRecorder":
         started = datetime.utcnow()
         async with db_session.AsyncSessionLocal() as db:
@@ -66,12 +87,22 @@ class RunRecorder:
                 started_at=started,
                 status="recording",
                 task_tokens=0,
+                # E2: this is the live path — quarantine old data via epoch, mark real turns
+                # kind='live', and persist the continuation flag on the row (authoritative;
+                # score() reads run.continuation directly). E3: kind='replay' marks a hermetic
+                # evolution arm — epoch stays 1 but the terminal status ('replayed', set in
+                # finalize) keeps it out of every scoring/reaper query.
+                kind=kind,
+                epoch=1,
+                continuation=continuation,
             )
             db.add(run)
             await db.commit()
             await db.refresh(run)
             run_id = run.id
-        return cls(run_id, started, route_ms, spawn_name)
+        if continuation:
+            _continuation_run_ids.add(run_id)
+        return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
@@ -163,7 +194,15 @@ class RunRecorder:
                         tokens_estimated: bool = False,
                         error_kind: str | None = None, error_text: str | None = None,
                         system_prompt: str | None = None, injected_kb: str | None = None,
-                        injected_kb_sources: list | None = None) -> int:
+                        injected_kb_sources: list | None = None,
+                        replay: bool = False) -> int:
+        """Persist steps + run metadata and (for live runs only) schedule judge scoring.
+
+        replay=True (S2 E3 hermetic replay): terminal status is 'replayed' (never
+        'recorded'/'score_failed', so no scoring/reaper query ever matches it),
+        kind='replay', the arm's output is stored in final_output for judge-comparison
+        and trace, and schedule_scoring is NOT called — a replay is evaluated by the
+        paired ReplayGate (E4), not the per-run judge."""
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
         self._merge_tool_trace(steps)
@@ -175,7 +214,17 @@ class RunRecorder:
                 run.ended_at = ended
                 run.total_ms = total_ms
                 run.task_tokens = tokens
-                run.status = "recorded"
+                # E2: belt-and-suspenders — the live recorder always finalizes a live run at
+                # epoch 1 and persists the continuation flag on the row (start() already set
+                # them; re-affirm here so no live finalize path can leave the columns unset).
+                # E3: a replay run finalizes to the quarantine terminal status + kind and
+                # persists its output on the row for judge-comparison/trace.
+                run.status = "replayed" if replay else "recorded"
+                run.kind = "replay" if replay else "live"
+                run.epoch = 1
+                run.continuation = self.continuation
+                if replay:
+                    run.final_output = full_output
                 run.model = model
                 run.provider = provider
                 run.tokens_in = tokens_in
@@ -193,6 +242,8 @@ class RunRecorder:
                     if msg is not None:
                         msg.run_id = self.run_id
             await db.commit()
+        if replay:
+            return self.run_id  # hermetic replay is scored by the paired gate, never here
         try:
             # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
             # scheduling. The judge task inherits this context's bucket via create_task, but
@@ -200,6 +251,16 @@ class RunRecorder:
             schedule_scoring(self.run_id)
         except Exception as exc:  # noqa: BLE001 — scoring is best-effort
             logger.warning("schedule_scoring failed (non-fatal): %s", exc)
+        # E5: nudge the evolution watcher that this spawn got fresh activity so a newly
+        # eligible spawn doesn't wait for the next 5-min tick. No-op unless the watch loop
+        # is running (the loop is the backstop); best-effort + non-blocking.
+        try:
+            if self.spawn_id is not None:
+                from server.services import evolution_watcher
+
+                evolution_watcher.notify_spawn(self.spawn_id)
+        except Exception as exc:  # noqa: BLE001 — the ping is never fatal
+            logger.warning("evolution notify failed (non-fatal): %s", exc)
         return self.run_id
 
     def _merge_tool_trace(self, steps: list[dict]) -> None:

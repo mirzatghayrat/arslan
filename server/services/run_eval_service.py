@@ -9,6 +9,7 @@ from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunEvaluation, RunStep, Spawn
 from server.orchestrator import promise_guard
 from server.orchestrator.json_protocol import parse_json_object
+from server.services import trace_evidence
 from server.services.llm_factory import build_adapter
 from server.services.prompts.run_judge import JUDGE_SYSTEM, build_prompt
 
@@ -76,6 +77,13 @@ async def score(run_id: int) -> None:
         user_message=run.user_message, spawn_name=run.spawn_name,
         roster=await _roster_text(), persona=persona, output=output,
         fabrication_signal=fabrication_signal,
+        # E1: the judge sees the actual recorded steps — fabrication is judged as the
+        # diff between claimed deliverables and real tool_calls, and a continuation
+        # (auto-continue) round is scored on this round's incremental goal.
+        evidence=await trace_evidence.build_evidence(run_id),
+        # E2: read the authoritative `runs.continuation` column (the run row is already
+        # loaded above) instead of the transitional in-memory registry.
+        continuation=bool(run.continuation),
     )
 
     try:
