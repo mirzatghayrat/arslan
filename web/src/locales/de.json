@@ -268,6 +268,9 @@
     "sensitive": "Sensibel"
   },
   "settings": {
+    "labelDisplayName": "Anzeigename",
+    "displayNamePlaceholder": "z. B. Alex",
+    "displayNameHint": "Wird in deiner Begrüßung und bei deinen eigenen Nachrichten angezeigt. Leer lassen für eine neutrale Begrüßung.",
     "title": "Einstellungen",
     "llm_section": "LLM-Konfiguration",
     "provider": "Anbieter",
@@ -363,6 +366,7 @@
     "render_failed": "Konnte dies nicht anzeigen."
   },
   "common": {
+    "you": "Du",
     "online": "Online",
     "offline": "Offline",
     "connecting": "Connecting",
@@ -403,6 +407,10 @@
     "distill_failed": "Distill failed"
   },
   "orchestrator": {
+    "greeting_morning": "Guten Morgen",
+    "greeting_afternoon": "Guten Tag",
+    "greeting_evening": "Guten Abend",
+    "greeting_named": "{{greeting}}, {{name}}",
     "sandbox_label": "Interactive Spawner Sandbox:",
     "placeholder_empty": "Aufgabe beschreiben, Dokument einfügen oder Link senden — ich koordiniere die richtigen Spawns.",
     "placeholder_chat": "Ask Arslan to orchestrate a task for your spawns...",

@@ -14,6 +14,7 @@ import { AppearanceSettings } from './AppearanceSettings';
 import EmbeddingSettings from './EmbeddingSettings';
 import Select from './Select';
 import { LANGUAGE_OPTIONS, normalizeLanguage } from '../lib/languages';
+import { useProfileStore } from '../stores/profileStore';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -29,6 +30,8 @@ interface SettingsScreenProps {
 
 export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
+  const displayName = useProfileStore((s) => s.displayName);
+  const setDisplayName = useProfileStore((s) => s.setDisplayName);
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -182,6 +185,27 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Display name — client-only (localStorage); empty = neutral greeting with no name */}
+            <div className="space-y-2">
+              <label
+                htmlFor="settings-display-name"
+                className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+              >
+                {t('settings.labelDisplayName')}
+              </label>
+              <input
+                id="settings-display-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
+                placeholder={t('settings.displayNamePlaceholder')}
+              />
+              <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+                {t('settings.displayNameHint')}
+              </p>
+            </div>
+
             {/* Language */}
             <div className="space-y-2">
               <label

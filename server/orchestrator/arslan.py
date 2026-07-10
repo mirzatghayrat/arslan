@@ -374,17 +374,17 @@ async def handle_user_message(
     confirm_command=None,
 ) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
-    with usage_sink.collecting():
-        # 1. persist the user turn
-        await memory.add_message(conversation_id, "user", user_message)
+    # 1. persist the user turn
+    await memory.add_message(conversation_id, "user", user_message)
 
-        # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
-        # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
-        # in words — it must dispatch the parked brief exactly like clicking Accept.
-        # Without this, the router reads a post-card "好" as answer-thanks and the
-        # parked delegation silently dies (real-machine gap found in the PA-6 run).
-        pending_invite = await phase_service.get_pending_invite(conversation_id)
-        if pending_invite is not None and confirm_lexicon.is_short_confirm(user_message):
+    # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
+    # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
+    # in words — it must dispatch the parked brief exactly like clicking Accept.
+    # Without this, the router reads a post-card "好" as answer-thanks and the
+    # parked delegation silently dies (real-machine gap found in the PA-6 run).
+    pending_invite = await phase_service.get_pending_invite(conversation_id)
+    if pending_invite is not None:
+        if confirm_lexicon.is_short_confirm(user_message):
             await phase_service.clear(conversation_id)
             from server.services import recap_service
             await recap_service.log_event(
@@ -401,181 +401,189 @@ async def handle_user_message(
             )
             await memory.maybe_compact(conversation_id)
             return
+        # Bug B (stale parked-invite mis-fire): a parked invite is honored ONLY as the
+        # IMMEDIATE next user action. This turn is NOT that bare confirm — the user
+        # ignored the chip and moved on (the frontend already implicitly dismissed the
+        # chip UI on send via dismissAllPending, but sent no dismiss_invite). Clear the
+        # stale invite here so a LATER bare 「好」 (e.g. agreeing with something else N
+        # turns on) can't deterministically mis-dispatch the aged task. Then fall
+        # through to normal routing/answer for this turn.
+        await phase_service.clear(conversation_id)
 
-        # 1b. if a proposal is pending, classify the reply before routing
-        pending = await phase_service.get_pending(conversation_id)
-        if pending and pending["phase"] == "proposing":
-            # _classify_followup calls the LLM — guard it so an LLM error surfaces as
-            # an in-chat error frame instead of crashing the WebSocket.
-            try:
-                kind = await _classify_followup(user_message, pending["direction"])
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("_classify_followup raised (surfacing as error): %s", exc)
-                emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
-                return
-            if kind == "confirm":
-                await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
-                await memory.maybe_compact(conversation_id)
-                return
-            if kind == "refine":
-                # task_brief stays the base direction; instruction carries the user's refinement.
-                await _dispatch_spawn(
-                    conversation_id,
-                    pending["spawn_id"],
-                    pending["direction"],
-                    emit,
-                    mode="propose",
-                    prior_output=None,
-                    instruction=user_message,
-                    user_message=user_message,
-                )
-                await memory.maybe_compact(conversation_id)
-                return
-            # kind == "new" → clear the stale pending phase and fall through to normal routing
-            await phase_service.clear(conversation_id, pending["spawn_id"])
-
-        # 1c. gather phases (B3/B4): while Arslan is gathering an under-specified create
-        # request — whether via the legacy `clarifying` flag or the slot-based `gathering`
-        # phase — the follow-up answer must keep clarifying (Arslan's voice). It must NOT be
-        # routed/dispatched to an existing spawn (routing leaks "请以X的身份" identity-bleed
-        # into the answer layer). We still route() below, but if the router wants to route
-        # to an existing spawn we OVERRIDE it to the clarify path. A ready staffing need (the
-        # user finally gave enough) clears the phase and proposes; answer/clarify proceed
-        # normally. Proposing takes precedence (handled above and returns), so the proposing
-        # and gather phases are never both live here.
-        gathering = _is_gather_phase(pending)
-
-        # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
-        # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
-        # frame instead of propagating out of run_with_live_frames and closing the WS.
+    # 1b. if a proposal is pending, classify the reply before routing
+    pending = await phase_service.get_pending(conversation_id)
+    if pending and pending["phase"] == "proposing":
+        # _classify_followup calls the LLM — guard it so an LLM error surfaces as
+        # an in-chat error frame instead of crashing the WebSocket.
         try:
-            t0 = datetime.utcnow()
-            result = await router.route(conversation_id, user_message)
-            route_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
+            kind = await _classify_followup(user_message, pending["direction"])
         except Exception as exc:  # noqa: BLE001
-            logger.warning("router.route raised (surfacing as error): %s", exc)
+            logger.warning("_classify_followup raised (surfacing as error): %s", exc)
             emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
             return
-
-        # 3. persist + announce extracted facts (transparency note)
-        if result.new_facts:
-            created = await memory.save_facts(result.new_facts)
-            for fact in created:
-                emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
-            if created:
-                from server.services import recap_service
-                _fsummary = " · ".join(
-                    (getattr(f, "label", None) or f.content or "")[:24] for f in created[:3]
-                )
-                await recap_service.log_event(conversation_id, "memory", None, _fsummary)
-
-        # B3/B4: while in a gather phase (clarifying or gathering a create), suppress
-        # routing to an existing spawn — keep clarifying in Arslan's voice instead of
-        # leaking spawn identity. Invariant: the gather phase persists ONLY while the
-        # router keeps producing an insufficient create-downgrade; clear it on every
-        # other terminal outcome. Here the user wants a DIFFERENT spawn — divert THIS
-        # turn (no bleed), but clear so the next route dispatches normally.
-        if gathering and result.action == "route":
-            await phase_service.clear(conversation_id)
-            await _handle_answer(conversation_id, user_message, emit,
-                                 extra_system=_CLARIFY_ADDENDUM,
-                                 attached_context=attached_context,
-                                 confirm_command=confirm_command)
+        if kind == "confirm":
+            await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
             await memory.maybe_compact(conversation_id)
             return
-
-        # 3b. Explicit @-mention override. The LLM router frequently defaults capability/meta
-        # questions ("@Deck Master 你能给我干嘛") to `answer`, which makes Arslan reply AS the spawn
-        # under its OWN identity. When the user explicitly @-named a real spawn, force the named
-        # route so the SPAWN answers in its own identity — dispatch if a member, else a speak-first
-        # invite (both handled by _handle_route, which sees _user_named_spawn=True and skips doer-
-        # first). Deliberately narrow: only rescues the `answer` default (never touches route /
-        # suggest_* / clarify) and only on explicit @mentions; gather/proposing already returned above.
-        if not gathering and result.action == "answer":
-            _named_id = await _resolve_at_mentioned_spawn(user_message)
-            if _named_id is not None:
-                result.action = "route"
-                result.spawn_id = _named_id
-                if not result.task_brief:
-                    result.task_brief = user_message
-
-        # 4. handle the action
-        if result.action == "route" and result.spawn_id is not None:
-            await _handle_route(conversation_id, result, emit, user_message=user_message,
-                                route_ms=route_ms, attached_context=attached_context,
-                                confirm_command=confirm_command)
-        elif result.action == "suggest_update" and result.spawn_id is not None:
-            # P2: conversational spawn editing. Draft a validated change-set and emit the
-            # confirm card; NOTHING is applied until the user's confirm_update. If drafting
-            # yields no actionable change, fall back to a plain answer (Arslan explains).
-            from server.orchestrator import update_drafter
-            drafted = await update_drafter.draft_update(
-                result.spawn_id, result.task_brief or user_message)
-            if drafted is None:
-                await _handle_answer(
-                    conversation_id, user_message, emit,
-                    extra_system=("The user asked to modify one of the agents, but the request "
-                                  "did not map to an editable change (persona/tone/capabilities/"
-                                  "equipment). Briefly say what CAN be changed and ask exactly "
-                                  "what they want adjusted. Answer in the user's language."),
-                    attached_context=attached_context, confirm_command=confirm_command)
-            else:
-                emit(protocol.suggest_update(**drafted))
-            await memory.maybe_compact(conversation_id)
-        elif result.action == "suggest_create":
-            # Staffing spine ①–③: the router signalled a (possibly-recurring)
-            # capability need. Run extract→accumulate→gate over the staffing slots.
-            # ② accumulate: load slots carried across the gather phase, extract from
-            # this turn, and merge (a filled slot is never overwritten with null).
-            slots = await phase_service.get_gathered_slots(conversation_id)
-            history_text = await _gather_history_text(conversation_id, user_message)
-            slots = staffing_gather.merge_slots(
-                slots, await staffing_gather.extract_slots(history_text)
+        if kind == "refine":
+            # task_brief stays the base direction; instruction carries the user's refinement.
+            await _dispatch_spawn(
+                conversation_id,
+                pending["spawn_id"],
+                pending["direction"],
+                emit,
+                mode="propose",
+                prior_output=None,
+                instruction=user_message,
+                user_message=user_message,
             )
-            # ③ gate: ONE readiness gate (the slot gate; subsumes the old draft gate).
-            if not staffing_gather.is_ready(slots):
-                # Not enough yet — pin the gathering phase (carrying accumulated slots)
-                # and clarify in Arslan's own voice, asking for exactly what's missing
-                # (incl. the recurrence question when `recurrence` is still null).
-                await phase_service.set_gathering(conversation_id, slots)
-                await _handle_answer(
-                    conversation_id, user_message, emit,
-                    extra_system=_gather_clarify_addendum(staffing_gather.missing_slots(slots)),
-                    attached_context=attached_context,
-                    confirm_command=confirm_command,
-                )
-                await memory.maybe_compact(conversation_id)
-                return
-            # Ready: the user gave enough — clear the gather phase and hand to B4's
-            # match-and-propose with the gathered slots (routing/proposing resumes).
-            await phase_service.clear(conversation_id)
-            await _staffing_match_and_propose(
-                conversation_id, user_message, slots, result, emit,
+            await memory.maybe_compact(conversation_id)
+            return
+        # kind == "new" → clear the stale pending phase and fall through to normal routing
+        await phase_service.clear(conversation_id, pending["spawn_id"])
+
+    # 1c. gather phases (B3/B4): while Arslan is gathering an under-specified create
+    # request — whether via the legacy `clarifying` flag or the slot-based `gathering`
+    # phase — the follow-up answer must keep clarifying (Arslan's voice). It must NOT be
+    # routed/dispatched to an existing spawn (routing leaks "请以X的身份" identity-bleed
+    # into the answer layer). We still route() below, but if the router wants to route
+    # to an existing spawn we OVERRIDE it to the clarify path. A ready staffing need (the
+    # user finally gave enough) clears the phase and proposes; answer/clarify proceed
+    # normally. Proposing takes precedence (handled above and returns), so the proposing
+    # and gather phases are never both live here.
+    gathering = _is_gather_phase(pending)
+
+    # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
+    # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
+    # frame instead of propagating out of run_with_live_frames and closing the WS.
+    try:
+        t0 = datetime.utcnow()
+        result = await router.route(conversation_id, user_message)
+        route_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("router.route raised (surfacing as error): %s", exc)
+        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+        return
+
+    # 3. persist + announce extracted facts (transparency note)
+    if result.new_facts:
+        created = await memory.save_facts(result.new_facts)
+        for fact in created:
+            emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
+        if created:
+            from server.services import recap_service
+            _fsummary = " · ".join(
+                (getattr(f, "label", None) or f.content or "")[:24] for f in created[:3]
+            )
+            await recap_service.log_event(conversation_id, "memory", None, _fsummary)
+
+    # B3/B4: while in a gather phase (clarifying or gathering a create), suppress
+    # routing to an existing spawn — keep clarifying in Arslan's voice instead of
+    # leaking spawn identity. Invariant: the gather phase persists ONLY while the
+    # router keeps producing an insufficient create-downgrade; clear it on every
+    # other terminal outcome. Here the user wants a DIFFERENT spawn — divert THIS
+    # turn (no bleed), but clear so the next route dispatches normally.
+    if gathering and result.action == "route":
+        await phase_service.clear(conversation_id)
+        await _handle_answer(conversation_id, user_message, emit,
+                             extra_system=_CLARIFY_ADDENDUM,
+                             attached_context=attached_context,
+                             confirm_command=confirm_command)
+        await memory.maybe_compact(conversation_id)
+        return
+
+    # 3b. Explicit @-mention override. The LLM router frequently defaults capability/meta
+    # questions ("@Deck Master 你能给我干嘛") to `answer`, which makes Arslan reply AS the spawn
+    # under its OWN identity. When the user explicitly @-named a real spawn, force the named
+    # route so the SPAWN answers in its own identity — dispatch if a member, else a speak-first
+    # invite (both handled by _handle_route, which sees _user_named_spawn=True and skips doer-
+    # first). Deliberately narrow: only rescues the `answer` default (never touches route /
+    # suggest_* / clarify) and only on explicit @mentions; gather/proposing already returned above.
+    if not gathering and result.action == "answer":
+        _named_id = await _resolve_at_mentioned_spawn(user_message)
+        if _named_id is not None:
+            result.action = "route"
+            result.spawn_id = _named_id
+            if not result.task_brief:
+                result.task_brief = user_message
+
+    # 4. handle the action
+    if result.action == "route" and result.spawn_id is not None:
+        await _handle_route(conversation_id, result, emit, user_message=user_message,
+                            route_ms=route_ms, attached_context=attached_context,
+                            confirm_command=confirm_command)
+    elif result.action == "suggest_update" and result.spawn_id is not None:
+        # P2: conversational spawn editing. Draft a validated change-set and emit the
+        # confirm card; NOTHING is applied until the user's confirm_update. If drafting
+        # yields no actionable change, fall back to a plain answer (Arslan explains).
+        from server.orchestrator import update_drafter
+        drafted = await update_drafter.draft_update(
+            result.spawn_id, result.task_brief or user_message)
+        if drafted is None:
+            await _handle_answer(
+                conversation_id, user_message, emit,
+                extra_system=("The user asked to modify one of the agents, but the request "
+                              "did not map to an editable change (persona/tone/capabilities/"
+                              "equipment). Briefly say what CAN be changed and ask exactly "
+                              "what they want adjusted. Answer in the user's language."),
+                attached_context=attached_context, confirm_command=confirm_command)
+        else:
+            emit(protocol.suggest_update(**drafted))
+        await memory.maybe_compact(conversation_id)
+    elif result.action == "suggest_create":
+        # Staffing spine ①–③: the router signalled a (possibly-recurring)
+        # capability need. Run extract→accumulate→gate over the staffing slots.
+        # ② accumulate: load slots carried across the gather phase, extract from
+        # this turn, and merge (a filled slot is never overwritten with null).
+        slots = await phase_service.get_gathered_slots(conversation_id)
+        history_text = await _gather_history_text(conversation_id, user_message)
+        slots = staffing_gather.merge_slots(
+            slots, await staffing_gather.extract_slots(history_text)
+        )
+        # ③ gate: ONE readiness gate (the slot gate; subsumes the old draft gate).
+        if not staffing_gather.is_ready(slots):
+            # Not enough yet — pin the gathering phase (carrying accumulated slots)
+            # and clarify in Arslan's own voice, asking for exactly what's missing
+            # (incl. the recurrence question when `recurrence` is still null).
+            await phase_service.set_gathering(conversation_id, slots)
+            await _handle_answer(
+                conversation_id, user_message, emit,
+                extra_system=_gather_clarify_addendum(staffing_gather.missing_slots(slots)),
                 attached_context=attached_context,
                 confirm_command=confirm_command,
             )
-        elif result.action == "clarify":
-            # Router no longer sees create-intent — release any gather phase.
-            if gathering:
-                await phase_service.clear(conversation_id)
-            await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
-                                 attached_context=attached_context,
-                                 confirm_command=confirm_command)
-        else:  # answer (incl. fallback)
-            # Router no longer sees create-intent — release any gather phase.
-            if gathering:
-                await phase_service.clear(conversation_id)
-            # PA-4: a bare short-confirm the router classifies as plain `answer` never
-            # reaches the PA-2 advance machinery (that only runs on route) — log the
-            # cheap repeated_confirmation counter here so the loop stays visible even
-            # on answer-path turns (which have no run_eval today).
-            if confirm_lexicon.is_short_confirm(user_message):
-                await _log_repeated_confirmation(conversation_id, {"at": "answer"})
-            await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
-                                 confirm_command=confirm_command)
+            await memory.maybe_compact(conversation_id)
+            return
+        # Ready: the user gave enough — clear the gather phase and hand to B4's
+        # match-and-propose with the gathered slots (routing/proposing resumes).
+        await phase_service.clear(conversation_id)
+        await _staffing_match_and_propose(
+            conversation_id, user_message, slots, result, emit,
+            attached_context=attached_context,
+            confirm_command=confirm_command,
+        )
+    elif result.action == "clarify":
+        # Router no longer sees create-intent — release any gather phase.
+        if gathering:
+            await phase_service.clear(conversation_id)
+        await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
+                             attached_context=attached_context,
+                             confirm_command=confirm_command)
+    else:  # answer (incl. fallback)
+        # Router no longer sees create-intent — release any gather phase.
+        if gathering:
+            await phase_service.clear(conversation_id)
+        # PA-4: a bare short-confirm the router classifies as plain `answer` never
+        # reaches the PA-2 advance machinery (that only runs on route) — log the
+        # cheap repeated_confirmation counter here so the loop stays visible even
+        # on answer-path turns (which have no run_eval today).
+        if confirm_lexicon.is_short_confirm(user_message):
+            await _log_repeated_confirmation(conversation_id, {"at": "answer"})
+        await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
+                             confirm_command=confirm_command)
 
-        # 5. compact the working thread if it grew too long
-        await memory.maybe_compact(conversation_id)
+    # 5. compact the working thread if it grew too long
+    await memory.maybe_compact(conversation_id)
 
 
 def _spawn_to_match_dict(s) -> dict:  # noqa: ANN001
@@ -690,7 +698,29 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     band, payload = spawn_match_service.classify_band(ranked)
 
     if band == "invite_one":
-        emit(protocol.propose_invite(payload["spawn_id"], payload["why"]))
+        # Bug A (staffing ready-path dropped the task): PARK the gathered first_task so
+        # Accept / typed-「好」 dispatches it — mirroring _handle_route's non-member branch.
+        # Without set_inviting the chip fires but nothing is parked, so on Accept the WS
+        # roster_invite handler reads get_pending_invite() == None and only joins the spawn
+        # to the roster: the whole 4-slot gather (its first_task) silently dies. Carry
+        # `needs_proposal` so the accept handler re-makes the same propose-vs-execute call.
+        # `announced=False`: unlike the route branch, this band streams no brief before the
+        # card, so the post-accept dispatch (announce=True) speaks the handoff.
+        invite_spawn_id = payload["spawn_id"]
+        invite_task_brief = slots.get("first_task") or getattr(result, "task_brief", None) or ""
+        await phase_service.set_inviting(
+            conversation_id, invite_spawn_id,
+            task_brief=invite_task_brief, user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)),
+            announced=False,
+        )
+        from server.services import recap_service
+        invite_spawn_name = await dispatcher.get_spawn_name(invite_spawn_id)
+        await recap_service.log_event(
+            conversation_id, "invite",
+            {"spawn_id": invite_spawn_id, "spawn_name": invite_spawn_name},
+            f"邀请 {invite_spawn_name or '分身'} 加入")
+        emit(protocol.propose_invite(invite_spawn_id, payload["why"]))
         return
 
     if band == "picker":
@@ -1165,7 +1195,10 @@ async def _arslan_tools() -> list[dict]:
             select(Tool).where(Tool.toolset_key.like("mcp_%"),
                                Tool.status == "wired", Tool.host_enabled.is_(True))
         )).scalars().all()
-    tools += [{"key": t.key, "description": t.description} for t in rows]
+    # Carry input_schema through so `_native_tool_schemas` (in run_native) hands the model the
+    # real JSON Schema captured at MCP discovery — instead of a permissive {} it must guess against.
+    tools += [{"key": t.key, "description": t.description, "input_schema": t.input_schema or {}}
+              for t in rows]
     return tools
 
 
@@ -1320,12 +1353,22 @@ async def _dispatch_spawn(  # noqa: ANN001
         tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
     tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
     tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
+    # usage_sink.collecting() is scoped HERE — one fresh bucket per Run — not around the
+    # whole user turn. This is the S0 hemostasis fix: EVERY dispatch path funnels through
+    # _dispatch_spawn, so opening the scope here means route_to/redo/refine/confirm_direction/
+    # roster_invite-accept/confirm_create (which call dispatch_spawn/dispatch_routed/
+    # confirm_and_execute WITHOUT a turn-level scope) all capture their own model/provider/
+    # tokens automatically. Per-Run scoping ALSO kills the turn-cumulative double-count: an
+    # auto-continue re-dispatch (the recursive call below, OUTSIDE this block) opens its own
+    # fresh scope, so each Run's finalize reads only its own usage — never the prior round's.
+    # An escalation re-dispatch stays INSIDE this same block, so its usage folds into the SAME
+    # Run, which is correct (one escalation resolution = one Run).
     # run_trace.collecting() spans the dispatch call (and any escalation re-dispatch) AND
     # every finalize() below, so tool_loop's run_trace.record(...) calls and the assembled
     # system prompt (build_spawn_system → run_trace.record_prompt) are both still readable
     # via snapshot()/prompt() at finalize time — draining happens inside RunRecorder.finalize
     # (_merge_tool_trace calls run_trace.snapshot()), before this context exits.
-    with run_trace.collecting():
+    with usage_sink.collecting(), run_trace.collecting():
         try:
             out = await dispatcher.dispatch(
                 conversation_id, spawn_id=spawn_id, task_brief=task_brief,

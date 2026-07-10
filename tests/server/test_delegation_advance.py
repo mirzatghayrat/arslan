@@ -481,7 +481,16 @@ async def test_short_confirm_accepts_parked_invite(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_non_confirm_leaves_invite_parked(maker, monkeypatch):
+async def test_non_confirm_clears_stale_invite(maker, monkeypatch):
+    """Bug B (stale parked-invite mis-fire): a parked invite is honored ONLY as the
+    IMMEDIATE next user action. If the user ignores the chip and sends anything that is
+    NOT a bare confirm, the invite is cleared — so a LATER bare 「好」 (e.g. agreeing with
+    something else Arslan said N turns later) can NOT deterministically mis-dispatch the
+    stale task. The frontend already implicitly dismisses the chip UI on send (via
+    dismissAllPending) but sends no dismiss_invite; this makes the backend consistent.
+
+    (Was `test_non_confirm_leaves_invite_parked`, which asserted the invite STAYED parked
+    across an intervening turn — that encoded the Bug B trap and is deliberately inverted.)"""
     import server.orchestrator.arslan as arslan_mod
     from server.orchestrator.router import RouterResult
     from server.services import phase_service
@@ -508,8 +517,13 @@ async def test_non_confirm_leaves_invite_parked(maker, monkeypatch):
     from server.orchestrator import tool_loop as tl
     monkeypatch.setattr(tl, "_get_adapter", lambda: adapter)
 
+    # Intervening NON-confirm turn: not an accept, and it clears the stale invite.
     events: list[dict] = []
     await arslan_mod.handle_user_message("conv-inv2", "换个主题,做人工智能方向的", events.append)
+    assert dispatched == []                                             # not treated as accept
+    assert await phase_service.get_pending_invite("conv-inv2") is None  # stale invite cleared (Bug B)
 
-    assert dispatched == []                                            # not treated as accept
-    assert await phase_service.get_pending_invite("conv-inv2") is not None   # invite stays parked
+    # A LATER bare 「好」 must fall through to normal routing (answer), NOT dispatch the
+    # now-cleared stale task.
+    await arslan_mod.handle_user_message("conv-inv2", "好", lambda e: None)
+    assert dispatched == []                                             # no delayed mis-fire

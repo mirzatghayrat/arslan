@@ -99,6 +99,36 @@ async def test_not_yet_live_toolset_appears_in_system(maker, monkeypatch):
     assert "Session Search" in s
 
 
+def test_wired_toolset_renders_live_not_coming_soon():
+    """A fully-wired toolset must NOT be labeled '(not yet live)'.
+
+    Regression for the key-namespace bug (S0): the toolset liveness gate compared a TOOLSET
+    key (e.g. 'charting') against a set of TOOL keys ('render_chart', ...). A toolset key is
+    never in that set, so `ts['key'] not in wired_keys` was ALWAYS true → every equipped, live
+    toolset was injected as '(not yet live)', contradicting the 'TOOL <x> (live)' lines drawn
+    from the same equipment. Liveness of a toolset must gate on its own status alone.
+    """
+    from server.orchestrator.dispatcher import _equipment_block_from
+
+    equipment = {
+        "toolsets": [
+            {"key": "charting", "name": "Charting", "description": "render_chart.",
+             "tier": "safe", "status": "wired"},
+            {"key": "session_search", "name": "Session Search",
+             "description": "Search past conversations.", "tier": "safe", "status": "registered"},
+        ],
+        "skills": [],
+    }
+    # wired = individual TOOL keys (never toolset keys) — this namespace gap is the bug.
+    wired = [{"key": "render_chart", "description": "Draw a chart.", "input_schema": {}}]
+    block = _equipment_block_from(equipment, wired)
+
+    # The wired toolset is live → the coming-soon label must NOT be attached to it.
+    assert "Charting (not yet live)" not in block
+    # The registered (non-wired) toolset still renders as coming-soon.
+    assert "Session Search (not yet live)" in block
+
+
 @pytest.mark.asyncio
 async def test_spawn_prompt_has_tool_use_guidance(maker, monkeypatch):
     """The spawn system prompt must tell it to USE its tools (emit the tool call), not

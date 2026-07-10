@@ -1,20 +1,3 @@
-export interface Tool {
-  id: string;
-  name: string;
-  description: string;
-  emoji: string;
-  category: 'standard' | 'advanced_locked';
-  tier: 'tier-1' | 'tier-2' | 'tier-3';
-}
-
-export interface Skill {
-  id: string;
-  name: string;
-  description: string;
-  emoji: string;
-  category: 'standard' | 'advanced_locked';
-}
-
 export interface ToolActivity {
   id: string;
   toolName: string;

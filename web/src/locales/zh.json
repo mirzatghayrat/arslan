@@ -268,6 +268,9 @@
     "sensitive": "敏感"
   },
   "settings": {
+    "labelDisplayName": "显示名称",
+    "displayNamePlaceholder": "例如:小明",
+    "displayNameHint": "用于问候语和你自己的消息。留空则使用不含名字的中性问候语。",
     "title": "设置",
     "llm_section": "LLM 配置",
     "provider": "提供商",
@@ -363,6 +366,7 @@
     "render_failed": "无法显示此内容。"
   },
   "common": {
+    "you": "你",
     "online": "在线",
     "offline": "离线",
     "connecting": "连接中",
@@ -403,6 +407,10 @@
     "distill_failed": "蒸馏失败"
   },
   "orchestrator": {
+    "greeting_morning": "早上好",
+    "greeting_afternoon": "下午好",
+    "greeting_evening": "晚上好",
+    "greeting_named": "{{greeting}},{{name}}",
     "sandbox_label": "交互式分身沙盒：",
     "placeholder_empty": "描述任务、粘贴文档或发送链接——我来编排合适的分身。",
     "placeholder_chat": "让 Arslan 为你的分身编排任务...",

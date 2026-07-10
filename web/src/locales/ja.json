@@ -268,6 +268,9 @@
     "sensitive": "機密"
   },
   "settings": {
+    "labelDisplayName": "表示名",
+    "displayNamePlaceholder": "例:太郎",
+    "displayNameHint": "挨拶とあなた自身のメッセージに表示されます。空欄の場合は名前なしの挨拶になります。",
     "title": "設定",
     "llm_section": "LLM 設定",
     "provider": "プロバイダー",
@@ -363,6 +366,7 @@
     "render_failed": "これを表示できませんでした。"
   },
   "common": {
+    "you": "あなた",
     "online": "Online",
     "offline": "Offline",
     "connecting": "Connecting",
@@ -403,6 +407,10 @@
     "distill_failed": "Distill failed"
   },
   "orchestrator": {
+    "greeting_morning": "おはようございます",
+    "greeting_afternoon": "こんにちは",
+    "greeting_evening": "こんばんは",
+    "greeting_named": "{{greeting}}、{{name}}さん",
     "sandbox_label": "Interactive Spawner Sandbox:",
     "placeholder_empty": "タスクを説明するか、ドキュメントを貼り付けるか、リンクを共有してください — 適切なスポーンを調整します。",
     "placeholder_chat": "Ask Arslan to orchestrate a task for your spawns...",

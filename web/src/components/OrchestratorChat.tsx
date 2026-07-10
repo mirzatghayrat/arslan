@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
-import { Message, MessageAttachment, Spawn, Tool, Skill } from '../types';
-import { TOOLS, SKILLS } from '../data';
+import { Message, MessageAttachment, Spawn } from '../types';
+import { useCapabilityLabel } from '../stores/registryStore';
+import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody, { HtmlDocCard } from './MessageBody';
@@ -89,6 +90,10 @@ export default function OrchestratorChat({
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
+  // Real capability display names (key → name) for equipped-capability chips.
+  const capabilityLabel = useCapabilityLabel();
+  // Client-side user display name for the greeting + own-message sender label.
+  const displayName = useProfileStore((s) => s.displayName);
   // Live roster from store — used to determine which spawns are in this conversation
   const roster = useArslanStore((s) => s.roster);
   // Per-spawn "running a turn now" signal for the pill shimmer: pendingRoute is set on the
@@ -275,7 +280,7 @@ export default function OrchestratorChat({
     const userMsg: Message = {
       id: `msg-user-${Date.now()}`,
       sender: 'user',
-      senderName: 'Mirzat',
+      senderName: displayName.trim() || t('common.you'),
       senderAvatar: '🦁',
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -391,10 +396,13 @@ export default function OrchestratorChat({
                 <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
                   {(() => {
                     const hr = new Date().getHours();
-                    if (hr < 12) return 'Morning';
-                    if (hr < 18) return 'Afternoon';
-                    return 'Evening';
-                  })()}, Mirzat
+                    const period = hr < 12 ? 'morning' : hr < 18 ? 'afternoon' : 'evening';
+                    const greeting = t(`orchestrator.greeting_${period}`);
+                    const name = displayName.trim();
+                    return name
+                      ? t('orchestrator.greeting_named', { greeting, name })
+                      : greeting;
+                  })()}
                 </h1>
               </div>
             </div>
@@ -707,31 +715,25 @@ export default function OrchestratorChat({
                           <div className="text-[10px] text-subtle-foreground font-mono font-medium tracking-wide uppercase">{t('orchestrator.equipped_capabilities')}</div>
                           <div className="flex flex-wrap gap-1.5">
                             {/* Render Tool tags with lucide icon */}
-                            {msg.spawnIntro.tools.map(toolId => {
-                              const toolMeta = TOOLS.find(t => t.id === toolId);
-                              return (
+                            {msg.spawnIntro.tools.map(toolId => (
                                 <span
                                   key={toolId}
                                   className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-surface text-muted-foreground px-2 py-0.5 rounded-lg hover:text-foreground transition-all"
                                 >
                                   {getIcon(toolId, 'w-3 h-3')}
-                                  <span className="font-semibold">{toolMeta?.name || toolId}</span>
+                                  <span className="font-semibold">{capabilityLabel(toolId)}</span>
                                 </span>
-                              );
-                            })}
+                            ))}
                             {/* Render Skill tags with lucide icon */}
-                            {msg.spawnIntro.skills.map(skillId => {
-                              const skillMeta = SKILLS.find(s => s.id === skillId);
-                              return (
+                            {msg.spawnIntro.skills.map(skillId => (
                                 <span
                                   key={skillId}
                                   className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg transition-all"
                                 >
                                   {getIcon(skillId, 'w-3 h-3')}
-                                  <span className="font-semibold">{skillMeta?.name || skillId}</span>
+                                  <span className="font-semibold">{capabilityLabel(skillId)}</span>
                                 </span>
-                              );
-                            })}
+                            ))}
                           </div>
                         </div>
                       </div>

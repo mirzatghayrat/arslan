@@ -197,7 +197,12 @@ def _equipment_block_from(equipment: dict, wired: list[dict], skill_bodies: dict
     for t in wired:
         lines.append(f"- TOOL {t['key']} (live): {t['description']}")
     for ts in equipment["toolsets"]:
-        if ts["status"] != "wired" or ts["key"] not in wired_keys:
+        # A toolset is live iff its own status is "wired" — that is the same liveness signal
+        # the TOOL lines above use (Tool.status == "wired"). Do NOT cross-check ts["key"]
+        # against wired_keys: wired_keys holds individual TOOL keys (e.g. "render_chart"),
+        # while ts["key"] is a TOOLSET key (e.g. "charting") — never a member — so that clause
+        # was always true and wrongly stamped every live toolset "(not yet live)".
+        if ts["status"] != "wired":
             lines.append(f"- {ts['name']} (not yet live)")
     technique_blocks: list[str] = []
     for sk in equipment["skills"]:
@@ -324,6 +329,39 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     return system, wired
 
 
+async def _apply_zero_tool_honesty(
+    full: str, spawn_name: str | None, conversation_id: str,
+    on_chunk: Callable[[str], None] | None,
+) -> str:
+    """S0: run the zero-tool spawn's final answer through the shared honesty pass. On a
+    fabrication hit, append the bounded honest correction (streamed live via on_chunk +
+    returned so it persists) and log a promise_intercept(tier=zero_tool) audit event.
+    Fail-open: any error keeps the original answer and the turn survives."""
+    if not full:
+        return full
+    try:
+        from server.orchestrator import promise_guard
+        outcome = await promise_guard.correct_zero_tool(full, spawn_name=spawn_name)
+        if outcome is not None:
+            correction = outcome["correction"]
+            if on_chunk is not None:
+                on_chunk("\n\n" + correction)
+            full = f"{full}\n\n{correction}"
+            try:
+                from server.services import recap_service
+                await recap_service.log_event(
+                    conversation_id, "promise_intercept",
+                    {"tier": "zero_tool", "pattern": outcome["pattern"],
+                     "corrected": outcome["corrected"]},
+                    f"零工具分身空头支票拦截:命中「{outcome['pattern']}」→ "
+                    f"{'重合成更正' if outcome['corrected'] else '模板更正'}")
+            except Exception:  # noqa: BLE001 — audit is best-effort
+                pass
+    except Exception as exc:  # noqa: BLE001 — honesty pass never breaks the turn
+        logger.warning("zero-tool honesty pass failed (fail-open, answer kept): %s", exc)
+    return full
+
+
 async def dispatch(
     conversation_id: str,
     *,
@@ -398,14 +436,17 @@ async def dispatch(
         full = out_loop["final"] or ""
         escalation = out_loop["escalation"]
     else:
-        # Legacy path: plain chat_stream (byte-identical to pre-loop behavior for
-        # zero-wired-tool spawns, including spawns with only unwired/non-wired equipment).
+        # Zero-tool path: plain chat_stream (a persona-only spawn has no wired tools, so it
+        # cannot run the native tool-loop). It still streams live, but its FINAL answer is run
+        # through the SAME honesty detectors the equipped/answer paths use — closing the S0 gap
+        # where a tool-less spawn could fabricate "已生成PPT并交付" / "正在生成中,稍等" unchecked.
         adapter = _get_adapter()
         a = await adapter if hasattr(adapter, "__await__") else adapter
         async for piece in a.chat_stream(system, user_content, history=history):
             full += piece
             if on_chunk is not None:
                 on_chunk(piece)
+        full = await _apply_zero_tool_honesty(full, spawn.name, conversation_id, on_chunk)
 
     # HX-2 (B1/B3): sniff the final output for a full/truncated HTML document at THIS
     # exit — every dispatched spawn passes through here, so the channel is universal.

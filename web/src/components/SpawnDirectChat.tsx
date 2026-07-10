@@ -5,7 +5,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import MatrixSpinner from './MatrixSpinner';
 import { Message, MessageAttachment, Spawn } from '../types';
-import { TOOLS, SKILLS } from '../data';
+import { useCapabilityLabel } from '../stores/registryStore';
+import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
 import MessageBody from './MessageBody';
 import EChart from './EChart';
@@ -48,6 +49,9 @@ export default function SpawnDirectChat({
 }: SpawnDirectChatProps) {
   const { t } = useTranslation();
   const refineAttachName = t('spawn_chat.refine_attach_name');
+  const capabilityLabel = useCapabilityLabel();
+  const displayName = useProfileStore((s) => s.displayName);
+  const userSenderName = displayName.trim() || t('common.you');
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -109,12 +113,12 @@ export default function SpawnDirectChat({
       id: String(m.message_id),
       messageId: m.message_id,
       sender: isUser ? 'user' : 'spawn',
-      senderName: isUser ? 'Mirzat' : spawn.name,
+      senderName: isUser ? userSenderName : spawn.name,
       senderAvatar: isUser ? '🦁' : spawn.avatarEmoji,
       text: m.content,
       timestamp: '',
     };
-  }, [spawn.name, spawn.avatarEmoji]);
+  }, [spawn.name, spawn.avatarEmoji, userSenderName]);
 
   const onFrame = useCallback((raw: unknown) => {
     const m = raw as any;
@@ -256,7 +260,7 @@ export default function SpawnDirectChat({
     const userMsg: Message = {
       id: `msg-direct-user-${Date.now()}`,
       sender: 'user',
-      senderName: 'Mirzat',
+      senderName: userSenderName,
       senderAvatar: '🦁',
       text: inputValue,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -352,24 +356,18 @@ export default function SpawnDirectChat({
 
           {/* Capabilities Badges */}
           <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto pt-1">
-            {spawn.tools.map(tId => {
-              const tool = TOOLS.find(t => t.id === tId) || { name: tId };
-              return (
+            {spawn.tools.map(tId => (
                 <span key={tId} className="px-2 py-0.5 bg-surface text-[10px] font-mono text-foreground rounded-lg flex items-center gap-1">
                   {getIcon(tId, 'w-3 h-3')}
-                  <span>{tool.name}</span>
+                  <span>{capabilityLabel(tId)}</span>
                 </span>
-              );
-            })}
-            {spawn.skills.map(sId => {
-              const skill = SKILLS.find(s => s.id === sId) || { name: sId };
-              return (
+            ))}
+            {spawn.skills.map(sId => (
                 <span key={sId} className="px-2 py-0.5 bg-warning/10 text-[10px] font-mono text-warning rounded-lg flex items-center gap-1">
                   {getIcon(sId, 'w-3 h-3 text-warning')}
-                  <span>{skill.name}</span>
+                  <span>{capabilityLabel(sId)}</span>
                 </span>
-              );
-            })}
+            ))}
           </div>
           </div>
         </div>

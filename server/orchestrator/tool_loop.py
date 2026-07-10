@@ -686,19 +686,43 @@ _NATIVE_EFFICIENCY = (
 _SEARCH_CAP = 3
 
 
+_PERMISSIVE_PARAMS = {"type": "object", "properties": {}, "additionalProperties": True}
+
+
+def _tool_params(t: dict) -> dict:
+    """Resolve the OpenAI `parameters` schema for one tool dict.
+
+    Precedence: built-in hardcoded schema (never clobbered) > the tool's stored
+    `input_schema` (the JSON Schema captured at MCP discovery — an MCP tool with a
+    real schema stops the model guessing arg names) > permissive fallback. `input_schema`
+    is a JSON column (already a dict), but a stringified schema is parsed defensively;
+    anything empty/None/malformed degrades to permissive — never raises."""
+    key = t.get("key")
+    if key in _NATIVE_PARAM_SCHEMAS:               # built-ins keep their hardcoded schema
+        return _NATIVE_PARAM_SCHEMAS[key]
+    raw = t.get("input_schema")
+    if isinstance(raw, str):                       # defensive: a schema stored as JSON text
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            raw = None
+    if isinstance(raw, dict) and raw:              # non-empty stored schema → hand it to the model
+        return raw
+    return _PERMISSIVE_PARAMS                       # genuinely no schema → executor re-validates args
+
+
 def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[dict]:
-    """Turn resolve_tools()'s [{key, description}] into OpenAI function schemas. Unknown keys
-    get a permissive schema (executor re-validates args). Adds `escalate` when allowed."""
+    """Turn resolve_tools()'s [{key, description, input_schema}] into OpenAI function schemas.
+    Tools carrying a stored `input_schema` expose it as `parameters`; keys with no schema get a
+    permissive one (executor re-validates args). Adds `escalate` when allowed."""
     schemas: list[dict] = []
     for t in wired:
         key = t["key"]
-        params = _NATIVE_PARAM_SCHEMAS.get(
-            key, {"type": "object", "properties": {}, "additionalProperties": True})
         schemas.append({
             "type": "function",
             "function": {"name": key,
                          "description": t.get("description", ""),
-                         "parameters": params},
+                         "parameters": _tool_params(t)},
         })
     if allow_escalation:
         schemas.append(_ESCALATE_SCHEMA)
