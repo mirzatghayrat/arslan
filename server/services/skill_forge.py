@@ -3,9 +3,16 @@ real, live, equippable library skill.
 
 Mirrors the offline-evolution SHAPE (candidate -> gate -> proposal -> human
 confirm; never auto-promote). Slice 1 IS the spine: the gate is the human
-confirm (promote_candidate). Slice 2 will insert a real eval gate before a
-candidate reaches "proposed" — the `samples`/`evidence`/`observing`->`proposed`
-seams on SkillCandidate are reserved for that.
+confirm (promote_candidate).
+
+S2 E8 — the candidate eval gate is now the SAME paired ReplayGate the evolution
+loop uses (replay_gate.run_gate over replay_gate.build_corpus): equipping the
+skill (skill-ON prompt, arm B) vs the spawn's plain prompt (skill-OFF, arm A)
+judged on the HOLDOUT split only (N>=10, >=60% win-rate, per-dim, real floor,
+length, tier). This kills the old structural deadlock — the private
+`len(val)<min_samples` observation gate whose default (8) exceeded the val_cap
+(6) so a candidate could never leave 'observing'. There is deliberately NO
+skill-specific gate: skill and evolution share run_gate verbatim.
 
 Registering a live skill = INSERT a SkillPack row (tier=safe, status=registered).
 Because the registry choke point (server/registry/service.py) reads assignable
@@ -26,7 +33,7 @@ from server.db import session as db_session
 from server.db.models import SkillCandidate, Spawn, SkillPack
 from server.orchestrator import dispatcher
 from server.registry import service as registry_service
-from server.services import evaluator, replay_set
+from server.services import replay_gate
 
 logger = logging.getLogger(__name__)
 
@@ -129,34 +136,28 @@ def _inject_skill_body(base_prompt: str, name: str, body: str, *,
     return f"{base_prompt}\n\nYour techniques:\n{block}"
 
 
-async def _val_outputs(spawn_id: int, system_prompt_override: str, val: list[dict]) -> dict:
-    """Run `system_prompt_override` over val, return {run_id: output}. Mirrors
-    evolution_loop._val_outputs (skill-off baseline outputs on held-out val)."""
-    out: dict = {}
-    for it in val:
-        gen = await dispatcher.dispatch(
-            "skill-eval", spawn_id=spawn_id, task_brief=it["task"],
-            system_prompt_override=system_prompt_override, persist=False,
-        )
-        out[it["run_id"]] = gen.get("full_output", "")
-    return out
-
-
 async def evaluate_candidate(candidate_id: int, target_spawn_id: int, *,
-                             min_samples: int = 8) -> dict:
+                             baseline_started_at=None) -> dict:
     """Real-data eval gate: move an `observing` candidate to `proposed` only if
-    equipping its body clears the performance-not-decreased gate on the target
-    spawn's REAL scored runs.
+    EQUIPPING its body beats not-equipping it on the SAME paired ReplayGate the
+    evolution loop uses.
 
-    The observation period IS the spawn accumulating real scored runs: we replay
-    them at eval time (no shadow live-testing). Until `min_samples` real val samples
-    exist, we stay `observing` and record the shortfall. Once enough exist, we run a
-    true equip-this-skill (skill-on) vs normal-prompt (skill-off) counterfactual over
-    the held-out val set and gate on it. Passing → `proposed` (human-confirmable);
-    the human confirm (promote_candidate) is still the ultimate gate — this INFORMS it.
+    Baseline arm (skill OFF) = the target spawn's current system_prompt. Candidate
+    arm (skill ON) = that prompt with the skill body injected exactly as real
+    dispatch injects an equipped skill (`_inject_skill_body`). The two arms replay
+    over `replay_gate.build_corpus` (real scored runs + current synthetic tasks,
+    split-aware) and are judged by `replay_gate.run_gate` on the HOLDOUT split only
+    (N>=10, >=60% win-rate, per-dim non-regression, real floor, length cap, tier) —
+    the identical gate + thresholds evolution gates its prompt edits with. Passing →
+    `proposed` (human-confirmable); the human confirm (promote_candidate) is still
+    the ultimate gate — this INFORMS it.
 
-    Self-manages DB sessions like evolution_loop. Never crashes: dispatch/eval
-    failures degrade to a not-passed gate (mirrors evolution_loop's I1 handling).
+    `baseline_started_at` is the clean-corpus start; E9 wires it from settings. For
+    now it defaults to None here AND in evolution_loop, so both callers assemble the
+    corpus over the same set of runs.
+
+    Self-manages DB sessions like evolution_loop. Never crashes: any gate/replay
+    failure degrades to a not-passed gate (mirrors evolution_loop's I1 handling).
     """
     async with db_session.AsyncSessionLocal() as db:
         cand = await db.get(SkillCandidate, candidate_id)
@@ -173,59 +174,47 @@ async def evaluate_candidate(candidate_id: int, target_spawn_id: int, *,
         skill_off_prompt = spawn.system_prompt or "You are a helpful assistant."
         persona = _persona(spawn)
 
-    split = await replay_set.build_split(target_spawn_id)
-    val = split["val"]
-
-    # Observation gate: the spawn's real scored runs ARE the samples. Not enough yet →
-    # do NOT evaluate; record the shortfall and stay observing.
-    if len(val) < min_samples:
-        shortfall = {"observed": len(val), "need": min_samples}
-        async with db_session.AsyncSessionLocal() as db:
-            cand = await db.get(SkillCandidate, candidate_id)
-            if cand is not None:
-                cand.samples = shortfall
-                cand.evidence = {"gate": {"passed": False, "reason": "insufficient", **shortfall}}
-                await db.commit()
-        return {"ok": True, "status": "observing",
-                "gate": {"passed": False,
-                         "reason": f"insufficient real samples (have {len(val)}, need {min_samples})",
-                         "aggregate": None}}
-
     skill_on_prompt = _inject_skill_body(
         skill_off_prompt, cand_name, cand_body,
         key=cand_key, has_scripts=registry_service.skill_has_scripts(cand_key))
 
-    # Faithful counterfactual: skill-off baseline outputs vs skill-on candidate, over the
-    # SAME held-out val runs. Degrade to a not-passed gate on any dispatch/eval failure.
+    # The SAME holdout-only paired gate evolution runs — skill-ON (candidate, arm B) vs
+    # skill-OFF (baseline, arm A) over the shared real+synthetic corpus. Degrade to a
+    # not-passed gate on any build/replay/judge failure; never crash (evolution I1).
     try:
-        baseline_outputs = await _val_outputs(target_spawn_id, skill_off_prompt, val)
-        res = await evaluator.evaluate(
-            spawn_id=target_spawn_id, persona=persona,
-            candidate_prompt=skill_on_prompt, replay_items=val,
-            baseline_outputs=baseline_outputs,
-        )
+        async with db_session.AsyncSessionLocal() as db:
+            corpus = await replay_gate.build_corpus(
+                db, target_spawn_id, baseline_started_at=baseline_started_at)
+            result = await replay_gate.run_gate(
+                db, spawn_id=target_spawn_id, candidate_prompt=skill_on_prompt,
+                baseline_prompt=skill_off_prompt, corpus=corpus, persona=persona)
     except Exception as exc:  # noqa: BLE001  -- I1: never crash; degrade to not-passed
-        logger.warning("skill candidate eval failed, degrading to no-pass: %s", exc)
-        res = {"items": [], "aggregate": None,
-               "gate": {"passed": False, "reason": f"eval failed: {exc}", "aggregate": None}}
+        logger.warning("skill candidate ReplayGate failed, degrading to no-pass: %s", exc)
+        async with db_session.AsyncSessionLocal() as db:
+            cand = await db.get(SkillCandidate, candidate_id)
+            if cand is not None:
+                cand.evidence = {"passed": False, "reason": f"gate failed: {exc}"}
+                await db.commit()
+        return {"ok": True, "status": "observing",
+                "gate": {"passed": False, "reason": f"gate failed: {exc}", "aggregate": None}}
 
-    gate = res["gate"]
-    val_run_ids = [it["run_id"] for it in val]
+    # Store the GateResult evidence the SAME way evolution_loop stores it on a proposal
+    # (gate.user_facing()) so a skill candidate's evidence renders identically to a prompt
+    # proposal (E7 PromotionCard reads real_delta / synthetic_delta / pairs / evidence_tier).
+    uf = result.user_facing()
     async with db_session.AsyncSessionLocal() as db:
         cand = await db.get(SkillCandidate, candidate_id)
         if cand is None:
             return {"ok": False, "reason": "candidate not found"}
-        cand.evidence = res
-        cand.samples = val_run_ids
-        if gate["passed"]:
+        cand.evidence = uf
+        cand.samples = list(uf.get("protected_run_ids", []))
+        if result.passed:
             cand.status = "proposed"
         new_status = cand.status
         await db.commit()
 
-    agg = res.get("aggregate") or {}
-    return {"ok": True, "status": new_status, "gate": gate,
-            "evidence_summary": {"key": cand_key, "samples": val_run_ids,
-                                 "aggregate": agg.get("overall") if isinstance(agg, dict) else None}}
+    return {"ok": True, "status": new_status,
+            "gate": {"passed": result.passed, "reason": result.reason, "aggregate": uf}}
 
 
 async def promote_candidate(candidate_id: int) -> dict:

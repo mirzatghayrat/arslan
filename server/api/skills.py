@@ -47,10 +47,10 @@ async def list_skill_candidates(status: str | None = None) -> list[SkillCandidat
 
 @router.post("/skills/candidates/{candidate_id}/evaluate")
 async def evaluate_skill_candidate(candidate_id: int, body: SkillEvaluateIn) -> dict:
-    """Real-data eval gate: observe -> evaluate -> proposed. Informs the human confirm."""
-    return await skill_forge.evaluate_candidate(
-        candidate_id, body.target_spawn_id, min_samples=body.min_samples,
-    )
+    """Paired-ReplayGate eval: observe -> evaluate (skill-ON vs skill-OFF) -> proposed.
+    Informs the human confirm. `min_samples` is gone (E8: the shared holdout gate replaced
+    the private observation gate); an extra `min_samples` in the body is harmlessly ignored."""
+    return await skill_forge.evaluate_candidate(candidate_id, body.target_spawn_id)
 
 
 @router.post("/skills/candidates/{candidate_id}/promote")
