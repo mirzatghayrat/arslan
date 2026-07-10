@@ -9,7 +9,7 @@ from datetime import datetime
 
 from arslan.core.param_registry import DEFAULT_REGISTRY
 from server.db import session as db_session
-from server.db.models import EvolutionProposal, Spawn
+from server.db.models import ConversationEvent, EvolutionProposal, Spawn
 from server.orchestrator import dispatcher
 from server.services import evaluator, optimizer, replay_gate, replay_set, skill_doc
 
@@ -268,3 +268,55 @@ async def confirm_proposal(proposal_id: int) -> dict:
         gen = spawn.generation_level
 
     return {"ok": True, "spawn_id": prop.spawn_id, "generation_level": gen}
+
+
+async def rollback_proposal(db, proposal_id: int) -> dict:
+    """Undo a promotion (spec §E7 audit #14). Restores the spawn to the previous generation:
+    pop spawn.config['prompt_history'][-1] and write its `old_prompt` back onto the spawn, reset
+    generation_level to that entry's, and re-open the proposal (status='open', promoted_at
+    cleared) so it becomes a living candidate again rather than a dead promotion. Logs an
+    evolution ConversationEvent. Refuses anything not currently 'promoted', or a promotion with
+    no recorded prompt_history to restore from. `db` is the caller's session (endpoint)."""
+    prop = await db.get(EvolutionProposal, proposal_id)
+    if prop is None:
+        return {"ok": False, "reason": "proposal not found"}
+    if prop.status != "promoted":
+        return {"ok": False, "reason": f"not promoted (status={prop.status})"}
+    spawn = await db.get(Spawn, prop.spawn_id)
+    if spawn is None:
+        return {"ok": False, "reason": "spawn not found"}
+
+    cfg = dict(spawn.config or {})
+    history = list(cfg.get("prompt_history", []))
+    if not history:
+        return {"ok": False, "reason": "no prompt history to roll back to"}
+    prev = history.pop()
+    DEFAULT_REGISTRY.set("system_prompt", spawn, prev.get("old_prompt", spawn.system_prompt))
+    spawn.generation_level = prev.get("generation_level", max((spawn.generation_level or 2) - 1, 1))
+    cfg["prompt_history"] = history
+    spawn.config = cfg
+    prop.status = "open"
+    prop.promoted_at = None
+
+    db.add(ConversationEvent(
+        conversation_id=f"spawn-{prop.spawn_id}", kind="evolution",
+        ref={"action": "rollback", "proposal_id": proposal_id,
+             "to_generation": spawn.generation_level},
+        summary=f"回滚进化提案 #{proposal_id} → 第 {spawn.generation_level} 代",
+    ))
+    await db.commit()
+    return {"ok": True, "spawn_id": prop.spawn_id, "generation_level": spawn.generation_level}
+
+
+async def reject_proposal(db, proposal_id: int) -> dict:
+    """Mark a proposal 'rejected' (human dismiss from the inbox). Refuses a proposal that was
+    already promoted — a promoted candidate must be rolled back, not rejected. `db` is the
+    caller's session (endpoint)."""
+    prop = await db.get(EvolutionProposal, proposal_id)
+    if prop is None:
+        return {"ok": False, "reason": "proposal not found"}
+    if prop.status == "promoted":
+        return {"ok": False, "reason": "already promoted; roll back instead"}
+    prop.status = "rejected"
+    await db.commit()
+    return {"ok": True, "spawn_id": prop.spawn_id}

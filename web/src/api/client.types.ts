@@ -478,6 +478,123 @@ export interface ConfirmResult {
   generation_level?: number;
 }
 
+/* ── S2 evolution: the promotion card + inbox (spec §E7) ──────────────────────
+ * Mirrors the backend GateResult.user_facing() shape EXACTLY. real_delta and
+ * synthetic_delta are the ONLY win-rate deltas — there is deliberately no merged
+ * field, and the UI must never compute one (real/synthetic never merged). */
+
+/** One corpus's win/loss/tie + exact binomial p-value + Wilson 95% CI. */
+export interface DeltaStat {
+  wins: number;
+  losses: number;
+  ties: number;
+  n: number; // non-tie pairs (wins + losses)
+  win_rate: number; // 0..1
+  p_value: number;
+  ci95: [number, number];
+}
+
+/** One holdout pair's trace-linkable evidence row. `overall`/`per_dim` verdicts:
+ * "b" = candidate won, "a" = baseline won (candidate lost), else tie. */
+export interface EvidencePair {
+  task_hash: string;
+  corpus_label: "real" | "synthetic";
+  source_ref: number | { synth_id: number; version: number } | null;
+  split_side: string;
+  baseline_run_id: number | null;
+  candidate_run_id: number | null;
+  base_out_len: number;
+  cand_out_len: number;
+  per_dim: Record<string, "a" | "b" | "tie">;
+  overall: "a" | "b" | "tie";
+  position_sensitive: boolean;
+}
+
+/** The holdout-only evidence payload (GateResult.user_facing). */
+export interface ProposalEvidence {
+  passed?: boolean;
+  reason?: string;
+  flags: string[];
+  real_delta: DeltaStat;
+  synthetic_delta: DeltaStat;
+  evidence_tier: "strong" | "medium" | "weak";
+  pairs: EvidencePair[];
+  excluded_count: number;
+  protected_run_ids?: number[];
+}
+
+/** One inbox row (GET /evolution/proposals) — summary only. */
+export interface ProposalListItem {
+  id: number;
+  spawn_id: number;
+  status: string; // open | proposed | promoted | rejected | stale
+  gate_passed: boolean;
+  base_prompt_sha: string | null;
+  real_delta: DeltaStat | null;
+  synthetic_delta: DeltaStat | null;
+  evidence_tier: string | null;
+  flags: string[];
+  created_at: string | null;
+  promoted_at: string | null;
+}
+
+/** Full card payload (GET /evolution/proposals/{id}). `base_prompt` is the spawn's
+ * CURRENT canonical system_prompt — the honest diff base; `is_stale` = it has
+ * drifted from the gate's baseline (base_prompt_sha). */
+export interface ProposalDetail {
+  id: number;
+  spawn_id: number;
+  spawn_name: string | null;
+  status: string;
+  gate_passed: boolean;
+  generation_level: number | null;
+  base_prompt_sha: string | null;
+  base_prompt: string | null;
+  candidate_prompt: string;
+  is_stale: boolean;
+  evidence: ProposalEvidence;
+  estimate: EvolveEstimate | null;
+  actual: Record<string, unknown> | null;
+  created_at: string | null;
+  promoted_at: string | null;
+}
+
+/** GET /spawns/{id}/evolve/estimate — honest lower-bound cost estimate. */
+export interface EvolveEstimate {
+  pairs: number;
+  dispatches: number;
+  judge_calls: number;
+  optimizer_calls: number;
+  synth_calls: number;
+  est_tokens: number;
+  lower_bound: boolean;
+}
+
+/** 202 response for POST /spawns/{id}/evolve (background job). */
+export interface EvolveEnqueued {
+  attempt_id: number | null;
+}
+
+/** POST /evolution/proposals/{id}/refresh. */
+export interface RefreshResult {
+  ok: boolean;
+  status?: string | null;
+  refreshed?: boolean;
+  gate_passed?: boolean | null;
+  flags?: string[];
+  reason?: string | null;
+  proposal_id?: number | null;
+  new_tasks?: number | null;
+}
+
+/** POST /evolution/proposals/{id}/rollback. */
+export interface RollbackResult {
+  ok: boolean;
+  reason?: string | null;
+  spawn_id?: number | null;
+  generation_level?: number | null;
+}
+
 export interface RunListItem {
   id: number;
   spawn_name: string | null;

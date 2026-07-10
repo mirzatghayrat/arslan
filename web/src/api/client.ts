@@ -8,7 +8,12 @@ import type {
   ConfirmResult,
   EmbeddingStatus,
   EvolutionStats,
-  EvolveProposal,
+  EvolveEstimate,
+  EvolveEnqueued,
+  ProposalListItem,
+  ProposalDetail,
+  RefreshResult,
+  RollbackResult,
   IngestResult,
   KnowledgeSource,
   NoteDto,
@@ -264,10 +269,26 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ fact }),
     }),
-  evolveSpawn: (spawnId: number) =>
-    request<EvolveProposal>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
+  // S2 evolution (spec §E7). The old sync propose was replaced by a background job:
+  // GET the estimate, POST to enqueue (202), then review the resulting proposal in the inbox.
+  getEvolveEstimate: (spawnId: number) =>
+    request<EvolveEstimate>(`/spawns/${spawnId}/evolve/estimate`),
+  runEvolve: (spawnId: number) =>
+    request<EvolveEnqueued>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
+  getEvolutionProposals: (status?: string) =>
+    request<ProposalListItem[]>(
+      `/evolution/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  getProposalDetail: (proposalId: number) =>
+    request<ProposalDetail>(`/evolution/proposals/${proposalId}`),
+  refreshProposal: (proposalId: number) =>
+    request<RefreshResult>(`/evolution/proposals/${proposalId}/refresh`, { method: "POST" }),
   confirmProposal: (proposalId: number) =>
     request<ConfirmResult>(`/evolution/proposals/${proposalId}/confirm`, { method: "POST" }),
+  rejectProposal: (proposalId: number) =>
+    request<ConfirmResult>(`/evolution/proposals/${proposalId}/reject`, { method: "POST" }),
+  rollbackProposal: (proposalId: number) =>
+    request<RollbackResult>(`/evolution/proposals/${proposalId}/rollback`, { method: "POST" }),
   listMcpServers: () =>
     request<
       Array<{

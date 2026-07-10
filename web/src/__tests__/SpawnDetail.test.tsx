@@ -2,15 +2,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpawnDetail from "../components/SpawnDetail";
 
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 vi.mock("../api/client", () => ({
   api: {
     getKnowledge: vi.fn(),
+    getPreferences: vi.fn().mockResolvedValue({ preferences: [] }),
+    deletePreference: vi.fn(),
     ingestKnowledgeText: vi.fn(),
     ingestKnowledgeFile: vi.fn(),
     ingestKnowledgeUrl: vi.fn(),
     deleteKnowledge: vi.fn(),
-    evolveSpawn: vi.fn(),
-    confirmProposal: vi.fn(),
+    getEvolveEstimate: vi.fn(),
+    runEvolve: vi.fn(),
   },
 }));
 import { api } from "../api/client";
@@ -42,44 +45,31 @@ describe("SpawnDetail", () => {
     expect(m.getKnowledge).toHaveBeenCalledTimes(2);
   });
 
-  it("proposes evolution and shows the gate verdict", async () => {
-    m.evolveSpawn.mockResolvedValue({
-      proposal_id: 11, candidate_prompt: "improved prompt",
-      gate: { passed: true, reason: "improves without regression",
-              aggregate: { overall: { better: 2, worse: 0, tie: 1 } } },
-      evidence: {},
+  it("shows the cost estimate before enqueuing evolution", async () => {
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
     });
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
     await screen.findByText("policy.txt");
-    fireEvent.click(screen.getByText("提出进化提案"));
-    await screen.findByText(/通过/);
-    expect(screen.getByText("采纳")).toBeTruthy();
+    fireEvent.click(screen.getByText("evolution.inbox.estimate_title"));
+    await waitFor(() => expect(m.getEvolveEstimate).toHaveBeenCalledWith(7));
+    // The enqueue button only appears once the estimate is shown.
+    await screen.findByText("evolution.inbox.enqueue");
   });
 
-  it("confirms a passed proposal", async () => {
-    m.evolveSpawn.mockResolvedValue({
-      proposal_id: 11, candidate_prompt: "p",
-      gate: { passed: true, reason: "ok", aggregate: null }, evidence: {},
+  it("enqueues a background evolution attempt", async () => {
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
     });
-    m.confirmProposal.mockResolvedValue({ ok: true, spawn_id: 7, generation_level: 2 });
+    m.runEvolve.mockResolvedValue({ attempt_id: 99 });
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
     await screen.findByText("policy.txt");
-    fireEvent.click(screen.getByText("提出进化提案"));
-    await screen.findByText("采纳");
-    fireEvent.click(screen.getByText("采纳"));
-    await screen.findByText(/已采纳/);
-  });
-
-  it("hides 采纳 when the gate failed", async () => {
-    m.evolveSpawn.mockResolvedValue({
-      proposal_id: null, candidate_prompt: null,
-      gate: { passed: false, reason: "no scored runs", aggregate: null }, evidence: null,
-    });
-    render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
-    await screen.findByText("policy.txt");
-    fireEvent.click(screen.getByText("提出进化提案"));
-    await screen.findByText(/no scored runs|可评估/);
-    expect(screen.queryByText("采纳")).toBeNull();
+    fireEvent.click(screen.getByText("evolution.inbox.estimate_title"));
+    fireEvent.click(await screen.findByText("evolution.inbox.enqueue"));
+    await waitFor(() => expect(m.runEvolve).toHaveBeenCalledWith(7));
+    await screen.findByText("evolution.inbox.enqueued");
   });
 
   it("ingests a URL and refreshes", async () => {

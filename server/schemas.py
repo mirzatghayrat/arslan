@@ -427,6 +427,41 @@ class RefreshProposalOut(BaseModel):
     new_tasks: int | None = None
 
 
+class ProposalDetailOut(BaseModel):
+    """Full evidence for ONE proposal (GET /evolution/proposals/{id}) — the E7 promotion-card
+    payload. `evidence` is the holdout-only GateResult.user_facing() (real_delta/synthetic_delta
+    NEVER merged, pairs, excluded_count, flags, tier). `base_prompt` is the spawn's CURRENT
+    canonicalized system_prompt — the honest baseline the diff renders against; when `is_stale`
+    the gate's baseline (base_prompt_sha) has drifted from it, so the card must warn. estimate/
+    actual come from the matching EvolutionAttempt (None when there is no linked attempt)."""
+
+    id: int
+    spawn_id: int
+    spawn_name: str | None = None
+    status: str
+    gate_passed: bool
+    generation_level: int | None = None
+    base_prompt_sha: str | None = None
+    base_prompt: str | None = None
+    candidate_prompt: str
+    is_stale: bool = False
+    evidence: dict = {}
+    estimate: dict | None = None
+    actual: dict | None = None
+    created_at: str | None = None
+    promoted_at: str | None = None
+
+
+class RollbackProposalOut(BaseModel):
+    """Response for POST /evolution/proposals/{id}/rollback — revert a promoted proposal to the
+    previous generation (restores spawn.config['prompt_history'][-1], adjusts generation_level)."""
+
+    ok: bool
+    reason: str | None = None
+    spawn_id: int | None = None
+    generation_level: int | None = None
+
+
 class KnowledgeIn(BaseModel):
     source: str | None = None
     text: str | None = None
