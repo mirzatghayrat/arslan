@@ -201,7 +201,7 @@ N_CATALOG_TREND = 12
 async def runs_catalog(rng: str = Query("1h", alias="range"),
                        db: AsyncSession = Depends(get_session)) -> RunCatalogOut:
     start = _window_start(rng)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -267,7 +267,7 @@ N_VITALS_BUCKETS = 30
 async def runs_vitals(rng: str = Query("1h", alias="range"),
                       db: AsyncSession = Depends(get_session)) -> VitalsOut:
     start = _window_start(rng)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -306,7 +306,7 @@ async def runs_vitals(rng: str = Query("1h", alias="range"),
 async def runs_anomalies(range: str = Query("1h"),
                          db: AsyncSession = Depends(get_session)) -> list[AnomalyOut]:
     start = _window_start(range)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -382,7 +382,7 @@ N_TIMELINE_BUCKETS = 24
 async def runs_timeline(rng: str = Query("1h", alias="range"),
                         db: AsyncSession = Depends(get_session)) -> TimelineOut:
     start = _window_start(rng)
-    q = select(Run)
+    q = select(Run).where(Run.kind == "live")  # E2: replay runs never surface in diagnosis
     if start is not None:
         q = q.where(Run.created_at >= start)
     runs = (await db.execute(q.order_by(Run.created_at))).scalars().all()
@@ -476,14 +476,16 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     """Manually re-enqueue judge scoring for one run (E1). 404 on unknown run.
 
     Auth: covered by the router-level require_auth dependency.
-    NOTE(E2): once `runs.kind` exists this must reject kind != 'live' (replay runs
-    end in terminal status 'replayed' and are never judged).
+    E2: rejects kind != 'live' with 409 — replay runs end in terminal status 'replayed'
+    and are never judged, so re-enqueueing one is a client error, not a no-op.
     """
     from server.services import run_recorder
 
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
+    if run.kind != "live":
+        raise HTTPException(status_code=409, detail="only live runs can be rescored")
     run_recorder.schedule_scoring(run_id)
     return {"enqueued": True}
 

@@ -19,9 +19,10 @@ async def memdb(monkeypatch):
 
 async def _add_run(Session, *, spawn_id, status, user_message, output, overall, with_eval=True):
     async with Session() as db:
+        # E2: the corpus is live epoch>=1 runs only (what the recorder now writes).
         run = Run(conversation_id="c", spawn_id=spawn_id, spawn_name="X",
                   user_message=user_message, status=status, task_tokens=0,
-                  overall_score=overall)
+                  overall_score=overall, kind="live", epoch=1)
         db.add(run)
         await db.commit()
         await db.refresh(run)

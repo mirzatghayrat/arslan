@@ -24,16 +24,16 @@ _STUCK_STATUSES = ("recorded", "score_failed")
 async def _reaper_candidates() -> list[int]:
     """Run ids stuck in a scorable status for longer than STUCK_AFTER.
 
-    NOTE(E2): when the `runs.kind` column lands, this query additionally filters
-    `kind == 'live'` so replay runs can never be re-enqueued (their terminal
-    status 'replayed' already never matches the status filter — the kind filter
-    makes it structural).
+    E2: the query filters `kind == 'live'` so replay runs can never be re-enqueued (their
+    terminal status 'replayed' already never matches the status filter — the kind filter
+    makes it structural, even for a replay row left mid-flight in a scorable status).
     """
     cutoff = datetime.utcnow() - STUCK_AFTER
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
             select(Run.id)
-            .where(Run.status.in_(_STUCK_STATUSES), Run.created_at < cutoff)
+            .where(Run.status.in_(_STUCK_STATUSES), Run.created_at < cutoff,
+                   Run.kind == "live")
             .order_by(Run.id)
         )
         return list(rows.scalars().all())

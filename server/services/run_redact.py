@@ -9,9 +9,30 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import Run, RunStep
+from server.db.models import EvolutionProposal, Run, RunStep
 
 _BULKY_STEP_KEYS = ("args_full", "result_raw")
+
+
+async def _protected_run_ids(db) -> set[int]:
+    """Run ids that must survive the retention sweep (S2 E2, audit CRITICAL-6).
+
+    A replay Run referenced by a non-'rejected' EvolutionProposal is the two-arm original
+    text the gate's win-rate was computed on — redacting it would sever the traceability the
+    promotion card promises. Proposals redundantly store the ids in evidence.protected_run_ids;
+    we union them across every still-live (status != 'rejected') proposal. Bounded by design
+    (each proposal holds ≤ 2× its pair count)."""
+    rows = (await db.execute(
+        select(EvolutionProposal.evidence).where(EvolutionProposal.status != "rejected")
+    )).scalars().all()
+    ids: set[int] = set()
+    for evidence in rows:
+        if not isinstance(evidence, dict):
+            continue
+        for rid in evidence.get("protected_run_ids") or []:
+            if isinstance(rid, int) and not isinstance(rid, bool):
+                ids.add(rid)
+    return ids
 
 
 def _scrub_steps(steps: list[RunStep]) -> None:
@@ -56,7 +77,11 @@ async def sweep(retention_days: int) -> int:
         return 0
     cutoff = datetime.utcnow() - timedelta(days=retention_days)
     async with db_session.AsyncSessionLocal() as db:
-        runs = (await db.execute(select(Run).where(Run.created_at < cutoff))).scalars().all()
+        protected = await _protected_run_ids(db)
+        runs = [
+            r for r in (await db.execute(select(Run).where(Run.created_at < cutoff))).scalars().all()
+            if r.id not in protected  # E2: exempt replay runs cited by a non-rejected proposal
+        ]
         ids = [r.id for r in runs]
         for run in runs:
             run.system_prompt = None

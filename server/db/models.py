@@ -352,6 +352,15 @@ class Run(Base):
     injected_kb = Column(Text, nullable=True)         # SENSITIVE: injected knowledge (retention-governed)
     injected_kb_sources = Column(JSON, nullable=True)  # SENSITIVE: source labels for detail-page chips (retention-governed)
 
+    # --- S2 evolution-real (0028) ---
+    # kind distinguishes a real turn from a hermetic evolution replay arm; epoch is what
+    # quarantines the old corpus (existing rows are pre-baseline epoch=0 via DEFAULT; the
+    # recorder writes epoch=1 for new live runs). Replay runs never enter the win-rate.
+    kind = Column(String(10), nullable=False, default="live", server_default="live")  # "live" | "replay"
+    epoch = Column(Integer, nullable=False, default=0, server_default="0")  # 0 = pre-baseline; live runs = 1
+    continuation = Column(Boolean, nullable=False, default=False, server_default="0")  # auto-continue (E1) round
+    final_output = Column(Text, nullable=True)  # replay arm's persisted output (E3) — judge-comparable, traceable
+
 
 class RunStep(Base):
     """One ordered step inside a Run (for the 'what it did' waterfall + gantt)."""
@@ -391,10 +400,54 @@ class EvolutionProposal(Base):
     spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
     candidate_prompt = Column(Text, nullable=False)
     gate_passed = Column(Boolean, nullable=False, default=False)
-    evidence = Column(JSON, default=dict)   # aggregate + per-item summary
-    status = Column(String(20), nullable=False, default="proposed")  # proposed|promoted|rejected
+    evidence = Column(JSON, default=dict)   # aggregate + per-item summary; S2 stores protected_run_ids here
+    # S2 (0028) widens the allowed value set to: proposed|promoted|rejected|open|stale.
+    # 'open' = a living proposal accumulating evidence; 'stale' = base prompt drifted from base_prompt_sha.
+    status = Column(String(20), nullable=False, default="proposed")
+    base_prompt_sha = Column(String(64), nullable=True)  # S2: sha256 of the base prompt the gate ran against
     created_at = Column(DateTime, default=datetime.utcnow)
     promoted_at = Column(DateTime, nullable=True)
+
+
+class SyntheticTask(Base):
+    """A versioned synthetic evaluation task for the cold-start replay corpus (S2 E6).
+
+    source='domain' (generated from the spawn's domain profile) or 'variant' (a variant of a
+    real run's task, carrying source_run_id). split_side is inherited from the source task so a
+    holdout task's variant can never leak into the propose set. status supports E6's
+    first-replay invalid-task exclusion."""
+
+    __tablename__ = "synthetic_tasks"
+
+    id = Column(Integer, primary_key=True)
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    task = Column(Text, nullable=False)
+    source = Column(String(20), nullable=False)          # "domain" | "variant"
+    source_run_id = Column(Integer, nullable=True)       # the real run a variant derives from
+    split_side = Column(String(10), nullable=False)      # "propose" | "holdout"
+    status = Column(String(10), nullable=False, default="active", server_default="active")  # "active" | "invalid"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EvolutionAttempt(Base):
+    """One background evolution attempt for a spawn (S2 E5, audit CRITICAL-4).
+
+    Records the estimate (pre-run cost) and the actual (post-run), the outcome, the resulting
+    proposal (if any), and a human-readable reason. Trigger cadence keys off the last attempt,
+    not the last proposal — so a failing gate can back off deterministically."""
+
+    __tablename__ = "evolution_attempts"
+
+    id = Column(Integer, primary_key=True)
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    outcome = Column(String(20), nullable=True)  # "passed" | "failed" | "error" | "skipped_budget"
+    estimate = Column(JSON, default=dict)
+    actual = Column(JSON, nullable=True)
+    proposal_id = Column(Integer, nullable=True)
+    reason = Column(Text, nullable=False, default="", server_default="")
 
 
 class Collection(Base):

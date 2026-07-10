@@ -36,17 +36,20 @@ def _default_schedule(run_id: int) -> None:
 # Module-level indirection so tests can stub scheduling.
 schedule_scoring: Callable[[int], None] = _default_schedule
 
-# E1 continuation registry (in-memory until the E2 `runs.continuation` column lands):
-# an auto-continue re-dispatch marks its Run here so the judge can score completion
-# against THIS round's incremental goal instead of the full original request.
-# Process-local by design — a restart loses the marks, which E2 fixes by persisting
-# the flag on the Run row. Entries are tiny (one int per run) and never removed
-# within a process lifetime so reaper/rescore re-judging still sees them.
+# E2: the `runs.continuation` column is now authoritative — start() persists the flag on the
+# Run row and score() reads run.continuation directly (no extra query; the row is already loaded).
+# This registry is retained only as a transitional in-memory mirror for any synchronous caller
+# of is_continuation() (a run_id can be checked without a DB round-trip). start() keeps it in sync.
 _continuation_run_ids: set[int] = set()
 
 
 def is_continuation(run_id: int) -> bool:
-    """True when this run was recorded as an auto-continue (continuation) round."""
+    """True when this run was recorded as an auto-continue (continuation) round.
+
+    Transitional sync shim. The authoritative source is the `runs.continuation` column,
+    which score() reads directly; this mirror only exists for sync callers that hold a
+    run_id but no DB session.
+    """
     return run_id in _continuation_run_ids
 
 
@@ -81,6 +84,12 @@ class RunRecorder:
                 started_at=started,
                 status="recording",
                 task_tokens=0,
+                # E2: this is the live path — quarantine old data via epoch, mark real turns
+                # kind='live', and persist the continuation flag on the row (authoritative;
+                # score() reads run.continuation directly).
+                kind="live",
+                epoch=1,
+                continuation=continuation,
             )
             db.add(run)
             await db.commit()
@@ -193,6 +202,12 @@ class RunRecorder:
                 run.total_ms = total_ms
                 run.task_tokens = tokens
                 run.status = "recorded"
+                # E2: belt-and-suspenders — the live recorder always finalizes a live run at
+                # epoch 1 and persists the continuation flag on the row (start() already set
+                # them; re-affirm here so no live finalize path can leave the columns unset).
+                run.kind = "live"
+                run.epoch = 1
+                run.continuation = self.continuation
                 run.model = model
                 run.provider = provider
                 run.tokens_in = tokens_in

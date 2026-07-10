@@ -24,7 +24,10 @@ async def build(spawn_id: int, *, cap: int = 20) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         runs = (await db.execute(
             select(Run)
-            .where(Run.spawn_id == spawn_id, Run.status == "scored")
+            # E2: only clean-corpus live runs — replay arms (kind='replay') and pre-baseline
+            # rows (epoch=0) are permanently excluded from the evaluation corpus.
+            .where(Run.spawn_id == spawn_id, Run.status == "scored",
+                   Run.kind == "live", Run.epoch >= 1)
             .order_by(Run.id.desc())
             .limit(cap)
         )).scalars().all()
