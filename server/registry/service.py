@@ -6,16 +6,25 @@ Layer 3: wired_tools_for_spawn() — the only tool resolution the loop may call.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server import config
 from server.db import session as db_session
 from server.db.models import SkillPack, SpawnCapability, Tool, Toolset
 
 ASSIGNABLE_STATUSES = ("wired", "registered")
+
+
+def _skill_scripts_root() -> Path:
+    """Root for bundled skill scripts/references: ``<data_dir>/skill_scripts``.
+
+    Resolved from the single ``config.data_dir()`` root (unset ARSLAN_DATA_DIR -> the
+    platform app-data dir, NOT CWD/data) so this stays co-located with the brain and
+    mirrors ``RunPythonExecutor._load_skill_script``'s resolution root."""
+    return config.data_dir() / "skill_scripts"
 
 # Deterministic, side-effect-free safe tools every spawn may use without per-spawn equipment.
 # The safe+wired filter STILL applies — this cannot be used to bypass the choke point.
@@ -70,7 +79,7 @@ def skill_has_scripts(key: str) -> bool:
     run_python(skill_script="<key>/<file>.py"). Fail-closed on any FS error → False."""
     if not key:
         return False
-    root = Path(os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts" / key
+    root = _skill_scripts_root() / key
     try:
         return any(p.is_file() and p.suffix == ".py" for p in root.iterdir())
     except OSError:
@@ -85,8 +94,7 @@ def skill_has_references(key: str) -> bool:
     Fail-closed on any FS error → False."""
     if not key:
         return False
-    root = (Path(os.environ.get("ARSLAN_DATA_DIR", "data"))
-            / "skill_scripts" / key / "references")
+    root = _skill_scripts_root() / key / "references"
     try:
         return any(p.is_file() for p in root.iterdir())
     except OSError:
@@ -97,7 +105,7 @@ def _skill_script_paths(key: str) -> list[Path]:
     """Top-level (non-references/) files bundled under skill_scripts/<key>/."""
     if not key:
         return []
-    root = Path(os.environ.get("ARSLAN_DATA_DIR", "data")) / "skill_scripts" / key
+    root = _skill_scripts_root() / key
     try:
         return [p for p in root.iterdir() if p.is_file()]
     except OSError:
@@ -191,8 +199,7 @@ def _reference_paths(key: str) -> list[Path]:
     """Files under data_dir/skill_scripts/<key>/references/ (fail-closed → [])."""
     if not key:
         return []
-    root = (Path(os.environ.get("ARSLAN_DATA_DIR", "data"))
-            / "skill_scripts" / key / "references")
+    root = _skill_scripts_root() / key / "references"
     try:
         return [p for p in root.iterdir() if p.is_file()]
     except OSError:

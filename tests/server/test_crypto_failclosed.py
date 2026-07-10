@@ -76,6 +76,28 @@ def test_is_insecure_default_false_for_real_key(reload_config):
 
 
 # --------------------------------------------------------------------------- #
+# FIX 4: whitespace-only secret is normalized consistently (unset == insecure).
+# is_insecure_default() strips before testing, so a whitespace-only ARSLAN_SECRET_KEY
+# reads as insecure; _active_secret() must ALSO strip so the DERIVED key is the
+# dev-fallback key — not a key derived from the literal whitespace (which would fail
+# closed citing "public key" while actually using a different, whitespace-derived key).
+# --------------------------------------------------------------------------- #
+def test_whitespace_secret_is_insecure_and_uses_dev_fallback(reload_config):
+    reload_config(secret_key="   ")
+    assert crypto.is_insecure_default() is True
+    assert crypto._active_secret() == crypto._DEV_FALLBACK_SECRET
+
+
+def test_whitespace_secret_derives_same_key_as_unset(reload_config, tmp_path):
+    """A whitespace-only secret must derive the SAME key as the (unset) public fallback:
+    a ciphertext written under "   " decrypts after the secret is unset, same salt."""
+    reload_config(secret_key="   ", allow_insecure="1", data_dir=tmp_path)
+    token = crypto.encrypt("sk-ws-derived")
+    reload_config(secret_key=None, allow_insecure="1", data_dir=tmp_path)
+    assert crypto.decrypt(token) == "sk-ws-derived"
+
+
+# --------------------------------------------------------------------------- #
 # encrypt() fail-closed + escape hatch (service/unit level)
 # --------------------------------------------------------------------------- #
 def test_encrypt_refuses_under_public_key(reload_config, tmp_path):

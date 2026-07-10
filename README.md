@@ -81,7 +81,7 @@ Arslan is **safe by default**:
 
 ## Data & backup
 
-Everything that matters lives in one directory — the DB, your notes, and your encrypted secrets — resolved from `ARSLAN_DATA_DIR` (or the platform app-data dir if unset). **That directory IS the backup unit:** copy it to back Arslan up, and restore by copying it back. Keep its `api_token` and `crypto_salt` files with it — without `crypto_salt` (and the matching `ARSLAN_SECRET_KEY`), stored secrets can't be decrypted.
+Everything that matters lives in one directory — the DB, your notes, and your encrypted secrets — resolved from `ARSLAN_DATA_DIR` (or the platform app-data dir if unset). **That directory IS the backup unit:** copy it to back Arslan up, and restore by copying it back. Keep its `api_token` and `crypto_salt` files with it — new-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`, so losing (or mismatching) `crypto_salt` makes those stored secrets undecryptable even with the right `ARSLAN_SECRET_KEY`. Back up and restore the whole directory as a unit.
 
 ## Status
 

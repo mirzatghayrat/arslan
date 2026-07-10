@@ -66,8 +66,13 @@ class InsecureSecretStoreError(RuntimeError):
 
 
 def _active_secret() -> str:
-    """The effective derivation input: the configured key, or the public fallback."""
-    return config.settings.secret_key or _DEV_FALLBACK_SECRET
+    """The effective derivation input: the configured key, or the public fallback.
+
+    Strips first so it agrees with :func:`is_insecure_default` (which also strips): a
+    whitespace-only ``ARSLAN_SECRET_KEY`` is treated as UNSET → derives from the public
+    ``_DEV_FALLBACK_SECRET`` and reads as insecure, rather than silently deriving a real
+    key from the literal whitespace while the fail-closed guard claims "public key"."""
+    return (config.settings.secret_key or "").strip() or _DEV_FALLBACK_SECRET
 
 
 def is_insecure_default() -> bool:

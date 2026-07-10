@@ -1,6 +1,8 @@
 """Settings REST endpoints."""
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,30 +22,76 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 # S1-3: the access-token view/reset endpoints must be reachable BEFORE the caller
 # knows the token (a packaged user has to discover it), so they live on a router
 # with NO require_auth dependency and are gated on the *client host* instead: only
-# a loopback caller (same machine) may read or rotate the token. A remote caller
-# gets `token_required` but never the value, and cannot reset (403). This closes
-# the "packaged user locked out" gap without opening the token to the network.
+# a DIRECT loopback caller (same machine) may read or rotate the token. A remote caller
+# gets `token_required` but never the value, and cannot reset. This closes the
+# "packaged user locked out" gap without opening the token to the network.
 access_token_router = APIRouter()
 
+# FIX 3: request.client.host reflects X-Forwarded-For when uvicorn runs with
+# --proxy-headers, so a remote client behind a trusted proxy could spoof 127.0.0.1 and
+# read/rotate the token. A GENUINE direct loopback connection never carries a
+# forwarding header, so their presence disqualifies the request regardless of the
+# reported client host. (Belt-and-suspenders: reset additionally requires the bearer.)
+_FORWARDING_HEADERS = ("x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded")
 
-def _client_is_localhost(request: Request) -> bool:
+
+def _is_direct_localhost(request: Request) -> bool:
+    """True only for a genuine DIRECT loopback connection (no proxy in front)."""
     client = request.client
-    return bool(client) and token_bootstrap.is_loopback_host(client.host)
+    if not (client and token_bootstrap.is_loopback_host(client.host)):
+        return False
+    return not any(h in request.headers for h in _FORWARDING_HEADERS)
+
+
+def _bearer_matches(request: Request, expected: str) -> bool:
+    """True when the request's ``Authorization: Bearer <tok>`` matches ``expected``."""
+    header = request.headers.get("authorization", "")
+    scheme, _, value = header.partition(" ")
+    token = value.strip()
+    return (
+        scheme.lower() == "bearer"
+        and bool(token)
+        and secrets.compare_digest(token, expected)
+    )
 
 
 @access_token_router.get("/settings/access-token", response_model=AccessTokenOut)
 async def get_access_token(request: Request) -> AccessTokenOut:
-    """Report whether auth is required, and (localhost only) the active token."""
+    """Report whether auth is required, and (direct-localhost only) the active token.
+
+    ``active_token()`` returns the authoritative token — the explicit ARSLAN_API_TOKEN
+    when env-managed, else the boot-minted one — so a direct-localhost caller sees the
+    value that actually gates the API (honest even under an env override). A remote /
+    proxy-forwarded caller learns only that auth is required, never the value.
+    """
     active = auth.active_token()
-    token = active if (active and _client_is_localhost(request)) else None
+    token = active if (active and _is_direct_localhost(request)) else None
     return AccessTokenOut(token_required=bool(active), token=token)
 
 
 @access_token_router.post("/settings/access-token/reset", response_model=AccessTokenOut)
 async def reset_access_token(request: Request) -> AccessTokenOut:
-    """Rotate the access token (localhost only). The old token stops working."""
-    if not _client_is_localhost(request):
+    """Rotate the access token. The old token stops working.
+
+    Rule (FIX 2 + FIX 3): allow only when the request is a DIRECT loopback connection
+    (no proxy-forwarding header) AND carries the CURRENT token as a bearer. If the token
+    is env-managed (ARSLAN_API_TOKEN set) the rotation cannot take effect — auth always
+    prefers the env token — so we refuse with an actionable 409 instead of minting a
+    dead token that would lock the user out.
+    """
+    if not _is_direct_localhost(request):
         raise HTTPException(status_code=403, detail="access-token reset is localhost-only")
+    if config.settings.api_token:
+        raise HTTPException(
+            status_code=409,
+            detail="Access token is set via the ARSLAN_API_TOKEN environment variable; "
+                   "rotate it there, not here.")
+    active = auth.active_token()
+    if active and not _bearer_matches(request, active):
+        raise HTTPException(
+            status_code=401,
+            detail="present the current access token to rotate it",
+            headers={"WWW-Authenticate": "Bearer"})
     token = token_bootstrap.reset_api_token(config.settings)
     return AccessTokenOut(token_required=True, token=token)
 

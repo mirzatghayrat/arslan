@@ -161,7 +161,17 @@ def reset_api_token(cfg, data_dir=None, *, log: logging.Logger = logger) -> str:
 
     The old token stops working immediately. Used by the localhost-gated Settings
     reset endpoint so a packaged user can never permanently lock themselves out.
+
+    REFUSES (ValueError) when ``ARSLAN_API_TOKEN`` is env-managed: ``auth.active_token``
+    makes an explicit env token always win, so minting here would rotate nothing and the
+    server would keep demanding the env token — a silent lockout. The env token must be
+    rotated where it is set. Defense-in-depth behind the endpoint's 409 (see
+    server.api.settings).
     """
+    if cfg.api_token:
+        raise ValueError(
+            "cannot reset: the access token is set via the ARSLAN_API_TOKEN environment "
+            "variable; rotate it there, not here.")
     if data_dir is None:
         data_dir = cfg.data_dir
     token = secrets.token_urlsafe(32)

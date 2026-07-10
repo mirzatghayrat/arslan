@@ -18,7 +18,6 @@ obedience) — that gets packaged. Fenced FRAGMENTS and teaching snippets stay v
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -147,9 +146,11 @@ def _fenced_deliverable_doctype(text: str) -> int | None:
 
 
 def artifacts_dir() -> Path:
-    """`{data_dir}/artifacts` — env read at call time (test/deploy friendly, same
-    pattern as skill_import/code_sandbox `_data_dir()`)."""
-    return Path(os.environ.get("ARSLAN_DATA_DIR", "data")).resolve() / "artifacts"
+    """`{data_dir}/artifacts` — resolved from the single ``config.data_dir()`` root at
+    call time (test/deploy friendly, same pattern as skill_import/code_sandbox
+    ``_data_dir()``). Unset ARSLAN_DATA_DIR -> the platform app-data dir, not CWD/data."""
+    from server import config
+    return config.data_dir() / "artifacts"
 
 
 def _slug(title: str) -> str:

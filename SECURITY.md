@@ -26,6 +26,10 @@ Please read these before exposing Arslan beyond a trusted local machine:
 - **The MCP client runs arbitrary configured stdio commands by design.** Only configure MCP servers you trust; a malicious server definition can run arbitrary local commands.
 - **BYOK secret confidentiality depends on `ARSLAN_SECRET_KEY` and `crypto_salt`.** Anyone with both the ciphertext and these can decrypt stored keys. Protect your data directory accordingly.
 
+## Backup & durability
+
+The `<data_dir>/crypto_salt` and `<data_dir>/api_token` files are part of the backup unit — back them up **together with** the database, not separately. New-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`: **losing `crypto_salt` (or restoring a mismatched one) makes those stored secrets undecryptable**, even with the correct `ARSLAN_SECRET_KEY`. Restore the whole data directory as a unit.
+
 ## Reporting a vulnerability
 
 Please report security issues **privately** — do not open a public issue for a vulnerability.

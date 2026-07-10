@@ -34,6 +34,33 @@ def _default_data_dir() -> Path:
     return base / "Arslan"
 
 
+def _resolve_data_dir() -> Path:
+    """Resolve the root data dir from the environment — the SINGLE resolver.
+
+    UNSET ``ARSLAN_DATA_DIR`` -> the stable per-platform app-data dir. SET (incl. the
+    dev flow's ``"data"``) -> honored verbatim, only expanded (``~``/``$VAR``) and
+    resolved to an absolute path. Both ``load_settings`` (the boot-time singleton) and
+    the live :func:`data_dir` accessor call this, so there is never a divergent
+    CWD-relative ``"data"`` default that could split the brain from the subsystems'
+    files (skill_scripts / artifacts / sandbox_env / shell workspace).
+    """
+    raw = os.environ.get("ARSLAN_DATA_DIR")
+    d = Path(raw) if raw else _default_data_dir()
+    return Path(os.path.expandvars(os.path.expanduser(str(d)))).resolve()
+
+
+def data_dir() -> Path:
+    """Live-resolved root data dir for subsystems (skill_scripts, artifacts, …).
+
+    Reads the environment at call time via the SAME resolver as the boot-time
+    ``settings.data_dir`` (see :func:`_resolve_data_dir`). Subsystems call this instead
+    of re-reading ``os.environ.get("ARSLAN_DATA_DIR", "data")`` so every one of them
+    shares ONE root. In a real deployment (env fixed at boot) it is identical to
+    ``settings.data_dir``; the live read keeps reload-free test env mutation valid.
+    """
+    return _resolve_data_dir()
+
+
 @dataclass(frozen=True)
 class Settings:
     """Immutable server settings read once from the environment."""
@@ -82,9 +109,8 @@ def load_settings() -> Settings:
     # ONE brain regardless of the launch directory). SET (incl. the dev flow's
     # "data") -> honored verbatim; only expanded (~/$VAR) and resolved to an
     # absolute path for stable file I/O + a meaningful boot log — never relocated.
-    raw_data_dir = os.environ.get("ARSLAN_DATA_DIR")
-    data_dir = Path(raw_data_dir) if raw_data_dir else _default_data_dir()
-    data_dir = Path(os.path.expandvars(os.path.expanduser(str(data_dir)))).resolve()
+    # Shares one resolver with the live ``data_dir()`` accessor the subsystems use.
+    data_dir = _resolve_data_dir()
     db_path = os.environ.get("ARSLAN_DB_PATH", str(data_dir / "arslan.db"))
     spawns_dir = Path(os.environ.get("ARSLAN_SPAWNS_DIR", str(data_dir / "spawns")))
     static_dir = os.environ.get("ARSLAN_STATIC_DIR", str(Path(__file__).parent / "static"))

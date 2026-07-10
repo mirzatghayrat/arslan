@@ -212,8 +212,12 @@ async def test_reset_access_token_localhost_rotates(monkeypatch, tmp_path):
     old = auth.active_token()
     assert old
     transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    # FIX 3: reset now requires the caller to present the CURRENT token (the genuine
+    # local operator who already read it via GET). A direct-loopback request carries no
+    # forwarding header.
     async with AsyncClient(transport=transport, base_url="http://localhost") as c:
-        r = await c.post("/api/v1/settings/access-token/reset")
+        r = await c.post("/api/v1/settings/access-token/reset",
+                         headers={"Authorization": f"Bearer {old}"})
     assert r.status_code == 200
     new = r.json()["token"]
     assert new and new != old
@@ -231,6 +235,110 @@ async def test_reset_access_token_remote_forbidden(monkeypatch, tmp_path):
     old = auth.active_token()
     transport = ASGITransport(app=app, client=("203.0.113.9", 5555))
     async with AsyncClient(transport=transport, base_url="http://localhost") as c:
-        r = await c.post("/api/v1/settings/access-token/reset")
+        r = await c.post("/api/v1/settings/access-token/reset",
+                         headers={"Authorization": f"Bearer {old}"})
     assert r.status_code == 403
     assert auth.active_token() == old  # a remote caller cannot rotate / lock out
+
+
+# --- FIX 2: reset refuses when ARSLAN_API_TOKEN is env-managed (no dead mint) ----
+
+
+@pytest.mark.asyncio
+async def test_reset_refuses_when_env_token_set(monkeypatch, tmp_path):
+    """An explicit ARSLAN_API_TOKEN always wins in auth.active_token(); minting a new
+    bootstrapped token would rotate NOTHING (the env token still gates) and lock the
+    user out. So reset must REFUSE with an actionable 409 and never mint."""
+    app, auth = _app_after_bootstrap(
+        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok", ARSLAN_ENV="prod",
+        ARSLAN_SECRET_KEY="x" * 32)
+    assert auth.active_token() == "explicit-tok"
+    transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        r = await c.post("/api/v1/settings/access-token/reset",
+                         headers={"Authorization": "Bearer explicit-tok"})
+    assert r.status_code == 409
+    assert "ARSLAN_API_TOKEN" in r.json()["detail"]
+    # No mint happened: the env token is unchanged and still works; no file was written.
+    assert auth.active_token() == "explicit-tok"
+    assert auth.is_ws_token_valid("explicit-tok") is True
+    assert not (tmp_path / "api_token").exists()
+
+
+@pytest.mark.asyncio
+async def test_get_reports_env_token_honestly(monkeypatch, tmp_path):
+    """GET reports token_required:true, and hands the authoritative ENV token to a
+    localhost caller (the honest, useful value — env is what actually gates)."""
+    app, auth = _app_after_bootstrap(
+        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok", ARSLAN_ENV="prod",
+        ARSLAN_SECRET_KEY="x" * 32)
+    transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        r = await c.get("/api/v1/settings/access-token")
+    body = r.json()
+    assert body["token_required"] is True
+    assert body["token"] == "explicit-tok"
+
+
+def test_reset_api_token_raises_under_env_token(monkeypatch, tmp_path):
+    """Defense-in-depth: reset_api_token itself refuses to mint a dead token when the
+    env manages the token, so no caller can silently lock the user out."""
+    config, _auth, tb = _reload(
+        monkeypatch, tmp_path, ARSLAN_API_TOKEN="explicit-tok")
+    with pytest.raises(ValueError) as exc:
+        tb.reset_api_token(config.settings)
+    assert "ARSLAN_API_TOKEN" in str(exc.value)
+    assert not (tmp_path / "api_token").exists()
+
+
+# --- FIX 3: the localhost gate must reject X-Forwarded-For loopback spoofing ------
+
+
+@pytest.mark.asyncio
+async def test_get_rejects_forwarded_header_spoof(monkeypatch, tmp_path):
+    """With uvicorn --proxy-headers, request.client.host reflects X-Forwarded-For, so a
+    remote client behind a trusted proxy could spoof 127.0.0.1. A DIRECT loopback
+    connection never carries a forwarding header, so its PRESENCE disqualifies the
+    request — the token is not leaked."""
+    app, auth = _app_after_bootstrap(monkeypatch, tmp_path, ARSLAN_PACKAGED="1")
+    transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        r = await c.get("/api/v1/settings/access-token",
+                        headers={"X-Forwarded-For": "127.0.0.1"})
+    body = r.json()
+    assert body["token_required"] is True
+    assert body["token"] is None  # spoofed loopback learns required, never the value
+
+
+@pytest.mark.asyncio
+async def test_reset_rejects_forwarded_header_spoof(monkeypatch, tmp_path):
+    app, auth = _app_after_bootstrap(monkeypatch, tmp_path, ARSLAN_PACKAGED="1")
+    old = auth.active_token()
+    transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        r = await c.post("/api/v1/settings/access-token/reset",
+                         headers={"Authorization": f"Bearer {old}",
+                                  "X-Forwarded-For": "127.0.0.1"})
+    assert r.status_code == 403
+    assert auth.active_token() == old  # spoofed loopback cannot rotate
+
+
+@pytest.mark.asyncio
+async def test_reset_requires_bearer_token(monkeypatch, tmp_path):
+    """Even a genuine direct-loopback reset must present the CURRENT token, so a
+    spoofed-loopback remote that also strips forwarding headers still can't rotate
+    without knowing the token."""
+    app, auth = _app_after_bootstrap(monkeypatch, tmp_path, ARSLAN_PACKAGED="1")
+    old = auth.active_token()
+    transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        # No Authorization header -> rejected.
+        r = await c.post("/api/v1/settings/access-token/reset")
+    assert r.status_code == 401
+    assert auth.active_token() == old
+    # Wrong bearer -> rejected.
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        r = await c.post("/api/v1/settings/access-token/reset",
+                         headers={"Authorization": "Bearer wrong-token"})
+    assert r.status_code == 401
+    assert auth.active_token() == old

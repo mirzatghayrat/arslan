@@ -10,14 +10,16 @@ per-repo cwd concept (single-command shell has no `cd`)."""
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 from server.services import command_ca, command_policy, command_proxy, command_sandbox
 
 
 def _data_dir() -> Path:
-    return Path(os.environ.get("ARSLAN_DATA_DIR", "data")).resolve()
+    # Single resolved root (config.data_dir()): unset ARSLAN_DATA_DIR -> the platform
+    # app-data dir, not CWD/data, so the shell workspace co-locates with the brain.
+    from server import config
+    return config.data_dir()
 
 
 def _workspace() -> Path:

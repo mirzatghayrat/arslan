@@ -23,7 +23,6 @@ import httpx
 import yaml
 from sqlalchemy import select
 
-import os
 from pathlib import Path
 
 from server.db import session as db_session
@@ -48,8 +47,10 @@ _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 
 
 def _data_dir() -> Path:
-    # Same convention as code_sandbox: resolve() so cwd changes never bite.
-    return Path(os.environ.get("ARSLAN_DATA_DIR", "data")).resolve()
+    # Single resolved root (config.data_dir(), same convention as code_sandbox): unset
+    # ARSLAN_DATA_DIR -> the platform app-data dir, not CWD/data. Absolute + resolved.
+    from server import config
+    return config.data_dir()
 
 
 def parse_skill_md(raw: str) -> dict | None:
