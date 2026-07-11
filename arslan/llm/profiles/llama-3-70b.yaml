@@ -1,9 +1,0 @@
-name: llama-3-70b
-provider: ollama
-reasoning: 3
-tool_use: 2
-chinese: 2
-creative: 3
-instruction: 3
-max_context: 8000
-cost_per_1k_tokens: 0.0

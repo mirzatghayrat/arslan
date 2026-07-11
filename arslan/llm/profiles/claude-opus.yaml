@@ -1,9 +1,0 @@
-name: claude-opus
-provider: anthropic
-reasoning: 5
-tool_use: 5
-chinese: 4
-creative: 5
-instruction: 5
-max_context: 200000
-cost_per_1k_tokens: 0.015

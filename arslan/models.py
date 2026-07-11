@@ -80,31 +80,6 @@ class SpawnBlueprint(BaseModel):
     generation_level: int = 1
 
 
-class CapabilityProfile(BaseModel):
-    """LLM capability ratings (1–5 scale) used by the quality compensator."""
-
-    name: str
-    provider: str
-    reasoning: int
-    tool_use: int
-    chinese: int
-    creative: int
-    instruction: int
-    max_context: int
-    cost_per_1k_tokens: float
-
-    def weak_capabilities(self, threshold: int = 3) -> list[str]:
-        """Return capability names scoring STRICTLY LESS THAN threshold."""
-        caps = {
-            "reasoning": self.reasoning,
-            "tool_use": self.tool_use,
-            "chinese": self.chinese,
-            "creative": self.creative,
-            "instruction": self.instruction,
-        }
-        return [name for name, score in caps.items() if score < threshold]
-
-
 class LLMResponse(BaseModel):
     """Normalised response from any LLM provider."""
 

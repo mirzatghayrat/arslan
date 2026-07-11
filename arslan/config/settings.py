@@ -16,13 +16,8 @@ class Settings(BaseSettings):
     templates_dir: Path = Field(
         default_factory=lambda: Path(__file__).parent.parent / "templates"
     )
-    profiles_dir: Path = Field(
-        default_factory=lambda: Path(__file__).parent.parent / "profiles"
-    )
 
     # --- LLM defaults ---
-    default_provider: str = "anthropic"
-    default_model: str = "claude-3-5-haiku-20241022"
     max_dialogue_turns: int = 20
 
     # --- Evolution engine ---
