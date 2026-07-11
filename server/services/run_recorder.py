@@ -245,8 +245,12 @@ class RunRecorder:
                     # S3-M1: status_override ("cancelled"/"interrupted") is a user/boot terminal
                     # state — it bypasses scoring entirely, so such runs can never enter the
                     # corpus (replay_set only collects status='scored').
+                    # S3-M4: PRESERVE a non-live kind set at start() — a scheduled run must
+                    # stay kind='scheduled' end-to-end (the corpus filters key on kind=='live',
+                    # so clobbering it back to 'live' here would leak scheduled runs into the
+                    # evolution corpus). The `or "live"` keeps the unset-column re-affirmation.
                     run.status = status_override or ("replayed" if replay else "recorded")
-                    run.kind = "replay" if replay else "live"
+                    run.kind = "replay" if replay else (run.kind or "live")
                     run.epoch = 1
                     run.continuation = self.continuation
                     if replay:

@@ -250,6 +250,17 @@ async def lifespan(app: FastAPI):
         evolution_watcher.start()
     except Exception as exc:  # noqa: BLE001 — watcher start must never block boot
         logger.warning("evolution watcher start failed (non-fatal): %s", exc)
+
+    # S3-M4 scheduler: a second supervised loop (60s tick, own task set — independent
+    # of the evolution watcher's) that fires due scheduled tasks headless
+    # (RunRecorder kind='scheduled' + dispatcher.dispatch). It sweeps orphaned
+    # in-flight rows before its first tick. Best-effort start — never blocks boot.
+    try:
+        from server.services import scheduler
+
+        scheduler.start()
+    except Exception as exc:  # noqa: BLE001 — scheduler start must never block boot
+        logger.warning("scheduler start failed (non-fatal): %s", exc)
     yield
 
     try:
@@ -258,6 +269,13 @@ async def lifespan(app: FastAPI):
         await _evo_watcher.stop()
     except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
         logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
+
+    try:
+        from server.services import scheduler as _scheduler
+
+        await _scheduler.stop()
+    except Exception as exc:  # noqa: BLE001 — scheduler stop must never block shutdown
+        logger.warning("scheduler stop failed (non-fatal): %s", exc)
 
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()
