@@ -123,13 +123,31 @@ class LLMAdapter:
                 chunks.append(piece)
                 yield piece
         finally:
-            usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
-            usage_sink.report_detail(
-                tokens_in=None,
-                tokens_out=None,
-                model=self.model,
-                provider=self.provider_name,
-            )
+            # S3-M3: providers stash the stream's real usage frame on themselves
+            # (see BaseLLMProvider._last_stream_usage); the adapter stays the ONE
+            # reporting point — real when captured, estimate only as fallback, so
+            # real + estimate can never double-report. Partial capture (e.g. an
+            # aborted anthropic stream with only input_tokens) falls back to the
+            # estimate: detail totals must never mix real and guessed fields.
+            real = getattr(self._provider, "_last_stream_usage", None) or {}
+            tokens_in = real.get("tokens_in")
+            tokens_out = real.get("tokens_out")
+            if tokens_in is not None and tokens_out is not None:
+                usage_sink.report(int(tokens_in) + int(tokens_out))
+                usage_sink.report_detail(
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    model=self.model,
+                    provider=self.provider_name,
+                )
+            else:
+                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
+                usage_sink.report_detail(
+                    tokens_in=None,
+                    tokens_out=None,
+                    model=self.model,
+                    provider=self.provider_name,
+                )
 
     # ------------------------------------------------------------------
     # Private helpers
