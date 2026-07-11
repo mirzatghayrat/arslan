@@ -32,8 +32,10 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 780 keys (baseline guard)", () => {
-    expect(enKeys).toHaveLength(780);
+  it("en locale has 781 keys (baseline guard)", () => {
+    // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
+    // existing working.stalled key instead of adding a duplicate).
+    expect(enKeys).toHaveLength(781);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -53,6 +53,10 @@ interface ArslanState {
   // spinner. Any new frame un-stalls; stream_end/error end the turn entirely.
   lastFrameAt: number | null;
   stalled: boolean;
+  // S3-M1 · cancellable runs: the recorded run id of the in-flight stream (from
+  // stream_start's run_id — spawn runs only). The stop button POSTs
+  // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
+  activeRunId: number | null;
 
   setSpawnNames: (map: Record<number, string>) => void;
   setThinking: (v: boolean) => void;
@@ -119,6 +123,7 @@ function initialData() {
     workStartedAt: null as number | null,
     lastFrameAt: null as number | null,
     stalled: false,
+    activeRunId: null as number | null,
   };
 }
 
@@ -245,7 +250,7 @@ function makeActions(set: SetState, get: GetState) {
         case "history": {
           const items: ArslanThreadItem[] = frame.messages.map(rowToItem);
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);
-          set({ items, lastMessageId: lastId, activitySteps: [] });
+          set({ items, lastMessageId: lastId, activitySteps: [], activeRunId: null });
           break;
         }
         case "message": {
@@ -302,6 +307,8 @@ function makeActions(set: SetState, get: GetState) {
                 ? state.pendingRoute?.spawnId ?? frame.spawn_id ?? null
                 : null,
             streamSpawnName: frame.source === "spawn" ? state.pendingRoute?.spawnName ?? null : null,
+            // S3-M1: recorded runs carry their run id — the cancel target.
+            activeRunId: frame.run_id ?? null,
           });
           break;
         case "stream_chunk":
@@ -329,6 +336,7 @@ function makeActions(set: SetState, get: GetState) {
               pendingRoute: null,
               activitySteps: [],
               pendingProposalSpawnId: null,
+              activeRunId: null,
             });
             break;
           }
@@ -382,8 +390,51 @@ function makeActions(set: SetState, get: GetState) {
             lastMessageId:
               frame.message_id != null ? Math.max(state.lastMessageId, frame.message_id) : state.lastMessageId,
             activitySteps: [],
+            activeRunId: null,
             // Clear the proposal flag once consumed
             pendingProposalSpawnId: isProposal ? null : state.pendingProposalSpawnId,
+          });
+          break;
+        }
+        case "run_cancelled": {
+          // S3-M1: the server cancelled this run mid-flight. Finalize the live
+          // bubble as an interrupted item — but only when partial text actually
+          // streamed. The canonical copy (spawn_summary with the 已中断 marker)
+          // was already persisted server-side; this is the live-session echo so
+          // the partial text doesn't vanish from under the user.
+          const hasPartial = state.streamingText.length > 0;
+          const item: ArslanThreadItem | null = hasPartial
+            ? {
+                id: frame.message_id ?? nextClientId(),
+                kind: "message",
+                role: state.streamSource === "spawn" ? "spawn" : "arslan",
+                content: state.streamingText,
+                spawnId: state.streamSpawnId,
+                spawnName: state.streamSpawnName,
+                toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
+                cancelled: true,
+              }
+            : null;
+          set({
+            thinking: false,
+            pending: false,
+            streaming: false,
+            streamingText: "",
+            streamSource: null,
+            streamSpawnId: null,
+            streamSpawnName: null,
+            pendingRoute: null,
+            activitySteps: [],
+            activeRunId: null,
+            ...(item
+              ? {
+                  items: [...state.items, item],
+                  lastMessageId:
+                    frame.message_id != null
+                      ? Math.max(state.lastMessageId, frame.message_id)
+                      : state.lastMessageId,
+                }
+              : {}),
           });
           break;
         }
@@ -683,6 +734,7 @@ function makeActions(set: SetState, get: GetState) {
             streamSpawnName: null,
             pendingRoute: null,
             activitySteps: [],
+            activeRunId: null,
           });
           break;
         default:

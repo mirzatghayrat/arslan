@@ -31,12 +31,23 @@ def _workspace() -> Path:
 async def _run_host(*cmd: str, timeout: float = 10.0) -> str:
     """Run a read-only helper (git config read / gh auth token) ON THE HOST (unsandboxed). Best-
     effort — returns stdout or "" on any failure."""
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return (out or b"").decode("utf-8", "replace")
+    except asyncio.CancelledError:
+        # Run cancel (S3-M1): except Exception below never catches CancelledError —
+        # without this arm the helper child would be orphaned by a cancelled run.
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+        raise
     except Exception:  # noqa: BLE001
+        # Timeout (wait_for) lands here too — the abandoned child must be killed,
+        # not left running with its pipe unread (review S6).
+        if proc is not None and proc.returncode is None:
+            proc.kill()
         return ""
 
 

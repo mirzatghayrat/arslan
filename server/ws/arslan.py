@@ -595,7 +595,9 @@ def _to_frame(ev: dict) -> dict:
         return protocol.routing(ev.get("spawn_id"), ev.get("spawn_name"),
                                 announcement=ev.get("announcement"))
     if t == "stream_start":
-        return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"))
+        # run_id must ride through the rebuild — it is the client's cancel handle (S3-M1).
+        return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"),
+                                         run_id=ev.get("run_id"))
     if t == "suggest_create":
         return protocol.suggest_create(
             ev.get("draft") or {}, task_brief=ev.get("task_brief"), overlaps=ev.get("overlaps")

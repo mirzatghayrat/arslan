@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.session import get_session
 from server.db.models import Run, RunEvaluation, RunStep
+from server.services import run_registry
 from server.schemas import (
     AnomalyOut,
     CatalogFleetOut,
@@ -474,6 +475,21 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
     )
 
 
+@router.post("/runs/{run_id}/cancel", status_code=202)
+async def cancel_run(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """Cancel an in-flight run (S3-M1). 202 on cancel; 409 terminal; 404 unknown.
+
+    The registry is process-local: a live run is only cancellable in the process
+    executing it. When the registry misses, the DB row disambiguates 404 vs 409.
+    """
+    if run_registry.cancel(run_id):
+        return {"ok": True}
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    raise HTTPException(status_code=409, detail=f"run is not cancellable (status={run.status})")
+
+
 @router.post("/runs/{run_id}/rescore")
 async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
     """Manually re-enqueue judge scoring for one run (E1). 404 on unknown run.
@@ -481,6 +497,9 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     Auth: covered by the router-level require_auth dependency.
     E2: rejects kind != 'live' with 409 — replay runs end in terminal status 'replayed'
     and are never judged, so re-enqueueing one is a client error, not a no-op.
+    S3-M1: also rejects non-rescorable statuses with 409 — cancelled/interrupted runs
+    are terminal and never scored; rescoring one would judge partial output and flip
+    it to 'scored' (corpus-eligible), breaching the milestone invariant.
     """
     from server.services import run_recorder
 
@@ -489,6 +508,9 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
         raise HTTPException(status_code=404, detail="run not found")
     if run.kind != "live":
         raise HTTPException(status_code=409, detail="only live runs can be rescored")
+    if run.status not in ("recorded", "scored", "score_failed"):
+        raise HTTPException(status_code=409,
+                            detail=f"run is not rescorable (status={run.status})")
     run_recorder.schedule_scoring(run_id)
     return {"enqueued": True}
 

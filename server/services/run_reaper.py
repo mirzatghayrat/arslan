@@ -39,6 +39,25 @@ async def _reaper_candidates() -> list[int]:
         return list(rows.scalars().all())
 
 
+async def mark_interrupted_runs() -> int:
+    """S3-M1 boot sweep: a 'recording' row at boot is by definition orphaned —
+    runs never survive a process restart (the run registry is process-local), so
+    mark them 'interrupted' instead of letting them rot as recording-forever
+    zombies. Live runs only (a replay row is the gate's problem).
+    Assumes exclusive DB ownership (single process — same assumption as run_registry)."""
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.execute(
+            select(Run).where(Run.status == "recording", Run.kind == "live"))
+        runs = list(rows.scalars().all())
+        for run in runs:
+            run.status = "interrupted"
+            run.ended_at = run.ended_at or datetime.utcnow()
+        await db.commit()
+    if runs:
+        logger.info("run reaper: marked %d orphaned recording run(s) interrupted", len(runs))
+    return len(runs)
+
+
 async def reap_stuck_runs() -> int:
     """Re-enqueue judge scoring for every stuck run; returns how many."""
     from server.services import run_recorder

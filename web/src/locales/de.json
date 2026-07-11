@@ -61,7 +61,8 @@
     "thinking": "Denkt nach …",
     "roster_joined": "{{name}} ist dem Gespräch beigetreten",
     "roster_left": "{{name}} hat das Gespräch verlassen",
-    "roster_recruited": "{{name}} ist beigetreten · beim nächsten Mal übernimmt {{name}} solche Aufgaben direkt"
+    "roster_recruited": "{{name}} ist beigetreten · beim nächsten Mal übernimmt {{name}} solche Aufgaben direkt",
+    "stopRun": "Stoppen"
   },
   "conversation": {
     "title": "Arslan",

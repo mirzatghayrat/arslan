@@ -224,6 +224,8 @@ export const api = {
   getConversationRecap: (id: string) => request<RecapDto>(`/conversations/${id}/recap`),
   /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
   redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
+  /** Cancel an in-flight run (S3-M1). 202 {ok} on cancel; 404 unknown; 409 already terminal. */
+  cancelRun: (id: number) => request<{ ok: boolean }>(`/runs/${id}/cancel`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
   redactAllRuns: () => request<{ redacted: number }>(`/runs/redact-all`, { method: "POST" }),
   getKnowledge: (spawnId: number) =>

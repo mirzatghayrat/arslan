@@ -31,10 +31,10 @@ def _capture_scheduling(monkeypatch) -> list[int]:
     return enqueued
 
 
-async def _seed_run(Session, *, status: str, age_minutes: int) -> int:
+async def _seed_run(Session, *, status: str, age_minutes: int, kind: str = "live") -> int:
     async with Session() as db:
         run = Run(conversation_id="c1", spawn_name="Mermer", user_message="m",
-                  status=status, task_tokens=0,
+                  status=status, task_tokens=0, kind=kind,
                   created_at=datetime.utcnow() - timedelta(minutes=age_minutes))
         db.add(run)
         await db.commit()
@@ -76,6 +76,26 @@ async def test_terminal_statuses_are_not_reenqueued(memdb, monkeypatch):
     assert enqueued == []
 
 
+# --- S3-M1 boot sweep: orphaned 'recording' rows → 'interrupted' -------------
+
+async def test_mark_interrupted_sweeps_orphaned_recording_rows(memdb):
+    orphan_id = await _seed_run(memdb, status="recording", age_minutes=5)
+    recorded_id = await _seed_run(memdb, status="recorded", age_minutes=5)
+    replay_id = await _seed_run(memdb, status="recording", age_minutes=5, kind="replay")
+
+    n = await run_reaper.mark_interrupted_runs()
+    assert n == 1
+
+    async with memdb() as db:
+        orphan = await db.get(Run, orphan_id)
+        recorded = await db.get(Run, recorded_id)
+        replay = await db.get(Run, replay_id)
+    assert orphan.status == "interrupted"
+    assert orphan.ended_at is not None
+    assert recorded.status == "recorded"
+    assert replay.status == "recording"
+
+
 # --- POST /runs/{id}/rescore -------------------------------------------------
 
 async def test_rescore_404_on_unknown_run(client):
@@ -83,16 +103,44 @@ async def test_rescore_404_on_unknown_run(client):
     assert resp.status_code == 404
 
 
-async def test_rescore_enqueues_known_run(client, monkeypatch):
-    enqueued = _capture_scheduling(monkeypatch)
+async def _seed_run_via_client(client, *, status: str) -> int:
     async with client.db_maker() as db:
         run = Run(conversation_id="c1", spawn_name="Mermer", user_message="m",
-                  status="score_failed", task_tokens=0)
+                  status=status, task_tokens=0)
         db.add(run)
         await db.commit()
         await db.refresh(run)
-        run_id = run.id
+        return run.id
+
+
+async def test_rescore_enqueues_known_run(client, monkeypatch):
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="score_failed")
     resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
     assert resp.status_code == 200
     assert resp.json() == {"enqueued": True}
     assert enqueued == [run_id]
+
+
+async def test_rescore_scored_run_still_accepted(client, monkeypatch):
+    """Regression for the S3-M1 terminal-status guard: 'scored' stays rescorable."""
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="scored")
+    resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert resp.status_code == 200
+    assert enqueued == [run_id]
+
+
+@pytest.mark.parametrize("status", ["cancelled", "interrupted"])
+async def test_rescore_terminal_unscored_run_409s(client, monkeypatch, status):
+    """S3-M1 invariant: cancelled/interrupted runs are never scored and never
+    corpus-eligible — rescoring one would judge partial output and flip it to
+    'scored', so the endpoint must refuse."""
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status=status)
+    resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert "not rescorable" in detail
+    assert status in detail
+    assert enqueued == []

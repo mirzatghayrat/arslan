@@ -15,6 +15,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from datetime import datetime
+from typing import Literal
 
 from arslan.llm import usage_sink
 from server.db import session as db_session
@@ -64,6 +65,12 @@ class RunRecorder:
         self.continuation = continuation
         self.spawn_id = spawn_id
         self._events: list[tuple[datetime, dict]] = []
+        # Two-flag finalize latch (review I1 + residual): _finalizing blocks true
+        # re-entrancy from entry; _finalized flips only AFTER the commit landed, so a
+        # pre-commit cancel (write rolled back) clears the latch and lets the cancel
+        # handler's second finalize run against the clean state.
+        self._finalizing = False
+        self._finalized = False
 
     @classmethod
     async def start(
@@ -195,7 +202,9 @@ class RunRecorder:
                         error_kind: str | None = None, error_text: str | None = None,
                         system_prompt: str | None = None, injected_kb: str | None = None,
                         injected_kb_sources: list | None = None,
-                        replay: bool = False) -> int:
+                        replay: bool = False,
+                        status_override: Literal["cancelled", "interrupted"] | None = None,
+                        ) -> int:
         """Persist steps + run metadata and (for live runs only) schedule judge scoring.
 
         replay=True (S2 E3 hermetic replay): terminal status is 'replayed' (never
@@ -203,47 +212,88 @@ class RunRecorder:
         kind='replay', the arm's output is stored in final_output for judge-comparison
         and trace, and schedule_scoring is NOT called — a replay is evaluated by the
         paired ReplayGate (E4), not the per-run judge."""
+        # S3-M1 (review I1 + residual): finalize must be idempotent — a cancel landing
+        # during one of the awaits below re-enters finalize via _dispatch_spawn's cancel
+        # handler. _finalizing flips BEFORE any await (synchronously, same task context)
+        # so a truly re-entrant call short-circuits; _finalized flips only AFTER the
+        # commit returned. A cancel in the PRE-commit phase rolled the write back, so
+        # the latch clears on the way out and the handler's second finalize runs
+        # cleanly (a stuck latch would rot the row at 'recording' after a run_cancelled
+        # frame already went out — frame/DB disagreement). Post-commit cancels stay
+        # short-circuited by _finalized: no duplicated RunStep rows, no terminal-status
+        # flip after the fact.
+        if self._finalizing or self._finalized:
+            return self.run_id
+        self._finalizing = True
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
         self._merge_tool_trace(steps)
         total_ms = int((ended - self.started_at).total_seconds() * 1000)
         tokens = usage_sink.total()
-        async with db_session.AsyncSessionLocal() as db:
-            run = await db.get(Run, self.run_id)
-            if run is not None:
-                run.ended_at = ended
-                run.total_ms = total_ms
-                run.task_tokens = tokens
-                # E2: belt-and-suspenders — the live recorder always finalizes a live run at
-                # epoch 1 and persists the continuation flag on the row (start() already set
-                # them; re-affirm here so no live finalize path can leave the columns unset).
-                # E3: a replay run finalizes to the quarantine terminal status + kind and
-                # persists its output on the row for judge-comparison/trace.
-                run.status = "replayed" if replay else "recorded"
-                run.kind = "replay" if replay else "live"
-                run.epoch = 1
-                run.continuation = self.continuation
-                if replay:
-                    run.final_output = full_output
-                run.model = model
-                run.provider = provider
-                run.tokens_in = tokens_in
-                run.tokens_out = tokens_out
-                run.tokens_estimated = tokens_estimated
-                run.error_kind = error_kind
-                run.error_text = (error_text[:RUN_ERR_CAP] if error_text else None)
-                run.system_prompt = system_prompt
-                run.injected_kb = injected_kb
-                run.injected_kb_sources = injected_kb_sources
-                for s in steps:
-                    db.add(RunStep(run_id=self.run_id, **s))
-                if summary_message_id is not None:
-                    msg = await db.get(ArslanMessage, summary_message_id)
-                    if msg is not None:
-                        msg.run_id = self.run_id
-            await db.commit()
-        if replay:
-            return self.run_id  # hermetic replay is scored by the paired gate, never here
+        try:
+            async with db_session.AsyncSessionLocal() as db:
+                run = await db.get(Run, self.run_id)
+                if run is not None:
+                    run.ended_at = ended
+                    run.total_ms = total_ms
+                    run.task_tokens = tokens
+                    # E2: belt-and-suspenders — the live recorder always finalizes a live run at
+                    # epoch 1 and persists the continuation flag on the row (start() already set
+                    # them; re-affirm here so no live finalize path can leave the columns unset).
+                    # E3: a replay run finalizes to the quarantine terminal status + kind and
+                    # persists its output on the row for judge-comparison/trace.
+                    # S3-M1: status_override ("cancelled"/"interrupted") is a user/boot terminal
+                    # state — it bypasses scoring entirely, so such runs can never enter the
+                    # corpus (replay_set only collects status='scored').
+                    run.status = status_override or ("replayed" if replay else "recorded")
+                    run.kind = "replay" if replay else "live"
+                    run.epoch = 1
+                    run.continuation = self.continuation
+                    if replay:
+                        run.final_output = full_output
+                    run.model = model
+                    run.provider = provider
+                    run.tokens_in = tokens_in
+                    run.tokens_out = tokens_out
+                    run.tokens_estimated = tokens_estimated
+                    run.error_kind = error_kind
+                    run.error_text = (error_text[:RUN_ERR_CAP] if error_text else None)
+                    run.system_prompt = system_prompt
+                    run.injected_kb = injected_kb
+                    run.injected_kb_sources = injected_kb_sources
+                    for s in steps:
+                        db.add(RunStep(run_id=self.run_id, **s))
+                    if summary_message_id is not None:
+                        msg = await db.get(ArslanMessage, summary_message_id)
+                        if msg is not None:
+                            msg.run_id = self.run_id
+                # Residual ambiguity accepted (final review): aiosqlite may land the
+                # commit on its worker thread even when THIS await is cancelled
+                # mid-flight — _finalized would then stay False and the pre-commit arm
+                # re-finalizes over an actually-committed row. Setting _finalized at
+                # the commit point makes every deterministic window safe; the
+                # thread-race window is analyzed-not-tested.
+                await db.commit()
+                # Flip HERE, not after the block: the except arm below also fires on a
+                # cancel during the POST-commit session close (__aexit__ awaits) —
+                # releasing _finalizing there must not reopen finalize once the commit
+                # landed; re-entry short-circuits on _finalized. A run cancelled in that
+                # window stays 'recorded' with scoring scheduling skipped — the stuck-run
+                # reaper (run_reaper.reap_stuck_runs, 'recorded' > STUCK_AFTER)
+                # re-enqueues its scoring.
+                self._finalized = True
+        except asyncio.CancelledError:
+            # Pre-commit cancel: the session __aexit__ rolled everything back —
+            # release the latch so the cancel handler's re-finalize is not blocked.
+            # (A post-commit-close cancel lands here too; _finalized already holds, so
+            # clearing _finalizing is then inert.)
+            self._finalizing = False
+            raise
+        if replay or status_override is not None:
+            # replay → paired gate; cancelled/interrupted → never scored. This also skips
+            # the evolution_watcher nudge below — harmless, since a cancelled run creates
+            # no scored run, so the nudge would be a guaranteed no-op.
+            return self.run_id
         try:
             # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
             # scheduling. The judge task inherits this context's bucket via create_task, but

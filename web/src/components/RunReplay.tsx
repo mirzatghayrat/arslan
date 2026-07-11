@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import { toUiRun, DIMENSION_LABELS } from "../api/adapters";
 import type { RunListItem, RunSummary } from "../api/client.types";
@@ -63,14 +64,26 @@ function buildRunMarkdown(run: UiRun): string {
   return lines.join("\n");
 }
 
+/** Terminal run statuses (S3-M1): the run row will never change again, so polling
+ * must stop. Without cancelled/interrupted here the panel polls those runs forever
+ * — they never reach 'scored' or 'score_failed'. */
+const TERMINAL_RUN_STATUSES = new Set([
+  "scored", "score_failed", "cancelled", "interrupted", "replayed",
+]);
+
+export function isTerminalRunStatus(status: string): boolean {
+  return TERMINAL_RUN_STATUSES.has(status);
+}
+
 interface Props {
   runId: number;
   onClose: () => void;
-  /** Poll interval while a run is not yet scored (ms). */
+  /** Poll interval while a run is not yet in a terminal status (ms). */
   pollMs?: number;
 }
 
 export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
+  const { t } = useTranslation();
   const [run, setRun] = useState<UiRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
@@ -94,7 +107,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       const ui = toUiRun(await api.getRun(runId));
       if (cancelledRef.current) return;
       setRun(ui);
-      if (!ui.scored && ui.status !== "score_failed") {
+      if (!isTerminalRunStatus(ui.status)) {
         timer.current = setTimeout(load, pollMs);
       }
     } catch (e) {
@@ -452,6 +465,11 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
               ))}
             </ul>
           </>
+        ) : run.status === "cancelled" || run.status === "interrupted" ? (
+          /* S3-M1: cancelled/interrupted runs will never be scored — showing
+             "评分中…" forever would be a lie. Same interrupted wording as the
+             chat stall/cancel markers (working.stalled = 已中断/Interrupted). */
+          <p className="run-replay__pending">⏸ {t("working.stalled")}</p>
         ) : (
           <p className="run-replay__pending">评分中…</p>
         )}
