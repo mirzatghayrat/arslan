@@ -1,7 +1,7 @@
 import pytest
 
 from arslan.llm import prices
-from arslan.llm.prices import PRICES, fmt_usd, usd
+from arslan.llm.prices import LOCAL_PRICES, PRICES, fmt_usd, usd
 
 
 # --- prefix matching -------------------------------------------------------
@@ -48,16 +48,38 @@ def test_none_tokens_return_none():
     assert usd("claude-sonnet-5", None, None) is None
 
 
-# --- local models are genuinely free ----------------------------------------
+# --- local models are free ONLY when actually served locally (review I1) ----
+# The same ids exist as PAID hosted models on BYOK OpenAI-compat clouds
+# (DashScope serves deepseek-r1): $0 is gated on provider == "ollama".
 
 
 @pytest.mark.parametrize("tag", ["llama3.1", "qwen3.5", "gemma4", "deepseek-r1"])
-def test_local_seed_tags_cost_zero(tag):
-    assert usd(tag, 500_000, 500_000) == 0.0
+def test_local_seed_tags_cost_zero_on_ollama(tag):
+    assert usd(tag, 500_000, 500_000, provider="ollama") == 0.0
 
 
-def test_local_tag_variant_costs_zero():
-    assert usd("llama3.1:70b", 1_000_000, 1_000_000) == 0.0
+def test_local_tag_variant_costs_zero_on_ollama():
+    assert usd("llama3.1:70b", 1_000_000, 1_000_000, provider="ollama") == 0.0
+
+
+@pytest.mark.parametrize("provider", ["qwen", "openai", "deepseek", None])
+def test_local_tag_on_hosted_or_unknown_provider_is_not_free(provider):
+    # deepseek-r1 on a hosted provider (or with no provider info) is a PAID call
+    # we have no price for → honest None, never $0.
+    assert usd("deepseek-r1", 1_000_000, 1_000_000, provider=provider) is None
+
+
+def test_cloud_prefix_on_ollama_is_not_priced_at_cloud_rate():
+    # A local tag that happens to share a cloud prefix is a LOCAL call — cloud
+    # rates never apply; not in LOCAL_PRICES → honest None.
+    assert usd("claude-sonnet-5", 1000, 500, provider="ollama") is None
+
+
+def test_cloud_entries_unaffected_by_provider_arg():
+    expected = pytest.approx(0.0105)
+    assert usd("claude-sonnet-5", 1000, 500) == expected
+    assert usd("claude-sonnet-5", 1000, 500, provider="anthropic") == expected
+    assert usd("claude-sonnet-5", 1000, 500, provider="something-custom") == expected
 
 
 # --- table hygiene ----------------------------------------------------------
@@ -83,13 +105,19 @@ def test_every_planned_entry_present():
         "qwen3.7-max": (2.5, 7.5),
         "qwen3.7-plus": (0.40, 1.20),
         "qwen3.6-flash": (0.05, 0.20),
+    }
+    for prefix, pair in expected.items():
+        assert PRICES.get(prefix) == pair, f"PRICES[{prefix!r}] != {pair}"
+    # Review I1: local $0 entries live in their OWN provider-gated table —
+    # they must never leak into the provider-agnostic cloud table.
+    expected_local = {
         "llama3.1": (0.0, 0.0),
         "qwen3.5": (0.0, 0.0),
         "gemma4": (0.0, 0.0),
         "deepseek-r1": (0.0, 0.0),
     }
-    for prefix, pair in expected.items():
-        assert PRICES.get(prefix) == pair, f"PRICES[{prefix!r}] != {pair}"
+    assert LOCAL_PRICES == expected_local
+    assert not set(PRICES) & set(LOCAL_PRICES)
 
 
 # --- fmt_usd ----------------------------------------------------------------

@@ -34,10 +34,10 @@ async def conversation_usage(conversation_id: str) -> ConversationUsageOut:
     usd_partial = False
     estimated_any = False
     by_scope: dict[str, dict] = {}
-    for scope, _provider, model, tin, tout, est, total, _ts in items:
+    for scope, provider, model, tin, tout, est, total, _ts in items:
         tokens_total += total
         estimated_any = estimated_any or est
-        usd = item_usd(model, tin, tout, est)
+        usd = item_usd(model, tin, tout, est, provider)
         s = by_scope.setdefault(scope, {"tokens_total": 0, "usd": None})
         s["tokens_total"] += total
         if usd is None:

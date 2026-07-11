@@ -781,6 +781,27 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     ))
 
 
+def _frame_usd(buckets: list[dict]) -> float | None:
+    """Review I2: USD for a turn = SUM of each (model, provider) bucket priced at
+    ITS OWN rate — never the primary bucket's rate applied to summed tokens (a
+    mixed-model turn would silently bill sonnet tokens at haiku prices). None
+    (unknown, not free) when there are no buckets, any bucket is estimated
+    (estimates are never priced — the existing gate, kept), or any bucket's
+    model/provider has no known price (a partial sum would understate cost)."""
+    if not buckets:
+        return None
+    total = 0.0
+    for b in buckets:
+        if b["estimated"]:
+            return None
+        v = prices.usd(b["model"], b["tokens_in"], b["tokens_out"],
+                       provider=b["provider"])
+        if v is None:
+            return None
+        total += v
+    return total
+
+
 def _usage_frame(detail: dict) -> dict:
     """S3-M3 Task 5: per-turn usage payload for a terminal stream_end frame.
 
@@ -788,15 +809,16 @@ def _usage_frame(detail: dict) -> dict:
     both the passed ``detail()`` snapshot and ``usage_sink.total()`` read the active
     contextvars. ``estimated`` mirrors finalize's ``tokens_estimated`` rule
     (``tokens_in is None`` — detail() already blinds totals when any bucket is
-    estimated). ``usd`` is None whenever it can't be known honestly (unknown model /
-    estimated tokens); the key is ALWAYS present so the frontend can tell
-    "unknown cost" (null) apart from "free" ($0)."""
+    estimated). ``usd`` is per-bucket-summed (review I2, _frame_usd) and None
+    whenever it can't be known honestly (unknown model / estimated tokens); the key
+    is ALWAYS present so the frontend can tell "unknown cost" (null) apart from
+    "free" ($0)."""
     return {
         "tokens_in": detail["tokens_in"],
         "tokens_out": detail["tokens_out"],
         "tokens_total": usage_sink.total(),
         "estimated": detail["tokens_in"] is None,
-        "usd": prices.usd(detail["model"], detail["tokens_in"], detail["tokens_out"]),
+        "usd": _frame_usd(detail["buckets"]),
     }
 
 

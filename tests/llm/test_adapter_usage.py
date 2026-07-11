@@ -76,3 +76,17 @@ async def test_chat_sums_in_out_when_no_total_key():
     with usage_sink.collecting():
         await a.chat("sys", "user")
         assert usage_sink.total() == 100
+
+
+async def test_chat_real_zero_prompt_tokens_stays_real_not_estimated():
+    # Review S2: a REAL 0 must not be laundered to None by an `or` chain —
+    # the bucket keeps real 0/5 figures and is NOT marked estimated.
+    a = _adapter({"prompt_tokens": 0, "completion_tokens": 5})
+    with usage_sink.collecting():
+        await a.chat("sys", "user")
+        detail = usage_sink.detail()
+        assert usage_sink.total() == 5
+    [bucket] = detail["buckets"]
+    assert (bucket["tokens_in"], bucket["tokens_out"]) == (0, 5)
+    assert bucket["estimated"] is False
+    assert (detail["tokens_in"], detail["tokens_out"]) == (0, 5)

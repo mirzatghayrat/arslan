@@ -7,6 +7,10 @@ OpenRouter dynamic price overlay ships with the Provider round's dynamic catalog
 
 Honesty rule: an unknown model, or missing token counts, yields None — the UI
 then shows tokens without a USD figure. We never guess a price.
+
+Known coarseness: prefix matching prices unknown subfamily variants at the parent
+rate (a future "gpt-5.6-terra-lite" would bill as -terra) until the dynamic
+catalog overlay ships in the Provider round.
 """
 from __future__ import annotations
 
@@ -39,7 +43,14 @@ PRICES: dict[str, tuple[float, float]] = {
     "qwen3.7-max": (2.5, 7.5),
     "qwen3.7-plus": (0.40, 1.20),
     "qwen3.6-flash": (0.05, 0.20),
-    # Local models (ollama seed tags) — genuinely free.
+}
+
+# Local models (ollama seed tags) — genuinely free, but ONLY as local calls.
+# Review I1: these very ids exist as PAID hosted models on BYOK OpenAI-compat
+# clouds (DashScope serves deepseek-r1), so $0 is gated on provider == "ollama"
+# (the sole local provider today; custom/local providers get honest None until
+# the Provider round's dynamic catalog).
+LOCAL_PRICES: dict[str, tuple[float, float]] = {
     "llama3.1": (0.0, 0.0),
     "qwen3.5": (0.0, 0.0),
     "gemma4": (0.0, 0.0),
@@ -47,19 +58,30 @@ PRICES: dict[str, tuple[float, float]] = {
 }
 
 
-def usd(model: str | None, tokens_in: int | None, tokens_out: int | None) -> float | None:
+def usd(
+    model: str | None,
+    tokens_in: int | None,
+    tokens_out: int | None,
+    *,
+    provider: str | None = None,
+) -> float | None:
     """USD cost for a call, or None when it can't be known honestly.
 
     None model / no prefix match / either token count None → None (never guess).
     Longest-prefix match: "gpt-5.6-terra-2026xx" hits "gpt-5.6-terra", not any
     shorter overlapping prefix.
+    Provider gate (review I1): provider == "ollama" prices against LOCAL_PRICES
+    ONLY (local calls are free, and never billed at cloud rates); every other
+    provider — including None — prices against the cloud table only, so a hosted
+    "deepseek-r1" is honestly unpriced instead of labelled free.
     """
     if model is None or tokens_in is None or tokens_out is None:
         return None
+    # Tables are read at call time (not captured at import) so tests can patch them.
+    table = LOCAL_PRICES if provider == "ollama" else PRICES
     match: tuple[float, float] | None = None
     match_len = -1
-    # PRICES is read at call time (not captured at import) so tests can patch it.
-    for prefix, pair in PRICES.items():
+    for prefix, pair in table.items():
         if len(prefix) > match_len and model.startswith(prefix):
             match, match_len = pair, len(prefix)
     if match is None:

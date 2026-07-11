@@ -61,13 +61,14 @@ _WINDOWS = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelt
 
 
 def item_usd(model: str | None, tokens_in: int | None, tokens_out: int | None,
-             estimated: bool) -> float | None:
+             estimated: bool, provider: str | None = None) -> float | None:
     """USD for one run/ledger item, or None when it can't be known honestly.
     Estimated tokens are NEVER priced — even for a known-price model, and even when
-    the sticky-estimated bucket left real-looking token fields behind."""
+    the sticky-estimated bucket left real-looking token fields behind. provider
+    gates the local $0 table (review I1: hosted deepseek-r1 is paid, not free)."""
     if estimated:
         return None
-    return prices.usd(model, tokens_in, tokens_out)
+    return prices.usd(model, tokens_in, tokens_out, provider=provider)
 
 
 async def fetch_usage_items(
@@ -110,7 +111,7 @@ async def usage_summary(
                               {"tokens_total": 0, "usd": None, "estimated_any": False})
         g["tokens_total"] += total
         g["estimated_any"] = g["estimated_any"] or est
-        usd = item_usd(model, tin, tout, est)
+        usd = item_usd(model, tin, tout, est, provider)
         if usd is not None:
             g["usd"] = (g["usd"] or 0.0) + usd
         if ts is not None:

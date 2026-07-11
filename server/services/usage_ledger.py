@@ -55,6 +55,14 @@ def _build_rows(scope_name: str, conversation_id: str | None,
     # The adapter's estimate fallback reports the estimated total ONLY via report()
     # (detail gets a both-None bucket): with exactly one blind bucket the remainder
     # is honestly its estimate; with several, attribution would be guesswork → 0.
+    # Review S1 — known frame-vs-ledger discrepancy in the est-then-real SAME-bucket
+    # case: the real report fills the bucket's fields, so it no longer counts as
+    # blind here and the estimate's remainder is dropped — the ledger row keeps only
+    # the attributable real portion (sticky-estimated flag preserved), while the
+    # turn's stream_end frame total still includes the estimate via
+    # usage_sink.total(). Deliberate: per-row attribution beats matching a blurred
+    # total (tested at 500-estimate→140-real in
+    # test_scope_same_bucket_estimate_then_real_row_marked_estimated).
     unattributed = max(sink_total - real_sum, 0)
     rows: list[UsageLedger] = []
     for b in buckets:

@@ -28,6 +28,16 @@ _DEFAULT_PROFILE_VALUES: dict[str, Any] = {
     "cost_per_1k_tokens": 0.0,
 }
 
+def _first_present(u: dict[str, Any], *keys: str) -> Any:
+    """First key whose value is not None — None-aware alternative to an `or`
+    chain, so a provider's REAL 0 token count survives extraction (review S2)."""
+    for k in keys:
+        v = u.get(k)
+        if v is not None:
+            return v
+    return None
+
+
 # Registry mapping provider_name -> provider class
 _PROVIDER_REGISTRY: dict[str, type[BaseLLMProvider]] = {
     "openai": OpenAIProvider,
@@ -91,8 +101,10 @@ class LLMAdapter:
         messages = self._provider.build_messages(system, user, history)
         resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
         u = resp.usage or {}
-        tin = u.get("prompt_tokens") or u.get("input_tokens") or u.get("promptTokenCount")
-        tout = u.get("completion_tokens") or u.get("output_tokens") or u.get("candidatesTokenCount")
+        # None-aware on purpose (NOT `or` chains — review S2): a REAL 0 is falsy
+        # and would launder to None, flipping the bucket to estimated.
+        tin = _first_present(u, "prompt_tokens", "input_tokens", "promptTokenCount")
+        tout = _first_present(u, "completion_tokens", "output_tokens", "candidatesTokenCount")
         # Total normalization (S1 fold-in, M3 Task 3 review): gemini's non-stream
         # usageMetadata carries totalTokenCount (not total_tokens), and anthropic
         # sends no total at all — only in/out. Without these fallbacks a response

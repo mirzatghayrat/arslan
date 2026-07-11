@@ -295,6 +295,59 @@ async def test_answer_stream_end_carries_usage(memdb, monkeypatch):
     assert usage["usd"] == pytest.approx(1000 / 1e6 * 3 + 500 / 1e6 * 15)
 
 
+# ---------------------------------------------------------------------------
+# Review I2: _usage_frame prices per (model, provider) bucket, never the
+# primary bucket's rate applied to summed tokens.
+# ---------------------------------------------------------------------------
+
+def _frame_from(report_calls: list[dict]) -> dict:
+    from server.orchestrator import arslan
+
+    with usage_sink.collecting():
+        for call in report_calls:
+            usage_sink.report_detail(**call)
+            usage_sink.report((call["tokens_in"] or 0) + (call["tokens_out"] or 0))
+        return arslan._usage_frame(usage_sink.detail())
+
+
+async def test_usage_frame_multi_model_usd_is_sum_of_per_bucket_prices():
+    frame = _frame_from([
+        {"tokens_in": 1000, "tokens_out": 500, "model": SONNET, "provider": "anthropic"},
+        {"tokens_in": 2000, "tokens_out": 100, "model": HAIKU, "provider": "anthropic"},
+    ])
+    per_bucket = (1000 / 1e6 * 3 + 500 / 1e6 * 15) + (2000 / 1e6 * 1 + 100 / 1e6 * 5)
+    assert frame["usd"] == pytest.approx(per_bucket)
+    # NOT the old bug: primary bucket's (haiku) rate applied to the summed tokens.
+    primary_rate_on_totals = 3000 / 1e6 * 1 + 600 / 1e6 * 5
+    assert frame["usd"] != pytest.approx(primary_rate_on_totals)
+    assert (frame["tokens_in"], frame["tokens_out"]) == (3000, 600)  # honest sums
+    assert frame["estimated"] is False
+
+
+async def test_usage_frame_any_unpriceable_bucket_blanks_usd():
+    frame = _frame_from([
+        {"tokens_in": 1000, "tokens_out": 500, "model": SONNET, "provider": "anthropic"},
+        {"tokens_in": 10, "tokens_out": 10, "model": "mystery-9000", "provider": "openai"},
+    ])
+    assert frame["usd"] is None          # unknown ≠ free — never a partial sum
+    assert (frame["tokens_in"], frame["tokens_out"]) == (1010, 510)
+    assert frame["estimated"] is False
+
+
+async def test_usage_frame_bucket_provider_reaches_pricing():
+    # deepseek-r1 is $0 ONLY as a local ollama call (review I1) — the frame must
+    # thread each bucket's provider into prices.usd.
+    ollama = _frame_from([
+        {"tokens_in": 100, "tokens_out": 50, "model": "deepseek-r1:14b",
+         "provider": "ollama"},
+    ])
+    assert ollama["usd"] == 0.0
+    hosted = _frame_from([
+        {"tokens_in": 100, "tokens_out": 50, "model": "deepseek-r1", "provider": "qwen"},
+    ])
+    assert hosted["usd"] is None
+
+
 async def test_answer_stream_end_usage_estimated_no_usd(memdb, monkeypatch):
     """Estimated tokens are never priced: usd stays None (key present) and
     estimated=True even for a known-price model."""
