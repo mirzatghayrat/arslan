@@ -62,9 +62,12 @@ def _build_rows(scope_name: str, conversation_id: str | None,
         total = (tin or 0) + (tout or 0)
         if tin is None and tout is None and len(blind) == 1:
             total = unattributed
+        # Review I1 alignment: the bucket's STICKY estimated flag is the truth —
+        # a same-bucket estimate-then-real sequence leaves real-looking fields but
+        # stays estimated. Fall back to the old None check if the flag is absent.
         rows.append(UsageLedger(**common, model=b["model"], provider=b["provider"],
                                 tokens_in=tin, tokens_out=tout, tokens_total=total,
-                                tokens_estimated=(tin is None)))
+                                tokens_estimated=bool(b.get("estimated", tin is None))))
     return rows
 
 

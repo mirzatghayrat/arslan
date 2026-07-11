@@ -269,6 +269,42 @@ async def test_anthropic_stream_captures_usage():
 
 
 @pytest.mark.asyncio
+async def test_anthropic_aborted_stream_falls_back_to_estimate():
+    """Review I2: message_start carries BOTH input_tokens and output_tokens (≈1), so a
+    stream that dies mid-generation (no message_delta) must NOT publish usage — else
+    the adapter would report it as REAL with output undercounted. Usage publishes only
+    at message_delta (end-of-message); an aborted stream falls to the estimate."""
+    from arslan.llm.adapter import LLMAdapter
+    from arslan.llm.providers.anthropic_provider import AnthropicProvider
+
+    sse = (
+        'data: {"type":"message_start",'
+        '"message":{"usage":{"input_tokens":25,"output_tokens":1}}}\n\n'
+        'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"He"}}\n\n'
+        # server dies here: no message_delta, no message_stop
+    )
+
+    def handler(request):
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
+
+    p = AnthropicProvider(model="claude-sonnet-5", api_key="k",
+                          transport=httpx.MockTransport(handler))
+    a = LLMAdapter.__new__(LLMAdapter)
+    a.provider_name = "anthropic"
+    a.model = "claude-sonnet-5"
+    a.api_key = "k"
+    a._provider = p
+
+    with usage_sink.collecting():
+        out = [c async for c in a.chat_stream("sys", "hi")]
+        assert "".join(out) == "He"
+        assert p._last_stream_usage is None  # nothing published without message_delta
+        d = usage_sink.detail()
+        assert d["tokens_in"] is None and d["tokens_out"] is None
+        assert usage_sink.total() > 0  # estimate fallback still reported
+
+
+@pytest.mark.asyncio
 async def test_anthropic_stream_missing_usage_leaves_none():
     from arslan.llm.providers.anthropic_provider import AnthropicProvider
 

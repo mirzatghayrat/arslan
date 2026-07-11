@@ -104,7 +104,9 @@ class OpenAIProvider(BaseLLMProvider):
             # request failed before any content arrived, retry exactly ONCE
             # without stream_options so chat never breaks over a nice-to-have.
             # A genuine 4xx (bad model, bad auth) fails identically on the retry
-            # and still surfaces to the caller.
+            # and still surfaces to the caller. Re-POSTing is billing-safe: a
+            # request the server rejected with a 4xx never started generation
+            # and is not billed.
             if yielded or not 400 <= exc.response.status_code < 500:
                 raise
         payload.pop("stream_options", None)

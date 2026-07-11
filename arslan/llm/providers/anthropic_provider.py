@@ -102,9 +102,14 @@ class AnthropicProvider(BaseLLMProvider):
         payload = {**self._payload(messages, temperature), "stream": True}
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
+        # Review I2: message_start ALSO carries an initial output_tokens (≈1), so
+        # publishing there would let a stream aborted mid-generation reach the
+        # adapter with both fields non-None and be reported REAL with output
+        # undercounted. message_start's numbers therefore stay in LOCALS;
+        # self._last_stream_usage is published ONLY at message_delta, whose usage
+        # confirms the message actually completed.
         self._last_stream_usage = None
         tin: int | None = None
-        tout: int | None = None
         async with self._client() as client:
             async with client.stream(
                 "POST",
@@ -131,17 +136,15 @@ class AnthropicProvider(BaseLLMProvider):
                         usage = (obj.get("message") or {}).get("usage") or {}
                         if usage.get("input_tokens") is not None:
                             tin = int(usage["input_tokens"])
-                        if usage.get("output_tokens") is not None:
-                            tout = int(usage["output_tokens"])
-                        if tin is not None or tout is not None:
-                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout}
                     elif etype == "message_delta":
                         # message_delta usage is CUMULATIVE per the API docs, so
                         # last-wins assignment (not summation) is the correct read.
                         usage = obj.get("usage") or {}
                         if usage.get("output_tokens") is not None:
-                            tout = int(usage["output_tokens"])
-                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout}
+                            self._last_stream_usage = {
+                                "tokens_in": tin,
+                                "tokens_out": int(usage["output_tokens"]),
+                            }
 
     @staticmethod
     def _parse_response(data: dict[str, Any]) -> LLMResponse:

@@ -103,6 +103,8 @@ class GeminiProvider(BaseLLMProvider):
         timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
         # S3-M3: the final SSE chunk carries usageMetadata with the complete
         # (cumulative) token counts — overwrite per field so the tail wins.
+        # usageMetadata also has totalTokenCount; deliberately unused — pricing
+        # needs the in/out split, and a total without the split is uncheckable.
         self._last_stream_usage = None
         tin: int | None = None
         tout: int | None = None

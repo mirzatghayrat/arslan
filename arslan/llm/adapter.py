@@ -126,9 +126,11 @@ class LLMAdapter:
             # S3-M3: providers stash the stream's real usage frame on themselves
             # (see BaseLLMProvider._last_stream_usage); the adapter stays the ONE
             # reporting point — real when captured, estimate only as fallback, so
-            # real + estimate can never double-report. Partial capture (e.g. an
-            # aborted anthropic stream with only input_tokens) falls back to the
-            # estimate: detail totals must never mix real and guessed fields.
+            # real + estimate can never double-report. Providers publish the stash
+            # only once the backend confirmed the message completed (anthropic:
+            # at message_delta, never from message_start alone — review I2), so an
+            # aborted stream leaves it None/partial and lands here on the estimate
+            # branch: real and guessed fields must never mix.
             real = getattr(self._provider, "_last_stream_usage", None) or {}
             tokens_in = real.get("tokens_in")
             tokens_out = real.get("tokens_out")

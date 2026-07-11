@@ -35,13 +35,22 @@ def report_detail(
     provider: str | None,
 ) -> None:
     """Structured usage from a provider response, accumulated into the call's
-    (model, provider) bucket. A None tokens_in/out (stream path, no usage frame)
-    leaves that bucket field None — i.e. marks the bucket estimated; real values
-    from other calls to the same bucket still accumulate. No-op without context."""
+    (model, provider) bucket. A report with a None tokens_in/out (stream path, no
+    usage frame) marks the bucket estimated via a STICKY flag — review I1: None-ness
+    alone is erasable (a later real report into the same bucket would do
+    (None or 0)+real and silently launder the estimated call's tokens into a
+    real-flagged total). Real values still accumulate per-bucket regardless of the
+    flag. No-op without context."""
     buckets = _detail.get()
     if buckets is None:
         return
-    b = buckets.setdefault((model, provider), {"tokens_in": None, "tokens_out": None})
+    b = buckets.setdefault(
+        (model, provider), {"tokens_in": None, "tokens_out": None, "estimated": False}
+    )
+    if tokens_in is None or tokens_out is None:
+        # Sticky, never cleared: once ANY report into this bucket lacked real
+        # numbers, the bucket's figures are incomplete for the whole collection.
+        b["estimated"] = True
     if tokens_in is not None:
         b["tokens_in"] = (b["tokens_in"] or 0) + int(tokens_in)
     if tokens_out is not None:
@@ -66,20 +75,28 @@ def primary() -> dict | None:
 def detail() -> dict:
     """Snapshot of the structured usage. Backward-compatible top-level keys
     (model/provider = primary bucket — replaces last-model-wins; tokens_in/out =
-    totals across buckets) plus a per-bucket breakdown under "buckets".
-    Honesty rule: any bucket with a None field makes the corresponding total None
-    (estimates are never summed into real numbers). All-None when no context/reports."""
+    totals across buckets) plus a per-bucket breakdown under "buckets" (each row
+    carries its sticky "estimated" flag).
+    Honesty rule: ANY estimated bucket makes both totals None (estimates are never
+    summed into real numbers) — generalizes the old any-None-field check, which a
+    same-bucket real report could erase. All-None when no context/reports."""
     buckets = _detail.get()
     if not buckets:
         return {"tokens_in": None, "tokens_out": None,
                 "model": None, "provider": None, "buckets": []}
     rows = [
         {"model": m, "provider": p,
-         "tokens_in": b["tokens_in"], "tokens_out": b["tokens_out"]}
+         "tokens_in": b["tokens_in"], "tokens_out": b["tokens_out"],
+         "estimated": b["estimated"]}
         for (m, p), b in buckets.items()
     ]
-    tin = None if any(r["tokens_in"] is None for r in rows) else sum(r["tokens_in"] for r in rows)
-    tout = None if any(r["tokens_out"] is None for r in rows) else sum(r["tokens_out"] for r in rows)
+    # estimated goes True whenever a report leaves a field None, so the flag check
+    # subsumes the old per-field None checks; keep them as defence in depth.
+    blind = any(r["estimated"] for r in rows)
+    tin = (None if blind or any(r["tokens_in"] is None for r in rows)
+           else sum(r["tokens_in"] for r in rows))
+    tout = (None if blind or any(r["tokens_out"] is None for r in rows)
+            else sum(r["tokens_out"] for r in rows))
     prim = primary()
     return {"tokens_in": tin, "tokens_out": tout,
             "model": prim["model"], "provider": prim["provider"], "buckets": rows}

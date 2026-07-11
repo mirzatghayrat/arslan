@@ -131,6 +131,28 @@ async def test_scope_single_blind_bucket_gets_estimated_total(memdb):
     assert r.tokens_estimated is True
 
 
+async def test_scope_same_bucket_estimate_then_real_row_marked_estimated(memdb):
+    """Review I1 alignment: an estimate report followed by a REAL report into the SAME
+    (model, provider) bucket leaves the bucket with real-looking fields but a sticky
+    estimated flag — the ledger row must carry tokens_estimated=True (the estimated
+    call's tokens are unattributable; only the real portion lands in the total)."""
+    async with usage_ledger.scope("answer", "c-est"):
+        # stream estimate fallback: total via report() only, both-None detail bucket
+        usage_sink.report(500)
+        usage_sink.report_detail(tokens_in=None, tokens_out=None,
+                                 model="claude-x", provider="anthropic")
+        # then a real (non-stream) call on the SAME model in the same scope
+        usage_sink.report_detail(tokens_in=100, tokens_out=40,
+                                 model="claude-x", provider="anthropic")
+        usage_sink.report(140)
+    rows = await _rows(memdb)
+    assert len(rows) == 1
+    r = rows[0]
+    assert (r.model, r.tokens_in, r.tokens_out) == ("claude-x", 100, 40)
+    assert r.tokens_total == 140  # real portion only — the 500 estimate is unattributable
+    assert r.tokens_estimated is True
+
+
 async def test_scope_pure_estimate_without_detail_writes_scope_row(memdb):
     async with usage_ledger.scope("memory", None):
         usage_sink.report(300)
