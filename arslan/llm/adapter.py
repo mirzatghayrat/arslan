@@ -64,11 +64,23 @@ class LLMAdapter:
         model: str,
         api_key: str = "",
         base_url: str = "",
+        report_provider: str | None = None,
     ) -> None:
         self.provider_name = provider_name
+        # Usage-attribution identity (S3-M3): Tier-0 presets (deepseek/qwen/ollama/…)
+        # all expand to the "openai" PROTOCOL before reaching this adapter, which
+        # made every usage bucket/summary row claim provider="openai". The caller
+        # passes the CONFIG-level provider key here; reporting uses it, the
+        # protocol name stays authoritative for client construction/routing.
+        self._report_provider = report_provider or provider_name
         self.model = model
         self.api_key = api_key
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
+
+    @property
+    def report_provider(self) -> str:
+        # Fallback for __new__-constructed doubles (tests) that bypass __init__.
+        return getattr(self, "_report_provider", None) or self.provider_name
 
     # ------------------------------------------------------------------
     # Public API
@@ -85,7 +97,7 @@ class LLMAdapter:
         # Fallback: unknown model → conservative defaults
         return CapabilityProfile(
             name=model,
-            provider=self.provider_name,
+            provider=self.report_provider,
             **_DEFAULT_PROFILE_VALUES,
         )
 
@@ -123,7 +135,7 @@ class LLMAdapter:
             tokens_in=tin,
             tokens_out=tout,
             model=self.model,
-            provider=self.provider_name,
+            provider=self.report_provider,
         )
         return resp
 
@@ -162,7 +174,7 @@ class LLMAdapter:
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
                     model=self.model,
-                    provider=self.provider_name,
+                    provider=self.report_provider,
                 )
             else:
                 usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
@@ -170,7 +182,7 @@ class LLMAdapter:
                     tokens_in=None,
                     tokens_out=None,
                     model=self.model,
-                    provider=self.provider_name,
+                    provider=self.report_provider,
                 )
 
     # ------------------------------------------------------------------

@@ -26,7 +26,8 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
             (c for c in configs if c["is_primary"]), configs[0])
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
-    return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url)
+    return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url,
+                      report_provider=chosen["provider"])
 
 
 async def build_synthesis_adapter() -> LLMAdapter | None:
@@ -45,15 +46,17 @@ async def build_synthesis_adapter() -> LLMAdapter | None:
                 key = await provider_config_service.get_decrypted_key(db, c["id"])
                 provider, model, base_url = expand_preset(
                     c["provider"], c["model"], c.get("base_url") or "")
-                return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url)
+                return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url,
+                                  report_provider=c["provider"])
     return None
 
 
 async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
     cfg = await settings_service.get_settings(db)
     api_key = await settings_service.get_decrypted_api_key(db)
-    provider = cfg.get("llm_provider") or "openai"
+    config_provider = cfg.get("llm_provider") or "openai"
     model = cfg.get("llm_model") or ""
     base_url = cfg.get("llm_base_url") or ""
-    provider, model, base_url = expand_preset(provider, model, base_url)
-    return LLMAdapter(provider, model or "gpt-4o", api_key=api_key, base_url=base_url)
+    provider, model, base_url = expand_preset(config_provider, model, base_url)
+    return LLMAdapter(provider, model or "gpt-4o", api_key=api_key, base_url=base_url,
+                      report_provider=config_provider)
