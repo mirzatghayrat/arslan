@@ -16,7 +16,7 @@ def test_every_entry_has_models_capabilities_languages():
 
 
 def test_models_for_and_capabilities_for():
-    assert "qwen-max" in catalog.models_for("qwen")
+    assert "qwen3.7-max" in catalog.models_for("qwen")
     assert catalog.models_for("nope") == []
     caps = catalog.capabilities_for("anthropic")
     assert caps["reasoning"] == 10

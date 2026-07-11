@@ -47,69 +47,76 @@ def normalize_language(value: str | None) -> str | None:
 # Keys MUST align with presets.PRESETS + presets.NATIVE. Scores are curated defaults,
 # refined on release. `cost` = cheapness (higher = cheaper).
 # `languages` keys MUST cover all 6 UI locale ISO codes: en, zh, de, es, fr, ja.
+# Model ids verified against official provider docs on 2026-07-11 (spec
+# 2026-07-11-provider-catalog-local-models-design.md Part A2). Ids with an
+# announced shutdown date or from a retired generation are deny-listed in
+# tests/llm/test_catalog_freshness.py — extend that list when refreshing here.
 CATALOG: dict[str, dict] = {
     "openai": {
-        "models": ["gpt-4o", "gpt-4o-mini", "o3"],
+        "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
         "capabilities": {"cost": 4, "speed": 7, "tool_calling": 9, "reasoning": 9, "long_context": 8},
         "languages": {"en": 10, "zh": 7, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
     "deepseek": {
-        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "models": ["deepseek-v4-pro", "deepseek-v4-flash"],
         "capabilities": {"cost": 9, "speed": 7, "tool_calling": 7, "reasoning": 8, "long_context": 8},
         "languages": {"en": 8, "zh": 9, "de": 6, "es": 6, "fr": 6, "ja": 6},
     },
     "qwen": {
-        "models": ["qwen-max", "qwen-plus", "qwen-turbo"],
+        "models": ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"],
         "capabilities": {"cost": 8, "speed": 8, "tool_calling": 9, "reasoning": 7, "long_context": 7},
         "languages": {"en": 7, "zh": 9, "de": 5, "es": 6, "fr": 5, "ja": 6},
     },
     "kimi": {
-        "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+        "models": ["kimi-k2.6", "kimi-k2.5"],
         "capabilities": {"cost": 7, "speed": 7, "tool_calling": 7, "reasoning": 7, "long_context": 9},
         "languages": {"en": 7, "zh": 9, "de": 5, "es": 5, "fr": 5, "ja": 5},
     },
     "zhipu": {
-        "models": ["glm-4", "glm-4-air", "glm-4-flash"],
+        "models": ["glm-5.2", "glm-5-turbo", "glm-4.7-flash"],
         "capabilities": {"cost": 8, "speed": 8, "tool_calling": 7, "reasoning": 7, "long_context": 7},
         "languages": {"en": 6, "zh": 9, "de": 4, "es": 5, "fr": 4, "ja": 5},
     },
     "minimax": {
-        "models": ["abab6.5s-chat", "abab6.5-chat"],
+        # MiniMax ids are case-sensitive: "MiniMax-M3", not "minimax-m3".
+        "models": ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5"],
         "capabilities": {"cost": 7, "speed": 7, "tool_calling": 6, "reasoning": 6, "long_context": 7},
         "languages": {"en": 6, "zh": 9, "de": 4, "es": 5, "fr": 4, "ja": 5},
     },
     "groq": {
-        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+        "models": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
         "capabilities": {"cost": 8, "speed": 10, "tool_calling": 7, "reasoning": 7, "long_context": 6},
         "languages": {"en": 9, "zh": 5, "de": 7, "es": 7, "fr": 7, "ja": 5},
     },
     "together": {
-        "models": ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "Qwen/Qwen2.5-72B-Instruct-Turbo"],
+        "models": ["Qwen/Qwen3.7-Max", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "openai/gpt-oss-20b"],
         "capabilities": {"cost": 8, "speed": 8, "tool_calling": 7, "reasoning": 7, "long_context": 7},
         "languages": {"en": 9, "zh": 6, "de": 7, "es": 7, "fr": 7, "ja": 6},
     },
     "mistral": {
-        "models": ["mistral-large-latest", "mistral-small-latest"],
+        # Versioned ids: the docs don't state which snapshot the -latest aliases resolve to.
+        "models": ["mistral-medium-2604", "mistral-large-2512", "mistral-small-2603"],
         "capabilities": {"cost": 6, "speed": 7, "tool_calling": 8, "reasoning": 8, "long_context": 7},
         "languages": {"en": 9, "zh": 6, "de": 8, "es": 8, "fr": 9, "ja": 6},
     },
     "openrouter": {
-        "models": ["openai/gpt-4o", "anthropic/claude-sonnet-4-6", "google/gemini-2.5-flash"],
+        "models": ["anthropic/claude-sonnet-5", "openai/gpt-5.6-terra", "deepseek/deepseek-v4-flash", "google/gemini-3.5-flash"],
         "capabilities": {"cost": 6, "speed": 7, "tool_calling": 8, "reasoning": 9, "long_context": 8},
         "languages": {"en": 9, "zh": 7, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
     "ollama": {
-        "models": ["llama3", "qwen2.5", "mistral"],
+        # Exact ollama.com/library tags (top popular general-chat pulls, 2026-07).
+        "models": ["llama3.1", "qwen3.5", "gemma4", "deepseek-r1"],
         "capabilities": {"cost": 10, "speed": 5, "tool_calling": 5, "reasoning": 6, "long_context": 5},
         "languages": {"en": 8, "zh": 6, "de": 6, "es": 6, "fr": 6, "ja": 5},
     },
     "anthropic": {
-        "models": ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
+        "models": ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
         "capabilities": {"cost": 3, "speed": 6, "tool_calling": 9, "reasoning": 10, "long_context": 9},
         "languages": {"en": 10, "zh": 8, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
     "gemini": {
-        "models": ["gemini-2.5-pro", "gemini-2.5-flash"],
+        "models": ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
         "capabilities": {"cost": 7, "speed": 8, "tool_calling": 8, "reasoning": 9, "long_context": 10},
         "languages": {"en": 10, "zh": 7, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
