@@ -328,6 +328,13 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         proc = await _spawn(argv)
         try:
             out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        except asyncio.CancelledError:
+            # Run cancel (S3-M1): the child must not outlive the cancelled task.
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            raise
         except TimeoutError:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -346,6 +353,13 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             proc = await _spawn([python, str(script)])
             try:
                 out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+            except asyncio.CancelledError:
+                # Run cancel (S3-M1): same kill guard for the unsandboxed retry child.
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                raise
             except TimeoutError:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)

@@ -29,8 +29,13 @@ def build_complete(spawn_id: int, spawn_name: str) -> dict[str, Any]:
     return {"type": "build_complete", "spawn_id": spawn_id, "spawn_name": spawn_name}
 
 
-def stream_start(message_id: int) -> dict[str, Any]:
-    return {"type": "stream_start", "message_id": message_id}
+def stream_start(message_id: int, run_id: int | None = None) -> dict[str, Any]:
+    # run_id (S3-M1): only on recorded runs — the cancel target for POST /runs/{id}/cancel.
+    # Key omitted when unset so unrecorded streams stay byte-identical.
+    frame: dict[str, Any] = {"type": "stream_start", "message_id": message_id}
+    if run_id is not None:
+        frame["run_id"] = run_id
+    return frame
 
 
 def stream_chunk(content: str) -> dict[str, Any]:
@@ -65,8 +70,14 @@ def routing(
     return frame
 
 
-def stream_start_src(source: str, spawn_id: int | None = None) -> dict[str, Any]:
-    return {"type": "stream_start", "source": source, "spawn_id": spawn_id}
+def stream_start_src(source: str, spawn_id: int | None = None,
+                     run_id: int | None = None) -> dict[str, Any]:
+    # run_id (S3-M1): only on recorded runs — the cancel target for POST /runs/{id}/cancel.
+    # Key omitted when unset so unrecorded streams stay byte-identical.
+    frame: dict[str, Any] = {"type": "stream_start", "source": source, "spawn_id": spawn_id}
+    if run_id is not None:
+        frame["run_id"] = run_id
+    return frame
 
 
 def suggest_create(

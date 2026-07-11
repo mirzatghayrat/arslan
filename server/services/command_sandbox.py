@@ -69,6 +69,13 @@ async def run_command(command: str, argv: list[str], *, timeout_s: float = TIMEO
         )
         try:
             out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        except asyncio.CancelledError:
+            # Run cancel (S3-M1): the child must not outlive the cancelled task.
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            raise
         except TimeoutError:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)

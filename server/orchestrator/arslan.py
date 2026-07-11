@@ -33,6 +33,7 @@ from server.services import (
     phase_service,
     roster_service,
     run_recorder,
+    run_registry,
     spawn_drafter,
     spawn_match_service,
     spawn_service,
@@ -1539,121 +1540,174 @@ async def _dispatch_spawn(  # noqa: ANN001
         continuation=_continuation,
     )
     tee = recorder.tee(emit)
+    chunks: list[str] = []  # streamed partial — the ONLY output a cancelled run can persist
 
-    # Join FIRST (DB state) so the announcement's roster lookup sees the routed spawn,
-    # but EMIT the routing frame (with the announcement) BEFORE the roster join notice:
-    # the user reads "user message → Arslan's brief → X joined → spawn work" in order.
-    # (User feedback: the brief showing up above an anonymous join divider read as a
-    # bare system line, not Arslan speaking.)
-    newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
-    # Routing brief: restate the need + @-mention each involved spawn (grounded in the
-    # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
-    # re-emit the routing frame for the UI pulse but must not repeat the announcement.
-    # `announce=False` when the brief was ALREADY shown before an invite card (accepted
-    # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
-    announcement = None
-    if announce and _auto_continues == MAX_AUTO_CONTINUES:
-        announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
-    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
-         **({"announcement": announcement} if announcement else {})})
-    if newly_joined:
-        tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
-    tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
-    tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id})
-    # usage_sink.collecting() is scoped HERE — one fresh bucket per Run — not around the
-    # whole user turn. This is the S0 hemostasis fix: EVERY dispatch path funnels through
-    # _dispatch_spawn, so opening the scope here means route_to/redo/refine/confirm_direction/
-    # roster_invite-accept/confirm_create (which call dispatch_spawn/dispatch_routed/
-    # confirm_and_execute WITHOUT a turn-level scope) all capture their own model/provider/
-    # tokens automatically. Per-Run scoping ALSO kills the turn-cumulative double-count: an
-    # auto-continue re-dispatch (the recursive call below, OUTSIDE this block) opens its own
-    # fresh scope, so each Run's finalize reads only its own usage — never the prior round's.
-    # An escalation re-dispatch stays INSIDE this same block, so its usage folds into the SAME
-    # Run, which is correct (one escalation resolution = one Run).
-    # run_trace.collecting() spans the dispatch call (and any escalation re-dispatch) AND
-    # every finalize() below, so tool_loop's run_trace.record(...) calls and the assembled
-    # system prompt (build_spawn_system → run_trace.record_prompt) are both still readable
-    # via snapshot()/prompt() at finalize time — draining happens inside RunRecorder.finalize
-    # (_merge_tool_trace calls run_trace.snapshot()), before this context exits.
-    with usage_sink.collecting(), run_trace.collecting():
-        try:
-            out = await dispatcher.dispatch(
-                conversation_id, spawn_id=spawn_id, task_brief=task_brief,
-                on_chunk=lambda c: tee({"type": "stream_chunk", "content": c}),
-                on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
-                attached_context=attached_context, run_id=recorder.run_id,
-            )
-        except Exception as exc:  # noqa: BLE001
-            tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
-            _usage = usage_sink.detail()
-            _prompt = run_trace.prompt()
-            await recorder.finalize(
-                summary_message_id=None, full_output="",
-                model=_usage["model"], provider=_usage["provider"],
-                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                tokens_estimated=(_usage["tokens_in"] is None),
-                error_kind=type(exc).__name__, error_text=str(exc),
-                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                injected_kb_sources=_prompt.get("injected_kb_sources"),
-            )
-            return
+    async def _run_turn() -> None:
+        # Join FIRST (DB state) so the announcement's roster lookup sees the routed spawn,
+        # but EMIT the routing frame (with the announcement) BEFORE the roster join notice:
+        # the user reads "user message → Arslan's brief → X joined → spawn work" in order.
+        # (User feedback: the brief showing up above an anonymous join divider read as a
+        # bare system line, not Arslan speaking.)
+        newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
+        # Routing brief: restate the need + @-mention each involved spawn (grounded in the
+        # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
+        # re-emit the routing frame for the UI pulse but must not repeat the announcement.
+        # `announce=False` when the brief was ALREADY shown before an invite card (accepted
+        # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
+        announcement = None
+        if announce and _auto_continues == MAX_AUTO_CONTINUES:
+            announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
+        tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
+             **({"announcement": announcement} if announcement else {})})
+        if newly_joined:
+            tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
+        tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
+        tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
+             "run_id": recorder.run_id})
+        # usage_sink.collecting() is scoped HERE — one fresh bucket per Run — not around the
+        # whole user turn. This is the S0 hemostasis fix: EVERY dispatch path funnels through
+        # _dispatch_spawn, so opening the scope here means route_to/redo/refine/confirm_direction/
+        # roster_invite-accept/confirm_create (which call dispatch_spawn/dispatch_routed/
+        # confirm_and_execute WITHOUT a turn-level scope) all capture their own model/provider/
+        # tokens automatically. Per-Run scoping ALSO kills the turn-cumulative double-count: an
+        # auto-continue re-dispatch (the recursive call below, OUTSIDE this block) opens its own
+        # fresh scope, so each Run's finalize reads only its own usage — never the prior round's.
+        # An escalation re-dispatch stays INSIDE this same block, so its usage folds into the SAME
+        # Run, which is correct (one escalation resolution = one Run).
+        # run_trace.collecting() spans the dispatch call (and any escalation re-dispatch) AND
+        # every finalize() below, so tool_loop's run_trace.record(...) calls and the assembled
+        # system prompt (build_spawn_system → run_trace.record_prompt) are both still readable
+        # via snapshot()/prompt() at finalize time — draining happens inside RunRecorder.finalize
+        # (_merge_tool_trace calls run_trace.snapshot()), before this context exits.
+        with usage_sink.collecting(), run_trace.collecting():
+            try:
+                try:
+                    out = await dispatcher.dispatch(
+                        conversation_id, spawn_id=spawn_id, task_brief=task_brief,
+                        on_chunk=lambda c: (chunks.append(c),
+                                            tee({"type": "stream_chunk", "content": c}))[1],
+                        on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
+                        attached_context=attached_context, run_id=recorder.run_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
+                    _usage = usage_sink.detail()
+                    _prompt = run_trace.prompt()
+                    await recorder.finalize(
+                        summary_message_id=None, full_output="",
+                        model=_usage["model"], provider=_usage["provider"],
+                        tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                        tokens_estimated=(_usage["tokens_in"] is None),
+                        error_kind=type(exc).__name__, error_text=str(exc),
+                        system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                        injected_kb_sources=_prompt.get("injected_kb_sources"),
+                    )
+                    return
 
-        if out.get("escalation"):
-            esc_out = await _handle_escalation(
-                conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee,
-                run_id=recorder.run_id,
-            )
-            final = esc_out or out
-            _usage = usage_sink.detail()
-            _prompt = run_trace.prompt()
-            await recorder.finalize(
-                summary_message_id=final.get("summary_message_id"),
-                full_output=final.get("full_output", ""),
-                model=_usage["model"], provider=_usage["provider"],
-                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                tokens_estimated=(_usage["tokens_in"] is None),
-                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                injected_kb_sources=_prompt.get("injected_kb_sources"),
-            )
-            return
+                if out.get("escalation"):
+                    esc_out = await _handle_escalation(
+                        conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee,
+                        run_id=recorder.run_id,
+                    )
+                    final = esc_out or out
+                    _usage = usage_sink.detail()
+                    _prompt = run_trace.prompt()
+                    await recorder.finalize(
+                        summary_message_id=final.get("summary_message_id"),
+                        full_output=final.get("full_output", ""),
+                        model=_usage["model"], provider=_usage["provider"],
+                        tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                        tokens_estimated=(_usage["tokens_in"] is None),
+                        system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                        injected_kb_sources=_prompt.get("injected_kb_sources"),
+                    )
+                    return
 
-        _usage = usage_sink.detail()
-        _prompt = run_trace.prompt()
-        await recorder.finalize(
-            summary_message_id=out["summary_message_id"], full_output=out["full_output"],
-            model=_usage["model"], provider=_usage["provider"],
-            tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-            tokens_estimated=(_usage["tokens_in"] is None),
-            system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-            injected_kb_sources=_prompt.get("injected_kb_sources"),
-        )
-    tee({
-        "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],
-        "spawn_id": spawn_id, "spawn_name": spawn_name,
-        "assistant_message_id": out["assistant_message_id"],
-        "task_brief": task_brief, "run_id": recorder.run_id,
-    })
-    # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
-    # store turns into the chat item) so the frontend can render the preview card live.
-    tee({"type": "stream_end", "message_id": out["summary_message_id"],
-         **({"artifact": out["artifact"]} if out.get("artifact") else {})})
+                _usage = usage_sink.detail()
+                _prompt = run_trace.prompt()
+                await recorder.finalize(
+                    summary_message_id=out["summary_message_id"], full_output=out["full_output"],
+                    model=_usage["model"], provider=_usage["provider"],
+                    tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                    tokens_estimated=(_usage["tokens_in"] is None),
+                    system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                    injected_kb_sources=_prompt.get("injected_kb_sources"),
+                )
+            except asyncio.CancelledError:
+                # S3-M1 user cancel — handled HERE, still inside the collecting scopes, so
+                # usage/prompt detail is readable. Persist the streamed partial (an aborted
+                # run must not silently eat output the user already saw), finalize as
+                # 'cancelled' (skips scoring → can never enter the corpus), then RE-RAISE
+                # so the task ends cancelled — the awaiter below tells user-cancel apart
+                # from its own teardown via task.cancelled().
+                partial = "".join(chunks)
+                summary_id = None
+                if partial.strip():
+                    summary_id = await memory.add_message(
+                        conversation_id, "spawn_summary",
+                        f"[{spawn_name}] {task_brief} -> 已中断",
+                        display_content=partial + "\n\n_(已中断)_", spawn_id=spawn_id,
+                    )
+                _usage = usage_sink.detail()
+                _prompt = run_trace.prompt()
+                await recorder.finalize(
+                    summary_message_id=summary_id, full_output=partial,
+                    model=_usage["model"], provider=_usage["provider"],
+                    tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                    tokens_estimated=(_usage["tokens_in"] is None),
+                    status_override="cancelled",
+                    system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                    injected_kb_sources=_prompt.get("injected_kb_sources"),
+                )
+                tee({"type": "run_cancelled", "run_id": recorder.run_id,
+                     **({"message_id": summary_id} if summary_id else {})})
+                raise
+        tee({
+            "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],
+            "spawn_id": spawn_id, "spawn_name": spawn_name,
+            "assistant_message_id": out["assistant_message_id"],
+            "task_brief": task_brief, "run_id": recorder.run_id,
+        })
+        # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
+        # store turns into the chat item) so the frontend can render the preview card live.
+        tee({"type": "stream_end", "message_id": out["summary_message_id"],
+             **({"artifact": out["artifact"]} if out.get("artifact") else {})})
 
-    # Auto-continue: a round that ended with a findings digest made real progress but ran
-    # out of tool budget — never park it on "回复'继续'" while budget remains. The digest
-    # message was already emitted above (the user sees the progress); re-dispatch the SAME
-    # spawn on the SAME direction so the next round builds on the carried evidence. The
-    # bare no-evidence fallback has no marker and never re-dispatches. After the final
-    # auto-continue, a still-digest-ending message is kept as-is (its 回复'继续' tail is
-    # then honest — the user can continue manually).
-    if _auto_continues > 0 and _has_findings_digest(out.get("full_output") or ""):
-        emit({"type": "auto_continue", "spawn_id": spawn_id, "spawn_name": spawn_name,
-              "remaining": _auto_continues - 1})
-        await _dispatch_spawn(
-            conversation_id, spawn_id, task_brief, emit,
-            mode=mode, user_message=user_message, attached_context=attached_context,
-            _auto_continues=_auto_continues - 1,
-            _continuation=True,
-        )
+        # Auto-continue: a round that ended with a findings digest made real progress but ran
+        # out of tool budget — never park it on "回复'继续'" while budget remains. The digest
+        # message was already emitted above (the user sees the progress); re-dispatch the SAME
+        # spawn on the SAME direction so the next round builds on the carried evidence. The
+        # bare no-evidence fallback has no marker and never re-dispatches. After the final
+        # auto-continue, a still-digest-ending message is kept as-is (its 回复'继续' tail is
+        # then honest — the user can continue manually).
+        # (Recursion stays INSIDE _run_turn: each recursive _dispatch_spawn registers its
+        # OWN run+task, so every round is cancellable under its own run_id.)
+        if _auto_continues > 0 and _has_findings_digest(out.get("full_output") or ""):
+            emit({"type": "auto_continue", "spawn_id": spawn_id, "spawn_name": spawn_name,
+                  "remaining": _auto_continues - 1})
+            await _dispatch_spawn(
+                conversation_id, spawn_id, task_brief, emit,
+                mode=mode, user_message=user_message, attached_context=attached_context,
+                _auto_continues=_auto_continues - 1,
+                _continuation=True,
+            )
+
+    # S3-M1: the turn runs as its OWN task so POST /runs/{id}/cancel can target it via
+    # run_registry. A CancelledError with task.cancelled()==True is a user cancel — already
+    # fully handled inside _run_turn (finalize+persist+frame) — swallow it so the WS turn
+    # survives. task.cancelled()==False means OUR caller was cancelled (shutdown/teardown):
+    # cancel the still-running turn (don't orphan it — its own handler finalizes the Run)
+    # and propagate.
+    task = asyncio.create_task(_run_turn())
+    run_registry.register(recorder.run_id, conversation_id, task)
+    try:
+        await task
+    except asyncio.CancelledError:
+        if not task.cancelled():
+            task.cancel()
+            raise
+    finally:
+        run_registry.unregister(recorder.run_id, conversation_id)
 
 
 _REFUSAL_RE = _re.compile(
