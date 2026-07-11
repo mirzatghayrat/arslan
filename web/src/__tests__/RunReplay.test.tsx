@@ -327,6 +327,24 @@ describe("RunReplay", () => {
     });
   }
 
+  // S3-M1 Task 7: a cancelled/interrupted run will never be scored — the eval
+  // section must show the interrupted badge, not an eternal "评分中…". (i18n is
+  // NOT mocked here, so t() falls back to the key text `working.stalled`.)
+  for (const status of ["cancelled", "interrupted"] as const) {
+    it(`shows the interrupted badge instead of 评分中 for a ${status} run`, async () => {
+      const terminal: RunDetailDto = {
+        ...scored,
+        run: { ...scored.run, status, overall_score: null, overall_badge: null },
+        evaluations: [],
+      };
+      (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(terminal);
+      render(<RunReplay runId={7} onClose={() => {}} />);
+      await screen.findByText("编排回放");
+      expect(screen.queryByText(/评分中/)).toBeNull();
+      expect(screen.getByText(/working\.stalled/)).toBeTruthy();
+    });
+  }
+
   it("degrades gracefully: no spawnId → no sparkline, no kb sources → no chips, summary failure → no radar", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...scored,

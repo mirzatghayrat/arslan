@@ -61,7 +61,8 @@
     "thinking": "考えています…",
     "roster_joined": "{{name}} が会話に参加しました",
     "roster_left": "{{name}} が会話を退出しました",
-    "roster_recruited": "{{name}} が参加 · 次回この種のタスクは {{name}} が直接担当します"
+    "roster_recruited": "{{name}} が参加 · 次回この種のタスクは {{name}} が直接担当します",
+    "stopRun": "停止"
   },
   "conversation": {
     "title": "Arslan",

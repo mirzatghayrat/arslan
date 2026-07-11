@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import { toUiRun, DIMENSION_LABELS } from "../api/adapters";
 import type { RunListItem, RunSummary } from "../api/client.types";
@@ -82,6 +83,7 @@ interface Props {
 }
 
 export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
+  const { t } = useTranslation();
   const [run, setRun] = useState<UiRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
@@ -463,6 +465,11 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
               ))}
             </ul>
           </>
+        ) : run.status === "cancelled" || run.status === "interrupted" ? (
+          /* S3-M1: cancelled/interrupted runs will never be scored — showing
+             "评分中…" forever would be a lie. Same interrupted wording as the
+             chat stall/cancel markers (working.stalled = 已中断/Interrupted). */
+          <p className="run-replay__pending">⏸ {t("working.stalled")}</p>
         ) : (
           <p className="run-replay__pending">评分中…</p>
         )}

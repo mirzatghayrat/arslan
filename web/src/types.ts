@@ -69,6 +69,9 @@ export interface Message {
   spawnName?: string;
   /** Original deliverable message id this was refined from (deliverable_finalized) — drives the 定稿 badge. */
   refinedFrom?: number | null;
+  /** S3-M1: true when this bubble is the partial output of a run the user cancelled
+   *  mid-stream — renders the muted interrupted marker under the body. */
+  cancelled?: boolean;
   routedTo?: {
     spawnId: string;
     spawnName: string;

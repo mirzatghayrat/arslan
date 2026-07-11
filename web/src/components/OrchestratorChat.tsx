@@ -3,7 +3,7 @@ import {
   ArrowRight, Terminal,
   AlertTriangle, CheckCircle2, XOctagon,
   Layers, CornerDownRight,
-  Cpu, X,
+  Cpu, X, Square,
   ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,7 @@ import WorkingPulse from './WorkingPulse';
 import LiveActivity from './LiveActivity';
 import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
+import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
@@ -29,6 +30,18 @@ import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 import { activeMention, filterRoster, insertMention } from '../lib/mentions';
+
+/** S3-M1: muted "interrupted" line under a bubble whose run was cancelled
+ *  mid-stream — same look as the stall indicator (⏸ + working.stalled, which
+ *  reads 已中断/Interrupted in all locales). */
+function RunCancelledMarker() {
+  const { t } = useTranslation();
+  return (
+    <div data-testid="run-cancelled-marker" className="mt-2 text-[11px] font-mono text-danger/80 select-none">
+      ⏸ {t('working.stalled')}
+    </div>
+  );
+}
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -118,6 +131,23 @@ export default function OrchestratorChat({
   // frame un-stalls (handled in the store).
   const pendingSend = useArslanStore((s) => s.pending);
   const stalled = useArslanStore((s) => s.stalled);
+  // S3-M1: the in-flight recorded run's id (spawn dispatches only) — the cancel
+  // target for the composer stop button. Null ⇒ nothing cancellable ⇒ no button.
+  const activeRunId = useArslanStore((s) => s.activeRunId);
+  // Latch after a stop click so a second click can't double-POST; a new run
+  // (activeRunId change, including → null on stream_end/run_cancelled) resets it.
+  const [stopPending, setStopPending] = useState(false);
+  useEffect(() => { setStopPending(false); }, [activeRunId]);
+  const handleStopRun = () => {
+    if (activeRunId == null || stopPending) return;
+    setStopPending(true);
+    // Fire-and-forget (one-shot action convention): the authoritative outcome
+    // arrives as a run_cancelled frame; on failure re-enable so the user can retry.
+    api.cancelRun(activeRunId).catch((err) => {
+      console.error(`[cancelRun] failed for run ${activeRunId}`, err);
+      setStopPending(false);
+    });
+  };
   const turnActive = thinking || liveStreaming || pendingSend || pendingRoute != null;
   useEffect(() => {
     if (!turnActive) return;
@@ -681,6 +711,7 @@ export default function OrchestratorChat({
                           </>
                         : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
+                      {msg.cancelled && <RunCancelledMarker />}
 
                       {/* Routed Indicator - specifically asked in prompt */}
                       {msg.routedTo && (
@@ -910,6 +941,7 @@ export default function OrchestratorChat({
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
                     : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
+                  {msg.cancelled && <RunCancelledMarker />}
 
                   {/* Routed branch block */}
                   {msg.routedTo && (
@@ -1095,6 +1127,7 @@ export default function OrchestratorChat({
 
                   {/* Body Content */}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                  {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (
@@ -1335,14 +1368,34 @@ export default function OrchestratorChat({
               />
               <div className="composer-row">
                 <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
-                <button
-                  id="chat-send-submit"
-                  type="submit"
-                  disabled={!inputValue.trim()}
-                  className="p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                {/* Right-side action group: composer-row is space-between, so stop
+                    must share a wrapper with send to sit NEXT to it (not centered). */}
+                <div className="flex items-center gap-1.5">
+                  {/* S3-M1 stop button: only while a recorded run is in flight
+                      (activeRunId set from stream_start). Renders NEXT to send —
+                      the send button's disabled-while-active behavior is untouched. */}
+                  {activeRunId != null && (
+                    <button
+                      type="button"
+                      data-testid="stop-run-button"
+                      title={t('chat.stopRun')}
+                      aria-label={t('chat.stopRun')}
+                      disabled={stopPending}
+                      onClick={handleStopRun}
+                      className="p-2 bg-danger/15 text-danger hover:bg-danger/25 disabled:opacity-50 rounded-lg transition-all"
+                    >
+                      <Square className="w-4 h-4" fill="currentColor" />
+                    </button>
+                  )}
+                  <button
+                    id="chat-send-submit"
+                    type="submit"
+                    disabled={!inputValue.trim()}
+                    className="p-2 bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-surface-raised disabled:text-subtle-foreground disabled:opacity-50 font-bold uppercase rounded-lg transition-all"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               {attach.dragActive && <div className="composer-drop-hint">{t('attach.drop_hint')}</div>}
             </div>

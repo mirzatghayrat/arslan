@@ -312,6 +312,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         taskBrief: item.taskBrief ?? undefined,
         runId: item.runId ?? undefined,
         refinedFrom: item.refinedFrom ?? undefined,
+        // S3-M1: partial output of a cancelled run → interrupted marker in the bubble.
+        cancelled: item.cancelled ?? undefined,
       };
     }
 
@@ -327,6 +329,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       artifactHtml: item.artifactHtml,
       // PA-3 structured clarification card (🔒 backend clarify_options frames only).
       clarifyOptions: item.clarifyOptions,
+      // S3-M1: run_cancelled can also finalize an arslan-role live bubble.
+      cancelled: item.cancelled ?? undefined,
     };
   });
 }
