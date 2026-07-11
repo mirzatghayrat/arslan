@@ -84,7 +84,7 @@ async def clear(conversation_id: str, spawn_id: int | None = None) -> None:
 
 async def set_inviting(
     conversation_id: str, spawn_id: int, *, task_brief: str, user_message: str,
-    needs_proposal: bool = False, announced: bool = False,
+    needs_proposal: bool = False, announced: bool = False, answered: bool = False,
 ) -> None:
     """Persist a pending roster invite for the conversation.
 
@@ -97,17 +97,68 @@ async def set_inviting(
     re-makes the exact same propose-vs-execute decision. Uses the sentinel spawn_id=0
     row (same as clarifying/gathering) and stows the real payload in `direction`
     as JSON, so no new column is needed.
+
+    `answered` (delegation route-to-member, cell 6): TRUE marks a RECRUITING invite —
+    Arslan already fully answered the task doer-first, so Accept must ONLY enroll the
+    spawn ("下次这类任务由 TA 直接接手") and must NOT re-dispatch the already-answered
+    task. The key is written ONLY when True so pre-existing parks (staffing / cell 2,
+    which carry an UNanswered task that Accept must still dispatch) keep their exact
+    payload shape — the accept side reads `pending.get("answered")`, falsy for those.
     """
     payload = {
         "spawn_id": spawn_id, "task_brief": task_brief, "user_message": user_message,
         "needs_proposal": bool(needs_proposal), "announced": bool(announced),
     }
+    if answered:
+        payload["answered"] = True
     await _upsert_phase(
         conversation_id,
         spawn_id=_CLARIFYING_SPAWN_ID,
         phase="inviting",
         direction=json.dumps(payload, ensure_ascii=False),
     )
+
+
+async def set_choosing(
+    conversation_id: str, *, candidates: list[dict], task_brief: str,
+    user_message: str, needs_proposal: bool = False,
+) -> None:
+    """Persist a pending member-picker choice (delegation route-to-member, cell 5).
+
+    The inferred route was AMBIGUOUS across ≥2 roster members (picker band), so instead
+    of silently dispatching the router's guess we emit an `ask_user_choice` card and park
+    the candidate members + the task here. The user's pick (the chosen member's name, sent
+    back as a normal message by the clarify_options card) is matched against `candidates`
+    on the next turn and dispatched to that member with the parked `task_brief`. Uses the
+    sentinel spawn_id=0 row + JSON `direction`, same as the other pre-spawn phases.
+
+    `candidates` is a list of {spawn_id, name} (extra keys are ignored/kept).
+    """
+    payload = {
+        "candidates": [{"spawn_id": c.get("spawn_id"), "name": c.get("name")}
+                       for c in candidates],
+        "task_brief": task_brief, "user_message": user_message,
+        "needs_proposal": bool(needs_proposal),
+    }
+    await _upsert_phase(
+        conversation_id,
+        spawn_id=_CLARIFYING_SPAWN_ID,
+        phase="choosing",
+        direction=json.dumps(payload, ensure_ascii=False),
+    )
+
+
+async def get_pending_choice(conversation_id: str) -> dict | None:
+    """Return the pending member-picker payload `{candidates, task_brief, user_message,
+    needs_proposal}`, or None if there is no active `choosing` phase / corrupt JSON."""
+    pending = await get_pending(conversation_id)
+    if not pending or pending.get("phase") != "choosing":
+        return None
+    try:
+        return json.loads(pending.get("direction") or "{}")
+    except Exception:  # noqa: BLE001
+        logger.warning("choice: corrupted choice JSON for %s", conversation_id)
+        return None
 
 
 async def get_pending_invite(conversation_id: str) -> dict | None:

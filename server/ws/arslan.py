@@ -430,6 +430,15 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 pending_invite = await phase_service.get_pending_invite(conversation_id)
                 if pending_invite is not None and pending_invite.get("spawn_id") == spawn_id:
                     await phase_service.clear(conversation_id)
+                    # Recruiting invite (delegation cell 6): Arslan already answered the
+                    # task doer-first, so Accept ONLY enrolls the spawn + posts the recruit
+                    # note — it must NOT re-dispatch the answered task (Bug 1 fix). An
+                    # ordinary (UNanswered) park still dispatches below (S0-2 not regressed).
+                    if pending_invite.get("answered"):
+                        await run_with_live_frames(
+                            arslan._accept_recruit(conversation_id, spawn_id, emit)
+                        )
+                        continue
                     await run_routed(
                         spawn_id,
                         pending_invite.get("task_brief") or "",

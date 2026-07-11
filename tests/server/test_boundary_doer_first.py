@@ -70,6 +70,10 @@ async def test_resolve_at_mentioned_spawn_prefix_ambiguity(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_inference_does_it_itself_and_chips(monkeypatch):
+    # Delegation route-to-member CELL 6: the inferred spawn is NOT a roster member, so the
+    # router picked a specialist that isn't here yet → Arslan answers doer-first AND pops a
+    # RECRUITING invite (park carries answered=True; Accept only enrolls, never re-dispatches
+    # the already-answered task). Pinned to non-member so this stays a cell-6 scenario.
     answered, frames = [], []
 
     async def _answer(conv, msg, emit, **kw):
@@ -77,6 +81,8 @@ async def test_inference_does_it_itself_and_chips(monkeypatch):
         emit({"type": "stream_end", "message_id": 1})
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
+    monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(False))
+    monkeypatch.setattr(arslan.router, "previous_decision", lambda conv: _aw(None))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
 
     dispatched = []
@@ -92,18 +98,23 @@ async def test_inference_does_it_itself_and_chips(monkeypatch):
     assert dispatched == []
     assert any(f.get("type") == "propose_invite" for f in frames)
     assert parked and parked[-1].get("announced") is True
+    assert parked[-1].get("answered") is True   # cell 6: recruiting invite, accept join-only
 
 
 @pytest.mark.asyncio
 async def test_inference_untrusted_band_also_gets_chip(monkeypatch):
-    """PA-2 验收①: a spawn with NO trust standing still gets the advancement chip —
-    the old trusted-only gate left non-trusted spawns with no escape from the divert."""
+    """PA-2 验收① (now folded into delegation CELL 6): the advancement chip is band-
+    INDEPENDENT — an inferred NON-member still gets the recruiting invite regardless of
+    trust standing (the arbitration is decided by (explicit?, membership, band), never
+    by trust). The park carries answered=True (recruiting invite)."""
     frames = []
 
     async def _answer(conv, msg, emit, **kw):
         emit({"type": "stream_end", "message_id": 1})
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Newbie"))
+    monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(False))
+    monkeypatch.setattr(arslan.router, "previous_decision", lambda conv: _aw(None))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
     parked = []
     monkeypatch.setattr(arslan.phase_service, "set_inviting",
@@ -113,6 +124,7 @@ async def test_inference_untrusted_band_also_gets_chip(monkeypatch):
     await arslan._handle_route("main", result, frames.append, user_message="帮我做点 Y")
     assert any(f.get("type") == "propose_invite" for f in frames)
     assert parked and parked[-1].get("announced") is True
+    assert parked[-1].get("answered") is True
 
 
 @pytest.mark.asyncio
@@ -125,6 +137,8 @@ async def test_dual_track_grows_inferred_spawn(monkeypatch):
         return long_answer
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
+    monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(False))
+    monkeypatch.setattr(arslan.router, "previous_decision", lambda conv: _aw(None))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
     monkeypatch.setattr(arslan.phase_service, "set_inviting", lambda *a, **k: _aw(None))
     fired = []
@@ -150,6 +164,8 @@ async def test_dual_track_skips_short_answer(monkeypatch):
         return "好的 👍"
     monkeypatch.setattr(arslan, "_handle_answer", _answer)
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
+    monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(False))
+    monkeypatch.setattr(arslan.router, "previous_decision", lambda conv: _aw(None))
     monkeypatch.setattr(arslan.db_session, "AsyncSessionLocal", lambda: _NullSession())
     monkeypatch.setattr(arslan.phase_service, "set_inviting", lambda *a, **k: _aw(None))
     fired = []

@@ -60,7 +60,8 @@
     "reconnecting": "Verbindung wird wiederhergestellt …",
     "thinking": "Denkt nach …",
     "roster_joined": "{{name}} ist dem Gespräch beigetreten",
-    "roster_left": "{{name}} hat das Gespräch verlassen"
+    "roster_left": "{{name}} hat das Gespräch verlassen",
+    "roster_recruited": "{{name}} ist beigetreten · beim nächsten Mal übernimmt {{name}} solche Aufgaben direkt"
   },
   "conversation": {
     "title": "Arslan",

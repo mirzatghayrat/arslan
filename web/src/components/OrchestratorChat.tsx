@@ -503,14 +503,18 @@ export default function OrchestratorChat({
             // Roster notice: render for all themes as a subtle centered line
             if (msg.rosterAction) {
               const name = msg.rosterSpawnName ?? '';
+              // "recruited" (delegation cell 6): Arslan already answered the task doer-first;
+              // accepting the invite enrolls the spawn so it takes this KIND of task next time.
               const label = msg.rosterAction === 'joined'
                 ? t('chat.roster_joined', { name })
-                : t('chat.roster_left', { name });
+                : msg.rosterAction === 'recruited'
+                  ? t('chat.roster_recruited', { name })
+                  : t('chat.roster_left', { name });
               return (
                 <div key={msg.id} className="flex items-center gap-3 py-1 select-none">
                   <div className="flex-1 h-px bg-border/60" />
                   <span className="text-[10px] text-subtle-foreground font-mono whitespace-nowrap">
-                    {msg.rosterAction === 'joined' ? '🔗' : '✕'} {label}
+                    {msg.rosterAction === 'left' ? '✕' : '🔗'} {label}
                   </span>
                   <div className="flex-1 h-px bg-border/60" />
                 </div>
