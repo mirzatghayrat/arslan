@@ -17,37 +17,37 @@ PRESETS: dict[str, dict[str, str]] = {
         "label": "OpenAI",
         "provider": "openai",
         "base_url": "https://api.openai.com/v1",
-        "default_model": "gpt-4o",
+        "default_model": "gpt-5.6-terra",
     },
     "deepseek": {
         "label": "DeepSeek",
         "provider": "openai",
         "base_url": "https://api.deepseek.com",
-        "default_model": "deepseek-chat",
+        "default_model": "deepseek-v4-flash",
     },
     "qwen": {
         "label": "通义千问 Qwen (阿里云)",
         "provider": "openai",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "default_model": "qwen-plus",
+        "default_model": "qwen3.7-plus",
     },
     "kimi": {
         "label": "Kimi (Moonshot)",
         "provider": "openai",
         "base_url": "https://api.moonshot.cn/v1",
-        "default_model": "moonshot-v1-8k",
+        "default_model": "kimi-k2.5",
     },
     "zhipu": {
         "label": "智谱 GLM",
         "provider": "openai",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "default_model": "glm-4",
+        "default_model": "glm-5-turbo",
     },
     "minimax": {
         "label": "MiniMax",
         "provider": "openai",
         "base_url": "https://api.minimax.chat/v1",
-        "default_model": "abab6.5s-chat",
+        "default_model": "MiniMax-M2.7",
     },
     "groq": {
         "label": "Groq",
@@ -65,19 +65,19 @@ PRESETS: dict[str, dict[str, str]] = {
         "label": "Mistral",
         "provider": "openai",
         "base_url": "https://api.mistral.ai/v1",
-        "default_model": "mistral-large-latest",
+        "default_model": "mistral-medium-2604",
     },
     "openrouter": {
         "label": "OpenRouter (聚合，含 Claude/Gemini)",
         "provider": "openai",
         "base_url": "https://openrouter.ai/api/v1",
-        "default_model": "openai/gpt-4o",
+        "default_model": "anthropic/claude-sonnet-5",
     },
     "ollama": {
         "label": "Ollama (本地)",
         "provider": "openai",
         "base_url": "http://localhost:11434/v1",
-        "default_model": "llama3",
+        "default_model": "llama3.1",
     },
 }
 
@@ -91,13 +91,13 @@ NATIVE: dict[str, dict[str, str]] = {
         "label": "Anthropic Claude",
         "provider": "anthropic",
         "base_url": "",
-        "default_model": "claude-sonnet-4-6",
+        "default_model": "claude-sonnet-5",
     },
     "gemini": {
         "label": "Google Gemini",
         "provider": "gemini",
         "base_url": "",
-        "default_model": "gemini-2.5-flash",
+        "default_model": "gemini-3.5-flash",
     },
 }
 

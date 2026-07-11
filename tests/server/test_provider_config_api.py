@@ -35,7 +35,7 @@ async def test_provider_config_crud(client):
 async def test_providers_endpoint_includes_models(client):
     opts = (await client.get("/api/v1/settings/providers")).json()
     qwen = next(o for o in opts if o["key"] == "qwen")
-    assert "qwen-max" in qwen["models"]
+    assert "qwen3.7-max" in qwen["models"]
 
 
 @pytest.mark.asyncio

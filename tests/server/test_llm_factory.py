@@ -55,7 +55,7 @@ async def test_build_adapter_defaults_when_unset(tmp_path, monkeypatch):
 
     adapter = await build_adapter()
     assert adapter.provider_name == "openai"  # default
-    assert adapter.model == "gpt-4o"          # default
+    assert adapter.model == "gpt-5.6-terra"   # preset default (expand_preset fills it)
 
 
 @pytest.mark.asyncio
@@ -83,4 +83,4 @@ async def test_build_adapter_expands_tier0_preset(tmp_path, monkeypatch):
 
     adapter = await build_adapter()
     assert adapter.provider_name == "openai"  # routed through OpenAI-compatible client
-    assert adapter.model == "deepseek-chat"   # filled from the preset default
+    assert adapter.model == "deepseek-v4-flash"  # filled from the preset default
