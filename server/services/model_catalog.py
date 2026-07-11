@@ -17,6 +17,7 @@ Cache policy (model_catalog_cache, one row per provider config):
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from datetime import datetime
@@ -24,6 +25,7 @@ from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arslan.llm import catalog
@@ -35,9 +37,19 @@ TTL_FRESH_S = 300          # <5min: serve cache, no network
 TTL_STALE_OK_S = 86400     # <24h: settings-open does NOT auto-refetch; beyond it, does
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
-_TIMEOUT_S = 10.0          # overall per-fetch budget
+_TIMEOUT_S = 10.0          # per-REQUEST httpx timeout (not a whole-fetch budget)
 _OLLAMA_SHOW_TIMEOUT_S = 5.0  # per /api/show call (one slow model must not eat the budget)
 _GEMINI_MAX_PAGES = 10
+# Wall-clock budget for one whole fetch_models() call: multi-request fetchers
+# (gemini pagination, ollama per-model /api/show) can multiply the per-request
+# timeout; get_models caps them so Settings-open degrades instead of hanging.
+TOTAL_BUDGET_S = 30.0
+
+# Native fetchers mirror the chat path's base semantics (AnthropicProvider /
+# GeminiProvider: ``base_url or DEFAULT_BASE_URL``) so a proxied config's
+# catalog fetch and its chat traffic hit the SAME host — never the official one.
+_ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com/v1"
+_GEMINI_DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 # api.openai.com serves embeddings/audio/image models on /models too — they are not
 # chat models and would poison the picker. Substring deny-list (openai.com only).
@@ -72,9 +84,11 @@ def _is_local_host(base_url: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_anthropic(client: httpx.AsyncClient, api_key: str) -> list[dict]:
+async def _fetch_anthropic(client: httpx.AsyncClient, base_url: str,
+                           api_key: str) -> list[dict]:
+    base = (base_url or _ANTHROPIC_DEFAULT_BASE).rstrip("/")
     resp = await client.get(
-        "https://api.anthropic.com/v1/models",
+        f"{base}/models",
         params={"limit": 1000},
         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"})
     resp.raise_for_status()
@@ -89,7 +103,9 @@ async def _fetch_anthropic(client: httpx.AsyncClient, api_key: str) -> list[dict
     return out
 
 
-async def _fetch_gemini(client: httpx.AsyncClient, api_key: str) -> list[dict]:
+async def _fetch_gemini(client: httpx.AsyncClient, base_url: str,
+                        api_key: str) -> list[dict]:
+    base = (base_url or _GEMINI_DEFAULT_BASE).rstrip("/")
     out: list[dict] = []
     page_token: str | None = None
     # NOTE: key goes in the x-goog-api-key header (repo idiom, see
@@ -100,7 +116,7 @@ async def _fetch_gemini(client: httpx.AsyncClient, api_key: str) -> list[dict]:
         if page_token:
             params["pageToken"] = page_token
         resp = await client.get(
-            "https://generativelanguage.googleapis.com/v1beta/models",
+            f"{base}/models",
             params=params, headers={"x-goog-api-key": api_key})
         resp.raise_for_status()
         payload = resp.json()
@@ -184,9 +200,9 @@ async def fetch_models(provider: str, base_url: str, api_key: str, *,
     """
     async with httpx.AsyncClient(timeout=_TIMEOUT_S, transport=transport) as client:
         if provider == "anthropic":
-            return await _fetch_anthropic(client, api_key)
+            return await _fetch_anthropic(client, base_url, api_key)
         if provider == "gemini":
-            return await _fetch_gemini(client, api_key)
+            return await _fetch_gemini(client, base_url, api_key)
         if provider == "ollama":
             return await _fetch_ollama(client, base_url)
         return await _fetch_openai_compat(client, base_url, api_key)
@@ -245,21 +261,27 @@ async def get_models(db: AsyncSession, config_id: int, *, refresh: bool = False)
         return _from_cache(valid_cache, stale=False, error=None)
 
     try:
-        models = await fetch_models(row.provider, base_url, api_key)
+        # httpx timeouts are per-request; TOTAL_BUDGET_S caps the WHOLE fetch
+        # (gemini pagination / ollama per-model /api/show) so Settings-open
+        # degrades to stale/static instead of hanging for minutes.
+        models = await asyncio.wait_for(
+            fetch_models(row.provider, base_url, api_key), timeout=TOTAL_BUDGET_S)
     except Exception as exc:  # noqa: BLE001 — degrade, never 500 the Settings page
+        err = str(exc) or type(exc).__name__  # str(TimeoutError()) is ""
         if valid_cache is not None:
-            return _from_cache(valid_cache, stale=True, error=str(exc))
-        return _static_fallback(row.provider, str(exc))
+            return _from_cache(valid_cache, stale=True, error=err)
+        return _static_fallback(row.provider, err)
 
     now = datetime.utcnow()
-    if cache_row is None:
-        cache_row = ModelCatalogCache(provider_config_id=config_id, fingerprint=fp,
-                                      fetched_at=now, models=json.dumps(models))
-        db.add(cache_row)
-    else:
-        cache_row.fingerprint = fp
-        cache_row.fetched_at = now
-        cache_row.models = json.dumps(models)
+    # Atomic upsert: two concurrent calls for the same uncached config both pass
+    # the SELECT above (the network fetch sits in between) — a plain INSERT made
+    # the loser's commit raise IntegrityError on UNIQUE(provider_config_id).
+    payload = {"fingerprint": fp, "fetched_at": now, "models": json.dumps(models)}
+    stmt = (sqlite_insert(ModelCatalogCache)
+            .values(provider_config_id=config_id, **payload)
+            .on_conflict_do_update(index_elements=["provider_config_id"],
+                                   set_=payload))
+    await db.execute(stmt)
     await db.commit()
     return {"models": models, "fetched_at": now.isoformat(),
             "stale": False, "error": None, "source": "api"}

@@ -7,6 +7,7 @@ DB tests follow the in-memory engine idiom from tests/server/test_llm_factory.py
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 from datetime import datetime, timedelta
@@ -118,9 +119,40 @@ async def test_anthropic_fetcher_headers_and_display_name():
     assert set(m["capabilities"]) == {"tools", "vision"}
 
 
+async def test_anthropic_fetcher_honors_base_url_override():
+    """Review FIX 1: a proxied native config (base_url set on the row) must send
+    its key to the PROXY host, exactly like the chat path (AnthropicProvider uses
+    ``base_url or DEFAULT_BASE_URL``) — never to the official host."""
+    captured = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"data": [{"id": "claude-sonnet-5"}]})
+
+    await model_catalog.fetch_models(
+        "anthropic", "https://proxy.example/anthropic/v1", "sk-ant",
+        transport=httpx.MockTransport(handler))
+    assert captured["url"].startswith("https://proxy.example/anthropic/v1/models")
+
+
 # ---------------------------------------------------------------------------
 # fetch_models — gemini
 # ---------------------------------------------------------------------------
+
+
+async def test_gemini_fetcher_honors_base_url_override():
+    """Review FIX 1: same as anthropic — catalog fetch and chat must hit the SAME
+    host for the same config (GeminiProvider: ``base_url or DEFAULT_BASE_URL``)."""
+    captured = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"models": []})
+
+    await model_catalog.fetch_models(
+        "gemini", "https://proxy.example/gemini/v1beta", "g-key",
+        transport=httpx.MockTransport(handler))
+    assert captured["url"].startswith("https://proxy.example/gemini/v1beta/models")
 
 
 async def test_gemini_pagination_filter_and_prefix_strip():
@@ -395,6 +427,62 @@ async def test_get_models_unknown_config_raises_lookup_error(db_maker):
             await model_catalog.get_models(s, 999999)
 
 
+async def test_concurrent_uncached_calls_upsert_once_no_error(db_maker, monkeypatch):
+    """Review FIX 2: two concurrent get_models on one UNCACHED config (React
+    StrictMode double-mount) both pass the cache SELECT before either commits;
+    the loser's INSERT used to raise IntegrityError on UNIQUE(provider_config_id)
+    → uncaught 500. Both must succeed, leaving exactly one cache row."""
+    cid = await _add_config(db_maker)
+    release = asyncio.Event()
+    in_flight = []
+
+    async def _slow_fetch(provider, base_url, api_key, **kwargs):
+        in_flight.append(1)
+        await release.wait()  # hold BOTH callers past the cache SELECT
+        return [{"id": "raced", "display_name": None, "context_window": None,
+                 "capabilities": [], "source": "api"}]
+
+    monkeypatch.setattr(model_catalog, "fetch_models", _slow_fetch)
+
+    async def _call():
+        async with db_maker() as s:
+            return await model_catalog.get_models(s, cid)
+
+    t1 = asyncio.create_task(_call())
+    t2 = asyncio.create_task(_call())
+    while len(in_flight) < 2:  # both sessions have SELECTed no-cache
+        await asyncio.sleep(0.01)
+    release.set()
+    out1, out2 = await asyncio.gather(t1, t2)
+
+    for out in (out1, out2):
+        assert [m["id"] for m in out["models"]] == ["raced"]
+        assert out["stale"] is False
+    async with db_maker() as s:
+        rows = (await s.execute(select(ModelCatalogCache).where(
+            ModelCatalogCache.provider_config_id == cid))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_fetch_exceeding_total_budget_degrades_not_hangs(db_maker, monkeypatch):
+    """Review FIX 3: httpx's timeout is PER-REQUEST (gemini worst case 10 pages,
+    ollama N sequential /api/show) — get_models must cap the whole fetch with a
+    wall-clock budget and land in the normal failure branch (static seed here)."""
+    cid = await _add_config(db_maker)
+    monkeypatch.setattr(model_catalog, "TOTAL_BUDGET_S", 0.05)
+
+    async def _hang(provider, base_url, api_key, **kwargs):
+        await asyncio.sleep(30)
+        return []
+
+    monkeypatch.setattr(model_catalog, "fetch_models", _hang)
+    async with db_maker() as s:
+        out = await asyncio.wait_for(model_catalog.get_models(s, cid), timeout=5)
+    assert out["source"] == "static"
+    assert out["stale"] is True
+    assert out["error"]  # TimeoutError str() is empty — must still carry a name
+
+
 # ---------------------------------------------------------------------------
 # API endpoint
 # ---------------------------------------------------------------------------
@@ -458,6 +546,9 @@ def test_chat_path_never_imports_model_catalog():
     repo = Path(__file__).resolve().parents[2]
     offenders = []
     for tree in ("server/orchestrator", "arslan"):
+        # Review FIX 4: rglob on a missing dir yields [] and the guard would pass
+        # vacuously — a renamed tree must fail loudly, not silently disarm the rule.
+        assert (repo / tree).is_dir(), f"chat-path tree missing: {tree}"
         for p in sorted((repo / tree).rglob("*.py")):
             if "model_catalog" in p.read_text(encoding="utf-8"):
                 offenders.append(str(p.relative_to(repo)))
