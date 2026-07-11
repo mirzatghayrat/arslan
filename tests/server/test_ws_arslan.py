@@ -3,6 +3,7 @@ import anyio
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -38,7 +39,13 @@ def app_client(tmp_path, monkeypatch):
 
     importlib.reload(config)
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'wsar.db'}")
+    # NullPool: the fixture seeds via anyio.run (its own short-lived loop) while the
+    # TestClient portal runs another — a POOLED aiosqlite connection created in the
+    # seed loop and reused by the portal loop is the known cross-loop flake root
+    # (memory: test-hygiene round). No pooling = every session opens a fresh
+    # connection on the current loop.
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'wsar.db'}",
+                                 poolclass=NullPool)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _seed():
