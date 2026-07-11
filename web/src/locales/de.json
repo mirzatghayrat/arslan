@@ -937,5 +937,63 @@
       "tokens": "Tokens",
       "usd": "USD"
     }
+  },
+  "scheduled": {
+    "title": "Geplante Aufgaben",
+    "new": "Neue Aufgabe",
+    "empty": "Noch keine geplanten Aufgaben",
+    "localTime": "Ortszeit",
+    "every": "alle {{v}}",
+    "due_in": "in {{v}}",
+    "due_now": "bald fällig",
+    "running": "Läuft",
+    "delete_confirm": "Diese Aufgabe samt Verlauf löschen?",
+    "col": {
+      "name": "Name",
+      "spawn": "Spawn",
+      "cadence": "Rhythmus",
+      "last": "Letztes Ergebnis",
+      "next": "Nächster Lauf",
+      "actions": "Aktionen"
+    },
+    "outcome": {
+      "ok": "ok",
+      "error": "Fehler",
+      "paused": "pausiert",
+      "skipped": "übersprungen"
+    },
+    "action": {
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "fire": "Jetzt ausführen",
+      "edit": "Bearbeiten",
+      "delete": "Löschen"
+    },
+    "history": {
+      "empty": "Noch keine Läufe",
+      "outcome": "Ergebnis",
+      "started": "Gestartet",
+      "reason": "Grund",
+      "replay": "Replay"
+    },
+    "form": {
+      "create_title": "Neue geplante Aufgabe",
+      "edit_title": "Geplante Aufgabe bearbeiten",
+      "name": "Name",
+      "prompt": "Prompt",
+      "spawn": "Spawn",
+      "spawn_placeholder": "Spawn auswählen…",
+      "kind_interval": "Intervall",
+      "kind_cron": "Cron",
+      "interval": "Ausführen alle",
+      "cron": "Cron-Ausdruck",
+      "cron_hint": "5 Felder (Min Std Tag Monat Wochentag), in deiner Ortszeit interpretiert",
+      "cron_invalid": "Ungültiger Cron-Ausdruck (5 Felder: *, Zahl, */n oder Kommaliste)",
+      "conversation": "Zielkonversation",
+      "conversation_placeholder": "Leer = eigene Konversation",
+      "submit_create": "Erstellen",
+      "submit_save": "Speichern",
+      "required": "Name, Prompt und Spawn sind erforderlich"
+    }
   }
 }

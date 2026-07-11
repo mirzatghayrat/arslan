@@ -937,5 +937,63 @@
       "tokens": "Tokens",
       "usd": "USD"
     }
+  },
+  "scheduled": {
+    "title": "Scheduled tasks",
+    "new": "New task",
+    "empty": "No scheduled tasks yet",
+    "localTime": "local time",
+    "every": "every {{v}}",
+    "due_in": "in {{v}}",
+    "due_now": "due soon",
+    "running": "Running",
+    "delete_confirm": "Delete this task and its run history?",
+    "col": {
+      "name": "Name",
+      "spawn": "Spawn",
+      "cadence": "Cadence",
+      "last": "Last result",
+      "next": "Next run",
+      "actions": "Actions"
+    },
+    "outcome": {
+      "ok": "ok",
+      "error": "error",
+      "paused": "paused",
+      "skipped": "skipped"
+    },
+    "action": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "fire": "Run now",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "history": {
+      "empty": "No runs yet",
+      "outcome": "Result",
+      "started": "Started",
+      "reason": "Reason",
+      "replay": "Replay"
+    },
+    "form": {
+      "create_title": "New scheduled task",
+      "edit_title": "Edit scheduled task",
+      "name": "Name",
+      "prompt": "Prompt",
+      "spawn": "Spawn",
+      "spawn_placeholder": "Select a spawn…",
+      "kind_interval": "Interval",
+      "kind_cron": "Cron",
+      "interval": "Run every",
+      "cron": "Cron expression",
+      "cron_hint": "5 fields (min hour day month weekday), interpreted in your local time",
+      "cron_invalid": "Invalid cron expression (5 fields: *, number, */n, or a comma list)",
+      "conversation": "Target conversation",
+      "conversation_placeholder": "Empty = dedicated conversation",
+      "submit_create": "Create",
+      "submit_save": "Save",
+      "required": "Name, prompt and spawn are required"
+    }
   }
 }

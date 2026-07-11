@@ -96,6 +96,28 @@ async def test_mark_interrupted_sweeps_orphaned_recording_rows(memdb):
     assert replay.status == "recording"
 
 
+# --- S3-M4: scheduled runs share the live reaper invariants (replay stays out) ----
+
+async def test_scheduled_runs_are_reaped_like_live(memdb, monkeypatch):
+    """A kind='scheduled' run is judge-scored like a live one, so the reaper must
+    cover it: a crashed 'recording' row → 'interrupted'; a stuck 'recorded' row is
+    re-enqueued for scoring. (Corpus stays safe regardless — replay_set/watcher
+    filter kind=='live'.)"""
+    enqueued = _capture_scheduling(monkeypatch)
+    orphan_id = await _seed_run(memdb, status="recording", age_minutes=5,
+                                kind="scheduled")
+    stuck_id = await _seed_run(memdb, status="recorded", age_minutes=20,
+                               kind="scheduled")
+
+    assert await run_reaper.mark_interrupted_runs() == 1
+    async with memdb() as db:
+        orphan = await db.get(Run, orphan_id)
+    assert orphan.status == "interrupted"
+
+    assert await run_reaper.reap_stuck_runs() == 1
+    assert enqueued == [stuck_id]
+
+
 # --- POST /runs/{id}/rescore -------------------------------------------------
 
 async def test_rescore_404_on_unknown_run(client):
@@ -103,10 +125,10 @@ async def test_rescore_404_on_unknown_run(client):
     assert resp.status_code == 404
 
 
-async def _seed_run_via_client(client, *, status: str) -> int:
+async def _seed_run_via_client(client, *, status: str, kind: str = "live") -> int:
     async with client.db_maker() as db:
         run = Run(conversation_id="c1", spawn_name="Mermer", user_message="m",
-                  status=status, task_tokens=0)
+                  status=status, task_tokens=0, kind=kind)
         db.add(run)
         await db.commit()
         await db.refresh(run)
@@ -129,6 +151,28 @@ async def test_rescore_scored_run_still_accepted(client, monkeypatch):
     resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
     assert resp.status_code == 200
     assert enqueued == [run_id]
+
+
+async def test_rescore_scheduled_run_accepted(client, monkeypatch):
+    """Task-2 review S5: scheduled runs are judge-scored like live ones (the reaper
+    already covers both) — rescoring a score_failed scheduled run must enqueue."""
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="score_failed",
+                                        kind="scheduled")
+    resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert resp.status_code == 200
+    assert resp.json() == {"enqueued": True}
+    assert enqueued == [run_id]
+
+
+async def test_rescore_replay_run_409s_on_kind(client, monkeypatch):
+    """The kind gate stays structural for replay: even a replay row left in a
+    scorable status (crash mid-arm) must never re-enter scoring via rescore."""
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="recorded", kind="replay")
+    resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert resp.status_code == 409
+    assert enqueued == []
 
 
 @pytest.mark.parametrize("status", ["cancelled", "interrupted"])

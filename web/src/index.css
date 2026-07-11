@@ -3370,6 +3370,90 @@ button:disabled {
   line-height: 1.7;
 }
 
+/* S3-M4 scheduled-tasks card (Diagnostics) — same section idiom as the usage card. */
+.sched-card__error {
+  margin: 0;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--danger);
+}
+.sched-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.sched-badge--ok {
+  color: var(--success);
+  border-color: var(--success);
+}
+.sched-badge--error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.sched-badge--paused {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+.sched-table__hint {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.sched-table__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.sched-table__confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sched-table__confirm-text {
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+}
+.sched-history {
+  padding: 6px 4px 10px 20px;
+}
+.sched-history__table {
+  margin-top: 0;
+}
+.sched-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  max-width: 560px;
+}
+.sched-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sched-form__label {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--muted-foreground);
+}
+.sched-form__hint {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.sched-form__error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--danger);
+}
+
 /* MatrixSpinner — dot-ring loader for agent-waiting moments. Each dot pulses on a
    staggered delay (set inline per dot) so the bright point chases around the ring. */
 @keyframes matrix-dot-pulse {

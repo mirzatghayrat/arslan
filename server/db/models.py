@@ -597,3 +597,47 @@ class UsageLedger(Base):
     tokens_out = Column(Integer, nullable=True)
     tokens_total = Column(Integer, nullable=False, default=0)  # real sum or honest estimate
     tokens_estimated = Column(Boolean, nullable=False, default=False)
+
+
+class ScheduledTask(Base):
+    """S3-M4: a user-defined recurring task (「每天早上调研X」) fired by the scheduler
+    service and dispatched headless to a spawn, with output landing in a conversation.
+
+    Scheduler state is data-driven: `next_due_at` is persisted so a restart resumes
+    cleanly, and it is ALWAYS computed forward from now — missed fires are NOT
+    replayed (no catch-up). 3 consecutive failures auto-pause the task
+    (enabled=False + paused_reason) and notify the target conversation."""
+
+    __tablename__ = "scheduled_tasks"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(80), nullable=False)
+    prompt = Column(Text, nullable=False)
+    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="SET NULL"), nullable=True)
+    conversation_id = Column(String(50), nullable=True)  # None -> dedicated "scheduled-{id}"
+    schedule_kind = Column(String(10), nullable=False)   # "interval" | "cron"
+    interval_s = Column(Integer, nullable=True)          # interval kind; >= MIN_INTERVAL_S
+    cron = Column(String(40), nullable=True)             # cron kind; 5-field expression
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_fired_at = Column(DateTime, nullable=True)
+    next_due_at = Column(DateTime, nullable=True, index=True)
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    paused_reason = Column(Text, nullable=True)          # set on auto-pause (3 fails)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ScheduledTaskRun(Base):
+    """One firing of a ScheduledTask (shaped after EvolutionAttempt): in-flight rows
+    have outcome NULL (they gate single-flight); finalized rows carry
+    'ok' | 'error' | 'skipped_overlap' plus the produced Run id when dispatched."""
+
+    __tablename__ = "scheduled_task_runs"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("scheduled_tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    outcome = Column(String(20), nullable=True)  # "ok" | "error" | "skipped_overlap"
+    run_id = Column(Integer, nullable=True)      # runs.id produced by the dispatch
+    reason = Column(Text, nullable=True)

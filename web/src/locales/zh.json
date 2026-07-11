@@ -937,5 +937,63 @@
       "tokens": "tokens",
       "usd": "美元"
     }
+  },
+  "scheduled": {
+    "title": "定时任务",
+    "new": "新建任务",
+    "empty": "还没有定时任务",
+    "localTime": "本地时间",
+    "every": "每 {{v}}",
+    "due_in": "{{v}} 后",
+    "due_now": "即将运行",
+    "running": "运行中",
+    "delete_confirm": "删除此任务及其运行历史？",
+    "col": {
+      "name": "名称",
+      "spawn": "分身",
+      "cadence": "节奏",
+      "last": "上次结果",
+      "next": "下次运行",
+      "actions": "操作"
+    },
+    "outcome": {
+      "ok": "成功",
+      "error": "失败",
+      "paused": "已暂停",
+      "skipped": "已跳过"
+    },
+    "action": {
+      "pause": "暂停",
+      "resume": "恢复",
+      "fire": "立即运行",
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "history": {
+      "empty": "还没有运行记录",
+      "outcome": "结果",
+      "started": "开始时间",
+      "reason": "原因",
+      "replay": "查看重放"
+    },
+    "form": {
+      "create_title": "新建定时任务",
+      "edit_title": "编辑定时任务",
+      "name": "名称",
+      "prompt": "提示词",
+      "spawn": "分身",
+      "spawn_placeholder": "选择分身…",
+      "kind_interval": "固定间隔",
+      "kind_cron": "Cron",
+      "interval": "运行间隔",
+      "cron": "Cron 表达式",
+      "cron_hint": "5 个字段（分 时 日 月 周），按本地时间解释",
+      "cron_invalid": "Cron 表达式无效（5 个字段：*、数字、*/n 或逗号列表）",
+      "conversation": "目标会话",
+      "conversation_placeholder": "留空 = 专用会话",
+      "submit_create": "创建",
+      "submit_save": "保存",
+      "required": "名称、提示词和分身必填"
+    }
   }
 }

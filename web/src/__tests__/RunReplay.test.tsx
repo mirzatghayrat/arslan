@@ -9,7 +9,8 @@ const scored: RunDetailDto = {
     status: "scored", overall_score: 8, overall_badge: "good",
     model: null, provider: null, tokens_in: null, tokens_out: null,
     tokens_estimated: false, error_kind: null, error_text: null,
-    system_prompt: null, injected_kb: null, injected_kb_sources: null },
+    system_prompt: null, injected_kb: null, injected_kb_sources: null,
+    final_output: null },
   steps: [
     { seq: 0, kind: "route", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 80 },
     { seq: 1, kind: "dispatch", ref: { spawn_name: "Mermer" }, detail: {}, duration_ms: 1200 },
@@ -91,6 +92,13 @@ const scoredWithP2: RunDetailDto = {
       duration_ms: 300,
     },
   ],
+};
+
+// M4 final review I-1: a scheduled run carries its full deliverable on the row
+// (its scheduled-{id} conversation is unreachable from the sidebar).
+const scheduledWithFinalOutput: RunDetailDto = {
+  ...scored,
+  run: { ...scored.run, final_output: "FULL_DELIVERABLE_全文交付物" },
 };
 
 vi.mock("../api/client", () => ({
@@ -240,6 +248,21 @@ describe("RunReplay", () => {
     expect(screen.getByText(/OKX/)).toBeTruthy();
     expect(screen.getByText(/8 results/)).toBeTruthy();
     expect(screen.getByText(/半导体 2025/)).toBeTruthy();
+  });
+
+  it("renders the full deliverable section when final_output is present (I-1)", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scheduledWithFinalOutput);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    const section = await screen.findByTestId("final-output");
+    fireEvent.click(section.querySelector("summary")!);
+    expect(screen.getByText(/FULL_DELIVERABLE_全文交付物/)).toBeTruthy();
+  });
+
+  it("hides the full deliverable section when final_output is absent", async () => {
+    (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
+    render(<RunReplay runId={7} onClose={() => {}} />);
+    await screen.findByText("编排回放");
+    expect(screen.queryByTestId("final-output")).toBeNull();
   });
 
   it("clear button calls redactRun after confirm", async () => {

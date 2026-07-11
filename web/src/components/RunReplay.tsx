@@ -444,6 +444,17 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
             <p className="output-preview__text">{outputPreview}</p>
           </div>
         )}
+
+        {/* M4 final review I-1: scheduled runs' deliverables land in a dedicated
+            conversation the sidebar can't reach, so the run row carries the full
+            text — render it here so the Diagnostics → history → RunReplay chain
+            is the complete reading path. Absent for plain live runs. */}
+        {run.finalOutput != null && (
+          <details className="run-replay__final-output" data-testid="final-output">
+            <summary>完整产出</summary>
+            <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{run.finalOutput}</pre>
+          </details>
+        )}
       </section>
 
       <section className="run-replay__eval">

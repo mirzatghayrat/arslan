@@ -1,10 +1,12 @@
 """S3-M3 cost visibility: fleet-wide usage summary (visibility only — no budgets).
 
-Two sources, one view: spawn runs keep their usage on the Run row (kind='live' only;
-replay arms never count), every other LLM call site writes usage_ledger rows. Both are
-fetched raw and aggregated in Python — pricing needs a per-item longest-prefix model
-lookup (arslan/llm/prices.py) plus the estimated-flag honesty gate, which SQL grouping
-would only obscure at this data volume.
+Two sources, one view: spawn runs keep their usage on the Run row (kind='live' as
+scope "spawn" and kind='scheduled' as scope "scheduled" — Task-2 review I2, 成本只可见:
+scheduled fires burn real tokens in real conversations, they count everywhere;
+kind='replay' only behind include_replay), every other LLM call site writes
+usage_ledger rows. Both are fetched raw and aggregated in Python — pricing needs a
+per-item longest-prefix model lookup (arslan/llm/prices.py) plus the estimated-flag
+honesty gate, which SQL grouping would only obscure at this data volume.
 
 Honesty rules (shared with /conversations/{id}/usage via item_usd):
   - an item is priced ONLY when its tokens are real (not estimated) AND the model has
@@ -71,19 +73,27 @@ def item_usd(model: str | None, tokens_in: int | None, tokens_out: int | None,
     return prices.usd(model, tokens_in, tokens_out, provider=provider)
 
 
+# Run.kind → usage scope. live and scheduled are ALWAYS included (Task-2 review I2:
+# scheduled fires target real/dedicated conversations users open — unlike synthetic
+# replay cids — so they count in BOTH the summary and the per-conversation view);
+# replay stays behind the include_replay gate.
+_KIND_SCOPES = {"live": "spawn", "scheduled": "scheduled", "replay": "replay"}
+
+
 async def fetch_usage_items(
     *, conversation_id: str | None = None, since: datetime | None = None,
     include_replay: bool = False,
 ) -> list[tuple]:
-    """Runs (kind='live', as scope 'spawn') + ledger rows, normalized to
+    """Runs (kind mapped per _KIND_SCOPES) + ledger rows, normalized to
     (scope, provider, model, tokens_in, tokens_out, estimated, tokens_total, ts)."""
-    # kind='live' → scope "spawn"; kind='replay' → scope "replay" (evolution arms are
-    # the single largest burner — omitting them would break the fleet-wide card's own
-    # "never pretends full coverage" contract). Replay rows carry synthetic
-    # conversation ids ("evolution-replay"), so per-conversation queries never see them.
+    # kind='replay' → scope "replay" only on the fleet-wide card (evolution arms are
+    # the single largest burner — omitting them would break the card's own "never
+    # pretends full coverage" contract). Replay rows carry synthetic conversation
+    # ids ("evolution-replay"), so per-conversation queries never see them.
+    kinds = ("live", "scheduled", "replay") if include_replay else ("live", "scheduled")
     run_q = select(Run.kind, Run.provider, Run.model, Run.tokens_in, Run.tokens_out,
                    Run.tokens_estimated, Run.task_tokens, Run.created_at
-                   ).where(Run.kind.in_(("live", "replay") if include_replay else ("live",)))
+                   ).where(Run.kind.in_(kinds))
     led_q = select(UsageLedger.scope, UsageLedger.provider, UsageLedger.model,
                    UsageLedger.tokens_in, UsageLedger.tokens_out,
                    UsageLedger.tokens_estimated, UsageLedger.tokens_total, UsageLedger.ts)
@@ -96,7 +106,7 @@ async def fetch_usage_items(
     async with db_session.AsyncSessionLocal() as db:
         runs = (await db.execute(run_q)).all()
         ledger = (await db.execute(led_q)).all()
-    items = [("spawn" if kind == "live" else "replay",
+    items = [(_KIND_SCOPES.get(kind, kind),
               provider, model, tin, tout, bool(est), task_tokens or 0, ts)
              for (kind, provider, model, tin, tout, est, task_tokens, ts) in runs]
     items += [(scope, provider, model, tin, tout, bool(est), total or 0, ts)

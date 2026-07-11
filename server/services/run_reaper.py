@@ -19,12 +19,16 @@ logger = logging.getLogger(__name__)
 
 STUCK_AFTER = timedelta(minutes=10)
 _STUCK_STATUSES = ("recorded", "score_failed")
+# S3-M4: scheduled runs are judge-scored like live ones, so the reaper covers both.
+# Replay runs stay excluded structurally (kind filter), never re-enqueued. The corpus
+# is safe either way — replay_set/evolution_watcher additionally filter kind=='live'.
+_REAPED_KINDS = ("live", "scheduled")
 
 
 async def _reaper_candidates() -> list[int]:
     """Run ids stuck in a scorable status for longer than STUCK_AFTER.
 
-    E2: the query filters `kind == 'live'` so replay runs can never be re-enqueued (their
+    E2: the query filters kind so replay runs can never be re-enqueued (their
     terminal status 'replayed' already never matches the status filter — the kind filter
     makes it structural, even for a replay row left mid-flight in a scorable status).
     """
@@ -33,7 +37,7 @@ async def _reaper_candidates() -> list[int]:
         rows = await db.execute(
             select(Run.id)
             .where(Run.status.in_(_STUCK_STATUSES), Run.created_at < cutoff,
-                   Run.kind == "live")
+                   Run.kind.in_(_REAPED_KINDS))
             .order_by(Run.id)
         )
         return list(rows.scalars().all())
@@ -43,11 +47,11 @@ async def mark_interrupted_runs() -> int:
     """S3-M1 boot sweep: a 'recording' row at boot is by definition orphaned —
     runs never survive a process restart (the run registry is process-local), so
     mark them 'interrupted' instead of letting them rot as recording-forever
-    zombies. Live runs only (a replay row is the gate's problem).
+    zombies. Live + scheduled runs (a replay row is the gate's problem).
     Assumes exclusive DB ownership (single process — same assumption as run_registry)."""
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
-            select(Run).where(Run.status == "recording", Run.kind == "live"))
+            select(Run).where(Run.status == "recording", Run.kind.in_(_REAPED_KINDS)))
         runs = list(rows.scalars().all())
         for run in runs:
             run.status = "interrupted"
