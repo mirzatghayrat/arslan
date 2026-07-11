@@ -1543,27 +1543,37 @@ async def _dispatch_spawn(  # noqa: ANN001
     chunks: list[str] = []  # streamed partial — the ONLY output a cancelled run can persist
 
     async def _run_turn() -> None:
-        # Join FIRST (DB state) so the announcement's roster lookup sees the routed spawn,
-        # but EMIT the routing frame (with the announcement) BEFORE the roster join notice:
-        # the user reads "user message → Arslan's brief → X joined → spawn work" in order.
-        # (User feedback: the brief showing up above an anonymous join divider read as a
-        # bare system line, not Arslan speaking.)
-        newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
-        # Routing brief: restate the need + @-mention each involved spawn (grounded in the
-        # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
-        # re-emit the routing frame for the UI pulse but must not repeat the announcement.
-        # `announce=False` when the brief was ALREADY shown before an invite card (accepted
-        # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
-        announcement = None
-        if announce and _auto_continues == MAX_AUTO_CONTINUES:
-            announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
-        tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
-             **({"announcement": announcement} if announcement else {})})
-        if newly_joined:
-            tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
-        tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
-        tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
-             "run_id": recorder.run_id})
+        # Pre-stream cancel guard (review I3): the roster join and _route_announcement
+        # (an LLM call) run BEFORE the collecting-scope handler below — a cancel landing
+        # here would otherwise propagate unfinalized and rot the row at 'recording' until
+        # the next boot reap. Nothing ran yet, so finalize bare (no usage/prompt detail).
+        try:
+            # Join FIRST (DB state) so the announcement's roster lookup sees the routed spawn,
+            # but EMIT the routing frame (with the announcement) BEFORE the roster join notice:
+            # the user reads "user message → Arslan's brief → X joined → spawn work" in order.
+            # (User feedback: the brief showing up above an anonymous join divider read as a
+            # bare system line, not Arslan speaking.)
+            newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
+            # Routing brief: restate the need + @-mention each involved spawn (grounded in the
+            # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
+            # re-emit the routing frame for the UI pulse but must not repeat the announcement.
+            # `announce=False` when the brief was ALREADY shown before an invite card (accepted
+            # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
+            announcement = None
+            if announce and _auto_continues == MAX_AUTO_CONTINUES:
+                announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
+            tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
+                 **({"announcement": announcement} if announcement else {})})
+            if newly_joined:
+                tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
+            tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
+            tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
+                 "run_id": recorder.run_id})
+        except asyncio.CancelledError:
+            await recorder.finalize(summary_message_id=None, full_output="",
+                                    status_override="cancelled")
+            emit({"type": "run_cancelled", "run_id": recorder.run_id})
+            raise
         # usage_sink.collecting() is scoped HERE — one fresh bucket per Run — not around the
         # whole user turn. This is the S0 hemostasis fix: EVERY dispatch path funnels through
         # _dispatch_spawn, so opening the scope here means route_to/redo/refine/confirm_direction/
@@ -1659,8 +1669,10 @@ async def _dispatch_spawn(  # noqa: ANN001
                     system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
                     injected_kb_sources=_prompt.get("injected_kb_sources"),
                 )
-                tee({"type": "run_cancelled", "run_id": recorder.run_id,
-                     **({"message_id": summary_id} if summary_id else {})})
+                # Via emit, NOT tee (review S7): finalize already derived the steps —
+                # a tee'd post-finalize event would be a dead entry in recorder._events.
+                emit({"type": "run_cancelled", "run_id": recorder.run_id,
+                      **({"message_id": summary_id} if summary_id else {})})
                 raise
         tee({
             "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],
@@ -1681,7 +1693,11 @@ async def _dispatch_spawn(  # noqa: ANN001
         # auto-continue, a still-digest-ending message is kept as-is (its 回复'继续' tail is
         # then honest — the user can continue manually).
         # (Recursion stays INSIDE _run_turn: each recursive _dispatch_spawn registers its
-        # OWN run+task, so every round is cancellable under its own run_id.)
+        # OWN run+task, so every round is cancellable under its own run_id. LOAD-BEARING:
+        # this recursion must remain _run_turn's LAST statement — a user cancel of the
+        # DELEGATED child is swallowed by the child's own awaiter, so the parent _run_turn
+        # resumes normally right here; any statement placed after it would run in that
+        # post-child-cancel state.)
         if _auto_continues > 0 and _has_findings_digest(out.get("full_output") or ""):
             emit({"type": "auto_continue", "spawn_id": spawn_id, "spawn_name": spawn_name,
                   "remaining": _auto_continues - 1})
@@ -1693,19 +1709,28 @@ async def _dispatch_spawn(  # noqa: ANN001
             )
 
     # S3-M1: the turn runs as its OWN task so POST /runs/{id}/cancel can target it via
-    # run_registry. A CancelledError with task.cancelled()==True is a user cancel — already
-    # fully handled inside _run_turn (finalize+persist+frame) — swallow it so the WS turn
-    # survives. task.cancelled()==False means OUR caller was cancelled (shutdown/teardown):
-    # cancel the still-running turn (don't orphan it — its own handler finalizes the Run)
-    # and propagate.
+    # run_registry. A user cancel is already fully handled inside _run_turn
+    # (finalize+persist+frame) — swallow it so the WS turn survives; OUR OWN teardown
+    # (WS disconnect/shutdown) must propagate the CancelledError contract.
     task = asyncio.create_task(_run_turn())
     run_registry.register(recorder.run_id, conversation_id, task)
     try:
         await task
     except asyncio.CancelledError:
-        if not task.cancelled():
-            task.cancel()
+        # task.cancelled() ALONE cannot discriminate (review I2): when THIS coroutine is
+        # cancelled while suspended at `await task`, asyncio delegates the cancellation
+        # INTO the inner task — it finalizes as if user-cancelled and task.cancelled()
+        # comes back True. current_task().cancelling() > 0 (py3.11+) is the real signal:
+        # nonzero means the CancelledError was aimed at US — propagate regardless of
+        # what the inner task did.
+        cur = asyncio.current_task()
+        if cur is not None and cur.cancelling() > 0:
+            task.cancel()  # teardown aimed at us — don't orphan a still-running turn
             raise
+        if not task.cancelled():
+            task.cancel()  # inner still running yet we got cancelled — same teardown case
+            raise
+        # else: user cancel via run_registry — fully handled inside _run_turn
     finally:
         run_registry.unregister(recorder.run_id, conversation_id)
 

@@ -65,6 +65,7 @@ class RunRecorder:
         self.continuation = continuation
         self.spawn_id = spawn_id
         self._events: list[tuple[datetime, dict]] = []
+        self._finalized = False
 
     @classmethod
     async def start(
@@ -206,6 +207,14 @@ class RunRecorder:
         kind='replay', the arm's output is stored in final_output for judge-comparison
         and trace, and schedule_scoring is NOT called — a replay is evaluated by the
         paired ReplayGate (E4), not the per-run judge."""
+        # S3-M1 (review I1): finalize must be idempotent — a cancel landing during one
+        # of the awaits below re-enters finalize via _dispatch_spawn's cancel handler.
+        # The flag flips BEFORE any await (synchronously, same task context), so the
+        # re-entrant call short-circuits: no duplicated RunStep rows, and an
+        # already-written terminal status never flips after the fact.
+        if self._finalized:
+            return self.run_id
+        self._finalized = True
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
         self._merge_tool_trace(steps)

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from arslan.llm import usage_sink
 from server.db import session as db_session
-from server.db.models import Base, Run, Spawn
+from server.db.models import Base, Run, RunStep, Spawn
 from server.services import run_recorder
 
 
@@ -52,6 +52,33 @@ async def test_finalize_status_override_skips_scoring(memdb, monkeypatch):
     # Diagnostics row-completeness contract: overridden runs still finalize fully.
     assert run.ended_at is not None
     assert run.total_ms is not None
+
+
+async def test_finalize_is_idempotent(memdb, monkeypatch):
+    """Review I1: a cancel landing during a finalize await (post-commit) re-enters
+    finalize via the cancel handler. The second call must short-circuit — no duplicated
+    RunStep rows, and the already-written terminal status must NOT flip."""
+    scheduled: list[int] = []
+    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
+    spawn_id = await _seed_spawn(memdb)
+
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="c-idem", spawn_id=spawn_id, spawn_name="S",
+        user_message="u")
+    tee = rec.tee(lambda ev: None)
+    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": "S"})
+    with usage_sink.collecting():
+        await rec.finalize(summary_message_id=None, full_output="done")
+        await rec.finalize(summary_message_id=None, full_output="",
+                           status_override="cancelled")
+
+    async with memdb() as db:
+        run = (await db.execute(select(Run).where(Run.id == rec.run_id))).scalar_one()
+        steps = (await db.execute(select(RunStep).where(
+            RunStep.run_id == rec.run_id))).scalars().all()
+    assert run.status == "recorded"          # second finalize did not flip the status
+    assert len(steps) == 1                   # step rows written exactly once
+    assert scheduled == [rec.run_id]         # scoring scheduled exactly once
 
 
 async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypatch):

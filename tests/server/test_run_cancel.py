@@ -14,6 +14,7 @@ from server.db import session as db_session
 from server.db.models import ArslanMessage, Base, Run, Spawn
 from server.orchestrator import arslan
 from server.services import run_registry
+from server.ws import arslan as ws_arslan
 
 
 @pytest.fixture
@@ -87,3 +88,47 @@ async def test_cancel_persists_streamed_partial(memdb, monkeypatch):
     cancelled = next(f for f in frames if f["type"] == "run_cancelled")
     assert cancelled["run_id"] == run_id
     assert cancelled.get("message_id") == rows[0].id
+
+
+async def test_cancel_during_announcement_finalizes_cancelled(memdb, monkeypatch):
+    """Review I3: a cancel landing BEFORE streaming (during the routing-announcement
+    LLM call) must still finalize the Run as 'cancelled' — never leave the row rotting
+    at 'recording' until the next boot reap."""
+    spawn_id = await _seed_spawn(memdb)
+    entered = asyncio.Event()
+
+    async def slow_announcement(*a, **k):
+        entered.set()
+        await asyncio.sleep(30)
+
+    async def unreachable_dispatch(*a, **k):
+        raise AssertionError("dispatch must not be reached on a pre-stream cancel")
+
+    monkeypatch.setattr(arslan, "_route_announcement", slow_announcement)
+    monkeypatch.setattr(arslan.dispatcher, "dispatch", unreachable_dispatch)
+    frames: list[dict] = []
+
+    turn = asyncio.create_task(arslan.dispatch_spawn(
+        "conv-pre", spawn_id, "test brief", frames.append, user_message="u"))
+    await asyncio.wait_for(entered.wait(), 5)
+
+    run_ids = run_registry.active_for("conv-pre")
+    assert len(run_ids) == 1
+    assert run_registry.cancel(run_ids[0]) is True
+    await asyncio.wait_for(turn, 5)      # outer coroutine survives the cancel
+
+    async with memdb() as db:
+        run = (await db.execute(select(Run).where(Run.id == run_ids[0]))).scalar_one()
+    assert run.status == "cancelled"
+    assert any(f["type"] == "run_cancelled" for f in frames)
+    assert run_registry.get(run_ids[0]) is None
+
+
+def test_to_frame_keeps_run_id_on_stream_start():
+    """The WS layer REBUILDS stream_start frames — without passing run_id through,
+    the client would never receive its cancel handle (silent-drop regression pin)."""
+    frame = ws_arslan._to_frame(
+        {"type": "stream_start", "source": "spawn", "spawn_id": 3, "run_id": 42})
+    assert frame["run_id"] == 42
+    bare = ws_arslan._to_frame({"type": "stream_start", "source": "arslan"})
+    assert "run_id" not in bare

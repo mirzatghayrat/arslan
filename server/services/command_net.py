@@ -44,6 +44,10 @@ async def _run_host(*cmd: str, timeout: float = 10.0) -> str:
             proc.kill()
         raise
     except Exception:  # noqa: BLE001
+        # Timeout (wait_for) lands here too — the abandoned child must be killed,
+        # not left running with its pipe unread (review S6).
+        if proc is not None and proc.returncode is None:
+            proc.kill()
         return ""
 
 
