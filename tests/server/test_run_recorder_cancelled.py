@@ -133,6 +133,55 @@ async def test_precommit_cancel_allows_refinalize(memdb, monkeypatch):
     assert scheduled == []               # cancelled runs are never scored
 
 
+async def test_postcommit_cancel_does_not_refinalize(memdb, monkeypatch):
+    """Final review: a cancel delivered during the POST-commit session close must NOT
+    release the latch — the commit already landed, so a re-entrant
+    finalize(status_override='cancelled') would flip a real terminal status, duplicate
+    RunStep rows, and let the cancel handler persist a duplicate 已中断 partial."""
+    scheduled: list[int] = []
+    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
+    spawn_id = await _seed_spawn(memdb)
+
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="c-postcommit", spawn_id=spawn_id, spawn_name="S",
+        user_message="u")
+    tee = rec.tee(lambda ev: None)
+    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": "S"})
+
+    closes = {"n": 0}
+    real_maker = db_session.AsyncSessionLocal
+
+    def close_cancelling_maker():
+        session = real_maker()
+        real_close = session.close
+
+        async def close_cancelled_once():
+            closes["n"] += 1
+            await real_close()
+            if closes["n"] == 1:
+                raise asyncio.CancelledError
+
+        session.close = close_cancelled_once
+        return session
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", close_cancelling_maker)
+
+    with usage_sink.collecting():
+        with pytest.raises(asyncio.CancelledError):
+            await rec.finalize(summary_message_id=None, full_output="done")
+        # Commit landed before the cancel — the re-entrant call must SHORT-CIRCUIT.
+        await rec.finalize(summary_message_id=None, full_output="",
+                           status_override="cancelled")
+
+    async with memdb() as db:
+        run = (await db.execute(select(Run).where(Run.id == rec.run_id))).scalar_one()
+        steps = (await db.execute(select(RunStep).where(
+            RunStep.run_id == rec.run_id))).scalars().all()
+    assert run.status == "recorded"      # committed terminal status never flips
+    assert len(steps) == 1               # no duplicated step rows
+    assert rec._finalized is True        # latch held — arslan.py's handler keys off this
+
+
 async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypatch):
     """Regression guard: the normal live path is unchanged by the new parameter."""
     scheduled: list[int] = []

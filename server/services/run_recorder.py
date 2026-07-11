@@ -267,13 +267,28 @@ class RunRecorder:
                         msg = await db.get(ArslanMessage, summary_message_id)
                         if msg is not None:
                             msg.run_id = self.run_id
+                # Residual ambiguity accepted (final review): aiosqlite may land the
+                # commit on its worker thread even when THIS await is cancelled
+                # mid-flight — _finalized would then stay False and the pre-commit arm
+                # re-finalizes over an actually-committed row. Setting _finalized at
+                # the commit point makes every deterministic window safe; the
+                # thread-race window is analyzed-not-tested.
                 await db.commit()
+                # Flip HERE, not after the block: the except arm below also fires on a
+                # cancel during the POST-commit session close (__aexit__ awaits) —
+                # releasing _finalizing there must not reopen finalize once the commit
+                # landed; re-entry short-circuits on _finalized. A run cancelled in that
+                # window stays 'recorded' with scoring scheduling skipped — the stuck-run
+                # reaper (run_reaper.reap_stuck_runs, 'recorded' > STUCK_AFTER)
+                # re-enqueues its scoring.
+                self._finalized = True
         except asyncio.CancelledError:
             # Pre-commit cancel: the session __aexit__ rolled everything back —
             # release the latch so the cancel handler's re-finalize is not blocked.
+            # (A post-commit-close cancel lands here too; _finalized already holds, so
+            # clearing _finalizing is then inert.)
             self._finalizing = False
             raise
-        self._finalized = True
         if replay or status_override is not None:
             # replay → paired gate; cancelled/interrupted → never scored. This also skips
             # the evolution_watcher nudge below — harmless, since a cancelled run creates

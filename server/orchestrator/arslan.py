@@ -1652,7 +1652,10 @@ async def _dispatch_spawn(  # noqa: ANN001
                 # from its own teardown via task.cancelled().
                 partial = "".join(chunks)
                 summary_id = None
-                if partial.strip():
+                # recorder._finalized (private, but this function owns the recorder): a
+                # cancel that landed AFTER the commit means the real summary is already
+                # persisted — a 已中断 partial here would be a duplicate.
+                if partial.strip() and not recorder._finalized:
                     summary_id = await memory.add_message(
                         conversation_id, "spawn_summary",
                         f"[{spawn_name}] {task_brief} -> 已中断",
