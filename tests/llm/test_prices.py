@@ -69,10 +69,16 @@ def test_local_tag_on_hosted_or_unknown_provider_is_not_free(provider):
     assert usd("deepseek-r1", 1_000_000, 1_000_000, provider=provider) is None
 
 
-def test_cloud_prefix_on_ollama_is_not_priced_at_cloud_rate():
-    # A local tag that happens to share a cloud prefix is a LOCAL call — cloud
-    # rates never apply; not in LOCAL_PRICES → honest None.
-    assert usd("claude-sonnet-5", 1000, 500, provider="ollama") is None
+def test_cloud_prefix_on_ollama_is_priced_zero_not_cloud_rate():
+    # A tag sharing a cloud prefix but served via the ollama protocol is a LOCAL
+    # call — the protocol has no per-token billing, so $0, never the cloud rate.
+    assert usd("claude-sonnet-5", 1000, 500, provider="ollama") == 0.0
+
+
+def test_any_tag_on_ollama_is_zero():
+    # M3 acceptance catch: the seed-tag allowlist left qwen2.5:0.5b unpriced —
+    # provider-level $0 is the honest rule for the billing-free ollama protocol.
+    assert usd("qwen2.5:0.5b", 2856, 2488, provider="ollama") == 0.0
 
 
 def test_cloud_entries_unaffected_by_provider_arg():

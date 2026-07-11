@@ -50,6 +50,8 @@ PRICES: dict[str, tuple[float, float]] = {
 # clouds (DashScope serves deepseek-r1), so $0 is gated on provider == "ollama"
 # (the sole local provider today; custom/local providers get honest None until
 # the Provider round's dynamic catalog).
+# Kept as documentation of the ollama seed tags; usd() no longer consults it —
+# provider == "ollama" is $0 for any tag (no per-token billing in the protocol).
 LOCAL_PRICES: dict[str, tuple[float, float]] = {
     "llama3.1": (0.0, 0.0),
     "qwen3.5": (0.0, 0.0),
@@ -70,15 +72,19 @@ def usd(
     None model / no prefix match / either token count None → None (never guess).
     Longest-prefix match: "gpt-5.6-terra-2026xx" hits "gpt-5.6-terra", not any
     shorter overlapping prefix.
-    Provider gate (review I1): provider == "ollama" prices against LOCAL_PRICES
-    ONLY (local calls are free, and never billed at cloud rates); every other
+    Provider gate (review I1, refined by the M3 real-machine acceptance): the
+    ollama protocol has NO per-token billing at all, so provider == "ollama" is
+    $0 for ANY model tag — a prefix allowlist would leave e.g. "qwen2.5:0.5b"
+    dishonestly unpriced (the acceptance run caught exactly that). Every other
     provider — including None — prices against the cloud table only, so a hosted
     "deepseek-r1" is honestly unpriced instead of labelled free.
     """
     if model is None or tokens_in is None or tokens_out is None:
         return None
-    # Tables are read at call time (not captured at import) so tests can patch them.
-    table = LOCAL_PRICES if provider == "ollama" else PRICES
+    if provider == "ollama":
+        return 0.0
+    # Table is read at call time (not captured at import) so tests can patch it.
+    table = PRICES
     match: tuple[float, float] | None = None
     match_len = -1
     for prefix, pair in table.items():
