@@ -3,6 +3,8 @@ must never schedule judge scoring (only scoring produces status='scored', and
 replay_set only collects status='scored', so an unscored run can never enter the
 evolution corpus)."""
 
+import asyncio
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -79,6 +81,56 @@ async def test_finalize_is_idempotent(memdb, monkeypatch):
     assert run.status == "recorded"          # second finalize did not flip the status
     assert len(steps) == 1                   # step rows written exactly once
     assert scheduled == [rec.run_id]         # scoring scheduled exactly once
+
+
+async def test_precommit_cancel_allows_refinalize(memdb, monkeypatch):
+    """Review I1 residual: a cancel landing DURING finalize's pre-commit awaits rolls
+    the write back — the latch must clear so the cancel handler's re-entrant
+    finalize(status_override='cancelled') runs against the rolled-back state instead
+    of short-circuiting (which would rot the row at 'recording' AFTER a run_cancelled
+    frame already went out)."""
+    scheduled: list[int] = []
+    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
+    spawn_id = await _seed_spawn(memdb)
+
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="c-precommit", spawn_id=spawn_id, spawn_name="S",
+        user_message="u")
+    tee = rec.tee(lambda ev: None)
+    tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": "S"})
+
+    calls = {"n": 0}
+    real_maker = db_session.AsyncSessionLocal
+
+    def cancelling_maker():
+        session = real_maker()
+        real_commit = session.commit
+
+        async def commit_cancelled_once():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise asyncio.CancelledError
+            await real_commit()
+
+        session.commit = commit_cancelled_once
+        return session
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", cancelling_maker)
+
+    with usage_sink.collecting():
+        with pytest.raises(asyncio.CancelledError):
+            await rec.finalize(summary_message_id=None, full_output="done")
+        # The cancel handler's second finalize must NOT short-circuit.
+        await rec.finalize(summary_message_id=None, full_output="",
+                           status_override="cancelled")
+
+    async with memdb() as db:
+        run = (await db.execute(select(Run).where(Run.id == rec.run_id))).scalar_one()
+        steps = (await db.execute(select(RunStep).where(
+            RunStep.run_id == rec.run_id))).scalars().all()
+    assert run.status == "cancelled"     # re-finalize landed, row is not rotting
+    assert len(steps) == 1               # first attempt rolled back — no duplicates
+    assert scheduled == []               # cancelled runs are never scored
 
 
 async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypatch):

@@ -1693,11 +1693,13 @@ async def _dispatch_spawn(  # noqa: ANN001
         # auto-continue, a still-digest-ending message is kept as-is (its 回复'继续' tail is
         # then honest — the user can continue manually).
         # (Recursion stays INSIDE _run_turn: each recursive _dispatch_spawn registers its
-        # OWN run+task, so every round is cancellable under its own run_id. LOAD-BEARING:
-        # this recursion must remain _run_turn's LAST statement — a user cancel of the
-        # DELEGATED child is swallowed by the child's own awaiter, so the parent _run_turn
-        # resumes normally right here; any statement placed after it would run in that
-        # post-child-cancel state.)
+        # OWN run+task, so every round is cancellable under its own run_id. Cancel routing:
+        # a PARENT-run_id cancel delegates into the child task and PROPAGATES back out at
+        # the child's awaiter — cancelling()>0 on THIS task — so the parent does NOT
+        # resume; only a direct CHILD-run_id cancel is swallowed by the child's awaiter,
+        # and then the parent _run_turn resumes normally right here. LOAD-BEARING: the
+        # recursion must remain _run_turn's LAST statement — any statement placed after
+        # it would run in that post-child-cancel state.)
         if _auto_continues > 0 and _has_findings_digest(out.get("full_output") or ""):
             emit({"type": "auto_continue", "spawn_id": spawn_id, "spawn_name": spawn_name,
                   "remaining": _auto_continues - 1})

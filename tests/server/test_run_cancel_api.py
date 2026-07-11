@@ -14,10 +14,14 @@ from server.services import run_registry
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
-    """Registry is process-global — clear around each test to avoid leakage."""
+    """Registry is process-global — clear around each test to avoid leakage.
+    Leftover tasks are cancelled first: a bare clear() would strand a pending
+    30s sleep past the test (and past its event loop)."""
     run_registry._tasks.clear()
     run_registry._by_conversation.clear()
     yield
+    for t in run_registry._tasks.values():
+        t.cancel()
     run_registry._tasks.clear()
     run_registry._by_conversation.clear()
 
@@ -35,6 +39,7 @@ async def test_cancel_endpoint_cancels_live_run(client):
         with pytest.raises(asyncio.CancelledError):
             await task
     finally:
+        task.cancel()  # an assertion failure above must not strand the 30s sleep
         run_registry.unregister(4242, "conv-x")
 
 
@@ -59,3 +64,19 @@ async def test_cancel_finished_run_409s(client):
     detail = resp.json()["detail"]
     assert "not cancellable" in detail
     assert "scored" in detail
+
+
+async def test_cancel_zombie_recording_run_409s(client):
+    """A 'recording' row with NO registry entry (its process died; the boot sweep has
+    not run yet) is not cancellable — 409 with the real status, never a fake 202."""
+    async with client.db_maker() as db:
+        run = Run(conversation_id="c-z", spawn_name="Mermer", user_message="x",
+                  status="recording", task_tokens=0)
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+        run_id = run.id
+
+    resp = await client.post(f"/api/v1/runs/{run_id}/cancel")
+    assert resp.status_code == 409
+    assert "recording" in resp.json()["detail"]
