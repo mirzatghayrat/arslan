@@ -9,7 +9,10 @@ confirm/cancel frame before executing (or declining).
 Harness modeled on tests/server/test_ws_arslan.py: fresh sqlite DB per test,
 stubbed adapters, TestClient websocket.
 """
+import contextlib
+
 import anyio
+import anyio.from_thread
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -173,6 +176,19 @@ def _collect_until(ws, want_type: str, max_frames: int = 40) -> list[dict]:
         if f.get("type") == want_type:
             break
     return frames
+
+
+@contextlib.contextmanager
+def _shared_loop(client: TestClient):
+    """One blocking portal shared by every WS session — required whenever a test
+    opens TWO sockets, so both run on a single app event loop (asyncio queues in
+    the registry fan-out are loop-bound; see test_ws_reattach.py docstring)."""
+    with anyio.from_thread.start_blocking_portal(backend="asyncio") as portal:
+        client.portal = portal
+        try:
+            yield portal
+        finally:
+            client.portal = None
 
 
 # --------------------------------------------------------------------------- #
@@ -344,3 +360,42 @@ def test_remember_low_does_not_auto_approve_high(app_client, monkeypatch):
         assert any(f.get("type") == "tool_result" for f in after2)
 
     assert len(fake_exec.calls) == 2
+
+
+def test_confirm_card_private_to_originating_socket(app_client, monkeypatch):
+    """The propose_run_command card must reach ONLY the socket that triggered it.
+    Only the originating connection's confirm_command receive-router can answer
+    this call_id — a card fanned out to a second tab is unanswerable there (the
+    other tab's reply is just a stale-call_id BUSY). The second socket must see
+    the shared run frames (tool_result, stream_end) but NO propose_run_command."""
+    _enable_shell()
+    _stub_answer_route(monkeypatch)
+    _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
+    fake_exec = _stub_run_command_executor(monkeypatch)
+
+    with _shared_loop(app_client):
+        with app_client.websocket_connect("/ws/arslan/main") as ws1, \
+             app_client.websocket_connect("/ws/arslan/main") as ws2:
+            for ws in (ws1, ws2):
+                assert ws.receive_json()["type"] == "history"
+                assert ws.receive_json()["type"] == "roster_update"
+
+            ws1.send_json({"type": "user_message", "content": "check the repo"})
+
+            # The originating socket gets the card…
+            frames1 = _collect_until(ws1, "propose_run_command")
+            propose = frames1[-1]
+            assert propose["type"] == "propose_run_command"
+            ws1.send_json({"type": "confirm_run_command", "call_id": propose["call_id"]})
+            after1 = _collect_until(ws1, "stream_end")
+            assert any(f.get("type") == "tool_result" for f in after1)
+
+            # …the second tab gets the broadcast run frames but NEVER the card.
+            frames2 = _collect_until(ws2, "stream_end")
+            types2 = [f["type"] for f in frames2]
+            assert "propose_run_command" not in types2, (
+                f"confirm card leaked to a non-originating socket: {types2}"
+            )
+            assert "tool_result" in types2  # broadcast frames still fan out
+
+    assert len(fake_exec.calls) == 1

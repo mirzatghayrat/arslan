@@ -211,7 +211,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         if policy == "ask_risky" and risk == "LOW":
             return True
         call_id = uuid.uuid4().hex
-        emit(protocol.propose_run_command(call_id, command, argv, reason=f"risk: {risk}"))
+        # Private card, sent directly to THIS socket — deliberately NOT emit():
+        # only this connection's receive-router below can answer this call_id,
+        # so fanning the card out would paint an unanswerable card on every
+        # other tab (same deliberate private-send pattern as the storage-intent
+        # question further down). It is also deliberately un-journaled — the
+        # card rides raw ws.send_json, never a recorder tee, so a reattaching
+        # socket cannot replay a dead interactive card.
+        await ws.send_json(
+            protocol.propose_run_command(call_id, command, argv, reason=f"risk: {risk}")
+        )
         # Own ws.receive HERE, only while this one command is pending. The plain-message
         # orchestration coro that led here is blocked awaiting this call, so the outer
         # `while True: ws.receive_json()` loop is not receiving — there is exactly one

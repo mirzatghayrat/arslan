@@ -113,5 +113,13 @@ def journal_snapshots(conversation_id: str) -> list[tuple[int, list[dict]]]:
         recorder = _recorders.get(run_id)
         if recorder is None:
             continue
+        # Skip finalized runs: a finalized run's output is already in history
+        # (its summary message persisted). During an auto-continue chain the
+        # PARENT run stays registered (until the outer finally) after it has
+        # already finalized and tee'd stream_end — replaying its journal would
+        # duplicate the summary item (same message_id → duplicate React key)
+        # on every reconnect for the whole of round 2+.
+        if getattr(recorder, "_finalized", False):
+            continue
         out.append((run_id, [ev for (_ts, ev) in recorder._events]))
     return out

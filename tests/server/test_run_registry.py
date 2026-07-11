@@ -65,9 +65,13 @@ async def test_cancel_finished_task_returns_false():
 
 
 class _FakeRecorder:
-    def __init__(self, events):
+    def __init__(self, events, finalized=None):
         # RunRecorder journal shape: list of (datetime, ev) tuples (run_recorder.py tee)
         self._events = events
+        # finalized=None leaves the attribute ABSENT (older/foreign recorder shape);
+        # journal_snapshots must treat that the same as _finalized=False.
+        if finalized is not None:
+            self._finalized = finalized
 
 
 def test_attach_detach_lifecycle():
@@ -173,6 +177,42 @@ async def test_journal_snapshots_run_id_order_copies_and_skips_missing_recorder(
 
     # other conversations: nothing active → empty list
     assert run_registry.journal_snapshots("conv-unknown") == []
+
+    for t in (t1, t2, t3):
+        t.cancel()
+
+
+@pytest.mark.asyncio
+async def test_journal_snapshots_skip_finalized_runs():
+    """A finalized run must NOT be replayed: its summary already persisted to
+    history, so replaying its journal duplicates the summary item (same
+    message_id → duplicate React key). This happens for real during an
+    auto-continue chain, where the PARENT run stays registered after it
+    finalized. _finalized=False or attribute absent → still included."""
+    import datetime as _dt
+
+    async def _work():
+        await asyncio.sleep(30)
+
+    now = _dt.datetime.utcnow()
+    rec_finalized = _FakeRecorder(
+        [(now, {"type": "stream_end", "message_id": 5})], finalized=True
+    )
+    rec_live = _FakeRecorder([(now, {"type": "stream_start"})], finalized=False)
+    rec_no_attr = _FakeRecorder([(now, {"type": "stream_chunk"})])  # attr absent
+
+    t1 = asyncio.create_task(_work())
+    t2 = asyncio.create_task(_work())
+    t3 = asyncio.create_task(_work())
+    run_registry.register(1, "conv-fin", t1, recorder=rec_finalized)
+    run_registry.register(2, "conv-fin", t2, recorder=rec_live)
+    run_registry.register(3, "conv-fin", t3, recorder=rec_no_attr)
+
+    snaps = run_registry.journal_snapshots("conv-fin")
+    assert snaps == [
+        (2, [{"type": "stream_start"}]),
+        (3, [{"type": "stream_chunk"}]),
+    ]  # run 1 (finalized) skipped; live + attr-absent included
 
     for t in (t1, t2, t3):
         t.cancel()
