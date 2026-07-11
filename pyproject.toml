@@ -7,7 +7,7 @@ name = "arslan"
 version = "0.1.0"
 description = "An open-source Meta-Agent that helps non-technical users build domain-specific AI agents through conversation."
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
     { name = "Arslan Team" },
