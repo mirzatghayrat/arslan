@@ -311,6 +311,23 @@ async def test_put_validation_and_404(client):
     assert r.status_code == 404
 
 
+async def test_put_explicit_null_spawn_id_rejected(client):
+    """M4 final review I-2: an explicit spawn_id: null in the patch must 422 —
+    silently nulling the FK would orphan the task (the loop can't dispatch it).
+    Omitting spawn_id in a partial PUT stays fine."""
+    spawn_id = await _seed_spawn()
+    tid = await _seed_task(spawn_id)
+    r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"spawn_id": None},
+                         headers=AUTH)
+    assert r.status_code == 422
+    assert "不可置空" in r.text
+    # partial PUT without spawn_id: unchanged behaviour
+    r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"name": "改名"},
+                         headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["spawn_id"] == spawn_id
+
+
 # ---------------------------------------------------------------------------
 # pause / resume
 # ---------------------------------------------------------------------------

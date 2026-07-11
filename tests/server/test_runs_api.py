@@ -30,6 +30,28 @@ async def test_get_run_returns_steps_and_eval(client):
     assert body["evaluations"][0]["dimension"] == "routing"
 
 
+async def test_get_run_carries_final_output(client):
+    """M4 final review I-1: a scheduled run's deliverable is read via the
+    Diagnostics → history → RunReplay chain, so the detail endpoint must expose
+    final_output (null for plain live runs — they never persist it)."""
+    async with client.db_maker() as db:
+        sched = Run(conversation_id="scheduled-1", spawn_name="M", user_message="晚报",
+                    status="recorded", task_tokens=0, kind="scheduled",
+                    final_output="完整交付物全文")
+        live = Run(conversation_id="c1", spawn_name="M", user_message="x",
+                   status="recorded", task_tokens=0)
+        db.add_all([sched, live])
+        await db.commit()
+        await db.refresh(sched)
+        await db.refresh(live)
+        sched_id, live_id = sched.id, live.id
+
+    body = (await client.get(f"/api/v1/runs/{sched_id}")).json()
+    assert body["run"]["final_output"] == "完整交付物全文"
+    body = (await client.get(f"/api/v1/runs/{live_id}")).json()
+    assert body["run"]["final_output"] is None
+
+
 async def test_get_missing_run_404(client):
     resp = await client.get("/api/v1/runs/9999")
     assert resp.status_code == 404

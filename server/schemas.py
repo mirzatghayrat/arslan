@@ -353,6 +353,10 @@ class RunOut(BaseModel):
     system_prompt: str | None = None
     injected_kb: str | None = None
     injected_kb_sources: list | None = None
+    # M4 final review I-1: full deliverable text — persisted for scheduled (and
+    # replay) runs whose conversation is unreachable from the sidebar; null for
+    # plain live runs.
+    final_output: str | None = None
 
 
 class RunDetailOut(BaseModel):

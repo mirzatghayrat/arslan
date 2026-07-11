@@ -76,6 +76,38 @@ async def test_finalize_schedules_scoring(memdb, monkeypatch):
     assert called == [rec.run_id]
 
 
+async def test_finalize_persists_final_output_for_scheduled_kind(memdb):
+    """M4 final review I-1: a scheduled run's deliverable lands in a dedicated
+    conversation the sidebar can't reach, so the run row must carry the full
+    text for RunReplay."""
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="scheduled-1", spawn_id=None, spawn_name="M",
+        user_message="做每日晚报", route_ms=0, kind="scheduled")
+    rec.tee(lambda e: None)({"type": "routing", "spawn_id": 1, "spawn_name": "M"})
+    with usage_sink.collecting():
+        await rec.finalize(summary_message_id=None, full_output="完整交付物全文")
+    async with memdb() as db:
+        run = await db.get(Run, rec.run_id)
+    assert run.kind == "scheduled"
+    assert run.status == "recorded"
+    assert run.final_output == "完整交付物全文"
+
+
+async def test_finalize_keeps_final_output_null_for_live_kind(memdb):
+    """Storage discipline (I-1 counterpart): plain live runs keep their output in
+    the conversation — the run row must NOT duplicate it."""
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="c1", spawn_id=None, spawn_name="M",
+        user_message="x", route_ms=0)
+    rec.tee(lambda e: None)({"type": "routing", "spawn_id": 1, "spawn_name": "M"})
+    with usage_sink.collecting():
+        await rec.finalize(summary_message_id=None, full_output="live output")
+    async with memdb() as db:
+        run = await db.get(Run, rec.run_id)
+    assert run.kind == "live"
+    assert run.final_output is None
+
+
 async def test_unpaired_tool_call_is_flushed(memdb):
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c1", spawn_id=None, spawn_name="Mermer",

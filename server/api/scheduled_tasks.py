@@ -160,7 +160,11 @@ async def update_scheduled_task(task_id: int,
     async with db_session.AsyncSessionLocal() as db:
         task = await _load_task(db, task_id)
         data = body.model_dump(exclude_unset=True)
-        if "spawn_id" in data and data["spawn_id"] is not None:
+        if "spawn_id" in data:
+            # M4 final review I-2: an explicit spawn_id: null would silently
+            # orphan the task (the loop can't dispatch without a spawn) — reject.
+            if data["spawn_id"] is None:
+                raise HTTPException(status_code=422, detail="spawn_id 不可置空")
             await _require_spawn(db, data["spawn_id"])
         # Validate the EFFECTIVE schedule (current row + patch), then recompute
         # next_due_at only when the schedule actually changed.

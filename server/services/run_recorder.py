@@ -253,7 +253,12 @@ class RunRecorder:
                     run.kind = "replay" if replay else (run.kind or "live")
                     run.epoch = 1
                     run.continuation = self.continuation
-                    if replay:
+                    # M4 final review I-1: scheduled deliverables land in a
+                    # sidebar-unreachable dedicated conversation (scheduled-{id}),
+                    # so the run row carries the full text for RunReplay. Plain
+                    # live runs still do NOT persist it (storage discipline —
+                    # their output lives in the reachable conversation).
+                    if replay or (run.kind == "scheduled"):
                         run.final_output = full_output
                     run.model = model
                     run.provider = provider

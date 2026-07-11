@@ -419,5 +419,6 @@ export function toUiRun(dto: RunDetailDto): UiRun {
     injectedKb: run.injected_kb ?? undefined,
     injectedKbSources: run.injected_kb_sources ?? undefined,
     spawnId: run.spawn_id,
+    finalOutput: run.final_output ?? undefined,
   };
 }

@@ -563,6 +563,10 @@ export interface RunDto {
   system_prompt: string | null;
   injected_kb: string | null;
   injected_kb_sources: string[] | null;
+  /** M4 final review I-1: full deliverable text — present for scheduled (and
+   * replay) runs whose conversation is unreachable from the sidebar; null for
+   * plain live runs. */
+  final_output: string | null;
 }
 
 export interface RunDetailDto {

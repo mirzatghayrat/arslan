@@ -179,6 +179,9 @@ export interface UiRun {
   injectedKbSources?: string[];
   /** The spawn this run belongs to (for the history sparkline). Null for orchestrator-level runs. */
   spawnId?: number | null;
+  /** Full deliverable text (M4 I-1) — present for scheduled/replay runs whose
+   * conversation is unreachable from the sidebar; absent for plain live runs. */
+  finalOutput?: string | null;
 }
 
 export interface AppSettings {
