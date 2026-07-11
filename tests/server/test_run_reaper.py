@@ -103,16 +103,44 @@ async def test_rescore_404_on_unknown_run(client):
     assert resp.status_code == 404
 
 
-async def test_rescore_enqueues_known_run(client, monkeypatch):
-    enqueued = _capture_scheduling(monkeypatch)
+async def _seed_run_via_client(client, *, status: str) -> int:
     async with client.db_maker() as db:
         run = Run(conversation_id="c1", spawn_name="Mermer", user_message="m",
-                  status="score_failed", task_tokens=0)
+                  status=status, task_tokens=0)
         db.add(run)
         await db.commit()
         await db.refresh(run)
-        run_id = run.id
+        return run.id
+
+
+async def test_rescore_enqueues_known_run(client, monkeypatch):
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="score_failed")
     resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
     assert resp.status_code == 200
     assert resp.json() == {"enqueued": True}
     assert enqueued == [run_id]
+
+
+async def test_rescore_scored_run_still_accepted(client, monkeypatch):
+    """Regression for the S3-M1 terminal-status guard: 'scored' stays rescorable."""
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="scored")
+    resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert resp.status_code == 200
+    assert enqueued == [run_id]
+
+
+@pytest.mark.parametrize("status", ["cancelled", "interrupted"])
+async def test_rescore_terminal_unscored_run_409s(client, monkeypatch, status):
+    """S3-M1 invariant: cancelled/interrupted runs are never scored and never
+    corpus-eligible — rescoring one would judge partial output and flip it to
+    'scored', so the endpoint must refuse."""
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status=status)
+    resp = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert "not rescorable" in detail
+    assert status in detail
+    assert enqueued == []

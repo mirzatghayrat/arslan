@@ -497,6 +497,9 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     Auth: covered by the router-level require_auth dependency.
     E2: rejects kind != 'live' with 409 — replay runs end in terminal status 'replayed'
     and are never judged, so re-enqueueing one is a client error, not a no-op.
+    S3-M1: also rejects non-rescorable statuses with 409 — cancelled/interrupted runs
+    are terminal and never scored; rescoring one would judge partial output and flip
+    it to 'scored' (corpus-eligible), breaching the milestone invariant.
     """
     from server.services import run_recorder
 
@@ -505,6 +508,9 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
         raise HTTPException(status_code=404, detail="run not found")
     if run.kind != "live":
         raise HTTPException(status_code=409, detail="only live runs can be rescored")
+    if run.status not in ("recorded", "scored", "score_failed"):
+        raise HTTPException(status_code=409,
+                            detail=f"run is not rescorable (status={run.status})")
     run_recorder.schedule_scoring(run_id)
     return {"enqueued": True}
 

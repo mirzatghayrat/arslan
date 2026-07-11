@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import RunReplay from "../components/RunReplay";
+import RunReplay, { isTerminalRunStatus } from "../components/RunReplay";
 import type { RunDetailDto } from "../api/client.types";
 
 const scored: RunDetailDto = {
@@ -299,6 +299,33 @@ describe("RunReplay", () => {
     const failedBar = bars[1] as HTMLElement;
     expect(failedBar.style.background).toContain("var(--danger)");
   });
+
+  // S3-M1: cancelled/interrupted are terminal — the panel must not poll them forever.
+  it("isTerminalRunStatus: terminal statuses stop polling, in-flight ones do not", () => {
+    for (const s of ["scored", "score_failed", "cancelled", "interrupted", "replayed"]) {
+      expect(isTerminalRunStatus(s)).toBe(true);
+    }
+    for (const s of ["recording", "recorded"]) {
+      expect(isTerminalRunStatus(s)).toBe(false);
+    }
+  });
+
+  for (const status of ["cancelled", "interrupted"] as const) {
+    it(`schedules no further poll for a ${status} run`, async () => {
+      const terminal: RunDetailDto = {
+        ...scored,
+        run: { ...scored.run, status, overall_score: null, overall_badge: null },
+        evaluations: [],
+      };
+      (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(terminal);
+      render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
+      await screen.findByText("编排回放");
+      // Real timers, mirroring the polling test above: at pollMs=10 a leaked
+      // timer would refetch several times within this window.
+      await new Promise((r) => setTimeout(r, 60));
+      expect(api.getRun).toHaveBeenCalledTimes(1);
+    });
+  }
 
   it("degrades gracefully: no spawnId → no sparkline, no kb sources → no chips, summary failure → no radar", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue({

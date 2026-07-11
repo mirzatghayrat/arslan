@@ -43,7 +43,8 @@ async def mark_interrupted_runs() -> int:
     """S3-M1 boot sweep: a 'recording' row at boot is by definition orphaned —
     runs never survive a process restart (the run registry is process-local), so
     mark them 'interrupted' instead of letting them rot as recording-forever
-    zombies. Live runs only (a replay row is the gate's problem)."""
+    zombies. Live runs only (a replay row is the gate's problem).
+    Assumes exclusive DB ownership (single process — same assumption as run_registry)."""
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
             select(Run).where(Run.status == "recording", Run.kind == "live"))
