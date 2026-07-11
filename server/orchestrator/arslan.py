@@ -1718,7 +1718,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     # (finalize+persist+frame) — swallow it so the WS turn survives; OUR OWN teardown
     # (WS disconnect/shutdown) must propagate the CancelledError contract.
     task = asyncio.create_task(_run_turn())
-    run_registry.register(recorder.run_id, conversation_id, task)
+    run_registry.register(recorder.run_id, conversation_id, task, recorder=recorder)
     try:
         await task
     except asyncio.CancelledError:
