@@ -387,6 +387,10 @@ def create_app() -> FastAPI:
 
     app.include_router(usage_api.router, prefix="/api/v1")
 
+    from server.api import scheduled_tasks as scheduled_tasks_api
+
+    app.include_router(scheduled_tasks_api.router, prefix="/api/v1")
+
     from server.api import knowledge as knowledge_api
 
     app.include_router(knowledge_api.router, prefix="/api/v1")

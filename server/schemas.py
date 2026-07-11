@@ -1,9 +1,10 @@
 """Pydantic DTOs for request bodies and responses."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class SettingsIn(BaseModel):
@@ -753,3 +754,71 @@ class UsageSummaryOut(BaseModel):
     # Call sites that do NOT feed the ledger yet (spec §S3-D 未计入清单) — the
     # summary never pretends to be complete.
     not_covered: list[str] = []
+
+
+# --- S3-M4 scheduled tasks (Task 3) -----------------------------------------
+# Scheduling rules (interval floor, cron grammar, enabled cap, next-due math)
+# live in server/services/scheduler.py — these DTOs only shape the payloads.
+
+
+class _ScheduledTaskFieldsIn(BaseModel):
+    """Shared field hygiene: name/prompt are stripped and must be non-blank."""
+
+    @field_validator("name", "prompt", check_fields=False)
+    @classmethod
+    def _non_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("不能为空")
+        return v
+
+
+class ScheduledTaskCreateIn(_ScheduledTaskFieldsIn):
+    name: str
+    prompt: str
+    spawn_id: int
+    schedule_kind: Literal["interval", "cron"]
+    interval_s: int | None = None     # interval kind; >= scheduler.MIN_INTERVAL_S
+    cron: str | None = None           # cron kind; 5-field expression
+    conversation_id: str | None = None
+
+
+class ScheduledTaskUpdateIn(_ScheduledTaskFieldsIn):
+    name: str | None = None
+    prompt: str | None = None
+    spawn_id: int | None = None
+    schedule_kind: Literal["interval", "cron"] | None = None
+    interval_s: int | None = None
+    cron: str | None = None
+    conversation_id: str | None = None
+
+
+class ScheduledTaskOut(BaseModel):
+    id: int
+    name: str
+    prompt: str
+    spawn_id: int | None = None
+    spawn_name: str | None = None     # joined; None when the spawn was deleted
+    conversation_id: str | None = None
+    schedule_kind: str
+    interval_s: int | None = None
+    cron: str | None = None
+    enabled: bool
+    last_fired_at: datetime | None = None
+    next_due_at: datetime | None = None
+    consecutive_failures: int = 0
+    paused_reason: str | None = None  # non-null ONLY on auto-pause (manual pause: None)
+    created_at: datetime | None = None
+    # outcome of the latest scheduled_task_run; None = no runs yet OR in flight
+    last_outcome: str | None = None
+
+
+class ScheduledTaskRunOut(BaseModel):
+    id: int
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    outcome: str | None = None        # "ok" | "error" | "skipped_overlap"; None = in flight
+    run_id: int | None = None         # runs.id — links to RunReplay
+    reason: str | None = None
