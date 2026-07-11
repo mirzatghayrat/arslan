@@ -12,8 +12,10 @@ from server import auth, config, token_bootstrap
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, CatalogEntryOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
-from server.services import provider_config_service, settings_service
+from server.schemas import AccessTokenOut, CatalogEntryOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+# model_catalog is Settings-only: this module is its ONLY allowed import site
+# outside its own tests (Provider-round iron rule — never from the chat path).
+from server.services import model_catalog, provider_config_service, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
 
@@ -158,6 +160,24 @@ async def delete_provider_config(config_id: int, session: AsyncSession = Depends
     if not deleted:
         raise HTTPException(status_code=400, detail="cannot delete the only provider config")
     return {"ok": True}
+
+
+@router.get("/settings/provider-configs/{config_id}/models", response_model=ModelListOut)
+async def list_provider_config_models(
+    config_id: int, refresh: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> ModelListOut:
+    """Dynamic model list for one saved provider config (Provider-P2).
+
+    Cache-first (5min fresh / 24h stale-ok, local hosts refetch eagerly);
+    ``?refresh=true`` forces a live fetch. Never 5xx on network failure —
+    degrades to the stale cache, then the static seed (source="static").
+    """
+    try:
+        result = await model_catalog.get_models(session, config_id, refresh=refresh)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="provider config not found") from None
+    return ModelListOut(**result)
 
 
 @router.post("/settings/test-llm", response_model=TestLLMOut)

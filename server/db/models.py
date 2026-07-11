@@ -316,7 +316,28 @@ class ProviderConfig(Base):
     base_url = Column(String(255), nullable=True)
     api_key = Column(Text, nullable=False)           # encrypted
     is_primary = Column(Boolean, nullable=False, default=False)
+    last_health = Column(String(20), nullable=True)      # P4: ok|failing|NULL=never checked
+    last_health_at = Column(DateTime, nullable=True)     # P4: when the last probe ran
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ModelCatalogCache(Base):
+    """P2: cached dynamic model list per provider config (Settings-only surface).
+
+    ``models`` is a JSON array string of ModelInfo dicts; ``fingerprint`` binds the
+    cache to the exact (provider, base_url, api_key) it was fetched with so editing
+    the config invalidates it. Never read from the chat path (round iron rule).
+    """
+
+    __tablename__ = "model_catalog_cache"
+
+    id = Column(Integer, primary_key=True)
+    provider_config_id = Column(
+        Integer, ForeignKey("provider_configs.id", ondelete="CASCADE"),
+        nullable=False, unique=True)
+    fingerprint = Column(String(40), nullable=False)
+    fetched_at = Column(DateTime, nullable=False)
+    models = Column(Text, nullable=False)
 
 
 class Run(Base):

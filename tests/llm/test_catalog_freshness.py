@@ -59,7 +59,10 @@ def test_seed_contains_no_dead_or_dying_model_ids():
 def test_every_preset_default_model_is_in_its_catalog_list():
     # catalog<->presets alignment was previously enforced only by comment convention
     # (catalog.py:47); make the default-model half of it executable.
+    # B5: an EMPTY default_model is exempt (ollama ships no seed — dynamic list only).
     for key, p in {**PRESETS, **NATIVE}.items():
+        if not p["default_model"]:
+            continue
         assert p["default_model"] in models_for(key), (
             f"{key}: default_model {p['default_model']!r} not in catalog models {models_for(key)}"
         )

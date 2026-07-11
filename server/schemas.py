@@ -302,6 +302,31 @@ class CatalogEntryOut(BaseModel):
     languages: dict[str, int]
 
 
+class ModelInfoOut(BaseModel):
+    """One model in GET /settings/provider-configs/{id}/models (Provider-P2)."""
+
+    id: str
+    display_name: str | None = None
+    context_window: int | None = None
+    capabilities: list[str] = []
+    source: str = "api"
+
+
+class ModelListOut(BaseModel):
+    """Response of GET /settings/provider-configs/{id}/models (Provider-P2).
+
+    ``stale`` means the list did not come from a just-now successful fetch;
+    ``source`` is "static" when even the cache was empty and the seed catalog
+    served as fallback. ``error`` carries the fetch failure, if any.
+    """
+
+    models: list[ModelInfoOut]
+    fetched_at: str | None = None
+    stale: bool = False
+    error: str | None = None
+    source: str = "api"
+
+
 class TitleIn(BaseModel):
     """Request body for POST /orchestrator/title."""
 

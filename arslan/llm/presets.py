@@ -77,7 +77,11 @@ PRESETS: dict[str, dict[str, str]] = {
         "label": "Ollama (本地)",
         "provider": "openai",
         "base_url": "http://localhost:11434/v1",
-        "default_model": "llama3.1",
+        # B5: no static default — the dynamic list (/api/tags) is king; the UI
+        # shows "not detected" when no local daemon answers. A blank model on a
+        # saved ollama config intentionally raises at build_adapter (user must
+        # pick a model that is actually pulled).
+        "default_model": "",
     },
 }
 

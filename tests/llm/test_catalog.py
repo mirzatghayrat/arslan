@@ -9,7 +9,10 @@ def test_catalog_covers_every_provider():
 
 def test_every_entry_has_models_capabilities_languages():
     for key, entry in catalog.CATALOG.items():
-        assert entry["models"], f"{key} has no models"
+        # B5: ollama ships NO seed models — the dynamic list (/api/tags) is the
+        # only honest source; every cloud provider still needs a static fallback.
+        if key != "ollama":
+            assert entry["models"], f"{key} has no models"
         for dim in catalog.CAPABILITY_DIMENSIONS:
             assert 0 <= entry["capabilities"][dim] <= 10, f"{key}.{dim} out of range"
         assert entry["languages"], f"{key} has no languages map"

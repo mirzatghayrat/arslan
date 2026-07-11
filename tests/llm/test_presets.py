@@ -40,8 +40,20 @@ def test_every_preset_is_well_formed(name):
     p = PRESETS[name]
     assert p["provider"] == "openai"  # all Tier-0 entries go through the OpenAI-compatible path
     assert p["base_url"].startswith(("http://", "https://"))
-    assert isinstance(p["default_model"], str) and p["default_model"]
+    assert isinstance(p["default_model"], str)
+    if name != "ollama":  # B5: ollama ships no seed default — dynamic list is king
+        assert p["default_model"]
     assert p.get("label")
+
+
+def test_ollama_seed_is_fully_dynamic():
+    """Provider spec B5: ollama has no static default model and no seed model list —
+    the dynamic catalog (/api/tags) is the only source; the UI shows "not detected"
+    when no daemon answers."""
+    from arslan.llm.catalog import models_for
+
+    assert PRESETS["ollama"]["default_model"] == ""
+    assert models_for("ollama") == []
 
 
 # ---- provider_options: the unified dropdown list (presets + native) -------
@@ -59,8 +71,11 @@ def test_provider_options_have_required_display_fields():
     for o in provider_options():
         assert o["key"]
         assert o["label"]
-        # every option carries a model default the UI can prefill
-        assert isinstance(o["default_model"], str) and o["default_model"]
+        # every option carries a model default the UI can prefill — except ollama
+        # (B5: no static seed; the dynamic list is the only source)
+        assert isinstance(o["default_model"], str)
+        if o["key"] != "ollama":
+            assert o["default_model"]
         assert "base_url" in o  # native entries may be "" (SDK default)
         assert isinstance(o["native"], bool)
 
