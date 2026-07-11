@@ -197,7 +197,8 @@ export type ServerMessage =
   | { type: "progress"; step: number; total: number; node_id: string }
   | { type: "build_complete"; spawn_id: number; spawn_name: string }
   | { type: "history"; messages: { message_id: number; role: string; content: string }[] }
-  | { type: "stream_start"; message_id: number }
+  // run_id (S3-M1): present only on recorded runs — the cancel target for POST /runs/{id}/cancel.
+  | { type: "stream_start"; message_id: number; run_id?: number }
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
@@ -291,6 +292,9 @@ export interface ArslanThreadItem {
   isProposal?: boolean;
   /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
   verdict?: string;
+  /** S3-M1: true when this item is the partial output of a cancelled run
+   *  (finalized from the live bubble by a run_cancelled frame). */
+  cancelled?: boolean;
   /** Original deliverable message id this item was refined from (deliverable_finalized). */
   refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
@@ -321,8 +325,13 @@ export type ArslanServerMessage =
   | { type: "proposal"; spawn_id: number; spawn_name: string | null }
   | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
   | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
-  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null }
+  // run_id (S3-M1): present only on recorded (spawn) runs — the cancel target for
+  // POST /runs/{id}/cancel. Omitted on unrecorded streams.
+  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number }
   | { type: "stream_chunk"; content: string }
+  // S3-M1: the server cancelled this run mid-flight. message_id is present when a
+  // partial spawn_summary (已中断 marker) was persisted server-side.
+  | { type: "run_cancelled"; run_id: number; message_id?: number }
   // stream_end may carry an HTML deliverable packaged by the backend spawn-output
   // exit (HX-2): {kind:"html", filename, title, bytes, complete, content}. It rides
   // the SAME frame the store turns into the chat item. 🔒 Backend only.
