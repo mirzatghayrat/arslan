@@ -89,16 +89,22 @@ def test_history_rows_carry_run_id(app_client):
     ALWAYS emitted; its value is None when the message is not linked to a run."""
     from server.db.models import ArslanMessage, Run
 
-    async def _seed_history():
+    async def _seed_history() -> int:
+        # No hardcoded PK / spawn FK: after ~1900 earlier tests the autoincrement
+        # sequence (or fixture spawn state) collides with fixed ids in the full
+        # suite — let the DB assign the Run id and link the message to it.
         async with db_session.AsyncSessionLocal() as s:
-            s.add(Run(id=555, conversation_id="histconv", spawn_id=7,
-                      spawn_name="beauty-guru", user_message="analyze"))
+            run = Run(conversation_id="histconv", spawn_name="beauty-guru",
+                      user_message="analyze")
+            s.add(run)
+            await s.flush()
             s.add(ArslanMessage(conversation_id="histconv", role="user", content="analyze"))
             s.add(ArslanMessage(conversation_id="histconv", role="spawn_summary",
-                                content="result", spawn_id=7, run_id=555))
+                                content="result", run_id=run.id))
             await s.commit()
+            return run.id
 
-    anyio.run(_seed_history)
+    run_id = anyio.run(_seed_history)
 
     with app_client.websocket_connect("/ws/arslan/histconv") as ws:
         hist = ws.receive_json()
@@ -109,8 +115,7 @@ def test_history_rows_carry_run_id(app_client):
         assert "run_id" in rows[0]
         assert rows[0]["run_id"] is None
         # Linked spawn_summary: carries its run id.
-        assert rows[1]["run_id"] == 555
-        assert rows[1]["spawn_id"] == 7
+        assert rows[1]["run_id"] == run_id
 
 
 def test_confirm_create_makes_spawn(app_client):
