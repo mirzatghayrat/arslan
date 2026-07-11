@@ -87,6 +87,12 @@ def _shared_loop(client: TestClient):
             yield portal
         finally:
             client.portal = None
+            # SL-round gotcha: the portal context exit WAITS for outstanding tasks
+            # (cancel_remaining=False default) — a turn's fire-and-forget stragglers
+            # (distill/ledger create_tasks) on slow CI make thread.join() hang until
+            # pytest-timeout (>120s, seen twice on run 29158926706). Cancel them:
+            # every assertion has already run by the time we get here.
+            portal.stop(cancel_remaining=True)
 
 
 def _collect_until(ws, want_type: str, max_frames: int = 40) -> list[dict]:
