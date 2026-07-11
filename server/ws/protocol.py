@@ -58,6 +58,14 @@ def ping(ts: int) -> dict[str, Any]:
     return {"type": "ping", "ts": ts}
 
 
+def run_in_progress(run_id: int) -> dict[str, Any]:
+    """S3-M2 reattach: announces an in-flight run to a (re)connecting socket.
+    The frames that follow are that run's journal REPLAY, after which the live
+    stream continues on the same socket — the client flips straight back into
+    streaming state with run_id as its cancel handle."""
+    return {"type": "run_in_progress", "run_id": run_id}
+
+
 def routing(
     spawn_id: int, spawn_name: str | None = None, announcement: str | None = None
 ) -> dict[str, Any]:

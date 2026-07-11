@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Coroutine
 from typing import Any
 
@@ -19,6 +20,7 @@ from server.services import (
     ingest,
     phase_service,
     roster_service,
+    run_registry,
     settings_service,
     spawn_service,
     storage_intent,
@@ -26,6 +28,9 @@ from server.services import (
 from server.ws import protocol
 
 logger = logging.getLogger(__name__)
+
+# S3-M2 heartbeat interval (seconds). Module-level so tests can shrink it.
+_HEARTBEAT_INTERVAL_S = 30
 
 
 def _cmd_sig(command: str, argv: list) -> str:
@@ -104,45 +109,73 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         return
 
     await ws.accept()
-    await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
-    await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
 
-    # Emit-sink: a queue drained concurrently with the orchestration coroutine so
-    # frames (tool_call/tool_result/stream_*) reach the client live, in order.
-    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+    # S3-M2 heartbeat: deterministic dead-peer detection. The pinger only ever
+    # SENDS — it never touches ws.receive, so the confirm_command flow below
+    # (which temporarily OWNS ws.receive while a command card is pending) is
+    # never raced by it. Client pong handling shipped in web/src/api/ws.ts;
+    # inbound ping/pong frames are ignored by the receive loop here.
+    async def _pinger() -> None:
+        try:
+            while True:
+                await asyncio.sleep(_HEARTBEAT_INTERVAL_S)
+                await ws.send_json(protocol.ping(int(time.time())))
+        except Exception:  # noqa: BLE001 — socket closed/failing; receive loop owns teardown
+            return
 
-    def emit(ev: dict) -> None:
+    keepalive = asyncio.create_task(_pinger())
+
+    # Per-connection frame queue. `sink` is its ONLY writer and lives in the
+    # run_registry sink registry (S3-M2): every frame producer in this endpoint
+    # emits through the fan-out `emit` below, which delivers to EVERY sink
+    # attached to this conversation — so frames outlive this socket (reattach)
+    # and reach other tabs on the same conversation.
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+
+    def sink(ev: dict) -> None:
         queue.put_nowait(ev)
 
+    emit = run_registry.make_emit(conversation_id)
+    drainer: asyncio.Task | None = None
+
     async def _drain() -> None:
+        """Resident sender: the single consumer of `queue` for this socket's whole
+        life (started AFTER the reattach replay below so a live frame that arrived
+        during it — newer than every snapshot frame — is delivered after it; it is
+        cancelled in the endpoint's finally). On send failure the sink detaches
+        (idempotent — stops dead-queue growth) and the drainer switches to
+        swallowing frames so the queue.join() flushes below can never deadlock;
+        the receive loop sees the disconnect and tears the connection down."""
+        dead = False
         while True:
             ev = await queue.get()
-            if ev is None:
-                return
             try:
-                await ws.send_json(_to_frame(ev))
-            except Exception:  # noqa: BLE001 — client gone; receive loop will see the disconnect
-                return
+                if not dead:
+                    await ws.send_json(_to_frame(ev))
+            except Exception:  # noqa: BLE001 — client gone
+                dead = True
+                run_registry.detach_sink(conversation_id, sink)
+            finally:
+                queue.task_done()
 
     async def run_with_live_frames(coro: Coroutine[Any, Any, object]) -> None:
-        sender = asyncio.create_task(_drain())
         try:
             await coro
         finally:
-            queue.put_nowait(None)  # sentinel: flush remainder, stop sender
-            await sender
+            # Flush: every frame the coroutine emitted is on the socket (or
+            # swallowed by a dead drainer) before the caller's next direct
+            # ws.send_json — same ordering guarantee the old sentinel gave.
+            await queue.join()
 
     async def run_with_confirm_frames(coro: Coroutine[Any, Any, object]) -> None:
         """Run a plain-message orchestration. run_command pauses mid-loop via the
         injected `confirm_command`, which OWNS ws.receive itself (see below) only
         while a command is pending — so there is never a blocked receiver to cancel,
         and the outer loop cleanly resumes receiving once orchestration finishes."""
-        sender = asyncio.create_task(_drain())
         try:
             await coro
         finally:
-            queue.put_nowait(None)
-            await sender
+            await queue.join()
 
     async def run_spawn(spawn_id: int, task_brief: str, **kw) -> None:
         await run_with_live_frames(
@@ -235,6 +268,30 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         return True
 
     try:
+        await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
+        await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
+
+        # Reattach (S3-M2): snapshot the run journals + attach the sink in ONE
+        # SYNCHRONOUS block — no await may sit between the two lines. A frame
+        # broadcast concurrently is then either already in the snapshot (it was
+        # journaled before) or delivered live to the freshly attached sink
+        # (after) — never both, never neither.
+        snapshots = run_registry.journal_snapshots(conversation_id)
+        run_registry.attach_sink(conversation_id, sink)
+
+        # Replay: announce each in-flight run, then its journaled frames. Live
+        # frames arriving meanwhile buffer in `queue` (drainer not started yet)
+        # so they follow the replay in order.
+        for run_id, events in snapshots:
+            await ws.send_json(protocol.run_in_progress(run_id))
+            for ev in events:
+                try:
+                    await ws.send_json(_to_frame(ev))
+                except Exception:  # noqa: BLE001 — client gone mid-replay; receive loop sees it
+                    break
+
+        drainer = asyncio.create_task(_drain())
+
         while True:
             data = await ws.receive_json()
             msg_type = data.get("type")
@@ -567,8 +624,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     question = (
                         f"这份材料记给哪个分身?在线的有:{', '.join(names) or '(暂无在线分身)'}"
                     )
-                    # Send directly via ws.send_json: emit() only enqueues for the
-                    # run_with_live_frames drainer, which is not running on this path.
+                    # Sent directly via ws.send_json: this question is a private
+                    # prompt to the tab that dropped the attachment — deliberately
+                    # NOT emit(), which would fan it out to every attached tab.
                     await ws.send_json(protocol.stream_start_src("arslan"))
                     await ws.send_json(protocol.stream_chunk(question))
                     msg_id = await memory.add_message(conversation_id, "arslan", question)
@@ -589,6 +647,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         except Exception:  # noqa: BLE001
             pass
         return
+    finally:
+        # Covers EVERY exit: normal return, WebSocketDisconnect (including one
+        # surfacing mid-run through a confirm_command receive), internal errors,
+        # and task cancellation (server shutdown). detach_sink is idempotent —
+        # the drainer may already have detached on a send failure, and if the
+        # history push raised before attach_sink ran this is a no-op.
+        run_registry.detach_sink(conversation_id, sink)
+        if drainer is not None:
+            drainer.cancel()
+        keepalive.cancel()
 
 
 def _to_frame(ev: dict) -> dict:
