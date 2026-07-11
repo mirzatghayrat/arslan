@@ -33,6 +33,10 @@ import type {
   RunDetailDto,
   RunListItem,
   RunSummary,
+  ScheduledTaskCreateBody,
+  ScheduledTaskDto,
+  ScheduledTaskRunDto,
+  ScheduledTaskUpdateBody,
   SeedsResponse,
   SkillCandidate,
   SkillEvaluateResult,
@@ -235,6 +239,27 @@ export const api = {
   /** S3-M3: fleet-wide usage summary — provider×model×scope rows + daily series + 未计入. */
   getUsageSummary: (range: "24h" | "7d" | "30d") =>
     request<UsageSummary>(`/usage/summary?range=${range}`),
+  // ── S3-M4 scheduled tasks: CRUD + pause/resume/fire-now + history ─────────────
+  listScheduledTasks: () => request<ScheduledTaskDto[]>("/scheduled-tasks"),
+  createScheduledTask: (body: ScheduledTaskCreateBody) =>
+    request<ScheduledTaskDto>("/scheduled-tasks", { method: "POST", body: JSON.stringify(body) }),
+  updateScheduledTask: (id: number, body: ScheduledTaskUpdateBody) =>
+    request<ScheduledTaskDto>(`/scheduled-tasks/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  /** Deletes the task AND its history rows (FK cascade on the server). */
+  deleteScheduledTask: (id: number) =>
+    request<{ ok: boolean }>(`/scheduled-tasks/${id}`, { method: "DELETE" }),
+  /** Manual pause — paused_reason stays null (non-null always means auto-pause). */
+  pauseScheduledTask: (id: number) =>
+    request<ScheduledTaskDto>(`/scheduled-tasks/${id}/pause`, { method: "POST" }),
+  /** Clears failures/paused_reason; next_due recomputed forward. 409 over the enabled cap. */
+  resumeScheduledTask: (id: number) =>
+    request<ScheduledTaskDto>(`/scheduled-tasks/${id}/resume`, { method: "POST" }),
+  /** 202 accepted; 409 when a run is already in flight (single-flight). */
+  fireScheduledTaskNow: (id: number) =>
+    request<{ status: string; task_id: number }>(`/scheduled-tasks/${id}/fire-now`, { method: "POST" }),
+  /** Execution history, newest first; run_id links to RunReplay. */
+  getScheduledTaskRuns: (id: number) =>
+    request<ScheduledTaskRunDto[]>(`/scheduled-tasks/${id}/runs`),
   /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
   redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
   /** Cancel an in-flight run (S3-M1). 202 {ok} on cancel; 404 unknown; 409 already terminal. */

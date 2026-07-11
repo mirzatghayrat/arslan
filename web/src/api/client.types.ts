@@ -118,6 +118,57 @@ export interface UsageSummary {
   not_covered: string[];
 }
 
+/** One row of GET /scheduled-tasks (S3-M4). Mirrors ScheduledTaskOut. */
+export interface ScheduledTaskDto {
+  id: number;
+  name: string;
+  prompt: string;
+  spawn_id: number | null;
+  /** Joined display name; null when the spawn was deleted. */
+  spawn_name: string | null;
+  conversation_id: string | null;
+  schedule_kind: "interval" | "cron" | string;
+  interval_s: number | null;
+  cron: string | null;
+  enabled: boolean;
+  last_fired_at: string | null;
+  next_due_at: string | null;
+  consecutive_failures: number;
+  /** Non-null ONLY on the 3-fail auto-pause (manual pause leaves it null). */
+  paused_reason: string | null;
+  created_at: string | null;
+  /** Latest run outcome ("ok"|"error"|"skipped_overlap"); null = no runs yet OR in flight. */
+  last_outcome: string | null;
+}
+
+/** One row of GET /scheduled-tasks/{id}/runs — execution history. */
+export interface ScheduledTaskRunDto {
+  id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  /** "ok" | "error" | "skipped_overlap"; null = in flight. */
+  outcome: string | null;
+  /** runs.id — links to RunReplay. */
+  run_id: number | null;
+  reason: string | null;
+}
+
+/** POST /scheduled-tasks body (ScheduledTaskCreateIn). Server validates the
+ *  schedule (interval floor 900s / cron grammar) — client mirrors loosely. */
+export interface ScheduledTaskCreateBody {
+  name: string;
+  prompt: string;
+  spawn_id: number;
+  schedule_kind: "interval" | "cron";
+  interval_s?: number | null;
+  cron?: string | null;
+  /** null/empty = dedicated conversation (scheduled-{id}). */
+  conversation_id?: string | null;
+}
+
+/** PUT /scheduled-tasks/{id} body — partial patch of the create fields. */
+export type ScheduledTaskUpdateBody = Partial<ScheduledTaskCreateBody>;
+
 /** One step of a spawn's tool loop, paired from tool_call/tool_result frames. */
 export interface ToolStep {
   tool: string;

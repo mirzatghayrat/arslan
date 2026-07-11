@@ -937,5 +937,63 @@
       "tokens": "トークン",
       "usd": "USD"
     }
+  },
+  "scheduled": {
+    "title": "定期タスク",
+    "new": "新規タスク",
+    "empty": "定期タスクはまだありません",
+    "localTime": "ローカル時間",
+    "every": "{{v}} ごと",
+    "due_in": "{{v}} 後",
+    "due_now": "まもなく実行",
+    "running": "実行中",
+    "delete_confirm": "このタスクと実行履歴を削除しますか？",
+    "col": {
+      "name": "名前",
+      "spawn": "スポーン",
+      "cadence": "周期",
+      "last": "前回の結果",
+      "next": "次回実行",
+      "actions": "操作"
+    },
+    "outcome": {
+      "ok": "成功",
+      "error": "エラー",
+      "paused": "一時停止",
+      "skipped": "スキップ"
+    },
+    "action": {
+      "pause": "一時停止",
+      "resume": "再開",
+      "fire": "今すぐ実行",
+      "edit": "編集",
+      "delete": "削除"
+    },
+    "history": {
+      "empty": "実行履歴はまだありません",
+      "outcome": "結果",
+      "started": "開始",
+      "reason": "理由",
+      "replay": "リプレイ"
+    },
+    "form": {
+      "create_title": "定期タスクを作成",
+      "edit_title": "定期タスクを編集",
+      "name": "名前",
+      "prompt": "プロンプト",
+      "spawn": "スポーン",
+      "spawn_placeholder": "スポーンを選択…",
+      "kind_interval": "間隔",
+      "kind_cron": "Cron",
+      "interval": "実行間隔",
+      "cron": "Cron 式",
+      "cron_hint": "5 フィールド（分 時 日 月 曜日）、ローカル時間で解釈されます",
+      "cron_invalid": "Cron 式が無効です（5 フィールド：*、数値、*/n、カンマ区切り）",
+      "conversation": "対象の会話",
+      "conversation_placeholder": "空欄 = 専用の会話",
+      "submit_create": "作成",
+      "submit_save": "保存",
+      "required": "名前・プロンプト・スポーンは必須です"
+    }
   }
 }

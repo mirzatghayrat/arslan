@@ -937,5 +937,63 @@
       "tokens": "Tokens",
       "usd": "USD"
     }
+  },
+  "scheduled": {
+    "title": "Tareas programadas",
+    "new": "Nueva tarea",
+    "empty": "Aún no hay tareas programadas",
+    "localTime": "hora local",
+    "every": "cada {{v}}",
+    "due_in": "en {{v}}",
+    "due_now": "en breve",
+    "running": "En ejecución",
+    "delete_confirm": "¿Eliminar esta tarea y su historial de ejecuciones?",
+    "col": {
+      "name": "Nombre",
+      "spawn": "Spawn",
+      "cadence": "Cadencia",
+      "last": "Último resultado",
+      "next": "Próxima ejecución",
+      "actions": "Acciones"
+    },
+    "outcome": {
+      "ok": "ok",
+      "error": "error",
+      "paused": "pausada",
+      "skipped": "omitida"
+    },
+    "action": {
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "fire": "Ejecutar ahora",
+      "edit": "Editar",
+      "delete": "Eliminar"
+    },
+    "history": {
+      "empty": "Aún no hay ejecuciones",
+      "outcome": "Resultado",
+      "started": "Inicio",
+      "reason": "Motivo",
+      "replay": "Reproducir"
+    },
+    "form": {
+      "create_title": "Nueva tarea programada",
+      "edit_title": "Editar tarea programada",
+      "name": "Nombre",
+      "prompt": "Prompt",
+      "spawn": "Spawn",
+      "spawn_placeholder": "Selecciona un spawn…",
+      "kind_interval": "Intervalo",
+      "kind_cron": "Cron",
+      "interval": "Ejecutar cada",
+      "cron": "Expresión cron",
+      "cron_hint": "5 campos (min hora día mes día-semana), interpretados en tu hora local",
+      "cron_invalid": "Expresión cron no válida (5 campos: *, número, */n o lista con comas)",
+      "conversation": "Conversación de destino",
+      "conversation_placeholder": "Vacío = conversación dedicada",
+      "submit_create": "Crear",
+      "submit_save": "Guardar",
+      "required": "Nombre, prompt y spawn son obligatorios"
+    }
   }
 }

@@ -5,6 +5,7 @@ import SpawnRunDetail from "./SpawnRunDetail";
 import RunReplay from "./RunReplay";
 import EvolutionInbox from "./EvolutionInbox";
 import UsageCard from "./UsageCard";
+import ScheduledTasksCard from "./ScheduledTasksCard";
 
 type Selection =
   | null
@@ -77,8 +78,10 @@ export default function DiagnosisView() {
       {evoRun != null ? (
         <>
           <div className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
+            {/* The overlay is shared by the evolution inbox AND the scheduled-tasks
+                card — label the crumb by the tab the run was opened from. */}
             <span className="cursor-pointer hover:text-foreground" onClick={() => setEvoRun(null)}>
-              {t("evolution.inbox.tab")}
+              {tab === "diag" ? t("evolution.inbox.diag_tab") : t("evolution.inbox.tab")}
             </span>
             <span>/</span>
             <span className="text-foreground">run #{evoRun}</span>
@@ -98,6 +101,9 @@ export default function DiagnosisView() {
               />
               {/* S3-M3 cost visibility: fleet-wide usage summary (tokens + honest USD). */}
               <UsageCard />
+              {/* S3-M4 scheduled tasks: list + create form; history rows open
+                  RunReplay through the same overlay the evolution inbox uses. */}
+              <ScheduledTasksCard onOpenRun={(runId) => setEvoRun(runId)} />
             </>
           )}
 

@@ -937,5 +937,63 @@
       "tokens": "Tokens",
       "usd": "USD"
     }
+  },
+  "scheduled": {
+    "title": "Tâches planifiées",
+    "new": "Nouvelle tâche",
+    "empty": "Aucune tâche planifiée pour l'instant",
+    "localTime": "heure locale",
+    "every": "toutes les {{v}}",
+    "due_in": "dans {{v}}",
+    "due_now": "imminente",
+    "running": "En cours",
+    "delete_confirm": "Supprimer cette tâche et son historique ?",
+    "col": {
+      "name": "Nom",
+      "spawn": "Spawn",
+      "cadence": "Cadence",
+      "last": "Dernier résultat",
+      "next": "Prochaine exécution",
+      "actions": "Actions"
+    },
+    "outcome": {
+      "ok": "ok",
+      "error": "erreur",
+      "paused": "en pause",
+      "skipped": "ignorée"
+    },
+    "action": {
+      "pause": "Mettre en pause",
+      "resume": "Reprendre",
+      "fire": "Exécuter maintenant",
+      "edit": "Modifier",
+      "delete": "Supprimer"
+    },
+    "history": {
+      "empty": "Aucune exécution pour l'instant",
+      "outcome": "Résultat",
+      "started": "Démarré",
+      "reason": "Raison",
+      "replay": "Replay"
+    },
+    "form": {
+      "create_title": "Nouvelle tâche planifiée",
+      "edit_title": "Modifier la tâche planifiée",
+      "name": "Nom",
+      "prompt": "Prompt",
+      "spawn": "Spawn",
+      "spawn_placeholder": "Choisir un spawn…",
+      "kind_interval": "Intervalle",
+      "kind_cron": "Cron",
+      "interval": "Exécuter toutes les",
+      "cron": "Expression cron",
+      "cron_hint": "5 champs (min heure jour mois jour-semaine), interprétés dans votre heure locale",
+      "cron_invalid": "Expression cron invalide (5 champs : *, nombre, */n ou liste à virgules)",
+      "conversation": "Conversation cible",
+      "conversation_placeholder": "Vide = conversation dédiée",
+      "submit_create": "Créer",
+      "submit_save": "Enregistrer",
+      "required": "Nom, prompt et spawn sont requis"
+    }
   }
 }
