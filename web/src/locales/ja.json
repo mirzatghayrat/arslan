@@ -919,5 +919,23 @@
       "status_stale": "失効",
       "status_proposed": "審査待ち"
     }
+  },
+  "usage": {
+    "title": "使用量",
+    "daily": "日別トークン",
+    "empty": "この期間の使用量はありません",
+    "notCovered": "未計上",
+    "range": {
+      "24h": "24h",
+      "7d": "7日",
+      "30d": "30日"
+    },
+    "col": {
+      "provider": "プロバイダ",
+      "model": "モデル",
+      "scope": "用途",
+      "tokens": "トークン",
+      "usd": "USD"
+    }
   }
 }

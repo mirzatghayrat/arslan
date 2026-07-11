@@ -28,6 +28,7 @@ import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type At
 import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
+import UsageChip from './UsageChip';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 import { activeMention, filterRoster, insertMention } from '../lib/mentions';
 
@@ -712,6 +713,7 @@ export default function OrchestratorChat({
                         : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
                       {msg.cancelled && <RunCancelledMarker />}
+                      {msg.usage && <UsageChip usage={msg.usage} />}
 
                       {/* Routed Indicator - specifically asked in prompt */}
                       {msg.routedTo && (
@@ -942,6 +944,7 @@ export default function OrchestratorChat({
                     : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
                   {msg.cancelled && <RunCancelledMarker />}
+                  {msg.usage && <UsageChip usage={msg.usage} />}
 
                   {/* Routed branch block */}
                   {msg.routedTo && (
@@ -1128,6 +1131,7 @@ export default function OrchestratorChat({
                   {/* Body Content */}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
+                  {msg.usage && <div className="pl-5"><UsageChip usage={msg.usage} /></div>}
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (

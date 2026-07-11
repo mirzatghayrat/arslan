@@ -2,6 +2,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../api/client", () => ({ api: {
+  // S3-M3: the dock also fetches the conversation cumulative usage (own test file).
+  getConversationUsage: vi.fn().mockResolvedValue({
+    tokens_total: 0, usd_total: null, usd_partial: false, estimated_any: false, by_scope: [],
+  }),
   getConversationRecap: vi.fn().mockResolvedValue({
     summary: { run_count: 2, avg_score: 7.8, growth_count: 1 },
     items: [

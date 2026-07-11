@@ -919,5 +919,23 @@
       "status_stale": "obsoleta",
       "status_proposed": "propuesta"
     }
+  },
+  "usage": {
+    "title": "Uso",
+    "daily": "Tokens por día",
+    "empty": "Sin uso en este rango",
+    "notCovered": "No contabilizado",
+    "range": {
+      "24h": "24h",
+      "7d": "7d",
+      "30d": "30d"
+    },
+    "col": {
+      "provider": "Proveedor",
+      "model": "Modelo",
+      "scope": "Ámbito",
+      "tokens": "Tokens",
+      "usd": "USD"
+    }
   }
 }

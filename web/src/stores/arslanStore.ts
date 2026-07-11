@@ -377,6 +377,10 @@ function makeActions(set: SetState, get: GetState) {
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),
+            // S3-M3: the turn's usage rides the terminal stream_end frame — land it
+            // on the created item so the bubble can render its usage chip.
+            // (run_cancelled finalization deliberately never sets this.)
+            ...(frame.usage ? { usage: frame.usage } : {}),
             // 🔒 SECURITY: artifactHtml comes ONLY from the backend stream_end frame's
             // artifact (HX-2 HTML deliverable channel — sniffed/stored server-side),
             // NEVER from LLM message text. Same invariant as artifactSvg/Chart/Pptx.

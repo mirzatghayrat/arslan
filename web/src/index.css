@@ -2790,6 +2790,14 @@ button:disabled {
   color: var(--muted-foreground);
   padding: 8px 2px;
 }
+/* S3-M3: conversation cumulative usage line under the recap head. */
+.recap-dock__usage {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  padding-left: 16px; /* aligns under the title, past the chevron */
+}
 .recap-timeline {
   list-style: none;
   margin: 0;
@@ -3308,6 +3316,58 @@ button:disabled {
   background: var(--primary);
   border-radius: 1px;
   opacity: 0.75;
+}
+
+/* S3-M3 usage card (Diagnostics) — follows the diag-catalog idiom. */
+.usage-card {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.usage-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.usage-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+.usage-card__daily {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.usage-card__daily-label {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--muted-foreground);
+}
+/* Widen the reused score sparkline for a 7-30 point daily series. */
+.usage-card__spark .cat-spark {
+  width: 140px;
+  height: 24px;
+}
+.usage-card__num {
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+.usage-card__notcovered {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.usage-card__notcovered summary {
+  cursor: pointer;
+  user-select: none;
+}
+.usage-card__notcovered-list {
+  padding: 6px 2px 0;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.7;
 }
 
 /* MatrixSpinner — dot-ring loader for agent-waiting moments. Each dot pulses on a
