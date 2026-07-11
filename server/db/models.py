@@ -335,7 +335,7 @@ class Run(Base):
     total_ms = Column(Integer, nullable=True)
     task_tokens = Column(Integer, nullable=False, default=0)   # router+dispatch+tools (NOT judge)
     status = Column(String(20), nullable=False, default="recording")
-    # "recording" | "recorded" | "scored" | "score_failed"
+    # "recording" | "recorded" | "scored" | "score_failed" | "replayed" | "cancelled" | "interrupted"
     overall_score = Column(Float, nullable=True)   # /10
     overall_badge = Column(String(10), nullable=True)  # "good" | "ok" | "bad"
     created_at = Column(DateTime, default=datetime.utcnow)

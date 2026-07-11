@@ -195,7 +195,8 @@ class RunRecorder:
                         error_kind: str | None = None, error_text: str | None = None,
                         system_prompt: str | None = None, injected_kb: str | None = None,
                         injected_kb_sources: list | None = None,
-                        replay: bool = False) -> int:
+                        replay: bool = False,
+                        status_override: str | None = None) -> int:
         """Persist steps + run metadata and (for live runs only) schedule judge scoring.
 
         replay=True (S2 E3 hermetic replay): terminal status is 'replayed' (never
@@ -219,7 +220,10 @@ class RunRecorder:
                 # them; re-affirm here so no live finalize path can leave the columns unset).
                 # E3: a replay run finalizes to the quarantine terminal status + kind and
                 # persists its output on the row for judge-comparison/trace.
-                run.status = "replayed" if replay else "recorded"
+                # S3-M1: status_override ("cancelled"/"interrupted") is a user/boot terminal
+                # state — it bypasses scoring entirely, so such runs can never enter the
+                # corpus (replay_set only collects status='scored').
+                run.status = status_override or ("replayed" if replay else "recorded")
                 run.kind = "replay" if replay else "live"
                 run.epoch = 1
                 run.continuation = self.continuation
@@ -242,8 +246,8 @@ class RunRecorder:
                     if msg is not None:
                         msg.run_id = self.run_id
             await db.commit()
-        if replay:
-            return self.run_id  # hermetic replay is scored by the paired gate, never here
+        if replay or status_override is not None:
+            return self.run_id  # replay → paired gate; cancelled/interrupted → never scored
         try:
             # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
             # scheduling. The judge task inherits this context's bucket via create_task, but
