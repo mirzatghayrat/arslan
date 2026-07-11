@@ -24,7 +24,7 @@ from server.orchestrator import (
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
-from arslan.llm import usage_sink
+from arslan.llm import prices, usage_sink
 from server.registry import service as registry_service
 from server.services import (
     distill_service,
@@ -781,6 +781,25 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     ))
 
 
+def _usage_frame(detail: dict) -> dict:
+    """S3-M3 Task 5: per-turn usage payload for a terminal stream_end frame.
+
+    MUST be built while the turn's ``usage_sink.collecting()`` scope is still open —
+    both the passed ``detail()`` snapshot and ``usage_sink.total()`` read the active
+    contextvars. ``estimated`` mirrors finalize's ``tokens_estimated`` rule
+    (``tokens_in is None`` — detail() already blinds totals when any bucket is
+    estimated). ``usd`` is None whenever it can't be known honestly (unknown model /
+    estimated tokens); the key is ALWAYS present so the frontend can tell
+    "unknown cost" (null) apart from "free" ($0)."""
+    return {
+        "tokens_in": detail["tokens_in"],
+        "tokens_out": detail["tokens_out"],
+        "tokens_total": usage_sink.total(),
+        "estimated": detail["tokens_in"] is None,
+        "usd": prices.usd(detail["model"], detail["tokens_in"], detail["tokens_out"]),
+    }
+
+
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, confirm_command=None,
@@ -862,7 +881,8 @@ async def _handle_answer_body(
         compact = clarify["question"] + "\n" + "\n".join(
             f"- {o['label']}" for o in clarify["options"])
         await memory.add_message(conversation_id, "arslan", compact)
-        emit({"type": "stream_end", "message_id": None})
+        emit({"type": "stream_end", "message_id": None,
+              "usage": _usage_frame(usage_sink.detail())})
         emit(protocol.clarify_options(clarify["question"], clarify["options"]))
         return compact
     full = result.get("final") or ""
@@ -901,7 +921,13 @@ async def _handle_answer_body(
     except Exception as exc:  # noqa: BLE001 — interception is never fatal
         logger.warning("promise interception failed (fail-open, answer kept): %s", exc)
     msg_id = await memory.add_message(conversation_id, "arslan", full)
-    emit({"type": "stream_end", "message_id": msg_id})
+    # S3-M3 Task 5 seam choice: the answer turn's usage rides the stream_end the body
+    # ALREADY emits (one frame shape for dispatch + answer, no extra answer_usage frame).
+    # _handle_answer_body only ever runs inside _handle_answer's usage_ledger.scope()
+    # wrapper, so the collecting contextvars are still open here and detail()/total()
+    # read exactly what the wrapper will ledger on exit.
+    emit({"type": "stream_end", "message_id": msg_id,
+          "usage": _usage_frame(usage_sink.detail())})
     return full
 
 
@@ -1513,7 +1539,11 @@ async def _handle_escalation(  # noqa: ANN001
         "task_brief": task_brief,
         "run_id": run_id,
     })
+    # S3-M3 Task 5: _handle_escalation is only called from inside _dispatch_spawn's
+    # usage_sink.collecting() scope, so the run's usage (dispatch + this re-dispatch)
+    # is readable here — same frame shape as the main dispatch stream_end.
     emit({"type": "stream_end", "message_id": out["summary_message_id"],
+          "usage": _usage_frame(usage_sink.detail()),
           **({"artifact": out["artifact"]} if out.get("artifact") else {})})
     return out
 
@@ -1656,6 +1686,10 @@ async def _dispatch_spawn(  # noqa: ANN001
 
                 _usage = usage_sink.detail()
                 _prompt = run_trace.prompt()
+                # S3-M3 Task 5: the stream_end below is emitted AFTER this collecting
+                # scope closes — build the frame payload NOW, from the SAME _usage
+                # snapshot finalize persists (frame chip and Run row can never disagree).
+                usage_frame = _usage_frame(_usage)
                 await recorder.finalize(
                     summary_message_id=out["summary_message_id"], full_output=out["full_output"],
                     model=_usage["model"], provider=_usage["provider"],
@@ -1707,6 +1741,7 @@ async def _dispatch_spawn(  # noqa: ANN001
         # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
         # store turns into the chat item) so the frontend can render the preview card live.
         tee({"type": "stream_end", "message_id": out["summary_message_id"],
+             "usage": usage_frame,
              **({"artifact": out["artifact"]} if out.get("artifact") else {})})
 
         # Auto-continue: a round that ended with a findings digest made real progress but ran

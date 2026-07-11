@@ -710,3 +710,46 @@ class PreferencesOut(BaseModel):
 
 class PreferenceDeleteIn(BaseModel):
     fact: str
+
+
+# --- S3-M3 cost visibility (Task 5) ----------------------------------------
+# Honesty invariant across all three shapes: usd is None (never 0.0) whenever the
+# cost can't be known — unknown-price model or estimated tokens. $0.00 is reserved
+# for genuinely free (local) models.
+
+
+class ScopeUsageOut(BaseModel):
+    scope: str                    # "spawn" (runs) | ledger scopes (answer/router/…)
+    tokens_total: int
+    usd: float | None = None
+
+
+class ConversationUsageOut(BaseModel):
+    tokens_total: int
+    usd_total: float | None = None   # None when NOTHING was priceable (≠ $0)
+    usd_partial: bool                # some tokens lacked a price or were estimated
+    estimated_any: bool
+    by_scope: list[ScopeUsageOut] = []
+
+
+class UsageSummaryRowOut(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    scope: str
+    tokens_total: int
+    usd: float | None = None
+    estimated_any: bool = False
+
+
+class UsageDailyPointOut(BaseModel):
+    date: str                     # UTC "YYYY-MM-DD"
+    tokens_total: int
+
+
+class UsageSummaryOut(BaseModel):
+    range: str
+    rows: list[UsageSummaryRowOut] = []
+    daily: list[UsageDailyPointOut] = []
+    # Call sites that do NOT feed the ledger yet (spec §S3-D 未计入清单) — the
+    # summary never pretends to be complete.
+    not_covered: list[str] = []

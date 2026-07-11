@@ -328,6 +328,12 @@ async def test_judge_scope_does_not_diminish_dispatch_run_usage(memdb, monkeypat
     assert run.task_tokens == 200
     assert (run.tokens_in, run.tokens_out) == (120, 80)
     assert run.status == "scored"
+    # S3-M3 Task 5: the run's stream_end frame carries the SAME usage finalize read
+    # (built inside the collecting scope). "claude-x" has no price → usd present, None.
+    ends = [e for e in events if e["type"] == "stream_end"]
+    assert len(ends) == 1
+    assert ends[0]["usage"] == {"tokens_in": 120, "tokens_out": 80, "tokens_total": 200,
+                                "estimated": False, "usd": None}
     judge_rows = [r for r in await _rows(memdb) if r.scope == "judge"]
     assert len(judge_rows) == 1
     # Judge row = judge's own tokens ONLY (a leaked inherited bucket would show 127/83).

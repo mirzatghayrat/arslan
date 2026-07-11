@@ -55,3 +55,24 @@ async def test_chat_reports_zero_when_provider_says_zero():
     with usage_sink.collecting():
         await a.chat("sys", "user")
         assert usage_sink.total() == 0
+
+
+# --- S3-M3 Task 5 (S1 fold-in): total normalization -------------------------
+# gemini's non-stream usage carries totalTokenCount, anthropic carries only
+# input/output — both are REAL numbers and must never fall through to the estimate.
+
+
+async def test_chat_reports_gemini_total_token_count():
+    a = _adapter({"promptTokenCount": 100, "candidatesTokenCount": 40,
+                  "totalTokenCount": 140})
+    with usage_sink.collecting():
+        await a.chat("sys", "user")
+        assert usage_sink.total() == 140
+
+
+async def test_chat_sums_in_out_when_no_total_key():
+    # anthropic shape: input/output only, no total field at all
+    a = _adapter({"input_tokens": 70, "output_tokens": 30})
+    with usage_sink.collecting():
+        await a.chat("sys", "user")
+        assert usage_sink.total() == 100

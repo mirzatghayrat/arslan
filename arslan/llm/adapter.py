@@ -90,13 +90,23 @@ class LLMAdapter:
         """Build messages and delegate to the underlying provider."""
         messages = self._provider.build_messages(system, user, history)
         resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
-        total = (resp.usage or {}).get("total_tokens")
-        if total is None:
-            total = usage_sink.estimate_tokens(system, user, resp.content)
-        usage_sink.report(total)
         u = resp.usage or {}
         tin = u.get("prompt_tokens") or u.get("input_tokens") or u.get("promptTokenCount")
         tout = u.get("completion_tokens") or u.get("output_tokens") or u.get("candidatesTokenCount")
+        # Total normalization (S1 fold-in, M3 Task 3 review): gemini's non-stream
+        # usageMetadata carries totalTokenCount (not total_tokens), and anthropic
+        # sends no total at all — only in/out. Without these fallbacks a response
+        # with REAL per-side counts still fell through to the character estimate.
+        # None-aware on purpose (NOT an `or` chain): a REAL total of 0 must be
+        # reported as 0, never laundered into an estimate.
+        total = u.get("total_tokens")
+        if total is None:
+            total = u.get("totalTokenCount")
+        if total is None and tin is not None and tout is not None:
+            total = tin + tout
+        if total is None:
+            total = usage_sink.estimate_tokens(system, user, resp.content)
+        usage_sink.report(total)
         usage_sink.report_detail(
             tokens_in=tin,
             tokens_out=tout,
