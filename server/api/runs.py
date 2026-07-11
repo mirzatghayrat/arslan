@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.session import get_session
 from server.db.models import Run, RunEvaluation, RunStep
+from server.services import run_registry
 from server.schemas import (
     AnomalyOut,
     CatalogFleetOut,
@@ -472,6 +473,21 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
         evaluations=[RunEvaluationOut(dimension=e.dimension, status=e.status,
                                       score=e.score, comment=e.comment) for e in evals],
     )
+
+
+@router.post("/runs/{run_id}/cancel", status_code=202)
+async def cancel_run(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """Cancel an in-flight run (S3-M1). 202 on cancel; 409 terminal; 404 unknown.
+
+    The registry is process-local: a live run is only cancellable in the process
+    executing it. When the registry misses, the DB row disambiguates 404 vs 409.
+    """
+    if run_registry.cancel(run_id):
+        return {"ok": True}
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    raise HTTPException(status_code=409, detail=f"run is not cancellable (status={run.status})")
 
 
 @router.post("/runs/{run_id}/rescore")
