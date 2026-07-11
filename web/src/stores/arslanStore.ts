@@ -222,6 +222,7 @@ function makeActions(set: SetState, get: GetState) {
         role: string;
         content: string;
         spawn_id?: number | null;
+        run_id?: number | null;
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
           // Resolve the spawn name ONLY from an explicit spawn_id. History rows
@@ -237,6 +238,9 @@ function makeActions(set: SetState, get: GetState) {
             content: row.content,
             spawnId,
             spawnName: spawnId != null ? state.spawnNames[spawnId] ?? null : null,
+            // S3-M2: run linkage from the history row — the RunReplay entry
+            // point survives a reload. null/absent degrades to undefined.
+            runId: row.run_id ?? undefined,
           };
         }
         return {
@@ -244,6 +248,7 @@ function makeActions(set: SetState, get: GetState) {
           kind: "message",
           role: row.role === "arslan" ? "arslan" : "user",
           content: row.content,
+          runId: row.run_id ?? undefined,
         };
       };
       switch (frame.type) {
@@ -295,6 +300,18 @@ function makeActions(set: SetState, get: GetState) {
           // follow-up dispatch: keep the thinking indicator alive so the activity
           // pulse continues seamlessly into the next round's frames.
           set({ thinking: true, workStartedAt: state.workStartedAt ?? Date.now() });
+          break;
+        case "run_in_progress":
+          // S3-M2 reattach: the server announces an in-flight run right after the
+          // history push, before replaying its journaled frames. Arm the stop
+          // button (activeRunId) and revive the thinking pulse; create NO item —
+          // the replayed stream_start/chunk frames rebuild the live view through
+          // the existing cases below.
+          set({
+            thinking: true,
+            workStartedAt: state.workStartedAt ?? Date.now(),
+            activeRunId: frame.run_id,
+          });
           break;
         case "stream_start":
           set({

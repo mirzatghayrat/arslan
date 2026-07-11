@@ -317,6 +317,9 @@ export interface ArslanHistoryRow {
   role: "user" | "arslan" | "spawn_summary";
   content: string;
   spawn_id: number | null;
+  /** S3-M2: run linkage (ArslanMessage.run_id, set at finalize) — restores the
+   *  RunReplay entry point after a reload. Always emitted; null when unlinked. */
+  run_id?: number | null;
 }
 
 // Server -> client frames on /ws/arslan
@@ -332,6 +335,9 @@ export type ArslanServerMessage =
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
   | { type: "run_cancelled"; run_id: number; message_id?: number }
+  // S3-M2 reattach: sent between the history push and the journal replay when the
+  // conversation has an in-flight run — arms the stop button before any stream frame.
+  | { type: "run_in_progress"; run_id: number }
   // stream_end may carry an HTML deliverable packaged by the backend spawn-output
   // exit (HX-2): {kind:"html", filename, title, bytes, complete, content}. It rides
   // the SAME frame the store turns into the chat item. 🔒 Backend only.

@@ -3,6 +3,7 @@ import anyio
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -38,7 +39,13 @@ def app_client(tmp_path, monkeypatch):
 
     importlib.reload(config)
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'wsar.db'}")
+    # NullPool: the fixture seeds via anyio.run (its own short-lived loop) while the
+    # TestClient portal runs another — a POOLED aiosqlite connection created in the
+    # seed loop and reused by the portal loop is the known cross-loop flake root
+    # (memory: test-hygiene round). No pooling = every session opens a fresh
+    # connection on the current loop.
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'wsar.db'}",
+                                 poolclass=NullPool)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _seed():
@@ -81,6 +88,41 @@ def test_answer_turn_streams(app_client, monkeypatch):
         assert ws.receive_json()["type"] == "stream_start"
         assert ws.receive_json() == {"type": "stream_chunk", "content": "Hello"}
         assert ws.receive_json()["type"] == "stream_end"
+
+
+def test_history_rows_carry_run_id(app_client):
+    """S3-M2 Task 1: every history row carries `run_id` (ArslanMessage.run_id,
+    set at finalize) — the RunReplay entry point survives a reload. The key is
+    ALWAYS emitted; its value is None when the message is not linked to a run."""
+    from server.db.models import ArslanMessage, Run
+
+    async def _seed_history() -> int:
+        # No hardcoded PK / spawn FK: after ~1900 earlier tests the autoincrement
+        # sequence (or fixture spawn state) collides with fixed ids in the full
+        # suite — let the DB assign the Run id and link the message to it.
+        async with db_session.AsyncSessionLocal() as s:
+            run = Run(conversation_id="histconv", spawn_name="beauty-guru",
+                      user_message="analyze")
+            s.add(run)
+            await s.flush()
+            s.add(ArslanMessage(conversation_id="histconv", role="user", content="analyze"))
+            s.add(ArslanMessage(conversation_id="histconv", role="spawn_summary",
+                                content="result", run_id=run.id))
+            await s.commit()
+            return run.id
+
+    run_id = anyio.run(_seed_history)
+
+    with app_client.websocket_connect("/ws/arslan/histconv") as ws:
+        hist = ws.receive_json()
+        assert hist["type"] == "history"
+        rows = hist["messages"]
+        assert len(rows) == 2
+        # Unlinked message: key present, value None (simpler client typing).
+        assert "run_id" in rows[0]
+        assert rows[0]["run_id"] is None
+        # Linked spawn_summary: carries its run id.
+        assert rows[1]["run_id"] == run_id
 
 
 def test_confirm_create_makes_spawn(app_client):

@@ -19,11 +19,15 @@ def _clean_registry():
     30s sleep past the test (and past its event loop)."""
     run_registry._tasks.clear()
     run_registry._by_conversation.clear()
+    run_registry._sinks.clear()
+    run_registry._recorders.clear()
     yield
     for t in run_registry._tasks.values():
         t.cancel()
     run_registry._tasks.clear()
     run_registry._by_conversation.clear()
+    run_registry._sinks.clear()
+    run_registry._recorders.clear()
 
 
 async def test_cancel_endpoint_cancels_live_run(client):
