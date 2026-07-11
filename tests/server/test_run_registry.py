@@ -104,6 +104,14 @@ def test_make_emit_fans_out_to_all_sinks_and_detach_stops_delivery():
     run_registry.detach_sink("conv-f", got_a.append)
     emit({"type": "orphan"})  # must not raise
 
+    # Late binding pinned: the SAME emit closure must deliver to a sink attached
+    # AFTER every previous sink detached (guards against a future "cache the sink
+    # set at make_emit time" optimization breaking reattach).
+    got_late: list[dict] = []
+    run_registry.attach_sink("conv-f", got_late.append)
+    emit({"type": "reattached"})
+    assert got_late == [{"type": "reattached"}]
+
 
 def test_make_emit_broken_sink_does_not_block_others():
     got: list[dict] = []

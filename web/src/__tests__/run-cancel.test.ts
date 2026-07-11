@@ -96,6 +96,50 @@ describe("run cancel wiring (S3-M1)", () => {
   });
 });
 
+describe("run_in_progress reattach (S3-M2)", () => {
+  beforeEach(() => {
+    useArslanStore.setState(initialArslanState(), true);
+  });
+
+  it("run_in_progress arms the stop button: thinking=true + activeRunId, NO item created", () => {
+    useArslanStore.getState().handleFrame({ type: "run_in_progress", run_id: 88 } as never);
+    const st = useArslanStore.getState();
+    expect(st.thinking).toBe(true);
+    expect(st.activeRunId).toBe(88);
+    // No item creation — the replayed stream frames rebuild state via existing paths.
+    expect(st.items).toHaveLength(0);
+    expect(st.streaming).toBe(false);
+  });
+
+  it("replayed stream frames after run_in_progress flow via the existing cases", () => {
+    useArslanStore.getState().handleFrame({ type: "run_in_progress", run_id: 89 } as never);
+    // Journal replay: stream_start (same run) then chunks, then live stream_end.
+    useArslanStore.getState().handleFrame({ type: "stream_start", source: "spawn", spawn_id: 3, run_id: 89 } as never);
+    expect(useArslanStore.getState().activeRunId).toBe(89);
+    expect(useArslanStore.getState().streaming).toBe(true);
+    useArslanStore.getState().handleFrame({ type: "stream_chunk", content: "resumed " } as never);
+    const mid = useArslanStore.getState();
+    expect(mid.thinking).toBe(false); // first real content clears thinking
+    expect(mid.streamingText).toBe("resumed ");
+    useArslanStore.getState().handleFrame({ type: "stream_end", message_id: 5 } as never);
+    const st = useArslanStore.getState();
+    expect(st.streaming).toBe(false);
+    expect(st.activeRunId).toBeNull();
+    expect(st.items[st.items.length - 1].content).toBe("resumed ");
+  });
+
+  it("server ordering (history THEN run_in_progress): rebuild clears, reattach re-arms", () => {
+    // history rebuild still clears activeRunId...
+    useArslanStore.setState({ activeRunId: 5, thinking: false });
+    useArslanStore.getState().handleFrame({ type: "history", messages: [] } as never);
+    expect(useArslanStore.getState().activeRunId).toBeNull();
+    // ...and the run_in_progress that follows it (server sends it after history) re-arms.
+    useArslanStore.getState().handleFrame({ type: "run_in_progress", run_id: 90 } as never);
+    expect(useArslanStore.getState().activeRunId).toBe(90);
+    expect(useArslanStore.getState().thinking).toBe(true);
+  });
+});
+
 describe("api.cancelRun (S3-M1)", () => {
   beforeEach(() => {
     global.fetch = vi.fn(async () => ({

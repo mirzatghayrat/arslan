@@ -104,6 +104,9 @@ def journal_snapshots(conversation_id: str) -> list[tuple[int, list[dict]]]:
     recorder are skipped. Must stay synchronous — the reattaching caller pairs
     this atomically (no await between) with attach_sink so no frame is lost
     or duplicated across the snapshot/live boundary.
+
+    Shallow copy: the returned lists are fresh, but the event dicts are shared
+    with the live journal — consumers must not mutate them.
     """
     out: list[tuple[int, list[dict]]] = []
     for run_id in active_for(conversation_id):

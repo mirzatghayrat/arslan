@@ -301,6 +301,18 @@ function makeActions(set: SetState, get: GetState) {
           // pulse continues seamlessly into the next round's frames.
           set({ thinking: true, workStartedAt: state.workStartedAt ?? Date.now() });
           break;
+        case "run_in_progress":
+          // S3-M2 reattach: the server announces an in-flight run right after the
+          // history push, before replaying its journaled frames. Arm the stop
+          // button (activeRunId) and revive the thinking pulse; create NO item —
+          // the replayed stream_start/chunk frames rebuild the live view through
+          // the existing cases below.
+          set({
+            thinking: true,
+            workStartedAt: state.workStartedAt ?? Date.now(),
+            activeRunId: frame.run_id,
+          });
+          break;
         case "stream_start":
           set({
             pending: false,
