@@ -197,7 +197,10 @@ async def test_usage_summary_24h_window(client):
     assert r.status_code == 200
     body = r.json()
     rows = {(x["provider"], x["model"], x["scope"]): x for x in body["rows"]}
-    assert set(rows) == {("anthropic", SONNET, "spawn"), ("anthropic", HAIKU, "router")}
+    # Final-review I2: replay arms (the biggest burner) now aggregate as scope="replay".
+    assert set(rows) == {("anthropic", SONNET, "spawn"), ("anthropic", HAIKU, "router"),
+                         ("anthropic", SONNET, "replay")}
+    assert rows[("anthropic", SONNET, "replay")]["tokens_total"] == 18
     spawn = rows[("anthropic", SONNET, "spawn")]
     assert spawn["tokens_total"] == 1100
     assert spawn["usd"] == pytest.approx(1000 / 1e6 * 3 + 100 / 1e6 * 15)
@@ -206,7 +209,7 @@ async def test_usage_summary_24h_window(client):
     assert router["tokens_total"] == 550
     assert router["usd"] == pytest.approx(500 / 1e6 * 1 + 50 / 1e6 * 5)
     # daily series covers exactly the in-window tokens, dates ascending
-    assert sum(p["tokens_total"] for p in body["daily"]) == 1100 + 550
+    assert sum(p["tokens_total"] for p in body["daily"]) == 1100 + 550 + 18
     dates = [p["date"] for p in body["daily"]]
     assert dates == sorted(dates)
 
@@ -218,7 +221,8 @@ async def test_usage_summary_7d_and_30d_windows(client):
     rows7 = {(x["provider"], x["model"], x["scope"]): x for x in r7["rows"]}
     assert set(rows7) == {("anthropic", SONNET, "spawn"),
                           ("anthropic", HAIKU, "router"),
-                          ("anthropic", HAIKU, "judge")}
+                          ("anthropic", HAIKU, "judge"),
+                          ("anthropic", SONNET, "replay")}
     spawn7 = rows7[("anthropic", SONNET, "spawn")]
     assert spawn7["tokens_total"] == 3300     # both sonnet runs
     assert spawn7["usd"] == pytest.approx(3000 / 1e6 * 3 + 300 / 1e6 * 15)
@@ -226,12 +230,12 @@ async def test_usage_summary_7d_and_30d_windows(client):
     assert judge7["tokens_total"] == 300
     assert judge7["usd"] is None              # estimated → never priced
     assert judge7["estimated_any"] is True
-    assert sum(p["tokens_total"] for p in r7["daily"]) == 3300 + 550 + 300
+    assert sum(p["tokens_total"] for p in r7["daily"]) == 3300 + 550 + 300 + 18  # +replay
 
     r30 = (await client.get("/api/v1/usage/summary", params={"range": "30d"},
                             headers=AUTH)).json()
     rows30 = {(x["provider"], x["model"], x["scope"]): x for x in r30["rows"]}
-    assert len(rows30) == 4                   # + the 20-day-old mystery run
+    assert len(rows30) == 5                   # + the 20-day-old mystery run + replay row
     mystery = rows30[("openai", "mystery-9000", "spawn")]
     assert mystery["tokens_total"] == 50
     assert mystery["usd"] is None             # unknown price
@@ -370,3 +374,20 @@ async def test_answer_stream_end_usage_estimated_no_usd(memdb, monkeypatch):
     assert usage["tokens_total"] == 800
     assert usage["estimated"] is True
     assert usage["usd"] is None
+
+
+async def test_summary_includes_replay_runs_but_conversation_stays_live_only(client):
+    # Final-review I2: evolution replay arms are the largest burner — the fleet
+    # summary must aggregate them (scope="replay"); the per-conversation endpoint
+    # stays live-only (replay rows carry synthetic conversation ids anyway).
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(_run("evolution-replay", model="deepseek-v4-flash", provider="deepseek",
+                    tin=1000, tout=500, task_tokens=1500, kind="replay"))
+        await db.commit()
+    resp = await client.get("/api/v1/usage/summary", params={"range": "24h"}, headers=AUTH)
+    assert resp.status_code == 200
+    rows = resp.json()["rows"]
+    assert any(r["scope"] == "replay" and r["model"] == "deepseek-v4-flash" for r in rows)
+    conv = (await client.get("/api/v1/conversations/evolution-replay/usage",
+                             headers=AUTH)).json()
+    assert conv["tokens_total"] == 0  # conversation endpoint excludes replay

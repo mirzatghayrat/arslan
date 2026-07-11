@@ -73,12 +73,17 @@ def item_usd(model: str | None, tokens_in: int | None, tokens_out: int | None,
 
 async def fetch_usage_items(
     *, conversation_id: str | None = None, since: datetime | None = None,
+    include_replay: bool = False,
 ) -> list[tuple]:
     """Runs (kind='live', as scope 'spawn') + ledger rows, normalized to
     (scope, provider, model, tokens_in, tokens_out, estimated, tokens_total, ts)."""
-    run_q = select(Run.provider, Run.model, Run.tokens_in, Run.tokens_out,
+    # kind='live' → scope "spawn"; kind='replay' → scope "replay" (evolution arms are
+    # the single largest burner — omitting them would break the fleet-wide card's own
+    # "never pretends full coverage" contract). Replay rows carry synthetic
+    # conversation ids ("evolution-replay"), so per-conversation queries never see them.
+    run_q = select(Run.kind, Run.provider, Run.model, Run.tokens_in, Run.tokens_out,
                    Run.tokens_estimated, Run.task_tokens, Run.created_at
-                   ).where(Run.kind == "live")
+                   ).where(Run.kind.in_(("live", "replay") if include_replay else ("live",)))
     led_q = select(UsageLedger.scope, UsageLedger.provider, UsageLedger.model,
                    UsageLedger.tokens_in, UsageLedger.tokens_out,
                    UsageLedger.tokens_estimated, UsageLedger.tokens_total, UsageLedger.ts)
@@ -91,8 +96,9 @@ async def fetch_usage_items(
     async with db_session.AsyncSessionLocal() as db:
         runs = (await db.execute(run_q)).all()
         ledger = (await db.execute(led_q)).all()
-    items = [("spawn", provider, model, tin, tout, bool(est), task_tokens or 0, ts)
-             for (provider, model, tin, tout, est, task_tokens, ts) in runs]
+    items = [("spawn" if kind == "live" else "replay",
+              provider, model, tin, tout, bool(est), task_tokens or 0, ts)
+             for (kind, provider, model, tin, tout, est, task_tokens, ts) in runs]
     items += [(scope, provider, model, tin, tout, bool(est), total or 0, ts)
               for (scope, provider, model, tin, tout, est, total, ts) in ledger]
     return items
@@ -102,7 +108,7 @@ async def fetch_usage_items(
 async def usage_summary(
     rng: str = Query("7d", alias="range", pattern="^(24h|7d|30d)$"),
 ) -> UsageSummaryOut:
-    items = await fetch_usage_items(since=datetime.utcnow() - _WINDOWS[rng])
+    items = await fetch_usage_items(since=datetime.utcnow() - _WINDOWS[rng], include_replay=True)
 
     groups: dict[tuple, dict] = {}
     daily: dict[str, int] = {}

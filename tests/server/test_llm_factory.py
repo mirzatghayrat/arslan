@@ -91,6 +91,12 @@ async def test_adapter_reports_config_provider_not_protocol(tmp_path, monkeypatc
     """S3-M3: usage attribution must carry the CONFIG-level provider key (deepseek/
     ollama/…), not the expanded protocol name ("openai") — every Tier-0 preset was
     previously reported as provider="openai" in buckets/summary rows."""
+    monkeypatch.setenv("ARSLAN_SECRET_KEY", "unit-test")  # hermetic: crypto fails closed without it
+    import importlib
+
+    import server.config as config
+
+    importlib.reload(config)
     from arslan.llm import usage_sink
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'rp.db'}")
