@@ -60,7 +60,8 @@
     "reconnecting": "Reconectando...",
     "thinking": "Pensando...",
     "roster_joined": "{{name}} se unió a la conversación",
-    "roster_left": "{{name}} salió de la conversación"
+    "roster_left": "{{name}} salió de la conversación",
+    "roster_recruited": "{{name}} se unió · la próxima vez tareas como esta van directo a {{name}}"
   },
   "conversation": {
     "title": "Arslan",

@@ -60,7 +60,8 @@
     "reconnecting": "正在重新连接……",
     "thinking": "思考中……",
     "roster_joined": "{{name}} 加入了对话",
-    "roster_left": "{{name}} 离开了对话"
+    "roster_left": "{{name}} 离开了对话",
+    "roster_recruited": "{{name}} 已加入 · 下次这类任务直接交给 {{name}}"
   },
   "conversation": {
     "title": "Arslan",

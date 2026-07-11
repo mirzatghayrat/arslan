@@ -386,6 +386,13 @@ async def handle_user_message(
     if pending_invite is not None:
         if confirm_lexicon.is_short_confirm(user_message):
             await phase_service.clear(conversation_id)
+            # Recruiting invite (delegation cell 6): Arslan already answered doer-first, so
+            # a typed accept ONLY enrolls the spawn — it must NOT re-dispatch the answered
+            # task (Bug 1 fix). An ordinary (UNanswered) park still dispatches (S0-2).
+            if pending_invite.get("answered"):
+                await _accept_recruit(conversation_id, pending_invite["spawn_id"], emit)
+                await memory.maybe_compact(conversation_id)
+                return
             from server.services import recap_service
             await recap_service.log_event(
                 conversation_id, "delegation_advance",
@@ -409,6 +416,25 @@ async def handle_user_message(
         # turns on) can't deterministically mis-dispatch the aged task. Then fall
         # through to normal routing/answer for this turn.
         await phase_service.clear(conversation_id)
+
+    # 1a2. A parked member-picker choice (delegation cell 5): the user's pick — the chosen
+    # member's name, sent back by the ask_user_choice card — dispatches the parked task to
+    # that member with its original brief. Like the parked invite, it is honored ONLY as the
+    # immediate next action: any non-matching message clears the stale choice and falls
+    # through to normal routing.
+    pending_choice = await phase_service.get_pending_choice(conversation_id)
+    if pending_choice is not None:
+        chosen = _match_choice(user_message, pending_choice.get("candidates") or [])
+        await phase_service.clear(conversation_id)
+        if chosen is not None:
+            await dispatch_routed(
+                conversation_id, chosen["spawn_id"],
+                pending_choice.get("task_brief") or "",
+                bool(pending_choice.get("needs_proposal")), emit,
+                user_message=pending_choice.get("user_message") or user_message,
+            )
+            await memory.maybe_compact(conversation_id)
+            return
 
     # 1b. if a proposal is pending, classify the reply before routing
     pending = await phase_service.get_pending(conversation_id)
@@ -938,6 +964,22 @@ async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
     return f"@{name}" in msg or name in msg
 
 
+# Escape hatch (delegation route-to-member, cell 3): the user explicitly wants the HOST
+# (Arslan) to answer even when a capable member exists — the mirror of the @spawn override.
+# Deliberately conservative, an explicit set only (documented in the spec §2/§1.5): an
+# @-address to Arslan/主脑, or a direct "you answer" directive. Deterministic, zero LLM.
+_ARSLAN_ADDRESS_PHRASES = (
+    "@arslan", "@主脑", "你直接答", "你来答", "直接回答", "you answer",
+)
+
+
+def _user_addressed_arslan(user_message: str) -> bool:
+    """True when the user explicitly told the HOST to answer this turn (cell 3 escape
+    hatch), so Arslan answers even if a capable member exists — no dispatch, no card."""
+    msg = (user_message or "").lower()
+    return any(p in msg for p in _ARSLAN_ADDRESS_PHRASES)
+
+
 async def _resolve_at_mentioned_spawn(user_message: str) -> int | None:
     """Resolve an EXPLICIT @-mention to a real spawn id. Requires the `@` form (never a bare
     name) so it can't hijack a normal answer turn. Matching, in order:
@@ -1023,90 +1065,173 @@ async def _log_repeated_confirmation(conversation_id, ref: dict | None = None) -
         {**(ref or {}), "count": count}, f"重复确认 ×{count}")
 
 
-async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
-                        user_message: str = "", route_ms: int | None = None,
-                        attached_context: str | None = None, confirm_command=None) -> None:
-    # Doer-first (boundary component 2): if the user did NOT explicitly name this spawn, the router
-    # merely INFERRED it fits — do NOT silently dispatch. Arslan does the task ITSELF, then floats a
-    # lightweight "让 X 接手更专业?" chip whose Accept dispatches the parked task. Explicit naming
-    # falls through to the existing dispatch/invite path below.
-    #
-    # PA-2 hard limit on the divert: it may fire ONCE per delegation. When the user already
-    # confirmed (previous decision was route→the SAME spawn, or this message is a bare short
-    # confirm), diverting again is the incident's infinite confirm loop — the turn MUST take the
-    # same dispatch/invite path an explicit naming takes. Deterministic, zero LLM.
+# ── Task arbitration (delegation route-to-member, §1.5 truth table) ──────────────────
+# One readable vocabulary for the seven rows; _arbitrate_task decides the cell, _handle_route
+# executes it. "Today the table changes before the code."
+_CELL_ESCAPE = "escape"                       # cell 3: user addressed Arslan → host answers
+_CELL_EXPLICIT_MEMBER = "explicit_member"     # cell 1 / advance→member: dispatch directly
+_CELL_EXPLICIT_NONMEMBER = "explicit_nonmember"  # cell 2 / advance→non-member: invite (UNANSWERED)
+_CELL_MEMBER_DISPATCH = "member_dispatch"     # cell 4: inferred member is the clean single fit
+_CELL_MEMBER_PICKER = "member_picker"         # cell 5: inferred members ambiguous (≥2 plausible)
+_CELL_RECRUIT = "recruit_nonmember"           # cell 6: inferred non-member → answer + recruit
+_CELL_ANSWER_ONLY = "answer_only"             # cell 7: no capable member → answer doer-first
+
+
+async def _score_roster_members(conversation_id, result):  # noqa: ANN001
+    """Score the CURRENT roster members against the routed task, return classify_band's
+    `(band, payload)`.
+
+    The need is the routed spawn's OWN domain + capabilities (the router's pick is the
+    reference point): a lone same-domain member is a clean single fit (invite_one), two
+    close same-domain members are ambiguous (picker), an off-domain routed member is
+    create. `score_spawns` is fail-open (no BYOK key → structural score only), so this
+    never raises on a missing key."""
+    routed = await spawn_service.load_one_spawn(result.spawn_id)
+    dom_cat = (getattr(routed, "domain_category", None) or "") if routed else ""
+    dom_sub = getattr(routed, "domain_subcategory", None) if routed else None
+    need = {
+        "domain": f"{dom_cat}.{dom_sub}" if (dom_cat and dom_sub) else dom_cat,
+        "capabilities": list(getattr(routed, "capabilities", None) or []) if routed else [],
+    }
+    spawns = await spawn_service.load_all_spawns()
+    roster = await roster_service.list_roster(conversation_id)
+    member_ids = {int(m["spawn_id"]) for m in roster if m.get("spawn_id") is not None}
+    member_dicts = [_spawn_to_match_dict(s) for s in spawns if getattr(s, "id", None) in member_ids]
+    ranked = await spawn_match_service.score_spawns(need, member_dicts)
+    return spawn_match_service.classify_band(ranked)
+
+
+async def _arbitrate_task(conversation_id, result, user_message):  # noqa: ANN001
+    """The §1.5 truth table as ONE decision. Returns `(cell, advance, candidates)` where
+    `cell` names the row, `advance` is the PA-2 advance trigger (for recap logging on the
+    explicit path), and `candidates` is the picker member list (cell 5). Detection only —
+    all side effects (answer/dispatch/invite/emit) live in _handle_route. Deterministic
+    except for the (fail-open) member-scoring LLM call on an inferred member route."""
+    # Cell 3: escape hatch wins over everything — mirror of the @spawn override.
+    if _user_addressed_arslan(user_message):
+        return _CELL_ESCAPE, None, None
+
     user_named = await _user_named_spawn(user_message, result.spawn_id)
     advance = None
     if not user_named:
         advance = await _delegation_advance_trigger(conversation_id, result.spawn_id, user_message)
-        if advance is not None:
-            spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-            from server.services import recap_service
-            await recap_service.log_event(
-                conversation_id, "delegation_advance",
-                {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "trigger": advance},
-                f"确认推进 → 交办 {spawn_name or '分身'}(触发:{advance})")
-            # PA-4: a short-confirm that fires the advance IS a repeated confirmation —
-            # count it (the answer-path site below catches the ones the router never
-            # routes; together they make the confirm loop countable in the recap).
-            if advance == "short_confirm":
-                await _log_repeated_confirmation(
-                    conversation_id,
-                    {"spawn_id": result.spawn_id, "spawn_name": spawn_name,
-                     "at": "delegation_advance"})
-    if not user_named and advance is None:
-        # HX-1 A2 tier 1: this branch KNOWS the inferred spawn's name, so the promise
-        # interceptor inside _handle_answer also gets the high-precision "交给/让/派 <name>"
-        # pattern — the exact live-incident shape ("已交给 Deck Master 生成中" with zero runs).
-        _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-        # PA-1: the divert branch NEVER delegates — no dispatch, no propose_invite (the
-        # chip emitted below AFTER the answer is a user-consent question,
-        # not a delegation) — so turn_delegated is False by construction and any
-        # "交给/让/派 <name>" claim in the answer is always intercepted, tools or not.
-        answer_text = await _handle_answer(conversation_id, user_message, emit,
-                                           attached_context=attached_context, confirm_command=confirm_command,
-                                           intercept_spawn_name=_guard_spawn_name,
-                                           turn_delegated=False)
-        # Dual-track growth (boundary component 5): Arslan just did an INFERRED spawn's job itself —
-        # feed the deliverable to that spawn in the background so it learns without having acted.
-        if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
-            _dual_track_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-            _fire_dual_track(conversation_id, result.spawn_id, _dual_track_spawn_name,
-                             _dual_track_signals(user_message, answer_text))
-        # 验收① (PA-2): this chip is the user's ONLY advancement channel after a doer-first
-        # self-answer, so EVERY trust band gets it. propose_invite is ITSELF the user-consent
-        # gate — trust band governs silent auto-join elsewhere, NOT invitability. The old
-        # `band == "trusted"` gate here is exactly what killed the live incident's escape
-        # hatch (Deck Master wasn't trusted → no chip → infinite confirm loop).
-        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
-        reason = (f"让「{spawn_name}」接手更专业?" if _is_cjk(user_message)
-                  else f"Let {spawn_name} take this for more depth?")
-        await phase_service.set_inviting(
-            conversation_id, result.spawn_id,
-            task_brief=result.task_brief or "", user_message=user_message,
-            needs_proposal=bool(getattr(result, "needs_proposal", False)), announced=True)
-        from server.services import recap_service
-        await recap_service.log_event(
-            conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": spawn_name},
-            f"邀请 {spawn_name or '分身'} 加入")
-        emit(protocol.propose_invite(result.spawn_id, reason))
+    is_member = await roster_service.is_member(conversation_id, result.spawn_id)
+
+    # Cells 1/2 + advance continuation: an EXPLICIT hand-off (an @name, or a confirmed
+    # advance — short_confirm / consecutive_route) takes the member-check path a naming
+    # always took. Dispatch a member (cell 1); invite a non-member, parking the task
+    # UNANSWERED so Accept dispatches it (cell 2) — S0-2 continuation preserved.
+    if user_named or advance is not None:
+        return (_CELL_EXPLICIT_MEMBER if is_member else _CELL_EXPLICIT_NONMEMBER), advance, None
+
+    # INFERRED route. The router picked a NON-member as best fit → recruit it (cell 6).
+    if not is_member:
+        return _CELL_RECRUIT, None, None
+
+    # Inferred route to a MEMBER: score the roster and arbitrate.
+    band, payload = await _score_roster_members(conversation_id, result)
+    if band == "invite_one":
+        # cell 4 only when the router's pick IS the strong top member; otherwise the pick
+        # isn't the clean fit the scoring found → Arslan answers (cell 7).
+        return (_CELL_MEMBER_DISPATCH if payload.get("spawn_id") == result.spawn_id
+                else _CELL_ANSWER_ONLY), None, None
+    if band == "picker":
+        cands = payload.get("candidates") or []
+        cand_ids = [c.get("spawn_id") for c in cands]
+        if result.spawn_id not in cand_ids:
+            return _CELL_ANSWER_ONLY, None, None       # router's pick isn't even plausible
+        if len(cands) >= 2:
+            return _CELL_MEMBER_PICKER, None, cands     # cell 5: ambiguous → ask, never guess
+        return _CELL_MEMBER_DISPATCH, None, None        # lone plausible member → dispatch it
+    return _CELL_ANSWER_ONLY, None, None                # create band → cell 7
+
+
+async def _accept_recruit(conversation_id, spawn_id, emit: EventSink) -> None:  # noqa: ANN001
+    """Accept a RECRUITING invite (cell 6, behavior a): ENROLL the spawn and post the
+    recruit note — do NOT dispatch, because Arslan already answered the task doer-first
+    (Bug 1 fix). Shared by the WS `roster_invite` accept handler and the typed-「好」 spine."""
+    await roster_service.join(conversation_id, spawn_id, via="invited")
+    spawn_name = await dispatcher.get_spawn_name(spawn_id)
+    emit(protocol.roster_event("recruited", spawn_id, spawn_name))
+    emit(protocol.roster_update(await roster_service.list_roster(conversation_id)))
+    from server.services import recap_service
+    await recap_service.log_event(
+        conversation_id, "invite", {"spawn_id": spawn_id, "spawn_name": spawn_name},
+        f"招募入编 {spawn_name or '分身'} · 下次这类任务直接接手")
+
+
+def _match_choice(user_message, candidates):  # noqa: ANN001
+    """Match the user's picker reply (the chosen member's name, sent back by the
+    ask_user_choice card) to a parked candidate. Exact case-insensitive name match first,
+    then a contains fallback. Returns the candidate dict or None."""
+    msg = (user_message or "").strip().lower()
+    if not msg:
+        return None
+    for c in candidates:
+        name = (c.get("name") or "").strip().lower()
+        if name and name == msg:
+            return c
+    for c in candidates:
+        name = (c.get("name") or "").strip().lower()
+        if name and (name in msg or msg in name):
+            return c
+    return None
+
+
+async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
+                        user_message: str = "", route_ms: int | None = None,
+                        attached_context: str | None = None, confirm_command=None) -> None:
+    """Arbitrate a task turn per the §1.5 truth table (single implementation; the table
+    changes before the code). Priority order = the table rows:
+
+      cell 3  escape hatch (@Arslan / "你直接答")           → Arslan answers, no card
+      cell 1  @named / advance → roster member              → dispatch directly
+      cell 2  @named / advance → non-member                 → invite, park UNANSWERED
+      cell 4  inferred → member is the clean single fit     → dispatch (Arslan does NOT answer)
+      cell 5  inferred → members ambiguous (≥2 plausible)   → ask_user_choice, park a choice
+      cell 6  inferred → non-member                         → answer + RECRUIT (answered park)
+      cell 7  inferred → no capable member                  → answer doer-first
+
+    Structural rationale (spec §1): a member taking the task is the ONLY source of live
+    evolution corpus, so "capable member → give it to the member" is a product premise,
+    not a UX preference; doer-first only holds until such a specialist exists.
+    """
+    cell, advance, candidates = await _arbitrate_task(conversation_id, result, user_message)
+
+    # Cell 3: the user told the host to answer — mirror of the @spawn override.
+    if cell == _CELL_ESCAPE:
+        await _handle_answer(conversation_id, user_message, emit,
+                             attached_context=attached_context, confirm_command=confirm_command)
         return
 
-    # Inline roster invite gates FIRST CONTACT — before the propose-vs-execute decision.
-    # If the router wants to route to a spawn that is NOT yet a member of this
-    # conversation, do NOT silently auto-join + dispatch (in EITHER propose or execute
-    # mode). Instead propose an inline Accept/Dismiss card (`propose_invite`) and park
-    # the task — carrying `needs_proposal` so the accept handler re-makes the same
-    # propose-vs-execute decision. On Accept the WS `roster_invite` handler joins and
-    # dispatches via `dispatch_routed` (the same shared path used below); on Dismiss
-    # `dismiss_invite` clears it. A spawn already in the roster dispatches directly.
-    if not await roster_service.is_member(conversation_id, result.spawn_id):
+    # PA-2 advance audit (only when the explicit path was reached VIA an advance trigger):
+    # keep the recap trail + the repeated-confirmation counter.
+    if advance is not None:
+        spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+        from server.services import recap_service
+        await recap_service.log_event(
+            conversation_id, "delegation_advance",
+            {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "trigger": advance},
+            f"确认推进 → 交办 {spawn_name or '分身'}(触发:{advance})")
+        if advance == "short_confirm":
+            await _log_repeated_confirmation(
+                conversation_id,
+                {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "at": "delegation_advance"})
+
+    # Cells 1 / 4 / advance→member: a named/confirmed or clean-fit member takes it directly.
+    if cell in (_CELL_EXPLICIT_MEMBER, _CELL_MEMBER_DISPATCH):
+        await dispatch_routed(
+            conversation_id, result.spawn_id, result.task_brief or "",
+            bool(getattr(result, "needs_proposal", False)), emit,
+            user_message=user_message, route_ms=route_ms, attached_context=attached_context,
+        )
+        return
+
+    # Cell 2 / advance→non-member: speak the brief first, THEN pop the invite; park the
+    # task UNANSWERED (Accept must dispatch it — S0-2 not regressed). `needs_proposal` is
+    # carried so the accept handler re-makes the same propose-vs-execute decision.
+    if cell == _CELL_EXPLICIT_NONMEMBER:
         summary = await _invite_capability_summary(result.spawn_id)
-        # Speak first, THEN ask. Arslan states its brief (need + @-mention of who it wants
-        # to bring in) as its OWN message, and only then pops the Accept/Dismiss card — so
-        # the user reads Arslan's reasoning before deciding, instead of a bare card that
-        # only explains itself after Accept. The brief is `announced` so the post-accept
-        # dispatch (`dispatch_routed(announce=False)`) does not repeat it.
         spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
         brief = await _route_announcement(
             conversation_id, result.spawn_id, spawn_name, result.task_brief or "")
@@ -1123,12 +1248,55 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         emit(protocol.propose_invite(result.spawn_id, summary))
         return
 
-    # Already a roster member → dispatch directly via the shared propose-vs-execute path.
-    await dispatch_routed(
-        conversation_id, result.spawn_id, result.task_brief or "",
-        bool(getattr(result, "needs_proposal", False)), emit,
-        user_message=user_message, route_ms=route_ms, attached_context=attached_context,
-    )
+    # Cell 5: the inferred route is ambiguous across ≥2 roster members — NEVER silently
+    # pick. Emit an ask_user_choice card (reuse the PA-3 clarify_options frame) and park a
+    # choice; the user's pick dispatches the parked task to the chosen member.
+    if cell == _CELL_MEMBER_PICKER:
+        cands = candidates or []
+        cjk = _is_cjk(user_message)
+        question = "这个任务交给谁来做?" if cjk else "Who should take this on?"
+        options = [{"label": c.get("name") or f"#{c.get('spawn_id')}",
+                    "hint": (c.get("why") or "")} for c in cands]
+        await phase_service.set_choosing(
+            conversation_id, candidates=cands,
+            task_brief=result.task_brief or "", user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)))
+        emit(protocol.clarify_options(question, options))
+        return
+
+    # Cells 6 / 7: doer-first — Arslan does the task ITSELF (no capable member has it).
+    # It KNOWS the inferred spawn's name, so the promise interceptor inside _handle_answer
+    # gets the high-precision "交给/让/派 <name>" pattern; turn_delegated=False by
+    # construction (no dispatch this turn) so any such claim is always intercepted (PA-1/HX-1).
+    _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
+    answer_text = await _handle_answer(
+        conversation_id, user_message, emit,
+        attached_context=attached_context, confirm_command=confirm_command,
+        intercept_spawn_name=_guard_spawn_name, turn_delegated=False)
+    # Dual-track growth (boundary component 5): feed Arslan's own deliverable to the
+    # inferred spawn in the background so it learns without having acted.
+    if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
+        _fire_dual_track(conversation_id, result.spawn_id, _guard_spawn_name,
+                         _dual_track_signals(user_message, answer_text))
+
+    # Cell 6: the router picked a NON-member as best fit → RECRUITING invite. The park
+    # carries answered=True so Accept ONLY enrolls ("下次这类任务由 TA 直接接手") and does
+    # NOT re-dispatch the task Arslan already answered (Bug 1 fix). Cell 7 (no capable
+    # member) stops at the doer-first answer — the suggest_create staffing spine is the
+    # `suggest_create` router action, untouched.
+    if cell == _CELL_RECRUIT:
+        reason = (f"让「{_guard_spawn_name}」接手更专业?" if _is_cjk(user_message)
+                  else f"Let {_guard_spawn_name} take this for more depth?")
+        await phase_service.set_inviting(
+            conversation_id, result.spawn_id,
+            task_brief=result.task_brief or "", user_message=user_message,
+            needs_proposal=bool(getattr(result, "needs_proposal", False)),
+            announced=True, answered=True)
+        from server.services import recap_service
+        await recap_service.log_event(
+            conversation_id, "invite", {"spawn_id": result.spawn_id, "spawn_name": _guard_spawn_name},
+            f"招募邀请 {_guard_spawn_name or '分身'} 加入")
+        emit(protocol.propose_invite(result.spawn_id, reason))
 
 
 async def propose_invite(
