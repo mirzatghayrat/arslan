@@ -6,6 +6,7 @@ import type {
   CatalogEntry,
   CollectionOut,
   ConfirmResult,
+  ConversationUsage,
   EmbeddingStatus,
   EvolutionStats,
   EvolveEstimate,
@@ -41,6 +42,7 @@ import type {
   SuggestDraft,
   SuggestPrimaryResult,
   TemplateInfo,
+  UsageSummary,
   UserFact,
 } from "./client.types";
 
@@ -196,11 +198,17 @@ export const api = {
   updateFact: (id: number, body: { content?: string; sensitive?: boolean }) =>
     request<UserFact>(`/facts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteFact: (id: number) => request<void>(`/facts/${id}`, { method: "DELETE" }),
-  /** Generate a concise thread title from the first user message + optional first reply. */
-  generateTitle: (firstMessage: string, firstReply?: string): Promise<{ title: string }> =>
+  /** Generate a concise thread title from the first user message + optional first reply.
+   *  conversationId (S3-M3 fold-in) lets the backend usage ledger attribute the
+   *  titler call to its conversation — optional on the wire (TitleIn). */
+  generateTitle: (firstMessage: string, firstReply?: string, conversationId?: string): Promise<{ title: string }> =>
     request<{ title: string }>("/orchestrator/title", {
       method: "POST",
-      body: JSON.stringify({ first_message: firstMessage, first_reply: firstReply }),
+      body: JSON.stringify({
+        first_message: firstMessage,
+        first_reply: firstReply,
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+      }),
     }),
   getRun: (id: number) => request<RunDetailDto>(`/runs/${id}`),
   getRuns: (spawnId?: number, limit = 50, conversationId?: string) => {
@@ -222,6 +230,11 @@ export const api = {
   getRunTimeline: (range: string) => request<RunTimelineDto>(`/runs/timeline?range=${range}`),
   /** This conversation's recap timeline — runs + growth events merged, newest first. */
   getConversationRecap: (id: string) => request<RecapDto>(`/conversations/${id}/recap`),
+  /** S3-M3: cumulative token/USD usage for one conversation (spawn runs + ledger scopes). */
+  getConversationUsage: (id: string) => request<ConversationUsage>(`/conversations/${id}/usage`),
+  /** S3-M3: fleet-wide usage summary — provider×model×scope rows + daily series + 未计入. */
+  getUsageSummary: (range: "24h" | "7d" | "30d") =>
+    request<UsageSummary>(`/usage/summary?range=${range}`),
   /** Manually redact one run's sensitive/bulky debug detail (system_prompt, injected_kb, ...). */
   redactRun: (id: number) => request<{ redacted: boolean }>(`/runs/${id}/redact`, { method: "POST" }),
   /** Cancel an in-flight run (S3-M1). 202 {ok} on cancel; 404 unknown; 409 already terminal. */

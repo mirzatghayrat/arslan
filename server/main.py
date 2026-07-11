@@ -165,6 +165,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_mcp_health_upgrade)
         from server.db.migrations.versions._0028_evolution_real import upgrade_sync as _evolution_real_upgrade
         await conn.run_sync(_evolution_real_upgrade)
+        from server.db.migrations.versions._0029_usage_ledger import upgrade_sync as _usage_ledger_upgrade
+        await conn.run_sync(_usage_ledger_upgrade)
 
     from server.registry.seeder import seed_registry
 
@@ -360,6 +362,10 @@ def create_app() -> FastAPI:
     from server.api import conversations as conversations_api
 
     app.include_router(conversations_api.router, prefix="/api/v1")
+
+    from server.api import usage as usage_api
+
+    app.include_router(usage_api.router, prefix="/api/v1")
 
     from server.api import knowledge as knowledge_api
 

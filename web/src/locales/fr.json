@@ -919,5 +919,23 @@
       "status_stale": "périmée",
       "status_proposed": "proposée"
     }
+  },
+  "usage": {
+    "title": "Utilisation",
+    "daily": "Tokens par jour",
+    "empty": "Aucune utilisation sur cette période",
+    "notCovered": "Non comptabilisé",
+    "range": {
+      "24h": "24h",
+      "7d": "7 j",
+      "30d": "30 j"
+    },
+    "col": {
+      "provider": "Fournisseur",
+      "model": "Modèle",
+      "scope": "Portée",
+      "tokens": "Tokens",
+      "usd": "USD"
+    }
   }
 }

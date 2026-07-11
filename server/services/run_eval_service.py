@@ -9,7 +9,7 @@ from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunEvaluation, RunStep, Spawn
 from server.orchestrator import promise_guard
 from server.orchestrator.json_protocol import parse_json_object
-from server.services import trace_evidence
+from server.services import trace_evidence, usage_ledger
 from server.services.llm_factory import build_adapter
 from server.services.prompts.run_judge import JUDGE_SYSTEM, build_prompt
 
@@ -87,8 +87,16 @@ async def score(run_id: int) -> None:
     )
 
     try:
-        adapter = await build_adapter(role="judge")
-        resp = await adapter.chat(system=JUDGE_SYSTEM, user=prompt)
+        # S3-M3 usage ledger: judge tokens never touch the Run row (task_tokens is
+        # router+dispatch+tools, read at finalize BEFORE scoring is scheduled) — ledger
+        # them under scope="judge". NESTING NOTE: this task is created (schedule_scoring)
+        # from INSIDE _dispatch_spawn's usage_sink.collecting() region and INHERITS that
+        # bucket via its context copy; scope() opens a FRESH bucket on enter, so the judge
+        # sees only its own usage and the dispatch Run's numbers are never diminished
+        # (regression: tests/server/test_usage_ledger.py).
+        async with usage_ledger.scope("judge", run.conversation_id, run_id=run_id):
+            adapter = await build_adapter(role="judge")
+            resp = await adapter.chat(system=JUDGE_SYSTEM, user=prompt)
         parsed = parse_json_object(resp.content or "")
         if not isinstance(parsed, dict) or "dimensions" not in parsed:
             raise ValueError("judge returned no dimensions")

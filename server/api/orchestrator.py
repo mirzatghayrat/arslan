@@ -13,5 +13,6 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 @router.post("/orchestrator/title", response_model=TitleOut)
 async def title_conversation(body: TitleIn) -> TitleOut:
     """Generate a short title for a conversation from its first exchange."""
-    title = await generate_title(body.first_message, body.first_reply)
+    title = await generate_title(body.first_message, body.first_reply,
+                                 conversation_id=body.conversation_id)
     return TitleOut(title=title)

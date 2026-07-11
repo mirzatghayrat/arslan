@@ -314,6 +314,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         refinedFrom: item.refinedFrom ?? undefined,
         // S3-M1: partial output of a cancelled run → interrupted marker in the bubble.
         cancelled: item.cancelled ?? undefined,
+        // S3-M3: the turn's usage from the stream_end frame → bubble usage chip.
+        usage: item.usage,
       };
     }
 
@@ -331,6 +333,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       clarifyOptions: item.clarifyOptions,
       // S3-M1: run_cancelled can also finalize an arslan-role live bubble.
       cancelled: item.cancelled ?? undefined,
+      // S3-M3: answer-turn usage from the stream_end frame → bubble usage chip.
+      usage: item.usage,
     };
   });
 }

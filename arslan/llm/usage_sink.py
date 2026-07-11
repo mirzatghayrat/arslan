@@ -6,7 +6,12 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 _sink: ContextVar[list[int] | None] = ContextVar("usage_sink", default=None)
-_detail: ContextVar[dict | None] = ContextVar("usage_detail", default=None)
+# S3-M3: per-(model, provider) buckets — {(model, provider): {"tokens_in", "tokens_out"}}.
+# Replaces the old single last-model-wins dict: mixed-model turns (tool-loop model +
+# synthesis adapter) misattributed the whole run to whichever model reported last.
+_detail: ContextVar[dict[tuple[str | None, str | None], dict] | None] = ContextVar(
+    "usage_detail", default=None
+)
 
 
 def report(tokens: int) -> None:
@@ -29,34 +34,81 @@ def report_detail(
     model: str | None,
     provider: str | None,
 ) -> None:
-    """Structured usage from a real (non-stream) provider response. Aggregates in/out
-    across the turn; keeps the latest non-null model/provider. No-op without context."""
-    d = _detail.get()
-    if d is None:
+    """Structured usage from a provider response, accumulated into the call's
+    (model, provider) bucket. A report with a None tokens_in/out (stream path, no
+    usage frame) marks the bucket estimated via a STICKY flag — review I1: None-ness
+    alone is erasable (a later real report into the same bucket would do
+    (None or 0)+real and silently launder the estimated call's tokens into a
+    real-flagged total). Real values still accumulate per-bucket regardless of the
+    flag. No-op without context."""
+    buckets = _detail.get()
+    if buckets is None:
         return
+    b = buckets.setdefault(
+        (model, provider), {"tokens_in": None, "tokens_out": None, "estimated": False}
+    )
+    if tokens_in is None or tokens_out is None:
+        # Sticky, never cleared: once ANY report into this bucket lacked real
+        # numbers, the bucket's figures are incomplete for the whole collection.
+        b["estimated"] = True
     if tokens_in is not None:
-        d["tokens_in"] = (d["tokens_in"] or 0) + int(tokens_in)
+        b["tokens_in"] = (b["tokens_in"] or 0) + int(tokens_in)
     if tokens_out is not None:
-        d["tokens_out"] = (d["tokens_out"] or 0) + int(tokens_out)
-    if model:
-        d["model"] = model
-    if provider:
-        d["provider"] = provider
+        b["tokens_out"] = (b["tokens_out"] or 0) + int(tokens_out)
+
+
+def primary() -> dict | None:
+    """The bucket with the most total tokens (None fields count 0), as
+    {model, provider, tokens_in, tokens_out} — or None when no context/reports.
+    Ties break to the earliest-reported bucket (dict insertion order)."""
+    buckets = _detail.get()
+    if not buckets:
+        return None
+    (model, provider), b = max(
+        buckets.items(),
+        key=lambda kv: (kv[1]["tokens_in"] or 0) + (kv[1]["tokens_out"] or 0),
+    )
+    return {"model": model, "provider": provider,
+            "tokens_in": b["tokens_in"], "tokens_out": b["tokens_out"]}
 
 
 def detail() -> dict:
-    """Snapshot of the structured usage, all-None when no context/reports."""
-    d = _detail.get()
-    return dict(d) if d else {"tokens_in": None, "tokens_out": None, "model": None, "provider": None}
+    """Snapshot of the structured usage. Backward-compatible top-level keys
+    (model/provider = primary bucket — replaces last-model-wins; tokens_in/out =
+    totals across buckets) plus a per-bucket breakdown under "buckets" (each row
+    carries its sticky "estimated" flag).
+    Honesty rule: ANY estimated bucket makes both totals None (estimates are never
+    summed into real numbers) — generalizes the old any-None-field check, which a
+    same-bucket real report could erase. All-None when no context/reports."""
+    buckets = _detail.get()
+    if not buckets:
+        return {"tokens_in": None, "tokens_out": None,
+                "model": None, "provider": None, "buckets": []}
+    rows = [
+        {"model": m, "provider": p,
+         "tokens_in": b["tokens_in"], "tokens_out": b["tokens_out"],
+         "estimated": b["estimated"]}
+        for (m, p), b in buckets.items()
+    ]
+    # estimated goes True whenever a report leaves a field None, so the flag check
+    # subsumes the old per-field None checks; keep them as defence in depth.
+    blind = any(r["estimated"] for r in rows)
+    tin = (None if blind or any(r["tokens_in"] is None for r in rows)
+           else sum(r["tokens_in"] for r in rows))
+    tout = (None if blind or any(r["tokens_out"] is None for r in rows)
+            else sum(r["tokens_out"] for r in rows))
+    prim = primary()
+    return {"tokens_in": tin, "tokens_out": tout,
+            "model": prim["model"], "provider": prim["provider"], "buckets": rows}
 
 
 @contextmanager
 def collecting():
     """Activate fresh accumulation buckets (total + structured) for the duration of the block."""
     bucket: list[int] = []
-    detail_bucket = {"tokens_in": None, "tokens_out": None, "model": None, "provider": None}
+    detail_buckets: dict[tuple[str | None, str | None], dict] = {}
     token = _sink.set(bucket)
-    dtoken = _detail.set(detail_bucket)
+    dtoken = _detail.set(detail_buckets)
     try:
         yield bucket
     finally:

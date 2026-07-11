@@ -70,12 +70,19 @@ class OpenAIProvider(BaseLLMProvider):
         Yields text content deltas only. Tool-call deltas (delta.tool_calls)
         are NOT surfaced on this path; callers needing tool calls should use
         the non-streaming chat() instead.
+
+        S3-M3: requests the trailing usage frame via stream_options.include_usage
+        and stashes it on self._last_stream_usage (read by LLMAdapter after the
+        loop). Servers that never send the frame simply leave it None.
         """
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "stream": True,
+            # Ask for the trailing usage frame (a data frame with empty choices
+            # and a usage object, sent just before [DONE]).
+            "stream_options": {"include_usage": True},
         }
         if tools:
             payload["tools"] = tools
@@ -84,6 +91,33 @@ class OpenAIProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        yielded = False
+        try:
+            async for piece in self._stream_once(payload, headers):
+                yielded = True
+                yield piece
+            return
+        except httpx.HTTPStatusError as exc:
+            # Some OpenAI-compatible servers (older vLLM/llama.cpp builds, strict
+            # proxies) reject unknown params with a 4xx instead of ignoring them.
+            # No retry helper exists in this file, so: minimal fallback — if the
+            # request failed before any content arrived, retry exactly ONCE
+            # without stream_options so chat never breaks over a nice-to-have.
+            # A genuine 4xx (bad model, bad auth) fails identically on the retry
+            # and still surfaces to the caller. Re-POSTing is billing-safe: a
+            # request the server rejected with a 4xx never started generation
+            # and is not billed.
+            if yielded or not 400 <= exc.response.status_code < 500:
+                raise
+        payload.pop("stream_options", None)
+        async for piece in self._stream_once(payload, headers):
+            yield piece
+
+    async def _stream_once(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> AsyncIterator[str]:
+        """Single SSE request: yield content deltas, capture the usage frame."""
+        self._last_stream_usage = None  # reset per attempt — no stale carry-over
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST",
@@ -104,6 +138,15 @@ class OpenAIProvider(BaseLLMProvider):
                         obj = json.loads(data)
                     except json.JSONDecodeError:
                         continue
+                    # Trailing usage frame: choices is empty, usage is an object.
+                    # (With include_usage, OpenAI sends "usage": null on content
+                    # frames — hence the isinstance check, not a truthiness one.)
+                    usage = obj.get("usage")
+                    if isinstance(usage, dict):
+                        tin = usage.get("prompt_tokens")
+                        tout = usage.get("completion_tokens")
+                        if tin is not None or tout is not None:
+                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout}
                     choices = obj.get("choices") or []
                     if not choices:
                         continue

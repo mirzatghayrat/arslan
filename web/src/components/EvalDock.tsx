@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { RecapDto } from "../api/client.types";
+import type { ConversationUsage, RecapDto } from "../api/client.types";
+import { fmtTok, fmtUsd } from "../lib/usageFormat";
+import { useArslanStore } from "../stores/arslanStore";
 
 interface Props {
   /** Backend numeric spawn id (spawn section) — unused by the recap timeline. */
@@ -42,7 +44,11 @@ function fmtTime(iso: string | null | undefined): string {
  */
 export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
   const [recap, setRecap] = useState<RecapDto | null>(null);
+  const [usage, setUsage] = useState<ConversationUsage | null>(null);
   const [open, setOpen] = useState(false);
+  // S3-M3: refetch the cumulative usage after every finalized turn — lastMessageId
+  // bumps exactly when a stream_end (or message) frame lands in the store.
+  const lastMessageId = useArslanStore((s) => s.lastMessageId);
 
   useEffect(() => {
     if (!conversationId) { setRecap(null); return; }
@@ -52,6 +58,17 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
       .catch(() => { if (!cancelled) setRecap(null); });
     return () => { cancelled = true; };
   }, [conversationId]);
+
+  // S3-M3 conversation cumulative usage — on conversation switch and after each
+  // turn. Fetch failure → hide the line silently (usage stays null).
+  useEffect(() => {
+    if (!conversationId) { setUsage(null); return; }
+    let cancelled = false;
+    api.getConversationUsage(conversationId)
+      .then((u) => { if (!cancelled) setUsage(u); })
+      .catch(() => { if (!cancelled) setUsage(null); });
+    return () => { cancelled = true; };
+  }, [conversationId, lastMessageId]);
 
   if (!conversationId) return null;
 
@@ -83,6 +100,15 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
           Diagnostics ↗
         </button>
       </div>
+      {/* S3-M3: conversation cumulative usage — Σ tok · $usd. ≈ = some tokens are
+          estimated; trailing + = some tokens carry no USD figure (usd_partial);
+          usd_total null = nothing priceable → tokens only (unknown ≠ free). */}
+      {usage != null && usage.tokens_total > 0 && (
+        <div className="recap-dock__usage" data-testid="conv-usage">
+          Σ {usage.estimated_any ? "≈ " : ""}{fmtTok(usage.tokens_total)} tok
+          {usage.usd_total != null && ` · ${fmtUsd(usage.usd_total)}${usage.usd_partial ? "+" : ""}`}
+        </div>
+      )}
       {open && (items.length === 0 ? (
         <div className="recap-dock__empty">本对话还没有运行 / 成长记录</div>
       ) : (

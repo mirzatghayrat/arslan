@@ -11,6 +11,14 @@ from arslan.models import LLMResponse
 class BaseLLMProvider(ABC):
     """Abstract base for every LLM provider integration."""
 
+    # S3-M3: real usage captured from the most recent chat_stream call, when the
+    # backend emitted a usage frame: {"tokens_in": int|None, "tokens_out": int|None}.
+    # None when the last stream carried no usage frame — LLMAdapter reads this after
+    # its stream loop and falls back to its estimate. Providers reset it at the start
+    # of every stream attempt. Safe as instance state because llm_factory builds a
+    # fresh provider per adapter per call (no concurrent streams share an instance).
+    _last_stream_usage: dict[str, int | None] | None = None
+
     def __init__(self, model: str, api_key: str = "", base_url: str = "") -> None:
         self.model = model
         self.api_key = api_key

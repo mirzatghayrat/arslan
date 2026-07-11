@@ -573,3 +573,27 @@ class BrainUsage(Base):
     last_used_at = Column(DateTime, nullable=True)
     last_used_ref = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UsageLedger(Base):
+    """S3-M3 cost visibility: one row per (scope, model, provider) bucket of LLM
+    usage for call sites that never produce a Run row — router decision, judge
+    scoring, memory compaction, titler, direct spawn chat — plus Arslan's answer
+    path. Live dispatch Runs keep their usage on the Run row (RunRecorder.finalize);
+    the summary endpoints aggregate runs + this ledger. Written best-effort by
+    server/services/usage_ledger.py — a ledger failure never breaks the wrapped call.
+    """
+
+    __tablename__ = "usage_ledger"
+
+    id = Column(Integer, primary_key=True)
+    ts = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    scope = Column(String(20), nullable=False)  # answer|router|judge|memory|titler|direct_chat
+    conversation_id = Column(String(50), nullable=True, index=True)  # direct chat: "spawn-{id}"
+    run_id = Column(Integer, nullable=True)            # judge rows: the scored Run
+    model = Column(String(80), nullable=True)          # None on the pure-estimate no-detail path
+    provider = Column(String(40), nullable=True)
+    tokens_in = Column(Integer, nullable=True)         # real provider tokens, or None (estimated)
+    tokens_out = Column(Integer, nullable=True)
+    tokens_total = Column(Integer, nullable=False, default=0)  # real sum or honest estimate
+    tokens_estimated = Column(Boolean, nullable=False, default=False)

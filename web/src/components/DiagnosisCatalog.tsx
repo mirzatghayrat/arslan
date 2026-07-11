@@ -57,8 +57,9 @@ function HealthRing({ score, health }: { score: number | null; health: string })
   );
 }
 
-/** Tiny bar sparkline for the score trend. */
-function Sparkline({ points }: { points: number[] }) {
+/** Tiny bar sparkline for the score trend. Exported for reuse (S3-M3 usage card's
+ *  daily-tokens series) — bar heights are relative to the series max (floor 10). */
+export function Sparkline({ points }: { points: number[] }) {
   if (points.length === 0) return <span className="cat-spark cat-spark--empty">—</span>;
   const max = Math.max(...points, 10);
   return (

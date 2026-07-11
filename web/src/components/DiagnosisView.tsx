@@ -4,6 +4,7 @@ import DiagnosisCatalog from "./DiagnosisCatalog";
 import SpawnRunDetail from "./SpawnRunDetail";
 import RunReplay from "./RunReplay";
 import EvolutionInbox from "./EvolutionInbox";
+import UsageCard from "./UsageCard";
 
 type Selection =
   | null
@@ -89,11 +90,15 @@ export default function DiagnosisView() {
       ) : (
         <>
           {sel == null && (
-            <DiagnosisCatalog
-              onClose={() => {}}
-              onSelectSpawn={(spawnId, name) => setSel({ spawnId: spawnId ?? 0, name })}
-              narrow={narrow}
-            />
+            <>
+              <DiagnosisCatalog
+                onClose={() => {}}
+                onSelectSpawn={(spawnId, name) => setSel({ spawnId: spawnId ?? 0, name })}
+                narrow={narrow}
+              />
+              {/* S3-M3 cost visibility: fleet-wide usage summary (tokens + honest USD). */}
+              <UsageCard />
+            </>
           )}
 
           {sel != null && sel.runId === undefined && (

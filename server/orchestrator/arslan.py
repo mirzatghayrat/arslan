@@ -24,7 +24,7 @@ from server.orchestrator import (
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
-from arslan.llm import usage_sink
+from arslan.llm import prices, usage_sink
 from server.registry import service as registry_service
 from server.services import (
     distill_service,
@@ -38,6 +38,7 @@ from server.services import (
     spawn_match_service,
     spawn_service,
     staffing_gather,
+    usage_ledger,
 )
 from server.services.llm_factory import build_adapter
 
@@ -780,6 +781,47 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     ))
 
 
+def _frame_usd(buckets: list[dict]) -> float | None:
+    """Review I2: USD for a turn = SUM of each (model, provider) bucket priced at
+    ITS OWN rate — never the primary bucket's rate applied to summed tokens (a
+    mixed-model turn would silently bill sonnet tokens at haiku prices). None
+    (unknown, not free) when there are no buckets, any bucket is estimated
+    (estimates are never priced — the existing gate, kept), or any bucket's
+    model/provider has no known price (a partial sum would understate cost)."""
+    if not buckets:
+        return None
+    total = 0.0
+    for b in buckets:
+        if b["estimated"]:
+            return None
+        v = prices.usd(b["model"], b["tokens_in"], b["tokens_out"],
+                       provider=b["provider"])
+        if v is None:
+            return None
+        total += v
+    return total
+
+
+def _usage_frame(detail: dict) -> dict:
+    """S3-M3 Task 5: per-turn usage payload for a terminal stream_end frame.
+
+    MUST be built while the turn's ``usage_sink.collecting()`` scope is still open —
+    both the passed ``detail()`` snapshot and ``usage_sink.total()`` read the active
+    contextvars. ``estimated`` mirrors finalize's ``tokens_estimated`` rule
+    (``tokens_in is None`` — detail() already blinds totals when any bucket is
+    estimated). ``usd`` is per-bucket-summed (review I2, _frame_usd) and None
+    whenever it can't be known honestly (unknown model / estimated tokens); the key
+    is ALWAYS present so the frontend can tell "unknown cost" (null) apart from
+    "free" ($0)."""
+    return {
+        "tokens_in": detail["tokens_in"],
+        "tokens_out": detail["tokens_out"],
+        "tokens_total": usage_sink.total(),
+        "estimated": detail["tokens_in"] is None,
+        "usd": _frame_usd(detail["buckets"]),
+    }
+
+
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, confirm_command=None,
@@ -788,6 +830,26 @@ async def _handle_answer(
     # propose_invite frame was emitted) — the sole honest exemption for spawn-handoff
     # promise language. No current caller delegates before/while answering, so the
     # default is truthfully False everywhere; PA-2's dispatch/invite paths pass True.
+    turn_delegated: bool = False,
+) -> str | None:
+    # S3-M3 usage ledger: the answer path produces no Run row, so its tokens (run_native
+    # + any promise-guard resynthesis) are ledgered under scope="answer". VERIFIED not to
+    # nest with _dispatch_spawn's usage_sink.collecting(): that block wraps ONLY
+    # dispatcher.dispatch and _handle_escalation (which re-dispatches, never answers) —
+    # every _handle_answer call sits at orchestration level, OUTSIDE any run's collecting
+    # region. Even under accidental nesting collecting() is set/reset, so an outer
+    # bucket would resume untouched.
+    async with usage_ledger.scope("answer", conversation_id):
+        return await _handle_answer_body(
+            conversation_id, user_message, emit, extra_system=extra_system,
+            attached_context=attached_context, confirm_command=confirm_command,
+            intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
+
+
+async def _handle_answer_body(
+    conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
+    attached_context: str | None = None, confirm_command=None,
+    intercept_spawn_name: str | None = None,
     turn_delegated: bool = False,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
@@ -841,7 +903,8 @@ async def _handle_answer(
         compact = clarify["question"] + "\n" + "\n".join(
             f"- {o['label']}" for o in clarify["options"])
         await memory.add_message(conversation_id, "arslan", compact)
-        emit({"type": "stream_end", "message_id": None})
+        emit({"type": "stream_end", "message_id": None,
+              "usage": _usage_frame(usage_sink.detail())})
         emit(protocol.clarify_options(clarify["question"], clarify["options"]))
         return compact
     full = result.get("final") or ""
@@ -880,7 +943,13 @@ async def _handle_answer(
     except Exception as exc:  # noqa: BLE001 — interception is never fatal
         logger.warning("promise interception failed (fail-open, answer kept): %s", exc)
     msg_id = await memory.add_message(conversation_id, "arslan", full)
-    emit({"type": "stream_end", "message_id": msg_id})
+    # S3-M3 Task 5 seam choice: the answer turn's usage rides the stream_end the body
+    # ALREADY emits (one frame shape for dispatch + answer, no extra answer_usage frame).
+    # _handle_answer_body only ever runs inside _handle_answer's usage_ledger.scope()
+    # wrapper, so the collecting contextvars are still open here and detail()/total()
+    # read exactly what the wrapper will ledger on exit.
+    emit({"type": "stream_end", "message_id": msg_id,
+          "usage": _usage_frame(usage_sink.detail())})
     return full
 
 
@@ -1492,7 +1561,11 @@ async def _handle_escalation(  # noqa: ANN001
         "task_brief": task_brief,
         "run_id": run_id,
     })
+    # S3-M3 Task 5: _handle_escalation is only called from inside _dispatch_spawn's
+    # usage_sink.collecting() scope, so the run's usage (dispatch + this re-dispatch)
+    # is readable here — same frame shape as the main dispatch stream_end.
     emit({"type": "stream_end", "message_id": out["summary_message_id"],
+          "usage": _usage_frame(usage_sink.detail()),
           **({"artifact": out["artifact"]} if out.get("artifact") else {})})
     return out
 
@@ -1635,6 +1708,10 @@ async def _dispatch_spawn(  # noqa: ANN001
 
                 _usage = usage_sink.detail()
                 _prompt = run_trace.prompt()
+                # S3-M3 Task 5: the stream_end below is emitted AFTER this collecting
+                # scope closes — build the frame payload NOW, from the SAME _usage
+                # snapshot finalize persists (frame chip and Run row can never disagree).
+                usage_frame = _usage_frame(_usage)
                 await recorder.finalize(
                     summary_message_id=out["summary_message_id"], full_output=out["full_output"],
                     model=_usage["model"], provider=_usage["provider"],
@@ -1686,6 +1763,7 @@ async def _dispatch_spawn(  # noqa: ANN001
         # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
         # store turns into the chat item) so the frontend can render the preview card live.
         tee({"type": "stream_end", "message_id": out["summary_message_id"],
+             "usage": usage_frame,
              **({"artifact": out["artifact"]} if out.get("artifact") else {})})
 
         # Auto-continue: a round that ended with a findings digest made real progress but ran

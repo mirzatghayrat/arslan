@@ -14,9 +14,43 @@ from server.db.models import (
     DistilledSession,
     SpawnPhase,
 )
-from server.schemas import RecapOut
+from server.schemas import ConversationUsageOut, RecapOut, ScopeUsageOut
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+
+@router.get("/conversations/{conversation_id}/usage", response_model=ConversationUsageOut)
+async def conversation_usage(conversation_id: str) -> ConversationUsageOut:
+    """S3-M3: cumulative token/USD usage for ONE conversation — live spawn runs
+    (scope "spawn") + usage_ledger rows (answer/router/judge/…). Honesty: usd_total
+    sums only priceable items (known-price model, non-estimated tokens) and is None
+    when nothing was priceable; usd_partial says some tokens carry no USD figure."""
+    from server.api.usage import fetch_usage_items, item_usd
+
+    items = await fetch_usage_items(conversation_id=conversation_id)
+
+    tokens_total = 0
+    usd_total: float | None = None
+    usd_partial = False
+    estimated_any = False
+    by_scope: dict[str, dict] = {}
+    for scope, provider, model, tin, tout, est, total, _ts in items:
+        tokens_total += total
+        estimated_any = estimated_any or est
+        usd = item_usd(model, tin, tout, est, provider)
+        s = by_scope.setdefault(scope, {"tokens_total": 0, "usd": None})
+        s["tokens_total"] += total
+        if usd is None:
+            usd_partial = True
+        else:
+            usd_total = (usd_total or 0.0) + usd
+            s["usd"] = (s["usd"] or 0.0) + usd
+    return ConversationUsageOut(
+        tokens_total=tokens_total, usd_total=usd_total,
+        usd_partial=usd_partial, estimated_any=estimated_any,
+        by_scope=[ScopeUsageOut(scope=scope, **agg) for scope, agg in sorted(
+            by_scope.items(), key=lambda kv: kv[1]["tokens_total"], reverse=True)],
+    )
 
 
 @router.get("/conversations/{conversation_id}/recap", response_model=RecapOut)
@@ -49,8 +83,9 @@ async def conversation_distill(conversation_id: str) -> dict:
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str) -> dict:
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
-    Deliberately KEEPS `runs` + `router_decisions` (audit/diagnosis data must
-    survive conversation deletion, mirroring how audit rows survive spawn deletion).
+    Deliberately KEEPS `runs` + `router_decisions` + `usage_ledger` (audit/diagnosis
+    and cost-accounting data must survive conversation deletion, mirroring how audit
+    rows survive spawn deletion).
     Auth-gated (inherited from the router-level require_auth dependency)."""
     deleted: dict[str, int] = {}
     async with db_session.AsyncSessionLocal() as db:

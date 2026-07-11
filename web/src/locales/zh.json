@@ -919,5 +919,23 @@
       "status_stale": "已过期",
       "status_proposed": "待审"
     }
+  },
+  "usage": {
+    "title": "用量",
+    "daily": "按日 tokens",
+    "empty": "该时段没有用量记录",
+    "notCovered": "未计入",
+    "range": {
+      "24h": "24h",
+      "7d": "7天",
+      "30d": "30天"
+    },
+    "col": {
+      "provider": "提供商",
+      "model": "模型",
+      "scope": "用途",
+      "tokens": "tokens",
+      "usd": "美元"
+    }
   }
 }

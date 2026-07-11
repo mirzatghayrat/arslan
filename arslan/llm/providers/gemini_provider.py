@@ -101,6 +101,13 @@ class GeminiProvider(BaseLLMProvider):
         # few seconds once the model starts, so 30 s per-chunk is ample; the overall
         # wall-clock is bounded by the model's thinking budget, not by our timeout.
         timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
+        # S3-M3: the final SSE chunk carries usageMetadata with the complete
+        # (cumulative) token counts — overwrite per field so the tail wins.
+        # usageMetadata also has totalTokenCount; deliberately unused — pricing
+        # needs the in/out split, and a total without the split is uncheckable.
+        self._last_stream_usage = None
+        tin: int | None = None
+        tout: int | None = None
         async with self._client() as client:
             async with client.stream(
                 "POST", url, json=self._payload(messages, temperature),
@@ -115,6 +122,14 @@ class GeminiProvider(BaseLLMProvider):
                         obj = json.loads(line[len("data:") :].strip())
                     except json.JSONDecodeError:
                         continue
+                    meta = obj.get("usageMetadata")
+                    if isinstance(meta, dict):
+                        if meta.get("promptTokenCount") is not None:
+                            tin = int(meta["promptTokenCount"])
+                        if meta.get("candidatesTokenCount") is not None:
+                            tout = int(meta["candidatesTokenCount"])
+                        if tin is not None or tout is not None:
+                            self._last_stream_usage = {"tokens_in": tin, "tokens_out": tout}
                     text = _first_text(obj)
                     if text:
                         yield text

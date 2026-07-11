@@ -47,6 +47,7 @@ def _fallback(first_message: str) -> str:
 async def generate_title(
     first_message: str,
     first_reply: str | None = None,
+    conversation_id: str | None = None,
 ) -> str:
     """Generate a short conversation title.
 
@@ -60,8 +61,13 @@ async def generate_title(
     user_prompt = "".join(user_parts)
 
     try:
-        adapter = await _llm_factory.build_adapter(role="summarize")
-        response = await adapter.chat(_SYSTEM, user_prompt)
+        # S3-M3 usage ledger: the title call is a standalone LLM call (no Run row,
+        # no surrounding collecting region) — ledger it under scope="titler".
+        from server.services import usage_ledger
+
+        async with usage_ledger.scope("titler", conversation_id):
+            adapter = await _llm_factory.build_adapter(role="summarize")
+            response = await adapter.chat(_SYSTEM, user_prompt)
         content = response.content
         if not content or not content.strip():
             return _fallback(first_message)

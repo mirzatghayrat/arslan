@@ -57,6 +57,67 @@ export interface SkillHealth {
   error?: string;
 }
 
+/* ── S3-M3 cost visibility ─────────────────────────────────────────────────────
+ * Honesty invariant (backend server/api/usage.py): usd is null whenever the cost
+ * can't be known — unknown-price model or estimated tokens. $0 is reserved for
+ * genuinely free (local) models; the UI must never render null as $0. */
+
+/** Per-turn usage riding a terminal stream_end frame (backend _usage_frame).
+ *  Only the /ws/arslan channel carries it — the direct spawn-chat channel's
+ *  stream_end (protocol.stream_end) stays usage-free; its tokens are ledgered
+ *  server-side under scope "direct_chat" instead. */
+export interface StreamUsage {
+  tokens_in: number | null;
+  tokens_out: number | null;
+  tokens_total: number;
+  estimated: boolean;
+  usd: number | null;
+}
+
+/** One scope's slice of a conversation's cumulative usage (spawn/answer/router/…). */
+export interface ScopeUsage {
+  scope: string;
+  tokens_total: number;
+  usd: number | null;
+}
+
+/** GET /conversations/{id}/usage — cumulative usage for ONE conversation.
+ *  usd_total is null when NOTHING was priceable (unknown ≠ free); usd_partial
+ *  says some tokens carry no USD figure. */
+export interface ConversationUsage {
+  tokens_total: number;
+  usd_total: number | null;
+  usd_partial: boolean;
+  estimated_any: boolean;
+  by_scope: ScopeUsage[];
+}
+
+/** One provider×model×scope aggregate row of GET /usage/summary. */
+export interface UsageSummaryRow {
+  provider: string | null;
+  model: string | null;
+  scope: string;
+  tokens_total: number;
+  usd: number | null;
+  estimated_any: boolean;
+}
+
+/** One day of the summary's daily-tokens series (UTC "YYYY-MM-DD"). */
+export interface UsageDailyPoint {
+  date: string;
+  tokens_total: number;
+}
+
+/** GET /usage/summary?range=24h|7d|30d — fleet-wide usage, visibility only.
+ *  not_covered lists the LLM call sites that don't feed the ledger yet — the
+ *  summary never pretends full coverage. */
+export interface UsageSummary {
+  range: string;
+  rows: UsageSummaryRow[];
+  daily: UsageDailyPoint[];
+  not_covered: string[];
+}
+
 /** One step of a spawn's tool loop, paired from tool_call/tool_result frames. */
 export interface ToolStep {
   tool: string;
@@ -295,6 +356,9 @@ export interface ArslanThreadItem {
   /** S3-M1: true when this item is the partial output of a cancelled run
    *  (finalized from the live bubble by a run_cancelled frame). */
   cancelled?: boolean;
+  /** S3-M3: the turn's usage from the terminal stream_end frame — drives the
+   *  bubble's usage chip. Absent on cancelled/usage-free turns. */
+  usage?: StreamUsage;
   /** Original deliverable message id this item was refined from (deliverable_finalized). */
   refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
@@ -341,9 +405,12 @@ export type ArslanServerMessage =
   // stream_end may carry an HTML deliverable packaged by the backend spawn-output
   // exit (HX-2): {kind:"html", filename, title, bytes, complete, content}. It rides
   // the SAME frame the store turns into the chat item. 🔒 Backend only.
+  // S3-M3: terminal stream_ends also carry the turn's usage (tokens + honest usd);
+  // omitted on paths that never opened a usage-collecting scope.
   | {
       type: "stream_end";
       message_id: number | null;
+      usage?: StreamUsage;
       artifact?: { kind: string; filename?: string; title?: string; bytes?: number;
                    complete?: boolean; content?: string };
     }

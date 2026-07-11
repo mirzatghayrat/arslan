@@ -11,6 +11,8 @@ vi.mock("../api/client", () => ({ api: {
     buckets: [], duration_bins: [], duration_matrix: [],
   }),
   getRunTimeline: vi.fn().mockResolvedValue({ range: "1h", buckets: [], spawns: [] }),
+  // S3-M3: the diag tab also mounts the UsageCard (own test file).
+  getUsageSummary: vi.fn().mockResolvedValue({ range: "7d", rows: [], daily: [], not_covered: [] }),
 } }));
 import DiagnosisView from "../components/DiagnosisView";
 

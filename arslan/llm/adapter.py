@@ -28,6 +28,16 @@ _DEFAULT_PROFILE_VALUES: dict[str, Any] = {
     "cost_per_1k_tokens": 0.0,
 }
 
+def _first_present(u: dict[str, Any], *keys: str) -> Any:
+    """First key whose value is not None — None-aware alternative to an `or`
+    chain, so a provider's REAL 0 token count survives extraction (review S2)."""
+    for k in keys:
+        v = u.get(k)
+        if v is not None:
+            return v
+    return None
+
+
 # Registry mapping provider_name -> provider class
 _PROVIDER_REGISTRY: dict[str, type[BaseLLMProvider]] = {
     "openai": OpenAIProvider,
@@ -54,11 +64,23 @@ class LLMAdapter:
         model: str,
         api_key: str = "",
         base_url: str = "",
+        report_provider: str | None = None,
     ) -> None:
         self.provider_name = provider_name
+        # Usage-attribution identity (S3-M3): Tier-0 presets (deepseek/qwen/ollama/…)
+        # all expand to the "openai" PROTOCOL before reaching this adapter, which
+        # made every usage bucket/summary row claim provider="openai". The caller
+        # passes the CONFIG-level provider key here; reporting uses it, the
+        # protocol name stays authoritative for client construction/routing.
+        self._report_provider = report_provider or provider_name
         self.model = model
         self.api_key = api_key
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
+
+    @property
+    def report_provider(self) -> str:
+        # Fallback for __new__-constructed doubles (tests) that bypass __init__.
+        return getattr(self, "_report_provider", None) or self.provider_name
 
     # ------------------------------------------------------------------
     # Public API
@@ -75,7 +97,7 @@ class LLMAdapter:
         # Fallback: unknown model → conservative defaults
         return CapabilityProfile(
             name=model,
-            provider=self.provider_name,
+            provider=self.report_provider,
             **_DEFAULT_PROFILE_VALUES,
         )
 
@@ -90,18 +112,30 @@ class LLMAdapter:
         """Build messages and delegate to the underlying provider."""
         messages = self._provider.build_messages(system, user, history)
         resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
-        total = (resp.usage or {}).get("total_tokens")
+        u = resp.usage or {}
+        # None-aware on purpose (NOT `or` chains — review S2): a REAL 0 is falsy
+        # and would launder to None, flipping the bucket to estimated.
+        tin = _first_present(u, "prompt_tokens", "input_tokens", "promptTokenCount")
+        tout = _first_present(u, "completion_tokens", "output_tokens", "candidatesTokenCount")
+        # Total normalization (S1 fold-in, M3 Task 3 review): gemini's non-stream
+        # usageMetadata carries totalTokenCount (not total_tokens), and anthropic
+        # sends no total at all — only in/out. Without these fallbacks a response
+        # with REAL per-side counts still fell through to the character estimate.
+        # None-aware on purpose (NOT an `or` chain): a REAL total of 0 must be
+        # reported as 0, never laundered into an estimate.
+        total = u.get("total_tokens")
+        if total is None:
+            total = u.get("totalTokenCount")
+        if total is None and tin is not None and tout is not None:
+            total = tin + tout
         if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
         usage_sink.report(total)
-        u = resp.usage or {}
-        tin = u.get("prompt_tokens") or u.get("input_tokens") or u.get("promptTokenCount")
-        tout = u.get("completion_tokens") or u.get("output_tokens") or u.get("candidatesTokenCount")
         usage_sink.report_detail(
             tokens_in=tin,
             tokens_out=tout,
             model=self.model,
-            provider=self.provider_name,
+            provider=self.report_provider,
         )
         return resp
 
@@ -123,13 +157,33 @@ class LLMAdapter:
                 chunks.append(piece)
                 yield piece
         finally:
-            usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
-            usage_sink.report_detail(
-                tokens_in=None,
-                tokens_out=None,
-                model=self.model,
-                provider=self.provider_name,
-            )
+            # S3-M3: providers stash the stream's real usage frame on themselves
+            # (see BaseLLMProvider._last_stream_usage); the adapter stays the ONE
+            # reporting point — real when captured, estimate only as fallback, so
+            # real + estimate can never double-report. Providers publish the stash
+            # only once the backend confirmed the message completed (anthropic:
+            # at message_delta, never from message_start alone — review I2), so an
+            # aborted stream leaves it None/partial and lands here on the estimate
+            # branch: real and guessed fields must never mix.
+            real = getattr(self._provider, "_last_stream_usage", None) or {}
+            tokens_in = real.get("tokens_in")
+            tokens_out = real.get("tokens_out")
+            if tokens_in is not None and tokens_out is not None:
+                usage_sink.report(int(tokens_in) + int(tokens_out))
+                usage_sink.report_detail(
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    model=self.model,
+                    provider=self.report_provider,
+                )
+            else:
+                usage_sink.report(usage_sink.estimate_tokens(system, user, "".join(chunks)))
+                usage_sink.report_detail(
+                    tokens_in=None,
+                    tokens_out=None,
+                    model=self.model,
+                    provider=self.report_provider,
+                )
 
     # ------------------------------------------------------------------
     # Private helpers

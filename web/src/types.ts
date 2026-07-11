@@ -72,6 +72,15 @@ export interface Message {
   /** S3-M1: true when this bubble is the partial output of a run the user cancelled
    *  mid-stream — renders the muted interrupted marker under the body. */
   cancelled?: boolean;
+  /** S3-M3: the turn's usage (from the stream_end frame) — renders the small
+   *  muted usage chip under the bubble body. */
+  usage?: {
+    tokens_in: number | null;
+    tokens_out: number | null;
+    tokens_total: number;
+    estimated: boolean;
+    usd: number | null;
+  };
   routedTo?: {
     spawnId: string;
     spawnName: string;

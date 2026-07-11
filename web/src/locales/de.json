@@ -919,5 +919,23 @@
       "status_stale": "veraltet",
       "status_proposed": "vorgeschlagen"
     }
+  },
+  "usage": {
+    "title": "Verbrauch",
+    "daily": "Tokens pro Tag",
+    "empty": "Kein Verbrauch in diesem Zeitraum",
+    "notCovered": "Nicht erfasst",
+    "range": {
+      "24h": "24h",
+      "7d": "7 T",
+      "30d": "30 T"
+    },
+    "col": {
+      "provider": "Anbieter",
+      "model": "Modell",
+      "scope": "Bereich",
+      "tokens": "Tokens",
+      "usd": "USD"
+    }
   }
 }
