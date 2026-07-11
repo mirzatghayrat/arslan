@@ -49,6 +49,9 @@ async def test_finalize_status_override_skips_scoring(memdb, monkeypatch):
     assert run.status == "cancelled"
     assert run.kind == "live"
     assert scheduled == []  # cancelled runs are never judge-scored → never corpus
+    # Diagnostics row-completeness contract: overridden runs still finalize fully.
+    assert run.ended_at is not None
+    assert run.total_ms is not None
 
 
 async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypatch):

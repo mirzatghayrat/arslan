@@ -15,6 +15,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from datetime import datetime
+from typing import Literal
 
 from arslan.llm import usage_sink
 from server.db import session as db_session
@@ -196,7 +197,8 @@ class RunRecorder:
                         system_prompt: str | None = None, injected_kb: str | None = None,
                         injected_kb_sources: list | None = None,
                         replay: bool = False,
-                        status_override: str | None = None) -> int:
+                        status_override: Literal["cancelled", "interrupted"] | None = None,
+                        ) -> int:
         """Persist steps + run metadata and (for live runs only) schedule judge scoring.
 
         replay=True (S2 E3 hermetic replay): terminal status is 'replayed' (never
@@ -247,7 +249,10 @@ class RunRecorder:
                         msg.run_id = self.run_id
             await db.commit()
         if replay or status_override is not None:
-            return self.run_id  # replay → paired gate; cancelled/interrupted → never scored
+            # replay → paired gate; cancelled/interrupted → never scored. This also skips
+            # the evolution_watcher nudge below — harmless, since a cancelled run creates
+            # no scored run, so the nudge would be a guaranteed no-op.
+            return self.run_id
         try:
             # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
             # scheduling. The judge task inherits this context's bucket via create_task, but
