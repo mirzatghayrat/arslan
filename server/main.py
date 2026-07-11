@@ -210,9 +210,12 @@ async def lifespan(app: FastAPI):
     # E1 reaper: re-enqueue judge scoring for runs stuck in 'recorded'/'score_failed'
     # for >10 minutes (process died around the fire-and-forget scoring task). The judge
     # must see every live run or the evolution corpus silently starves. Best-effort.
+    # S3-M1: first sweep orphaned 'recording' rows to 'interrupted' — a run never
+    # survives a process restart (the run registry is process-local).
     try:
         from server.services import run_reaper
 
+        await run_reaper.mark_interrupted_runs()
         await run_reaper.reap_stuck_runs()
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
