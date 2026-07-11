@@ -365,14 +365,176 @@ async def test_s02_staffing_park_still_dispatches_on_accept(maker, monkeypatch):
 
 
 def test_user_addressed_arslan_phrase_set():
-    """The conservative escape-hatch phrase set (documented in the design)."""
+    """The conservative escape-hatch phrase set (Fix 1b): EVERY phrase carries an explicit
+    Arslan address (@arslan/主脑) OR a 你-anchored 'you answer'. Pronoun-less phrases are
+    DELIBERATELY excluded so ordinary task text can't trip the escape hatch."""
     assert arslan._user_addressed_arslan("@Arslan 你来答") is True
     assert arslan._user_addressed_arslan("@arslan handle it") is True
     assert arslan._user_addressed_arslan("你直接答就行") is True
-    assert arslan._user_addressed_arslan("主脑你来答这个") is True
-    assert arslan._user_addressed_arslan("直接回答我") is True
-    assert arslan._user_addressed_arslan("you answer this one") is True
+    assert arslan._user_addressed_arslan("主脑你来答这个") is True     # matches 你来答
+    assert arslan._user_addressed_arslan("让主脑答这个问题") is True   # anchored 主脑 variant
+    assert arslan._user_addressed_arslan("arslan 你答") is True        # anchored host variant
+    # Fix 1b: pronoun-less phrases NO LONGER escape — they false-positive on task text.
+    assert arslan._user_addressed_arslan("直接回答我") is False        # was True (over-match)
+    assert arslan._user_addressed_arslan("you answer this one") is False  # was True (over-match)
+    assert arslan._user_addressed_arslan("研究X并直接回答所有子问题") is False
     # not addressing Arslan → no escape
     assert arslan._user_addressed_arslan("帮我做张 deck") is False
     assert arslan._user_addressed_arslan("让 Deck Master 做张 deck") is False
     assert arslan._user_addressed_arslan("") is False
+
+
+# --------------------------------------------------------------------------- Fix 1: escape priority
+
+
+@pytest.mark.asyncio
+async def test_named_member_beats_escape_phrase(monkeypatch):
+    """Fix 1a: an @named real member is an address to THAT member, checked BEFORE the escape
+    hatch. `@ResearchAnalyst 直接回答:X` (Analyst is a member and the routed spawn) dispatches
+    to the Analyst (cell 1), it does NOT get hijacked to Arslan self-answer (regression vs
+    main, where the escape hatch was evaluated first)."""
+    monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(True))
+    monkeypatch.setattr(arslan.router, "previous_decision", lambda conv: _aw(None))
+    monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("ResearchAnalyst"))
+    answered, dispatched, frames = [], [], []
+    monkeypatch.setattr(arslan, "_handle_answer", lambda *a, **k: answered.append(1) or _aw(None))
+
+    async def _disp(*a, **k):
+        dispatched.append((a, k))
+    monkeypatch.setattr(arslan, "dispatch_routed", _disp)
+
+    await arslan._handle_route("main", _route_result(7), frames.append,
+                               user_message="@ResearchAnalyst 直接回答:调研一下 X")
+
+    assert len(dispatched) == 1 and dispatched[0][0][1] == 7, "@member dispatches to the member"
+    assert answered == [], "must NOT hijack to Arslan self-answer (escape hatch skipped)"
+
+
+@pytest.mark.asyncio
+async def test_inferred_task_text_with_answer_phrase_not_escape(monkeypatch):
+    """Fix 1b: ordinary task text that merely CONTAINS '直接回答' (no @Arslan, no 你-anchor) must
+    NOT trip the escape hatch. '研究X并直接回答' with a strong capable member routes to the
+    member (cell 4) — Arslan does not self-answer."""
+    _stub_arbitration_env(monkeypatch, is_member=True, ranked=[
+        {"spawn_id": 7, "name": "Deck Master", "score": 0.9, "why": "strong"},
+    ])
+    answered, dispatched, frames = [], [], []
+    monkeypatch.setattr(arslan, "_handle_answer", lambda *a, **k: answered.append(1) or _aw(None))
+
+    async def _disp(*a, **k):
+        dispatched.append((a, k))
+    monkeypatch.setattr(arslan, "dispatch_routed", _disp)
+
+    await arslan._handle_route("main", _route_result(7), frames.append,
+                               user_message="研究X并直接回答所有子问题")
+
+    assert len(dispatched) == 1 and dispatched[0][0][1] == 7, "routes to the member, not escape"
+    assert answered == [], "did not fall into the escape hatch (Arslan self-answer)"
+
+
+# --------------------------------------------------------------------------- Fix 2: lone picker
+
+
+@pytest.mark.asyncio
+async def test_lone_picker_member_answers_not_silent_dispatch(monkeypatch):
+    """Fix 2: exactly ONE roster member in the picker band (moderate, 0.4≤score<0.8, below
+    invite_one) must NOT be silently direct-dispatched. It falls to cell 7 — Arslan answers
+    doer-first, NO card, NO dispatch. (Pre-fix: len(cands)>=2 False → returned MEMBER_DISPATCH,
+    a silent direct dispatch that violated '直派只认强命中'.)"""
+    _stub_arbitration_env(monkeypatch, is_member=True, ranked=[
+        {"spawn_id": 7, "name": "Deck Master", "score": 0.5, "why": "moderate lone fit"},
+    ])
+    answered, dispatched, parked, chosen, frames = [], [], [], [], []
+    monkeypatch.setattr(arslan, "_handle_answer", lambda *a, **k: answered.append(1) or _aw("短答"))
+
+    async def _disp(*a, **k):
+        dispatched.append((a, k))
+    monkeypatch.setattr(arslan, "dispatch_routed", _disp)
+    monkeypatch.setattr(arslan.phase_service, "set_inviting",
+                        lambda *a, **k: parked.append(k) or _aw(None))
+    monkeypatch.setattr(arslan.phase_service, "set_choosing",
+                        lambda *a, **k: chosen.append(k) or _aw(None))
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
+
+    await arslan._handle_route("main", _route_result(7), frames.append,
+                               user_message="帮我搞个演示")
+
+    assert answered == [1], "lone picker-band member → Arslan answers doer-first (cell 7)"
+    assert dispatched == [], "NO silent direct-dispatch of a lone moderate member"
+    assert chosen == [], "no picker card parked (only ≥2 candidates pop a picker)"
+    assert not any(f.get("type") in ("propose_invite", "clarify_options") for f in frames)
+
+
+# --------------------------------------------------------------------------- Fix 3: invite_one B
+
+
+@pytest.mark.asyncio
+async def test_invite_one_dispatches_to_strong_top_not_router_pick(monkeypatch):
+    """Fix 3: the router routed to member A (id 7) but the deterministic scorer's invite_one
+    strong top is a DIFFERENT member B (id 8). Dispatch to B — trust the scorer, a strong
+    capable member exists ('有对口成员就交给成员'). (Pre-fix: returned answer-only when
+    pick != top, starving the turn.)"""
+    _stub_arbitration_env(monkeypatch, is_member=True, ranked=[
+        {"spawn_id": 8, "name": "Slide Smith", "score": 0.95, "why": "stronger fit"},
+        {"spawn_id": 7, "name": "Deck Master", "score": 0.5, "why": "weaker"},
+    ])
+    answered, dispatched, frames = [], [], []
+    monkeypatch.setattr(arslan, "_handle_answer", lambda *a, **k: answered.append(1) or _aw(None))
+
+    async def _disp(*a, **k):
+        dispatched.append((a, k))
+    monkeypatch.setattr(arslan, "dispatch_routed", _disp)
+
+    await arslan._handle_route("main", _route_result(7), frames.append,
+                               user_message="帮我搞个演示")
+
+    assert len(dispatched) == 1, "a strong invite_one member exists → dispatch to it"
+    assert dispatched[0][0][1] == 8, "dispatch to the scorer's strong top (B), not router's pick"
+    assert answered == [], "Arslan does not self-answer — a capable member takes it"
+
+
+# --------------------------------------------------------------------------- Fix 4: _match_choice
+
+
+def test_match_choice_exact_and_short_fallback():
+    """Fix 4: exact name still selects; a SHORT decorated echo still selects; a LONG unrelated
+    message that merely CONTAINS a candidate name does NOT (returns None → the caller falls
+    through to normal routing instead of auto-dispatching a stale parked choice)."""
+    cands = [{"spawn_id": 7, "name": "Deck Master"}, {"spawn_id": 8, "name": "Slide Smith"}]
+    assert arslan._match_choice("Deck Master", cands)["spawn_id"] == 7          # exact
+    assert arslan._match_choice("deck master", cands)["spawn_id"] == 7          # case-normalized
+    assert arslan._match_choice("选 Deck Master", cands)["spawn_id"] == 7       # short decorated echo
+    # long unrelated message merely mentioning the name → no auto-dispatch
+    long_msg = "帮我写一篇关于 Deck Master 这个产品的详细评测文章,要覆盖优缺点和竞品对比"
+    assert arslan._match_choice(long_msg, cands) is None
+    assert arslan._match_choice("", cands) is None
+
+
+@pytest.mark.asyncio
+async def test_choice_long_message_falls_through_no_dispatch(maker, monkeypatch):
+    """Fix 4 (integration): with a parked picker choice, a LONG unrelated message that contains
+    a candidate name must NOT auto-dispatch — the choice is cleared and the turn falls through
+    to normal routing (here stubbed to `answer`)."""
+    dispatched, answered, frames = [], [], []
+
+    async def _disp(*a, **k):
+        dispatched.append((a, k))
+    monkeypatch.setattr(arslan, "dispatch_routed", _disp)
+    monkeypatch.setattr(arslan.router, "route",
+                        lambda conv, msg: _aw(arslan.router.RouterResult(action="answer")))
+    monkeypatch.setattr(arslan, "_handle_answer",
+                        lambda *a, **k: answered.append(1) or _aw(None))
+
+    await phase_service.set_choosing(
+        "main",
+        candidates=[{"spawn_id": 7, "name": "Deck Master"},
+                    {"spawn_id": 8, "name": "Slide Smith"}],
+        task_brief="做半导体 PPT", user_message="帮我做半导体行业 PPT")
+
+    await arslan.handle_user_message(
+        "main", "帮我写一篇关于 Deck Master 这个产品的详细评测文章,要覆盖优缺点和竞品对比",
+        frames.append)
+
+    assert dispatched == [], "long unrelated message must NOT auto-dispatch the parked choice"
+    assert answered == [1], "it falls through to normal routing (answer)"
+    assert await phase_service.get_pending_choice("main") is None, "stale choice cleared"

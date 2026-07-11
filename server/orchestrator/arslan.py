@@ -966,16 +966,24 @@ async def _user_named_spawn(user_message: str, spawn_id: int) -> bool:
 
 # Escape hatch (delegation route-to-member, cell 3): the user explicitly wants the HOST
 # (Arslan) to answer even when a capable member exists — the mirror of the @spawn override.
-# Deliberately conservative, an explicit set only (documented in the spec §2/§1.5): an
-# @-address to Arslan/主脑, or a direct "you answer" directive. Deterministic, zero LLM.
+# Deliberately conservative (documented in the spec §2/§1.5): EVERY phrase must carry an
+# explicit Arslan address (`@arslan`/`主脑`) OR a `你`-anchored "you (the host) answer"
+# directive. Pronoun-less phrases ("直接回答"/"you answer") are DELIBERATELY excluded — they
+# false-positive on ordinary task text ("研究X并直接回答", "…make sure you answer all parts")
+# and would make Arslan self-answer instead of delegating. Deterministic, zero LLM.
 _ARSLAN_ADDRESS_PHRASES = (
-    "@arslan", "@主脑", "你直接答", "你来答", "直接回答", "you answer",
+    "@arslan", "@主脑",            # explicit @-address to the host itself
+    "你直接答", "你来答",           # 你-anchored "you (the host) answer" directive
+    "arslan 你答", "让 arslan 答",  # anchored host (English name) variants
+    "主脑你答", "让主脑答",          # anchored 主脑 (host) variants
 )
 
 
 def _user_addressed_arslan(user_message: str) -> bool:
     """True when the user explicitly told the HOST to answer this turn (cell 3 escape
-    hatch), so Arslan answers even if a capable member exists — no dispatch, no card."""
+    hatch), so Arslan answers even if a capable member exists — no dispatch, no card. NOTE:
+    an @-address to a real (non-Arslan) member is checked FIRST in `_arbitrate_task` and
+    wins over this — an @member is an address to THAT member, not to Arslan."""
     msg = (user_message or "").lower()
     return any(p in msg for p in _ARSLAN_ADDRESS_PHRASES)
 
@@ -1102,16 +1110,24 @@ async def _score_roster_members(conversation_id, result):  # noqa: ANN001
 
 
 async def _arbitrate_task(conversation_id, result, user_message):  # noqa: ANN001
-    """The §1.5 truth table as ONE decision. Returns `(cell, advance, candidates)` where
-    `cell` names the row, `advance` is the PA-2 advance trigger (for recap logging on the
-    explicit path), and `candidates` is the picker member list (cell 5). Detection only —
-    all side effects (answer/dispatch/invite/emit) live in _handle_route. Deterministic
-    except for the (fail-open) member-scoring LLM call on an inferred member route."""
-    # Cell 3: escape hatch wins over everything — mirror of the @spawn override.
-    if _user_addressed_arslan(user_message):
-        return _CELL_ESCAPE, None, None
-
+    """The §1.5 truth table as ONE decision. Returns `(cell, advance, candidates, dispatch_id)`
+    where `cell` names the row, `advance` is the PA-2 advance trigger (for recap logging on the
+    explicit path), `candidates` is the picker member list (cell 5), and `dispatch_id` is the
+    member to dispatch to when it differs from the router's pick (cell 4 invite_one; None means
+    "use result.spawn_id"). Detection only — all side effects (answer/dispatch/invite/emit) live
+    in _handle_route. Deterministic except for the (fail-open) member-scoring LLM call on an
+    inferred member route."""
+    # An explicit @-address to a real (non-Arslan) member is an address to THAT member, not
+    # to Arslan — so it takes the cell 1/2 explicit path and WINS over the cell 3 escape
+    # hatch. Only when the user did NOT @name a real spawn does an Arslan-address escape.
     user_named = await _user_named_spawn(user_message, result.spawn_id)
+
+    # Cell 3: escape hatch — the user explicitly told the HOST to answer (mirror of the
+    # @spawn override), so Arslan answers even if a capable member exists. Gated by
+    # `not user_named` so `@Member 直接回答:…` routes to the member, not to Arslan.
+    if not user_named and _user_addressed_arslan(user_message):
+        return _CELL_ESCAPE, None, None, None
+
     advance = None
     if not user_named:
         advance = await _delegation_advance_trigger(conversation_id, result.spawn_id, user_message)
@@ -1122,28 +1138,32 @@ async def _arbitrate_task(conversation_id, result, user_message):  # noqa: ANN00
     # always took. Dispatch a member (cell 1); invite a non-member, parking the task
     # UNANSWERED so Accept dispatches it (cell 2) — S0-2 continuation preserved.
     if user_named or advance is not None:
-        return (_CELL_EXPLICIT_MEMBER if is_member else _CELL_EXPLICIT_NONMEMBER), advance, None
+        return (_CELL_EXPLICIT_MEMBER if is_member else _CELL_EXPLICIT_NONMEMBER), advance, None, None
 
     # INFERRED route. The router picked a NON-member as best fit → recruit it (cell 6).
     if not is_member:
-        return _CELL_RECRUIT, None, None
+        return _CELL_RECRUIT, None, None, None
 
     # Inferred route to a MEMBER: score the roster and arbitrate.
     band, payload = await _score_roster_members(conversation_id, result)
     if band == "invite_one":
-        # cell 4 only when the router's pick IS the strong top member; otherwise the pick
-        # isn't the clean fit the scoring found → Arslan answers (cell 7).
-        return (_CELL_MEMBER_DISPATCH if payload.get("spawn_id") == result.spawn_id
-                else _CELL_ANSWER_ONLY), None, None
+        # Cell 4: a STRONG single fit is the ONLY outcome allowed to silently direct-dispatch
+        # (user ruling: 直派只认强命中). Trust the deterministic scorer — dispatch to the
+        # strong top even when it isn't the router's own pick (a strong capable member exists,
+        # so "有对口成员就交给成员"; Fix 3). dispatch_id carries the strong top's id.
+        return _CELL_MEMBER_DISPATCH, None, None, payload.get("spawn_id")
     if band == "picker":
         cands = payload.get("candidates") or []
         cand_ids = [c.get("spawn_id") for c in cands]
-        if result.spawn_id not in cand_ids:
-            return _CELL_ANSWER_ONLY, None, None       # router's pick isn't even plausible
-        if len(cands) >= 2:
-            return _CELL_MEMBER_PICKER, None, cands     # cell 5: ambiguous → ask, never guess
-        return _CELL_MEMBER_DISPATCH, None, None        # lone plausible member → dispatch it
-    return _CELL_ANSWER_ONLY, None, None                # create band → cell 7
+        # A ≥2-candidate picker is the ONLY picker outcome allowed to act, and it never
+        # guesses → ask_user_choice (cell 5). A LONE picker-band member (moderate, below
+        # invite_one strength) must NOT be silently direct-dispatched (Fix 2) — nor may a
+        # picker whose plausible set excludes the router's own pick. Both fall to cell 7
+        # (Arslan answers doer-first, no silent member pick).
+        if len(cands) >= 2 and result.spawn_id in cand_ids:
+            return _CELL_MEMBER_PICKER, None, cands, None   # cell 5: ambiguous → ask, never guess
+        return _CELL_ANSWER_ONLY, None, None, None
+    return _CELL_ANSWER_ONLY, None, None, None              # create band → cell 7
 
 
 async def _accept_recruit(conversation_id, spawn_id, emit: EventSink) -> None:  # noqa: ANN001
@@ -1162,8 +1182,11 @@ async def _accept_recruit(conversation_id, spawn_id, emit: EventSink) -> None:  
 
 def _match_choice(user_message, candidates):  # noqa: ANN001
     """Match the user's picker reply (the chosen member's name, sent back by the
-    ask_user_choice card) to a parked candidate. Exact case-insensitive name match first,
-    then a contains fallback. Returns the candidate dict or None."""
+    ask_user_choice card) to a parked candidate. Exact case/space-normalized name match
+    first, then a substring fallback SCOPED to SHORT replies only. The picker card sends
+    back the bare name, sometimes lightly decorated ("选 Deck Master"), but a LONG unrelated
+    message that merely CONTAINS a candidate name must NOT auto-dispatch the parked choice —
+    it returns None so the caller falls through to normal routing. Returns the dict or None."""
     msg = (user_message or "").strip().lower()
     if not msg:
         return None
@@ -1173,7 +1196,11 @@ def _match_choice(user_message, candidates):  # noqa: ANN001
             return c
     for c in candidates:
         name = (c.get("name") or "").strip().lower()
-        if name and (name in msg or msg in name):
+        if not name:
+            continue
+        # substring fallback only for SHORT replies — a bare or lightly-decorated name echo,
+        # not a long message that happens to mention the candidate somewhere.
+        if len(msg) <= len(name) + 10 and (name in msg or msg in name):
             return c
     return None
 
@@ -1196,7 +1223,11 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     evolution corpus, so "capable member → give it to the member" is a product premise,
     not a UX preference; doer-first only holds until such a specialist exists.
     """
-    cell, advance, candidates = await _arbitrate_task(conversation_id, result, user_message)
+    cell, advance, candidates, dispatch_id = await _arbitrate_task(
+        conversation_id, result, user_message)
+    # Cell 4 (Fix 3) may dispatch to the scorer's strong top even when it isn't the router's
+    # own pick; every other cell uses the router's spawn_id.
+    dispatch_target = dispatch_id if dispatch_id is not None else result.spawn_id
 
     # Cell 3: the user told the host to answer — mirror of the @spawn override.
     if cell == _CELL_ESCAPE:
@@ -1219,9 +1250,11 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
                 {"spawn_id": result.spawn_id, "spawn_name": spawn_name, "at": "delegation_advance"})
 
     # Cells 1 / 4 / advance→member: a named/confirmed or clean-fit member takes it directly.
+    # `dispatch_target` is the scorer's strong top for cell 4 (may differ from the router's
+    # pick, Fix 3), else the router's spawn_id.
     if cell in (_CELL_EXPLICIT_MEMBER, _CELL_MEMBER_DISPATCH):
         await dispatch_routed(
-            conversation_id, result.spawn_id, result.task_brief or "",
+            conversation_id, dispatch_target, result.task_brief or "",
             bool(getattr(result, "needs_proposal", False)), emit,
             user_message=user_message, route_ms=route_ms, attached_context=attached_context,
         )
