@@ -24,7 +24,7 @@ Task 1 review hardening (folded into Task 2):
     local time; storage stays utc-naive) — tests pin the _to_local/_to_utc seams;
   - S6: record_outcome targets the EXPLICIT in-flight row id (no latest-NULL race).
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -244,6 +244,56 @@ def test_cron_next_real_seams_roundtrip_to_local_slot():
     assert scheduler._to_utc(local) == got
 
 
+# Review I1 (Task-2): DST fall-back — the repeated local hour must never yield a
+# PAST utc instant (fold=0 maps it to its FIRST utc occurrence), or the task would
+# be due on EVERY 60s tick for the rest of the repeated hour (~59 unattended fires).
+
+def test_cron_next_dst_fall_back_never_returns_past(monkeypatch):
+    """Synthetic fold: offset flips -4h → -5h at the boundary; _to_utc resolves the
+    ambiguous 01:xx local hour to its FIRST utc occurrence (exactly what
+    astimezone() does with the default fold=0). cron_next must keep searching."""
+    boundary = datetime(2026, 11, 1, 6, 0)   # utc instant where EDT(-4) becomes EST(-5)
+
+    def to_local(utc_naive):
+        off = 4 if utc_naive < boundary else 5
+        return utc_naive - timedelta(hours=off)
+
+    def to_utc(local_naive):
+        first = local_naive + timedelta(hours=4)   # the EDT reading = first occurrence
+        return first if first < boundary else local_naive + timedelta(hours=5)
+
+    monkeypatch.setattr(scheduler, "_to_local", to_local)
+    monkeypatch.setattr(scheduler, "_to_utc", to_utc)
+
+    # after = 06:10 utc = 01:10 local on the SECOND (EST) pass through 01:xx.
+    # Unfixed, local 01:45 matches and maps (fold=0) to 05:45 utc — in the past.
+    after = datetime(2026, 11, 1, 6, 10)
+    got = scheduler.cron_next("45 1 * * *", after)
+    assert got > after
+    assert got == datetime(2026, 11, 2, 6, 45)     # next day's 01:45 EST
+
+
+def test_cron_next_dst_fall_back_real_zoneinfo(monkeypatch):
+    """The exact reported repro: TZ America/New_York via zoneinfo (fold=0),
+    cron_next('45 1 * * *', 2026-11-01 06:10 utc) used to return 05:45 utc."""
+    try:
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo("America/New_York")
+    except Exception:  # noqa: BLE001 — no tz database on this machine
+        pytest.skip("tzdata unavailable")
+    monkeypatch.setattr(
+        scheduler, "_to_local",
+        lambda dt: dt.replace(tzinfo=timezone.utc).astimezone(ny).replace(tzinfo=None))
+    monkeypatch.setattr(
+        scheduler, "_to_utc",
+        lambda dt: dt.replace(tzinfo=ny).astimezone(timezone.utc).replace(tzinfo=None))
+
+    after = datetime(2026, 11, 1, 6, 10)           # inside the repeated 01:xx hour
+    got = scheduler.cron_next("45 1 * * *", after)
+    assert got > after
+    assert got == datetime(2026, 11, 2, 6, 45)
+
+
 # ---------------------------------------------------------------------------
 # compute_next_due — MISSED FIRES ARE NOT REPLAYED
 # ---------------------------------------------------------------------------
@@ -401,6 +451,26 @@ async def test_record_outcome_targets_explicit_row(memdb):
 
     assert (await _get(memdb, ScheduledTaskRun, first)).outcome == "ok"
     assert (await _get(memdb, ScheduledTaskRun, second)).outcome is None
+
+
+async def test_record_outcome_cancel_does_not_count_toward_pause(memdb):
+    """Review I3 (Task-2): a user cancel is a deliberate action, not a task failure —
+    count_failure=False finalizes the row as error WITHOUT advancing the 3-fail
+    auto-pause counter (a task 2 cancels away from pause must stay enabled)."""
+    task_id = await _seed_task(memdb, consecutive_failures=2)
+    row_id = await _add_inflight(memdb, task_id)
+
+    await scheduler.record_outcome(task_id, False, row_id=row_id,
+                                   reason="cancelled by user", count_failure=False)
+
+    row = await _get(memdb, ScheduledTaskRun, row_id)
+    assert row.outcome == "error"
+    assert row.reason == "cancelled by user"
+    task = await _get(memdb, ScheduledTask, task_id)
+    assert task.consecutive_failures == 2          # NOT incremented
+    assert task.enabled is True                    # NOT auto-paused
+    assert task.paused_reason is None
+    assert await scheduler.has_inflight(task_id) is False
 
 
 async def test_record_outcome_reason_truncated_to_2000(memdb):

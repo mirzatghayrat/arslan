@@ -12,7 +12,9 @@ Cadence semantics (approved decision D1 + spec):
 - Single-flight: an in-flight scheduled_task_runs row (outcome IS NULL) gates the
   task — an overlapping due fire records a 'skipped_overlap' row instead of
   dispatching AND advances next_due_at past now (review I3: ONE skip row per due
-  period, not one per 60s tick).
+  period, not one per 60s tick). Task-2 review S4: next_due_at ALSO advances at
+  FIRE time (same commit as the in-flight insert), so a fire outliving one tick
+  never even looks due — skip rows only appear for a GENUINE second due period.
 - 3 consecutive failures auto-pause the task (enabled=False + paused_reason) and
   post a notification message into the task's conversation + a best-effort
   conversation_events entry. Notification failure NEVER breaks the outcome write.
@@ -44,9 +46,12 @@ bare fire-and-forget). A fire is HEADLESS: deliberately NOT arslan._dispatch_spa
 (its roster-join / routing-announcement side effects are wrong here) but the M1-M3
 seam directly — RunRecorder.start(kind='scheduled') + dispatcher.dispatch(run_id=…)
 with frames fanned out through run_registry.make_emit (online users see the stream
-live; offline it lands in the conversation for next open). kind='scheduled' NEVER
-enters the evolution corpus — replay_set/evolution_watcher filter kind=='live'
-(structurally pinned in tests).
+live; offline it lands in the conversation for next open). Task-2 review I3: the
+dispatch coroutine runs as a run_registry-REGISTERED task, so POST /runs/{id}/cancel
+reaches a hung fire and WS reattach replays mid-fire frames; a user cancel finalizes
+the Run as 'cancelled' and records error/'cancelled by user' WITHOUT counting toward
+the 3-fail auto-pause. kind='scheduled' NEVER enters the evolution corpus —
+replay_set/evolution_watcher filter kind=='live' (structurally pinned in tests).
 """
 from __future__ import annotations
 
@@ -155,7 +160,14 @@ def cron_next(expr: str, after: datetime) -> datetime:
             continue
         if ((minute is None or cur.minute in minute)
                 and (hour is None or cur.hour in hour)):
-            return _to_utc(cur)
+            got = _to_utc(cur)
+            # Task-2 review I1 (DST fall-back): in the repeated local hour, _to_utc
+            # (fold=0) maps a matched minute to its FIRST utc occurrence, which can
+            # be <= after — returning that past instant would make the task due on
+            # EVERY 60s tick for the rest of the repeated hour (~59 unattended
+            # fires). Keep searching until the utc instant is STRICTLY after.
+            if got > after:
+                return got
         cur += timedelta(minutes=1)
     raise ValueError(f"cron expression {expr!r} never matches within 366 days")
 
@@ -265,7 +277,8 @@ async def sweep_orphans() -> int:
 
 async def record_outcome(task_id: int, ok: bool, *, row_id: int,
                          run_id: int | None = None,
-                         reason: str | None = None) -> None:
+                         reason: str | None = None,
+                         count_failure: bool = True) -> None:
     """Finalize the EXPLICIT in-flight run row `row_id` and update the task's state.
 
     S6: the caller passes the row id its own insert returned — never "the latest
@@ -276,7 +289,11 @@ async def record_outcome(task_id: int, ok: bool, *, row_id: int,
     pauses the task instead of raising). fail: increment consecutive_failures; at
     PAUSE_AFTER_FAILURES the task is auto-paused (enabled=False, paused_reason,
     next_due_at=None) and the target conversation is notified — notification is
-    best-effort and never breaks the outcome write."""
+    best-effort and never breaks the outcome write.
+
+    count_failure (Task-2 review I3): a USER CANCEL is a deliberate action, not a
+    task failure — the cancel path passes False so the row still finalizes as
+    error/'cancelled by user' but never advances the 3-fail auto-pause counter."""
     now = datetime.utcnow()
     notify: tuple[str, str] | None = None  # (conversation_id, task_name)
     async with db_session.AsyncSessionLocal() as db:
@@ -303,7 +320,7 @@ async def record_outcome(task_id: int, ok: bool, *, row_id: int,
                 task.next_due_at = compute_next_due(task, now)
             except ValueError as exc:
                 _pause_no_future(task, exc)
-        else:
+        elif count_failure:
             task.consecutive_failures = (task.consecutive_failures or 0) + 1
             if task.consecutive_failures >= PAUSE_AFTER_FAILURES:
                 task.enabled = False
@@ -366,7 +383,10 @@ async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> 
     """One recorded headless dispatch: frames fan out to whatever sinks are attached
     (run_registry.make_emit — online users see the stream live, zero sinks drop
     silently, the recorder journal keeps everything via tee), usage/trace collected
-    per-run exactly like _dispatch_spawn, recorder finalized on BOTH exits."""
+    per-run exactly like _dispatch_spawn, recorder finalized on ALL exits (ok /
+    error / user cancel via run_registry — Task-2 review I3)."""
+    from server.orchestrator.arslan import _usage_frame  # local: keep import light
+
     emit = recorder.tee(run_registry.make_emit(cid))
     emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
           "run_id": recorder.run_id})
@@ -383,6 +403,26 @@ async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> 
                 allow_escalation=False,
                 run_id=recorder.run_id,
             )
+        except asyncio.CancelledError:
+            # Task-2 review I3 — user cancel (run_registry.cancel), mirroring
+            # arslan._run_turn's cancel path: handled HERE, still inside the
+            # collecting scopes, so usage detail is readable. Headless → no partial
+            # message to persist; finalize as 'cancelled' (skips scoring → can never
+            # enter the corpus), emit the terminal frame, then RE-RAISE so the
+            # awaiting _fire tells user-cancel apart via task.cancelled().
+            _usage = usage_sink.detail()
+            _prompt = run_trace.prompt()
+            await recorder.finalize(
+                summary_message_id=None, full_output="",
+                model=_usage["model"], provider=_usage["provider"],
+                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
+                tokens_estimated=(_usage["tokens_in"] is None),
+                status_override="cancelled",
+                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
+                injected_kb_sources=_prompt.get("injected_kb_sources"),
+            )
+            emit({"type": "run_cancelled", "run_id": recorder.run_id})
+            raise
         except Exception as exc:  # noqa: BLE001 — finalize with error fields, then re-raise
             emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc),
                   "recoverable": True})
@@ -400,6 +440,11 @@ async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> 
             raise
         _usage = usage_sink.detail()
         _prompt = run_trace.prompt()
+        # Task-2 review I2 (成本只可见): the stream_end below is emitted AFTER this
+        # collecting scope closes — build the frame payload NOW, from the SAME
+        # _usage snapshot finalize persists (frame chip and Run row can never
+        # disagree). Exactly the live path's contract (arslan._run_turn).
+        usage_frame = _usage_frame(_usage)
         await recorder.finalize(
             summary_message_id=out["summary_message_id"],
             full_output=out["full_output"],
@@ -411,7 +456,8 @@ async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> 
         )
     # Post-finalize close frame, exactly like _dispatch_spawn's tail: live sinks get
     # their stream closed (the persisted summary message is the durable copy).
-    emit({"type": "stream_end", "message_id": out["summary_message_id"]})
+    emit({"type": "stream_end", "message_id": out["summary_message_id"],
+          "usage": usage_frame})
     return out
 
 
@@ -421,17 +467,29 @@ async def _fire(task: ScheduledTask) -> None:
     RunRecorder + dispatcher.dispatch directly.
 
     Order matters: the in-flight scheduled_task_runs row is inserted FIRST (it IS the
-    single-flight gate), and EVERY exit records an outcome against that exact row
-    (S6) — ok advances the cadence, any exception becomes outcome='error' and counts
-    toward the 3-fail auto-pause."""
+    single-flight gate) and, in the SAME commit, next_due_at advances past now
+    (Task-2 review S4: the executing period is consumed at FIRE time, so a fire
+    outliving one 60s tick never looks due — no spurious skipped_overlap rows;
+    record_outcome's ok path re-computes forward from finish time, forward-only).
+    EVERY exit records an outcome against that exact row (S6) — ok advances the
+    cadence, any exception becomes outcome='error' and counts toward the 3-fail
+    auto-pause, a user cancel (review I3) is error/'cancelled by user' and does NOT
+    count."""
     task_id, name = task.id, task.name
     spawn_id, prompt = task.spawn_id, task.prompt
     cid = task.conversation_id or f"scheduled-{task_id}"
+    now = datetime.utcnow()
     async with db_session.AsyncSessionLocal() as db:
-        row = ScheduledTaskRun(task_id=task_id, started_at=datetime.utcnow())
+        row = ScheduledTaskRun(task_id=task_id, started_at=now)
         db.add(row)
         await db.flush()          # assigns the PK without a post-commit refresh
         row_id = row.id
+        db_task = await db.get(ScheduledTask, task_id)
+        if db_task is not None:   # S4: consume the due period at fire time
+            try:
+                db_task.next_due_at = _next_due_after(db_task, now)
+            except ValueError as exc:
+                _pause_no_future(db_task, exc)
         await db.commit()
 
     run_id: int | None = None
@@ -447,7 +505,33 @@ async def _fire(task: ScheduledTask) -> None:
             conversation_id=cid, spawn_id=spawn_id, spawn_name=spawn_name,
             user_message=prompt, kind="scheduled")
         run_id = recorder.run_id
-        await _dispatch_recorded(recorder, cid, spawn_id, prompt)
+        # Task-2 review I3: the dispatch runs as its OWN registered task (mirrors
+        # arslan's live-turn registration) — POST /runs/{id}/cancel can target a
+        # hung fire, and a reattaching WS replays mid-fire frames via the recorder
+        # journal run_registry now holds.
+        inner = asyncio.create_task(_dispatch_recorded(recorder, cid, spawn_id, prompt))
+        run_registry.register(recorder.run_id, cid, inner, recorder=recorder)
+        try:
+            await inner
+        except asyncio.CancelledError:
+            # Same discrimination as arslan's awaiter (review I2 there): when THIS
+            # supervised fire is cancelled while suspended at `await inner`, asyncio
+            # delegates the cancellation INTO inner — cancelling() > 0 means the
+            # CancelledError was aimed at US (shutdown/teardown), so propagate; only
+            # a direct user cancel of the INNER task is handled as an outcome.
+            cur = asyncio.current_task()
+            if (cur is not None and cur.cancelling() > 0) or not inner.cancelled():
+                inner.cancel()    # teardown aimed at us — don't orphan the dispatch
+                raise
+            # User cancel via run_registry: the recorder already finalized the Run
+            # as 'cancelled' inside _dispatch_recorded. A deliberate user action is
+            # not a task failure — record the outcome WITHOUT advancing the 3-fail
+            # auto-pause counter (count_failure=False).
+            await record_outcome(task_id, False, row_id=row_id, run_id=run_id,
+                                 reason="cancelled by user", count_failure=False)
+            return
+        finally:
+            run_registry.unregister(recorder.run_id, cid)
     except Exception as exc:  # noqa: BLE001 — a failed fire is an error outcome, not a crash
         logger.warning("scheduled task %s fire failed: %s", task_id, exc)
         await record_outcome(task_id, False, row_id=row_id, run_id=run_id,

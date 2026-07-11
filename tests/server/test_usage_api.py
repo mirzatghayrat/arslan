@@ -153,6 +153,28 @@ async def test_conversation_usage_clean_priced_conversation(client):
     assert body["estimated_any"] is False
 
 
+async def test_conversation_usage_counts_scheduled_runs(client):
+    """Task-2 review I2 (成本只可见): scheduled fires land in real conversations the
+    user opens (unlike synthetic replay cids) — the per-conversation endpoint must
+    count them, under their own scope='scheduled'."""
+    cid = "conv-sched"
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(_run(cid, model=SONNET, provider="anthropic",
+                    tin=1000, tout=500, task_tokens=1500))
+        db.add(_run(cid, model=SONNET, provider="anthropic",
+                    tin=100, tout=10, task_tokens=110, kind="scheduled"))
+        await db.commit()
+    r = await client.get(f"/api/v1/conversations/{cid}/usage", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["tokens_total"] == 1500 + 110
+    scopes = {s["scope"]: s for s in body["by_scope"]}
+    assert set(scopes) == {"spawn", "scheduled"}
+    assert scopes["scheduled"]["tokens_total"] == 110
+    assert scopes["scheduled"]["usd"] == pytest.approx(100 / 1e6 * 3 + 10 / 1e6 * 15)
+    assert scopes["spawn"]["tokens_total"] == 1500
+
+
 async def test_conversation_usage_empty_conversation(client):
     r = await client.get("/api/v1/conversations/conv-none/usage", headers=AUTH)
     body = r.json()
@@ -240,6 +262,26 @@ async def test_usage_summary_7d_and_30d_windows(client):
     assert mystery["tokens_total"] == 50
     assert mystery["usd"] is None             # unknown price
     assert mystery["estimated_any"] is False
+
+
+async def test_usage_summary_includes_scheduled_scope(client):
+    """Task-2 review I2 (成本只可见): scheduled runs appear on the fleet-wide card as
+    their own scope='scheduled' row — unconditionally (they are real user-visible
+    work, not replay arms behind the include_replay gate)."""
+    now = datetime.utcnow()
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(_run("scheduled-1", model=SONNET, provider="anthropic", tin=2000,
+                    tout=100, task_tokens=2100, kind="scheduled",
+                    created_at=now - timedelta(hours=1)))
+        await db.commit()
+    r = await client.get("/api/v1/usage/summary", params={"range": "24h"}, headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    rows = {(x["provider"], x["model"], x["scope"]): x for x in body["rows"]}
+    sched = rows[("anthropic", SONNET, "scheduled")]
+    assert sched["tokens_total"] == 2100
+    assert sched["usd"] == pytest.approx(2000 / 1e6 * 3 + 100 / 1e6 * 15)
+    assert sum(p["tokens_total"] for p in body["daily"]) == 2100
 
 
 async def test_usage_summary_not_covered_footnote(client):

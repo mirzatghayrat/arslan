@@ -27,6 +27,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from arslan.llm import usage_sink
 from server.db import session as db_session
 from server.db.models import (
     ArslanMessage,
@@ -184,6 +185,43 @@ async def test_tick_fires_due_task_end_to_end_ok(memdb, monkeypatch):
     assert "stream_end" in kinds
 
 
+async def test_stream_end_carries_usage_payload(memdb, monkeypatch):
+    """Task-2 review I2(b) — 成本只可见: the scheduled fire's terminal stream_end
+    must carry the SAME M3 usage payload the live path emits, built inside the
+    collecting scope from the snapshot finalize persists (frame chip and Run row
+    can never disagree). Price anchors: claude-sonnet-5 = (3, 15) USD/MTok."""
+    spawn_id = await _seed_spawn(memdb)
+    task_id = await _seed_task(memdb, spawn_id=spawn_id, conversation_id=None)
+    cid = f"scheduled-{task_id}"
+
+    async def reporting_dispatch(conversation_id, **kwargs):
+        # Mirror LLMAdapter's choke point: structured detail + a total token count
+        # into the ACTIVE usage sink of the fire's collecting scope.
+        usage_sink.report_detail(tokens_in=1000, tokens_out=100,
+                                 model="claude-sonnet-5-20260101", provider="anthropic")
+        usage_sink.report(1100)
+        return {"full_output": "o", "spawn_name": "S", "summary_message_id": None,
+                "assistant_message_id": None, "escalation": None, "artifact": None}
+    monkeypatch.setattr(scheduler.dispatcher, "dispatch", reporting_dispatch)
+
+    frames: list[dict] = []
+    run_registry.attach_sink(cid, frames.append)
+    try:
+        await scheduler.tick()
+        await _drain()
+    finally:
+        run_registry.detach_sink(cid, frames.append)
+
+    ends = [f for f in frames if f["type"] == "stream_end"]
+    assert len(ends) == 1
+    usage = ends[0]["usage"]
+    assert usage["tokens_in"] == 1000
+    assert usage["tokens_out"] == 100
+    assert usage["tokens_total"] == 1100
+    assert usage["estimated"] is False
+    assert usage["usd"] == pytest.approx(1000 / 1e6 * 3 + 100 / 1e6 * 15)
+
+
 async def test_fire_lands_in_the_configured_conversation(memdb, monkeypatch):
     spawn_id = await _seed_spawn(memdb)
     await _seed_task(memdb, spawn_id=spawn_id, conversation_id="c-42")
@@ -249,6 +287,144 @@ async def test_spawn_deleted_is_clean_error_outcome(memdb, monkeypatch):
         assert rows[0].run_id is None    # no Run row was ever started
     async with memdb() as db:
         assert (await db.execute(select(Run))).scalars().all() == []
+
+
+# ---------------------------------------------------------------------------
+# Task-2 review I3: scheduled fires are REGISTERED runs — cancellable, reattachable
+# ---------------------------------------------------------------------------
+
+def _hanging_dispatch(started: asyncio.Event, release: asyncio.Event,
+                      output: str = "今日早报内容"):
+    async def fake_dispatch(conversation_id, **kwargs):
+        started.set()
+        await release.wait()
+        return {"full_output": output, "spawn_name": "S", "summary_message_id": None,
+                "assistant_message_id": None, "escalation": None, "artifact": None}
+    return fake_dispatch
+
+
+async def test_cancel_mid_fire_finalizes_cancelled_without_counting_failure(
+        memdb, monkeypatch):
+    """Task-2 review I3: the fire's dispatch runs as a run_registry-registered task,
+    so POST /runs/{id}/cancel (run_registry.cancel) reaches it mid-fire; the Run
+    finalizes status='cancelled', the outcome row is error/'cancelled by user'
+    WITHOUT advancing the 3-fail auto-pause counter, the single-flight gate is
+    released, and the registration is cleaned up."""
+    spawn_id = await _seed_spawn(memdb)
+    task_id = await _seed_task(memdb, spawn_id=spawn_id, conversation_id=None,
+                               consecutive_failures=2)   # 1 counted failure from pausing
+    cid = f"scheduled-{task_id}"
+    started, release = asyncio.Event(), asyncio.Event()   # release never set: hung fire
+    monkeypatch.setattr(scheduler.dispatcher, "dispatch",
+                        _hanging_dispatch(started, release))
+
+    await scheduler.tick()
+    await asyncio.wait_for(started.wait(), 2)
+
+    # Mid-fire the run is registered WITH its recorder: a reattaching WS can replay
+    # the journal frames, and the cancel seam resolves the task.
+    snapshots = run_registry.journal_snapshots(cid)
+    assert len(snapshots) == 1
+    run_id, events = snapshots[0]
+    assert any(e["type"] == "stream_start" for e in events)
+    assert run_registry.cancel(run_id) is True
+
+    await _drain()
+
+    async with memdb() as db:
+        run = await db.get(Run, run_id)
+        task = await db.get(ScheduledTask, task_id)
+    assert run.status == "cancelled"                  # never scored, never corpus
+    assert run.kind == "scheduled"
+    rows = await _task_runs(memdb, task_id)
+    assert len(rows) == 1
+    assert rows[0].outcome == "error"
+    assert rows[0].reason == "cancelled by user"
+    assert rows[0].run_id == run_id
+    assert task.consecutive_failures == 2             # cancel did NOT count
+    assert task.enabled is True                       # and did NOT pause
+    assert await scheduler.has_inflight(task_id) is False   # single-flight released
+    assert run_registry.get(run_id) is None           # unregistered in finally
+
+
+async def test_fire_registers_and_unregisters_run(memdb, monkeypatch):
+    """The happy path also registers (WS reattach must see a mid-fire run) and
+    unregisters once the fire completes."""
+    spawn_id = await _seed_spawn(memdb)
+    task_id = await _seed_task(memdb, spawn_id=spawn_id, conversation_id=None)
+    cid = f"scheduled-{task_id}"
+    started, release = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(scheduler.dispatcher, "dispatch",
+                        _hanging_dispatch(started, release))
+
+    await scheduler.tick()
+    await asyncio.wait_for(started.wait(), 2)
+    assert len(run_registry.active_for(cid)) == 1     # registered while in flight
+
+    release.set()
+    await _drain()
+    assert run_registry.active_for(cid) == []         # unregistered after the fire
+    rows = await _task_runs(memdb, task_id)
+    assert [r.outcome for r in rows] == ["ok"]
+
+
+# ---------------------------------------------------------------------------
+# Task-2 review S4: next_due advances at FIRE time — long fires never look due
+# ---------------------------------------------------------------------------
+
+async def test_fire_spanning_ticks_records_zero_skip_rows(memdb, monkeypatch):
+    """S4: a fire outliving one 60s tick must not leave the task looking due —
+    next_due_at advances when the fire STARTS, so subsequent ticks during the
+    same period record ZERO skipped_overlap rows."""
+    spawn_id = await _seed_spawn(memdb)
+    task_id = await _seed_task(memdb, spawn_id=spawn_id)
+    started, release = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(scheduler.dispatcher, "dispatch",
+                        _hanging_dispatch(started, release))
+
+    await scheduler.tick()
+    await asyncio.wait_for(started.wait(), 2)
+
+    async with memdb() as db:
+        task = await db.get(ScheduledTask, task_id)
+    assert task.next_due_at > datetime.utcnow()       # period consumed at fire time
+
+    await scheduler.tick()                            # "next 60s tick", still in flight
+    await scheduler.tick()                            # and another
+    rows = await _task_runs(memdb, task_id)
+    assert [r.outcome for r in rows] == [None]        # in-flight row only, NO skips
+
+    release.set()
+    await _drain()
+    rows = await _task_runs(memdb, task_id)
+    assert [r.outcome for r in rows] == ["ok"]
+
+
+async def test_second_due_period_during_inflight_still_records_one_skip(
+        memdb, monkeypatch):
+    """S4 keeps the genuine-overlap contract: when the NEXT period really arrives
+    while the previous fire is still running, the tick records exactly ONE
+    skipped_overlap row (and advances next_due again)."""
+    spawn_id = await _seed_spawn(memdb)
+    task_id = await _seed_task(memdb, spawn_id=spawn_id)
+    started, release = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(scheduler.dispatcher, "dispatch",
+                        _hanging_dispatch(started, release))
+
+    await scheduler.tick()
+    await asyncio.wait_for(started.wait(), 2)
+
+    async with memdb() as db:                         # the next period arrives early
+        task = await db.get(ScheduledTask, task_id)
+        task.next_due_at = datetime.utcnow() - timedelta(seconds=1)
+        await db.commit()
+
+    await scheduler.tick()
+    rows = await _task_runs(memdb, task_id)
+    assert sorted((r.outcome or "inflight") for r in rows) == ["inflight", "skipped_overlap"]
+
+    release.set()
+    await _drain()
 
 
 # ---------------------------------------------------------------------------

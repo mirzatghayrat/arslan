@@ -495,8 +495,10 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     """Manually re-enqueue judge scoring for one run (E1). 404 on unknown run.
 
     Auth: covered by the router-level require_auth dependency.
-    E2: rejects kind != 'live' with 409 — replay runs end in terminal status 'replayed'
-    and are never judged, so re-enqueueing one is a client error, not a no-op.
+    E2 + Task-2 review S5: accepts kind in ('live', 'scheduled') — scheduled runs are
+    judge-scored exactly like live ones (matches the reaper's _REAPED_KINDS policy);
+    replay runs end in terminal status 'replayed' and are never judged, so
+    re-enqueueing one is a client error, not a no-op.
     S3-M1: also rejects non-rescorable statuses with 409 — cancelled/interrupted runs
     are terminal and never scored; rescoring one would judge partial output and flip
     it to 'scored' (corpus-eligible), breaching the milestone invariant.
@@ -506,8 +508,9 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
-    if run.kind != "live":
-        raise HTTPException(status_code=409, detail="only live runs can be rescored")
+    if run.kind not in ("live", "scheduled"):
+        raise HTTPException(status_code=409,
+                            detail="only live/scheduled runs can be rescored")
     if run.status not in ("recorded", "scored", "score_failed"):
         raise HTTPException(status_code=409,
                             detail=f"run is not rescorable (status={run.status})")
