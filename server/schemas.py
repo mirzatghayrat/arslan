@@ -306,6 +306,8 @@ class TitleIn(BaseModel):
 
     first_message: str
     first_reply: str | None = None
+    # S3-M3: optional — lets the usage ledger attribute the title call to its conversation.
+    conversation_id: str | None = None
 
 
 class TitleOut(BaseModel):

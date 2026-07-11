@@ -171,10 +171,16 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
 
             sender = asyncio.create_task(_drain())
             try:
-                out = await spawn_loop.run(
-                    spawn_id=spawn_id, system=system, user_content=llm_user, history=history,
-                    current_turn=current_turn, emit=_emit, on_chunk=_on_chunk, allow_escalation=False,
-                )
+                # S3-M3 usage ledger: direct spawn chat records no Run row — ledger the
+                # turn under scope="direct_chat". Direct chat has no conversation id
+                # (messages key on spawn_id), so the ledger uses the "spawn-{id}" convention.
+                from server.services import usage_ledger
+
+                async with usage_ledger.scope("direct_chat", f"spawn-{spawn_id}"):
+                    out = await spawn_loop.run(
+                        spawn_id=spawn_id, system=system, user_content=llm_user, history=history,
+                        current_turn=current_turn, emit=_emit, on_chunk=_on_chunk, allow_escalation=False,
+                    )
             except Exception as exc:  # noqa: BLE001
                 queue.put_nowait(None)
                 await sender

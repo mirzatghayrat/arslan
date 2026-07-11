@@ -132,15 +132,21 @@ async def maybe_compact(conversation_id: str) -> None:
         prior = summ.summary if summ else ""
         body = "\n".join(f"{m.role}: {m.content}" for m in to_fold)
         adapter = _get_adapter()
-        new_summary = await _summarize(adapter, f"{prior}\n{body}".strip())
+        # S3-M3 usage ledger: compaction runs at orchestration level (after the turn,
+        # never inside a dispatch's collecting region) — ledger its 1-2 summarize calls
+        # under scope="memory".
+        from server.services import usage_ledger
 
-        # Bound the rolling summary itself (C1): if it exceeds the cap, compress it
-        # once more, then hard-truncate as a guaranteed floor so context can't grow.
-        if estimate_tokens(new_summary) > _summary_token_cap():
-            new_summary = await _summarize(adapter, new_summary)
-            cap_chars = _summary_token_cap() * 4
-            if len(new_summary) > cap_chars:
-                new_summary = new_summary[:cap_chars]
+        async with usage_ledger.scope("memory", conversation_id):
+            new_summary = await _summarize(adapter, f"{prior}\n{body}".strip())
+
+            # Bound the rolling summary itself (C1): if it exceeds the cap, compress it
+            # once more, then hard-truncate as a guaranteed floor so context can't grow.
+            if estimate_tokens(new_summary) > _summary_token_cap():
+                new_summary = await _summarize(adapter, new_summary)
+                cap_chars = _summary_token_cap() * 4
+                if len(new_summary) > cap_chars:
+                    new_summary = new_summary[:cap_chars]
 
         async with db_session.AsyncSessionLocal() as db:
             db.add(

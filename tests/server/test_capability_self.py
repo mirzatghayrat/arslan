@@ -19,7 +19,9 @@ def test_router_system_biases_to_answer():
 
 
 def test_handle_answer_assembles_capability_self():
-    # _handle_answer builds `system` from a concatenation; assert the capability block
-    # is actually spliced in (assembling live would require DB/context).
-    src = inspect.getsource(arslan._handle_answer)
+    # The answer path builds `system` from a concatenation; assert the capability block
+    # is actually spliced in (assembling live would require DB/context). S3-M3 split
+    # _handle_answer into a usage-ledger wrapper + _handle_answer_body — the system
+    # assembly lives in the body.
+    src = inspect.getsource(arslan._handle_answer_body)
     assert "_CAPABILITY_SELF" in src

@@ -38,6 +38,7 @@ from server.services import (
     spawn_match_service,
     spawn_service,
     staffing_gather,
+    usage_ledger,
 )
 from server.services.llm_factory import build_adapter
 
@@ -788,6 +789,26 @@ async def _handle_answer(
     # propose_invite frame was emitted) — the sole honest exemption for spawn-handoff
     # promise language. No current caller delegates before/while answering, so the
     # default is truthfully False everywhere; PA-2's dispatch/invite paths pass True.
+    turn_delegated: bool = False,
+) -> str | None:
+    # S3-M3 usage ledger: the answer path produces no Run row, so its tokens (run_native
+    # + any promise-guard resynthesis) are ledgered under scope="answer". VERIFIED not to
+    # nest with _dispatch_spawn's usage_sink.collecting(): that block wraps ONLY
+    # dispatcher.dispatch and _handle_escalation (which re-dispatches, never answers) —
+    # every _handle_answer call sits at orchestration level, OUTSIDE any run's collecting
+    # region. Even under accidental nesting collecting() is set/reset, so an outer
+    # bucket would resume untouched.
+    async with usage_ledger.scope("answer", conversation_id):
+        return await _handle_answer_body(
+            conversation_id, user_message, emit, extra_system=extra_system,
+            attached_context=attached_context, confirm_command=confirm_command,
+            intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
+
+
+async def _handle_answer_body(
+    conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
+    attached_context: str | None = None, confirm_command=None,
+    intercept_spawn_name: str | None = None,
     turn_delegated: bool = False,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
