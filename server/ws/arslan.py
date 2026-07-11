@@ -60,6 +60,9 @@ async def _history(conversation_id: str) -> list[dict]:
             "role": m.role,
             "content": m.display_content or m.content,  # DISPLAY copy
             "spawn_id": m.spawn_id,
+            # S3-M2: run linkage (set at finalize) so RunReplay entry points
+            # survive a reload. Key always emitted; None when unlinked.
+            "run_id": m.run_id,
         }
         for m in msgs
     ]

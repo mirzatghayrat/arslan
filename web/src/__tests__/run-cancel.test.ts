@@ -78,6 +78,22 @@ describe("run cancel wiring (S3-M1)", () => {
     useArslanStore.getState().handleFrame({ type: "history", messages: [] } as never);
     expect(useArslanStore.getState().activeRunId).toBeNull();
   });
+
+  it("history rebuild restores runId from the row's run_id (S3-M2)", () => {
+    useArslanStore.getState().handleFrame({
+      type: "history",
+      messages: [
+        { message_id: 1, role: "user", content: "analyze", spawn_id: null, run_id: null },
+        { message_id: 2, role: "spawn_summary", content: "result", spawn_id: 7, run_id: 555 },
+      ],
+    } as never);
+    const st = useArslanStore.getState();
+    expect(st.items).toHaveLength(2);
+    // Linked row: RunReplay entry point survives the reload.
+    expect(st.items[1].runId).toBe(555);
+    // Unlinked row: null run_id degrades to undefined (no replay entry).
+    expect(st.items[0].runId).toBeUndefined();
+  });
 });
 
 describe("api.cancelRun (S3-M1)", () => {

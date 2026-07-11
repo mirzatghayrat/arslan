@@ -317,6 +317,9 @@ export interface ArslanHistoryRow {
   role: "user" | "arslan" | "spawn_summary";
   content: string;
   spawn_id: number | null;
+  /** S3-M2: run linkage (ArslanMessage.run_id, set at finalize) — restores the
+   *  RunReplay entry point after a reload. Always emitted; null when unlinked. */
+  run_id?: number | null;
 }
 
 // Server -> client frames on /ws/arslan

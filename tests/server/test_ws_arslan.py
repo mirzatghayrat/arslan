@@ -83,6 +83,36 @@ def test_answer_turn_streams(app_client, monkeypatch):
         assert ws.receive_json()["type"] == "stream_end"
 
 
+def test_history_rows_carry_run_id(app_client):
+    """S3-M2 Task 1: every history row carries `run_id` (ArslanMessage.run_id,
+    set at finalize) — the RunReplay entry point survives a reload. The key is
+    ALWAYS emitted; its value is None when the message is not linked to a run."""
+    from server.db.models import ArslanMessage, Run
+
+    async def _seed_history():
+        async with db_session.AsyncSessionLocal() as s:
+            s.add(Run(id=555, conversation_id="histconv", spawn_id=7,
+                      spawn_name="beauty-guru", user_message="analyze"))
+            s.add(ArslanMessage(conversation_id="histconv", role="user", content="analyze"))
+            s.add(ArslanMessage(conversation_id="histconv", role="spawn_summary",
+                                content="result", spawn_id=7, run_id=555))
+            await s.commit()
+
+    anyio.run(_seed_history)
+
+    with app_client.websocket_connect("/ws/arslan/histconv") as ws:
+        hist = ws.receive_json()
+        assert hist["type"] == "history"
+        rows = hist["messages"]
+        assert len(rows) == 2
+        # Unlinked message: key present, value None (simpler client typing).
+        assert "run_id" in rows[0]
+        assert rows[0]["run_id"] is None
+        # Linked spawn_summary: carries its run id.
+        assert rows[1]["run_id"] == 555
+        assert rows[1]["spawn_id"] == 7
+
+
 def test_confirm_create_makes_spawn(app_client):
     draft = {
         "name": "translator",

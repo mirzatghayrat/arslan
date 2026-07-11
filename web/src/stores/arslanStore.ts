@@ -222,6 +222,7 @@ function makeActions(set: SetState, get: GetState) {
         role: string;
         content: string;
         spawn_id?: number | null;
+        run_id?: number | null;
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
           // Resolve the spawn name ONLY from an explicit spawn_id. History rows
@@ -237,6 +238,9 @@ function makeActions(set: SetState, get: GetState) {
             content: row.content,
             spawnId,
             spawnName: spawnId != null ? state.spawnNames[spawnId] ?? null : null,
+            // S3-M2: run linkage from the history row — the RunReplay entry
+            // point survives a reload. null/absent degrades to undefined.
+            runId: row.run_id ?? undefined,
           };
         }
         return {
@@ -244,6 +248,7 @@ function makeActions(set: SetState, get: GetState) {
           kind: "message",
           role: row.role === "arslan" ? "arslan" : "user",
           content: row.content,
+          runId: row.run_id ?? undefined,
         };
       };
       switch (frame.type) {
