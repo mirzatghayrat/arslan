@@ -165,4 +165,112 @@ describe("provider master-detail structure", () => {
     // The add button is still available in the master list
     expect(screen.getByRole("button", { name: /btnAddModel/i })).toBeInTheDocument();
   });
+
+  // FIX 1 — health dot must be a SIBLING of the row-select control, not nested
+  // inside an interactive element (axe nested-interactive), and both must be
+  // independently keyboard-activatable.
+  it("health dot and row-select are independent keyboard-activatable siblings (no nested interactive)", async () => {
+    const user = userEvent.setup();
+    const fresh = new Date(Date.now() - 60_000).toISOString();
+    // Fresh probe timestamps → the mount auto-probe skips these rows, so the
+    // dot is not mid-probe when we exercise manual keyboard activation.
+    const healthyConfigs: ProviderConfig[] = configs.map((c) => ({
+      ...c,
+      last_health: "reachable_models",
+      last_health_at: fresh,
+    }));
+    render(
+      <ProviderConfigList llmProviders={providers} providerConfigs={healthyConfigs} onConfigsChange={vi.fn()} />,
+    );
+
+    const dot = screen.getByTestId("provider-health-dot-0");
+    const rowSelect = screen.getByTestId("provider-master-row-0");
+
+    // (a) the dot button is NOT a descendant of the row-select control …
+    expect(rowSelect.contains(dot)).toBe(false);
+    // … and has no interactive (button / role=button) ancestor at all.
+    for (let el = dot.parentElement; el && el !== document.body; el = el.parentElement) {
+      expect(el.getAttribute("role")).not.toBe("button");
+      expect(el.tagName).not.toBe("BUTTON");
+    }
+
+    // (b) keyboard-activate the health dot → probe fires (not swallowed).
+    mockProbeProviderHealth.mockClear();
+    dot.focus();
+    expect(document.activeElement).toBe(dot);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(mockProbeProviderHealth).toHaveBeenCalledWith(1));
+
+    // (c) keyboard-activate the row-select for row 1 → selection moves there.
+    const rowSelect1 = screen.getByTestId("provider-master-row-1");
+    rowSelect1.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(rowSelect1).toHaveAttribute("data-selected", "true"),
+    );
+  });
+
+  // FIX 2 — deleting the selected row must land on the survivor in the SAME
+  // render (selection set inside handleDelete), so the detail pane never flashes
+  // its empty state before re-anchoring.
+  it("deleting the selected row lands on the survivor with no empty-state flash", async () => {
+    const user = userEvent.setup();
+    mockDeleteProviderConfig.mockResolvedValue({ ok: true });
+
+    let emptyFlashSeen = false;
+    const sawEmpty = (el: HTMLElement) =>
+      el.matches('[data-testid="provider-detail-empty"]') ||
+      !!el.querySelector('[data-testid="provider-detail-empty"]');
+    const observer = new MutationObserver((records) => {
+      for (const rec of records) {
+        // A fresh empty node mounted …
+        rec.addedNodes.forEach((n) => {
+          if (n instanceof HTMLElement && sawEmpty(n)) emptyFlashSeen = true;
+        });
+        // … OR React reused the detail <div> and flipped its data-testid to the
+        // empty marker (the flash we're actually guarding against).
+        if (
+          rec.type === 'attributes' &&
+          rec.target instanceof HTMLElement &&
+          rec.target.getAttribute('data-testid') === 'provider-detail-empty'
+        ) {
+          emptyFlashSeen = true;
+        }
+      }
+    });
+
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>(configs);
+      return (
+        <ProviderConfigList llmProviders={providers} providerConfigs={cfgs} onConfigsChange={setCfgs} />
+      );
+    }
+    render(<Harness />);
+
+    // Select the non-primary row (id 2) so its detail delete button is enabled.
+    await user.click(screen.getByTestId("provider-master-row-1"));
+    expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument();
+
+    // Watch for any provider-detail-empty node appearing across the delete.
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-testid"],
+    });
+    await user.click(screen.getByRole("button", { name: "settings.btnDelete" }));
+    await waitFor(() => expect(screen.queryByTestId("provider-master-row-1")).toBeNull());
+    // Flush any queued mutation records before disconnecting.
+    await Promise.resolve();
+    observer.disconnect();
+
+    expect(mockDeleteProviderConfig).toHaveBeenCalledWith(2);
+    // No empty-state flash — the detail re-anchored to the survivor in one paint.
+    expect(emptyFlashSeen).toBe(false);
+    expect(screen.queryByTestId("provider-detail-empty")).toBeNull();
+    expect(screen.getByTestId("provider-master-row-0")).toHaveAttribute("data-selected", "true");
+    expect((screen.getByTestId("provider-config-model-0") as HTMLInputElement).value).toBe(
+      "deepseek-chat",
+    );
+  });
 });

@@ -282,7 +282,16 @@ export default function ProviderConfigList({
     setBusy(id);
     try {
       await deleteProviderConfig(id);
-      onConfigsChange(providerConfigs.filter((c) => c.id !== id));
+      const remaining = providerConfigs.filter((c) => c.id !== id);
+      onConfigsChange(remaining);
+      // Re-anchor the master-detail selection in the SAME batched update as the
+      // list change so the detail pane never flashes its empty state before
+      // landing on a survivor. The sync effect stays as a backstop for external
+      // prop changes that drop the selected id.
+      if (selectedId === id) {
+        const primary = remaining.find((c) => c.is_primary);
+        setSelectedId(primary?.id ?? remaining[0]?.id ?? null);
+      }
       pendingCustomSwitchRef.current.delete(id);
       baseUrlInputRefs.current.delete(id);
       // SQLite reuses INTEGER PRIMARY KEY values (no AUTOINCREMENT) — purge every

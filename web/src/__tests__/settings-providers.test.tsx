@@ -738,7 +738,8 @@ describe("dynamic model list integration (Provider P2)", () => {
     });
   });
 
-  it("compatibility note + blank-base_url hint render only for custom rows (P3)", () => {
+  it("compat note + blank-base_url hint show for a custom row but NOT a non-custom row (P3)", async () => {
+    const user = userEvent.setup();
     const customProviders: ProviderOption[] = [
       { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
       ...providers,
@@ -754,12 +755,20 @@ describe("dynamic model list integration (Provider P2)", () => {
         onConfigsChange={vi.fn()}
       />
     );
-    // Exactly one compat note (the custom row), none for deepseek
-    expect(screen.getAllByText("settings.customCompatNote")).toHaveLength(1);
+    // Custom row (id 5) is primary → selected by default: compat note + the
+    // blank-base_url required hint are both shown in its detail pane.
     expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
-    expect(screen.queryByTestId("provider-config-custom-note-1")).toBeNull();
-    // Saved custom row with blank base_url shows the required hint
     expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+
+    // Select the NON-custom (deepseek) row → its detail mounts (model field
+    // present) but proves the negative: NO compat note, NO required hint —
+    // neither for the deepseek row nor lingering from the custom row.
+    await user.click(screen.getByTestId("provider-master-row-1"));
+    expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-config-custom-note-1")).toBeNull();
+    expect(screen.queryByTestId("provider-config-custom-required-1")).toBeNull();
+    expect(screen.queryByText("settings.customCompatNote")).toBeNull();
+    expect(screen.queryByTestId("provider-config-custom-note-0")).toBeNull();
   });
 
   it("compatibility note renders without the blank hint when base_url is set (P3)", () => {
