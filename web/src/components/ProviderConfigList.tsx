@@ -14,10 +14,11 @@ import {
   probeProviderHealth,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Plus, Star, Trash2, Loader2, FlaskConical, ChevronDown } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronDown } from 'lucide-react';
 import Select from './Select';
 import type { SelectOption } from './Select';
-import ModelCombobox from './ModelCombobox';
+import ProviderMasterList from './settings/ProviderMasterList';
+import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -30,9 +31,6 @@ interface ProviderConfigListProps {
   onStrategyChange?: (strategy: string) => void;
 }
 
-const INPUT_CLS =
-  'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
-
 /** P3: quick-pick base_url templates for the custom OpenAI-compatible
  *  provider. Labels are product names (not translated) except the Ollama
  *  remote chip, whose "(remote)" qualifier is localized via labelKey. */
@@ -43,16 +41,6 @@ const CUSTOM_BASE_URL_TEMPLATES: { label?: string; labelKey?: string; url: strin
   { label: 'LiteLLM', url: 'http://localhost:4000' },
   { labelKey: 'settings.customChipOllamaRemote', url: 'http://<host>:11434/v1' },
 ];
-
-/** Draft state for the add-new flow */
-interface DraftConfig {
-  provider: string;
-  model: string;
-  base_url: string;
-  api_key: string;
-  testState: 'idle' | 'testing' | 'ok' | 'failed';
-  testError?: string;
-}
 
 /** Test status per saved config id */
 type TestStatusMap = Record<
@@ -110,6 +98,12 @@ export default function ProviderConfigList({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
+  // Master-detail selection: which saved config's detail pane is shown. Default
+  // to the primary config, else the first, else null (draft-only / empty).
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    const primary = providerConfigs.find((c) => c.is_primary);
+    return primary?.id ?? providerConfigs[0]?.id ?? null;
+  });
   const [testAllBusy, setTestAllBusy] = useState(false);
   const [rowModels, setRowModels] = useState<RowModelsMap>({});
   // P4: connectivity dot state (overlay; falls back to the persisted columns).
@@ -136,6 +130,17 @@ export default function ProviderConfigList({
   useEffect(() => {
     getCatalog().then(setCatalog).catch(() => setCatalog([]));
   }, []);
+
+  // Keep the selection valid as the config list changes (e.g. deleting the
+  // selected row moves selection to a survivor; an external refresh that drops
+  // the selected id re-anchors to the primary/first). The draft owns the pane
+  // while active, so leave selection untouched then.
+  useEffect(() => {
+    if (draft) return;
+    if (selectedId != null && providerConfigs.some((c) => c.id === selectedId)) return;
+    const primary = providerConfigs.find((c) => c.is_primary);
+    setSelectedId(primary?.id ?? providerConfigs[0]?.id ?? null);
+  }, [providerConfigs, selectedId, draft]);
 
   // --- helpers ---
 
@@ -559,6 +564,8 @@ export default function ProviderConfigList({
       });
       onConfigsChange([...providerConfigs, newConfig]);
       setDraft(null);
+      // Land the master-detail selection on the freshly added config.
+      setSelectedId(newConfig.id);
       // Key just saved — fetch the live model list once (doubles as key check).
       modelsFetchedRef.current.add(newConfig.id);
       void loadModels(newConfig.id, true);
@@ -705,153 +712,102 @@ export default function ProviderConfigList({
     label: `${p.label}${p.native ? ' (Native)' : ''}`,
   }));
 
+  // Master-detail: resolve the selected config + its index (for stable testids).
+  const selectedConfig =
+    (!draft && selectedId != null
+      ? providerConfigs.find((c) => c.id === selectedId)
+      : undefined) ?? null;
+  const selectedIndex = selectedConfig
+    ? providerConfigs.findIndex((c) => c.id === selectedConfig.id)
+    : -1;
+
   return (
     <div className="space-y-4">
-      {/* Config rows */}
-      <div className="space-y-3">
-        {providerConfigs.map((config, idx) => {
-          const ts = testStatus[config.id];
-          const native = isNative(config.provider);
-
-          return (
-            <div
-              key={config.id}
-              className="flex flex-wrap items-start gap-2 bg-surface border border-border rounded-xl px-4 py-3"
-            >
-              {/* Primary indicator */}
-              <div className="w-5 flex-shrink-0 flex items-center justify-center pt-2">
-                {config.is_primary ? (
-                  <span className="text-primary text-sm" title="Primary">★</span>
-                ) : null}
-              </div>
-
-              {/* Provider select */}
-              <div className="flex-1 min-w-[120px]">
-                <Select
-                  data-testid={`provider-config-provider-${idx}`}
-                  id={`provider-config-provider-${idx}`}
-                  value={config.provider}
-                  onChange={(v) => handleFieldChange(config, 'provider', v)}
-                  options={providerSelectOptions}
-                  ariaLabel="Provider"
-                />
-              </div>
-
-              {/* Model combobox (dynamic catalog, lazy-fetched on first focus) */}
-              <div
-                className="flex-1 min-w-[160px]"
-                onFocus={() => ensureModelsLoaded(config.id)}
-              >
-                <ModelCombobox
-                  data-testid={`provider-config-model-${idx}`}
-                  value={config.model}
-                  onChange={(v) => handleFieldChange(config, 'model', v)}
-                  options={optionsForRow(config)}
-                  staleHint={staleHintFor(config)}
-                  onRefresh={() => void loadModels(config.id, true)}
-                  ariaLabel="Model"
-                />
-                {showOllamaHint(config) && (
-                  <p
-                    data-testid={`provider-config-ollama-hint-${idx}`}
-                    className="mt-1 text-[10px] font-mono text-subtle-foreground"
-                  >
-                    {t('settings.ollamaNotDetected')}{' '}
-                    <a
-                      href="https://ollama.com/download"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline text-primary hover:text-primary/80"
-                    >
-                      {t('settings.ollamaDownload')}
-                    </a>
-                  </p>
-                )}
-              </div>
-
-              {/* Base URL (non-native providers only) — saved on blur */}
-              {!native && (
-                <div className="flex-1 min-w-[120px]">
-                  <input
-                    type="text"
-                    ref={(el) => {
-                      baseUrlInputRefs.current.set(config.id, el);
-                    }}
-                    data-testid={`provider-config-baseurl-${idx}`}
-                    value={config.base_url}
-                    onChange={(e) => handleLocalFieldChange(config, 'base_url', e.target.value)}
-                    onBlur={(e) => handleBaseUrlBlur(config, e.target.value)}
-                    placeholder={baseUrlFor(config.provider) || t('settings.labelBaseUrl')}
-                    aria-label={t('settings.labelBaseUrl')}
-                    className={INPUT_CLS}
-                  />
-                </div>
-              )}
-
-              {/* API key */}
-              <div className="flex-1 min-w-[100px]">
-                <input
-                  type="password"
-                  data-testid={`provider-config-key-${idx}`}
-                  value={config.api_key}
-                  onChange={(e) => handleFieldChange(config, 'api_key', e.target.value)}
-                  placeholder={t('settings.labelConfigApiKey')}
-                  className={INPUT_CLS}
-                />
-              </div>
-
-              {/* P4: connectivity dot (level 1) + last-probe time */}
-              {renderHealthDot(config, idx)}
-
-              {/* Per-row test result indicator (populated by Test all) */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {ts?.state === 'testing' && (
-                  <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-                )}
-                {ts?.state === 'ok' && (
-                  <span className="text-[10px] font-mono text-success">{t('settings.testOk')}</span>
-                )}
-                {ts?.state === 'failed' && (
-                  <span className="text-[10px] font-mono text-danger">✗ {ts.error}</span>
-                )}
-              </div>
-
-              {/* Set primary button (only for non-primary rows) */}
-              {!config.is_primary && (
-                <button
-                  type="button"
-                  onClick={() => handleSetPrimary(config.id)}
-                  disabled={busy === config.id}
-                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
-                  title={t('settings.btnSetPrimary')}
-                >
-                  <Star className="w-3 h-3" />
-                  {t('settings.btnSetPrimary')}
-                </button>
-              )}
-
-              {/* Delete button */}
-              <button
-                type="button"
-                onClick={() => handleDelete(config.id)}
-                disabled={busy === config.id || config.is_primary}
-                className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-subtle-foreground hover:text-danger border border-border hover:border-danger/50 rounded-lg transition-colors disabled:opacity-30"
-                title={t('settings.btnDelete')}
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-
-              {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
-              {config.provider === 'custom' &&
-                renderCustomExtras({
-                  baseUrl: config.base_url,
-                  onChip: (url) => handleChipFillSaved(config, url),
-                  requiredTestId: `provider-config-custom-required-${idx}`,
-                  noteTestId: `provider-config-custom-note-${idx}`,
-                })}
-            </div>
-          );
-        })}
+      {/* Provider master-detail (B2): left list + right detail/draft pane */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <ProviderMasterList
+          configs={providerConfigs}
+          llmProviders={llmProviders}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onAddDraft={openDraft}
+          draftActive={draft !== null}
+          draftLabel={
+            draft
+              ? llmProviders.find((p) => p.key === draft.provider)?.label ?? draft.provider
+              : undefined
+          }
+          testStatus={testStatus}
+          renderHealthDot={renderHealthDot}
+        />
+        <ProviderDetailPane
+          llmProviders={llmProviders}
+          providerSelectOptions={providerSelectOptions}
+          isNative={isNative}
+          baseUrlFor={baseUrlFor}
+          staticModelInfos={staticModelInfos}
+          draft={draft}
+          draftBusy={busy === -1}
+          onDraftProviderChange={handleDraftProviderChange}
+          onDraftModelChange={(v) =>
+            setDraft((prev) =>
+              prev ? { ...prev, model: v, testState: 'idle', testError: undefined } : prev,
+            )
+          }
+          onDraftBaseUrlChange={(v) =>
+            setDraft((prev) =>
+              prev ? { ...prev, base_url: v, testState: 'idle', testError: undefined } : prev,
+            )
+          }
+          onDraftApiKeyChange={(v) =>
+            setDraft((prev) =>
+              prev ? { ...prev, api_key: v, testState: 'idle', testError: undefined } : prev,
+            )
+          }
+          onDraftConfirm={handleDraftConfirm}
+          onDraftCancel={handleDraftCancel}
+          draftCustomExtras={
+            draft && draft.provider === 'custom'
+              ? renderCustomExtras({
+                  baseUrl: draft.base_url,
+                  onChip: handleChipFillDraft,
+                  requiredTestId: 'provider-draft-custom-required',
+                  noteTestId: 'provider-draft-custom-note',
+                })
+              : null
+          }
+          config={selectedConfig}
+          index={selectedIndex}
+          busy={busy}
+          onFieldChange={handleFieldChange}
+          onBaseUrlChange={(config, value) => handleLocalFieldChange(config, 'base_url', value)}
+          onBaseUrlBlur={handleBaseUrlBlur}
+          onSetPrimary={handleSetPrimary}
+          onDelete={handleDelete}
+          registerBaseUrlRef={(id, el) => {
+            baseUrlInputRefs.current.set(id, el);
+          }}
+          modelOptions={selectedConfig ? optionsForRow(selectedConfig) : []}
+          modelStaleHint={selectedConfig ? staleHintFor(selectedConfig) : undefined}
+          onModelFocus={() => {
+            if (selectedConfig) ensureModelsLoaded(selectedConfig.id);
+          }}
+          onModelChange={(config, v) => handleFieldChange(config, 'model', v)}
+          onModelRefresh={() => {
+            if (selectedConfig) void loadModels(selectedConfig.id, true);
+          }}
+          showOllamaHint={selectedConfig ? showOllamaHint(selectedConfig) : false}
+          configCustomExtras={
+            selectedConfig && selectedConfig.provider === 'custom'
+              ? renderCustomExtras({
+                  baseUrl: selectedConfig.base_url,
+                  onChip: (url) => handleChipFillSaved(selectedConfig, url),
+                  requiredTestId: `provider-config-custom-required-${selectedIndex}`,
+                  noteTestId: `provider-config-custom-note-${selectedIndex}`,
+                })
+              : null
+          }
+        />
       </div>
 
       {/* Test all button + Suggest primary button + rationale panel */}
@@ -896,113 +852,6 @@ export default function ProviderConfigList({
           </div>
         )}
       </div>
-
-      {/* Add model button OR draft form */}
-      {draft === null ? (
-        <button
-          type="button"
-          onClick={openDraft}
-          disabled={llmProviders.length === 0}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-xl transition-colors disabled:opacity-50"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          {t('settings.btnAddModel')}
-        </button>
-      ) : (
-        /* Draft / new config form */
-        <div className="flex flex-wrap items-start gap-2 bg-surface border border-primary/30 rounded-xl px-4 py-3">
-          {/* Provider select */}
-          <div className="flex-1 min-w-[120px]">
-            <Select
-              value={draft.provider}
-              onChange={handleDraftProviderChange}
-              options={providerSelectOptions}
-              ariaLabel="Provider"
-            />
-          </div>
-
-          {/* Model combobox (static seed options until the config is saved) */}
-          <div className="flex-1 min-w-[160px]">
-            <ModelCombobox
-              data-testid="provider-draft-model"
-              value={draft.model}
-              onChange={(v) =>
-                setDraft((prev) => prev ? { ...prev, model: v, testState: 'idle', testError: undefined } : prev)
-              }
-              options={staticModelInfos(draft.provider)}
-              ariaLabel="Model"
-            />
-          </div>
-
-          {/* Base URL (non-native providers only) — part of the draft payload */}
-          {!isNative(draft.provider) && (
-            <div className="flex-1 min-w-[120px]">
-              <input
-                type="text"
-                data-testid="provider-draft-baseurl"
-                value={draft.base_url}
-                onChange={(e) =>
-                  setDraft((prev) =>
-                    prev ? { ...prev, base_url: e.target.value, testState: 'idle', testError: undefined } : prev,
-                  )
-                }
-                placeholder={baseUrlFor(draft.provider) || t('settings.labelBaseUrl')}
-                aria-label={t('settings.labelBaseUrl')}
-                className={INPUT_CLS}
-              />
-            </div>
-          )}
-
-          {/* API key */}
-          <div className="flex-1 min-w-[100px]">
-            <input
-              type="password"
-              value={draft.api_key}
-              onChange={(e) =>
-                setDraft((prev) =>
-                  prev ? { ...prev, api_key: e.target.value, testState: 'idle', testError: undefined } : prev,
-                )
-              }
-              placeholder={t('settings.labelConfigApiKey')}
-              className={INPUT_CLS}
-            />
-          </div>
-
-          {/* Confirm / Cancel */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              data-testid="provider-draft-confirm"
-              onClick={handleDraftConfirm}
-              disabled={
-                !draft.provider ||
-                !draft.model ||
-                (draft.provider === 'custom' && !draft.base_url.trim()) ||
-                busy === -1
-              }
-              className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-primary border border-primary/40 hover:border-primary/80 rounded-lg transition-colors disabled:opacity-30"
-            >
-              {t('settings.btnAddConfirm')}
-            </button>
-            <button
-              type="button"
-              onClick={handleDraftCancel}
-              className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-subtle-foreground hover:text-foreground border border-border hover:border-border-strong rounded-lg transition-colors"
-            >
-              {t('common.cancel')}
-            </button>
-          </div>
-
-          {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
-          {draft.provider === 'custom' &&
-            renderCustomExtras({
-              baseUrl: draft.base_url,
-              onChip: handleChipFillDraft,
-              requiredTestId: 'provider-draft-custom-required',
-              noteTestId: 'provider-draft-custom-note',
-            })}
-        </div>
-      )}
 
       {/* ── Strategy selector (C: below the config rows) ── */}
       <div className="space-y-1.5 pt-2 border-t border-border/40">
