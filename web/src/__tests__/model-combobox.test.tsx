@@ -223,3 +223,205 @@ describe("ModelCombobox", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ── Review fixes: guarded commits + all four exits behave identically ─────────
+
+describe("ModelCombobox guarded commits (review fixes)", () => {
+  it("Enter without editing does not fire onChange (no-op commit)", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelCombobox
+        value="deepseek-chat"
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    await user.click(screen.getByTestId("model-combobox"));
+    await user.keyboard("{Enter}");
+    expect(onChange).not.toHaveBeenCalled();
+    // Commit still closes the dropdown
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("clicking the option equal to the current value does not fire onChange", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelCombobox
+        value="deepseek-chat"
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    await user.click(screen.getByTestId("model-combobox"));
+    const same = screen
+      .getAllByRole("option")
+      .find((o) => (o.textContent ?? "").includes("deepseek-chat"));
+    await user.click(same!);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("clearing the input then Enter reverts to the stored value without onChange", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelCombobox
+        value="deepseek-chat"
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    const input = screen.getByTestId("model-combobox") as HTMLInputElement;
+    await user.click(input);
+    await user.clear(input);
+    await user.keyboard("{Enter}");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.value).toBe("deepseek-chat");
+  });
+
+  it("resets the highlight when options swap under an open dropdown", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <ModelCombobox
+        value=""
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    const input = screen.getByTestId("model-combobox");
+    await user.click(input);
+    // Highlight the 3rd option (index 2)
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    // Options swap (e.g. the lazy fetch resolving) to a 1-item list
+    const single: ModelInfo[] = [OPTIONS[1]];
+    rerender(
+      <ModelCombobox
+        value=""
+        onChange={onChange}
+        options={single}
+        data-testid="model-combobox"
+      />,
+    );
+    // Highlight was reset — Enter must NOT commit an out-of-range surprise;
+    // the empty raw input reverts, so nothing fires.
+    await user.keyboard("{Enter}");
+    expect(onChange).not.toHaveBeenCalled();
+    // Re-open and pick predictably from the new list
+    await user.click(input);
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(onChange).toHaveBeenCalledWith("deepseek-reasoner");
+  });
+
+  it("Tab-away commits pending text like outside-click", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelCombobox
+        value="deepseek-chat"
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    const input = screen.getByTestId("model-combobox") as HTMLInputElement;
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, "typed-then-tabbed");
+    await user.tab();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("typed-then-tabbed");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("Tab-away without an edit closes without firing onChange", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelCombobox
+        value="deepseek-chat"
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    await user.click(screen.getByTestId("model-combobox"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("Escape reverts the draft and closes; a later Tab does not commit it", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelCombobox
+        value="deepseek-chat"
+        onChange={onChange}
+        options={OPTIONS}
+        data-testid="model-combobox"
+      />,
+    );
+    const input = screen.getByTestId("model-combobox") as HTMLInputElement;
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, "zzz-discard-me");
+    await user.keyboard("{Escape}");
+    expect(input.value).toBe("deepseek-chat");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // The reverted draft must be gone for good — Tab-away commits nothing
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("outside-click commits changed text (blur-save semantics)", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <div>
+        <ModelCombobox
+          value="deepseek-chat"
+          onChange={onChange}
+          options={OPTIONS}
+          data-testid="model-combobox"
+        />
+        <button type="button" data-testid="outside-target">out</button>
+      </div>,
+    );
+    const input = screen.getByTestId("model-combobox") as HTMLInputElement;
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, "clicked-away-model");
+    await user.click(screen.getByTestId("outside-target"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("clicked-away-model");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("outside-click without an edit does not fire onChange", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <div>
+        <ModelCombobox
+          value="deepseek-chat"
+          onChange={onChange}
+          options={OPTIONS}
+          data-testid="model-combobox"
+        />
+        <button type="button" data-testid="outside-target">out</button>
+      </div>,
+    );
+    await user.click(screen.getByTestId("model-combobox"));
+    await user.click(screen.getByTestId("outside-target"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+});

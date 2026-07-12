@@ -5,7 +5,7 @@
  * SettingsScreen. This keeps the test clean and the component focused.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -390,6 +390,89 @@ describe("dynamic model list integration (Provider P2)", () => {
     await waitFor(() => {
       // fetch-on-key-save doubles as key validation (refresh=true, new id=3)
       expect(mockFetchProviderModels).toHaveBeenCalledWith(3, true);
+    });
+  });
+
+  it("switching a row's provider invalidates its cached dynamic model list (FIX A)", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    mockUpdateProviderConfig.mockClear();
+    // First fetch returns a deepseek-only dynamic list
+    mockFetchProviderModels.mockResolvedValueOnce({
+      models: [
+        { id: "dyn-deepseek-model", display_name: null, context_window: null, capabilities: [], source: "api" },
+      ],
+      fetched_at: "2026-07-12T00:00:00",
+      stale: false,
+      error: null,
+      source: "api",
+    });
+
+    // Stateful harness so provider switches actually re-render the row
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providers}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+
+    // First focus loads the deepseek dynamic list
+    await user.click(screen.getByTestId("provider-config-model-0"));
+    await waitFor(() => {
+      const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(opts.some((t) => t.includes("dyn-deepseek-model"))).toBe(true);
+    });
+    expect(mockFetchProviderModels).toHaveBeenCalledTimes(1);
+
+    // Switch the row's provider to qwen
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const qwenOpt = screen.getAllByRole("option").find((o) => /qwen/i.test(o.textContent ?? ""));
+    expect(qwenOpt).toBeTruthy();
+    await user.click(qwenOpt!);
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("provider-config-model-0") as HTMLInputElement).value,
+      ).toBe("qwen-max");
+    });
+
+    // Re-focus: the deepseek cache must be gone → refetch fires and the
+    // suggestions are the NEW provider's seed models
+    await user.click(screen.getByTestId("provider-config-model-0"));
+    await waitFor(() => {
+      expect(mockFetchProviderModels).toHaveBeenCalledTimes(2);
+    });
+    expect(mockFetchProviderModels).toHaveBeenLastCalledWith(1, false);
+    const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(opts.some((t) => t.includes("qwen-max"))).toBe(true);
+    expect(opts.some((t) => t.includes("dyn-deepseek-model"))).toBe(false);
+  });
+
+  it("failed base_url blur-save retries on the next blur (FIX D)", async () => {
+    mockUpdateProviderConfig.mockClear();
+    mockUpdateProviderConfig.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={configs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    fireEvent.change(baseUrl0, { target: { value: "https://retry.example/v1" } });
+    fireEvent.blur(baseUrl0, { target: { value: "https://retry.example/v1" } });
+    await waitFor(() => expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1));
+    // The write failed — the next blur must retry instead of silently dropping it
+    fireEvent.blur(baseUrl0, { target: { value: "https://retry.example/v1" } });
+    await waitFor(() => expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(2));
+    expect(mockUpdateProviderConfig).toHaveBeenLastCalledWith(1, {
+      base_url: "https://retry.example/v1",
     });
   });
 });

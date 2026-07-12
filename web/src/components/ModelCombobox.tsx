@@ -59,17 +59,25 @@ export default function ModelCombobox({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   /** null = not editing; input displays `value`. Non-null = in-progress text. */
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraftState] = useState<string | null>(null);
   /** Index into [ ...filtered, customRow ]; -1 = none highlighted. */
   const [highlighted, setHighlighted] = useState(-1);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Refs so the outside-click listener sees current values without re-binding.
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
+  // Refs so document-level listeners see current values without re-binding,
+  // and so commit/revert clears the draft SYNCHRONOUSLY (before React
+  // re-renders) — otherwise the blur that follows an outside-click or Escape
+  // would still see the stale draft and commit it a second time.
+  const draftRef = useRef<string | null>(null);
   const valueRef = useRef(value);
   valueRef.current = value;
+
+  /** Keep the draft state and its ref in lockstep. */
+  const setDraft = (v: string | null) => {
+    draftRef.current = v;
+    setDraftState(v);
+  };
 
   const displayValue = draft ?? value;
 
@@ -96,29 +104,41 @@ export default function ModelCombobox({
 
   const commit = useCallback(
     (v: string) => {
-      onChange(v);
-      setDraft(null);
+      // Guarded commit, shared by ALL four exits (Enter / option click /
+      // outside-click / Tab-away): an empty input reverts to the stored
+      // value, and re-committing the stored value is a no-op — neither may
+      // fire onChange (a spurious PUT would also wipe the row's test status).
+      if (v.trim() !== "" && v !== valueRef.current) {
+        onChange(v);
+      }
+      draftRef.current = null;
+      setDraftState(null);
       close();
     },
     [onChange, close],
   );
+  // Ref so document-level listeners always run the latest guarded commit.
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  // Options swapped under an open dropdown (e.g. the lazy fetch resolving
+  // after first focus): an existing highlight could fall out of range or
+  // silently point at a different row — reset it.
+  useEffect(() => {
+    setHighlighted(-1);
+  }, [options]);
 
   // ── click-outside: close; commit pending free text (blur-save semantics) ──
   useEffect(() => {
     if (!open) return;
     const handlePointerDown = (e: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        const pending = draftRef.current;
-        if (pending !== null && pending !== valueRef.current) {
-          onChange(pending);
-        }
-        setDraft(null);
-        close();
+        commitRef.current(draftRef.current ?? valueRef.current);
       }
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open, close, onChange]);
+  }, [open]);
 
   // ── keyboard ──────────────────────────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -173,6 +193,15 @@ export default function ModelCombobox({
           value={displayValue}
           onFocus={() => {
             if (!disabled) setOpen(true);
+          }}
+          onBlur={(e) => {
+            // Tab-away (or any focus loss landing OUTSIDE the component)
+            // behaves exactly like outside-click: guarded commit + close.
+            // Focus moves within the component (refresh button) are ignored;
+            // option rows never blur (their pointerdown is preventDefault'd).
+            const next = e.relatedTarget as Node | null;
+            if (next && containerRef.current?.contains(next)) return;
+            commitRef.current(draftRef.current ?? valueRef.current);
           }}
           onChange={(e) => {
             setDraft(e.target.value);

@@ -89,6 +89,10 @@ export default function ProviderConfigList({
   const modelsFetchedRef = useRef<Set<number>>(new Set());
   // Rows with base_url edits pending a blur-save.
   const baseUrlDirtyRef = useRef<Set<number>>(new Set());
+  // Per-row cache epoch: bumped when the row's provider changes so an
+  // in-flight fetch for the OLD provider can't repopulate the cache after
+  // invalidation.
+  const modelsEpochRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
     getCatalog().then(setCatalog).catch(() => setCatalog([]));
@@ -121,14 +125,19 @@ export default function ProviderConfigList({
   // --- dynamic model lists (lazy per row) ---
 
   const loadModels = async (id: number, refresh = false) => {
+    const epoch = modelsEpochRef.current.get(id) ?? 0;
     setRowModels((prev) => ({
       ...prev,
       [id]: { loading: true, result: prev[id]?.result ?? null },
     }));
     try {
       const result = await fetchProviderModels(id, refresh);
+      // Provider switched while this fetch was in flight — the result
+      // belongs to the old provider; drop it.
+      if ((modelsEpochRef.current.get(id) ?? 0) !== epoch) return;
       setRowModels((prev) => ({ ...prev, [id]: { loading: false, result } }));
     } catch {
+      if ((modelsEpochRef.current.get(id) ?? 0) !== epoch) return;
       setRowModels((prev) => ({
         ...prev,
         [id]: { loading: false, result: prev[id]?.result ?? null },
@@ -208,6 +217,20 @@ export default function ProviderConfigList({
     if (field === 'provider') {
       patch.model = defaultModelFor(value);
       patch.base_url = baseUrlFor(value);
+      // The cached dynamic model list (and any stale/ollama hint) belongs to
+      // the OLD provider — invalidate it so the next focus refetches, and
+      // bump the epoch so an in-flight fetch can't repopulate the cache.
+      modelsFetchedRef.current.delete(config.id);
+      baseUrlDirtyRef.current.delete(config.id);
+      modelsEpochRef.current.set(
+        config.id,
+        (modelsEpochRef.current.get(config.id) ?? 0) + 1,
+      );
+      setRowModels((prev) => {
+        const next = { ...prev };
+        delete next[config.id];
+        return next;
+      });
     }
     const optimistic = providerConfigs.map((c) =>
       c.id === config.id ? { ...c, ...patch } : c,
@@ -242,7 +265,9 @@ export default function ProviderConfigList({
     try {
       await updateProviderConfig(config.id, { base_url: value });
     } catch {
-      // Keep the optimistic value; the next successful save will reconcile.
+      // The write failed — mark the row dirty again so the next blur retries
+      // instead of silently showing a base_url the server never received.
+      baseUrlDirtyRef.current.add(config.id);
     }
   };
 
