@@ -63,6 +63,7 @@ vi.mock("../stores/authStore", () => ({
 }));
 
 import ProviderConfigList from "../components/ProviderConfigList";
+import { capabilityOverrideKey } from "../components/settings/CapabilityBadges";
 import type { ProviderOption, ProviderConfig } from "../api/client.types";
 
 const providers: ProviderOption[] = [
@@ -154,6 +155,26 @@ describe("provider master-detail structure", () => {
     expect(screen.getByTestId("provider-master-row-0")).toHaveAttribute("data-selected", "true");
     // Detail now reflects the survivor
     expect((screen.getByTestId("provider-config-model-0") as HTMLInputElement).value).toBe("deepseek-chat");
+  });
+
+  it("purges stored capability overrides when its config is deleted (PK-reuse safety)", async () => {
+    const user = userEvent.setup();
+    mockDeleteProviderConfig.mockResolvedValue({ ok: true });
+    // Config id 2 / model qwen-max has a manual capability override on disk.
+    localStorage.setItem(capabilityOverrideKey(2, "qwen-max", "tools"), "on");
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>(configs);
+      return (
+        <ProviderConfigList llmProviders={providers} providerConfigs={cfgs} onConfigsChange={setCfgs} />
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByTestId("provider-master-row-1"));
+    await user.click(screen.getByRole("button", { name: "settings.btnDelete" }));
+    await waitFor(() => expect(mockDeleteProviderConfig).toHaveBeenCalledWith(2));
+    // The override for the deleted id is purged so a future config reusing id 2
+    // can't silently inherit it (SQLite reuses integer PKs).
+    expect(localStorage.getItem(capabilityOverrideKey(2, "qwen-max", "tools"))).toBeNull();
   });
 
   it("renders the detail empty state when there are no configs and no draft", () => {

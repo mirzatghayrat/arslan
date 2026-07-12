@@ -347,6 +347,33 @@ describe("(E) Test all batch button", () => {
   });
 });
 
+// ── (F) Deep test surfaces the latency from testProviderConfig ───────────────
+
+describe("(F) Deep test latency wiring", () => {
+  it("clicking the detail-pane deep test shows the latency_ms from testProviderConfig", async () => {
+    mockTestProviderConfig.mockResolvedValue({ ok: true, latency_ms: 150 });
+
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={twoConfigs}
+        onConfigsChange={vi.fn()}
+        strategy="single"
+        onStrategyChange={vi.fn()}
+      />
+    );
+
+    // The primary config (id 1) is selected by default → its ConnectionTester
+    // level-2 button drives the deep test.
+    fireEvent.click(screen.getByTestId("connection-test-level2"));
+
+    await waitFor(() => {
+      expect(mockTestProviderConfig).toHaveBeenCalledWith(1);
+      expect(screen.getByText(/· 150ms/)).toBeInTheDocument();
+    });
+  });
+});
+
 // ── (E) Draft / add-new flow: Add enabled when fields filled (no test gate) ──
 
 describe("(E) Draft config: Add enabled when fields are filled", () => {

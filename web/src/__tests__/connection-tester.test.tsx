@@ -110,6 +110,7 @@ describe("ConnectionTester", () => {
     expect(onDeepTest).toHaveBeenCalledWith(config);
     // transient level-2 (usability) result is visible (ok + latency)
     expect(screen.getByText(/settings\.deepTestOk/)).toBeInTheDocument();
+    expect(screen.getByText(/· 200ms/)).toBeInTheDocument();
   });
 
   it("shows the level-2 failure error", () => {

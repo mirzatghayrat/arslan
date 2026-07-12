@@ -19,6 +19,7 @@ import type { SelectOption } from './Select';
 import ProviderMasterList from './settings/ProviderMasterList';
 import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
 import RoutingStrategyCard from './settings/RoutingStrategyCard';
+import { purgeCapabilityOverrides } from './settings/CapabilityBadges';
 import { parseUtcMs, formatRelativeTime } from './settings/relativeTime';
 
 interface ProviderConfigListProps {
@@ -43,10 +44,12 @@ const CUSTOM_BASE_URL_TEMPLATES: { label?: string; labelKey?: string; url: strin
   { labelKey: 'settings.customChipOllamaRemote', url: 'http://<host>:11434/v1' },
 ];
 
-/** Test status per saved config id */
+/** Test status per saved config id. `latency` carries the level-2 (deep chat
+ *  test) round-trip time so the ConnectionTester can show it (parity with the
+ *  level-1 probe). */
 type TestStatusMap = Record<
   number,
-  { state: 'idle' | 'testing' | 'ok' | 'failed'; error?: string }
+  { state: 'idle' | 'testing' | 'ok' | 'failed'; error?: string; latency?: number }
 >;
 
 /** Dynamic model list state per saved config id (lazy, fetched on first focus). */
@@ -275,7 +278,10 @@ export default function ProviderConfigList({
       baseUrlInputRefs.current.delete(id);
       // SQLite reuses INTEGER PRIMARY KEY values (no AUTOINCREMENT) — purge every
       // per-row cache so a future config reusing this id starts clean instead of
-      // inheriting stale models / dirty flags / fetch epoch.
+      // inheriting stale models / dirty flags / fetch epoch. This includes the
+      // persisted CapabilityBadges overrides (localStorage), which would
+      // otherwise leak onto a new config reclaiming this id + model string.
+      purgeCapabilityOverrides(id);
       modelsFetchedRef.current.delete(id);
       baseUrlDirtyRef.current.delete(id);
       modelsEpochRef.current.delete(id);
@@ -399,7 +405,7 @@ export default function ProviderConfigList({
     try {
       const result: TestLlmResult = await testProviderConfig(id);
       if (result.ok) {
-        setTestStatus((prev) => ({ ...prev, [id]: { state: 'ok' } }));
+        setTestStatus((prev) => ({ ...prev, [id]: { state: 'ok', latency: result.latency_ms } }));
       } else {
         setTestStatus((prev) => ({
           ...prev,
@@ -430,7 +436,7 @@ export default function ProviderConfigList({
         try {
           const result: TestLlmResult = await testProviderConfig(c.id);
           if (result.ok) {
-            setTestStatus((prev) => ({ ...prev, [c.id]: { state: 'ok' } }));
+            setTestStatus((prev) => ({ ...prev, [c.id]: { state: 'ok', latency: result.latency_ms } }));
           } else {
             setTestStatus((prev) => ({
               ...prev,

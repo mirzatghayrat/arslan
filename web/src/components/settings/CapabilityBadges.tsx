@@ -47,6 +47,26 @@ export function capabilityOverrideKey(
   return `${OVERRIDE_PREFIX}:${configId}:${model}:${cap}`;
 }
 
+/** Remove EVERY stored capability override for a config id. Call this when a
+ *  config is deleted: SQLite reuses integer PKs, so without a purge a brand-new
+ *  config that reclaims the id (and happens to use the same model string) would
+ *  silently inherit the old override — a wrong capability badge, and per spec B2
+ *  the tools flag can gate behavior. The prefix ends in a colon so id 2 does not
+ *  match id 20. */
+export function purgeCapabilityOverrides(configId: number): void {
+  try {
+    const prefix = `${OVERRIDE_PREFIX}:${configId}:`;
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) doomed.push(key);
+    }
+    for (const key of doomed) localStorage.removeItem(key);
+  } catch {
+    /* localStorage unavailable — nothing to purge */
+  }
+}
+
 /** Read the stored override: true / false when set, undefined when absent. */
 function readOverride(
   configId: number,

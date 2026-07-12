@@ -23,6 +23,7 @@ vi.mock("react-i18next", () => ({
 
 import CapabilityBadges, {
   capabilityOverrideKey,
+  purgeCapabilityOverrides,
 } from "../components/settings/CapabilityBadges";
 
 describe("CapabilityBadges", () => {
@@ -91,6 +92,41 @@ describe("CapabilityBadges", () => {
     );
     expect(localStorage.getItem(capabilityOverrideKey(1, "m1", "tools"))).toBe(
       "off",
+    );
+  });
+
+  it("purgeCapabilityOverrides removes every override key for a config id (PK-reuse safety)", () => {
+    localStorage.setItem(capabilityOverrideKey(2, "X", "tools"), "on");
+    localStorage.setItem(capabilityOverrideKey(2, "X", "vision"), "off");
+    localStorage.setItem(capabilityOverrideKey(2, "Y", "reasoning"), "on");
+    // A different config that must NOT be purged.
+    localStorage.setItem(capabilityOverrideKey(3, "X", "tools"), "on");
+    // A config whose id merely SHARES the "2" prefix (20) must survive — the
+    // purge prefix ends in a colon so id 2 does not match id 20.
+    localStorage.setItem(capabilityOverrideKey(20, "X", "tools"), "on");
+    // An unrelated key must be untouched.
+    localStorage.setItem("arslan.other", "keep");
+
+    purgeCapabilityOverrides(2);
+
+    expect(localStorage.getItem(capabilityOverrideKey(2, "X", "tools"))).toBeNull();
+    expect(localStorage.getItem(capabilityOverrideKey(2, "X", "vision"))).toBeNull();
+    expect(localStorage.getItem(capabilityOverrideKey(2, "Y", "reasoning"))).toBeNull();
+    expect(localStorage.getItem(capabilityOverrideKey(3, "X", "tools"))).toBe("on");
+    expect(localStorage.getItem(capabilityOverrideKey(20, "X", "tools"))).toBe("on");
+    expect(localStorage.getItem("arslan.other")).toBe("keep");
+  });
+
+  it("after a purge, a config reusing the id + model shows the API caps (no stale override)", () => {
+    // Config 2 / model X had tools overridden ON despite no API tools cap.
+    localStorage.setItem(capabilityOverrideKey(2, "X", "tools"), "on");
+    purgeCapabilityOverrides(2);
+    // A brand-new config reclaims id 2 with the same model string but the API
+    // says it has NO tools — the stale override must not leak through.
+    render(<CapabilityBadges configId={2} model="X" capabilities={[]} />);
+    expect(screen.getByTestId("cap-badge-tools")).toHaveAttribute(
+      "data-active",
+      "false",
     );
   });
 
