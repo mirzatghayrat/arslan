@@ -271,7 +271,7 @@
   },
   "settings": {
     "navProviders": "Fournisseurs",
-"navRegion": "Sections des paramètres",
+    "navRegion": "Sections des paramètres",
     "navSearch": "Recherche et outils",
     "navAppearance": "Apparence et langue",
     "navAccess": "Accès",

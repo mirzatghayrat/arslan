@@ -182,6 +182,37 @@ describe("SettingsScreen auto-save (Task 6)", () => {
     expect(mockUpdateSettings.mock.calls[0][0].search_api_key).toBeUndefined();
   });
 
+  // ── FIX 2: a background save resolving mid-edit must not revert the typed key
+  // to its mask (the sync effect skips key fields the user is editing) ──────────
+  it("keeps a key the user is typing when a background non-key save resolves", async () => {
+    let resolveTelemetry!: (v: unknown) => void;
+    mockUpdateSettings.mockImplementationOnce(
+      () => new Promise((res) => { resolveTelemetry = res; }),
+    );
+    renderSettings({ apiKeySearch: "tv...bcde" }); // pre-filled masked echo
+
+    // Toggle telemetry (non-key) and let its debounced PUT fire and hang.
+    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(document.getElementById("settings-telemetry-toggle")!);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    // While that PUT is in flight, the user types a real key.
+    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    const keyInput = document.getElementById("settings-search-key") as HTMLInputElement;
+    fireEvent.change(keyInput, { target: { value: "tvly-typed" } });
+
+    // The background save resolves → onPersisted → parent settings sync fires.
+    await act(async () => {
+      resolveTelemetry({});
+      await Promise.resolve();
+    });
+
+    // The typed value survives — NOT reverted to the mask by the sync effect.
+    expect((document.getElementById("settings-search-key") as HTMLInputElement).value).toBe("tvly-typed");
+  });
+
   it("does not PUT when the backend is offline (no crash)", () => {
     renderSettings({}, "offline");
     fireEvent.click(screen.getByTestId("settings-nav-advanced"));
@@ -190,5 +221,36 @@ describe("SettingsScreen auto-save (Task 6)", () => {
       vi.advanceTimersByTime(1000);
     });
     expect(mockUpdateSettings).not.toHaveBeenCalled();
+  });
+
+  // ── FIX 3: an offline edit is buffered and flushed once on reconnect ─────────
+  it("flushes a buffered offline edit when the backend reconnects", async () => {
+    const setSettings = vi.fn();
+    const settingsObj = { ...defaultSettings }; // stable identity across rerenders
+    const el = (backendStatus: "online" | "offline") => (
+      <SettingsScreen
+        settings={settingsObj}
+        setSettings={setSettings}
+        llmProviders={providers}
+        searchProviders={searchProviders}
+        backendStatus={backendStatus}
+      />
+    );
+    const { rerender } = render(el("offline"));
+
+    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(document.getElementById("settings-shell-toggle")!);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(mockUpdateSettings).not.toHaveBeenCalled(); // offline: buffered
+
+    // Backend comes back → reconnect effect flushes the buffer once.
+    await act(async () => {
+      rerender(el("online"));
+      await Promise.resolve();
+    });
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSettings.mock.calls[0][0].orchestrator_shell_enabled).toBe("true");
   });
 });

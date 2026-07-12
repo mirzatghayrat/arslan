@@ -48,16 +48,22 @@ const base: AppSettings = {
  */
 function setupHook(overrides: Partial<AppSettings> = {}, opts: { enabled?: boolean } = {}) {
   let settings: AppSettings = { ...base, ...overrides };
+  let enabled = opts.enabled ?? true;
   const onPersisted = vi.fn();
+  const props = () => ({ settings, setLocalSettings, onPersisted, enabled, debounceMs: 600, savedLingerMs: 2000 });
   const setLocalSettings = vi.fn((updater: AppSettings | ((p: AppSettings) => AppSettings)) => {
     settings = typeof updater === "function" ? (updater as (p: AppSettings) => AppSettings)(settings) : updater;
-    rerender({ settings, setLocalSettings, onPersisted, enabled: opts.enabled ?? true, debounceMs: 600, savedLingerMs: 2000 });
+    rerender(props());
   });
   const { result, rerender } = renderHook(
-    (props) => useDebouncedSettingsSave(props),
-    { initialProps: { settings, setLocalSettings, onPersisted, enabled: opts.enabled ?? true, debounceMs: 600, savedLingerMs: 2000 } },
+    (p) => useDebouncedSettingsSave(p),
+    { initialProps: props() },
   );
-  return { result, getSettings: () => settings, onPersisted, setLocalSettings };
+  const setEnabled = (v: boolean) => {
+    enabled = v;
+    rerender(props());
+  };
+  return { result, getSettings: () => settings, onPersisted, setLocalSettings, setEnabled };
 }
 
 describe("useDebouncedSettingsSave", () => {
@@ -185,6 +191,27 @@ describe("useDebouncedSettingsSave", () => {
     });
     expect(mockUpdateSettings).not.toHaveBeenCalled();
     expect(getSettings().searchProvider).toBe("serpapi");
+  });
+
+  // ── FIX 3: offline edits buffer + reflush on reconnect ──────────────────────
+  it("buffers an offline edit and flushes it exactly once when back online", async () => {
+    const { result, setEnabled } = setupHook({}, { enabled: false });
+    act(() => {
+      result.current.saveField({ searchProvider: "serpapi" });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(mockUpdateSettings).not.toHaveBeenCalled(); // offline: buffered, no PUT
+
+    act(() => {
+      setEnabled(true); // reconnect
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSettings.mock.calls[0][0].search_provider).toBe("serpapi");
   });
 
   // ── FIX 2: dirty-guard key blur-save ────────────────────────────────────────

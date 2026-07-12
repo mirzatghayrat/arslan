@@ -28,16 +28,23 @@ function looksMasked(value: string): boolean {
  * Legacy flat LLM fields (llm_provider / llm_model / llm_api_key) are no longer
  * mapped to UI state — the multi-config provider list is the single source of truth.
  *
+ * llmStrategy DOES have a backend counterpart (GET /settings returns llm_strategy,
+ * defaulting to "single"). It MUST be hydrated here — otherwise localSettings keeps
+ * the client default and every debounced auto-save PUTs llm_strategy:'single',
+ * silently clobbering the user's stored routing strategy (T6 FIX 1).
+ *
  * UI-only fields with no backend counterpart are kept at their current UI value
  * and therefore should NOT be overwritten on fetch; callers must merge:
  *   theme, telemetry, spawnMode
  */
-export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode" | "llmStrategy"> {
+export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode"> {
   return {
     searchProvider: backend.search_provider ?? "",
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
+    // Routing strategy round-trips through the backend (default "single").
+    llmStrategy: (backend.llm_strategy ?? "single") as AppSettings["llmStrategy"],
     distillOnSessionEnd: backend.distill_on_session_end ?? true,
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.

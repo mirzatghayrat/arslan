@@ -36,24 +36,37 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'providers');
 
-  // Sync local form when parent settings update (e.g. after initial backend fetch)
-  useEffect(() => {
-    setLocalSettings((prev) => ({ ...prev, ...settings }));
-  }, [settings]);
-
   // ── Persistence (Task 6) ───────────────────────────────────────────────────
   // Instant auto-save replaces the old top Save button + <form onSubmit>.
   // Non-key fields debounce through saveField; the two key-type fields (search
   // key / GitHub token) persist on BLUR only via flushField (user's constraint).
-  // Saves are disabled while the backend is offline (mirrors the old disabled
-  // Save button); the optimistic display still updates so controls stay live.
-  const { saveField, editKeyField, flushField, status: saveStatus, error: saveError } =
+  // While offline the change is buffered and flushed on reconnect; the optimistic
+  // display still updates so controls stay live.
+  const { saveField, editKeyField, flushField, getEditingKeyFields, status: saveStatus, error: saveError } =
     useDebouncedSettingsSave({
       settings: localSettings,
       setLocalSettings,
-      onPersisted: setSettings,
+      // Merge only the fields the hook actually persisted (a patch) so a masked
+      // key never round-trips back through the parent onto a field the user is
+      // still editing.
+      onPersisted: (patch) => setSettings((prev) => ({ ...prev, ...patch })),
       enabled: backendStatus !== 'offline',
     });
+
+  // Sync local form when parent settings update (e.g. after initial backend fetch),
+  // but never clobber a key field the user is actively editing — that would revert
+  // an in-progress secret back to its mask when a background save resolves.
+  useEffect(() => {
+    setLocalSettings((prev) => {
+      const next: AppSettings = { ...prev, ...settings };
+      const mutableNext = next as unknown as Record<string, unknown>;
+      const prevRec = prev as unknown as Record<string, unknown>;
+      for (const f of getEditingKeyFields()) {
+        mutableNext[f as string] = prevRec[f as string];
+      }
+      return next;
+    });
+  }, [settings, getEditingKeyFields]);
 
   // ── Section slots ─────────────────────────────────────────────────────────
   // Pure relocation of the existing cards into the shell's section slots. The

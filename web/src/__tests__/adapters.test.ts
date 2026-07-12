@@ -79,6 +79,18 @@ describe("toUiSettings", () => {
     const ui = toUiSettings(partial);
     expect(ui.apiKeySearch).toBe("");
   });
+
+  // ── T6 FIX 1: llm_strategy must round-trip (was never hydrated → auto-save
+  // clobbered the stored value back to the 'single' default) ───────────────────
+  it("hydrates llmStrategy from the backend llm_strategy field", () => {
+    const ui = toUiSettings({ ...backendBase, llm_strategy: "balanced" });
+    expect((ui as { llmStrategy: string }).llmStrategy).toBe("balanced");
+  });
+
+  it("defaults llmStrategy to 'single' when llm_strategy is absent", () => {
+    const ui = toUiSettings(backendBase);
+    expect((ui as { llmStrategy: string }).llmStrategy).toBe("single");
+  });
 });
 
 // ── toBackendSettings (masked-key omission) ───────────────────────────────────
@@ -156,6 +168,22 @@ describe("toBackendSettings", () => {
     expect(body.search_provider).toBe("tavily");
     expect(body.language).toBe("en");
     expect(body.llm_strategy).toBe("single");
+  });
+
+  // ── T6 FIX 1: a GET→hydrate→PUT round-trip must preserve the stored strategy,
+  // so an auto-save where the user changed nothing does NOT downgrade it ────────
+  it("round-trips llm_strategy through toUiSettings → toBackendSettings", () => {
+    const backend = {
+      llm_provider: "anthropic",
+      language: "en",
+      search_provider: "tavily",
+      search_api_key: "tvly-••••••••",
+      github_token: "",
+      llm_strategy: "balanced",
+    } as unknown as Parameters<typeof toUiSettings>[0];
+    const ui = { ...baseUi, ...toUiSettings(backend) };
+    const body = toBackendSettings(ui);
+    expect(body.llm_strategy).toBe("balanced");
   });
 });
 

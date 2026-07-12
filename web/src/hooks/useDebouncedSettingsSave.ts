@@ -49,9 +49,17 @@ export interface UseDebouncedSettingsSaveArgs {
   settings: AppSettings;
   /** Setter for the working copy — used for optimistic apply + rollback. */
   setLocalSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-  /** Called with the merged settings after a successful PUT (propagate to parent). */
-  onPersisted?: (next: AppSettings) => void;
-  /** When false (backend offline) the PUT is skipped; the optimistic display still applies. */
+  /**
+   * Called after a successful PUT with ONLY the fields that were actually
+   * persisted (a patch), so the parent merges just those — untouched key fields
+   * (which may hold a mask placeholder) are never pushed back into the parent.
+   */
+  onPersisted?: (persisted: Partial<AppSettings>) => void;
+  /**
+   * When false (backend offline) the PUT is skipped and the change is BUFFERED;
+   * the optimistic display still applies, and a flip back to true re-flushes the
+   * buffer (offline edits are not silently lost).
+   */
   enabled?: boolean;
   /** Debounce window for non-key saves. */
   debounceMs?: number;
@@ -66,6 +74,12 @@ export interface UseDebouncedSettingsSave {
   editKeyField: (field: keyof AppSettings, value: string) => void;
   /** Key fields on blur: PUT immediately, but only if the key is dirty. */
   flushField: (patch: Partial<AppSettings>) => void;
+  /**
+   * Key fields the user is actively editing (dirty). The host's settings-sync
+   * effect consults this to avoid clobbering an in-progress key with the masked
+   * value from a background save's settings round-trip.
+   */
+  getEditingKeyFields: () => (keyof AppSettings)[];
   status: SettingsSaveStatus;
   error: string | null;
 }
@@ -124,6 +138,8 @@ export function useDebouncedSettingsSave({
   }, [savedLingerMs]);
 
   const runPut = useCallback(async () => {
+    // Offline — keep the buffer intact so the reconnect effect can flush it.
+    if (!enabledRef.current) return;
     const pending = pendingRef.current;
     if (Object.keys(pending).length === 0) return;
     const revert = revertRef.current;
@@ -141,7 +157,6 @@ export function useDebouncedSettingsSave({
         mutableSource[kf as string] = "";
       }
     }
-    const merged: AppSettings = { ...settingsRef.current, ...pending };
 
     const seq = requestSeqRef.current + 1;
     requestSeqRef.current = seq;
@@ -154,7 +169,9 @@ export function useDebouncedSettingsSave({
       for (const kf of KEY_FIELDS) {
         if (kf in pending) dirtyKeysRef.current.delete(kf);
       }
-      onPersistedRef.current?.(merged);
+      // Propagate ONLY the persisted patch — the parent merges just these fields,
+      // so a background non-key save never pushes a masked key back to the parent.
+      onPersistedRef.current?.(pending);
       setStatus("saved");
       scheduleSavedFade();
     } catch (err) {
@@ -183,11 +200,12 @@ export function useDebouncedSettingsSave({
   const saveField = useCallback(
     (patch: Partial<AppSettings>) => {
       // Optimistic display update always applies (control stays responsive even
-      // offline); only persistence is gated on `enabled`.
+      // offline). The change is ALWAYS buffered (snapshot + pending) so an offline
+      // edit isn't lost — only the network debounce is gated on `enabled`.
       setLocalSettings((prev) => ({ ...prev, ...patch }));
-      if (!enabledRef.current) return;
       snapshot(patch);
       pendingRef.current = { ...pendingRef.current, ...patch };
+      if (!enabledRef.current) return; // offline: buffered, flushed on reconnect
       if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(() => {
         debounceTimer.current = null;
@@ -219,9 +237,9 @@ export function useDebouncedSettingsSave({
       if (!hasNonKey && dirtyKeyFields.length === 0) return;
 
       setLocalSettings((prev) => ({ ...prev, ...patch }));
-      if (!enabledRef.current) return;
       snapshot(patch);
       pendingRef.current = { ...pendingRef.current, ...patch };
+      if (!enabledRef.current) return; // offline: buffered, flushed on reconnect
       if (debounceTimer.current !== null) {
         clearTimeout(debounceTimer.current);
         debounceTimer.current = null;
@@ -231,5 +249,20 @@ export function useDebouncedSettingsSave({
     [runPut, setLocalSettings, snapshot],
   );
 
-  return { saveField, editKeyField, flushField, status, error };
+  const getEditingKeyFields = useCallback(
+    (): (keyof AppSettings)[] => Array.from(dirtyKeysRef.current),
+    [],
+  );
+
+  // Reconnect flush — when `enabled` flips false→true, flush anything buffered
+  // while offline exactly once (no Save button to fall back on).
+  const wasEnabledRef = useRef(enabled);
+  useEffect(() => {
+    if (enabled && !wasEnabledRef.current && Object.keys(pendingRef.current).length > 0) {
+      void runPut();
+    }
+    wasEnabledRef.current = enabled;
+  }, [enabled, runPut]);
+
+  return { saveField, editKeyField, flushField, getEditingKeyFields, status, error };
 }
