@@ -5,20 +5,28 @@
  *
  *  - saveField(patch): NON-key fields. Merges into a pending buffer, debounces
  *    (~600ms) and then PUTs once — multiple rapid changes collapse into ONE PUT.
- *  - flushField(patch): KEY fields on blur (search key / GitHub token). Cancels
- *    any pending debounce and PUTs immediately. This is the mechanism behind the
- *    user's hard constraint: key-type fields persist on BLUR only, never per key-
- *    stroke (their onChange updates the display value; only blur reaches here).
+ *  - editKeyField(field, value): KEY fields (search key / GitHub token) onChange —
+ *    updates the display value AND marks the field dirty. No persistence here.
+ *  - flushField(patch): KEY fields on blur. Cancels any pending debounce and PUTs
+ *    immediately, BUT only if the key was actually edited (dirty) — an unedited
+ *    blur is a no-op. This is the user's hard constraint: key-type fields persist
+ *    on BLUR only, never per-keystroke, and never on a bare tab-through.
  *
  * Optimistic + rollback: every change is applied to localSettings immediately so
- * the UI reflects it; the pre-change value is snapshotted, and on PUT rejection
- * the optimistic value is reverted and status flips to 'error' (mirrors
- * ProviderConfigList's optimistic field handlers).
+ * the UI reflects it; for NON-key fields the pre-change value is snapshotted and
+ * reverted on PUT rejection. KEY fields are NEVER reverted — their pre-edit value
+ * is the mask placeholder, so on a key-save failure we keep the user's typed
+ * value + surface the error (they retry on the next blur; the field stays dirty).
  *
  * Empty/masked-key invariant: the body is always built via toBackendSettings,
- * which omits an empty or masked search key / GitHub token. Additionally, a NON-
- * key debounced PUT blanks the key fields it is not explicitly flushing, so a
- * mid-typed (un-blurred) key can never ride out on a non-key save.
+ * which omits an empty or masked secret. Additionally, a NON-key debounced PUT
+ * blanks the key fields it is not explicitly flushing, so a mid-typed (un-blurred)
+ * key can never ride out on a non-key save.
+ *
+ * Sequencing (latest-wins): each PUT captures a monotonic request version; when a
+ * PUT settles, if a newer PUT has since been issued the stale one's status /
+ * rollback / persist effects are ignored — so a slow in-flight save can't clobber
+ * a newer one that already resolved.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,8 +37,10 @@ import type { AppSettings } from "../types";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
 
-/** Secret-ish fields that persist on blur only (see flushField). */
+/** Secret-ish fields that persist on blur only (see editKeyField / flushField). */
 const KEY_FIELDS: (keyof AppSettings)[] = ["apiKeySearch", "githubToken"];
+const isKeyField = (k: string): k is keyof AppSettings =>
+  (KEY_FIELDS as string[]).includes(k);
 const DEFAULT_DEBOUNCE_MS = 600;
 const DEFAULT_SAVED_LINGER_MS = 2000;
 
@@ -52,7 +62,9 @@ export interface UseDebouncedSettingsSaveArgs {
 export interface UseDebouncedSettingsSave {
   /** Non-key fields: debounced, merged, single PUT. */
   saveField: (patch: Partial<AppSettings>) => void;
-  /** Key fields on blur: cancel pending debounce, PUT immediately. */
+  /** Key-field onChange: display update + mark dirty (no persistence). */
+  editKeyField: (field: keyof AppSettings, value: string) => void;
+  /** Key fields on blur: PUT immediately, but only if the key is dirty. */
   flushField: (patch: Partial<AppSettings>) => void;
   status: SettingsSaveStatus;
   error: string | null;
@@ -81,10 +93,16 @@ export function useDebouncedSettingsSave({
   enabledRef.current = enabled;
 
   // Accumulated pending patch (collapses rapid changes) + pre-change snapshot
-  // for rollback. Distinct object identities per batch avoid cross-contamination
-  // with an in-flight PUT.
+  // for rollback (NON-key fields only). Distinct object identities per batch
+  // avoid cross-contamination with an in-flight PUT.
   const pendingRef = useRef<Partial<AppSettings>>({});
   const revertRef = useRef<Partial<AppSettings>>({});
+
+  // Which key fields the user has actually edited since the last successful save.
+  const dirtyKeysRef = useRef<Set<keyof AppSettings>>(new Set());
+
+  // Monotonic PUT version — latest-wins settle ordering (FIX 3).
+  const requestSeqRef = useRef(0);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,24 +143,37 @@ export function useDebouncedSettingsSave({
     }
     const merged: AppSettings = { ...settingsRef.current, ...pending };
 
+    const seq = requestSeqRef.current + 1;
+    requestSeqRef.current = seq;
     setStatus("saving");
     setError(null);
     try {
       await api.updateSettings(toBackendSettings(source));
+      if (seq !== requestSeqRef.current) return; // superseded by a newer PUT → ignore
+      // Committed successfully → those key fields are no longer dirty.
+      for (const kf of KEY_FIELDS) {
+        if (kf in pending) dirtyKeysRef.current.delete(kf);
+      }
       onPersistedRef.current?.(merged);
       setStatus("saved");
       scheduleSavedFade();
     } catch (err) {
-      // Roll the optimistic values back to their pre-change snapshot.
+      if (seq !== requestSeqRef.current) return; // superseded → ignore stale rollback/status
+      // Roll NON-key optimistic values back to their pre-change snapshot. Key
+      // fields are absent from `revert` (never snapshotted) so the user's typed
+      // value survives a failed key save for retry.
       setLocalSettings((prev) => ({ ...prev, ...revert }));
       setError(err instanceof Error ? err.message : "Save failed");
       setStatus("error");
     }
   }, [scheduleSavedFade, setLocalSettings]);
 
+  // Snapshot pre-change values for rollback — NON-key fields only (key fields are
+  // never reverted; see the module doc + FIX note #4).
   const snapshot = useCallback((patch: Partial<AppSettings>) => {
     const revert = revertRef.current as unknown as Record<string, unknown>;
     for (const k of Object.keys(patch) as (keyof AppSettings)[]) {
+      if (isKeyField(k)) continue;
       if (!(k in revertRef.current)) {
         revert[k as string] = settingsRef.current[k];
       }
@@ -166,8 +197,27 @@ export function useDebouncedSettingsSave({
     [debounceMs, runPut, setLocalSettings, snapshot],
   );
 
+  const editKeyField = useCallback(
+    (field: keyof AppSettings, value: string) => {
+      // Display-only: no persistence until blur. Marks the field dirty so the
+      // subsequent blur actually flushes (an unedited blur must not PUT).
+      dirtyKeysRef.current.add(field);
+      setLocalSettings((prev) => ({ ...prev, [field]: value }));
+    },
+    [setLocalSettings],
+  );
+
   const flushField = useCallback(
     (patch: Partial<AppSettings>) => {
+      const patchKeys = Object.keys(patch);
+      const hasNonKey = patchKeys.some((k) => !isKeyField(k));
+      const dirtyKeyFields = patchKeys.filter(
+        (k) => isKeyField(k) && dirtyKeysRef.current.has(k),
+      );
+      // Unedited key blur (only clean key fields, nothing else) → nothing to
+      // persist. Skip entirely — no display churn, no PUT.
+      if (!hasNonKey && dirtyKeyFields.length === 0) return;
+
       setLocalSettings((prev) => ({ ...prev, ...patch }));
       if (!enabledRef.current) return;
       snapshot(patch);
@@ -181,5 +231,5 @@ export function useDebouncedSettingsSave({
     [runPut, setLocalSettings, snapshot],
   );
 
-  return { saveField, flushField, status, error };
+  return { saveField, editKeyField, flushField, status, error };
 }

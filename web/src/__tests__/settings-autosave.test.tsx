@@ -126,6 +126,19 @@ describe("SettingsScreen auto-save (Task 6)", () => {
     expect(mockUpdateSettings.mock.calls[0][0].search_api_key).toBe("tvly-secret");
   });
 
+  it("does NOT PUT when a key field is focused and blurred without editing (dirty-guard)", () => {
+    renderSettings({ apiKeySearch: "tv...bcde" }); // pre-filled masked echo
+    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    const input = document.getElementById("settings-search-key") as HTMLInputElement;
+    // Tab through: focus then blur, no change event.
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+  });
+
   it("saves the GitHub token on blur only", () => {
     renderSettings();
     fireEvent.click(screen.getByTestId("settings-nav-search"));

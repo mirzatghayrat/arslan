@@ -113,6 +113,37 @@ describe("toBackendSettings", () => {
     expect(body.search_api_key).toBe("tvly-real-key");
   });
 
+  // ── T6 FIX 1: the backend's real mask shapes must be omitted too ─────────────
+  // mask_secret() emits "***" (len<8) and "<2-3 prefix>...<last4>" (long). The
+  // old bullet-only guard let these through, so blurring an unedited key wrote
+  // the mask placeholder back as the stored key. Mirror backend _looks_masked.
+  it.each([
+    ["sk-...wxyz"], // sk- prefix (3) ... last4
+    ["tv...bcde"], // 2-char prefix ... last4
+    ["gh...2345"], // github-style prefix ... last4
+    ["***"], // short-key mask
+    ["••••"], // legacy bullet mask
+  ])("omits search_api_key when it is the masked echo %s", (masked) => {
+    const body = toBackendSettings({ ...baseUi, apiKeySearch: masked });
+    expect(body.search_api_key).toBeUndefined();
+  });
+
+  it("still includes a real key that merely contains '...' but not the mask shape", () => {
+    // A real key isn't prefix(2-3)...last4; the anchored regex must not eat it.
+    const body = toBackendSettings({ ...baseUi, apiKeySearch: "sk-realkey123" });
+    expect(body.search_api_key).toBe("sk-realkey123");
+  });
+
+  it("omits github_token when it is a masked echo (prefix...last4)", () => {
+    const body = toBackendSettings({ ...baseUi, githubToken: "gh...2345" });
+    expect(body.github_token).toBeUndefined();
+  });
+
+  it("includes github_token when the user entered a real value", () => {
+    const body = toBackendSettings({ ...baseUi, githubToken: "ghp_realtoken" });
+    expect(body.github_token).toBe("ghp_realtoken");
+  });
+
   it("does NOT send legacy flat LLM fields (llm_provider / llm_model / llm_api_key)", () => {
     const body = toBackendSettings(baseUi) as Record<string, unknown>;
     expect(body.llm_provider).toBeUndefined();

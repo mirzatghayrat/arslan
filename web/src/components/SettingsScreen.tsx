@@ -47,7 +47,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   // key / GitHub token) persist on BLUR only via flushField (user's constraint).
   // Saves are disabled while the backend is offline (mirrors the old disabled
   // Save button); the optimistic display still updates so controls stay live.
-  const { saveField, flushField, status: saveStatus, error: saveError } =
+  const { saveField, editKeyField, flushField, status: saveStatus, error: saveError } =
     useDebouncedSettingsSave({
       settings: localSettings,
       setLocalSettings,
@@ -86,12 +86,13 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         searchProviders={searchProviders}
         onSearchProviderChange={(v) => saveField({ searchProvider: v })}
         searchKey={localSettings.apiKeySearch}
-        // Key-type field: onChange updates the display value only (no save);
-        // the value persists on blur via flushField.
-        onSearchKeyChange={(v) => setLocalSettings(prev => ({ ...prev, apiKeySearch: v }))}
+        // Key-type field: onChange updates the display value only + marks dirty
+        // (no save); the value persists on blur via flushField, and ONLY if the
+        // user actually edited it (an unedited tab-through blur is a no-op).
+        onSearchKeyChange={(v) => editKeyField('apiKeySearch', v)}
         onSearchKeyBlur={(v) => flushField({ apiKeySearch: v })}
         githubToken={localSettings.githubToken}
-        onGithubTokenChange={(v) => setLocalSettings(prev => ({ ...prev, githubToken: v }))}
+        onGithubTokenChange={(v) => editKeyField('githubToken', v)}
         onGithubTokenBlur={(v) => flushField({ githubToken: v })}
       />
     ),

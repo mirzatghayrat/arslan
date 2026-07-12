@@ -101,6 +101,7 @@ describe("useDebouncedSettingsSave", () => {
     const { result } = setupHook();
     act(() => {
       result.current.saveField({ telemetry: true }); // schedules a debounce
+      result.current.editKeyField("apiKeySearch", "tvly-new"); // user edits the key
       result.current.flushField({ apiKeySearch: "tvly-new" }); // blur → immediate
     });
     // Immediate PUT already happened once (the flush), no debounce yet.
@@ -184,5 +185,90 @@ describe("useDebouncedSettingsSave", () => {
     });
     expect(mockUpdateSettings).not.toHaveBeenCalled();
     expect(getSettings().searchProvider).toBe("serpapi");
+  });
+
+  // ── FIX 2: dirty-guard key blur-save ────────────────────────────────────────
+  it("does NOT PUT on an unedited key blur (dirty-guard)", async () => {
+    const { result } = setupHook({ apiKeySearch: "tv...bcde" });
+    act(() => {
+      result.current.flushField({ apiKeySearch: "tv...bcde" }); // tab-through, never edited
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+  });
+
+  it("PUTs on blur after the key was edited, and that field is no longer dirty afterwards", async () => {
+    const { result } = setupHook();
+    act(() => {
+      result.current.editKeyField("apiKeySearch", "tvly-new");
+      result.current.flushField({ apiKeySearch: "tvly-new" });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSettings.mock.calls[0][0].search_api_key).toBe("tvly-new");
+    // A second, unedited blur must NOT re-PUT (dirty was cleared on success).
+    act(() => {
+      result.current.flushField({ apiKeySearch: "tvly-new" });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the typed key value on a failed key save (never reverts to the mask)", async () => {
+    mockUpdateSettings.mockRejectedValueOnce(new Error("boom"));
+    const { result, getSettings } = setupHook({ apiKeySearch: "tv...bcde" }); // starts masked
+    act(() => {
+      result.current.editKeyField("apiKeySearch", "tvly-typed");
+      result.current.flushField({ apiKeySearch: "tvly-typed" });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("error");
+    // The user's typed value survives — NOT rolled back to the mask placeholder.
+    expect(getSettings().apiKeySearch).toBe("tvly-typed");
+  });
+
+  // ── FIX 3: latest-wins PUT sequencing ───────────────────────────────────────
+  it("ignores a stale in-flight PUT that settles after a newer one (latest-wins)", async () => {
+    let rejectA!: (e: unknown) => void;
+    mockUpdateSettings
+      .mockImplementationOnce(() => new Promise((_res, rej) => { rejectA = rej; })) // A hangs
+      .mockImplementationOnce(() => Promise.resolve({})); // B resolves
+    const { result, getSettings } = setupHook();
+
+    // Issue A (searchProvider) — goes in-flight and hangs.
+    act(() => {
+      result.current.saveField({ searchProvider: "serpapi" });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(result.current.status).toBe("saving");
+
+    // Issue B (language) — resolves.
+    act(() => {
+      result.current.saveField({ language: "ja" });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(result.current.status).toBe("saved");
+
+    // A rejects late — its rollback/status must be ignored (superseded).
+    await act(async () => {
+      rejectA(new Error("late-A"));
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("saved");
+    expect(result.current.error).toBeNull();
+    expect(getSettings().searchProvider).toBe("serpapi"); // A's revert ignored
+    expect(getSettings().language).toBe("ja");
   });
 });
