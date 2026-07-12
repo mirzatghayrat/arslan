@@ -5,7 +5,7 @@
  * SettingsScreen. This keeps the test clean and the component focused.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -24,6 +24,16 @@ const mockAddProviderConfig = vi.fn().mockResolvedValue({ id: 3, label: "C", pro
 const mockUpdateProviderConfig = vi.fn().mockResolvedValue({});
 const mockSetPrimaryProviderConfig = vi.fn().mockResolvedValue({ ok: true });
 const mockDeleteProviderConfig = vi.fn().mockResolvedValue({ ok: true });
+const mockFetchProviderModels = vi.fn().mockResolvedValue({
+  models: [],
+  fetched_at: null,
+  stale: false,
+  error: null,
+  source: "static",
+});
+const mockProbeProviderHealth = vi.fn().mockResolvedValue({
+  state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
+});
 
 vi.mock("../api/client", () => ({
   api: {
@@ -36,10 +46,12 @@ vi.mock("../api/client", () => ({
   updateProviderConfig: (...args: unknown[]) => mockUpdateProviderConfig(...args),
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
   deleteProviderConfig: (...args: unknown[]) => mockDeleteProviderConfig(...args),
+  fetchProviderModels: (...args: unknown[]) => mockFetchProviderModels(...args),
   suggestPrimary: vi.fn().mockResolvedValue(null),
   getCatalog: vi.fn().mockResolvedValue([]),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
+  probeProviderHealth: (...args: unknown[]) => mockProbeProviderHealth(...args),
 }));
 
 vi.mock("../stores/authStore", () => ({
@@ -64,8 +76,7 @@ const configs: ProviderConfig[] = [
 ];
 
 describe("ProviderConfigList", () => {
-  it("renders configured rows with provider model visible", async () => {
-    const user = userEvent.setup();
+  it("renders configured rows with provider model visible", () => {
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -74,14 +85,11 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // Custom Select triggers: open the model select for the first row by id
-    const modelTrigger0 = document.getElementById("provider-config-model-0") as HTMLButtonElement;
-    expect(modelTrigger0).not.toBeNull();
-    // The trigger shows the selected model label in its text
-    expect(modelTrigger0.textContent).toContain("deepseek-chat");
-    const modelTrigger1 = document.getElementById("provider-config-model-1") as HTMLButtonElement;
-    expect(modelTrigger1).not.toBeNull();
-    expect(modelTrigger1.textContent).toContain("qwen-max");
+    // Model comboboxes: free-text inputs showing the stored model id
+    const model0 = screen.getByTestId("provider-config-model-0") as HTMLInputElement;
+    expect(model0.value).toBe("deepseek-chat");
+    const model1 = screen.getByTestId("provider-config-model-1") as HTMLInputElement;
+    expect(model1.value).toBe("qwen-max");
   });
 
   it("shows a set-primary button for non-primary rows", () => {
@@ -149,13 +157,17 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // Open the model select for the first (deepseek) row
-    const modelTrigger0 = document.getElementById("provider-config-model-0") as HTMLButtonElement;
-    await user.click(modelTrigger0);
-    // Both model options should be rendered in the listbox
-    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
-    expect(options).toContain("deepseek-chat");
-    expect(options).toContain("deepseek-reasoner");
+    // Focus the model combobox for the first (deepseek) row → dropdown opens
+    const model0 = screen.getByTestId("provider-config-model-0");
+    await user.click(model0);
+    // Both static seed models should be suggested (dynamic mock returns [])
+    await waitFor(() => {
+      const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(options.some((t) => t.includes("deepseek-chat"))).toBe(true);
+      expect(options.some((t) => t.includes("deepseek-reasoner"))).toBe(true);
+    });
+    // First focus lazily fetched the dynamic model list for that row
+    expect(mockFetchProviderModels).toHaveBeenCalledWith(1, false);
   });
 
   it("renders a strategy dropdown with 4 options", async () => {
@@ -275,6 +287,629 @@ describe("base_url update on provider change (Change 1)", () => {
         10,
         expect.objectContaining({ base_url: "" }),
       );
+    });
+  });
+});
+
+// ── Provider P2: dynamic model list + base_url blur-save + ollama hint ────────
+
+describe("dynamic model list integration (Provider P2)", () => {
+  it("base_url input saves on blur only, never per keystroke", async () => {
+    mockUpdateProviderConfig.mockClear();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={configs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    // deepseek is non-native → base_url input rendered for row 0
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    fireEvent.change(baseUrl0, { target: { value: "https://my-proxy.example/v1" } });
+    // No network write while typing
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+    fireEvent.blur(baseUrl0, { target: { value: "https://my-proxy.example/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledWith(1, {
+        base_url: "https://my-proxy.example/v1",
+      });
+    });
+    // Blur without an edit must not fire another save
+    mockUpdateProviderConfig.mockClear();
+    fireEvent.blur(baseUrl0, { target: { value: "https://my-proxy.example/v1" } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it("refresh button re-fetches the row's dynamic model list", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={configs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    const refreshBtns = screen.getAllByRole("button", { name: "settings.modelRefresh" });
+    await user.click(refreshBtns[0]);
+    await waitFor(() => {
+      expect(mockFetchProviderModels).toHaveBeenCalledWith(1, true);
+    });
+  });
+
+  it("shows stale + ollama-not-detected hints when the daemon is down", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    mockFetchProviderModels.mockResolvedValueOnce({
+      models: [],
+      fetched_at: null,
+      stale: true,
+      error: "connection refused",
+      source: "static",
+    });
+    const ollamaProviders: ProviderOption[] = [
+      { key: "ollama", label: "Ollama", base_url: "http://127.0.0.1:11434", default_model: "", native: false, models: [] },
+    ];
+    const ollamaConfigs: ProviderConfig[] = [
+      { id: 7, label: "O", provider: "ollama", model: "llama3", base_url: "http://127.0.0.1:11434", api_key: "x", is_primary: true },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={ollamaProviders}
+        providerConfigs={ollamaConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    // First focus triggers the lazy fetch which returns the daemon-down result
+    await user.click(screen.getByTestId("provider-config-model-0"));
+    await waitFor(() => {
+      // stale + fetched_at null → pure static-fallback hint
+      expect(screen.getByText("settings.modelStaticFallback")).toBeInTheDocument();
+      // ollama empty list + error → not-detected hint with download link
+      const hint = screen.getByTestId("provider-config-ollama-hint-0");
+      expect(hint.textContent).toContain("settings.ollamaNotDetected");
+      const link = hint.querySelector("a") as HTMLAnchorElement;
+      expect(link.href).toBe("https://ollama.com/download");
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noreferrer");
+    });
+  });
+
+  it("saving a draft fires a refresh fetch for the new config id", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    mockAddProviderConfig.mockClear();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
+    fireEvent.change(keyInput, { target: { value: "sk-test" } });
+    await user.click(screen.getByTestId("provider-draft-confirm"));
+    await waitFor(() => {
+      // fetch-on-key-save doubles as key validation (refresh=true, new id=3)
+      expect(mockFetchProviderModels).toHaveBeenCalledWith(3, true);
+    });
+  });
+
+  it("switching a row's provider invalidates its cached dynamic model list (FIX A)", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    mockUpdateProviderConfig.mockClear();
+    // First fetch returns a deepseek-only dynamic list
+    mockFetchProviderModels.mockResolvedValueOnce({
+      models: [
+        { id: "dyn-deepseek-model", display_name: null, context_window: null, capabilities: [], source: "api" },
+      ],
+      fetched_at: "2026-07-12T00:00:00",
+      stale: false,
+      error: null,
+      source: "api",
+    });
+
+    // Stateful harness so provider switches actually re-render the row
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providers}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+
+    // First focus loads the deepseek dynamic list
+    await user.click(screen.getByTestId("provider-config-model-0"));
+    await waitFor(() => {
+      const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(opts.some((t) => t.includes("dyn-deepseek-model"))).toBe(true);
+    });
+    expect(mockFetchProviderModels).toHaveBeenCalledTimes(1);
+
+    // Switch the row's provider to qwen
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const qwenOpt = screen.getAllByRole("option").find((o) => /qwen/i.test(o.textContent ?? ""));
+    expect(qwenOpt).toBeTruthy();
+    await user.click(qwenOpt!);
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("provider-config-model-0") as HTMLInputElement).value,
+      ).toBe("qwen-max");
+    });
+
+    // Re-focus: the deepseek cache must be gone → refetch fires and the
+    // suggestions are the NEW provider's seed models
+    await user.click(screen.getByTestId("provider-config-model-0"));
+    await waitFor(() => {
+      expect(mockFetchProviderModels).toHaveBeenCalledTimes(2);
+    });
+    expect(mockFetchProviderModels).toHaveBeenLastCalledWith(1, false);
+    const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(opts.some((t) => t.includes("qwen-max"))).toBe(true);
+    expect(opts.some((t) => t.includes("dyn-deepseek-model"))).toBe(false);
+  });
+
+  it("custom draft save stays disabled until base_url is filled (P3)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    // custom first → openDraft starts on the custom provider
+    const customFirst: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+      ...providers,
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+
+    // Fill model (combobox commits on blur) and api_key — base_url still blank
+    const modelInput = screen.getByTestId("provider-draft-model");
+    fireEvent.change(modelInput, { target: { value: "my-model" } });
+    fireEvent.blur(modelInput);
+    const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
+    fireEvent.change(keyInput, { target: { value: "sk-test" } });
+
+    const confirm = screen.getByTestId("provider-draft-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    // The required-base_url hint shows while blank
+    expect(screen.getByTestId("provider-draft-custom-required")).toBeInTheDocument();
+
+    // Fill base_url → save enabled, hint gone
+    fireEvent.change(screen.getByTestId("provider-draft-baseurl"), {
+      target: { value: "http://localhost:1234/v1" },
+    });
+    expect((screen.getByTestId("provider-draft-confirm") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId("provider-draft-custom-required")).toBeNull();
+
+    await user.click(screen.getByTestId("provider-draft-confirm"));
+    await waitFor(() => {
+      expect(mockAddProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "custom",
+          model: "my-model",
+          base_url: "http://localhost:1234/v1",
+        }),
+      );
+    });
+  });
+
+  it("quick-pick chip fills the draft base_url field (P3)", async () => {
+    const user = userEvent.setup();
+    const customFirst: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+      ...providers,
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+
+    // Chips render for the custom draft; clicking LM Studio fills the input
+    await user.click(screen.getByRole("button", { name: "LM Studio" }));
+    expect(
+      (screen.getByTestId("provider-draft-baseurl") as HTMLInputElement).value,
+    ).toBe("http://localhost:1234/v1");
+    // Another chip overwrites it
+    await user.click(screen.getByRole("button", { name: "vLLM" }));
+    expect(
+      (screen.getByTestId("provider-draft-baseurl") as HTMLInputElement).value,
+    ).toBe("http://localhost:8000/v1");
+  });
+
+  it("quick-pick chip on a saved row fills + focuses WITHOUT persisting; natural blur persists (FIX 3)", async () => {
+    const user = userEvent.setup();
+    mockUpdateProviderConfig.mockClear();
+    const customProviders: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "", api_key: "", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={customProviders}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "llama.cpp" }));
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    // Chip fills the input and focuses it for review — persistence must wait
+    // for a NATURAL blur (the Ollama chip is a placeholder the user must edit).
+    expect(baseUrl0.value).toBe("http://localhost:8080/v1");
+    expect(document.activeElement).toBe(baseUrl0);
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+    fireEvent.blur(baseUrl0, { target: { value: "http://localhost:8080/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledWith(5, {
+        base_url: "http://localhost:8080/v1",
+      });
+    });
+    expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("keyless ollama draft saves (FIX 1)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    const ollamaFirst: ProviderOption[] = [
+      { key: "ollama", label: "Ollama", base_url: "http://localhost:11434/v1", default_model: "", native: false, models: [] },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={ollamaFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    // Fill only the model — api_key stays empty (local daemon needs none)
+    const modelInput = screen.getByTestId("provider-draft-model");
+    fireEvent.change(modelInput, { target: { value: "llama3" } });
+    fireEvent.blur(modelInput);
+    const confirm = screen.getByTestId("provider-draft-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    await user.click(confirm);
+    await waitFor(() => {
+      expect(mockAddProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "ollama", model: "llama3", api_key: "" }),
+      );
+    });
+  });
+
+  it("keyless custom draft with base_url saves (FIX 1)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    const customFirst: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    const modelInput = screen.getByTestId("provider-draft-model");
+    fireEvent.change(modelInput, { target: { value: "my-model" } });
+    fireEvent.blur(modelInput);
+    fireEvent.change(screen.getByTestId("provider-draft-baseurl"), {
+      target: { value: "http://localhost:1234/v1" },
+    });
+    // api_key left empty — must not gate the save
+    const confirm = screen.getByTestId("provider-draft-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    await user.click(confirm);
+    await waitFor(() => {
+      expect(mockAddProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "custom",
+          model: "my-model",
+          base_url: "http://localhost:1234/v1",
+          api_key: "",
+        }),
+      );
+    });
+  });
+
+  it("switching a saved row to custom is local-pending with hint; base_url blur persists the full patch (FIX 2)", async () => {
+    const user = userEvent.setup();
+    mockUpdateProviderConfig.mockClear();
+    const providersWithCustom: ProviderOption[] = [
+      { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-chat", native: false, models: ["deepseek-chat"] },
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 21, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "https://api.deepseek.com", api_key: "k", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providersWithCustom}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+
+    // Switch the row's provider to custom
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const customOpt = screen.getAllByRole("option").find((o) => /自定义/.test(o.textContent ?? ""));
+    expect(customOpt).toBeTruthy();
+    await user.click(customOpt!);
+
+    // NOT silent: switch applied locally, required-base_url hint shows, NO PUT
+    // (a PUT with blank base_url would deterministically 422)
+    await waitFor(() => {
+      expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+    });
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+
+    // Filling base_url and blurring persists provider+model+base_url in ONE PUT
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    fireEvent.change(baseUrl0, { target: { value: "http://localhost:1234/v1" } });
+    fireEvent.blur(baseUrl0, { target: { value: "http://localhost:1234/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateProviderConfig).toHaveBeenCalledWith(21, {
+      provider: "custom",
+      model: "",
+      base_url: "http://localhost:1234/v1",
+    });
+  });
+
+  it("switch-to-custom + chip + natural blur produces exactly ONE full-patch PUT (FIX 2+3)", async () => {
+    const user = userEvent.setup();
+    mockUpdateProviderConfig.mockClear();
+    const providersWithCustom: ProviderOption[] = [
+      { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-chat", native: false, models: ["deepseek-chat"] },
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 22, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "https://api.deepseek.com", api_key: "k", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providersWithCustom}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const customOpt = screen.getAllByRole("option").find((o) => /自定义/.test(o.textContent ?? ""));
+    await user.click(customOpt!);
+    await waitFor(() => {
+      expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+    });
+
+    // Chip fills the field — still NO PUT (fill-without-save)
+    await user.click(screen.getByRole("button", { name: "LM Studio" }));
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    expect(baseUrl0.value).toBe("http://localhost:1234/v1");
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+
+    // Natural blur → exactly ONE PUT carrying the COMPLETE pending patch
+    fireEvent.blur(baseUrl0, { target: { value: "http://localhost:1234/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateProviderConfig).toHaveBeenCalledWith(22, {
+      provider: "custom",
+      model: "",
+      base_url: "http://localhost:1234/v1",
+    });
+  });
+
+  it("compatibility note + blank-base_url hint render only for custom rows (P3)", () => {
+    const customProviders: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+      ...providers,
+    ];
+    const mixedConfigs: ProviderConfig[] = [
+      { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "", api_key: "", is_primary: true },
+      { id: 6, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: false },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customProviders}
+        providerConfigs={mixedConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    // Exactly one compat note (the custom row), none for deepseek
+    expect(screen.getAllByText("settings.customCompatNote")).toHaveLength(1);
+    expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-config-custom-note-1")).toBeNull();
+    // Saved custom row with blank base_url shows the required hint
+    expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+  });
+
+  it("compatibility note renders without the blank hint when base_url is set (P3)", () => {
+    const customProviders: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    const customConfigs: ProviderConfig[] = [
+      { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "http://localhost:1234/v1", api_key: "", is_primary: true },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customProviders}
+        providerConfigs={customConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-config-custom-required-0")).toBeNull();
+  });
+
+  it("switching a saved row's provider resets its connectivity health dot (FIX health-reset)", async () => {
+    const user = userEvent.setup();
+    mockProbeProviderHealth.mockClear();
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 30, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true, last_health: null, last_health_at: null },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providers}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+    // Auto-probe on mount fills the overlay from the (mocked) reachable_models probe
+    await waitFor(() =>
+      expect(screen.getByTestId("provider-health-dot-0")).toHaveAttribute(
+        "data-health-state", "reachable_models"));
+
+    // Switch the row's provider deepseek → qwen
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const qwenOpt = screen.getAllByRole("option").find((o) => /qwen/i.test(o.textContent ?? ""));
+    expect(qwenOpt).toBeTruthy();
+    await user.click(qwenOpt!);
+
+    // The stale overlay (old provider's reachability) must be cleared → the dot
+    // falls back to unknown/hollow, not the previous provider's state.
+    await waitFor(() =>
+      expect(screen.getByTestId("provider-health-dot-0")).toHaveAttribute(
+        "data-health-state", "unknown"));
+    expect(screen.getByTestId("provider-health-dot-0").textContent).toBe("○");
+  });
+
+  it("deleting a config purges its per-row model cache so a reused id starts clean (FIX cache-cleanup)", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockReset();
+    // The first fetch (row id 2, deepseek) caches a dynamic model unique to the
+    // OLD config; every later fetch is seed-only (empty dynamic list).
+    mockFetchProviderModels.mockResolvedValueOnce({
+      models: [{ id: "stale-cached-model", display_name: null, context_window: null, capabilities: [], source: "api" }],
+      fetched_at: "2026-07-12T00:00:00", stale: false, error: null, source: "api",
+    });
+    mockFetchProviderModels.mockResolvedValue({
+      models: [], fetched_at: null, stale: false, error: null, source: "static",
+    });
+    mockDeleteProviderConfig.mockResolvedValue({ ok: true });
+
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true },
+        { id: 2, label: "B", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: false },
+      ]);
+      // Simulate SQLite PK reuse: a brand-new qwen config lands on the freed id 2.
+      const reuseId2 = () =>
+        setCfgs([
+          { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true },
+          { id: 2, label: "C", provider: "qwen", model: "qwen-max", base_url: "", api_key: "k", is_primary: false },
+        ]);
+      return (
+        <>
+          <button data-testid="reuse-id-2" onClick={reuseId2}>reuse</button>
+          <ProviderConfigList
+            llmProviders={providers}
+            providerConfigs={cfgs}
+            onConfigsChange={setCfgs}
+          />
+        </>
+      );
+    }
+    render(<Harness />);
+
+    // Focus row 2's combobox → caches the stale dynamic list under id 2
+    await user.click(screen.getByTestId("provider-config-model-1"));
+    await waitFor(() => {
+      const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(opts.some((t) => t.includes("stale-cached-model"))).toBe(true);
+    });
+
+    // Delete row 2 (non-primary). handleDelete must purge modelsFetchedRef +
+    // rowModels for id 2 so a future config reusing the PK doesn't inherit them.
+    const deleteBtns = screen.getAllByRole("button", { name: "settings.btnDelete" });
+    await user.click(deleteBtns[1]);
+    await waitFor(() => expect(screen.queryByTestId("provider-config-model-1")).toBeNull());
+
+    // Reintroduce id 2 as a fresh qwen config (external refresh / PK reuse).
+    mockFetchProviderModels.mockClear();
+    await user.click(screen.getByTestId("reuse-id-2"));
+    await waitFor(() => expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument());
+
+    // Focus the reused row. WITH the fix, modelsFetchedRef was purged → this
+    // refetches; the stale cached model is gone and the qwen seed shows.
+    await user.click(screen.getByTestId("provider-config-model-1"));
+    await waitFor(() => expect(mockFetchProviderModels).toHaveBeenCalledWith(2, false));
+    const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(opts.some((t) => t.includes("qwen-max"))).toBe(true);
+    expect(opts.some((t) => t.includes("stale-cached-model"))).toBe(false);
+  });
+
+  it("a mid-session added config is health-probed for its new id (FIX mid-session-probe)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    mockProbeProviderHealth.mockClear();
+    mockAddProviderConfig.mockResolvedValueOnce({
+      id: 3, label: "C", provider: "deepseek", model: "deepseek-reasoner", base_url: "", api_key: "", is_primary: false,
+    });
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
+    fireEvent.change(keyInput, { target: { value: "sk-test" } });
+    await user.click(screen.getByTestId("provider-draft-confirm"));
+    // The settings-open auto-probe already latched — the new config must still
+    // get a connectivity probe so its dot isn't stuck hollow until a manual click.
+    await waitFor(() => expect(mockProbeProviderHealth).toHaveBeenCalledWith(3));
+  });
+
+  it("failed base_url blur-save retries on the next blur (FIX D)", async () => {
+    mockUpdateProviderConfig.mockClear();
+    mockUpdateProviderConfig.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={configs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    fireEvent.change(baseUrl0, { target: { value: "https://retry.example/v1" } });
+    fireEvent.blur(baseUrl0, { target: { value: "https://retry.example/v1" } });
+    await waitFor(() => expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1));
+    // The write failed — the next blur must retry instead of silently dropping it
+    fireEvent.blur(baseUrl0, { target: { value: "https://retry.example/v1" } });
+    await waitFor(() => expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(2));
+    expect(mockUpdateProviderConfig).toHaveBeenLastCalledWith(1, {
+      base_url: "https://retry.example/v1",
     });
   });
 });

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import time
 
+import httpx
+
 from arslan.llm.adapter import LLMAdapter
 from arslan.llm.presets import expand_preset
 
@@ -47,4 +49,12 @@ async def test_connection(
         latency_ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "error": None, "latency_ms": latency_ms}
     except Exception as exc:  # noqa: BLE001
+        # P3: 401/403 from an OpenAI-compatible server almost always means
+        # "this endpoint wants an API key" (keyless test against LiteLLM with
+        # auth on, a cloud endpoint, …) — say that instead of the raw dump.
+        if (isinstance(exc, httpx.HTTPStatusError)
+                and exc.response.status_code in (401, 403)):
+            status = exc.response.status_code
+            return {"ok": False, "error": f"该服务器要求 API key(HTTP {status})",
+                    "latency_ms": None}
         return {"ok": False, "error": str(exc) or "connection failed", "latency_ms": None}

@@ -41,6 +41,9 @@ vi.mock("../api/client", () => ({
   updateProviderConfig: vi.fn().mockResolvedValue({}),
   setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
   deleteProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
+  probeProviderHealth: vi.fn().mockResolvedValue({
+    state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
+  }),
 }));
 
 // ── auth store mock (api/client imports authStore) ─────────────────────────────

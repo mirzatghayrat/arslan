@@ -105,8 +105,10 @@ CATALOG: dict[str, dict] = {
         "languages": {"en": 9, "zh": 7, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
     "ollama": {
-        # Exact ollama.com/library tags (top popular general-chat pulls, 2026-07).
-        "models": ["llama3.1", "qwen3.5", "gemma4", "deepseek-r1"],
+        # B5: no seed models — what is actually pulled locally is the only honest
+        # list; the dynamic catalog service (Settings /models endpoint, /api/tags)
+        # is king. Capabilities/languages stay for the routing engine.
+        "models": [],
         "capabilities": {"cost": 10, "speed": 5, "tool_calling": 5, "reasoning": 6, "long_context": 5},
         "languages": {"en": 8, "zh": 6, "de": 6, "es": 6, "fr": 6, "ja": 5},
     },

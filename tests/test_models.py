@@ -1,7 +1,6 @@
 """Tests for arslan.models — written TDD before implementation."""
 
 from arslan.models import (
-    CapabilityProfile,
     DomainInfo,
     EvolutionRule,
     FeedbackEntry,
@@ -166,53 +165,6 @@ class TestSpawnBlueprint:
         assert blueprint.template_used is None
         assert len(blueprint.tools) == 1
         assert blueprint.system_prompt == "You are a helpful assistant."
-
-
-# ---------------------------------------------------------------------------
-# CapabilityProfile
-# ---------------------------------------------------------------------------
-
-class TestCapabilityProfile:
-    def _make_profile(self, **overrides) -> CapabilityProfile:
-        defaults = dict(
-            name="claude-3-haiku",
-            provider="anthropic",
-            reasoning=4,
-            tool_use=3,
-            chinese=5,
-            creative=3,
-            instruction=4,
-            max_context=200_000,
-            cost_per_1k_tokens=0.00025,
-        )
-        defaults.update(overrides)
-        return CapabilityProfile(**defaults)
-
-    def test_weak_capabilities_strictly_less_than_threshold(self):
-        profile = self._make_profile(reasoning=2, tool_use=3, creative=1)
-        weak = profile.weak_capabilities(threshold=3)
-        # reasoning=2 < 3 → weak; tool_use=3 is NOT < 3 → not weak; creative=1 < 3 → weak
-        assert "reasoning" in weak
-        assert "creative" in weak
-        assert "tool_use" not in weak
-
-    def test_weak_capabilities_default_threshold(self):
-        profile = self._make_profile(reasoning=2, tool_use=3, creative=2, instruction=3, chinese=4)
-        weak = profile.weak_capabilities()  # default threshold=3
-        assert "reasoning" in weak
-        assert "creative" in weak
-        assert "tool_use" not in weak
-        assert "instruction" not in weak
-        assert "chinese" not in weak
-
-    def test_weak_capabilities_none_weak(self):
-        profile = self._make_profile(reasoning=3, tool_use=3, creative=3, instruction=3, chinese=3)
-        assert profile.weak_capabilities(threshold=3) == []
-
-    def test_weak_capabilities_all_weak(self):
-        profile = self._make_profile(reasoning=1, tool_use=2, creative=1, instruction=2, chinese=2)
-        weak = profile.weak_capabilities(threshold=3)
-        assert set(weak) == {"reasoning", "tool_use", "creative", "instruction", "chinese"}
 
 
 # ---------------------------------------------------------------------------

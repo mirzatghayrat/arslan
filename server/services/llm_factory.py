@@ -8,6 +8,17 @@ from server.db import session as db_session
 from server.services import provider_config_service, settings_service
 
 
+def _require_model(model: str, config_provider: str) -> str:
+    """Fail loudly on a blank model instead of the old `or "gpt-4o"` poison
+    fallback, which silently sent requests for a model most providers don't
+    serve (opaque 404s at chat time)."""
+    if not model or not model.strip():
+        raise ValueError(
+            f"provider '{config_provider}' 没有配置模型 — 请在 Settings 里选择或输入 model id"
+        )
+    return model
+
+
 async def build_adapter(role: str | None = None) -> LLMAdapter:
     """Construct an LLMAdapter for *role*.
 
@@ -26,8 +37,8 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
             (c for c in configs if c["is_primary"]), configs[0])
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
-    return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url,
-                      report_provider=chosen["provider"])
+    return LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
+                      base_url=base_url, report_provider=chosen["provider"])
 
 
 async def build_synthesis_adapter() -> LLMAdapter | None:
@@ -46,8 +57,8 @@ async def build_synthesis_adapter() -> LLMAdapter | None:
                 key = await provider_config_service.get_decrypted_key(db, c["id"])
                 provider, model, base_url = expand_preset(
                     c["provider"], c["model"], c.get("base_url") or "")
-                return LLMAdapter(provider, model or "gpt-4o", api_key=key, base_url=base_url,
-                                  report_provider=c["provider"])
+                return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
+                                  base_url=base_url, report_provider=c["provider"])
     return None
 
 
@@ -58,5 +69,5 @@ async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
     model = cfg.get("llm_model") or ""
     base_url = cfg.get("llm_base_url") or ""
     provider, model, base_url = expand_preset(config_provider, model, base_url)
-    return LLMAdapter(provider, model or "gpt-4o", api_key=api_key, base_url=base_url,
-                      report_provider=config_provider)
+    return LLMAdapter(provider, _require_model(model, config_provider), api_key=api_key,
+                      base_url=base_url, report_provider=config_provider)

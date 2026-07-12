@@ -29,6 +29,9 @@ vi.mock("../api/client", () => ({
   addProviderConfig: vi.fn().mockResolvedValue({}),
   updateProviderConfig: vi.fn().mockResolvedValue({}),
   deleteProviderConfig: vi.fn().mockResolvedValue({}),
+  probeProviderHealth: vi.fn().mockResolvedValue({
+    state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
+  }),
   API_BASE: "",
 }));
 

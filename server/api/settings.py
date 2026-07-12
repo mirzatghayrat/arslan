@@ -2,18 +2,22 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arslan.llm.catalog import CATALOG
-from arslan.llm.presets import provider_options
+from arslan.llm.presets import expand_preset, provider_options
 from server import auth, config, token_bootstrap
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, CatalogEntryOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
-from server.services import provider_config_service, settings_service
+from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+# model_catalog + provider_health are Settings-only: this module is their ONLY
+# allowed import site outside their own tests (Provider-round iron rule —
+# never from the chat path).
+from server.services import model_catalog, provider_config_service, provider_health, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
 
@@ -130,17 +134,23 @@ async def list_provider_configs(session: AsyncSession = Depends(get_session)):
 
 @router.post("/settings/provider-configs", response_model=ProviderConfigOut)
 async def add_provider_config(body: ProviderConfigIn, session: AsyncSession = Depends(get_session)):
-    return await provider_config_service.add_config(
-        session, label=body.label, provider=body.provider, model=body.model,
-        base_url=body.base_url, api_key=body.api_key)
+    try:
+        return await provider_config_service.add_config(
+            session, label=body.label, provider=body.provider, model=body.model,
+            base_url=body.base_url, api_key=body.api_key)
+    except ValueError as exc:  # P3: custom without base_url
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 @router.put("/settings/provider-configs/{config_id}", response_model=ProviderConfigOut)
 async def update_provider_config(config_id: int, body: ProviderConfigUpdateIn,
                                  session: AsyncSession = Depends(get_session)):
-    updated = await provider_config_service.update_config(
-        session, config_id, label=body.label, provider=body.provider, model=body.model,
-        base_url=body.base_url, api_key=body.api_key)
+    try:
+        updated = await provider_config_service.update_config(
+            session, config_id, label=body.label, provider=body.provider, model=body.model,
+            base_url=body.base_url, api_key=body.api_key)
+    except ValueError as exc:  # P3: patch would leave a custom config without base_url
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     if updated is None:
         raise HTTPException(status_code=404, detail="config not found")
     return updated
@@ -160,6 +170,24 @@ async def delete_provider_config(config_id: int, session: AsyncSession = Depends
     return {"ok": True}
 
 
+@router.get("/settings/provider-configs/{config_id}/models", response_model=ModelListOut)
+async def list_provider_config_models(
+    config_id: int, refresh: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> ModelListOut:
+    """Dynamic model list for one saved provider config (Provider-P2).
+
+    Cache-first (5min fresh / 24h stale-ok, local hosts refetch eagerly);
+    ``?refresh=true`` forces a live fetch. Never 5xx on network failure —
+    degrades to the stale cache, then the static seed (source="static").
+    """
+    try:
+        result = await model_catalog.get_models(session, config_id, refresh=refresh)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="provider config not found") from None
+    return ModelListOut(**result)
+
+
 @router.post("/settings/test-llm", response_model=TestLLMOut)
 async def test_llm_raw(body: TestLLMIn) -> TestLLMOut:
     """Test a raw LLM config (provider, model, base_url, api_key) without saving it.
@@ -167,7 +195,10 @@ async def test_llm_raw(body: TestLLMIn) -> TestLLMOut:
     Returns {ok, error, latency_ms}.  Never raises a 5xx — errors come back as
     {ok: false, error: "…"}.
     """
-    if not body.api_key or _looks_masked(body.api_key):
+    # D3 empty-key unification: an empty key is a legitimate config (keyless
+    # local servers) and proceeds to the real connection test — consistent
+    # with the saved-config path below. Only a masked echo is rejected.
+    if body.api_key and _looks_masked(body.api_key):
         return TestLLMOut(ok=False, error="enter a real API key to test")
     result = await test_connection(
         provider=body.provider,
@@ -198,6 +229,34 @@ async def test_saved_provider_config(
         api_key=api_key,
     )
     return TestLLMOut(**result)
+
+
+@router.post("/settings/provider-configs/{config_id}/health", response_model=HealthOut)
+async def probe_provider_config_health(
+    config_id: int, session: AsyncSession = Depends(get_session)
+) -> HealthOut:
+    """Tri-state connectivity probe for one saved provider config (Provider-P4).
+
+    Fires ONLY on explicit Settings interactions (spec decision D4 — no
+    background polling). Persists the verdict on the row (last_health /
+    last_health_at) so Settings-open can render the last-known state.
+    Never 5xx on network failure — that is the "unreachable" state.
+    """
+    from server.db.models import ProviderConfig
+    row = await session.get(ProviderConfig, config_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="provider config not found")
+    api_key = provider_config_service._safe(row.api_key)
+    # Mirror the /models endpoint: probe the expand_preset-resolved base_url
+    # with the config-level provider key.
+    _, _, base_url = expand_preset(row.provider, row.model, row.base_url or "")
+    result = await provider_health.probe(row.provider, base_url, api_key)
+    row.last_health = result["state"]
+    row.last_health_at = datetime.utcnow()
+    await session.commit()
+    return HealthOut(state=result["state"], latency_ms=result["latency_ms"],
+                     detail=result["detail"],
+                     last_health_at=row.last_health_at.isoformat())
 
 
 @router.get("/settings/suggest-primary", response_model=SuggestPrimaryOut | None)

@@ -18,11 +18,25 @@ def _safe(enc: str) -> str:
         return ""
 
 
+def _require_custom_base_url(provider: str, base_url: str) -> None:
+    """P3: a "custom" config has no preset to fall back on — expand_preset
+    passes it through verbatim, so a blank base_url would silently talk to
+    api.openai.com (OpenAIProvider's default). Refuse it at the door.
+
+    Raises ValueError; the API layer maps it to HTTP 422.
+    """
+    if provider == "custom" and not (base_url or "").strip():
+        raise ValueError("custom provider 必须填写 base_url")
+
+
 def _to_public(row: ProviderConfig) -> dict:
     return {
         "id": row.id, "label": row.label, "provider": row.provider, "model": row.model,
         "base_url": row.base_url or "", "is_primary": bool(row.is_primary),
         "api_key": mask_secret(_safe(row.api_key)),
+        # P4: last connectivity probe (null until the first probe)
+        "last_health": row.last_health,
+        "last_health_at": row.last_health_at.isoformat() if row.last_health_at else None,
     }
 
 
@@ -39,6 +53,7 @@ async def list_for_routing(session: AsyncSession) -> list[dict]:
 
 async def add_config(session: AsyncSession, *, label: str, provider: str, model: str,
                      base_url: str, api_key: str) -> dict:
+    _require_custom_base_url(provider, base_url)
     first = (await session.execute(select(ProviderConfig).limit(1))).scalar_one_or_none() is None
     row = ProviderConfig(label=label, provider=provider, model=model, base_url=base_url or None,
                          api_key=crypto.encrypt(api_key), is_primary=first)
@@ -54,6 +69,11 @@ async def update_config(session: AsyncSession, config_id: int, *, label: str | N
     row = await session.get(ProviderConfig, config_id)
     if row is None:
         return None
+    # P3: validate the EFFECTIVE (row ∘ patch) state BEFORE mutating anything,
+    # so a rejected patch leaves the row untouched.
+    effective_provider = provider if provider is not None else row.provider
+    effective_base_url = base_url if base_url is not None else (row.base_url or "")
+    _require_custom_base_url(effective_provider, effective_base_url)
     if label is not None:
         row.label = label
     if provider is not None:

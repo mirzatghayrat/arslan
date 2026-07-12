@@ -77,7 +77,11 @@ PRESETS: dict[str, dict[str, str]] = {
         "label": "Ollama (本地)",
         "provider": "openai",
         "base_url": "http://localhost:11434/v1",
-        "default_model": "llama3.1",
+        # B5: no static default — the dynamic list (/api/tags) is king; the UI
+        # shows "not detected" when no local daemon answers. A blank model on a
+        # saved ollama config intentionally raises at build_adapter (user must
+        # pick a model that is actually pulled).
+        "default_model": "",
     },
 }
 
@@ -146,6 +150,21 @@ def provider_options() -> list[dict[str, object]]:
                 "models": models_for(key),
             }
         )
+    # P3: custom OpenAI-compatible endpoint (LM Studio, vLLM, llama.cpp, …).
+    # Deliberately NOT a PRESETS row: expand_preset's unknown-provider
+    # passthrough + LLMAdapter's registry-miss fallback to OpenAIProvider ARE
+    # the runtime chain, and a preset row would start filling defaults the
+    # user must own (base_url is required, enforced server-side).
+    options.append(
+        {
+            "key": "custom",
+            "label": "OpenAI-compatible(自定义)",
+            "base_url": "",  # user must fill
+            "default_model": "",
+            "native": False,
+            "models": [],
+        }
+    )
     return options
 
 

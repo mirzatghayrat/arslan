@@ -17,6 +17,7 @@ import type {
   RollbackResult,
   IngestResult,
   KnowledgeSource,
+  ModelListResult,
   NoteDto,
   NoteSuggestDto,
   ProviderConfig,
@@ -473,6 +474,13 @@ export const deleteProviderConfig = (id: number) =>
 export const suggestPrimary = () =>
   request<SuggestPrimaryResult | null>("/settings/suggest-primary");
 
+/** Dynamic model catalog for a saved provider config. `refresh=true` forces a
+ *  live re-fetch from the provider (doubles as an API-key sanity check). */
+export const fetchProviderModels = (id: number, refresh = false) =>
+  request<ModelListResult>(
+    `/settings/provider-configs/${id}/models${refresh ? "?refresh=true" : ""}`,
+  );
+
 export const getCatalog = () =>
   request<CatalogEntry[]>("/settings/catalog");
 
@@ -511,5 +519,24 @@ export const testLlm = (body: TestLlmBody) =>
 /** Test a saved provider config by id. */
 export const testProviderConfig = (id: number) =>
   request<TestLlmResult>(`/settings/provider-configs/${id}/test`, {
+    method: "POST",
+  });
+
+// ── Provider connectivity probe (Provider-P4) ─────────────────────────────────
+
+/** Tri-state connectivity probe result. `reachable_no_list` means HTTP answered
+ *  but no usable model list — chat may still work. */
+export interface HealthResult {
+  state: "reachable_models" | "reachable_no_list" | "unreachable";
+  latency_ms: number | null;
+  detail: string | null;
+  /** Naive-UTC ISO (no timezone suffix) — append "Z" before parsing. */
+  last_health_at: string | null;
+}
+
+/** Probe a saved provider config's connectivity. Fires only on explicit
+ *  Settings interactions (spec D4: no background polling). */
+export const probeProviderHealth = (id: number) =>
+  request<HealthResult>(`/settings/provider-configs/${id}/health`, {
     method: "POST",
   });

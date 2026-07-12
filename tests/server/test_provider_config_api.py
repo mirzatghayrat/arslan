@@ -81,3 +81,69 @@ async def test_delete_non_last_config_succeeds(client):
     assert len(listed) == 1
     assert listed[0]["id"] == cid2
     assert listed[0]["is_primary"] is True
+
+
+# ---------------------------------------------------------------------------
+# Provider P3: "custom" requires base_url (server-side validation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_add_custom_config_without_base_url_is_422(client):
+    r = await client.post("/api/v1/settings/provider-configs", json={
+        "label": "C", "provider": "custom", "model": "my-model",
+        "base_url": "", "api_key": ""})
+    assert r.status_code == 422
+    assert "base_url" in r.json()["detail"]
+    # Nothing was persisted
+    listed = (await client.get("/api/v1/settings/provider-configs")).json()
+    assert not any(c["provider"] == "custom" for c in listed)
+
+
+@pytest.mark.asyncio
+async def test_add_custom_config_with_base_url_succeeds(client):
+    r = await client.post("/api/v1/settings/provider-configs", json={
+        "label": "LM Studio", "provider": "custom", "model": "my-model",
+        "base_url": "http://localhost:1234/v1", "api_key": ""})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "custom"
+    assert body["base_url"] == "http://localhost:1234/v1"
+
+
+@pytest.mark.asyncio
+async def test_update_blanking_base_url_on_custom_config_is_422(client):
+    r = await client.post("/api/v1/settings/provider-configs", json={
+        "label": "C", "provider": "custom", "model": "my-model",
+        "base_url": "http://localhost:1234/v1", "api_key": ""})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+
+    r2 = await client.put(f"/api/v1/settings/provider-configs/{cid}", json={
+        "base_url": ""})
+    assert r2.status_code == 422
+    assert "base_url" in r2.json()["detail"]
+
+    # The stored base_url must be untouched by the rejected PUT
+    listed = (await client.get("/api/v1/settings/provider-configs")).json()
+    row = next(c for c in listed if c["id"] == cid)
+    assert row["base_url"] == "http://localhost:1234/v1"
+
+
+@pytest.mark.asyncio
+async def test_update_provider_to_custom_without_base_url_is_422(client):
+    r = await client.post("/api/v1/settings/provider-configs", json={
+        "label": "A", "provider": "deepseek", "model": "deepseek-chat",
+        "base_url": "", "api_key": "sk-aaaa1111bbbb"})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+
+    r2 = await client.put(f"/api/v1/settings/provider-configs/{cid}", json={
+        "provider": "custom"})
+    assert r2.status_code == 422
+    assert "base_url" in r2.json()["detail"]
+
+    # The row keeps its original provider
+    listed = (await client.get("/api/v1/settings/provider-configs")).json()
+    row = next(c for c in listed if c["id"] == cid)
+    assert row["provider"] == "deepseek"

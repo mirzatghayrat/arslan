@@ -1,82 +1,8 @@
-"""Tests for LLMAdapter — profile loading and provider creation."""
+"""Tests for LLMAdapter — provider creation."""
 from __future__ import annotations
-
-import pytest
 
 from arslan.llm.adapter import LLMAdapter
 from arslan.llm.providers.openai_provider import OpenAIProvider
-from arslan.models import CapabilityProfile
-
-
-# ---------------------------------------------------------------------------
-# load_profile — known models
-# ---------------------------------------------------------------------------
-
-
-def test_load_profile_gpt4o_returns_correct_profile():
-    """load_profile('gpt-4o') loads values from gpt-4o.yaml."""
-    adapter = LLMAdapter("openai", "gpt-4o", api_key="sk-test")
-    profile = adapter.load_profile("gpt-4o")
-
-    assert isinstance(profile, CapabilityProfile)
-    assert profile.name == "gpt-4o"
-    assert profile.provider == "openai"
-    assert profile.reasoning == 5
-    assert profile.tool_use == 5
-    assert profile.chinese == 4
-    assert profile.creative == 4
-    assert profile.instruction == 5
-    assert profile.max_context == 128000
-    assert profile.cost_per_1k_tokens == pytest.approx(0.005)
-
-
-def test_load_profile_claude_opus():
-    """load_profile('claude-opus') loads the correct provider and reasoning score."""
-    adapter = LLMAdapter("openai", "any-model")
-    profile = adapter.load_profile("claude-opus")
-
-    assert profile.provider == "anthropic"
-    assert profile.reasoning == 5
-    assert profile.max_context == 200000
-
-
-def test_load_profile_deepseek_v3():
-    """load_profile('deepseek-v3') returns Chinese score of 5."""
-    adapter = LLMAdapter("openai", "any-model")
-    profile = adapter.load_profile("deepseek-v3")
-
-    assert profile.chinese == 5
-    assert profile.cost_per_1k_tokens == pytest.approx(0.001)
-
-
-def test_load_profile_llama_3_70b():
-    """load_profile('llama-3-70b') returns zero cost and provider ollama."""
-    adapter = LLMAdapter("openai", "any-model")
-    profile = adapter.load_profile("llama-3-70b")
-
-    assert profile.provider == "ollama"
-    assert profile.cost_per_1k_tokens == pytest.approx(0.0)
-
-
-# ---------------------------------------------------------------------------
-# load_profile — unknown model fallback
-# ---------------------------------------------------------------------------
-
-
-def test_load_profile_unknown_model_returns_default():
-    """load_profile for an unknown model falls back to all-3 defaults."""
-    adapter = LLMAdapter("openai", "unknown-model-xyz")
-    profile = adapter.load_profile("unknown-model-xyz")
-
-    assert isinstance(profile, CapabilityProfile)
-    assert profile.name == "unknown-model-xyz"
-    assert profile.reasoning == 3
-    assert profile.tool_use == 3
-    assert profile.chinese == 3
-    assert profile.creative == 3
-    assert profile.instruction == 3
-    assert profile.max_context == 8000
-    assert profile.cost_per_1k_tokens == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -109,3 +35,13 @@ def test_create_adapter_unknown_provider_falls_back_to_openai():
     adapter = LLMAdapter("ollama", "llama3", base_url="http://localhost:11434/v1")
     assert isinstance(adapter._provider, OpenAIProvider)
     assert adapter._provider.base_url == "http://localhost:11434/v1"
+
+
+def test_create_adapter_custom_provider_uses_openai_with_base_url():
+    """P3: "custom" misses the registry → OpenAIProvider talking to the user's
+    base_url. This registry-miss fallback IS the custom provider's runtime
+    chain — pin it."""
+    adapter = LLMAdapter("custom", "m", base_url="http://x/v1")
+    assert isinstance(adapter._provider, OpenAIProvider)
+    assert adapter._provider.base_url == "http://x/v1"
+    assert adapter._provider.model == "m"

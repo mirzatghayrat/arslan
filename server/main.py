@@ -169,6 +169,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(_usage_ledger_upgrade)
         from server.db.migrations.versions._0030_scheduled_tasks import upgrade_sync as _scheduled_tasks_upgrade
         await conn.run_sync(_scheduled_tasks_upgrade)
+        from server.db.migrations.versions._0031_model_catalog import upgrade_sync as _model_catalog_upgrade
+        await conn.run_sync(_model_catalog_upgrade)
 
     from server.registry.seeder import seed_registry
 

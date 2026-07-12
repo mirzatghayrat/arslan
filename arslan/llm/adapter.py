@@ -1,32 +1,16 @@
-"""Unified LLMAdapter — thin facade over any provider with profile loading."""
+"""Unified LLMAdapter — thin facade over any provider."""
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Any
-
-import yaml
 
 from arslan.llm import usage_sink
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
 from arslan.llm.providers.openai_provider import OpenAIProvider
-from arslan.models import CapabilityProfile, LLMResponse
+from arslan.models import LLMResponse
 
-# Directory that holds the bundled YAML capability profiles
-_PROFILES_DIR = Path(__file__).parent / "profiles"
-
-# Default profile values used when no YAML is found for the requested model
-_DEFAULT_PROFILE_VALUES: dict[str, Any] = {
-    "reasoning": 3,
-    "tool_use": 3,
-    "chinese": 3,
-    "creative": 3,
-    "instruction": 3,
-    "max_context": 8000,
-    "cost_per_1k_tokens": 0.0,
-}
 
 def _first_present(u: dict[str, Any], *keys: str) -> Any:
     """First key whose value is not None — None-aware alternative to an `or`
@@ -53,9 +37,8 @@ class LLMAdapter:
 
     Usage::
 
-        adapter = LLMAdapter("openai", "gpt-4o", api_key="sk-...")
+        adapter = LLMAdapter("openai", "gpt-5.6-terra", api_key="sk-...")
         response = await adapter.chat("You are helpful.", "Hello!")
-        profile = adapter.load_profile("gpt-4o")
     """
 
     def __init__(
@@ -85,21 +68,6 @@ class LLMAdapter:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-
-    def load_profile(self, model: str) -> CapabilityProfile:
-        """Return the CapabilityProfile for *model*, falling back to defaults."""
-        yaml_path = _PROFILES_DIR / f"{model}.yaml"
-        if yaml_path.exists():
-            with yaml_path.open("r", encoding="utf-8") as fh:
-                data = yaml.safe_load(fh)
-            return CapabilityProfile(**data)
-
-        # Fallback: unknown model → conservative defaults
-        return CapabilityProfile(
-            name=model,
-            provider=self.report_provider,
-            **_DEFAULT_PROFILE_VALUES,
-        )
 
     async def chat(
         self,

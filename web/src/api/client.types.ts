@@ -282,6 +282,31 @@ export interface ProviderConfig {
   base_url: string;
   api_key: string;     // masked on read
   is_primary: boolean;
+  /** P4 tri-state connectivity of the last probe (null/absent = never probed):
+   *  "reachable_models" | "reachable_no_list" | "unreachable". */
+  last_health?: string | null;
+  /** Naive-UTC ISO of the last probe (no timezone suffix — append "Z" before parsing). */
+  last_health_at?: string | null;
+}
+
+/** One model from GET /settings/provider-configs/{id}/models. */
+export interface ModelInfo {
+  id: string;
+  display_name: string | null;
+  context_window: number | null;
+  /** Subset of ["tools", "vision", "reasoning"]. */
+  capabilities: string[];
+  source: string;
+}
+
+/** GET /settings/provider-configs/{id}/models — dynamic model catalog.
+ *  `fetched_at` is naive-UTC ISO (no timezone suffix); append "Z" before parsing. */
+export interface ModelListResult {
+  models: ModelInfo[];
+  fetched_at: string | null;
+  stale: boolean;
+  error: string | null;
+  source: string;
 }
 
 export interface TemplateInfo {

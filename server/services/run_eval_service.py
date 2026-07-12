@@ -31,7 +31,12 @@ async def _roster_text() -> str:
     )
 
 
-def _coerce_dim(raw: dict) -> tuple[str, float, str]:
+def _coerce_dim(raw) -> tuple[str, float, str]:
+    # P4 defensive parse: a weak judge model sometimes writes a bare string for
+    # a dimension — degrade THAT dim (warn/0, string preserved as the comment)
+    # instead of killing the whole eval with an AttributeError.
+    if not isinstance(raw, dict):
+        return "warn", 0.0, str(raw)[:200]
     status = str(raw.get("status", "warn"))
     if status not in ("pass", "warn", "fail"):
         status = "warn"
@@ -101,7 +106,13 @@ async def score(run_id: int) -> None:
         if not isinstance(parsed, dict) or "dimensions" not in parsed:
             raise ValueError("judge returned no dimensions")
         dims_raw = parsed["dimensions"]
+        if not isinstance(dims_raw, dict):
+            # No per-dimension structure at all → nothing to salvage; fail with
+            # a reason that names the shape (lands in error_text below).
+            raise ValueError(f"judge dimensions 非对象: {type(dims_raw).__name__}")
         overall = parsed.get("overall", {})
+        if not isinstance(overall, dict):
+            overall = {}  # degrades to score 0 / badge "ok" — still scored
         rows = []
         for dim in _DIMENSIONS:
             status, sc, comment = _coerce_dim(dims_raw.get(dim, {}))
@@ -109,7 +120,13 @@ async def score(run_id: int) -> None:
                 comment = f"[fabrication_signal] {comment}".rstrip()
             rows.append(RunEvaluation(run_id=run_id, dimension=dim, status=status,
                                       score=sc, comment=comment))
-        overall_score = float(overall.get("score", 0))
+        try:
+            overall_score = float(overall.get("score", 0))
+        except (TypeError, ValueError):
+            # A weak judge sometimes writes a non-numeric overall score (a bare
+            # word like "high") — degrade to 0.0 (mirrors _coerce_dim) instead
+            # of failing the whole eval, defeating the salvage goal.
+            overall_score = 0.0
         badge = str(overall.get("badge", "ok"))
         if badge not in ("good", "ok", "bad"):
             badge = "ok"
@@ -119,6 +136,11 @@ async def score(run_id: int) -> None:
             run = await db.get(Run, run_id)
             if run is not None:
                 run.status = "score_failed"
+                # P4: persist WHY (was log-only). Never clobber a real run
+                # error — only fill error_kind/error_text when empty.
+                if not run.error_kind:
+                    run.error_kind = "score_failed"
+                    run.error_text = str(exc)[:500]
                 await db.commit()
         return
 

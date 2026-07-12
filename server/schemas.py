@@ -88,6 +88,9 @@ class ProviderConfigOut(BaseModel):
     base_url: str = ""
     api_key: str = ""   # masked
     is_primary: bool = False
+    # Provider-P4: last connectivity probe result (null until first probe).
+    last_health: str | None = None       # reachable_models|reachable_no_list|unreachable
+    last_health_at: str | None = None    # naive-UTC ISO
 
 
 class EquipmentItemOut(BaseModel):
@@ -300,6 +303,44 @@ class CatalogEntryOut(BaseModel):
     provider: str
     capabilities: CatalogCapabilities
     languages: dict[str, int]
+
+
+class ModelInfoOut(BaseModel):
+    """One model in GET /settings/provider-configs/{id}/models (Provider-P2)."""
+
+    id: str
+    display_name: str | None = None
+    context_window: int | None = None
+    capabilities: list[str] = []
+    source: str = "api"
+
+
+class ModelListOut(BaseModel):
+    """Response of GET /settings/provider-configs/{id}/models (Provider-P2).
+
+    ``stale`` means the list did not come from a just-now successful fetch;
+    ``source`` is "static" when even the cache was empty and the seed catalog
+    served as fallback. ``error`` carries the fetch failure, if any.
+    """
+
+    models: list[ModelInfoOut]
+    fetched_at: str | None = None
+    stale: bool = False
+    error: str | None = None
+    source: str = "api"
+
+
+class HealthOut(BaseModel):
+    """Response of POST /settings/provider-configs/{id}/health (Provider-P4).
+
+    ``state`` is the tri-state connectivity verdict; ``reachable_no_list``
+    means HTTP answered but no usable model list (chat may still work).
+    """
+
+    state: str
+    latency_ms: int | None = None
+    detail: str | None = None
+    last_health_at: str | None = None
 
 
 class TitleIn(BaseModel):
