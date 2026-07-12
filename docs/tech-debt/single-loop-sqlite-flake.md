@@ -66,3 +66,4 @@ A **different** flake now recurs and is **NOT covered by the `database is locked
 | Date | Commit | Reds | Cleared on | Notes |
 |---|---|---|---|---|
 | 2026-07-12 | `0935593` (provider-round final fixes) | 2 consecutive | 3rd manual rerun | 4 clean local full/subset runs; frontend job green throughout; non-regression confirmed. |
+| 2026-07-12 | `a6a79ec` (settings-round merge) | 1 | 1st manual rerun | Frontend-only round — backend byte-identical to green-at-`3296b07`, so a backend fail is definitionally the flake, not a regression. Frontend job green throughout. |
