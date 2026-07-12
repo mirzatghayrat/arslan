@@ -316,7 +316,7 @@ class ProviderConfig(Base):
     base_url = Column(String(255), nullable=True)
     api_key = Column(Text, nullable=False)           # encrypted
     is_primary = Column(Boolean, nullable=False, default=False)
-    last_health = Column(String(20), nullable=True)      # P4: ok|failing|NULL=never checked
+    last_health = Column(String(20), nullable=True)      # P4: reachable_models|reachable_no_list|unreachable|NULL=never checked
     last_health_at = Column(DateTime, nullable=True)     # P4: when the last probe ran
     created_at = Column(DateTime, default=datetime.utcnow)
 
