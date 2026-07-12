@@ -24,6 +24,13 @@ const mockAddProviderConfig = vi.fn().mockResolvedValue({ id: 3, label: "C", pro
 const mockUpdateProviderConfig = vi.fn().mockResolvedValue({});
 const mockSetPrimaryProviderConfig = vi.fn().mockResolvedValue({ ok: true });
 const mockDeleteProviderConfig = vi.fn().mockResolvedValue({ ok: true });
+const mockFetchProviderModels = vi.fn().mockResolvedValue({
+  models: [],
+  fetched_at: null,
+  stale: false,
+  error: null,
+  source: "static",
+});
 
 vi.mock("../api/client", () => ({
   api: {
@@ -36,6 +43,7 @@ vi.mock("../api/client", () => ({
   updateProviderConfig: (...args: unknown[]) => mockUpdateProviderConfig(...args),
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
   deleteProviderConfig: (...args: unknown[]) => mockDeleteProviderConfig(...args),
+  fetchProviderModels: (...args: unknown[]) => mockFetchProviderModels(...args),
   suggestPrimary: vi.fn().mockResolvedValue(null),
   getCatalog: vi.fn().mockResolvedValue([]),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
@@ -64,8 +72,7 @@ const configs: ProviderConfig[] = [
 ];
 
 describe("ProviderConfigList", () => {
-  it("renders configured rows with provider model visible", async () => {
-    const user = userEvent.setup();
+  it("renders configured rows with provider model visible", () => {
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -74,14 +81,11 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // Custom Select triggers: open the model select for the first row by id
-    const modelTrigger0 = document.getElementById("provider-config-model-0") as HTMLButtonElement;
-    expect(modelTrigger0).not.toBeNull();
-    // The trigger shows the selected model label in its text
-    expect(modelTrigger0.textContent).toContain("deepseek-chat");
-    const modelTrigger1 = document.getElementById("provider-config-model-1") as HTMLButtonElement;
-    expect(modelTrigger1).not.toBeNull();
-    expect(modelTrigger1.textContent).toContain("qwen-max");
+    // Model comboboxes: free-text inputs showing the stored model id
+    const model0 = screen.getByTestId("provider-config-model-0") as HTMLInputElement;
+    expect(model0.value).toBe("deepseek-chat");
+    const model1 = screen.getByTestId("provider-config-model-1") as HTMLInputElement;
+    expect(model1.value).toBe("qwen-max");
   });
 
   it("shows a set-primary button for non-primary rows", () => {
@@ -149,13 +153,17 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // Open the model select for the first (deepseek) row
-    const modelTrigger0 = document.getElementById("provider-config-model-0") as HTMLButtonElement;
-    await user.click(modelTrigger0);
-    // Both model options should be rendered in the listbox
-    const options = screen.getAllByRole("option").map((o) => o.textContent?.trim());
-    expect(options).toContain("deepseek-chat");
-    expect(options).toContain("deepseek-reasoner");
+    // Focus the model combobox for the first (deepseek) row → dropdown opens
+    const model0 = screen.getByTestId("provider-config-model-0");
+    await user.click(model0);
+    // Both static seed models should be suggested (dynamic mock returns [])
+    await waitFor(() => {
+      const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(options.some((t) => t.includes("deepseek-chat"))).toBe(true);
+      expect(options.some((t) => t.includes("deepseek-reasoner"))).toBe(true);
+    });
+    // First focus lazily fetched the dynamic model list for that row
+    expect(mockFetchProviderModels).toHaveBeenCalledWith(1, false);
   });
 
   it("renders a strategy dropdown with 4 options", async () => {
@@ -275,6 +283,113 @@ describe("base_url update on provider change (Change 1)", () => {
         10,
         expect.objectContaining({ base_url: "" }),
       );
+    });
+  });
+});
+
+// ── Provider P2: dynamic model list + base_url blur-save + ollama hint ────────
+
+describe("dynamic model list integration (Provider P2)", () => {
+  it("base_url input saves on blur only, never per keystroke", async () => {
+    mockUpdateProviderConfig.mockClear();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={configs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    // deepseek is non-native → base_url input rendered for row 0
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    fireEvent.change(baseUrl0, { target: { value: "https://my-proxy.example/v1" } });
+    // No network write while typing
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+    fireEvent.blur(baseUrl0, { target: { value: "https://my-proxy.example/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledWith(1, {
+        base_url: "https://my-proxy.example/v1",
+      });
+    });
+    // Blur without an edit must not fire another save
+    mockUpdateProviderConfig.mockClear();
+    fireEvent.blur(baseUrl0, { target: { value: "https://my-proxy.example/v1" } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it("refresh button re-fetches the row's dynamic model list", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={configs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    const refreshBtns = screen.getAllByRole("button", { name: "settings.modelRefresh" });
+    await user.click(refreshBtns[0]);
+    await waitFor(() => {
+      expect(mockFetchProviderModels).toHaveBeenCalledWith(1, true);
+    });
+  });
+
+  it("shows stale + ollama-not-detected hints when the daemon is down", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    mockFetchProviderModels.mockResolvedValueOnce({
+      models: [],
+      fetched_at: null,
+      stale: true,
+      error: "connection refused",
+      source: "static",
+    });
+    const ollamaProviders: ProviderOption[] = [
+      { key: "ollama", label: "Ollama", base_url: "http://127.0.0.1:11434", default_model: "", native: false, models: [] },
+    ];
+    const ollamaConfigs: ProviderConfig[] = [
+      { id: 7, label: "O", provider: "ollama", model: "llama3", base_url: "http://127.0.0.1:11434", api_key: "x", is_primary: true },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={ollamaProviders}
+        providerConfigs={ollamaConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    // First focus triggers the lazy fetch which returns the daemon-down result
+    await user.click(screen.getByTestId("provider-config-model-0"));
+    await waitFor(() => {
+      // stale + fetched_at null → pure static-fallback hint
+      expect(screen.getByText("settings.modelStaticFallback")).toBeInTheDocument();
+      // ollama empty list + error → not-detected hint with download link
+      const hint = screen.getByTestId("provider-config-ollama-hint-0");
+      expect(hint.textContent).toContain("settings.ollamaNotDetected");
+      const link = hint.querySelector("a") as HTMLAnchorElement;
+      expect(link.href).toBe("https://ollama.com/download");
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noreferrer");
+    });
+  });
+
+  it("saving a draft fires a refresh fetch for the new config id", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockClear();
+    mockAddProviderConfig.mockClear();
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
+    fireEvent.change(keyInput, { target: { value: "sk-test" } });
+    await user.click(screen.getByTestId("provider-draft-confirm"));
+    await waitFor(() => {
+      // fetch-on-key-save doubles as key validation (refresh=true, new id=3)
+      expect(mockFetchProviderModels).toHaveBeenCalledWith(3, true);
     });
   });
 });

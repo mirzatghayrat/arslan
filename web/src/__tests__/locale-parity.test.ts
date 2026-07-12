@@ -32,14 +32,17 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 839 keys (baseline guard)", () => {
+  it("en locale has 854 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
     // title/daily/empty/notCovered + 3 range + 5 column keys).
     // 793 → 839: S3-M4 added the scheduled.* section (Diagnostics scheduled
     // tasks — card + badges + actions + history + create/edit form, 46 keys).
-    expect(enKeys).toHaveLength(839);
+    // 839 → 854: Provider-P2 added settings model-combobox keys (refresh,
+    // custom-id row, stale/last-updated hints, ollama empty state, base URL
+    // label, relative-time units, capability chips — 15 keys).
+    expect(enKeys).toHaveLength(854);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

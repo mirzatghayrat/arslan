@@ -284,6 +284,26 @@ export interface ProviderConfig {
   is_primary: boolean;
 }
 
+/** One model from GET /settings/provider-configs/{id}/models. */
+export interface ModelInfo {
+  id: string;
+  display_name: string | null;
+  context_window: number | null;
+  /** Subset of ["tools", "vision", "reasoning"]. */
+  capabilities: string[];
+  source: string;
+}
+
+/** GET /settings/provider-configs/{id}/models — dynamic model catalog.
+ *  `fetched_at` is naive-UTC ISO (no timezone suffix); append "Z" before parsing. */
+export interface ModelListResult {
+  models: ModelInfo[];
+  fetched_at: string | null;
+  stale: boolean;
+  error: string | null;
+  source: string;
+}
+
 export interface TemplateInfo {
   name: string;
   domain: string;

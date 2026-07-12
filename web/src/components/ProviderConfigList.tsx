@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CatalogEntry, ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
+import type { CatalogEntry, ModelInfo, ModelListResult, ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
 import {
   addProviderConfig,
   updateProviderConfig,
@@ -8,6 +8,7 @@ import {
   deleteProviderConfig,
   suggestPrimary,
   getCatalog,
+  fetchProviderModels,
   testLlm,
   testProviderConfig,
 } from '../api/client';
@@ -15,6 +16,7 @@ import type { TestLlmResult } from '../api/client';
 import { Plus, Star, Trash2, Loader2, FlaskConical, ChevronDown } from 'lucide-react';
 import Select from './Select';
 import type { SelectOption } from './Select';
+import ModelCombobox from './ModelCombobox';
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -46,6 +48,26 @@ type TestStatusMap = Record<
   { state: 'idle' | 'testing' | 'ok' | 'failed'; error?: string }
 >;
 
+/** Dynamic model list state per saved config id (lazy, fetched on first focus). */
+type RowModelsMap = Record<number, { loading: boolean; result: ModelListResult | null }>;
+
+/** Tiny relative-time helper (minutes/hours/days). `iso` is naive-UTC without
+ *  a timezone suffix — append "Z" before parsing so it isn't read as local. */
+function formatRelativeTime(
+  iso: string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const hasTz = iso.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(iso);
+  const then = new Date(hasTz ? iso : `${iso}Z`).getTime();
+  if (Number.isNaN(then)) return iso;
+  const mins = Math.floor((Date.now() - then) / 60_000);
+  if (mins < 1) return t('settings.timeJustNow');
+  if (mins < 60) return t('settings.timeMinutesAgo', { n: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return t('settings.timeHoursAgo', { n: hours });
+  return t('settings.timeDaysAgo', { n: Math.floor(hours / 24) });
+}
+
 export default function ProviderConfigList({
   llmProviders,
   providerConfigs,
@@ -62,6 +84,11 @@ export default function ProviderConfigList({
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
   const [testAllBusy, setTestAllBusy] = useState(false);
+  const [rowModels, setRowModels] = useState<RowModelsMap>({});
+  // Rows whose dynamic model list was already requested (fetch once per row).
+  const modelsFetchedRef = useRef<Set<number>>(new Set());
+  // Rows with base_url edits pending a blur-save.
+  const baseUrlDirtyRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     getCatalog().then(setCatalog).catch(() => setCatalog([]));
@@ -77,6 +104,71 @@ export default function ProviderConfigList({
 
   const baseUrlFor = (providerKey: string): string =>
     llmProviders.find((p) => p.key === providerKey)?.base_url ?? '';
+
+  const isNative = (providerKey: string): boolean =>
+    llmProviders.find((p) => p.key === providerKey)?.native ?? false;
+
+  /** Static seed models (from the provider preset) shaped as ModelInfo. */
+  const staticModelInfos = (providerKey: string): ModelInfo[] =>
+    modelsFor(providerKey).map((m) => ({
+      id: m,
+      display_name: null,
+      context_window: null,
+      capabilities: [],
+      source: 'static',
+    }));
+
+  // --- dynamic model lists (lazy per row) ---
+
+  const loadModels = async (id: number, refresh = false) => {
+    setRowModels((prev) => ({
+      ...prev,
+      [id]: { loading: true, result: prev[id]?.result ?? null },
+    }));
+    try {
+      const result = await fetchProviderModels(id, refresh);
+      setRowModels((prev) => ({ ...prev, [id]: { loading: false, result } }));
+    } catch {
+      setRowModels((prev) => ({
+        ...prev,
+        [id]: { loading: false, result: prev[id]?.result ?? null },
+      }));
+    }
+  };
+
+  /** Fetch a row's dynamic model list the first time its combobox is focused. */
+  const ensureModelsLoaded = (id: number) => {
+    if (modelsFetchedRef.current.has(id)) return;
+    modelsFetchedRef.current.add(id);
+    void loadModels(id, false);
+  };
+
+  /** Combobox options for a saved row: dynamic list when non-empty, else seed. */
+  const optionsForRow = (config: ProviderConfig): ModelInfo[] => {
+    const result = rowModels[config.id]?.result;
+    if (result && result.models.length > 0) return result.models;
+    return staticModelInfos(config.provider);
+  };
+
+  /** Inline hint under the model field when the served list is stale. */
+  const staleHintFor = (config: ProviderConfig): string | undefined => {
+    const result = rowModels[config.id]?.result;
+    if (!result || !result.stale) return undefined;
+    if (result.fetched_at) {
+      const rel = formatRelativeTime(result.fetched_at, t);
+      const updated = t('settings.modelLastUpdated', { time: rel });
+      return result.error ? `${updated} · ${t('settings.modelRefreshFailed')}` : updated;
+    }
+    // Pure static fallback (never fetched successfully).
+    return t('settings.modelStaticFallback');
+  };
+
+  /** Ollama daemon-down empty state: dynamic list empty + error present. */
+  const showOllamaHint = (config: ProviderConfig): boolean => {
+    if (config.provider !== 'ollama') return false;
+    const result = rowModels[config.id]?.result;
+    return !!result && result.models.length === 0 && result.error != null;
+  };
 
   // --- mutations ---
 
@@ -127,6 +219,30 @@ export default function ProviderConfigList({
       await updateProviderConfig(config.id, patch);
     } catch {
       onConfigsChange(providerConfigs);
+    }
+  };
+
+  /** Local-only (optimistic) edit — no network. Used by blur-saved fields. */
+  const handleLocalFieldChange = (
+    config: ProviderConfig,
+    field: 'base_url',
+    value: string,
+  ) => {
+    baseUrlDirtyRef.current.add(config.id);
+    onConfigsChange(
+      providerConfigs.map((c) => (c.id === config.id ? { ...c, [field]: value } : c)),
+    );
+  };
+
+  /** Persist base_url on blur only (never per-keystroke). */
+  const handleBaseUrlBlur = async (config: ProviderConfig, value: string) => {
+    if (!baseUrlDirtyRef.current.has(config.id)) return;
+    baseUrlDirtyRef.current.delete(config.id);
+    setTestStatus((prev) => ({ ...prev, [config.id]: { state: 'idle' } }));
+    try {
+      await updateProviderConfig(config.id, { base_url: value });
+    } catch {
+      // Keep the optimistic value; the next successful save will reconcile.
     }
   };
 
@@ -282,6 +398,9 @@ export default function ProviderConfigList({
       });
       onConfigsChange([...providerConfigs, newConfig]);
       setDraft(null);
+      // Key just saved — fetch the live model list once (doubles as key check).
+      modelsFetchedRef.current.add(newConfig.id);
+      void loadModels(newConfig.id, true);
     } finally {
       setBusy(null);
     }
@@ -320,11 +439,8 @@ export default function ProviderConfigList({
       {/* Config rows */}
       <div className="space-y-3">
         {providerConfigs.map((config, idx) => {
-          const models = modelsFor(config.provider);
-          const modelOptions: SelectOption[] = models.length > 0
-            ? models.map((m) => ({ value: m, label: m }))
-            : [{ value: config.model, label: config.model }];
           const ts = testStatus[config.id];
+          const native = isNative(config.provider);
 
           return (
             <div
@@ -350,17 +466,53 @@ export default function ProviderConfigList({
                 />
               </div>
 
-              {/* Model select */}
-              <div className="flex-1 min-w-[120px]">
-                <Select
+              {/* Model combobox (dynamic catalog, lazy-fetched on first focus) */}
+              <div
+                className="flex-1 min-w-[160px]"
+                onFocus={() => ensureModelsLoaded(config.id)}
+              >
+                <ModelCombobox
                   data-testid={`provider-config-model-${idx}`}
-                  id={`provider-config-model-${idx}`}
                   value={config.model}
                   onChange={(v) => handleFieldChange(config, 'model', v)}
-                  options={modelOptions}
+                  options={optionsForRow(config)}
+                  staleHint={staleHintFor(config)}
+                  onRefresh={() => void loadModels(config.id, true)}
                   ariaLabel="Model"
                 />
+                {showOllamaHint(config) && (
+                  <p
+                    data-testid={`provider-config-ollama-hint-${idx}`}
+                    className="mt-1 text-[10px] font-mono text-subtle-foreground"
+                  >
+                    {t('settings.ollamaNotDetected')}{' '}
+                    <a
+                      href="https://ollama.com/download"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline text-primary hover:text-primary/80"
+                    >
+                      {t('settings.ollamaDownload')}
+                    </a>
+                  </p>
+                )}
               </div>
+
+              {/* Base URL (non-native providers only) — saved on blur */}
+              {!native && (
+                <div className="flex-1 min-w-[120px]">
+                  <input
+                    type="text"
+                    data-testid={`provider-config-baseurl-${idx}`}
+                    value={config.base_url}
+                    onChange={(e) => handleLocalFieldChange(config, 'base_url', e.target.value)}
+                    onBlur={(e) => handleBaseUrlBlur(config, e.target.value)}
+                    placeholder={baseUrlFor(config.provider) || t('settings.labelBaseUrl')}
+                    aria-label={t('settings.labelBaseUrl')}
+                    className={INPUT_CLS}
+                  />
+                </div>
+              )}
 
               {/* API key */}
               <div className="flex-1 min-w-[100px]">
@@ -483,21 +635,37 @@ export default function ProviderConfigList({
             />
           </div>
 
-          {/* Model select */}
-          <div className="flex-1 min-w-[120px]">
-            <Select
+          {/* Model combobox (static seed options until the config is saved) */}
+          <div className="flex-1 min-w-[160px]">
+            <ModelCombobox
+              data-testid="provider-draft-model"
               value={draft.model}
               onChange={(v) =>
                 setDraft((prev) => prev ? { ...prev, model: v, testState: 'idle', testError: undefined } : prev)
               }
-              options={
-                modelsFor(draft.provider).length > 0
-                  ? modelsFor(draft.provider).map((m) => ({ value: m, label: m }))
-                  : [{ value: draft.model, label: draft.model }]
-              }
+              options={staticModelInfos(draft.provider)}
               ariaLabel="Model"
             />
           </div>
+
+          {/* Base URL (non-native providers only) — part of the draft payload */}
+          {!isNative(draft.provider) && (
+            <div className="flex-1 min-w-[120px]">
+              <input
+                type="text"
+                data-testid="provider-draft-baseurl"
+                value={draft.base_url}
+                onChange={(e) =>
+                  setDraft((prev) =>
+                    prev ? { ...prev, base_url: e.target.value, testState: 'idle', testError: undefined } : prev,
+                  )
+                }
+                placeholder={baseUrlFor(draft.provider) || t('settings.labelBaseUrl')}
+                aria-label={t('settings.labelBaseUrl')}
+                className={INPUT_CLS}
+              />
+            </div>
+          )}
 
           {/* API key */}
           <div className="flex-1 min-w-[100px]">
