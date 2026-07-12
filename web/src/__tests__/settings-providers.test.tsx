@@ -529,27 +529,196 @@ describe("dynamic model list integration (Provider P2)", () => {
     ).toBe("http://localhost:8000/v1");
   });
 
-  it("quick-pick chip on a saved custom row persists the base_url (P3)", async () => {
+  it("quick-pick chip on a saved row fills + focuses WITHOUT persisting; natural blur persists (FIX 3)", async () => {
     const user = userEvent.setup();
     mockUpdateProviderConfig.mockClear();
     const customProviders: ProviderOption[] = [
       { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
     ];
-    const customConfigs: ProviderConfig[] = [
-      { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "", api_key: "", is_primary: true },
-    ];
-    render(
-      <ProviderConfigList
-        llmProviders={customProviders}
-        providerConfigs={customConfigs}
-        onConfigsChange={vi.fn()}
-      />
-    );
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "", api_key: "", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={customProviders}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
     await user.click(screen.getByRole("button", { name: "llama.cpp" }));
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    // Chip fills the input and focuses it for review — persistence must wait
+    // for a NATURAL blur (the Ollama chip is a placeholder the user must edit).
+    expect(baseUrl0.value).toBe("http://localhost:8080/v1");
+    expect(document.activeElement).toBe(baseUrl0);
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+    fireEvent.blur(baseUrl0, { target: { value: "http://localhost:8080/v1" } });
     await waitFor(() => {
       expect(mockUpdateProviderConfig).toHaveBeenCalledWith(5, {
         base_url: "http://localhost:8080/v1",
       });
+    });
+    expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("keyless ollama draft saves (FIX 1)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    const ollamaFirst: ProviderOption[] = [
+      { key: "ollama", label: "Ollama", base_url: "http://localhost:11434/v1", default_model: "", native: false, models: [] },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={ollamaFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    // Fill only the model — api_key stays empty (local daemon needs none)
+    const modelInput = screen.getByTestId("provider-draft-model");
+    fireEvent.change(modelInput, { target: { value: "llama3" } });
+    fireEvent.blur(modelInput);
+    const confirm = screen.getByTestId("provider-draft-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    await user.click(confirm);
+    await waitFor(() => {
+      expect(mockAddProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "ollama", model: "llama3", api_key: "" }),
+      );
+    });
+  });
+
+  it("keyless custom draft with base_url saves (FIX 1)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    const customFirst: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    const modelInput = screen.getByTestId("provider-draft-model");
+    fireEvent.change(modelInput, { target: { value: "my-model" } });
+    fireEvent.blur(modelInput);
+    fireEvent.change(screen.getByTestId("provider-draft-baseurl"), {
+      target: { value: "http://localhost:1234/v1" },
+    });
+    // api_key left empty — must not gate the save
+    const confirm = screen.getByTestId("provider-draft-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    await user.click(confirm);
+    await waitFor(() => {
+      expect(mockAddProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "custom",
+          model: "my-model",
+          base_url: "http://localhost:1234/v1",
+          api_key: "",
+        }),
+      );
+    });
+  });
+
+  it("switching a saved row to custom is local-pending with hint; base_url blur persists the full patch (FIX 2)", async () => {
+    const user = userEvent.setup();
+    mockUpdateProviderConfig.mockClear();
+    const providersWithCustom: ProviderOption[] = [
+      { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-chat", native: false, models: ["deepseek-chat"] },
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 21, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "https://api.deepseek.com", api_key: "k", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providersWithCustom}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+
+    // Switch the row's provider to custom
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const customOpt = screen.getAllByRole("option").find((o) => /自定义/.test(o.textContent ?? ""));
+    expect(customOpt).toBeTruthy();
+    await user.click(customOpt!);
+
+    // NOT silent: switch applied locally, required-base_url hint shows, NO PUT
+    // (a PUT with blank base_url would deterministically 422)
+    await waitFor(() => {
+      expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+    });
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+
+    // Filling base_url and blurring persists provider+model+base_url in ONE PUT
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    fireEvent.change(baseUrl0, { target: { value: "http://localhost:1234/v1" } });
+    fireEvent.blur(baseUrl0, { target: { value: "http://localhost:1234/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateProviderConfig).toHaveBeenCalledWith(21, {
+      provider: "custom",
+      model: "",
+      base_url: "http://localhost:1234/v1",
+    });
+  });
+
+  it("switch-to-custom + chip + natural blur produces exactly ONE full-patch PUT (FIX 2+3)", async () => {
+    const user = userEvent.setup();
+    mockUpdateProviderConfig.mockClear();
+    const providersWithCustom: ProviderOption[] = [
+      { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-chat", native: false, models: ["deepseek-chat"] },
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 22, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "https://api.deepseek.com", api_key: "k", is_primary: true },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providersWithCustom}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const customOpt = screen.getAllByRole("option").find((o) => /自定义/.test(o.textContent ?? ""));
+    await user.click(customOpt!);
+    await waitFor(() => {
+      expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+    });
+
+    // Chip fills the field — still NO PUT (fill-without-save)
+    await user.click(screen.getByRole("button", { name: "LM Studio" }));
+    const baseUrl0 = screen.getByTestId("provider-config-baseurl-0") as HTMLInputElement;
+    expect(baseUrl0.value).toBe("http://localhost:1234/v1");
+    expect(mockUpdateProviderConfig).not.toHaveBeenCalled();
+
+    // Natural blur → exactly ONE PUT carrying the COMPLETE pending patch
+    fireEvent.blur(baseUrl0, { target: { value: "http://localhost:1234/v1" } });
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateProviderConfig).toHaveBeenCalledWith(22, {
+      provider: "custom",
+      model: "",
+      base_url: "http://localhost:1234/v1",
     });
   });
 

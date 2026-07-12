@@ -342,7 +342,10 @@ describe("(E) Test all batch button", () => {
 // ── (E) Draft / add-new flow: Add enabled when fields filled (no test gate) ──
 
 describe("(E) Draft config: Add enabled when fields are filled", () => {
-  it("Add button is disabled when draft has empty api_key", async () => {
+  it("Add button is enabled with an empty api_key (P3 FIX 1: keyless local servers)", async () => {
+    // D3/B3: api_key is OPTIONAL — keyless configs (ollama, LM Studio, vLLM)
+    // are legitimate and the draft is their only UI entry point. The backend
+    // accepts empty keys everywhere (empty key = no Authorization header).
     render(
       <ProviderConfigList
         llmProviders={providers}
@@ -353,12 +356,12 @@ describe("(E) Draft config: Add enabled when fields are filled", () => {
       />
     );
 
-    // Open draft form
+    // Open draft form — provider + model are pre-filled from defaults
     fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
 
-    // Confirm button should be disabled (api_key is empty)
+    // Confirm must NOT be gated on the (empty) api_key
     await waitFor(() => {
-      expect(screen.getByTestId("provider-draft-confirm")).toBeDisabled();
+      expect(screen.getByTestId("provider-draft-confirm")).not.toBeDisabled();
     });
   });
 

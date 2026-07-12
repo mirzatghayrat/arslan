@@ -104,6 +104,13 @@ export default function ProviderConfigList({
   // in-flight fetch for the OLD provider can't repopulate the cache after
   // invalidation.
   const modelsEpochRef = useRef<Map<number, number>>(new Map());
+  // FIX 2: rows switched to "custom" locally but not yet persisted (a PUT
+  // with blank base_url would deterministically 422 — a silent dead-end).
+  // The base_url blur persists the FULL {provider, model, base_url} patch.
+  const pendingCustomSwitchRef = useRef<Set<number>>(new Set());
+  // FIX 3: saved-row base_url inputs, so a quick-pick chip can focus the
+  // field for review instead of auto-persisting a template value.
+  const baseUrlInputRefs = useRef<Map<number, HTMLInputElement | null>>(new Map());
 
   useEffect(() => {
     getCatalog().then(setCatalog).catch(() => setCatalog([]));
@@ -208,6 +215,8 @@ export default function ProviderConfigList({
     try {
       await deleteProviderConfig(id);
       onConfigsChange(providerConfigs.filter((c) => c.id !== id));
+      pendingCustomSwitchRef.current.delete(id);
+      baseUrlInputRefs.current.delete(id);
       // Clear test status for deleted row
       setTestStatus((prev) => {
         const next = { ...prev };
@@ -225,6 +234,7 @@ export default function ProviderConfigList({
     value: string,
   ) => {
     let patch: Partial<ProviderConfig> = { [field]: value };
+    let localOnly = false;
     if (field === 'provider') {
       patch.model = defaultModelFor(value);
       patch.base_url = baseUrlFor(value);
@@ -242,6 +252,16 @@ export default function ProviderConfigList({
         delete next[config.id];
         return next;
       });
+      // FIX 2: switching to custom leaves base_url blank (no preset) — a PUT
+      // would deterministically 422 and the revert would look like a dead
+      // click. Apply the switch locally, let the required-base_url hint guide
+      // the user, and persist the full patch on the base_url blur.
+      if (value === 'custom' && !(patch.base_url ?? '').trim()) {
+        pendingCustomSwitchRef.current.add(config.id);
+        localOnly = true;
+      } else {
+        pendingCustomSwitchRef.current.delete(config.id);
+      }
     }
     const optimistic = providerConfigs.map((c) =>
       c.id === config.id ? { ...c, ...patch } : c,
@@ -249,6 +269,7 @@ export default function ProviderConfigList({
     onConfigsChange(optimistic);
     // Clear test status since config changed
     setTestStatus((prev) => ({ ...prev, [config.id]: { state: 'idle' } }));
+    if (localOnly) return;
     try {
       await updateProviderConfig(config.id, patch);
     } catch {
@@ -270,14 +291,25 @@ export default function ProviderConfigList({
 
   /** Persist base_url on blur only (never per-keystroke). */
   const handleBaseUrlBlur = async (config: ProviderConfig, value: string) => {
-    if (!baseUrlDirtyRef.current.has(config.id)) return;
+    const pendingSwitch = pendingCustomSwitchRef.current.has(config.id);
+    if (!baseUrlDirtyRef.current.has(config.id) && !pendingSwitch) return;
+    // FIX 2: a custom row with a still-blank base_url would 422 — keep the
+    // local pending state (the required hint stays) and retry on a later blur.
+    if (config.provider === 'custom' && !value.trim()) return;
     baseUrlDirtyRef.current.delete(config.id);
     setTestStatus((prev) => ({ ...prev, [config.id]: { state: 'idle' } }));
+    // A pending provider→custom switch persists as ONE complete patch here
+    // (provider+model+base_url together, matching the server-side validation).
+    const patch: Partial<ProviderConfig> = pendingSwitch
+      ? { provider: config.provider, model: config.model, base_url: value }
+      : { base_url: value };
     try {
-      await updateProviderConfig(config.id, { base_url: value });
+      await updateProviderConfig(config.id, patch);
+      pendingCustomSwitchRef.current.delete(config.id);
     } catch {
       // The write failed — mark the row dirty again so the next blur retries
       // instead of silently showing a base_url the server never received.
+      // (A pending switch stays pending → the retry re-sends the full patch.)
       baseUrlDirtyRef.current.add(config.id);
     }
   };
@@ -421,7 +453,10 @@ export default function ProviderConfigList({
   };
 
   const handleDraftConfirm = async () => {
-    if (!draft || !draft.provider || !draft.model || !draft.api_key) return;
+    // FIX 1 (spec B3/D3): api_key is deliberately NOT required — keyless
+    // configs (ollama, LM Studio, vLLM, …) are legitimate; an empty key just
+    // means no Authorization header. The backend accepts empty keys.
+    if (!draft || !draft.provider || !draft.model) return;
     // P3: custom has no preset base_url to fall back on — refuse a blank one
     // (mirrors the server-side 422 guard).
     if (draft.provider === 'custom' && !draft.base_url.trim()) return;
@@ -449,13 +484,13 @@ export default function ProviderConfigList({
 
   // --- P3: custom provider helpers ---
 
-  /** Chip click on a SAVED custom row: set the field (marks dirty) and run
-   *  the blur-save path immediately — a chip click never blurs the input, so
-   *  waiting for a natural blur would leave the value unsaved. On failure the
-   *  dirty flag is restored (handleBaseUrlBlur), so the next blur retries. */
+  /** Chip click on a SAVED row: fill the field (marks dirty) and FOCUS it —
+   *  never auto-persist. The user reviews/edits the template (the Ollama
+   *  remote chip is a literal placeholder that MUST be edited) and the
+   *  natural blur performs the save via the existing dirty/blur machinery. */
   const handleChipFillSaved = (config: ProviderConfig, url: string) => {
     handleLocalFieldChange(config, 'base_url', url);
-    void handleBaseUrlBlur(config, url);
+    baseUrlInputRefs.current.get(config.id)?.focus();
   };
 
   const handleChipFillDraft = (url: string) => {
@@ -604,6 +639,9 @@ export default function ProviderConfigList({
                 <div className="flex-1 min-w-[120px]">
                   <input
                     type="text"
+                    ref={(el) => {
+                      baseUrlInputRefs.current.set(config.id, el);
+                    }}
                     data-testid={`provider-config-baseurl-${idx}`}
                     value={config.base_url}
                     onChange={(e) => handleLocalFieldChange(config, 'base_url', e.target.value)}
@@ -801,7 +839,6 @@ export default function ProviderConfigList({
               disabled={
                 !draft.provider ||
                 !draft.model ||
-                !draft.api_key ||
                 (draft.provider === 'custom' && !draft.base_url.trim()) ||
                 busy === -1
               }
