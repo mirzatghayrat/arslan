@@ -13,6 +13,8 @@ from server.orchestrator.json_protocol import parse_json_object
 from server.services import spawn_service, usage_ledger
 from server.services.llm_factory import build_adapter
 
+from arslan.llm.cached_system import build_cached_system
+
 _VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify", "suggest_update"}
 
 
@@ -147,10 +149,16 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
     # S3-M3 usage ledger: the router decision runs BEFORE any dispatch, outside
     # _dispatch_spawn's per-Run usage_sink.collecting() region — its tokens land
     # nowhere else, so ledger them under scope="router".
+    # Prompt-cache reorder (spec 2026-07-13, Task 2): the router's dynamic context
+    # (summary/turns/facts/registry/user msg) already lives in the USER message, so the
+    # system is the pure-static _SYSTEM rubric. Wrap it as a CachedSystem(stable=_SYSTEM,
+    # volatile="") so the Anthropic adapter places a cache_control breakpoint on the rubric;
+    # DeepSeek/OpenAI/Ollama see the byte-identical string (== _SYSTEM) and auto-cache it.
+    system = build_cached_system(_SYSTEM, "")
     async with usage_ledger.scope("router", conversation_id):
         adapter = _get_adapter()
         a = await adapter if hasattr(adapter, "__await__") else adapter
-        resp = await a.chat(system=_SYSTEM, user=prompt)
+        resp = await a.chat(system=system, user=prompt)
     raw = resp.content
 
     parsed = _parse(raw or "")

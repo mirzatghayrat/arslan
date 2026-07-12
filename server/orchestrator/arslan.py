@@ -25,6 +25,7 @@ from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
 from arslan.llm import prices, usage_sink
+from arslan.llm.cached_system import build_cached_system
 from server.registry import service as registry_service
 from server.services import (
     distill_service,
@@ -256,13 +257,67 @@ _NO_REPASTE = (
 
 
 def _now_line() -> str:
-    """Current server time injected into Arslan's prompt so date/time questions need no search."""
+    """Current server date + UTC HOUR injected into Arslan's prompt so date/'now' questions
+    need no search. HOUR-level, not minute-level (prompt-cache reorder, spec 2026-07-13):
+    the minute is a per-request cache poison — it changed every turn and, when it sat
+    mid-prompt, cache-missed the whole dynamic tail after it.
+
+    Why hour and not date-only: the line RETAINS the "convert to the user's timezone (e.g.
+    Beijing = UTC+8)" guidance, and that conversion is impossible from a bare date near the
+    day boundary — at UTC 2026-07-12 23:30, Beijing (+8) is already 07-13, but a date-only
+    line ("07-12") gives the model no way to know that. Date-level was a real correctness
+    regression for boundary timezone questions (caught in L1 adversarial review; pinned by
+    test_now_line_boundary_tz). The UTC hour is sufficient to get every user's LOCAL date
+    right near midnight while still changing only once an hour (not once a request), and the
+    line lives at the END of the volatile suffix — so its granularity is irrelevant to the
+    Anthropic cache_control breakpoint (that's on the stable prefix, entirely upstream) and
+    costs DeepSeek/OpenAI only the trailing ~30 tokens, re-cached once per hour.
+
+    Known limit (accepted per the L1 decision): hour precision is exact for whole-hour zones.
+    Half-hour / 45-min zones (India +5:30, Nepal +5:45, Newfoundland -3:30) can be a day off
+    within the ~30-45 min around their local midnight — a rare edge traded for cache stability;
+    minute precision would fix it but re-poison the trailing cache every request."""
     now = datetime.utcnow()
     return (
-        f"\n\nCurrent date/time (server clock, UTC): {now:%Y-%m-%d %H:%M} ({now:%A}). "
-        "Use this directly for 'today' / 'now' / the current date; convert to the user's timezone "
-        "when asked (e.g. Beijing = UTC+8). Do NOT search the web for the current date/time."
+        f"\n\nCurrent date & time (server clock, UTC): {now:%Y-%m-%d %H}:00 ({now:%A}), to the hour. "
+        "Use this directly for 'today' / 'now' / the current date; the UTC hour is enough to convert "
+        "to the user's timezone when asked (e.g. Beijing = UTC+8) and get their LOCAL date right even "
+        "near midnight. Do NOT search the web for the current date/time."
     )
+
+
+# Prompt-cache reorder (spec 2026-07-13, D1/D2/D3): the answer system is assembled as a
+# byte-stable STABLE PREFIX (the static guards, same order as before, minus the timestamp)
+# + a VOLATILE SUFFIX (everything per-turn/per-conversation). Kept as a named pure helper so
+# the stable-prefix byte-stability invariant is directly testable.
+_ANSWER_STABLE_PREFIX = (
+    _ARSLAN_SYSTEM + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
+    + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF
+)
+
+
+def _build_answer_system(
+    *, extra_system: str, roster: str, facts: str, summary: str, kb_block: str,
+):
+    """Assemble Arslan's answer system as a CachedSystem(stable_prefix, volatile_suffix).
+
+    stable_prefix = the static guards (identical bytes every turn) → the cacheable prefix.
+    volatile_suffix, ordered least→most volatile: extra_system (per-turn clarify/gather
+    addendum — VARIES per turn, so it is volatile, never in the prefix) → roster → facts →
+    summary → KB → now line LAST. This is the SAME content the pre-reorder prompt carried,
+    only reordered (+ the timestamp moved to the end and floored to the UTC hour); the model
+    sees an equivalent prompt with the UTC hour still present for timezone conversion.
+    """
+    volatile = (
+        extra_system
+        + f"\n\nYour team:\n{roster}"
+        + (f"\n\n{facts}" if facts else "")
+    )
+    if summary:
+        volatile += f"\n\nConversation summary so far:\n{summary}"
+    volatile += kb_block
+    volatile += _now_line()  # now line LAST — the least cache-poisoning position
+    return build_cached_system(_ANSWER_STABLE_PREFIX, volatile)
 
 
 async def _team_roster() -> str:
@@ -855,20 +910,20 @@ async def _handle_answer_body(
     ctx = await memory.assemble_working_context(conversation_id)
     facts = await memory.facts_text()
     roster = await _team_roster()
-    system = (
-        _ARSLAN_SYSTEM + extra_system + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
-        + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _now_line()
-        + f"\n\nYour team:\n{roster}"
-        + (f"\n\n{facts}" if facts else "")
-    )
-    if ctx["summary"]:
-        system += f"\n\nConversation summary so far:\n{ctx['summary']}"
+    # Prompt-cache reorder (spec 2026-07-13): KB is per-query volatile → gather it, then
+    # assemble via _build_answer_system so the static guards stay a byte-stable cacheable
+    # prefix and all dynamic content (incl. the date line) lands in the volatile suffix.
+    kb_block = ""
     try:
         from server.services import knowledge as _knowledge
         _kb = await _knowledge.retrieve_scoped(user_message, spawn_id=None, used_ref=conversation_id)
-        system += _knowledge.knowledge_block(_kb)
+        kb_block = _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
+    system = _build_answer_system(
+        extra_system=extra_system, roster=roster, facts=facts,
+        summary=ctx["summary"], kb_block=kb_block,
+    )
 
     llm_user = user_message
     if attached_context:

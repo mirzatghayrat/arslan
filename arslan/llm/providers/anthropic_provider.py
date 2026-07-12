@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
 
@@ -52,19 +53,67 @@ class AnthropicProvider(BaseLLMProvider):
         return headers
 
     @staticmethod
-    def _split_system(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-        """Pull the system text out of an OpenAI-style message list."""
-        system = "\n\n".join(
-            str(m.get("content", "")) for m in messages if m.get("role") == "system"
-        )
+    def _split_system(
+        messages: list[dict[str, Any]],
+    ) -> tuple[str | list[dict[str, Any]], list[dict[str, Any]]]:
+        """Pull the system out of an OpenAI-style message list.
+
+        Returns the ``system`` field for the Anthropic payload plus the non-system convo.
+        The system is a plain **string** as before UNLESS a ``CachedSystem`` is present
+        (the prompt-cache reorder, spec 2026-07-13) — then it becomes a **content-block
+        array** with a single ``cache_control: ephemeral`` breakpoint on the byte-stable
+        prefix block, and everything after it in an un-cached trailing block. Anthropic
+        renders adjacent text blocks with no separator, so ``"".join(block texts)`` is
+        byte-identical to the plain-string form — the model sees the same prompt either
+        way; only the cache boundary is added.
+
+        Floor degrade (spec R4): a ``cache_control`` breakpoint on a prefix shorter than
+        the model's minimum-cacheable floor is simply not honored by Anthropic — it does
+        NOT error, the block just isn't cached (``cache_creation_input_tokens == 0``). So
+        no per-model gating is needed here; the breakpoint is always emitted and degrades
+        naturally. Which Anthropic models actually cache the ~static prefix depends on
+        those floors, which differ between the spec and the current platform docs — see
+        the note in ``_payload``.
+        """
+        system_contents = [m.get("content", "") for m in messages if m.get("role") == "system"]
         convo = [
             {"role": m["role"], "content": m["content"]}
             for m in messages
             if m.get("role") != "system"
         ]
-        return system, convo
+        # Byte-exact full system text (unchanged behavior when no CachedSystem is present).
+        full = "\n\n".join(str(m) for m in system_contents)
+        cached = next((m for m in system_contents if isinstance(m, CachedSystem)), None)
+        if cached is None or not cached.stable or not full.startswith(cached.stable):
+            # No split (or an unexpected shape) → plain string, exactly as before.
+            return full, convo
+        stable = cached.stable
+        trailing = full[len(stable):]  # = volatile (+ any other system msgs), byte-exact
+        blocks: list[dict[str, Any]] = [
+            {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}}
+        ]
+        if trailing:
+            blocks.append({"type": "text", "text": trailing})
+        return blocks, convo
 
     def _payload(self, messages: list[dict[str, Any]], temperature: float) -> dict[str, Any]:
+        # D4/R4 — cache_control floors (which models actually benefit from the breakpoint):
+        # a prefix below the model's minimum-cacheable floor is silently NOT cached (no
+        # error, cache_creation_input_tokens == 0), so we never gate/branch on the model —
+        # the breakpoint is always emitted and degrades naturally.
+        #   Floors (live platform.claude.com/docs/en/build-with-claude/prompt-caching,
+        #   re-fetched + three-way reconciled 2026-07-13): Fable 5 = 512, Opus 4.8 = 1024,
+        #   Sonnet 5 = 1024, Haiku 4.5 = 4096 (Bedrock: Fable 5 = 1024). Arslan's static answer
+        #   prefix (~1280 tok, byte-derived — confirm with a keyed count_tokens on the real
+        #   assembled prefix before relying on the ~256-tok margin over 1024) → Fable 5 caches
+        #   comfortably; Opus 4.8 / Sonnet 5 cache iff the keyed count clears 1024; Haiku 4.5
+        #   does not. (The bundled claude-api reference table lists HIGHER, STALE floors for the
+        #   Claude 5 family — do not trust it; the live doc above is authoritative.) The code is
+        #   correct regardless of the exact number: it always emits the breakpoint and Anthropic
+        #   honors it iff the prefix clears that model's floor (else a silent zero-side-effect no-op).
+        # Tools: Arslan's Anthropic path is intentionally text-in/text-out (native tool-use
+        # is not implemented — see the module docstring), so `tools` are not serialized into
+        # this payload; D3's "cache_control on the last tool" therefore does not apply here.
         system, convo = self._split_system(messages)
         payload: dict[str, Any] = {
             "model": self.model,
