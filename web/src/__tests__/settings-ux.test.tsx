@@ -113,10 +113,13 @@ beforeEach(() => {
   mockSetPrimaryProviderConfig.mockResolvedValue({ ok: true });
 });
 
-// ── (C) Strategy renders AFTER config rows in the DOM ────────────────────────
+// ── (C) Strategy renders in the RoutingStrategyCard at the TOP of the section ──
+// Task 3.3 lifted the strategy Select + Suggest-primary into RoutingStrategyCard
+// placed ABOVE the master-detail, so the strategy control now PRECEDES the
+// add-model button (which lives at the bottom of the master list).
 
 describe("(C) Strategy control position", () => {
-  it("strategy control appears AFTER the add-model button in the DOM", () => {
+  it("strategy control appears BEFORE the add-model button in the DOM", () => {
     render(
       <ProviderConfigList
         llmProviders={providers}
@@ -133,10 +136,10 @@ describe("(C) Strategy control position", () => {
     // Get add button
     const addBtn = screen.getByRole("button", { name: /btnAddModel/i });
 
-    // Strategy control should come AFTER the add-model button in DOM order
-    // Node.DOCUMENT_POSITION_FOLLOWING = 4 means strategyEl is after addBtn
+    // Strategy control should come BEFORE the add-model button in DOM order.
+    // Node.DOCUMENT_POSITION_PRECEDING = 2 means strategyEl is before addBtn.
     const position = addBtn.compareDocumentPosition(strategyEl!);
-    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(position & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });
 
@@ -336,7 +339,9 @@ describe("(E) Test all batch button", () => {
     fireEvent.click(screen.getByTestId("provider-test-all"));
 
     await waitFor(() => {
-      expect(screen.getByText(/Invalid API key/)).toBeInTheDocument();
+      // The failed config is the selected one, so its error shows in BOTH the
+      // master-list row and the detail-pane ConnectionTester (level-2 result).
+      expect(screen.getAllByText(/Invalid API key/).length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("settings.testOk")).toBeInTheDocument();
     });
   });

@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 873 keys (baseline guard)", () => {
+  it("en locale has 878 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -49,7 +49,11 @@ describe("locale parity", () => {
     // 862 → 872: Settings-T1 added the SettingsShell side-nav keys (settings.
     // navProviders/navSearch/navAppearance/navAccess/navMemory/navAdvanced/
     // navScheduled/navUsage + navComingSoon + placeholderHint — 10 keys).
-    expect(enKeys).toHaveLength(873);
+    // 872 → 873: Settings-T2 added settings.navRegion (side-nav aria-label).
+    // 873 → 878: Settings-T3 added the ConnectionTester + CapabilityBadges keys
+    // (capabilitiesLabel, testConnection, deepTest, deepTestOk,
+    // reachableNoListNote — 5 keys).
+    expect(enKeys).toHaveLength(878);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

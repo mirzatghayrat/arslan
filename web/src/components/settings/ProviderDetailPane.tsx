@@ -19,6 +19,8 @@ import type { ModelInfo, ProviderOption, ProviderConfig } from '../../api/client
 import Select from '../Select';
 import type { SelectOption } from '../Select';
 import ModelCombobox from '../ModelCombobox';
+import ConnectionTester, { type DeepTestStatus } from './ConnectionTester';
+import CapabilityBadges from './CapabilityBadges';
 
 const INPUT_CLS =
   'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
@@ -73,6 +75,17 @@ export interface ProviderDetailPaneProps {
   onModelRefresh: () => void;
   showOllamaHint: boolean;
   configCustomExtras: React.ReactNode;
+
+  // ── connection testing + capabilities (saved-config mode only) ──
+  /** Effective tri-state health overlay for the selected config (level-1). */
+  health?: string | null;
+  lastHealthAt?: string | null;
+  onProbeHealth: (config: ProviderConfig) => void;
+  onDeepTest: (config: ProviderConfig) => void;
+  deepTestStatus?: DeepTestStatus;
+  /** API-derived capabilities of the selected model (tools/vision/reasoning). */
+  modelCapabilities: string[];
+  onCapabilityOverride?: (cap: string, value: boolean) => void;
 }
 
 export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
@@ -230,6 +243,13 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             </a>
           </p>
         )}
+        {/* B2: per-model capability badges (Cherry override) under the combobox */}
+        <CapabilityBadges
+          configId={config.id}
+          model={config.model}
+          capabilities={props.modelCapabilities}
+          onOverride={props.onCapabilityOverride}
+        />
       </div>
 
       {/* Base URL (non-native providers only) — saved on blur */}
@@ -287,6 +307,16 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
       >
         <Trash2 className="w-3 h-3" />
       </button>
+
+      {/* B2: two-level connection testing (level-1 /health, level-2 real chat) */}
+      <ConnectionTester
+        config={config}
+        health={props.health}
+        lastHealthAt={props.lastHealthAt}
+        onProbeHealth={props.onProbeHealth}
+        onDeepTest={props.onDeepTest}
+        deepTestStatus={props.deepTestStatus}
+      />
 
       {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
       {props.configCustomExtras}

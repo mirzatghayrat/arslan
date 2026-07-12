@@ -15,10 +15,11 @@ import {
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
 import { Loader2, FlaskConical, ChevronDown } from 'lucide-react';
-import Select from './Select';
 import type { SelectOption } from './Select';
 import ProviderMasterList from './settings/ProviderMasterList';
 import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
+import RoutingStrategyCard from './settings/RoutingStrategyCard';
+import { parseUtcMs, formatRelativeTime } from './settings/relativeTime';
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -60,28 +61,6 @@ type HealthMap = Record<number, { state: string | null; at: string | null; probi
  *  probe is older than this (or never happened). Client-side check only —
  *  spec D4: no background polling, no intervals. */
 const HEALTH_STALE_MS = 5 * 60_000;
-
-/** Parse a possibly-naive-UTC ISO timestamp to epoch ms (NaN when invalid). */
-function parseUtcMs(iso: string): number {
-  const hasTz = iso.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(iso);
-  return new Date(hasTz ? iso : `${iso}Z`).getTime();
-}
-
-/** Tiny relative-time helper (minutes/hours/days). `iso` is naive-UTC without
- *  a timezone suffix — append "Z" before parsing so it isn't read as local. */
-function formatRelativeTime(
-  iso: string,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): string {
-  const then = parseUtcMs(iso);
-  if (Number.isNaN(then)) return iso;
-  const mins = Math.floor((Date.now() - then) / 60_000);
-  if (mins < 1) return t('settings.timeJustNow');
-  if (mins < 60) return t('settings.timeMinutesAgo', { n: mins });
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return t('settings.timeHoursAgo', { n: hours });
-  return t('settings.timeDaysAgo', { n: Math.floor(hours / 24) });
-}
 
 export default function ProviderConfigList({
   llmProviders,
@@ -695,27 +674,6 @@ export default function ProviderConfigList({
     );
   };
 
-  // --- Strategy options with gating ---
-  const canUseMultiStrategy = providerConfigs.length >= 2;
-  const strategyOptions: SelectOption[] = [
-    { value: 'single', label: t('settings.strategyOptions.single') },
-    {
-      value: 'cost',
-      label: t('settings.strategyOptions.cost'),
-      disabled: !canUseMultiStrategy,
-    },
-    {
-      value: 'balanced',
-      label: t('settings.strategyOptions.balanced'),
-      disabled: !canUseMultiStrategy,
-    },
-    {
-      value: 'performance',
-      label: t('settings.strategyOptions.performance'),
-      disabled: !canUseMultiStrategy,
-    },
-  ];
-
   const providerSelectOptions: SelectOption[] = llmProviders.map((p) => ({
     value: p.key,
     label: `${p.label}${p.native ? ' (Native)' : ''}`,
@@ -730,8 +688,27 @@ export default function ProviderConfigList({
     ? providerConfigs.findIndex((c) => c.id === selectedConfig.id)
     : -1;
 
+  // B2: API-derived capabilities of the selected model (for CapabilityBadges) —
+  // the matching ModelInfo from the row's catalog, or [] when the id is typed
+  // free-hand / not in the list.
+  const selectedModelCaps = selectedConfig
+    ? optionsForRow(selectedConfig).find((m) => m.id === selectedConfig.model)?.capabilities ?? []
+    : [];
+
   return (
     <div className="space-y-4">
+      {/* B2: routing strategy + suggest-primary card at the TOP of the section */}
+      <RoutingStrategyCard
+        strategy={strategy}
+        onStrategyChange={onStrategyChange}
+        configCount={providerConfigs.length}
+        onSuggestPrimary={handleSuggest}
+        suggestBusy={suggestBusy}
+        suggestion={suggestion}
+        onUseThis={handleUseThis}
+        useThisBusy={suggestion ? busy === suggestion.id : false}
+      />
+
       {/* Provider master-detail (B2): left list + right detail/draft pane */}
       <div className="flex flex-col md:flex-row gap-4">
         <ProviderMasterList
@@ -816,71 +793,37 @@ export default function ProviderConfigList({
                 })
               : null
           }
+          // B2 connection testing: level-1 = existing /health probe, level-2 =
+          // existing real-chat test (handleTestSaved). Health overlay resolves
+          // through healthFor (overlay → persisted columns).
+          health={selectedConfig ? healthFor(selectedConfig).state : null}
+          lastHealthAt={selectedConfig ? healthFor(selectedConfig).at : null}
+          onProbeHealth={handleProbeHealth}
+          onDeepTest={(config) => void handleTestSaved(config.id)}
+          deepTestStatus={selectedConfig ? testStatus[selectedConfig.id] : undefined}
+          modelCapabilities={selectedModelCaps}
         />
       </div>
 
-      {/* Test all button + Suggest primary button + rationale panel */}
-      <div className="space-y-2">
+      {/* Test all button (batch level-2 usability test across saved configs) */}
+      {providerConfigs.length > 0 && (
         <div className="flex items-center gap-2">
-          {providerConfigs.length > 0 && (
-            <button
-              type="button"
-              data-testid="provider-test-all"
-              onClick={handleTestAll}
-              disabled={testAllBusy}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
-            >
-              {testAllBusy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <FlaskConical className="w-3.5 h-3.5" />
-              )}
-              {t('settings.btnTestAll')}
-            </button>
-          )}
           <button
             type="button"
-            onClick={handleSuggest}
-            disabled={suggestBusy}
+            data-testid="provider-test-all"
+            onClick={handleTestAll}
+            disabled={testAllBusy}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
           >
-            {t('settings.btnSuggestPrimary')}
+            {testAllBusy ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FlaskConical className="w-3.5 h-3.5" />
+            )}
+            {t('settings.btnTestAll')}
           </button>
         </div>
-        {suggestion && (
-          <div className="flex items-start gap-3 bg-surface/80 border border-primary/20 rounded-xl px-4 py-3">
-            <p className="flex-1 text-xs text-foreground font-mono">{suggestion.rationale}</p>
-            <button
-              type="button"
-              onClick={handleUseThis}
-              disabled={busy === suggestion.id}
-              className="flex-shrink-0 px-2 py-1 text-[10px] font-mono font-medium text-primary border border-primary/40 hover:border-primary/80 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {t('settings.btnUseThis')}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Strategy selector (C: below the config rows) ── */}
-      <div className="space-y-1.5 pt-2 border-t border-border/40">
-        <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-          {t('settings.labelStrategy')}
-        </label>
-        <Select
-          data-testid="provider-strategy-select"
-          id="provider-strategy-select"
-          value={canUseMultiStrategy ? strategy : 'single'}
-          onChange={(v) => onStrategyChange?.(v)}
-          options={strategyOptions}
-          ariaLabel={t('settings.labelStrategy')}
-        />
-        {!canUseMultiStrategy && (
-          <p className="text-[10px] text-subtle-foreground font-mono">
-            {t('settings.strategyHint')}
-          </p>
-        )}
-      </div>
+      )}
 
       {/* ── Provider capability comparison table ── */}
       {catalog.length > 0 && (
