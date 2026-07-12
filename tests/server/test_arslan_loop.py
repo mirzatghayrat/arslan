@@ -491,4 +491,6 @@ async def test_arslan_answer_prompt_has_web_tool_guidance(maker, monkeypatch):
     assert "MUST" in sys                       # "you MUST actually CALL web_search"
     assert "INSTEAD of fabricating" in sys     # reconciled with anti-fabrication
     assert "ACT, don't narrate" in sys         # forbid ending a turn with "I'll search"
-    assert "Current date/time" in sys          # current time injected → no search needed for 'now'
+    # Prompt-cache reorder (spec 2026-07-13): the timestamp is now DATE-level (the minute is
+    # a per-request cache poison) — the date is still injected → no search needed for 'now'.
+    assert "Current date" in sys

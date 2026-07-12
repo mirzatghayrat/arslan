@@ -218,3 +218,50 @@ def test_pa4_new_facts_language_rule_in_prompt():
     raw by fact_saved — the extraction prompt must force the user's own language."""
     from server.orchestrator import router
     assert "事实条目必须使用用户消息所用的语言书写" in router._SYSTEM
+
+
+def _capturing_adapter(captured: dict, content: str):
+    """Adapter stub that records the (system, user) it was called with."""
+    class _A:
+        provider_name = "anthropic"
+        model = "claude-opus-4-8"
+
+        async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+            from arslan.models import LLMResponse
+            captured.setdefault("systems", []).append(system)
+            captured.setdefault("users", []).append(user)
+            return LLMResponse(content=content, usage={})
+
+    return _A()
+
+
+@pytest.mark.asyncio
+async def test_router_system_is_cached_stable_across_turns(maker, monkeypatch):
+    """Prompt-cache reorder (spec 2026-07-13, Task 2): the router's system is the pure
+    static _SYSTEM rubric wrapped as a CachedSystem(stable=_SYSTEM, volatile="") — all
+    dynamic context (summary/turns/facts/registry/user msg) lives in the USER message, so
+    the cacheable system prefix is byte-stable across turns while `user` varies."""
+    from arslan.llm.cached_system import CachedSystem
+    from server.orchestrator import router
+
+    captured = {}
+    monkeypatch.setattr(
+        router, "_get_adapter",
+        lambda: _capturing_adapter(captured, '{"action":"answer","reason":"x"}'))
+
+    # Seed a fact so the second turn's USER message differs (facts flow into `user`).
+    await router.route("main", "first message about tea")
+    await router.route("main", "a totally different second message")
+
+    systems = captured["systems"]
+    assert len(systems) == 2
+    s0, s1 = systems
+    assert isinstance(s0, CachedSystem) and isinstance(s1, CachedSystem)
+    # Byte-stable cacheable prefix == the static rubric; nothing dynamic in it.
+    assert s0.stable == s1.stable == router._SYSTEM
+    assert s0.volatile == s1.volatile == ""
+    assert str(s0) == str(s1) == router._SYSTEM
+    # The per-turn content really did differ — proving it rides the user message, not system.
+    assert captured["users"][0] != captured["users"][1]
+    assert "first message about tea" in captured["users"][0]
+    assert "second message" in captured["users"][1]

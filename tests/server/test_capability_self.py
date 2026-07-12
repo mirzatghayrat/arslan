@@ -19,9 +19,14 @@ def test_router_system_biases_to_answer():
 
 
 def test_handle_answer_assembles_capability_self():
-    # The answer path builds `system` from a concatenation; assert the capability block
-    # is actually spliced in (assembling live would require DB/context). S3-M3 split
-    # _handle_answer into a usage-ledger wrapper + _handle_answer_body — the system
-    # assembly lives in the body.
-    src = inspect.getsource(arslan._handle_answer_body)
-    assert "_CAPABILITY_SELF" in src
+    # The answer path builds `system` from stable_prefix + volatile_suffix; assert the
+    # capability block is actually spliced into the assembled system. The prompt-cache
+    # reorder (spec 2026-07-13) moved the assembly into the pure helper _build_answer_system,
+    # so assert on its real output — the capability guard is part of the stable prefix.
+    system = arslan._build_answer_system(
+        extra_system="", roster="(none)", facts="", summary="", kb_block="")
+    assert arslan._CAPABILITY_SELF in system
+    assert arslan._CAPABILITY_SELF in system.stable  # it's a byte-stable cacheable guard
+    # and the source of truth referenced by the helper:
+    assert "_CAPABILITY_SELF" in inspect.getsource(arslan._build_answer_system) or \
+        arslan._CAPABILITY_SELF in arslan._ANSWER_STABLE_PREFIX
