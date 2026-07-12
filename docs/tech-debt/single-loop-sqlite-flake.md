@@ -67,3 +67,6 @@ A **different** flake now recurs and is **NOT covered by the `database is locked
 |---|---|---|---|---|
 | 2026-07-12 | `0935593` (provider-round final fixes) | 2 consecutive | 3rd manual rerun | 4 clean local full/subset runs; frontend job green throughout; non-regression confirmed. |
 | 2026-07-12 | `a6a79ec` (settings-round merge) | 1 | 1st manual rerun | Frontend-only round — backend byte-identical to green-at-`3296b07`, so a backend fail is definitionally the flake, not a regression. Frontend job green throughout. |
+| 2026-07-13 | `b0e0526` (prompt-cache reorder L1, branch) | 2 consecutive | 3rd manual rerun | `test_ask_risky_auto_runs_low_no_card` then `test_cancel_run_command_declines` — different portal test each attempt, identical `assert self._is_stopped`→120s teardown-hang signature, both green locally. `--only-rerun` filter NOT widened. |
+
+**Escalation now firmly past the >3/week trigger** (S3-M3 ×2 + provider `0935593` ×2 + settings `a6a79ec` ×1 + this ×2 within the week). Root-fix (S4 frozen-main stabilization, re-derive per the decision above) should be scheduled — surfaced to maintainer.
