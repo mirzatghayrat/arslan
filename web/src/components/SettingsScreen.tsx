@@ -6,17 +6,16 @@ import type { BackendStatus } from '../hooks/useBackendStatus';
 import { api } from '../api/client';
 import { toBackendSettings } from '../api/adapters';
 import {
-  Sliders, Check, Eye, EyeOff, Save,
-  Info, AlertCircle, WifiOff, Search, Palette, Database
+  Sliders, Check, Save,
+  Info, AlertCircle, WifiOff, Database
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
 import AccessTokenSettings from './AccessTokenSettings';
-import { AppearanceSettings } from './AppearanceSettings';
 import EmbeddingSettings from './EmbeddingSettings';
 import Select from './Select';
-import { LANGUAGE_OPTIONS, normalizeLanguage } from '../lib/languages';
-import { useProfileStore } from '../stores/profileStore';
 import SettingsShell from './settings/SettingsShell';
+import SearchToolsSection from './settings/SearchToolsSection';
+import AppearanceSection from './settings/AppearanceSection';
 import type { SettingsSectionId } from './settings/sectionRegistry';
 
 interface SettingsScreenProps {
@@ -35,13 +34,9 @@ interface SettingsScreenProps {
 
 export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
-  const displayName = useProfileStore((s) => s.displayName);
-  const setDisplayName = useProfileStore((s) => s.setDisplayName);
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showSearchKey, setShowSearchKey] = useState(false);
-  const [showGithubToken, setShowGithubToken] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'providers');
 
   // Sync local form when parent settings update (e.g. after initial backend fetch)
@@ -92,155 +87,26 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
     // Search & Tools — search provider + search key + GitHub token.
     search: (
-      <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-        <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-          <Search className="w-4.5 h-4.5 text-primary" />
-          <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionSearch')}</h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Search Provider select */}
-          <div className="space-y-2">
-            <label
-              htmlFor="settings-search-provider"
-              className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
-            >
-              {t('settings.labelSearchProvider')}
-            </label>
-            <Select
-              id="settings-search-provider"
-              value={localSettings.searchProvider}
-              onChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
-              options={
-                searchProviders.length > 0
-                  ? searchProviders.map((k) => ({
-                      value: k,
-                      label: k.charAt(0).toUpperCase() + k.slice(1),
-                    }))
-                  : [{ value: localSettings.searchProvider, label: localSettings.searchProvider || 'Loading…' }]
-              }
-              ariaLabel={t('settings.labelSearchProvider')}
-            />
-          </div>
-
-          {/* Search API Key input */}
-          <div className="space-y-2">
-            <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-              Tavily / Google Search API Private key
-            </label>
-            <div className="relative">
-              <input
-                id="settings-search-key"
-                type={showSearchKey ? "text" : "password"}
-                value={localSettings.apiKeySearch}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, apiKeySearch: e.target.value }))}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
-                placeholder="Enter search provider key..."
-              />
-              <button
-                id="toggle-show-search-key"
-                type="button"
-                onClick={() => setShowSearchKey(!showSearchKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-foreground transition-colors"
-              >
-                {showSearchKey ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-              </button>
-            </div>
-            <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-              Allocated to standard spawns carrying "Web Search" capability chips. Ensure live indices limits are sufficient.
-            </p>
-          </div>
-        </div>
-
-        {/* GitHub Token input — secret, raises Tool-Hub discovery rate limit */}
-        <div className="space-y-2">
-          <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-            GitHub Token (optional — raises rate limit)
-          </label>
-          <div className="relative">
-            <input
-              id="settings-github-token"
-              type={showGithubToken ? "text" : "password"}
-              value={localSettings.githubToken}
-              onChange={(e) => setLocalSettings(prev => ({ ...prev, githubToken: e.target.value }))}
-              className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
-              placeholder="ghp_… (optional)"
-            />
-            <button
-              id="toggle-show-github-token"
-              type="button"
-              onClick={() => setShowGithubToken(!showGithubToken)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-foreground transition-colors"
-            >
-              {showGithubToken ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
-            </button>
-          </div>
-          <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-            Used by the Tool-Hub to evaluate GitHub repos. Without a token, GitHub rate-limits anonymous requests.
-          </p>
-        </div>
-      </div>
+      <SearchToolsSection
+        searchProvider={localSettings.searchProvider}
+        searchProviders={searchProviders}
+        onSearchProviderChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
+        searchKey={localSettings.apiKeySearch}
+        onSearchKeyChange={(v) => setLocalSettings(prev => ({ ...prev, apiKeySearch: v }))}
+        githubToken={localSettings.githubToken}
+        onGithubTokenChange={(v) => setLocalSettings(prev => ({ ...prev, githubToken: v }))}
+      />
     ),
 
     // Appearance & Language — display name + language + palette/mode.
     appearance: (
-      <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-        <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-          <Palette className="w-4.5 h-4.5 text-primary" />
-          <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionAppearance')}</h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Display name — client-only (localStorage); empty = neutral greeting with no name */}
-          <div className="space-y-2">
-            <label
-              htmlFor="settings-display-name"
-              className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
-            >
-              {t('settings.labelDisplayName')}
-            </label>
-            <input
-              id="settings-display-name"
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
-              placeholder={t('settings.displayNamePlaceholder')}
-            />
-            <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-              {t('settings.displayNameHint')}
-            </p>
-          </div>
-
-          {/* Language */}
-          <div className="space-y-2">
-            <label
-              htmlFor="settings-language"
-              className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
-            >
-              {t('settings.labelLanguage')}
-            </label>
-            <Select
-              id="settings-language"
-              value={normalizeLanguage(localSettings.language)}
-              onChange={(code) => {
-                setLocalSettings(prev => ({ ...prev, language: code }));
-                i18n.changeLanguage(code);
-              }}
-              options={LANGUAGE_OPTIONS.map((o) => ({ value: o.code, label: o.label }))}
-              ariaLabel={t('settings.labelLanguage')}
-            />
-            <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-              {t('settings.language_i18n_note')}
-            </p>
-          </div>
-
-          {/* Appearance — palette picker + mode toggle */}
-          <div className="md:col-span-2">
-            <AppearanceSettings />
-          </div>
-        </div>
-      </div>
+      <AppearanceSection
+        language={localSettings.language}
+        onLanguageChange={(code) => {
+          setLocalSettings(prev => ({ ...prev, language: code }));
+          i18n.changeLanguage(code);
+        }}
+      />
     ),
 
     // Access token card — token-entry / copy / reset (packaged builds).
