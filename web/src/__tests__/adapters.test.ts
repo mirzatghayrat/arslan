@@ -79,6 +79,18 @@ describe("toUiSettings", () => {
     const ui = toUiSettings(partial);
     expect(ui.apiKeySearch).toBe("");
   });
+
+  // ── T6 FIX 1: llm_strategy must round-trip (was never hydrated → auto-save
+  // clobbered the stored value back to the 'single' default) ───────────────────
+  it("hydrates llmStrategy from the backend llm_strategy field", () => {
+    const ui = toUiSettings({ ...backendBase, llm_strategy: "balanced" });
+    expect((ui as { llmStrategy: string }).llmStrategy).toBe("balanced");
+  });
+
+  it("defaults llmStrategy to 'single' when llm_strategy is absent", () => {
+    const ui = toUiSettings(backendBase);
+    expect((ui as { llmStrategy: string }).llmStrategy).toBe("single");
+  });
 });
 
 // ── toBackendSettings (masked-key omission) ───────────────────────────────────
@@ -113,6 +125,37 @@ describe("toBackendSettings", () => {
     expect(body.search_api_key).toBe("tvly-real-key");
   });
 
+  // ── T6 FIX 1: the backend's real mask shapes must be omitted too ─────────────
+  // mask_secret() emits "***" (len<8) and "<2-3 prefix>...<last4>" (long). The
+  // old bullet-only guard let these through, so blurring an unedited key wrote
+  // the mask placeholder back as the stored key. Mirror backend _looks_masked.
+  it.each([
+    ["sk-...wxyz"], // sk- prefix (3) ... last4
+    ["tv...bcde"], // 2-char prefix ... last4
+    ["gh...2345"], // github-style prefix ... last4
+    ["***"], // short-key mask
+    ["••••"], // legacy bullet mask
+  ])("omits search_api_key when it is the masked echo %s", (masked) => {
+    const body = toBackendSettings({ ...baseUi, apiKeySearch: masked });
+    expect(body.search_api_key).toBeUndefined();
+  });
+
+  it("still includes a real key that merely contains '...' but not the mask shape", () => {
+    // A real key isn't prefix(2-3)...last4; the anchored regex must not eat it.
+    const body = toBackendSettings({ ...baseUi, apiKeySearch: "sk-realkey123" });
+    expect(body.search_api_key).toBe("sk-realkey123");
+  });
+
+  it("omits github_token when it is a masked echo (prefix...last4)", () => {
+    const body = toBackendSettings({ ...baseUi, githubToken: "gh...2345" });
+    expect(body.github_token).toBeUndefined();
+  });
+
+  it("includes github_token when the user entered a real value", () => {
+    const body = toBackendSettings({ ...baseUi, githubToken: "ghp_realtoken" });
+    expect(body.github_token).toBe("ghp_realtoken");
+  });
+
   it("does NOT send legacy flat LLM fields (llm_provider / llm_model / llm_api_key)", () => {
     const body = toBackendSettings(baseUi) as Record<string, unknown>;
     expect(body.llm_provider).toBeUndefined();
@@ -125,6 +168,22 @@ describe("toBackendSettings", () => {
     expect(body.search_provider).toBe("tavily");
     expect(body.language).toBe("en");
     expect(body.llm_strategy).toBe("single");
+  });
+
+  // ── T6 FIX 1: a GET→hydrate→PUT round-trip must preserve the stored strategy,
+  // so an auto-save where the user changed nothing does NOT downgrade it ────────
+  it("round-trips llm_strategy through toUiSettings → toBackendSettings", () => {
+    const backend = {
+      llm_provider: "anthropic",
+      language: "en",
+      search_provider: "tavily",
+      search_api_key: "tvly-••••••••",
+      github_token: "",
+      llm_strategy: "balanced",
+    } as unknown as Parameters<typeof toUiSettings>[0];
+    const ui = { ...baseUi, ...toUiSettings(backend) };
+    const body = toBackendSettings(ui);
+    expect(body.llm_strategy).toBe("balanced");
   });
 });
 

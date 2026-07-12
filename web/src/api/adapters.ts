@@ -3,8 +3,19 @@ import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto,
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
-// Backend masked value sentinel (the server returns this literal when a key is set but masked).
-const MASKED_SENTINEL_RE = /^[•*]+$/;
+// Masked-echo detection — mirrors the backend's settings_service._looks_masked
+// so a GET→(blur)→PUT round-trip never writes a mask placeholder back as the
+// real secret. mask_secret() emits two shapes:
+//   "***"                              – short-key mask (len < 8)
+//   "<2-3 char prefix>...<last 4>"     – long-key mask (e.g. "sk-...wxyz")
+// We also keep the legacy pure-bullet form (never a real key). The prefix regex
+// is anchored full-string so a real key that merely contains "..." passes.
+const MASK_PREFIX_RE = /^.{2,3}\.\.\..{4}$/;
+const MASK_BULLET_RE = /^[•*]+$/;
+
+function looksMasked(value: string): boolean {
+  return value === "***" || MASK_BULLET_RE.test(value) || MASK_PREFIX_RE.test(value);
+}
 
 /**
  * Maps a backend AppSettings (snake_case) → UI AppSettings (camelCase).
@@ -17,16 +28,23 @@ const MASKED_SENTINEL_RE = /^[•*]+$/;
  * Legacy flat LLM fields (llm_provider / llm_model / llm_api_key) are no longer
  * mapped to UI state — the multi-config provider list is the single source of truth.
  *
+ * llmStrategy DOES have a backend counterpart (GET /settings returns llm_strategy,
+ * defaulting to "single"). It MUST be hydrated here — otherwise localSettings keeps
+ * the client default and every debounced auto-save PUTs llm_strategy:'single',
+ * silently clobbering the user's stored routing strategy (T6 FIX 1).
+ *
  * UI-only fields with no backend counterpart are kept at their current UI value
  * and therefore should NOT be overwritten on fetch; callers must merge:
  *   theme, telemetry, spawnMode
  */
-export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode" | "llmStrategy"> {
+export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode"> {
   return {
     searchProvider: backend.search_provider ?? "",
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
+    // Routing strategy round-trips through the backend (default "single").
+    llmStrategy: (backend.llm_strategy ?? "single") as AppSettings["llmStrategy"],
     distillOnSessionEnd: backend.distill_on_session_end ?? true,
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.
@@ -57,12 +75,12 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
   };
 
   // Only send the search key if the user entered something new (non-empty, non-masked).
-  if (ui.apiKeySearch && !MASKED_SENTINEL_RE.test(ui.apiKeySearch)) {
+  if (ui.apiKeySearch && !looksMasked(ui.apiKeySearch)) {
     body.search_api_key = ui.apiKeySearch;
   }
 
   // Same mask-aware round-trip for the GitHub token secret.
-  if (ui.githubToken && !MASKED_SENTINEL_RE.test(ui.githubToken)) {
+  if (ui.githubToken && !looksMasked(ui.githubToken)) {
     body.github_token = ui.githubToken;
   }
 

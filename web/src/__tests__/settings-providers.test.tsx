@@ -76,7 +76,8 @@ const configs: ProviderConfig[] = [
 ];
 
 describe("ProviderConfigList", () => {
-  it("renders configured rows with provider model visible", () => {
+  it("renders configured rows with provider model visible", async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -85,14 +86,20 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // Model comboboxes: free-text inputs showing the stored model id
+    // Master list shows every config's model id as small text
+    expect(screen.getByText("deepseek-chat")).toBeInTheDocument();
+    expect(screen.getByText("qwen-max")).toBeInTheDocument();
+    // Row 0 (primary) is selected by default → its detail combobox shows its model
     const model0 = screen.getByTestId("provider-config-model-0") as HTMLInputElement;
     expect(model0.value).toBe("deepseek-chat");
+    // Selecting row 1 swaps the detail pane to that config's fields
+    await user.click(screen.getByTestId("provider-master-row-1"));
     const model1 = screen.getByTestId("provider-config-model-1") as HTMLInputElement;
     expect(model1.value).toBe("qwen-max");
   });
 
-  it("shows a set-primary button for non-primary rows", () => {
+  it("shows a set-primary button for the selected non-primary row", async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -101,8 +108,11 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // At least one "Set primary" control for the non-primary row
-    expect(screen.getAllByRole("button", { name: /primary/i }).length).toBeGreaterThan(0);
+    // Primary row is selected by default → no set-primary button in the detail
+    expect(screen.queryByRole("button", { name: /btnSetPrimary/i })).toBeNull();
+    // Selecting the non-primary row reveals its "Set primary" control
+    await user.click(screen.getByTestId("provider-master-row-1"));
+    expect(screen.getByRole("button", { name: /btnSetPrimary/i })).toBeInTheDocument();
   });
 
   it("marks the primary row with a star indicator", () => {
@@ -132,6 +142,7 @@ describe("ProviderConfigList", () => {
   });
 
   it("calls setPrimaryProviderConfig when set-primary is clicked", async () => {
+    const user = userEvent.setup();
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -140,8 +151,9 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    const setPrimaryBtns = screen.getAllByRole("button", { name: /primary/i });
-    fireEvent.click(setPrimaryBtns[0]);
+    // Select the non-primary row, then click its detail "Set primary" button
+    await user.click(screen.getByTestId("provider-master-row-1"));
+    fireEvent.click(screen.getByRole("button", { name: /btnSetPrimary/i }));
     // Wait a tick for async
     await new Promise((r) => setTimeout(r, 0));
     expect(mockSetPrimaryProviderConfig).toHaveBeenCalledWith(2);
@@ -726,7 +738,8 @@ describe("dynamic model list integration (Provider P2)", () => {
     });
   });
 
-  it("compatibility note + blank-base_url hint render only for custom rows (P3)", () => {
+  it("compat note + blank-base_url hint show for a custom row but NOT a non-custom row (P3)", async () => {
+    const user = userEvent.setup();
     const customProviders: ProviderOption[] = [
       { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
       ...providers,
@@ -742,12 +755,20 @@ describe("dynamic model list integration (Provider P2)", () => {
         onConfigsChange={vi.fn()}
       />
     );
-    // Exactly one compat note (the custom row), none for deepseek
-    expect(screen.getAllByText("settings.customCompatNote")).toHaveLength(1);
+    // Custom row (id 5) is primary → selected by default: compat note + the
+    // blank-base_url required hint are both shown in its detail pane.
     expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
-    expect(screen.queryByTestId("provider-config-custom-note-1")).toBeNull();
-    // Saved custom row with blank base_url shows the required hint
     expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+
+    // Select the NON-custom (deepseek) row → its detail mounts (model field
+    // present) but proves the negative: NO compat note, NO required hint —
+    // neither for the deepseek row nor lingering from the custom row.
+    await user.click(screen.getByTestId("provider-master-row-1"));
+    expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-config-custom-note-1")).toBeNull();
+    expect(screen.queryByTestId("provider-config-custom-required-1")).toBeNull();
+    expect(screen.queryByText("settings.customCompatNote")).toBeNull();
+    expect(screen.queryByTestId("provider-config-custom-note-0")).toBeNull();
   });
 
   it("compatibility note renders without the blank hint when base_url is set (P3)", () => {
@@ -841,26 +862,29 @@ describe("dynamic model list integration (Provider P2)", () => {
     }
     render(<Harness />);
 
-    // Focus row 2's combobox → caches the stale dynamic list under id 2
+    // Select row 2 in the master list, then focus its detail combobox →
+    // caches the stale dynamic list under id 2.
+    await user.click(screen.getByTestId("provider-master-row-1"));
     await user.click(screen.getByTestId("provider-config-model-1"));
     await waitFor(() => {
       const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
       expect(opts.some((t) => t.includes("stale-cached-model"))).toBe(true);
     });
 
-    // Delete row 2 (non-primary). handleDelete must purge modelsFetchedRef +
-    // rowModels for id 2 so a future config reusing the PK doesn't inherit them.
-    const deleteBtns = screen.getAllByRole("button", { name: "settings.btnDelete" });
-    await user.click(deleteBtns[1]);
+    // Delete row 2 (non-primary, currently selected) via the detail delete
+    // button. handleDelete must purge modelsFetchedRef + rowModels for id 2 so a
+    // future config reusing the PK doesn't inherit them.
+    await user.click(screen.getByRole("button", { name: "settings.btnDelete" }));
     await waitFor(() => expect(screen.queryByTestId("provider-config-model-1")).toBeNull());
 
     // Reintroduce id 2 as a fresh qwen config (external refresh / PK reuse).
     mockFetchProviderModels.mockClear();
     await user.click(screen.getByTestId("reuse-id-2"));
-    await waitFor(() => expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("provider-master-row-1")).toBeInTheDocument());
 
-    // Focus the reused row. WITH the fix, modelsFetchedRef was purged → this
-    // refetches; the stale cached model is gone and the qwen seed shows.
+    // Select + focus the reused row. WITH the fix, modelsFetchedRef was purged →
+    // this refetches; the stale cached model is gone and the qwen seed shows.
+    await user.click(screen.getByTestId("provider-master-row-1"));
     await user.click(screen.getByTestId("provider-config-model-1"));
     await waitFor(() => expect(mockFetchProviderModels).toHaveBeenCalledWith(2, false));
     const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");

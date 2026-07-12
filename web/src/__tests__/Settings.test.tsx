@@ -9,7 +9,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── i18n mock ──────────────────────────────────────────────────────────────────
@@ -136,6 +136,8 @@ describe("SettingsScreen", () => {
   it("renders the search provider dropdown with fetched options", async () => {
     const user = userEvent.setup();
     renderSettings();
+    // The search controls live in the 'search' section — navigate there first.
+    await user.click(screen.getByTestId("settings-nav-search"));
     // Custom Select renders a button trigger; open it to inspect options
     const trigger = document.getElementById("settings-search-provider") as HTMLButtonElement;
     expect(trigger).not.toBeNull();
@@ -148,12 +150,31 @@ describe("SettingsScreen", () => {
 
   it("renders the search API key input", () => {
     renderSettings();
+    fireEvent.click(screen.getByTestId("settings-nav-search"));
     expect(document.getElementById("settings-search-key")).not.toBeNull();
   });
 
   it("renders the language dropdown", () => {
     renderSettings();
+    fireEvent.click(screen.getByTestId("settings-nav-appearance"));
     expect(document.getElementById("settings-language")).not.toBeNull();
+  });
+
+  it("deep-links to a section via the initialSection prop", () => {
+    render(
+      <SettingsScreen
+        settings={defaultSettings}
+        setSettings={vi.fn()}
+        llmProviders={providers}
+        searchProviders={searchProviders}
+        backendStatus="online"
+        initialSection="memory"
+      />
+    );
+    // The memory section's distill toggle is mounted from first paint…
+    expect(document.getElementById("settings-distill-toggle")).not.toBeNull();
+    // …while the default 'providers' section is not.
+    expect(screen.queryByText("settings.sectionLlmConfig")).toBeNull();
   });
 
   it("shows the offline banner when backendStatus is offline", () => {
@@ -161,33 +182,31 @@ describe("SettingsScreen", () => {
     expect(screen.getByText(/Backend not connected/i)).toBeInTheDocument();
   });
 
-  it("save button is disabled when backend is offline", () => {
-    renderSettings({}, "offline");
-    const saveBtn = document.getElementById("settings-save-button") as HTMLButtonElement;
-    expect(saveBtn.disabled).toBe(true);
-  });
+  // ── Task 6: the top Save button is GONE (instant auto-save) ───────────────────
 
-  it("save button is enabled when backend is online", () => {
+  it("no longer renders the top Save button", () => {
     renderSettings();
-    const saveBtn = document.getElementById("settings-save-button") as HTMLButtonElement;
-    expect(saveBtn.disabled).toBe(false);
+    expect(document.getElementById("settings-save-button")).toBeNull();
   });
 
-  it("calls api.updateSettings on form submit", async () => {
+  it("auto-saves a non-key control change with a single PUT (debounced)", async () => {
     const user = userEvent.setup();
     renderSettings();
-    const saveBtn = document.getElementById("settings-save-button") as HTMLButtonElement;
-    await user.click(saveBtn);
+    // Advanced section hosts the telemetry toggle (a non-key control).
+    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(document.getElementById("settings-telemetry-toggle")!);
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
-    });
+    }, { timeout: 2000 });
   });
 
-  it("does not send empty search key on save", async () => {
+  it("does not send empty search key on auto-save", async () => {
     const user = userEvent.setup();
     renderSettings({ apiKeySearch: "" });
-    await user.click(document.getElementById("settings-save-button")!);
-    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled());
+    // Trigger a non-key auto-save (search provider) — the empty key must stay out.
+    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(document.getElementById("settings-telemetry-toggle")!);
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled(), { timeout: 2000 });
     const body = mockUpdateSettings.mock.calls[0][0];
     expect(body.search_api_key).toBeUndefined();
   });

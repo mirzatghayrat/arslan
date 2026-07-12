@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 862 keys (baseline guard)", () => {
+  it("en locale has 885 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -46,7 +46,22 @@ describe("locale parity", () => {
     // hint, quick-fill label, Ollama-remote chip, compatibility note — 4 keys).
     // 858 → 862: Provider-P4 added connectivity-dot tooltips (healthDotModels/
     // NoList/Unreachable/Unknown — 4 keys).
-    expect(enKeys).toHaveLength(862);
+    // 862 → 872: Settings-T1 added the SettingsShell side-nav keys (settings.
+    // navProviders/navSearch/navAppearance/navAccess/navMemory/navAdvanced/
+    // navScheduled/navUsage + navComingSoon + placeholderHint — 10 keys).
+    // 872 → 873: Settings-T2 added settings.navRegion (side-nav aria-label).
+    // 873 → 878: Settings-T3 added the ConnectionTester + CapabilityBadges keys
+    // (capabilitiesLabel, testConnection, deepTest, deepTestOk,
+    // reachableNoListNote — 5 keys).
+    // 878 → 885: Settings-T5 i18n'd the retention label/hint, the spawn-mode
+    // desc + 3 option labels, the page-header lore, and the footer note
+    // (spawnModeDesc/Auto/Interactive/Strict, retentionLabel/Hint, headerLore,
+    // footerNote = +8) and removed the now-orphaned settings.sectionInterface
+    // (−1) → net +7.
+    // 885 → 886: Settings-T6 replaced the top Save button with instant auto-save
+    // — removed the now-dead btnSave/btnSaving (−2) and added the auto-save
+    // status keys savingLabel/savedTick/saveFailed (+3) → net +1.
+    expect(enKeys).toHaveLength(886);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

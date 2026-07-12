@@ -9,7 +9,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── i18n mock ──────────────────────────────────────────────────────────────────
@@ -97,6 +97,8 @@ describe("distillation Settings toggle", () => {
 
   it("renders the distill toggle reflecting distillOnSessionEnd=true", () => {
     renderSettings({ distillOnSessionEnd: true });
+    // The distill toggle lives in the 'memory' section — navigate there first.
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
     expect(toggle).not.toBeNull();
     expect(toggle.checked).toBe(true);
@@ -104,18 +106,20 @@ describe("distillation Settings toggle", () => {
 
   it("reflects distillOnSessionEnd=false", () => {
     renderSettings({ distillOnSessionEnd: false });
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(false);
   });
 
-  it("toggling off then saving routes distill_on_session_end=false to the PUT path", async () => {
+  it("toggling off auto-saves distill_on_session_end=false to the PUT path", async () => {
     const user = userEvent.setup();
     renderSettings({ distillOnSessionEnd: true });
+    await user.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
+    // Task 6: no Save button — toggling auto-saves (debounced) through the PUT path.
     await user.click(toggle);
     expect(toggle.checked).toBe(false);
-    await user.click(document.getElementById("settings-save-button")!);
-    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled());
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled(), { timeout: 2000 });
     const body = mockUpdateSettings.mock.calls[0][0];
     expect(body.distill_on_session_end).toBe(false);
   });

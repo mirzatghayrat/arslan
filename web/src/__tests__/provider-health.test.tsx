@@ -128,7 +128,9 @@ describe("health status dot", () => {
 
   it("shows relative time next to the dot when a probe timestamp exists", () => {
     renderList([cfg({ id: 1, last_health: "reachable_models", last_health_at: freshIso() })]);
-    expect(screen.getByText("settings.timeMinutesAgo")).toBeInTheDocument();
+    // The selected config surfaces its relative time in BOTH the master-list dot
+    // and the detail-pane ConnectionTester (Task 3) — at least one is present.
+    expect(screen.getAllByText("settings.timeMinutesAgo").length).toBeGreaterThanOrEqual(1);
   });
 
   it("click fires a manual probe and updates the dot state", async () => {

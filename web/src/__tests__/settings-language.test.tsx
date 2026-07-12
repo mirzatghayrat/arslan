@@ -87,6 +87,8 @@ describe("SettingsScreen language selector", () => {
   it("offers all 6 supported languages", async () => {
     const user = userEvent.setup();
     renderSettings();
+    // The language selector lives in the 'appearance' section — navigate first.
+    await user.click(screen.getByTestId("settings-nav-appearance"));
     await user.click(document.getElementById("settings-language") as HTMLButtonElement);
     const options = screen.getAllByRole("option");
     expect(options).toHaveLength(6);
@@ -95,6 +97,7 @@ describe("SettingsScreen language selector", () => {
   it("calls i18n.changeLanguage('zh') when Chinese is selected", async () => {
     const user = userEvent.setup();
     renderSettings();
+    await user.click(screen.getByTestId("settings-nav-appearance"));
     await user.click(document.getElementById("settings-language") as HTMLButtonElement);
     const zhOption = screen
       .getAllByRole("option")
