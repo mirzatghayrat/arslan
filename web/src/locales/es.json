@@ -325,9 +325,10 @@
     "retentionLabel": "Días de retención del detalle de depuración de ejecuciones",
     "retentionHint": "Tras estos días, el prompt de sistema real / conocimiento inyectado / entradas completas de herramientas y respuestas en bruto de una ejecución se borran automáticamente (las puntuaciones y los tiempos no se ven afectados).",
     "headerLore": "Configura proveedores, búsqueda, apariencia, memoria y opciones avanzadas.",
-    "footerNote": "Los cambios se aplican al guardar.",
-    "btnSave": "Save settings",
-    "btnSaving": "Saving...",
+    "footerNote": "Los cambios se guardan automáticamente.",
+    "savingLabel": "Guardando…",
+    "savedTick": "Guardado ✓",
+    "saveFailed": "No se pudieron guardar los cambios",
     "sectionProviderConfigs": "Configuración multi-modelo",
     "labelStrategy": "Estrategia de enrutamiento",
     "strategyOptions": {

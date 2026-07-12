@@ -182,33 +182,31 @@ describe("SettingsScreen", () => {
     expect(screen.getByText(/Backend not connected/i)).toBeInTheDocument();
   });
 
-  it("save button is disabled when backend is offline", () => {
-    renderSettings({}, "offline");
-    const saveBtn = document.getElementById("settings-save-button") as HTMLButtonElement;
-    expect(saveBtn.disabled).toBe(true);
-  });
+  // ── Task 6: the top Save button is GONE (instant auto-save) ───────────────────
 
-  it("save button is enabled when backend is online", () => {
+  it("no longer renders the top Save button", () => {
     renderSettings();
-    const saveBtn = document.getElementById("settings-save-button") as HTMLButtonElement;
-    expect(saveBtn.disabled).toBe(false);
+    expect(document.getElementById("settings-save-button")).toBeNull();
   });
 
-  it("calls api.updateSettings on form submit", async () => {
+  it("auto-saves a non-key control change with a single PUT (debounced)", async () => {
     const user = userEvent.setup();
     renderSettings();
-    const saveBtn = document.getElementById("settings-save-button") as HTMLButtonElement;
-    await user.click(saveBtn);
+    // Advanced section hosts the telemetry toggle (a non-key control).
+    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(document.getElementById("settings-telemetry-toggle")!);
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
-    });
+    }, { timeout: 2000 });
   });
 
-  it("does not send empty search key on save", async () => {
+  it("does not send empty search key on auto-save", async () => {
     const user = userEvent.setup();
     renderSettings({ apiKeySearch: "" });
-    await user.click(document.getElementById("settings-save-button")!);
-    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled());
+    // Trigger a non-key auto-save (search provider) — the empty key must stay out.
+    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(document.getElementById("settings-telemetry-toggle")!);
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled(), { timeout: 2000 });
     const body = mockUpdateSettings.mock.calls[0][0];
     expect(body.search_api_key).toBeUndefined();
   });

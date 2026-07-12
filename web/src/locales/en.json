@@ -325,9 +325,10 @@
     "retentionLabel": "Run debug detail retention (days)",
     "retentionHint": "After this many days, a run's actual system prompt / injected knowledge / full tool inputs and raw returns are cleared automatically (scores and timings are unaffected).",
     "headerLore": "Configure providers, search, appearance, memory, and advanced options.",
-    "footerNote": "Changes take effect once you save.",
-    "btnSave": "Save settings",
-    "btnSaving": "Saving...",
+    "footerNote": "Changes save automatically.",
+    "savingLabel": "Saving…",
+    "savedTick": "Saved ✓",
+    "saveFailed": "Couldn't save changes",
     "sectionProviderConfigs": "Multi-Model Configuration",
     "labelStrategy": "Routing strategy",
     "strategyOptions": {

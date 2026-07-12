@@ -325,9 +325,10 @@
     "retentionLabel": "Aufbewahrungstage für Ausführungs-Debugdetails",
     "retentionHint": "Nach dieser Anzahl von Tagen werden der tatsächliche System-Prompt / eingespeistes Wissen / vollständige Tool-Eingaben und Rohantworten einer Ausführung automatisch gelöscht (Bewertungen und Zeiten bleiben unberührt).",
     "headerLore": "Anbieter, Suche, Erscheinungsbild, Speicher und erweiterte Optionen konfigurieren.",
-    "footerNote": "Änderungen werden nach dem Speichern wirksam.",
-    "btnSave": "Save settings",
-    "btnSaving": "Saving...",
+    "footerNote": "Änderungen werden automatisch gespeichert.",
+    "savingLabel": "Wird gespeichert…",
+    "savedTick": "Gespeichert ✓",
+    "saveFailed": "Änderungen konnten nicht gespeichert werden",
     "sectionProviderConfigs": "Multi-Model-Konfiguration",
     "labelStrategy": "Routing-Strategie",
     "strategyOptions": {

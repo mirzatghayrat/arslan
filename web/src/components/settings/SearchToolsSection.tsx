@@ -26,9 +26,17 @@ export interface SearchToolsSectionProps {
   /** Search API key (masked). */
   searchKey: string;
   onSearchKeyChange: (value: string) => void;
+  /**
+   * Blur-save for the search key (key-type field persists on blur only, never
+   * per-keystroke — the user's constraint). Optional so presentational tests can
+   * omit it; the host wires it to flushField.
+   */
+  onSearchKeyBlur?: (value: string) => void;
   /** GitHub token (masked, optional). */
   githubToken: string;
   onGithubTokenChange: (value: string) => void;
+  /** Blur-save for the GitHub token (key-type field — blur only). */
+  onGithubTokenBlur?: (value: string) => void;
 }
 
 export default function SearchToolsSection({
@@ -37,8 +45,10 @@ export default function SearchToolsSection({
   onSearchProviderChange,
   searchKey,
   onSearchKeyChange,
+  onSearchKeyBlur,
   githubToken,
   onGithubTokenChange,
+  onGithubTokenBlur,
 }: SearchToolsSectionProps) {
   const { t } = useTranslation();
   const [showSearchKey, setShowSearchKey] = useState(false);
@@ -87,6 +97,7 @@ export default function SearchToolsSection({
               type={showSearchKey ? "text" : "password"}
               value={searchKey}
               onChange={(e) => onSearchKeyChange(e.target.value)}
+              onBlur={(e) => onSearchKeyBlur?.(e.target.value)}
               className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
               placeholder="Enter search provider key..."
             />
@@ -116,6 +127,7 @@ export default function SearchToolsSection({
             type={showGithubToken ? "text" : "password"}
             value={githubToken}
             onChange={(e) => onGithubTokenChange(e.target.value)}
+            onBlur={(e) => onGithubTokenBlur?.(e.target.value)}
             className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
             placeholder="ghp_… (optional)"
           />

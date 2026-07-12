@@ -58,7 +58,10 @@ describe("locale parity", () => {
     // (spawnModeDesc/Auto/Interactive/Strict, retentionLabel/Hint, headerLore,
     // footerNote = +8) and removed the now-orphaned settings.sectionInterface
     // (−1) → net +7.
-    expect(enKeys).toHaveLength(885);
+    // 885 → 886: Settings-T6 replaced the top Save button with instant auto-save
+    // — removed the now-dead btnSave/btnSaving (−2) and added the auto-save
+    // status keys savingLabel/savedTick/saveFailed (+3) → net +1.
+    expect(enKeys).toHaveLength(886);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

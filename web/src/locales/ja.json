@@ -325,9 +325,10 @@
     "retentionLabel": "実行デバッグ詳細の保持日数",
     "retentionHint": "この日数を超えた run は、実際のシステムプロンプト / 注入された知識 / ツールの完全な入力と生の応答が自動的に消去されます（スコアと所要時間には影響しません）。",
     "headerLore": "プロバイダー、検索、外観、メモリ、詳細オプションを設定します。",
-    "footerNote": "変更は保存後に有効になります。",
-    "btnSave": "Save settings",
-    "btnSaving": "Saving...",
+    "footerNote": "変更は自動的に保存されます。",
+    "savingLabel": "保存中…",
+    "savedTick": "保存しました ✓",
+    "saveFailed": "保存できませんでした",
     "sectionProviderConfigs": "マルチモデル設定",
     "labelStrategy": "ルーティング戦略",
     "strategyOptions": {

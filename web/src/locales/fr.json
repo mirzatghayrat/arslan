@@ -325,9 +325,10 @@
     "retentionLabel": "Jours de conservation des détails de débogage d'exécution",
     "retentionHint": "Passé ce nombre de jours, l'invite système réelle / les connaissances injectées / les entrées complètes des outils et les réponses brutes d'une exécution sont effacées automatiquement (les scores et les durées ne sont pas affectés).",
     "headerLore": "Configurez les fournisseurs, la recherche, l'apparence, la mémoire et les options avancées.",
-    "footerNote": "Les modifications prennent effet après enregistrement.",
-    "btnSave": "Save settings",
-    "btnSaving": "Saving...",
+    "footerNote": "Les modifications sont enregistrées automatiquement.",
+    "savingLabel": "Enregistrement…",
+    "savedTick": "Enregistré ✓",
+    "saveFailed": "Impossible d'enregistrer les modifications",
     "sectionProviderConfigs": "Configuration multi-modèle",
     "labelStrategy": "Stratégie de routage",
     "strategyOptions": {

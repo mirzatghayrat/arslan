@@ -325,9 +325,10 @@
     "retentionLabel": "运行调试详情保留天数",
     "retentionHint": "超过此天数的 run，实际系统提示 / 注入知识 / 工具完整入参与原始返回会被自动清除（分数与耗时不受影响）。",
     "headerLore": "配置模型提供方、搜索、外观、记忆与高级选项。",
-    "footerNote": "更改在你保存后生效。",
-    "btnSave": "保存设置",
-    "btnSaving": "保存中...",
+    "footerNote": "更改会自动保存。",
+    "savingLabel": "保存中…",
+    "savedTick": "已保存 ✓",
+    "saveFailed": "保存失败",
     "sectionProviderConfigs": "多模型配置",
     "labelStrategy": "路由策略",
     "strategyOptions": {

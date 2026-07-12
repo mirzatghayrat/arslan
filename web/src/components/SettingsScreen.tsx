@@ -3,10 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
 import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
-import { api } from '../api/client';
-import { toBackendSettings } from '../api/adapters';
 import {
-  Sliders, Check, Save,
+  Sliders, Check, Loader2,
   Info, AlertCircle, WifiOff
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
@@ -17,6 +15,7 @@ import AppearanceSection from './settings/AppearanceSection';
 import MemoryDataSection from './settings/MemoryDataSection';
 import AdvancedSection from './settings/AdvancedSection';
 import type { SettingsSectionId } from './settings/sectionRegistry';
+import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -35,8 +34,6 @@ interface SettingsScreenProps {
 export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
-  const [isSaved, setIsSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'providers');
 
   // Sync local form when parent settings update (e.g. after initial backend fetch)
@@ -44,19 +41,19 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     setLocalSettings((prev) => ({ ...prev, ...settings }));
   }, [settings]);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaveError(null);
-    try {
-      const backendBody = toBackendSettings(localSettings);
-      await api.updateSettings(backendBody);
-      setSettings(localSettings);
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2000);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Save failed');
-    }
-  };
+  // ── Persistence (Task 6) ───────────────────────────────────────────────────
+  // Instant auto-save replaces the old top Save button + <form onSubmit>.
+  // Non-key fields debounce through saveField; the two key-type fields (search
+  // key / GitHub token) persist on BLUR only via flushField (user's constraint).
+  // Saves are disabled while the backend is offline (mirrors the old disabled
+  // Save button); the optimistic display still updates so controls stay live.
+  const { saveField, flushField, status: saveStatus, error: saveError } =
+    useDebouncedSettingsSave({
+      settings: localSettings,
+      setLocalSettings,
+      onPersisted: setSettings,
+      enabled: backendStatus !== 'offline',
+    });
 
   // ── Section slots ─────────────────────────────────────────────────────────
   // Pure relocation of the existing cards into the shell's section slots. The
@@ -76,10 +73,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
           strategy={localSettings.llmStrategy}
           onStrategyChange={(s) =>
-            setLocalSettings((prev) => ({
-              ...prev,
-              llmStrategy: s as AppSettings['llmStrategy'],
-            }))
+            saveField({ llmStrategy: s as AppSettings['llmStrategy'] })
           }
         />
       </div>
@@ -90,11 +84,15 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <SearchToolsSection
         searchProvider={localSettings.searchProvider}
         searchProviders={searchProviders}
-        onSearchProviderChange={(v) => setLocalSettings(prev => ({ ...prev, searchProvider: v }))}
+        onSearchProviderChange={(v) => saveField({ searchProvider: v })}
         searchKey={localSettings.apiKeySearch}
+        // Key-type field: onChange updates the display value only (no save);
+        // the value persists on blur via flushField.
         onSearchKeyChange={(v) => setLocalSettings(prev => ({ ...prev, apiKeySearch: v }))}
+        onSearchKeyBlur={(v) => flushField({ apiKeySearch: v })}
         githubToken={localSettings.githubToken}
         onGithubTokenChange={(v) => setLocalSettings(prev => ({ ...prev, githubToken: v }))}
+        onGithubTokenBlur={(v) => flushField({ githubToken: v })}
       />
     ),
 
@@ -103,8 +101,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <AppearanceSection
         language={localSettings.language}
         onLanguageChange={(code) => {
-          setLocalSettings(prev => ({ ...prev, language: code }));
+          // i18n switches immediately; the PERSIST is debounced through the hook.
           i18n.changeLanguage(code);
+          saveField({ language: code });
         }}
       />
     ),
@@ -119,13 +118,11 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <MemoryDataSection
         providerConfigs={providerConfigs}
         embeddingConfigId={localSettings.embeddingConfigId ?? ''}
-        onEmbeddingConfigIdChange={(v) =>
-          setLocalSettings((prev) => ({ ...prev, embeddingConfigId: v }))
-        }
+        onEmbeddingConfigIdChange={(v) => saveField({ embeddingConfigId: v })}
         distillOnSessionEnd={localSettings.distillOnSessionEnd ?? true}
-        onDistillChange={(v) => setLocalSettings((prev) => ({ ...prev, distillOnSessionEnd: v }))}
+        onDistillChange={(v) => saveField({ distillOnSessionEnd: v })}
         retentionDays={localSettings.runDebugRetentionDays ?? 30}
-        onRetentionDaysChange={(v) => setLocalSettings((prev) => ({ ...prev, runDebugRetentionDays: v }))}
+        onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
       />
     ),
 
@@ -133,13 +130,13 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     advanced: (
       <AdvancedSection
         telemetry={localSettings.telemetry}
-        onTelemetryChange={(v) => setLocalSettings((prev) => ({ ...prev, telemetry: v }))}
+        onTelemetryChange={(v) => saveField({ telemetry: v })}
         orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? false}
-        onOrchestratorShellChange={(v) => setLocalSettings((prev) => ({ ...prev, orchestratorShellEnabled: v }))}
+        onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
         shellConfirmPolicy={localSettings.shellConfirmPolicy}
-        onShellConfirmPolicyChange={(v) => setLocalSettings((prev) => ({ ...prev, shellConfirmPolicy: v }))}
+        onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
         spawnMode={localSettings.spawnMode}
-        onSpawnModeChange={(v) => setLocalSettings((prev) => ({ ...prev, spawnMode: v }))}
+        onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />
     ),
   };
@@ -172,45 +169,38 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
       )}
 
-      <form onSubmit={handleSave} className="max-w-6xl space-y-8">
+      <div className="max-w-6xl space-y-8">
         <SettingsShell activeSection={activeSection} onSectionChange={setActiveSection}>
           {sections}
         </SettingsShell>
 
-        {/* Footer actions bar */}
-        <div className="flex select-none items-center justify-between pt-4 border-t border-border/60 text-[10.5px] font-mono text-subtle-foreground">
-          <div className="flex items-center gap-1.5 matches">
-            {saveError ? (
-              <>
-                <AlertCircle className="w-4 h-4 text-danger" />
-                <span className="text-danger">{saveError}</span>
-              </>
-            ) : (
-              <>
-                <Info className="w-4 h-4 text-subtle-foreground" />
-                <span>{t('settings.footerNote')}</span>
-              </>
-            )}
-          </div>
-
-          <button
-            id="settings-save-button"
-            type="submit"
-            disabled={backendStatus === 'offline'}
-            className={`px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1.5 ${
-              backendStatus === 'offline'
-                ? 'bg-surface-raised text-subtle-foreground cursor-not-allowed opacity-50'
-                : isSaved
-                  ? 'bg-success text-white'
-                  : 'bg-primary hover:bg-primary-hover text-primary-foreground shadow-lg shadow-primary/10'
-            }`}
-          >
-            {isSaved ? <Check className="w-4 h-4 text-white" /> : <Save className="w-4 h-4" />}
-            {isSaved ? t('settings.btnSaving') : t('settings.btnSave')}
-          </button>
+        {/* Footer status bar — the global auto-save indicator (no Save button:
+            settings persist instantly per field). */}
+        <div className="flex select-none items-center gap-1.5 pt-4 border-t border-border/60 text-[10.5px] font-mono text-subtle-foreground">
+          {saveStatus === 'error' ? (
+            <>
+              <AlertCircle className="w-4 h-4 text-danger" />
+              <span className="text-danger">{saveError ?? t('settings.saveFailed')}</span>
+            </>
+          ) : saveStatus === 'saving' ? (
+            <>
+              <Loader2 className="w-4 h-4 text-subtle-foreground animate-spin" />
+              <span>{t('settings.savingLabel')}</span>
+            </>
+          ) : saveStatus === 'saved' ? (
+            <span id="settings-saved-tick" className="flex items-center gap-1.5 text-success">
+              <Check className="w-4 h-4" />
+              {t('settings.savedTick')}
+            </span>
+          ) : (
+            <>
+              <Info className="w-4 h-4 text-subtle-foreground" />
+              <span>{t('settings.footerNote')}</span>
+            </>
+          )}
         </div>
 
-      </form>
+      </div>
     </div>
   );
 }
