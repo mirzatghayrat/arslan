@@ -7,15 +7,15 @@ import { api } from '../api/client';
 import { toBackendSettings } from '../api/adapters';
 import {
   Sliders, Check, Save,
-  Info, AlertCircle, WifiOff, Database
+  Info, AlertCircle, WifiOff
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
 import AccessTokenSettings from './AccessTokenSettings';
-import EmbeddingSettings from './EmbeddingSettings';
-import Select from './Select';
 import SettingsShell from './settings/SettingsShell';
 import SearchToolsSection from './settings/SearchToolsSection';
 import AppearanceSection from './settings/AppearanceSection';
+import MemoryDataSection from './settings/MemoryDataSection';
+import AdvancedSection from './settings/AdvancedSection';
 import type { SettingsSectionId } from './settings/sectionRegistry';
 
 interface SettingsScreenProps {
@@ -116,160 +116,31 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
     // Memory & Data — embedding config + distillation + run-debug retention.
     memory: (
-      <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-        <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-          <Database className="w-4.5 h-4.5 text-primary" />
-          <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navMemory')}</h3>
-        </div>
-
-        <EmbeddingSettings
-          providerConfigs={providerConfigs}
-          embeddingConfigId={localSettings.embeddingConfigId ?? ''}
-          onEmbeddingConfigIdChange={(v) =>
-            setLocalSettings((prev) => ({ ...prev, embeddingConfigId: v }))
-          }
-        />
-
-        {/* Separation divider */}
-        <div className="h-[1px] bg-border/40"></div>
-
-        {/* Toggle session-end distillation */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.distill_on_session_end')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              {t('settings.distill_hint')}
-            </p>
-          </div>
-          <input
-            id="settings-distill-toggle"
-            type="checkbox"
-            checked={localSettings.distillOnSessionEnd ?? true}
-            onChange={(e) => setLocalSettings(prev => ({ ...prev, distillOnSessionEnd: e.target.checked }))}
-            className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
-          />
-        </div>
-
-        {/* Separation divider */}
-        <div className="h-[1px] bg-border/40"></div>
-
-        {/* Run debug detail retention — days before boot sweep redacts sensitive/bulky run fields */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">运行调试详情保留天数</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              超过此天数的 run，实际系统提示 / 注入知识 / 工具完整入参与原始返回会被自动清除（分数与耗时不受影响）。
-            </p>
-          </div>
-          <input
-            id="settings-run-debug-retention-days"
-            type="number"
-            min={1}
-            value={localSettings.runDebugRetentionDays ?? 30}
-            onChange={(e) =>
-              setLocalSettings((prev) => ({
-                ...prev,
-                runDebugRetentionDays: Math.max(1, Number(e.target.value) || 1),
-              }))
-            }
-            className="w-24 bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none transition-all font-mono"
-          />
-        </div>
-      </div>
+      <MemoryDataSection
+        providerConfigs={providerConfigs}
+        embeddingConfigId={localSettings.embeddingConfigId ?? ''}
+        onEmbeddingConfigIdChange={(v) =>
+          setLocalSettings((prev) => ({ ...prev, embeddingConfigId: v }))
+        }
+        distillOnSessionEnd={localSettings.distillOnSessionEnd ?? true}
+        onDistillChange={(v) => setLocalSettings((prev) => ({ ...prev, distillOnSessionEnd: v }))}
+        retentionDays={localSettings.runDebugRetentionDays ?? 30}
+        onRetentionDaysChange={(v) => setLocalSettings((prev) => ({ ...prev, runDebugRetentionDays: v }))}
+      />
     ),
 
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (
-      <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-        <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-          <Sliders className="w-4.5 h-4.5 text-primary" />
-          <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navAdvanced')}</h3>
-        </div>
-
-        <div className="space-y-4">
-          {/* Toggle telemetry */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelTelemetry')}</h4>
-              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-                {t('settings.telemetryDesc')}
-              </p>
-            </div>
-            <input
-              id="settings-telemetry-toggle"
-              type="checkbox"
-              checked={localSettings.telemetry}
-              onChange={(e) => setLocalSettings(prev => ({ ...prev, telemetry: e.target.checked }))}
-              className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
-            />
-          </div>
-
-          {/* Separation divider */}
-          <div className="h-[1px] bg-border/40"></div>
-
-          {/* Orchestrator shell — Arslan may run whitelisted commands (default off) */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelOrchestratorShell')}</h4>
-              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-                {t('settings.orchestratorShellDesc')}
-              </p>
-            </div>
-            <input
-              id="settings-shell-toggle"
-              type="checkbox"
-              checked={localSettings.orchestratorShellEnabled ?? false}
-              onChange={(e) => setLocalSettings(prev => ({ ...prev, orchestratorShellEnabled: e.target.checked }))}
-              className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
-            />
-          </div>
-
-          {/* Confirm-policy select — only meaningful when shell is enabled */}
-          {localSettings.orchestratorShellEnabled && (
-            <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
-              <div>
-                <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelShellConfirmPolicy')}</h4>
-              </div>
-              <Select
-                id="settings-shell-policy"
-                value={localSettings.shellConfirmPolicy}
-                onChange={(v) => setLocalSettings(prev => ({ ...prev, shellConfirmPolicy: v as AppSettings['shellConfirmPolicy'] }))}
-                options={[
-                  { value: 'ask_all', label: t('settings.shellPolicyAskAll') },
-                  { value: 'ask_risky', label: t('settings.shellPolicyAskRisky') },
-                ]}
-                className="w-56"
-                ariaLabel={t('settings.labelShellConfirmPolicy')}
-              />
-            </div>
-          )}
-
-          {/* Separation divider */}
-          <div className="h-[1px] bg-border/40"></div>
-
-          {/* Spawns synthesis modes */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelSpawnMode')}</h4>
-              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-                Choose how sub-agents are created. Auto: instant delegation without checks. Interactive: asks user approval on the fly before spinning up new spawns.
-              </p>
-            </div>
-            <Select
-              id="settings-spawn-mode"
-              value={localSettings.spawnMode}
-              onChange={(v) => setLocalSettings(prev => ({ ...prev, spawnMode: v as AppSettings['spawnMode'] }))}
-              options={[
-                { value: 'auto', label: 'Autonomous Synthesis' },
-                { value: 'interactive', label: 'Interactive Sandbox Auth' },
-                { value: 'strict', label: 'Strict Static Lock' },
-              ]}
-              className="w-40"
-              ariaLabel="Spawn synthesis mode"
-            />
-          </div>
-        </div>
-      </div>
+      <AdvancedSection
+        telemetry={localSettings.telemetry}
+        onTelemetryChange={(v) => setLocalSettings((prev) => ({ ...prev, telemetry: v }))}
+        orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? false}
+        onOrchestratorShellChange={(v) => setLocalSettings((prev) => ({ ...prev, orchestratorShellEnabled: v }))}
+        shellConfirmPolicy={localSettings.shellConfirmPolicy}
+        onShellConfirmPolicyChange={(v) => setLocalSettings((prev) => ({ ...prev, shellConfirmPolicy: v }))}
+        spawnMode={localSettings.spawnMode}
+        onSpawnModeChange={(v) => setLocalSettings((prev) => ({ ...prev, spawnMode: v }))}
+      />
     ),
   };
 
@@ -282,7 +153,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <div className="mb-8">
         <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">System Diagnostics & Configuration</h1>
         <p className="text-xs text-subtle-foreground font-sans mt-1">
-          Calibrate the neural orchestrator core, assign LLM credential keys, and configure telemetry parameters.
+          {t('settings.headerLore')}
         </p>
       </div>
 
@@ -317,7 +188,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             ) : (
               <>
                 <Info className="w-4 h-4 text-subtle-foreground" />
-                <span>Diagnostics confirm hardware configurations match system boundaries.</span>
+                <span>{t('settings.footerNote')}</span>
               </>
             )}
           </div>
