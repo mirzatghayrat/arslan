@@ -99,3 +99,61 @@ def test_openai_provider_name():
     """provider_name must return 'openai'."""
     provider = OpenAIProvider(model="gpt-4o")
     assert provider.provider_name == "openai"
+
+
+# ---------------------------------------------------------------------------
+# Empty-key semantics (Provider P3 / spec D3) — regression pins
+# ---------------------------------------------------------------------------
+
+
+def _patch_openai_post(monkeypatch):
+    """Patch op.httpx.AsyncClient so client.post() is captured (no network).
+
+    Returns the dict the fake client fills with the request's headers.
+    """
+    import arslan.llm.providers.openai_provider as op
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "pong"}}],
+                "usage": {},
+            }
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, json=None, headers=None, timeout=None):  # noqa: A002, ARG002
+            captured["headers"] = headers or {}
+            return _FakeResponse()
+
+    monkeypatch.setattr(op.httpx, "AsyncClient", lambda *a, **k: _FakeClient())
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_empty_key_sends_no_auth_header(monkeypatch):
+    """D3: an empty api_key (keyless local server: LM Studio, vLLM, …) must
+    send NO Authorization header at all — not "Bearer "."""
+    captured = _patch_openai_post(monkeypatch)
+    provider = OpenAIProvider(model="m", api_key="", base_url="http://localhost:1234/v1")
+    await provider.chat([{"role": "user", "content": "hi"}])
+    assert "Authorization" not in captured["headers"]
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_nonempty_key_sends_bearer_header(monkeypatch):
+    """Companion pin: a real key still goes out as a Bearer header."""
+    captured = _patch_openai_post(monkeypatch)
+    provider = OpenAIProvider(model="m", api_key="sk-real", base_url="http://localhost:1234/v1")
+    await provider.chat([{"role": "user", "content": "hi"}])
+    assert captured["headers"].get("Authorization") == "Bearer sk-real"

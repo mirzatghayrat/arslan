@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 854 keys (baseline guard)", () => {
+  it("en locale has 858 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -42,7 +42,9 @@ describe("locale parity", () => {
     // 839 → 854: Provider-P2 added settings model-combobox keys (refresh,
     // custom-id row, stale/last-updated hints, ollama empty state, base URL
     // label, relative-time units, capability chips — 15 keys).
-    expect(enKeys).toHaveLength(854);
+    // 854 → 858: Provider-P3 added custom-provider keys (required base_url
+    // hint, quick-fill label, Ollama-remote chip, compatibility note — 4 keys).
+    expect(enKeys).toHaveLength(858);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -35,3 +35,13 @@ def test_create_adapter_unknown_provider_falls_back_to_openai():
     adapter = LLMAdapter("ollama", "llama3", base_url="http://localhost:11434/v1")
     assert isinstance(adapter._provider, OpenAIProvider)
     assert adapter._provider.base_url == "http://localhost:11434/v1"
+
+
+def test_create_adapter_custom_provider_uses_openai_with_base_url():
+    """P3: "custom" misses the registry → OpenAIProvider talking to the user's
+    base_url. This registry-miss fallback IS the custom provider's runtime
+    chain — pin it."""
+    adapter = LLMAdapter("custom", "m", base_url="http://x/v1")
+    assert isinstance(adapter._provider, OpenAIProvider)
+    assert adapter._provider.base_url == "http://x/v1"
+    assert adapter._provider.model == "m"

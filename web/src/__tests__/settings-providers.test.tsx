@@ -454,6 +454,147 @@ describe("dynamic model list integration (Provider P2)", () => {
     expect(opts.some((t) => t.includes("dyn-deepseek-model"))).toBe(false);
   });
 
+  it("custom draft save stays disabled until base_url is filled (P3)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    // custom first → openDraft starts on the custom provider
+    const customFirst: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+      ...providers,
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+
+    // Fill model (combobox commits on blur) and api_key — base_url still blank
+    const modelInput = screen.getByTestId("provider-draft-model");
+    fireEvent.change(modelInput, { target: { value: "my-model" } });
+    fireEvent.blur(modelInput);
+    const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
+    fireEvent.change(keyInput, { target: { value: "sk-test" } });
+
+    const confirm = screen.getByTestId("provider-draft-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    // The required-base_url hint shows while blank
+    expect(screen.getByTestId("provider-draft-custom-required")).toBeInTheDocument();
+
+    // Fill base_url → save enabled, hint gone
+    fireEvent.change(screen.getByTestId("provider-draft-baseurl"), {
+      target: { value: "http://localhost:1234/v1" },
+    });
+    expect((screen.getByTestId("provider-draft-confirm") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId("provider-draft-custom-required")).toBeNull();
+
+    await user.click(screen.getByTestId("provider-draft-confirm"));
+    await waitFor(() => {
+      expect(mockAddProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "custom",
+          model: "my-model",
+          base_url: "http://localhost:1234/v1",
+        }),
+      );
+    });
+  });
+
+  it("quick-pick chip fills the draft base_url field (P3)", async () => {
+    const user = userEvent.setup();
+    const customFirst: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+      ...providers,
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customFirst}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+
+    // Chips render for the custom draft; clicking LM Studio fills the input
+    await user.click(screen.getByRole("button", { name: "LM Studio" }));
+    expect(
+      (screen.getByTestId("provider-draft-baseurl") as HTMLInputElement).value,
+    ).toBe("http://localhost:1234/v1");
+    // Another chip overwrites it
+    await user.click(screen.getByRole("button", { name: "vLLM" }));
+    expect(
+      (screen.getByTestId("provider-draft-baseurl") as HTMLInputElement).value,
+    ).toBe("http://localhost:8000/v1");
+  });
+
+  it("quick-pick chip on a saved custom row persists the base_url (P3)", async () => {
+    const user = userEvent.setup();
+    mockUpdateProviderConfig.mockClear();
+    const customProviders: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    const customConfigs: ProviderConfig[] = [
+      { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "", api_key: "", is_primary: true },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customProviders}
+        providerConfigs={customConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "llama.cpp" }));
+    await waitFor(() => {
+      expect(mockUpdateProviderConfig).toHaveBeenCalledWith(5, {
+        base_url: "http://localhost:8080/v1",
+      });
+    });
+  });
+
+  it("compatibility note + blank-base_url hint render only for custom rows (P3)", () => {
+    const customProviders: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+      ...providers,
+    ];
+    const mixedConfigs: ProviderConfig[] = [
+      { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "", api_key: "", is_primary: true },
+      { id: 6, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: false },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customProviders}
+        providerConfigs={mixedConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    // Exactly one compat note (the custom row), none for deepseek
+    expect(screen.getAllByText("settings.customCompatNote")).toHaveLength(1);
+    expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-config-custom-note-1")).toBeNull();
+    // Saved custom row with blank base_url shows the required hint
+    expect(screen.getByTestId("provider-config-custom-required-0")).toBeInTheDocument();
+  });
+
+  it("compatibility note renders without the blank hint when base_url is set (P3)", () => {
+    const customProviders: ProviderOption[] = [
+      { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
+    ];
+    const customConfigs: ProviderConfig[] = [
+      { id: 5, label: "C", provider: "custom", model: "my-model", base_url: "http://localhost:1234/v1", api_key: "", is_primary: true },
+    ];
+    render(
+      <ProviderConfigList
+        llmProviders={customProviders}
+        providerConfigs={customConfigs}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-config-custom-required-0")).toBeNull();
+  });
+
   it("failed base_url blur-save retries on the next blur (FIX D)", async () => {
     mockUpdateProviderConfig.mockClear();
     mockUpdateProviderConfig.mockRejectedValueOnce(new Error("boom"));

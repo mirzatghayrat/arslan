@@ -72,9 +72,10 @@ def test_provider_options_have_required_display_fields():
         assert o["key"]
         assert o["label"]
         # every option carries a model default the UI can prefill — except ollama
-        # (B5: no static seed; the dynamic list is the only source)
+        # (B5: no static seed; the dynamic list is the only source) and custom
+        # (P3: the user always names their own model)
         assert isinstance(o["default_model"], str)
-        if o["key"] != "ollama":
+        if o["key"] not in ("ollama", "custom"):
             assert o["default_model"]
         assert "base_url" in o  # native entries may be "" (SDK default)
         assert isinstance(o["native"], bool)
@@ -124,4 +125,38 @@ def test_expand_preset_unknown_provider_passes_through():
         "mystery",
         "m1",
         "https://x/v1",
+    )
+
+
+# ---- Provider P3: custom OpenAI-compatible entry ---------------------------
+
+
+def test_provider_options_includes_custom_entry():
+    """P3: the dropdown offers a "custom" OpenAI-compatible entry with no
+    prefilled base_url/model — the user supplies both."""
+    by_key = {o["key"]: o for o in provider_options()}
+    assert by_key["custom"] == {
+        "key": "custom",
+        "label": "OpenAI-compatible(自定义)",
+        "base_url": "",
+        "default_model": "",
+        "native": False,
+        "models": [],
+    }
+
+
+def test_custom_is_not_a_preset():
+    """"custom" rides expand_preset's PASSTHROUGH mechanism (resolve_preset
+    returns None) — it must never gain a PRESETS row, which would start
+    filling defaults the user is supposed to own."""
+    assert resolve_preset("custom") is None
+    assert "custom" not in PRESETS
+
+
+def test_expand_preset_custom_passes_through_unchanged():
+    """Pin the runtime chain: a custom config reaches the adapter verbatim."""
+    assert expand_preset("custom", "my-model", "http://localhost:1234/v1") == (
+        "custom",
+        "my-model",
+        "http://localhost:1234/v1",
     )

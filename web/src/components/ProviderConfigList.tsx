@@ -32,6 +32,17 @@ interface ProviderConfigListProps {
 const INPUT_CLS =
   'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
 
+/** P3: quick-pick base_url templates for the custom OpenAI-compatible
+ *  provider. Labels are product names (not translated) except the Ollama
+ *  remote chip, whose "(remote)" qualifier is localized via labelKey. */
+const CUSTOM_BASE_URL_TEMPLATES: { label?: string; labelKey?: string; url: string }[] = [
+  { label: 'LM Studio', url: 'http://localhost:1234/v1' },
+  { label: 'vLLM', url: 'http://localhost:8000/v1' },
+  { label: 'llama.cpp', url: 'http://localhost:8080/v1' },
+  { label: 'LiteLLM', url: 'http://localhost:4000' },
+  { labelKey: 'settings.customChipOllamaRemote', url: 'http://<host>:11434/v1' },
+];
+
 /** Draft state for the add-new flow */
 interface DraftConfig {
   provider: string;
@@ -411,6 +422,9 @@ export default function ProviderConfigList({
 
   const handleDraftConfirm = async () => {
     if (!draft || !draft.provider || !draft.model || !draft.api_key) return;
+    // P3: custom has no preset base_url to fall back on — refuse a blank one
+    // (mirrors the server-side 422 guard).
+    if (draft.provider === 'custom' && !draft.base_url.trim()) return;
     const providerInfo = llmProviders.find((p) => p.key === draft.provider);
     setBusy(-1);
     try {
@@ -432,6 +446,68 @@ export default function ProviderConfigList({
   };
 
   const handleDraftCancel = () => setDraft(null);
+
+  // --- P3: custom provider helpers ---
+
+  /** Chip click on a SAVED custom row: set the field (marks dirty) and run
+   *  the blur-save path immediately — a chip click never blurs the input, so
+   *  waiting for a natural blur would leave the value unsaved. On failure the
+   *  dirty flag is restored (handleBaseUrlBlur), so the next blur retries. */
+  const handleChipFillSaved = (config: ProviderConfig, url: string) => {
+    handleLocalFieldChange(config, 'base_url', url);
+    void handleBaseUrlBlur(config, url);
+  };
+
+  const handleChipFillDraft = (url: string) => {
+    setDraft((prev) =>
+      prev ? { ...prev, base_url: url, testState: 'idle', testError: undefined } : prev,
+    );
+  };
+
+  /** P3 custom-row extras: required-base_url hint + quick-pick chips + static
+   *  compatibility note. Rendered full-width under the fields of any custom
+   *  row (saved or draft). */
+  const renderCustomExtras = (opts: {
+    baseUrl: string;
+    onChip: (url: string) => void;
+    requiredTestId: string;
+    noteTestId: string;
+  }) => (
+    <div className="w-full space-y-1.5">
+      {!opts.baseUrl.trim() && (
+        <p
+          data-testid={opts.requiredTestId}
+          className="text-[10px] font-mono text-danger"
+        >
+          {t('settings.customBaseUrlRequired')}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-mono text-subtle-foreground">
+          {t('settings.customQuickFill')}
+        </span>
+        {CUSTOM_BASE_URL_TEMPLATES.map((tpl) => {
+          const label = tpl.labelKey ? t(tpl.labelKey) : tpl.label ?? '';
+          return (
+            <button
+              key={tpl.url}
+              type="button"
+              onClick={() => opts.onChip(tpl.url)}
+              className="px-2 py-0.5 text-[10px] font-mono text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors"
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p
+        data-testid={opts.noteTestId}
+        className="text-[10px] font-mono text-subtle-foreground"
+      >
+        {t('settings.customCompatNote')}
+      </p>
+    </div>
+  );
 
   // --- Strategy options with gating ---
   const canUseMultiStrategy = providerConfigs.length >= 2;
@@ -588,6 +664,15 @@ export default function ProviderConfigList({
               >
                 <Trash2 className="w-3 h-3" />
               </button>
+
+              {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
+              {config.provider === 'custom' &&
+                renderCustomExtras({
+                  baseUrl: config.base_url,
+                  onChip: (url) => handleChipFillSaved(config, url),
+                  requiredTestId: `provider-config-custom-required-${idx}`,
+                  noteTestId: `provider-config-custom-note-${idx}`,
+                })}
             </div>
           );
         })}
@@ -713,7 +798,13 @@ export default function ProviderConfigList({
               type="button"
               data-testid="provider-draft-confirm"
               onClick={handleDraftConfirm}
-              disabled={!draft.provider || !draft.model || !draft.api_key || busy === -1}
+              disabled={
+                !draft.provider ||
+                !draft.model ||
+                !draft.api_key ||
+                (draft.provider === 'custom' && !draft.base_url.trim()) ||
+                busy === -1
+              }
               className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-primary border border-primary/40 hover:border-primary/80 rounded-lg transition-colors disabled:opacity-30"
             >
               {t('settings.btnAddConfirm')}
@@ -726,6 +817,15 @@ export default function ProviderConfigList({
               {t('common.cancel')}
             </button>
           </div>
+
+          {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
+          {draft.provider === 'custom' &&
+            renderCustomExtras({
+              baseUrl: draft.base_url,
+              onChip: handleChipFillDraft,
+              requiredTestId: 'provider-draft-custom-required',
+              noteTestId: 'provider-draft-custom-note',
+            })}
         </div>
       )}
 

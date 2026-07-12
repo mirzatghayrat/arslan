@@ -132,17 +132,23 @@ async def list_provider_configs(session: AsyncSession = Depends(get_session)):
 
 @router.post("/settings/provider-configs", response_model=ProviderConfigOut)
 async def add_provider_config(body: ProviderConfigIn, session: AsyncSession = Depends(get_session)):
-    return await provider_config_service.add_config(
-        session, label=body.label, provider=body.provider, model=body.model,
-        base_url=body.base_url, api_key=body.api_key)
+    try:
+        return await provider_config_service.add_config(
+            session, label=body.label, provider=body.provider, model=body.model,
+            base_url=body.base_url, api_key=body.api_key)
+    except ValueError as exc:  # P3: custom without base_url
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 @router.put("/settings/provider-configs/{config_id}", response_model=ProviderConfigOut)
 async def update_provider_config(config_id: int, body: ProviderConfigUpdateIn,
                                  session: AsyncSession = Depends(get_session)):
-    updated = await provider_config_service.update_config(
-        session, config_id, label=body.label, provider=body.provider, model=body.model,
-        base_url=body.base_url, api_key=body.api_key)
+    try:
+        updated = await provider_config_service.update_config(
+            session, config_id, label=body.label, provider=body.provider, model=body.model,
+            base_url=body.base_url, api_key=body.api_key)
+    except ValueError as exc:  # P3: patch would leave a custom config without base_url
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     if updated is None:
         raise HTTPException(status_code=404, detail="config not found")
     return updated
@@ -187,7 +193,10 @@ async def test_llm_raw(body: TestLLMIn) -> TestLLMOut:
     Returns {ok, error, latency_ms}.  Never raises a 5xx — errors come back as
     {ok: false, error: "…"}.
     """
-    if not body.api_key or _looks_masked(body.api_key):
+    # D3 empty-key unification: an empty key is a legitimate config (keyless
+    # local servers) and proceeds to the real connection test — consistent
+    # with the saved-config path below. Only a masked echo is rejected.
+    if body.api_key and _looks_masked(body.api_key):
         return TestLLMOut(ok=False, error="enter a real API key to test")
     result = await test_connection(
         provider=body.provider,
