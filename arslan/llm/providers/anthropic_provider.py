@@ -101,13 +101,16 @@ class AnthropicProvider(BaseLLMProvider):
         # a prefix below the model's minimum-cacheable floor is silently NOT cached (no
         # error, cache_creation_input_tokens == 0), so we never gate/branch on the model —
         # the breakpoint is always emitted and degrades naturally.
-        #   Spec-cited floors (source platform.claude.com prompt-caching): Fable 5 = 512,
-        #   Opus 4.8 = 1024, Sonnet 5 = 1024, Haiku 4.5 = 4096. Under those, Arslan's static
-        #   answer prefix (~1280 tok) → Fable 5 / Opus 4.8 / Sonnet 5 cache; Haiku 4.5 does not.
-        #   NOTE: the current claude-api reference tables list HIGHER floors (Opus 4.8 = 4096,
-        #   Fable 5 / Sonnet 4.6 = 2048, Sonnet 4.5 = 1024) — under those, a ~1280-tok prefix
-        #   would not reach any current-model floor. Either way the code is correct: it emits
-        #   the breakpoint and lets Anthropic honor it iff the prefix clears that model's floor.
+        #   Floors (live platform.claude.com/docs/en/build-with-claude/prompt-caching,
+        #   re-fetched + three-way reconciled 2026-07-13): Fable 5 = 512, Opus 4.8 = 1024,
+        #   Sonnet 5 = 1024, Haiku 4.5 = 4096 (Bedrock: Fable 5 = 1024). Arslan's static answer
+        #   prefix (~1280 tok, byte-derived — confirm with a keyed count_tokens on the real
+        #   assembled prefix before relying on the ~256-tok margin over 1024) → Fable 5 caches
+        #   comfortably; Opus 4.8 / Sonnet 5 cache iff the keyed count clears 1024; Haiku 4.5
+        #   does not. (The bundled claude-api reference table lists HIGHER, STALE floors for the
+        #   Claude 5 family — do not trust it; the live doc above is authoritative.) The code is
+        #   correct regardless of the exact number: it always emits the breakpoint and Anthropic
+        #   honors it iff the prefix clears that model's floor (else a silent zero-side-effect no-op).
         # Tools: Arslan's Anthropic path is intentionally text-in/text-out (native tool-use
         # is not implemented — see the module docstring), so `tools` are not serialized into
         # this payload; D3's "cache_control on the last tool" therefore does not apply here.

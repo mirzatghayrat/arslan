@@ -257,17 +257,32 @@ _NO_REPASTE = (
 
 
 def _now_line() -> str:
-    """Current server DATE injected into Arslan's prompt so date/'now' questions need no
-    search. DATE-level, not minute-level (prompt-cache reorder, spec 2026-07-13): the minute
-    is a per-request cache poison — it changed every turn and, when it sat mid-prompt,
-    cache-missed the whole dynamic tail after it. Date granularity is behavior-equivalent
-    (the model still answers today/now/date questions) while the line only changes once a
-    day, and it lives at the END of the volatile suffix, never in the cacheable prefix."""
+    """Current server date + UTC HOUR injected into Arslan's prompt so date/'now' questions
+    need no search. HOUR-level, not minute-level (prompt-cache reorder, spec 2026-07-13):
+    the minute is a per-request cache poison — it changed every turn and, when it sat
+    mid-prompt, cache-missed the whole dynamic tail after it.
+
+    Why hour and not date-only: the line RETAINS the "convert to the user's timezone (e.g.
+    Beijing = UTC+8)" guidance, and that conversion is impossible from a bare date near the
+    day boundary — at UTC 2026-07-12 23:30, Beijing (+8) is already 07-13, but a date-only
+    line ("07-12") gives the model no way to know that. Date-level was a real correctness
+    regression for boundary timezone questions (caught in L1 adversarial review; pinned by
+    test_now_line_boundary_tz). The UTC hour is sufficient to get every user's LOCAL date
+    right near midnight while still changing only once an hour (not once a request), and the
+    line lives at the END of the volatile suffix — so its granularity is irrelevant to the
+    Anthropic cache_control breakpoint (that's on the stable prefix, entirely upstream) and
+    costs DeepSeek/OpenAI only the trailing ~30 tokens, re-cached once per hour.
+
+    Known limit (accepted per the L1 decision): hour precision is exact for whole-hour zones.
+    Half-hour / 45-min zones (India +5:30, Nepal +5:45, Newfoundland -3:30) can be a day off
+    within the ~30-45 min around their local midnight — a rare edge traded for cache stability;
+    minute precision would fix it but re-poison the trailing cache every request."""
     now = datetime.utcnow()
     return (
-        f"\n\nCurrent date (server clock, UTC): {now:%Y-%m-%d} ({now:%A}). "
-        "Use this directly for 'today' / 'now' / the current date; convert to the user's timezone "
-        "when asked (e.g. Beijing = UTC+8). Do NOT search the web for the current date/time."
+        f"\n\nCurrent date & time (server clock, UTC): {now:%Y-%m-%d %H}:00 ({now:%A}), to the hour. "
+        "Use this directly for 'today' / 'now' / the current date; the UTC hour is enough to convert "
+        "to the user's timezone when asked (e.g. Beijing = UTC+8) and get their LOCAL date right even "
+        "near midnight. Do NOT search the web for the current date/time."
     )
 
 
@@ -289,9 +304,9 @@ def _build_answer_system(
     stable_prefix = the static guards (identical bytes every turn) → the cacheable prefix.
     volatile_suffix, ordered least→most volatile: extra_system (per-turn clarify/gather
     addendum — VARIES per turn, so it is volatile, never in the prefix) → roster → facts →
-    summary → KB → date line LAST. This is the SAME content the pre-reorder prompt carried,
-    only reordered (+ the timestamp downgraded to date-level and moved to the end); the model
-    sees an equivalent prompt.
+    summary → KB → now line LAST. This is the SAME content the pre-reorder prompt carried,
+    only reordered (+ the timestamp moved to the end and floored to the UTC hour); the model
+    sees an equivalent prompt with the UTC hour still present for timezone conversion.
     """
     volatile = (
         extra_system
@@ -301,7 +316,7 @@ def _build_answer_system(
     if summary:
         volatile += f"\n\nConversation summary so far:\n{summary}"
     volatile += kb_block
-    volatile += _now_line()  # date line LAST — the least cache-poisoning position
+    volatile += _now_line()  # now line LAST — the least cache-poisoning position
     return build_cached_system(_ANSWER_STABLE_PREFIX, volatile)
 
 
