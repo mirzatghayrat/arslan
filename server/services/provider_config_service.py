@@ -34,6 +34,9 @@ def _to_public(row: ProviderConfig) -> dict:
         "id": row.id, "label": row.label, "provider": row.provider, "model": row.model,
         "base_url": row.base_url or "", "is_primary": bool(row.is_primary),
         "api_key": mask_secret(_safe(row.api_key)),
+        # P4: last connectivity probe (null until the first probe)
+        "last_health": row.last_health,
+        "last_health_at": row.last_health_at.isoformat() if row.last_health_at else None,
     }
 
 

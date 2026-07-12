@@ -88,6 +88,9 @@ class ProviderConfigOut(BaseModel):
     base_url: str = ""
     api_key: str = ""   # masked
     is_primary: bool = False
+    # Provider-P4: last connectivity probe result (null until first probe).
+    last_health: str | None = None       # reachable_models|reachable_no_list|unreachable
+    last_health_at: str | None = None    # naive-UTC ISO
 
 
 class EquipmentItemOut(BaseModel):
@@ -325,6 +328,19 @@ class ModelListOut(BaseModel):
     stale: bool = False
     error: str | None = None
     source: str = "api"
+
+
+class HealthOut(BaseModel):
+    """Response of POST /settings/provider-configs/{id}/health (Provider-P4).
+
+    ``state`` is the tri-state connectivity verdict; ``reachable_no_list``
+    means HTTP answered but no usable model list (chat may still work).
+    """
+
+    state: str
+    latency_ms: int | None = None
+    detail: str | None = None
+    last_health_at: str | None = None
 
 
 class TitleIn(BaseModel):

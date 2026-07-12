@@ -282,6 +282,11 @@ export interface ProviderConfig {
   base_url: string;
   api_key: string;     // masked on read
   is_primary: boolean;
+  /** P4 tri-state connectivity of the last probe (null/absent = never probed):
+   *  "reachable_models" | "reachable_no_list" | "unreachable". */
+  last_health?: string | null;
+  /** Naive-UTC ISO of the last probe (no timezone suffix — append "Z" before parsing). */
+  last_health_at?: string | null;
 }
 
 /** One model from GET /settings/provider-configs/{id}/models. */

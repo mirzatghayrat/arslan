@@ -45,6 +45,9 @@ vi.mock("../api/client", () => ({
   getCatalog: (...args: unknown[]) => mockGetCatalog(...args),
   testLlm: (...args: unknown[]) => mockTestLlm(...args),
   testProviderConfig: (...args: unknown[]) => mockTestProviderConfig(...args),
+  probeProviderHealth: vi.fn().mockResolvedValue({
+    state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
+  }),
 }));
 
 import ProviderConfigList from "../components/ProviderConfigList";

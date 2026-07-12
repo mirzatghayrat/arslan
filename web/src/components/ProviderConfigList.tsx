@@ -11,6 +11,7 @@ import {
   fetchProviderModels,
   testLlm,
   testProviderConfig,
+  probeProviderHealth,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
 import { Plus, Star, Trash2, Loader2, FlaskConical, ChevronDown } from 'lucide-react';
@@ -62,14 +63,29 @@ type TestStatusMap = Record<
 /** Dynamic model list state per saved config id (lazy, fetched on first focus). */
 type RowModelsMap = Record<number, { loading: boolean; result: ModelListResult | null }>;
 
+/** P4: connectivity tri-state per saved config id. A LOCAL overlay over the
+ *  persisted last_health/last_health_at props — concurrent auto-probes would
+ *  race each other through onConfigsChange's full-array snapshot. */
+type HealthMap = Record<number, { state: string | null; at: string | null; probing: boolean }>;
+
+/** Auto-probe staleness cutoff: probe on settings-open only when the last
+ *  probe is older than this (or never happened). Client-side check only —
+ *  spec D4: no background polling, no intervals. */
+const HEALTH_STALE_MS = 5 * 60_000;
+
+/** Parse a possibly-naive-UTC ISO timestamp to epoch ms (NaN when invalid). */
+function parseUtcMs(iso: string): number {
+  const hasTz = iso.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : `${iso}Z`).getTime();
+}
+
 /** Tiny relative-time helper (minutes/hours/days). `iso` is naive-UTC without
  *  a timezone suffix — append "Z" before parsing so it isn't read as local. */
 function formatRelativeTime(
   iso: string,
   t: (key: string, opts?: Record<string, unknown>) => string,
 ): string {
-  const hasTz = iso.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(iso);
-  const then = new Date(hasTz ? iso : `${iso}Z`).getTime();
+  const then = parseUtcMs(iso);
   if (Number.isNaN(then)) return iso;
   const mins = Math.floor((Date.now() - then) / 60_000);
   if (mins < 1) return t('settings.timeJustNow');
@@ -96,6 +112,11 @@ export default function ProviderConfigList({
   const [draft, setDraft] = useState<DraftConfig | null>(null);
   const [testAllBusy, setTestAllBusy] = useState(false);
   const [rowModels, setRowModels] = useState<RowModelsMap>({});
+  // P4: connectivity dot state (overlay; falls back to the persisted columns).
+  const [health, setHealth] = useState<HealthMap>({});
+  // P4: settings-open auto-probe fires ONCE per mount (StrictMode double-invokes
+  // effects on the same instance — the ref survives and guards the second pass).
+  const healthAutoProbedRef = useRef(false);
   // Rows whose dynamic model list was already requested (fetch once per row).
   const modelsFetchedRef = useRef<Set<number>>(new Set());
   // Rows with base_url edits pending a blur-save.
@@ -197,6 +218,48 @@ export default function ProviderConfigList({
     return !!result && result.models.length === 0 && result.error != null;
   };
 
+  // --- P4: connectivity dot (level-1 health; the test button stays level-2 chat) ---
+
+  const healthFor = (config: ProviderConfig): { state: string | null; at: string | null; probing: boolean } =>
+    health[config.id] ?? {
+      state: config.last_health ?? null,
+      at: config.last_health_at ?? null,
+      probing: false,
+    };
+
+  const handleProbeHealth = async (config: ProviderConfig) => {
+    const base = healthFor(config);
+    if (base.probing) return;
+    setHealth((prev) => ({ ...prev, [config.id]: { ...base, probing: true } }));
+    try {
+      const result = await probeProviderHealth(config.id);
+      setHealth((prev) => ({
+        ...prev,
+        [config.id]: { state: result.state, at: result.last_health_at, probing: false },
+      }));
+    } catch {
+      // Probe endpoint itself unreachable (backend down) — keep the last known
+      // state; the dot simply stops pulsing.
+      setHealth((prev) => {
+        const cur = prev[config.id];
+        return cur ? { ...prev, [config.id]: { ...cur, probing: false } } : prev;
+      });
+    }
+  };
+
+  useEffect(() => {
+    // Settings-open auto-probe: once per mount, ONLY rows never probed or
+    // probed more than HEALTH_STALE_MS ago (spec D4 — no polling/intervals).
+    if (healthAutoProbedRef.current || providerConfigs.length === 0) return;
+    healthAutoProbedRef.current = true;
+    const now = Date.now();
+    for (const c of providerConfigs) {
+      const then = c.last_health_at ? parseUtcMs(c.last_health_at) : Number.NaN;
+      const fresh = !Number.isNaN(then) && now - then < HEALTH_STALE_MS;
+      if (!fresh) void handleProbeHealth(c);
+    }
+  }, [providerConfigs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- mutations ---
 
   const handleSetPrimary = async (id: number) => {
@@ -219,6 +282,11 @@ export default function ProviderConfigList({
       baseUrlInputRefs.current.delete(id);
       // Clear test status for deleted row
       setTestStatus((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setHealth((prev) => {
         const next = { ...prev };
         delete next[id];
         return next;
@@ -544,6 +612,50 @@ export default function ProviderConfigList({
     </div>
   );
 
+  /** P4: per-row connectivity dot + last-probe relative time. Click = manual
+   *  probe. Visually level-1 (connectivity only); the test button/Test all
+   *  stays level-2 (real chat round-trip). */
+  const renderHealthDot = (config: ProviderConfig, idx: number) => {
+    const h = healthFor(config);
+    const cls =
+      h.state === 'reachable_models'
+        ? 'text-success'
+        : h.state === 'reachable_no_list'
+          ? 'text-warning'
+          : h.state === 'unreachable'
+            ? 'text-danger'
+            : 'text-subtle-foreground';
+    const titleKey =
+      h.state === 'reachable_models'
+        ? 'settings.healthDotModels'
+        : h.state === 'reachable_no_list'
+          ? 'settings.healthDotNoList'
+          : h.state === 'unreachable'
+            ? 'settings.healthDotUnreachable'
+            : 'settings.healthDotUnknown';
+    return (
+      <div className="flex items-center gap-1.5 flex-shrink-0 pt-2">
+        <button
+          type="button"
+          data-testid={`provider-health-dot-${idx}`}
+          data-health-state={h.state ?? 'unknown'}
+          onClick={() => void handleProbeHealth(config)}
+          disabled={h.probing}
+          title={t(titleKey)}
+          aria-label={t(titleKey)}
+          className={`text-[11px] leading-none ${cls} ${h.probing ? 'animate-pulse' : ''} transition-colors`}
+        >
+          {h.state ? '●' : '○'}
+        </button>
+        {h.at && (
+          <span className="text-[9px] font-mono text-subtle-foreground">
+            {formatRelativeTime(h.at, t)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   // --- Strategy options with gating ---
   const canUseMultiStrategy = providerConfigs.length >= 2;
   const strategyOptions: SelectOption[] = [
@@ -664,6 +776,9 @@ export default function ProviderConfigList({
                   className={INPUT_CLS}
                 />
               </div>
+
+              {/* P4: connectivity dot (level 1) + last-probe time */}
+              {renderHealthDot(config, idx)}
 
               {/* Per-row test result indicator (populated by Test all) */}
               <div className="flex items-center gap-2 flex-shrink-0">

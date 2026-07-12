@@ -521,3 +521,22 @@ export const testProviderConfig = (id: number) =>
   request<TestLlmResult>(`/settings/provider-configs/${id}/test`, {
     method: "POST",
   });
+
+// ── Provider connectivity probe (Provider-P4) ─────────────────────────────────
+
+/** Tri-state connectivity probe result. `reachable_no_list` means HTTP answered
+ *  but no usable model list — chat may still work. */
+export interface HealthResult {
+  state: "reachable_models" | "reachable_no_list" | "unreachable";
+  latency_ms: number | null;
+  detail: string | null;
+  /** Naive-UTC ISO (no timezone suffix) — append "Z" before parsing. */
+  last_health_at: string | null;
+}
+
+/** Probe a saved provider config's connectivity. Fires only on explicit
+ *  Settings interactions (spec D4: no background polling). */
+export const probeProviderHealth = (id: number) =>
+  request<HealthResult>(`/settings/provider-configs/${id}/health`, {
+    method: "POST",
+  });

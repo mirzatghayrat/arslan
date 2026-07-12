@@ -2,20 +2,22 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arslan.llm.catalog import CATALOG
-from arslan.llm.presets import provider_options
+from arslan.llm.presets import expand_preset, provider_options
 from server import auth, config, token_bootstrap
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, CatalogEntryOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
-# model_catalog is Settings-only: this module is its ONLY allowed import site
-# outside its own tests (Provider-round iron rule — never from the chat path).
-from server.services import model_catalog, provider_config_service, settings_service
+from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+# model_catalog + provider_health are Settings-only: this module is their ONLY
+# allowed import site outside their own tests (Provider-round iron rule —
+# never from the chat path).
+from server.services import model_catalog, provider_config_service, provider_health, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
 
@@ -227,6 +229,34 @@ async def test_saved_provider_config(
         api_key=api_key,
     )
     return TestLLMOut(**result)
+
+
+@router.post("/settings/provider-configs/{config_id}/health", response_model=HealthOut)
+async def probe_provider_config_health(
+    config_id: int, session: AsyncSession = Depends(get_session)
+) -> HealthOut:
+    """Tri-state connectivity probe for one saved provider config (Provider-P4).
+
+    Fires ONLY on explicit Settings interactions (spec decision D4 — no
+    background polling). Persists the verdict on the row (last_health /
+    last_health_at) so Settings-open can render the last-known state.
+    Never 5xx on network failure — that is the "unreachable" state.
+    """
+    from server.db.models import ProviderConfig
+    row = await session.get(ProviderConfig, config_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="provider config not found")
+    api_key = provider_config_service._safe(row.api_key)
+    # Mirror the /models endpoint: probe the expand_preset-resolved base_url
+    # with the config-level provider key.
+    _, _, base_url = expand_preset(row.provider, row.model, row.base_url or "")
+    result = await provider_health.probe(row.provider, base_url, api_key)
+    row.last_health = result["state"]
+    row.last_health_at = datetime.utcnow()
+    await session.commit()
+    return HealthOut(state=result["state"], latency_ms=result["latency_ms"],
+                     detail=result["detail"],
+                     last_health_at=row.last_health_at.isoformat())
 
 
 @router.get("/settings/suggest-primary", response_model=SuggestPrimaryOut | None)

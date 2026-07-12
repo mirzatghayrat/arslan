@@ -48,6 +48,9 @@ vi.mock("../api/client", () => ({
   getCatalog: vi.fn().mockResolvedValue([]),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
+  probeProviderHealth: vi.fn().mockResolvedValue({
+    state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
+  }),
 }));
 
 vi.mock("../stores/authStore", () => ({
