@@ -271,6 +271,7 @@
   },
   "settings": {
     "navProviders": "模型供应商",
+"navRegion": "设置分区",
     "navSearch": "搜索与工具",
     "navAppearance": "外观与语言",
     "navAccess": "访问令牌",

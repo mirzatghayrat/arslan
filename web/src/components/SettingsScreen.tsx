@@ -422,7 +422,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
       {/* Backend-down honest banner — shown when health check fails */}
       {backendStatus === 'offline' && (
-        <div className="max-w-4xl mb-6 flex items-start gap-3 bg-danger/30 border border-danger/50 rounded-xl px-5 py-4">
+        <div className="max-w-6xl mb-6 flex items-start gap-3 bg-danger/30 border border-danger/50 rounded-xl px-5 py-4">
           <WifiOff className="w-4 h-4 text-danger shrink-0 mt-0.5" />
           <div>
             <p className="text-xs font-bold text-danger font-mono uppercase tracking-wide">

@@ -271,6 +271,7 @@
   },
   "settings": {
     "navProviders": "Proveedores",
+"navRegion": "Secciones de ajustes",
     "navSearch": "Búsqueda y herramientas",
     "navAppearance": "Apariencia e idioma",
     "navAccess": "Acceso",

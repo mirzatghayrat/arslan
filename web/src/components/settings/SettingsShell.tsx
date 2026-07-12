@@ -78,7 +78,7 @@ export default function SettingsShell({
   return (
     <div className="flex flex-col md:flex-row gap-6">
       <nav
-        aria-label="Settings sections"
+        aria-label={t('settings.navRegion')}
         className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-visible md:w-56 md:shrink-0 pb-2 md:pb-0"
       >
         {SETTINGS_SECTIONS.map(navButton)}
