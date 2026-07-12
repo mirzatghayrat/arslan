@@ -41,3 +41,15 @@ The full refactor is preserved at tag **`archive/single-loop-refactor`** (tip `6
 ## Iron rule
 
 **The `--only-rerun` match string is `"database is locked"` and never widens.** Any need to add a second match signature is, by definition, a declaration that a *different* flake exists and that a real root fix (not another retry band) is required — open the escalation ticket instead of broadening the retry.
+
+## Escalation log — second, distinct flake signature (`Event loop is closed` / portal-teardown)
+
+A **different** flake now recurs and is **NOT covered by the `database is locked` bridge**, so the auto-rerun never retries it — it requires a **manual full-job rerun**.
+
+- **Signature:** `Failed: Timeout (>120.0s) from pytest-timeout` inside `threading.py:_wait_for_tstate_lock` (a `BlockingPortal` thread's `join()` hanging on teardown), accompanied by `RuntimeError: Event loop is closed` and `NullPool` connection-termination tracebacks. It surfaces only on slow/loaded CI runners, never locally.
+- **Occurrences (this week, 2026-07-07..07-12):** S3-M3 merge (2×, one earlier rerun pair) + Provider-round final-fix commit `0935593` (2× consecutive CI reds → green on the 3rd manual rerun, zero code change between attempts). This **crosses the ">3 weekly rerun-triggers" escalation trigger.**
+- **Non-regression evidence for `0935593`:** the exact HEAD passed the full `tests/` suite and the portal/ws-heavy `tests/server` subset **4 times locally with zero hang**; the frontend CI job was green throughout; the two immediately-preceding commits on the same branch (`aa0baa1`, `aa0c0a0`) went green first-try. So the flake is CI-environment-timing, not `0935593`'s code.
+- **Partial prior mitigation:** S3-M3 added `portal.stop(cancel_remaining=True)` to the two shared portal helpers, which fixed one teardown-hang class. The residual `Event loop is closed` hang is a separate layer (bridge does not capture it) and remains open.
+- **Iron rule still intact:** the `--only-rerun` string was **not** widened to catch this signature (per the rule above, doing so would be the wrong move). Reruns for this signature are manual `gh run rerun --failed`.
+
+**Escalation status: TRIGGERED.** A root-fix ticket for the portal-teardown hang should be opened (start from tag `archive/single-loop-refactor`, whose single-explicit-portal + `portal.stop(True)` + `NullPool` approach targets exactly this teardown-hang class). Deferred pending maintainer decision; recorded here so the on-repo ledger is honest.
