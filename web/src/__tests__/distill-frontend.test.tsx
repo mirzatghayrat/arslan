@@ -9,7 +9,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── i18n mock ──────────────────────────────────────────────────────────────────
@@ -97,6 +97,8 @@ describe("distillation Settings toggle", () => {
 
   it("renders the distill toggle reflecting distillOnSessionEnd=true", () => {
     renderSettings({ distillOnSessionEnd: true });
+    // The distill toggle lives in the 'memory' section — navigate there first.
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
     expect(toggle).not.toBeNull();
     expect(toggle.checked).toBe(true);
@@ -104,6 +106,7 @@ describe("distillation Settings toggle", () => {
 
   it("reflects distillOnSessionEnd=false", () => {
     renderSettings({ distillOnSessionEnd: false });
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(false);
   });
@@ -111,6 +114,7 @@ describe("distillation Settings toggle", () => {
   it("toggling off then saving routes distill_on_session_end=false to the PUT path", async () => {
     const user = userEvent.setup();
     renderSettings({ distillOnSessionEnd: true });
+    await user.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-distill-toggle") as HTMLInputElement;
     await user.click(toggle);
     expect(toggle.checked).toBe(false);

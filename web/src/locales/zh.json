@@ -270,6 +270,16 @@
     "sensitive": "敏感"
   },
   "settings": {
+    "navProviders": "模型供应商",
+    "navSearch": "搜索与工具",
+    "navAppearance": "外观与语言",
+    "navAccess": "访问令牌",
+    "navMemory": "记忆与数据",
+    "navAdvanced": "高级",
+    "navScheduled": "定时任务",
+    "navUsage": "用量",
+    "navComingSoon": "即将上线",
+    "placeholderHint": "此功能即将在此处上线，当前可在 Diagnostics 查看。",
     "labelDisplayName": "显示名称",
     "displayNamePlaceholder": "例如:小明",
     "displayNameHint": "用于问候语和你自己的消息。留空则使用不含名字的中性问候语。",

@@ -270,6 +270,16 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "navProviders": "Providers",
+    "navSearch": "Search & Tools",
+    "navAppearance": "Appearance & Language",
+    "navAccess": "Access",
+    "navMemory": "Memory & Data",
+    "navAdvanced": "Advanced",
+    "navScheduled": "Scheduled Tasks",
+    "navUsage": "Usage",
+    "navComingSoon": "Coming soon",
+    "placeholderHint": "This feature will live here soon — for now, you can view it under Diagnostics.",
     "labelDisplayName": "Display Name",
     "displayNamePlaceholder": "e.g. Alex",
     "displayNameHint": "Shown in your greeting and on your own messages. Leave empty for a neutral greeting.",

@@ -9,7 +9,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── i18n mock ──────────────────────────────────────────────────────────────────
@@ -136,6 +136,8 @@ describe("SettingsScreen", () => {
   it("renders the search provider dropdown with fetched options", async () => {
     const user = userEvent.setup();
     renderSettings();
+    // The search controls live in the 'search' section — navigate there first.
+    await user.click(screen.getByTestId("settings-nav-search"));
     // Custom Select renders a button trigger; open it to inspect options
     const trigger = document.getElementById("settings-search-provider") as HTMLButtonElement;
     expect(trigger).not.toBeNull();
@@ -148,12 +150,31 @@ describe("SettingsScreen", () => {
 
   it("renders the search API key input", () => {
     renderSettings();
+    fireEvent.click(screen.getByTestId("settings-nav-search"));
     expect(document.getElementById("settings-search-key")).not.toBeNull();
   });
 
   it("renders the language dropdown", () => {
     renderSettings();
+    fireEvent.click(screen.getByTestId("settings-nav-appearance"));
     expect(document.getElementById("settings-language")).not.toBeNull();
+  });
+
+  it("deep-links to a section via the initialSection prop", () => {
+    render(
+      <SettingsScreen
+        settings={defaultSettings}
+        setSettings={vi.fn()}
+        llmProviders={providers}
+        searchProviders={searchProviders}
+        backendStatus="online"
+        initialSection="memory"
+      />
+    );
+    // The memory section's distill toggle is mounted from first paint…
+    expect(document.getElementById("settings-distill-toggle")).not.toBeNull();
+    // …while the default 'providers' section is not.
+    expect(screen.queryByText("settings.sectionLlmConfig")).toBeNull();
   });
 
   it("shows the offline banner when backendStatus is offline", () => {

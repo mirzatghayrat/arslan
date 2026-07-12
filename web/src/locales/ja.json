@@ -270,6 +270,16 @@
     "sensitive": "機密"
   },
   "settings": {
+    "navProviders": "プロバイダー",
+    "navSearch": "検索とツール",
+    "navAppearance": "外観と言語",
+    "navAccess": "アクセス",
+    "navMemory": "メモリとデータ",
+    "navAdvanced": "詳細設定",
+    "navScheduled": "スケジュールタスク",
+    "navUsage": "使用状況",
+    "navComingSoon": "近日公開",
+    "placeholderHint": "この機能は近日中にここで利用可能になります。現在は Diagnostics で確認できます。",
     "labelDisplayName": "表示名",
     "displayNamePlaceholder": "例:太郎",
     "displayNameHint": "挨拶とあなた自身のメッセージに表示されます。空欄の場合は名前なしの挨拶になります。",

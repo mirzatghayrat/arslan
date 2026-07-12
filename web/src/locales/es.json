@@ -270,6 +270,16 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "navProviders": "Proveedores",
+    "navSearch": "Búsqueda y herramientas",
+    "navAppearance": "Apariencia e idioma",
+    "navAccess": "Acceso",
+    "navMemory": "Memoria y datos",
+    "navAdvanced": "Avanzado",
+    "navScheduled": "Tareas programadas",
+    "navUsage": "Uso",
+    "navComingSoon": "Próximamente",
+    "placeholderHint": "Esta función estará disponible aquí pronto; por ahora, puedes verla en Diagnostics.",
     "labelDisplayName": "Nombre para mostrar",
     "displayNamePlaceholder": "p. ej. Alex",
     "displayNameHint": "Se muestra en tu saludo y en tus propios mensajes. Déjalo vacío para un saludo neutral.",

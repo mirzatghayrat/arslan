@@ -270,6 +270,16 @@
     "sensitive": "Sensibel"
   },
   "settings": {
+    "navProviders": "Anbieter",
+    "navSearch": "Suche & Tools",
+    "navAppearance": "Darstellung & Sprache",
+    "navAccess": "Zugriff",
+    "navMemory": "Speicher & Daten",
+    "navAdvanced": "Erweitert",
+    "navScheduled": "Geplante Aufgaben",
+    "navUsage": "Nutzung",
+    "navComingSoon": "Demnächst",
+    "placeholderHint": "Diese Funktion wird hier bald verfügbar sein – vorerst findest du sie unter Diagnostics.",
     "labelDisplayName": "Anzeigename",
     "displayNamePlaceholder": "z. B. Alex",
     "displayNameHint": "Wird in deiner Begrüßung und bei deinen eigenen Nachrichten angezeigt. Leer lassen für eine neutrale Begrüßung.",
