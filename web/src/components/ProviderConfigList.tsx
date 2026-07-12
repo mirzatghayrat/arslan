@@ -280,6 +280,17 @@ export default function ProviderConfigList({
       onConfigsChange(providerConfigs.filter((c) => c.id !== id));
       pendingCustomSwitchRef.current.delete(id);
       baseUrlInputRefs.current.delete(id);
+      // SQLite reuses INTEGER PRIMARY KEY values (no AUTOINCREMENT) — purge every
+      // per-row cache so a future config reusing this id starts clean instead of
+      // inheriting stale models / dirty flags / fetch epoch.
+      modelsFetchedRef.current.delete(id);
+      baseUrlDirtyRef.current.delete(id);
+      modelsEpochRef.current.delete(id);
+      setRowModels((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       // Clear test status for deleted row
       setTestStatus((prev) => {
         const next = { ...prev };
@@ -316,6 +327,14 @@ export default function ProviderConfigList({
         (modelsEpochRef.current.get(config.id) ?? 0) + 1,
       );
       setRowModels((prev) => {
+        const next = { ...prev };
+        delete next[config.id];
+        return next;
+      });
+      // The connectivity dot reflected the OLD provider's reachability — clear
+      // the overlay so it falls back to unknown/hollow until the new provider
+      // is probed (same pattern as the testStatus→idle reset below).
+      setHealth((prev) => {
         const next = { ...prev };
         delete next[config.id];
         return next;
@@ -543,6 +562,10 @@ export default function ProviderConfigList({
       // Key just saved — fetch the live model list once (doubles as key check).
       modelsFetchedRef.current.add(newConfig.id);
       void loadModels(newConfig.id, true);
+      // The settings-open auto-probe already latched (healthAutoProbedRef) — a
+      // config added mid-session would otherwise never get its connectivity dot
+      // filled until a manual click. Probe it now (reuses the health overlay).
+      void handleProbeHealth(newConfig);
     } finally {
       setBusy(null);
     }

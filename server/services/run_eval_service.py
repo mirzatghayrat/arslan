@@ -120,7 +120,13 @@ async def score(run_id: int) -> None:
                 comment = f"[fabrication_signal] {comment}".rstrip()
             rows.append(RunEvaluation(run_id=run_id, dimension=dim, status=status,
                                       score=sc, comment=comment))
-        overall_score = float(overall.get("score", 0))
+        try:
+            overall_score = float(overall.get("score", 0))
+        except (TypeError, ValueError):
+            # A weak judge sometimes writes a non-numeric overall score (a bare
+            # word like "high") — degrade to 0.0 (mirrors _coerce_dim) instead
+            # of failing the whole eval, defeating the salvage goal.
+            overall_score = 0.0
         badge = str(overall.get("badge", "ok"))
         if badge not in ("good", "ok", "bad"):
             badge = "ok"

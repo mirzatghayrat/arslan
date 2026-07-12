@@ -31,6 +31,9 @@ const mockFetchProviderModels = vi.fn().mockResolvedValue({
   error: null,
   source: "static",
 });
+const mockProbeProviderHealth = vi.fn().mockResolvedValue({
+  state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
+});
 
 vi.mock("../api/client", () => ({
   api: {
@@ -48,9 +51,7 @@ vi.mock("../api/client", () => ({
   getCatalog: vi.fn().mockResolvedValue([]),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
-  probeProviderHealth: vi.fn().mockResolvedValue({
-    state: "reachable_models", latency_ms: 1, detail: null, last_health_at: "2026-07-12T00:00:00",
-  }),
+  probeProviderHealth: (...args: unknown[]) => mockProbeProviderHealth(...args),
 }));
 
 vi.mock("../stores/authStore", () => ({
@@ -765,6 +766,129 @@ describe("dynamic model list integration (Provider P2)", () => {
     );
     expect(screen.getByTestId("provider-config-custom-note-0")).toBeInTheDocument();
     expect(screen.queryByTestId("provider-config-custom-required-0")).toBeNull();
+  });
+
+  it("switching a saved row's provider resets its connectivity health dot (FIX health-reset)", async () => {
+    const user = userEvent.setup();
+    mockProbeProviderHealth.mockClear();
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 30, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true, last_health: null, last_health_at: null },
+      ]);
+      return (
+        <ProviderConfigList
+          llmProviders={providers}
+          providerConfigs={cfgs}
+          onConfigsChange={setCfgs}
+        />
+      );
+    }
+    render(<Harness />);
+    // Auto-probe on mount fills the overlay from the (mocked) reachable_models probe
+    await waitFor(() =>
+      expect(screen.getByTestId("provider-health-dot-0")).toHaveAttribute(
+        "data-health-state", "reachable_models"));
+
+    // Switch the row's provider deepseek → qwen
+    await user.click(document.getElementById("provider-config-provider-0") as HTMLButtonElement);
+    const qwenOpt = screen.getAllByRole("option").find((o) => /qwen/i.test(o.textContent ?? ""));
+    expect(qwenOpt).toBeTruthy();
+    await user.click(qwenOpt!);
+
+    // The stale overlay (old provider's reachability) must be cleared → the dot
+    // falls back to unknown/hollow, not the previous provider's state.
+    await waitFor(() =>
+      expect(screen.getByTestId("provider-health-dot-0")).toHaveAttribute(
+        "data-health-state", "unknown"));
+    expect(screen.getByTestId("provider-health-dot-0").textContent).toBe("○");
+  });
+
+  it("deleting a config purges its per-row model cache so a reused id starts clean (FIX cache-cleanup)", async () => {
+    const user = userEvent.setup();
+    mockFetchProviderModels.mockReset();
+    // The first fetch (row id 2, deepseek) caches a dynamic model unique to the
+    // OLD config; every later fetch is seed-only (empty dynamic list).
+    mockFetchProviderModels.mockResolvedValueOnce({
+      models: [{ id: "stale-cached-model", display_name: null, context_window: null, capabilities: [], source: "api" }],
+      fetched_at: "2026-07-12T00:00:00", stale: false, error: null, source: "api",
+    });
+    mockFetchProviderModels.mockResolvedValue({
+      models: [], fetched_at: null, stale: false, error: null, source: "static",
+    });
+    mockDeleteProviderConfig.mockResolvedValue({ ok: true });
+
+    function Harness() {
+      const [cfgs, setCfgs] = useState<ProviderConfig[]>([
+        { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true },
+        { id: 2, label: "B", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: false },
+      ]);
+      // Simulate SQLite PK reuse: a brand-new qwen config lands on the freed id 2.
+      const reuseId2 = () =>
+        setCfgs([
+          { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "k", is_primary: true },
+          { id: 2, label: "C", provider: "qwen", model: "qwen-max", base_url: "", api_key: "k", is_primary: false },
+        ]);
+      return (
+        <>
+          <button data-testid="reuse-id-2" onClick={reuseId2}>reuse</button>
+          <ProviderConfigList
+            llmProviders={providers}
+            providerConfigs={cfgs}
+            onConfigsChange={setCfgs}
+          />
+        </>
+      );
+    }
+    render(<Harness />);
+
+    // Focus row 2's combobox → caches the stale dynamic list under id 2
+    await user.click(screen.getByTestId("provider-config-model-1"));
+    await waitFor(() => {
+      const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(opts.some((t) => t.includes("stale-cached-model"))).toBe(true);
+    });
+
+    // Delete row 2 (non-primary). handleDelete must purge modelsFetchedRef +
+    // rowModels for id 2 so a future config reusing the PK doesn't inherit them.
+    const deleteBtns = screen.getAllByRole("button", { name: "settings.btnDelete" });
+    await user.click(deleteBtns[1]);
+    await waitFor(() => expect(screen.queryByTestId("provider-config-model-1")).toBeNull());
+
+    // Reintroduce id 2 as a fresh qwen config (external refresh / PK reuse).
+    mockFetchProviderModels.mockClear();
+    await user.click(screen.getByTestId("reuse-id-2"));
+    await waitFor(() => expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument());
+
+    // Focus the reused row. WITH the fix, modelsFetchedRef was purged → this
+    // refetches; the stale cached model is gone and the qwen seed shows.
+    await user.click(screen.getByTestId("provider-config-model-1"));
+    await waitFor(() => expect(mockFetchProviderModels).toHaveBeenCalledWith(2, false));
+    const opts = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(opts.some((t) => t.includes("qwen-max"))).toBe(true);
+    expect(opts.some((t) => t.includes("stale-cached-model"))).toBe(false);
+  });
+
+  it("a mid-session added config is health-probed for its new id (FIX mid-session-probe)", async () => {
+    const user = userEvent.setup();
+    mockAddProviderConfig.mockClear();
+    mockProbeProviderHealth.mockClear();
+    mockAddProviderConfig.mockResolvedValueOnce({
+      id: 3, label: "C", provider: "deepseek", model: "deepseek-reasoner", base_url: "", api_key: "", is_primary: false,
+    });
+    render(
+      <ProviderConfigList
+        llmProviders={providers}
+        providerConfigs={[]}
+        onConfigsChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
+    fireEvent.change(keyInput, { target: { value: "sk-test" } });
+    await user.click(screen.getByTestId("provider-draft-confirm"));
+    // The settings-open auto-probe already latched — the new config must still
+    // get a connectivity probe so its dot isn't stuck hollow until a manual click.
+    await waitFor(() => expect(mockProbeProviderHealth).toHaveBeenCalledWith(3));
   });
 
   it("failed base_url blur-save retries on the next blur (FIX D)", async () => {

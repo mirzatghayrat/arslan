@@ -243,6 +243,23 @@ async def test_overall_non_dict_degrades_to_zero_ok(memdb, monkeypatch):
     assert run.overall_badge == "ok"
 
 
+async def test_overall_non_numeric_score_degrades_to_zero_not_fail(memdb, monkeypatch):
+    """(d') A weak judge emits a NON-NUMERIC overall score (a bare word) while
+    the dimensions parse fine → the run must still land SCORED with
+    overall_score 0.0 (badge preserved), NOT collapse to score_failed."""
+    verdict = (
+        '{"dimensions": {'
+        '"routing": {"status": "pass", "score": 9, "comment": "ok"}},'
+        '"overall": {"score": "high", "badge": "good"}}'
+    )
+    run_id = await _score_with(memdb, monkeypatch, verdict)
+    run, dims = await _run_and_dims(memdb, run_id)
+    assert run.status == "scored"
+    assert run.overall_score == 0.0
+    assert run.overall_badge == "good"
+    assert dims["routing"].score == 9
+
+
 async def test_existing_error_kind_never_clobbered(memdb, monkeypatch):
     """(e) A run that already carries a REAL error keeps it — score_failed must
     not overwrite error_kind/error_text."""

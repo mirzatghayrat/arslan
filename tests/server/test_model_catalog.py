@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -544,17 +545,38 @@ async def test_models_endpoint_refresh_param_passthrough(client, monkeypatch):
 
 def test_chat_path_never_imports_model_catalog():
     repo = Path(__file__).resolve().parents[2]
+    # model_catalog is a Settings-only surface. The whole of server/ and arslan/
+    # (the runtime chat path — ws, services, registry, mcp, orchestrator, …) is
+    # scanned; only these three files may reference the module:
+    #   • server/api/settings.py            — the /models endpoint
+    #   • server/services/provider_health.py — the health probe the settings UI
+    #       drives (a settings interaction, NOT the chat/runtime path)
+    #   • server/services/model_catalog.py   — the module itself
+    allowed = {
+        repo / "server" / "api" / "settings.py",
+        repo / "server" / "services" / "provider_health.py",
+        repo / "server" / "services" / "model_catalog.py",
+    }
+    # Match model_catalog as a whole word so incidental substrings — the
+    # `model_catalog_cache` table (server/db/models.py) and the
+    # `_0031_model_catalog` migration module (server/main.py) — are not
+    # false positives; a real `import model_catalog` / `model_catalog.<x>`
+    # reference always has word boundaries and is caught.
+    ref = re.compile(r"\bmodel_catalog\b")
     offenders = []
-    for tree in ("server/orchestrator", "arslan"):
+    for tree in ("server", "arslan"):
         # Review FIX 4: rglob on a missing dir yields [] and the guard would pass
         # vacuously — a renamed tree must fail loudly, not silently disarm the rule.
         assert (repo / tree).is_dir(), f"chat-path tree missing: {tree}"
         for p in sorted((repo / tree).rglob("*.py")):
-            if "model_catalog" in p.read_text(encoding="utf-8"):
+            if p in allowed:
+                continue
+            if ref.search(p.read_text(encoding="utf-8")):
                 offenders.append(str(p.relative_to(repo)))
     assert not offenders, (
-        f"model_catalog leaked into the chat path: {offenders} — it may only be "
-        "imported from server/api/settings.py (round iron rule)")
+        f"model_catalog leaked into the chat/runtime path: {offenders} — it may "
+        "only be referenced from server/api/settings.py and the provider_health "
+        "probe it powers (round iron rule)")
 
 
 # ---------------------------------------------------------------------------
