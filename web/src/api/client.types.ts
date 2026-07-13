@@ -740,8 +740,8 @@ export interface EvolveEnqueued {
 /**
  * Stable machine verdict for the evolution eligibility diagnosis (E9-b). The panel maps each
  * to a localized `evolution.diag.verdict_${code}` sentence. `holdout_via_synthetic_topup` is
- * INFORMATIONAL (the mint=True top-up fills a thin real holdout at evolve time);
- * `drought_holdout_split` is retained for back-compat but the top-up makes it unreachable.
+ * INFORMATIONAL — a thin real holdout is no longer a blocker; the mint=True top-up fills it at
+ * evolve time. This union is the EXACT 1:1 set of codes the service can emit.
  */
 export type VerdictCode =
   | "in_flight_hung"
@@ -749,7 +749,6 @@ export type VerdictCode =
   | "drought_non_replayable"
   | "drought_too_few"
   | "baseline_flooring"
-  | "drought_holdout_split"
   | "holdout_via_synthetic_topup"
   | "gate_failure"
   | "skipped_budget"

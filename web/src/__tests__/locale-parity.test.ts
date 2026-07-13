@@ -62,8 +62,9 @@ describe("locale parity", () => {
     // — removed the now-dead btnSave/btnSaving (−2) and added the auto-save
     // status keys savingLabel/savedTick/saveFailed (+3) → net +1.
     // 886 → 904: E9-b Task 4d added the evolution.diag.* block for the inbox
-    // eligibility panel (title + pick_spawn + 10 verdict_* codes + 5 chain_* +
-    // auto_off = 18 keys).
+    // eligibility panel (title + pick_spawn + verdict_* codes + chain_* +
+    // auto_off = 18 keys). Review fix: swapped the unreachable
+    // verdict_drought_holdout_split for chain_holdout_plain (−1 +1, net 0).
     expect(enKeys).toHaveLength(904);
   });
 

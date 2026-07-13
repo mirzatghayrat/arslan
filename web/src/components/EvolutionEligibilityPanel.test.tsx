@@ -38,7 +38,7 @@ const base: SpawnDiagnosis = {
 };
 
 describe("EvolutionEligibilityPanel (E9-b Task 4d)", () => {
-  test("renders the top-up verdict + the honest holdout blocker chain", () => {
+  test("top-up verdict → shows the '→ after top-up' holdout phrasing (effective > ceiling)", () => {
     render(<EvolutionEligibilityPanel diag={base} />);
     // verdict interpolates real_holdout + min from verdict_params
     expect(screen.getByTestId("eligibility-verdict").textContent).toMatch(
@@ -54,9 +54,14 @@ describe("EvolutionEligibilityPanel (E9-b Task 4d)", () => {
     expect(screen.queryByText(/Auto-evolution is off/i)).not.toBeInTheDocument();
   });
 
-  test("shows the last-attempt line + the auto-off line when applicable", () => {
+  test("blocker verdict → plain 'X / N needed' holdout phrasing (effective == ceiling)", () => {
+    // FIX 1: under a real blocker the service sets effective_holdout == holdout_ceiling, so the
+    // panel must NOT dangle "→ after top-up" — it shows the plain, honest count.
     const diag: SpawnDiagnosis = {
       ...base,
+      holdout_ceiling: 12,
+      real_holdout: 12,
+      effective_holdout: 12,
       auto_on: false,
       verdict_code: "gate_failure",
       verdict_params: { attempt_id: 3, reason: "holdout_winrate" },
@@ -74,6 +79,9 @@ describe("EvolutionEligibilityPanel (E9-b Task 4d)", () => {
     expect(screen.getByTestId("eligibility-verdict").textContent).toMatch(
       /last attempt \(#3\) failed the gate: holdout_winrate/i,
     );
+    // plain phrasing, no top-up arrow
+    expect(screen.getByText(/Holdout pairs: 12 \/ 10 needed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/after top-up/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Last attempt: failed \(holdout_winrate\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Auto-evolution is off/i)).toBeInTheDocument();
   });

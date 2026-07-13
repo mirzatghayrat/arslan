@@ -34,11 +34,16 @@ export function EvolutionEligibilityPanel({ diag }: { diag: SpawnDiagnosis }) {
           })}
         </li>
         <li>
-          {t("evolution.diag.chain_holdout", {
-            real_holdout: diag.real_holdout,
-            effective_holdout: diag.effective_holdout,
-            min: diag.min_holdout_n,
-          })}
+          {diag.effective_holdout > diag.holdout_ceiling
+            ? t("evolution.diag.chain_holdout", {
+                real_holdout: diag.real_holdout,
+                effective_holdout: diag.effective_holdout,
+                min: diag.min_holdout_n,
+              })
+            : t("evolution.diag.chain_holdout_plain", {
+                holdout_ceiling: diag.holdout_ceiling,
+                min: diag.min_holdout_n,
+              })}
         </li>
         <li>
           {t("evolution.diag.chain_backoff", {

@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db.models import Base, Run, Spawn, SyntheticTask
+from server.db.models import Base, Run, RunStep, Spawn, SyntheticTask
 
 
 @pytest.fixture
@@ -162,3 +162,27 @@ async def test_diagnose_spawn_no_runs_is_genuine_drought(memdb):
         spawn = await db.get(Spawn, 2)
         d = await ed.diagnose_spawn(db, spawn)
     assert d["total_scored"] == 0 and d["verdict_code"] == "drought_no_runs"
+
+
+async def test_diagnose_spawn_effective_holdout_not_projected_under_blocker(memdb):
+    """FIX 1 (honesty): under a genuine upstream blocker (drought_non_replayable), the top-up is
+    NOT the next step — effective_holdout must equal the real un-topped ceiling, never MIN."""
+    from server.services import evolution_diagnostics as ed
+    async with memdb() as db:
+        db.add(Spawn(id=3, name="NR", domain_category="x", system_prompt="p"))
+        for i in range(3):
+            db.add(Run(id=100 + i, conversation_id="c", spawn_id=3, user_message=f"t{i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+        # every run uses a non-replay-safe (MCP) tool → not hermetically replayable → excluded.
+        for i in range(3):
+            db.add(RunStep(run_id=100 + i, seq=0, kind="tool_call",
+                           ref={"tool": "mcp_x__do"}, detail={}))
+        await db.commit()
+    async with memdb() as db:
+        spawn = await db.get(Spawn, 3)
+        d = await ed.diagnose_spawn(db, spawn)
+    assert d["verdict_code"] == "drought_non_replayable"
+    assert d["replayable"] == 0 and d["non_replayable"] == 3
+    assert d["effective_holdout"] == d["holdout_ceiling"]   # NOT projected to MIN
+    assert d["effective_holdout"] < ed.MIN_HOLDOUT_N

@@ -119,11 +119,6 @@ def _render_verdict_en(code: str, p: dict) -> tuple[str, str]:
                 f"the real holdout side has {p['real_holdout']} pairs (< {p['min']}); the next "
                 f"evolve tops it up to {p['min']} with fresh synthetic domain tasks (isolated to "
                 f"the holdout side) so the gate becomes reachable — enqueue evolution to run.")
-    if code == "drought_holdout_split":   # retained defensively; the top-up makes it unreachable
-        return ("CORPUS DROUGHT — holdout split too small",
-                f"corpus holdout side has only {p['holdout_ceiling']} pairs (< {p['min']}); "
-                f"the gate's threshold-1 (insufficient_holdout) can never pass. Add more "
-                f"replayable real runs and/or synthetic holdout tasks.")
     if code == "gate_failure":
         return ("GATE FAILURE",
                 f"attempt #{p['attempt_id']} failed: {_trunc(p['reason'], 300)}")

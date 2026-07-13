@@ -176,10 +176,6 @@ async def diagnose_spawn(db, spawn: Spawn) -> dict:
     propose_pairs = [p for p in corpus if p.get("split_side") == "propose"]
     holdout_ceiling = len(holdout_pairs)
     real_holdout = sum(1 for p in holdout_pairs if p.get("corpus_label") == "real")
-    if real_holdout < MIN_HOLDOUT_N and holdout_ceiling < MIN_HOLDOUT_N:
-        effective_holdout = MIN_HOLDOUT_N   # the top-up fills the residual gap at evolve time
-    else:
-        effective_holdout = holdout_ceiling
     corpus_excluded = getattr(corpus, "excluded", 0)
     # Read within THIS session (not the global one) so the whole diagnosis is one consistent,
     # read-only source — the endpoint's request session and the CLI's read-only engine both work.
@@ -212,6 +208,15 @@ async def diagnose_spawn(db, spawn: Spawn) -> dict:
         scored_ge_baseline=scored_ge_baseline, holdout_ceiling=holdout_ceiling,
         real_holdout=real_holdout, propose_count=len(propose_pairs), attempts=attempts,
     )
+
+    # effective_holdout projects the mint=True top-up ONLY when that top-up is genuinely the next
+    # step — i.e. the headline verdict IS `holdout_via_synthetic_topup`. Under any upstream blocker
+    # (no runs / non-replayable / too few / baseline flooring / in-flight) the honest number is the
+    # real un-topped ceiling; don't dangle "→ MIN after top-up" next to a hard drought.
+    if verdict_code == "holdout_via_synthetic_topup":
+        effective_holdout = MIN_HOLDOUT_N
+    else:
+        effective_holdout = holdout_ceiling
 
     # Globals surfaced for the endpoint payload (one place, one call).
     auto_on = await settings_service.evolution_auto(db)
