@@ -464,7 +464,7 @@ class EvolutionAttempt(Base):
     spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
-    outcome = Column(String(20), nullable=True)  # "passed" | "failed" | "error" | "skipped_budget"
+    outcome = Column(String(20), nullable=True)  # "passed" | "failed" | "error" | "skipped_budget" | "skipped_structural"
     estimate = Column(JSON, default=dict)
     actual = Column(JSON, nullable=True)
     proposal_id = Column(Integer, nullable=True)

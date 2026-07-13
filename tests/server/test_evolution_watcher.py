@@ -151,6 +151,57 @@ async def test_C4_failed_attempt_backs_off_and_records(wdb, monkeypatch):
     assert [a.outcome for a in attempts] == ["failed", "failed"]
 
 
+# ── E9-b (a): structural-fail transparency ───────────────────────────────────────────────
+
+async def _structural_propose(spawn_id, **k):
+    return {"proposal_id": None, "candidate_prompt": "C",
+            "gate": {"passed": False, "reason": "length_cap", "aggregate": None},
+            "evidence": {}}
+
+
+async def test_structural_fail_is_skipped_structural_and_does_not_back_off(wdb, monkeypatch):
+    """A pre-run STRUCTURAL failure (length_cap) is recorded outcome='skipped_structural' and is
+    transparent to the backoff streak — a lone structural skip leaves the streak at 0 (threshold
+    stays the BASE 10). It says nothing about the spawn's prompt, so it must not punish it."""
+    Session = wdb
+    monkeypatch.setattr(evolution_loop, "propose_improvement", _structural_propose)
+    sid = await _spawn(Session)
+
+    aid = await evolution_watcher.enqueue_attempt(sid, manual=True)
+    assert aid is not None
+    await _drain()
+
+    async with Session() as db:
+        att = await db.get(EvolutionAttempt, aid)
+        assert att.outcome == "skipped_structural"
+        assert att.reason == "length_cap"
+        # backoff is unaffected — a lone structural skip leaves the streak at 0 (threshold 10).
+        assert await evolution_watcher._consecutive_fails(db, sid) == 0
+        assert evolution_watcher._threshold(
+            await evolution_watcher._consecutive_fails(db, sid)) == evolution_watcher.BASE_THRESHOLD
+
+
+async def test_consecutive_fails_sees_through_structural_skips(wdb):
+    """Transparency: two genuine quality fails on either side of a structural skip still both
+    count (streak 2) — the skip is neither counted nor a wall that resets the streak."""
+    Session = wdb
+    sid = await _spawn(Session)
+    async with Session() as db:
+        # oldest → newest (by insertion / id): failed, skipped_structural, failed.
+        db.add_all([
+            EvolutionAttempt(spawn_id=sid, outcome="failed", reason="holdout_winrate",
+                             started_at=datetime(2026, 7, 1)),
+            EvolutionAttempt(spawn_id=sid, outcome="skipped_structural", reason="length_cap",
+                             started_at=datetime(2026, 7, 2)),
+            EvolutionAttempt(spawn_id=sid, outcome="failed", reason="holdout_winrate",
+                             started_at=datetime(2026, 7, 3)),
+        ])
+        await db.commit()
+    async with Session() as db:
+        # both genuine fails count; the structural skip is transparent (not counted, not a wall).
+        assert await evolution_watcher._consecutive_fails(db, sid) == 2
+
+
 # ── evolution_auto gate ─────────────────────────────────────────────────────────────────
 
 async def test_evolution_auto_off_never_runs(wdb, monkeypatch):
