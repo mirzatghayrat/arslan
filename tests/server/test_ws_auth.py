@@ -12,19 +12,17 @@ prove the wiring end to end:
 * the correct token connects and receives the first ``history`` frame;
 * with the token unset, the empty-token passthrough lets any client connect,
   mirroring the HTTP ``require_auth`` no-op-when-unset semantics.
-"""
-import importlib
 
-import anyio
+The DB seed + every ``websocket_connect`` run on one ``portal`` loop over a
+NullPool engine (see ``conftest.build_ws_client``), so no pooled aiosqlite
+connection is reused across event loops.
+"""
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketDisconnect
 
-from sqlalchemy.pool import NullPool
-
-import server.db.session as db_session
-from server.db.models import Base, Spawn
+from server.db.models import Spawn
+from tests.server.conftest import build_ws_client
 
 # (path, human name) for each of the three token-guarded WS endpoints. The
 # arslan channel is the highest-risk one (drives spawn dispatch / roster edits).
@@ -35,32 +33,15 @@ WS_ENDPOINTS = [
 ]
 
 
-def _build_client(tmp_path, monkeypatch, token: str) -> TestClient:
+def _build_client(tmp_path, monkeypatch, portal, token: str) -> TestClient:
     """Build a TestClient whose app sees ``ARSLAN_API_TOKEN=token``.
 
-    Reloads ``server.config`` so ``config.settings.api_token`` reflects the env,
-    then points the WS handlers' session factory at an isolated temp DB seeded
-    with one spawn (id=1) so the chat/sandbox handlers get past their spawn
-    lookup once the token check passes.
+    Seeds one spawn (id=1) so the chat/sandbox handlers get past their spawn
+    lookup once the token check passes. ``ARSLAN_API_TOKEN`` is passed as env so
+    the factory's config reload makes ``config.settings.api_token`` reflect it.
     """
-    monkeypatch.setenv("ARSLAN_API_TOKEN", token)
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
 
-    import server.config as config
-
-    importlib.reload(config)  # is_ws_token_valid reads config.settings live
-
-    # NullPool: TestClient drives each WS connection on its own portal event
-    # loop; a pooled aiosqlite connection reused across loops hangs on teardown
-    # (see the arslan endpoint's extra roster/_history DB work). Don't pool.
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{tmp_path/'wsauth.db'}", poolclass=NullPool
-    )
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async def _seed(maker):
         async with maker() as s:
             s.add(
                 Spawn(
@@ -73,17 +54,15 @@ def _build_client(tmp_path, monkeypatch, token: str) -> TestClient:
             )
             await s.commit()
 
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-
-    return TestClient(create_app())
+    return build_ws_client(
+        portal, tmp_path, monkeypatch, _seed,
+        db_name="wsauth.db", env={"ARSLAN_API_TOKEN": token},
+    )
 
 
 @pytest.mark.parametrize("path,name", WS_ENDPOINTS)
-def test_ws_rejects_wrong_token(tmp_path, monkeypatch, path, name):
-    client = _build_client(tmp_path, monkeypatch, "secret123")
+def test_ws_rejects_wrong_token(tmp_path, monkeypatch, portal, path, name):
+    client = _build_client(tmp_path, monkeypatch, portal, "secret123")
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect(f"{path}?token=wrong") as ws:
             ws.receive_json()
@@ -91,8 +70,8 @@ def test_ws_rejects_wrong_token(tmp_path, monkeypatch, path, name):
 
 
 @pytest.mark.parametrize("path,name", WS_ENDPOINTS)
-def test_ws_rejects_missing_token(tmp_path, monkeypatch, path, name):
-    client = _build_client(tmp_path, monkeypatch, "secret123")
+def test_ws_rejects_missing_token(tmp_path, monkeypatch, portal, path, name):
+    client = _build_client(tmp_path, monkeypatch, portal, "secret123")
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect(path) as ws:  # no ?token=
             ws.receive_json()
@@ -100,17 +79,17 @@ def test_ws_rejects_missing_token(tmp_path, monkeypatch, path, name):
 
 
 @pytest.mark.parametrize("path,name", WS_ENDPOINTS)
-def test_ws_accepts_correct_token(tmp_path, monkeypatch, path, name):
-    client = _build_client(tmp_path, monkeypatch, "secret123")
+def test_ws_accepts_correct_token(tmp_path, monkeypatch, portal, path, name):
+    client = _build_client(tmp_path, monkeypatch, portal, "secret123")
     with client.websocket_connect(f"{path}?token=secret123") as ws:
         frame = ws.receive_json()
         assert frame["type"] == "history"
 
 
 @pytest.mark.parametrize("path,name", WS_ENDPOINTS)
-def test_ws_open_when_token_unset(tmp_path, monkeypatch, path, name):
+def test_ws_open_when_token_unset(tmp_path, monkeypatch, portal, path, name):
     # Empty token => auth disabled => any client (even token-less) connects.
-    client = _build_client(tmp_path, monkeypatch, "")
+    client = _build_client(tmp_path, monkeypatch, portal, "")
     with client.websocket_connect(path) as ws:  # no ?token=
         frame = ws.receive_json()
         assert frame["type"] == "history"
