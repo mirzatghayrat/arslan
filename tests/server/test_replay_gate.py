@@ -144,7 +144,7 @@ async def test_insufficient_holdout(monkeypatch):
 
 
 async def test_length_cap_fails_before_judging(monkeypatch):
-    # Candidate > 1.25x baseline → fail BEFORE any arm/judge is called.
+    # Candidate above the (headroom-inclusive) ceiling → fail BEFORE any arm/judge is called.
     called = {"arms": 0}
 
     async def boom(*a, **k):
@@ -153,17 +153,42 @@ async def test_length_cap_fails_before_judging(monkeypatch):
 
     monkeypatch.setattr(replay_run, "run_arm", boom)
     monkeypatch.setattr(replay_run, "snapshot_ambient", boom)
-    res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 100,
-                         baseline_prompt="x" * 10,
+    # baseline 9000 → ceiling = max(11250, 11000) = 11250; candidate 11500 > 11250 (multiplier
+    # branch), and 11500 < 12000 so it is NOT the absolute cap — proves the multiplier still guards.
+    res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 11500,
+                         baseline_prompt="x" * 9000,
                          corpus=[_pt("real", "holdout", 0, "b")], persona="p")
     assert res.passed is False and res.reason == "length_cap"
     assert called["arms"] == 0
+
+
+def test_length_ceiling_gives_short_baselines_absolute_headroom():
+    from server.services.replay_gate import _length_ceiling, LENGTH_MULT, HEADROOM_CHARS
+    # short baseline: the absolute headroom dominates the 1.25x multiplier
+    assert _length_ceiling("x" * 800) == 800 + HEADROOM_CHARS      # 2800, not 1000
+    # long baseline: the 1.25x multiplier dominates the headroom
+    assert _length_ceiling("x" * 9000) == int(9000 * LENGTH_MULT)  # 11250, not 11000
+    # one added ~1500-char section on an 800-char baseline now fits
+    assert 800 + 1500 <= _length_ceiling("x" * 800)
+    # the pre-fix 1.25x-only ceiling would have rejected it
+    assert 800 + 1500 > int(800 * LENGTH_MULT)
 
 
 async def test_length_cap_absolute_12000(monkeypatch):
     res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 12001,
                          baseline_prompt="x" * 12001, corpus=[], persona="p")
     assert res.passed is False and res.reason == "length_cap"
+
+
+async def test_length_cap_allows_one_section_on_short_baseline(monkeypatch):
+    # A short (800-char) baseline + one added ~1500-char section must get PAST the length gate
+    # (reason is anything other than 'length_cap'). Stub arms/judge so the corpus loop can run.
+    _stub_arms(monkeypatch)
+    _stub_judge(monkeypatch)
+    res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 2300,
+                         baseline_prompt="x" * 800,
+                         corpus=[_pt("real", "holdout", 0, "b")], persona="p")
+    assert res.reason != "length_cap"   # 2300 < ceiling 2800 → not strangled
 
 
 async def test_verbose_fail_and_warn(monkeypatch):

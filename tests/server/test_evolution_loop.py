@@ -190,6 +190,31 @@ def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
     assert res["proposal_id"] is None
 
 
+def test_inner_loop_rejects_overlength_edit_without_judging(monkeypatch, memdb):
+    # E9-b: an edit whose applied doc would exceed _length_ceiling(original) must be rejected in
+    # the optimizer inner loop WITHOUT calling evaluator.evaluate (bounded by construction — the
+    # candidate can never reach the final holdout gate only to blow the length cap).
+    from server.services import skill_doc
+    evaluated = {"n": 0}
+    big = "x" * 3000                                     # one huge added section
+    _patch_common(monkeypatch,
+                  edits_by_epoch=[[{"op": "add", "section": "Bloat", "content": big}], []])
+
+    async def boom_eval(**k):
+        evaluated["n"] += 1
+        raise AssertionError("must not evaluate an over-length candidate")
+    monkeypatch.setattr(evaluator, "evaluate", boom_eval)
+    _seed_spawn(memdb, _Spawn)
+    # sanity: the applied candidate really does exceed the ceiling for this short baseline
+    original = skill_doc.apply_edits(_Spawn.system_prompt, [])
+    cand = skill_doc.apply_edits(original, [{"op": "add", "section": "Bloat", "content": big}])
+    assert len(cand) > replay_gate._length_ceiling(original)
+    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    assert res["proposal_id"] is None                    # nothing accepted
+    assert evaluated["n"] == 0                            # never judged
+    assert res["gate"]["reason"] == "no accepted edit beats the original"
+
+
 # ── confirm_proposal tests (unchanged behavior) ──────────────────────────────
 
 

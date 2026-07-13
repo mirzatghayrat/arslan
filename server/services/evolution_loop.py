@@ -139,6 +139,11 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
             if cand_doc == doc:                            # M2: no-op edit -> auto-reject, no dispatch
                 rejected.append(edit)
                 continue
+            if len(cand_doc) > replay_gate._length_ceiling(original) or \
+                    len(cand_doc) > replay_gate.MAX_PROMPT_LEN:
+                rejected.append(edit)                      # E9-b: would blow the holdout length
+                continue                                   # cap — reject WITHOUT judging (bounded
+                                                           # by construction, saves judge cost)
             try:
                 res = await evaluator.evaluate(
                     spawn_id=spawn_id, persona=persona, candidate_prompt=cand_doc,

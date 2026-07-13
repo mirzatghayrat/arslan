@@ -40,6 +40,8 @@ DIMENSIONS = ("fabrication", "identity", "completion")
 # ── thresholds (spec §E4; user-locked 60% / holdout N>=10) ───────────────────────────
 MAX_PROMPT_LEN = 12000
 LENGTH_MULT = 1.25
+HEADROOM_CHARS = 2000   # E9-b: absolute per-attempt growth room so short baselines aren't
+                        # strangled by the 1.25x multiplier (~one added markdown section).
 MIN_HOLDOUT_N = 10
 WIN_RATE_MIN = 0.60
 REAL_FLOOR_MIN_N = 3
@@ -311,6 +313,14 @@ def routing_triggered(changed_fields) -> bool:
     return bool(ROUTING_CONSUMED_FIELDS & set(changed_fields or ()))
 
 
+def _length_ceiling(baseline_prompt: str) -> int:
+    """Max candidate length before the length_cap trips: the larger of the 1.25x multiplier
+    and an absolute headroom over the baseline (E9-b — short baselines get real room; long
+    ones keep the proportional guard). Shared by run_gate and the optimizer inner loop so the
+    candidate is bounded by construction, not only rejected at the final gate."""
+    return max(int(len(baseline_prompt) * LENGTH_MULT), len(baseline_prompt) + HEADROOM_CHARS)
+
+
 def _fail_prerun(reason: str) -> GateResult:
     return GateResult(
         passed=False, reason=reason, flags=[],
@@ -327,7 +337,7 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
     and apply the holdout thresholds. Returns a GateResult. `corpus` is a list of pairtasks
     {task, corpus_label, source_ref, split_side}."""
     # Threshold 5 — length cap, BEFORE any judge call (saves cost on a bloated candidate).
-    if len(candidate_prompt) > len(baseline_prompt) * LENGTH_MULT or \
+    if len(candidate_prompt) > _length_ceiling(baseline_prompt) or \
             len(candidate_prompt) > MAX_PROMPT_LEN:
         return _fail_prerun("length_cap")
 
