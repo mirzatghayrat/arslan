@@ -1,7 +1,7 @@
 """RouterDecision is an append-only audit log: rows must survive spawn deletion
 with the original spawn_id intact (not nulled, not cascaded away)."""
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -10,18 +10,16 @@ from server.db.models import Base, RouterDecision, Spawn
 from server.services import spawn_service
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'audit.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _setup():
-        async with engine.begin() as conn:
-            # Enforce FKs so any accidental FK on spawn_id would blow up here.
-            await conn.execute(text("PRAGMA foreign_keys=ON"))
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        # Enforce FKs so any accidental FK on spawn_id would blow up here.
+        await conn.execute(text("PRAGMA foreign_keys=ON"))
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_setup)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

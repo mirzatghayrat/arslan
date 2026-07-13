@@ -3,8 +3,7 @@
 import asyncio
 import importlib
 
-import anyio
-import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -35,16 +34,14 @@ async def test_0027_adds_health_columns_and_is_idempotent():
 # ── endpoint probe paths ────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def client(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'health.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    anyio.run(_seed)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     monkeypatch.setenv("ARSLAN_API_TOKEN", "")
     from server.main import app
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://t"), m
@@ -217,16 +214,14 @@ async def test_check_health_all_probes_every_server_fail_open(client, monkeypatc
 # ── dispatch advisory ──────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'adv.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    anyio.run(_seed)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 
 

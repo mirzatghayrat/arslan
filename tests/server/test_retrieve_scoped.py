@@ -1,6 +1,5 @@
 """retrieve_scoped: the ONLY retrieval gate. Partition invariants + RRF hybrid."""
-import anyio
-import pytest
+import pytest_asyncio
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -28,29 +27,27 @@ async def _add_chunk(s, cid, *, spawn_id=None, collection_id=None, source, text,
         {"r": cid, "t": text})
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'r.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            await conn.exec_driver_sql(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(text)")
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-        async with m() as s:
-            s.add(Spawn(id=1, name="甲", domain_category="c", system_prompt="p"))
-            s.add(Spawn(id=2, name="乙", domain_category="c", system_prompt="p"))
-            s.add(Collection(id=10, name="绑定库"))
-            s.add(Collection(id=11, name="别人的库"))
-            s.add(SpawnCollection(spawn_id=1, collection_id=10))
-            # spawn-1 well / bound collection-10 / unbound collection-11 / spawn-2 well
-            await _add_chunk(s, 100, spawn_id=1, source="well.txt", text="猫粮 深井资料", vec=[1, 0])
-            await _add_chunk(s, 101, collection_id=10, source="shared.pdf", text="猫粮 共享资料", vec=[1, 0])
-            await _add_chunk(s, 102, collection_id=11, source="other.pdf", text="猫粮 未绑定资料", vec=[1, 0])
-            await _add_chunk(s, 103, spawn_id=2, source="w2.txt", text="猫粮 别的分身深井", vec=[1, 0])
-            await s.commit()
-    anyio.run(_seed)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.exec_driver_sql(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(text)")
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    async with m() as s:
+        s.add(Spawn(id=1, name="甲", domain_category="c", system_prompt="p"))
+        s.add(Spawn(id=2, name="乙", domain_category="c", system_prompt="p"))
+        s.add(Collection(id=10, name="绑定库"))
+        s.add(Collection(id=11, name="别人的库"))
+        s.add(SpawnCollection(spawn_id=1, collection_id=10))
+        # spawn-1 well / bound collection-10 / unbound collection-11 / spawn-2 well
+        await _add_chunk(s, 100, spawn_id=1, source="well.txt", text="猫粮 深井资料", vec=[1, 0])
+        await _add_chunk(s, 101, collection_id=10, source="shared.pdf", text="猫粮 共享资料", vec=[1, 0])
+        await _add_chunk(s, 102, collection_id=11, source="other.pdf", text="猫粮 未绑定资料", vec=[1, 0])
+        await _add_chunk(s, 103, spawn_id=2, source="w2.txt", text="猫粮 别的分身深井", vec=[1, 0])
+        await s.commit()
     return m
 
 
@@ -58,9 +55,9 @@ def _texts(chunks):
     return [t for _, t in chunks]
 
 
-def test_partition_spawn_sees_well_and_bound_only(maker):
+async def test_partition_spawn_sees_well_and_bound_only(maker):
     from server.services import knowledge
-    out = anyio.run(lambda: knowledge.retrieve_scoped("猫粮", spawn_id=1, k=10))
+    out = await knowledge.retrieve_scoped("猫粮", spawn_id=1, k=10)
     texts = _texts(out)
     assert any("深井资料" in t for t in texts)
     assert any("共享资料" in t for t in texts)
@@ -68,32 +65,32 @@ def test_partition_spawn_sees_well_and_bound_only(maker):
     assert not any("别的分身" in t for t in texts)     # 他人深井不可见
 
 
-def test_partition_arslan_sees_all_collections_never_wells(maker):
+async def test_partition_arslan_sees_all_collections_never_wells(maker):
     from server.services import knowledge
-    out = anyio.run(lambda: knowledge.retrieve_scoped("猫粮", spawn_id=None, k=10))
+    out = await knowledge.retrieve_scoped("猫粮", spawn_id=None, k=10)
     texts = _texts(out)
     assert any("共享资料" in t for t in texts)
     assert any("未绑定资料" in t for t in texts)       # 主脑看全部共享库
     assert not any("深井" in t for t in texts)         # 永不碰深井
 
 
-def test_vector_route_merges_semantic_hit(maker, monkeypatch):
+async def test_vector_route_merges_semantic_hit(maker, monkeypatch):
     """FTS 完全不命中(查询词不同)时,向量路仍召回语义近邻。"""
     from server.services import knowledge
     async def _fake_active():
         return FakeProvider()
     monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
-    out = anyio.run(lambda: knowledge.retrieve_scoped("猫咪吃什么", spawn_id=1, k=5))
+    out = await knowledge.retrieve_scoped("猫咪吃什么", spawn_id=1, k=5)
     assert any("猫粮" in t for t in _texts(out))
 
 
-def test_fts_only_without_provider(maker):
+async def test_fts_only_without_provider(maker):
     from server.services import knowledge
-    out = anyio.run(lambda: knowledge.retrieve_scoped("猫粮", spawn_id=1, k=5))
+    out = await knowledge.retrieve_scoped("猫粮", spawn_id=1, k=5)
     assert len(out) == 2  # FTS 照常工作 = 今天的行为
 
 
-def test_empty_vector_scope_skips_query_embedding(maker, monkeypatch):
+async def test_empty_vector_scope_skips_query_embedding(maker, monkeypatch):
     """Scope 内没有一条(当前模型的)向量 ⇒ 不得为查询白付一次 embedding 调用。"""
     from server.services import knowledge
 
@@ -107,16 +104,13 @@ def test_empty_vector_scope_skips_query_embedding(maker, monkeypatch):
         return CountingProvider()
     monkeypatch.setattr(embedding_service, "active_provider", _fake_active)
 
-    async def _run():
-        # 新分身 3:井里只有一条无向量 chunk —— 向量 scope 为空,FTS 照常。
-        async with maker() as s:
-            s.add(Spawn(id=3, name="丙", domain_category="c", system_prompt="p"))
-            await s.flush()
-            await _add_chunk(s, 200, spawn_id=3, source="new.txt", text="猫粮 新分身无向量")
-            await s.commit()
-        return await knowledge.retrieve_scoped("猫粮", spawn_id=3, k=5)
-
-    out = anyio.run(_run)
+    # 新分身 3:井里只有一条无向量 chunk —— 向量 scope 为空,FTS 照常。
+    async with maker() as s:
+        s.add(Spawn(id=3, name="丙", domain_category="c", system_prompt="p"))
+        await s.flush()
+        await _add_chunk(s, 200, spawn_id=3, source="new.txt", text="猫粮 新分身无向量")
+        await s.commit()
+    out = await knowledge.retrieve_scoped("猫粮", spawn_id=3, k=5)
     assert CountingProvider.calls == 0          # 没白付 embedding 网络调用
     assert any("新分身无向量" in t for t in _texts(out))  # FTS 路照常召回
 

@@ -6,8 +6,8 @@ confirmation card; on confirm it sends the EXISTING `roster_invite` frame,
 which joins exactly that one spawn. So this task only adds the proposal seam:
 emit `propose_invite{spawn_id, reason}` and join NOTHING.
 """
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -16,29 +16,27 @@ from server.orchestrator import arslan
 from server.ws import protocol
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'invite.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
-            s.add(
-                Spawn(
-                    id=7,
-                    name="seo-auditor",
-                    domain_category="marketing",
-                    domain_subcategory="seo",
-                    capabilities=["seo-audit"],
-                    persona_role="audits sites for SEO issues",
-                    system_prompt="You are an SEO analyst.",
-                )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as s:
+        s.add(
+            Spawn(
+                id=7,
+                name="seo-auditor",
+                domain_category="marketing",
+                domain_subcategory="seo",
+                capabilities=["seo-audit"],
+                persona_role="audits sites for SEO issues",
+                system_prompt="You are an SEO analyst.",
             )
-            await s.commit()
+        )
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 
@@ -55,7 +53,7 @@ def test_propose_invite_frame_shape():
     assert f == {"type": "propose_invite", "spawn_id": 12, "reason": "best fit for the SEO subtask"}
 
 
-def test_propose_invite_helper_emits_and_does_not_join(monkeypatch):
+async def test_propose_invite_helper_emits_and_does_not_join(monkeypatch):
     """The orchestrator helper emits a propose_invite frame and never joins the roster."""
     joined: list = []
 
@@ -71,12 +69,9 @@ def test_propose_invite_helper_emits_and_does_not_join(monkeypatch):
 
     frames: list = []
 
-    async def _run():
-        await arslan.propose_invite(
-            "conv-1", spawn_id=7, reason="best fit for the SEO subtask", emit=frames.append
-        )
-
-    anyio.run(_run)
+    await arslan.propose_invite(
+        "conv-1", spawn_id=7, reason="best fit for the SEO subtask", emit=frames.append
+    )
 
     assert {"type": "propose_invite", "spawn_id": 7, "reason": "best fit for the SEO subtask"} in frames
     assert joined == [], "propose step must NOT join the roster"

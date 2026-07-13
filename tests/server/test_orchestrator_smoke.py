@@ -1,6 +1,6 @@
 """End-to-end: a route turn writes spawn memory + an arslan summary row, with a stubbed LLM."""
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -8,24 +8,22 @@ import server.db.session as db_session
 from server.db.models import ArslanMessage, Base, ChatMessage, Spawn
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'smoke.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
-            s.add(
-                Spawn(
-                    id=7, name="beauty-guru", domain_category="content-creator",
-                    capabilities=["content-generation"], system_prompt="You are a beauty expert.",
-                )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as s:
+        s.add(
+            Spawn(
+                id=7, name="beauty-guru", domain_category="content-creator",
+                capabilities=["content-generation"], system_prompt="You are a beauty expert.",
             )
-            await s.commit()
+        )
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 
