@@ -236,7 +236,7 @@ class Corpus(list):
     excluded: int = 0
 
 
-async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus:
+async def build_corpus(db, spawn_id: int, *, baseline_started_at=None, mint: bool = False) -> Corpus:
     """Assemble the paired corpus for `spawn_id`.
 
     real: clean-corpus live runs (kind='live', epoch>=1, status='scored', created_at >=
@@ -249,7 +249,12 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
 
     E9: `baseline_started_at=None` (the default) means READ the developer-declared baseline
     from settings; an explicit value (the living-proposal `since`) overrides it. When no
-    baseline is declared, no created_at floor applies (back-compat)."""
+    baseline is declared, no created_at floor applies (back-compat).
+
+    E9-b: `mint` (default FALSE = read-only) is the write switch for the synthetic holdout
+    top-up. Only the REAL gate paths (evolution propose / skill-forge eval) pass mint=True;
+    the cost PREVIEW (evolution_estimate) and every read-only caller (diagnostics, refresh)
+    leave it False so merely inspecting a spawn never mutates the corpus or spends tokens."""
     if baseline_started_at is None:
         baseline_started_at = await settings_service.get_baseline_started_at(db)
     pairs: Corpus = Corpus()
@@ -295,27 +300,30 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
                 "split_side": st.split_side,
             })
 
-    # E9-b: synthetic holdout top-up. Threshold-1 needs >= MIN_HOLDOUT_N holdout pairs. When the
+    # E9-b: synthetic holdout top-up — a WRITE, so it runs ONLY when the caller opts in via
+    # mint=True (the real gate paths). Threshold-1 needs >= MIN_HOLDOUT_N holdout pairs; when the
     # REAL holdout side can't reach it (thin corpus), mint fresh DOMAIN synthetic tasks tagged
     # holdout so the gate becomes reachable. Isolation is free (optimizer only reads propose);
     # provenance is honest (corpus_label='synthetic' → the card marks them); the real floor
     # (Threshold-4) is untouched so synthetic evidence can never carry a real regression. No
-    # dilution of mature corpora: only tops up when real holdout is below the floor. Idempotent:
-    # once minted (persisted), a later build sees total_holdout >= floor and mints nothing.
-    from server.services import synthetic_corpus  # local import avoids a circular import
-    real_holdout = sum(1 for p in pairs
-                       if p["corpus_label"] == "real" and p["split_side"] == "holdout")
-    total_holdout = sum(1 for p in pairs if p["split_side"] == "holdout")
-    if real_holdout < MIN_HOLDOUT_N and total_holdout < MIN_HOLDOUT_N:
-        minted = await synthetic_corpus.mint_domain_holdout(
-            db, spawn_id, MIN_HOLDOUT_N - total_holdout)
-        for st in minted:
-            pairs.append({
-                "task": st.task, "corpus_label": "synthetic",
-                "source_ref": {"synth_id": st.id, "version": st.version},
-                "source_run_id": st.source_run_id,   # None (domain) → own independence root
-                "split_side": st.split_side,          # 'holdout'
-            })
+    # dilution of mature corpora: only tops up when real holdout is below the floor. Convergent —
+    # each build tops up the residual holdout gap until the floor is reached (a partial mint on
+    # one build is completed on the next), then stops.
+    if mint:
+        from server.services import synthetic_corpus  # local import avoids a circular import
+        real_holdout = sum(1 for p in pairs
+                           if p["corpus_label"] == "real" and p["split_side"] == "holdout")
+        total_holdout = sum(1 for p in pairs if p["split_side"] == "holdout")
+        if real_holdout < MIN_HOLDOUT_N and total_holdout < MIN_HOLDOUT_N:
+            minted = await synthetic_corpus.mint_domain_holdout(
+                db, spawn_id, MIN_HOLDOUT_N - total_holdout)
+            for st in minted:
+                pairs.append({
+                    "task": st.task, "corpus_label": "synthetic",
+                    "source_ref": {"synth_id": st.id, "version": st.version},
+                    "source_run_id": st.source_run_id,   # None (domain) → own independence root
+                    "split_side": st.split_side,          # 'holdout'
+                })
 
     pairs.excluded = excluded
     return pairs

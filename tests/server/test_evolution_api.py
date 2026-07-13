@@ -32,7 +32,10 @@ async def test_estimate_endpoint_shape(client):
                 "synth_calls", "est_tokens", "lower_bound"):
         assert key in body
     assert body["lower_bound"] is True
-    assert body["pairs"] == 3
+    # E9-b: thin corpus (3 real) → the estimate PROJECTS the synthetic holdout top-up the real
+    # run would mint (up to MIN_HOLDOUT_N), without minting — so the previewed pair count reaches
+    # the floor rather than staying at 3.
+    assert body["pairs"] >= 10
     assert body["est_tokens"] > 0
 
 

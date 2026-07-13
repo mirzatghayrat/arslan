@@ -95,7 +95,7 @@ def _rich(propose_n=3):
 
 def _patch_common(monkeypatch, *, edits_by_epoch, corpus=None, rich=None):
     the_corpus = corpus if corpus is not None else _corpus()
-    async def fake_corpus(db, spawn_id, *, baseline_started_at=None): return the_corpus
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False): return the_corpus
     monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
     async def fake_build(spawn_id, **k): return rich if rich is not None else _rich()
     monkeypatch.setattr(replay_set, "build", fake_build)
@@ -153,7 +153,8 @@ def test_loop_rejects_and_buffers(monkeypatch, memdb):
 
 
 def test_loop_no_op_on_insufficient(monkeypatch, memdb):
-    async def fake_corpus(db, spawn_id, *, baseline_started_at=None): return replay_gate.Corpus()
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
+        return replay_gate.Corpus()
     monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
     async def fake_build(spawn_id, **k): return []
     monkeypatch.setattr(replay_set, "build", fake_build)
@@ -161,6 +162,24 @@ def test_loop_no_op_on_insufficient(monkeypatch, memdb):
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
     assert res["proposal_id"] is None and res["gate"]["passed"] is False
     assert res["gate"]["reason"] == "insufficient scored runs"
+
+
+def test_propose_improvement_builds_corpus_with_mint_true(monkeypatch, memdb):
+    # E9-b: the REAL evolution path must build its corpus with mint=True so a thin holdout is
+    # topped up to the gate floor — unlike the read-only cost preview (evolution_estimate), which
+    # passes mint=False and never mutates. Spy the exact mint kwarg propose_improvement passes.
+    _patch_common(monkeypatch, edits_by_epoch=[[]])   # sets up replay_set/optimizer/eval stubs
+    captured = {}
+
+    async def spy_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
+        captured["mint"] = mint
+        return _corpus()
+
+    monkeypatch.setattr(replay_gate, "build_corpus", spy_corpus)   # override _patch_common's
+    _patch_gate(monkeypatch, passed=True)
+    _seed_spawn(memdb, _Spawn)
+    anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=1))
+    assert captured["mint"] is True
 
 
 def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):

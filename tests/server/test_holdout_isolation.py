@@ -60,7 +60,7 @@ def _corpus():
 def test_optimizer_never_sees_holdout_tasks(monkeypatch, memdb):
     seen: set[str] = set()
 
-    async def fake_corpus(db, spawn_id, *, baseline_started_at=None):
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
         return _corpus()
     monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
 

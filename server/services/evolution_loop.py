@@ -92,7 +92,9 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
                     "evidence": None}
         # baseline_started_at defaults to None → build_corpus reads the declared clean-corpus
         # start from settings (E9); the SAME corpus is reused for the final gate below.
-        corpus = await replay_gate.build_corpus(db, spawn_id, baseline_started_at=None)
+        # mint=True (E9-b): the REAL gate path tops a thin holdout up to the floor so the gate is
+        # reachable — the read-only cost preview (evolution_estimate) never does this.
+        corpus = await replay_gate.build_corpus(db, spawn_id, baseline_started_at=None, mint=True)
 
     # Rich baseline judge evidence for the optimizer's edit digest (keyed by run id).
     rich = await replay_set.build(spawn_id, cap=train_cap + val_cap)

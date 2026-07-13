@@ -475,7 +475,7 @@ async def test_build_corpus_tops_up_synthetic_holdout_when_real_thin(memdb, monk
                        status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
         await db.commit()
     async with memdb() as db:
-        corpus = await replay_gate.build_corpus(db, 1)
+        corpus = await replay_gate.build_corpus(db, 1, mint=True)   # real gate path opts in
     holdout = [p for p in corpus if p["split_side"] == "holdout"]
     assert len(holdout) >= replay_gate.MIN_HOLDOUT_N
     # the top-up pairs are synthetic + holdout; isolation: none leak to propose.
@@ -498,17 +498,45 @@ async def test_build_corpus_no_topup_when_real_holdout_sufficient(memdb, monkeyp
     monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", spy_mint)
     async with memdb() as db:
         db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
-        # Force >= MIN_HOLDOUT_N real holdout pairs by seeding many real runs; mint never called.
-        for i in range(40):
+        # Seed 60 real runs: the ~40% hash split near-certainly yields >= MIN_HOLDOUT_N holdout,
+        # so even with mint=True the mature corpus is NEVER topped up (non-vacuous check below).
+        for i in range(60):
             db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
                        status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
         await db.commit()
     async with memdb() as db:
-        corpus = await replay_gate.build_corpus(db, 1)
+        corpus = await replay_gate.build_corpus(db, 1, mint=True)   # mint enabled, yet no top-up
     real_holdout = sum(1 for p in corpus
                        if p["corpus_label"] == "real" and p["split_side"] == "holdout")
-    if real_holdout >= replay_gate.MIN_HOLDOUT_N:
-        assert called["n"] == 0   # mature corpus → never diluted
+    assert real_holdout >= replay_gate.MIN_HOLDOUT_N   # precondition really holds (non-vacuous)
+    assert called["n"] == 0                            # mature corpus → never diluted
+
+
+async def test_build_corpus_mint_false_is_read_only_no_topup(memdb, monkeypatch):
+    from datetime import datetime
+    from sqlalchemy import func, select as sa_select
+    from server.db.models import SyntheticTask as _ST
+    from server.services import synthetic_corpus
+    called = {"n": 0}
+
+    async def spy_mint(db, spawn_id, n, *, adapter=None):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", spy_mint)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        for i in range(3):   # thin corpus — WOULD top up if mint were True
+            db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+    async with memdb() as db:
+        corpus = await replay_gate.build_corpus(db, 1)   # default mint=False (the preview path)
+        rows = (await db.execute(sa_select(func.count()).select_from(_ST))).scalar()
+    holdout = [p for p in corpus if p["split_side"] == "holdout"]
+    assert called["n"] == 0                              # no mint call — pure read
+    assert rows == 0                                     # no SyntheticTask rows written
+    assert len(holdout) < replay_gate.MIN_HOLDOUT_N      # thin corpus left thin (not topped up)
 
 
 def test_capped_tier_clamps_when_real_thin():
