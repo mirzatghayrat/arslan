@@ -281,6 +281,10 @@ export interface ProviderConfig {
   model: string;
   base_url: string;
   api_key: string;     // masked on read
+  /** Honest key state from the backend so the UI can tell a genuinely-absent key
+   *  from one that is STORED but undecryptable (encrypted under a now-changed
+   *  ARSLAN_SECRET_KEY). Absent on legacy payloads → treated as 'unset'. */
+  key_status?: 'set' | 'unset' | 'undecryptable';
   is_primary: boolean;
   /** P4 tri-state connectivity of the last probe (null/absent = never probed):
    *  "reachable_models" | "reachable_no_list" | "unreachable". */

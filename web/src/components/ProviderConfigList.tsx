@@ -80,6 +80,11 @@ export default function ProviderConfigList({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
+  // Fresh-entry API-key drafts per saved config id. The saved-config key input
+  // is decoupled from the masked server value (config.api_key): it starts empty
+  // and commits the NEW typed value on blur. Keyed by id so switching the
+  // selected config never leaks one config's unsaved key onto another.
+  const [keyDrafts, setKeyDrafts] = useState<Record<number, string>>({});
   // Master-detail selection: which saved config's detail pane is shown. Default
   // to the primary config, else the first, else null (draft-only / empty).
   const [selectedId, setSelectedId] = useState<number | null>(() => {
@@ -276,6 +281,14 @@ export default function ProviderConfigList({
       }
       pendingCustomSwitchRef.current.delete(id);
       baseUrlInputRefs.current.delete(id);
+      // Drop any unsaved key draft for the deleted id — SQLite reuses integer
+      // PKs, so a future config reclaiming this id must not inherit it.
+      setKeyDrafts((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       // SQLite reuses INTEGER PRIMARY KEY values (no AUTOINCREMENT) — purge every
       // per-row cache so a future config reusing this id starts clean instead of
       // inheriting stale models / dirty flags / fetch epoch. This includes the
@@ -349,6 +362,12 @@ export default function ProviderConfigList({
         pendingCustomSwitchRef.current.delete(config.id);
       }
     }
+    if (field === 'api_key') {
+      // Optimistically reflect the honest key state so the placeholder flips to
+      // "key saved — type to replace" and any undecryptable warning clears the
+      // moment a new key is committed (a failed PUT reverts via the catch below).
+      patch.key_status = value.trim() ? 'set' : 'unset';
+    }
     const optimistic = providerConfigs.map((c) =>
       c.id === config.id ? { ...c, ...patch } : c,
     );
@@ -398,6 +417,25 @@ export default function ProviderConfigList({
       // (A pending switch stays pending → the retry re-sends the full patch.)
       baseUrlDirtyRef.current.add(config.id);
     }
+  };
+
+  /** Local-only edit of a saved config's fresh-entry key draft (no network). */
+  const handleApiKeyDraftChange = (config: ProviderConfig, value: string) => {
+    setKeyDrafts((prev) => ({ ...prev, [config.id]: value }));
+  };
+
+  /** Commit the key draft on blur. A non-empty draft persists as the NEW key via
+   *  the existing api_key field-change path, then clears so the field is ready
+   *  for the next replace. An empty/whitespace draft is a no-op — the stored key
+   *  (or its honest key_status) is left untouched. */
+  const handleApiKeyBlur = (config: ProviderConfig, value: string) => {
+    if (!value.trim()) return;
+    void handleFieldChange(config, 'api_key', value);
+    setKeyDrafts((prev) => {
+      const next = { ...prev };
+      delete next[config.id];
+      return next;
+    });
   };
 
   const handleTestSaved = async (id: number) => {
@@ -567,6 +605,19 @@ export default function ProviderConfigList({
       // config added mid-session would otherwise never get its connectivity dot
       // filled until a manual click. Probe it now (reuses the health overlay).
       void handleProbeHealth(newConfig);
+    } catch (err) {
+      // A rejected add MUST surface (never silent) — a validation 422 / network
+      // failure otherwise looked like a dead "Add" button. Show the reason on
+      // the draft's error channel and keep the draft open for a retry.
+      setDraft((prev) =>
+        prev
+          ? {
+              ...prev,
+              testState: 'failed',
+              testError: err instanceof Error ? err.message : 'Add failed',
+            }
+          : prev,
+      );
     } finally {
       setBusy(null);
     }
@@ -774,6 +825,9 @@ export default function ProviderConfigList({
           onFieldChange={handleFieldChange}
           onBaseUrlChange={(config, value) => handleLocalFieldChange(config, 'base_url', value)}
           onBaseUrlBlur={handleBaseUrlBlur}
+          apiKeyDraft={selectedConfig ? (keyDrafts[selectedConfig.id] ?? '') : ''}
+          onApiKeyDraftChange={handleApiKeyDraftChange}
+          onApiKeyDraftBlur={handleApiKeyBlur}
           onSetPrimary={handleSetPrimary}
           onDelete={handleDelete}
           registerBaseUrlRef={(id, el) => {

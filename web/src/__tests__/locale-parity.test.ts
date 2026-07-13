@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 885 keys (baseline guard)", () => {
+  it("en locale has 908 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -65,7 +65,10 @@ describe("locale parity", () => {
     // eligibility panel (title + pick_spawn + verdict_* codes + chain_* +
     // auto_off = 18 keys). Review fix: swapped the unreachable
     // verdict_drought_holdout_split for chain_holdout_plain (−1 +1, net 0).
-    expect(enKeys).toHaveLength(904);
+    // 904 → 908: provider-key-input fix added the saved-config key-field keys
+    // (settings.keyEnter/keySavedReplace/keyReenter/keyUndecryptableReason —
+    // fresh-entry placeholder states + the honest undecryptable reason, 4 keys).
+    expect(enKeys).toHaveLength(908);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
