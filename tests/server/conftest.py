@@ -6,6 +6,7 @@ import os
 
 import pytest
 import pytest_asyncio
+from anyio.from_thread import start_blocking_portal
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -116,3 +117,35 @@ class MockAdapter:
 def mock_adapter():
     """Factory: `mock_adapter(stream_chunks=[...], raise_on_call=...)`."""
     return MockAdapter
+
+
+# ---------------------------------------------------------------------------
+# Single-loop WS/TestClient harness — the root fix for the cross-loop aiosqlite
+# flake (`database is locked` / `Event loop is closed` / portal-teardown hang).
+# See docs/tech-debt/single-loop-sqlite-flake.md. Every TestClient-backed test
+# seeds its DB and serves every websocket_connect on ONE portal loop, over a
+# NullPool engine, so no pooled connection is ever reused across event loops.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def portal():
+    """One blocking portal per test: its single event loop drives BOTH the DB
+    seed and every TestClient/websocket_connect built via ``build_ws_client``,
+    so no pooled aiosqlite connection is reused across loops (the flake root).
+
+    Teardown order is load-bearing: dispose every engine ON the portal loop
+    BEFORE stopping the portal, else the portal thread's ``join()`` blocks
+    terminating a live connection. ``portal.stop(cancel_remaining=True)`` also
+    cancels fire-and-forget stragglers (distill/ledger ``create_task``) that
+    anyio's own ``__exit__`` (cancel_remaining=False) would otherwise wait on —
+    the source of the >120s teardown hangs seen on slow CI.
+    """
+    with start_blocking_portal() as p:
+        p._test_engines = []  # populated by build_ws_client, disposed below
+        try:
+            yield p
+        finally:
+            try:
+                for _engine in p._test_engines:
+                    p.call(_engine.dispose)
+            finally:
+                p.call(p.stop, True)
