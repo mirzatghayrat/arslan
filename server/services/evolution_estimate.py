@@ -63,8 +63,20 @@ async def estimate(db, spawn_id: int) -> dict:
     lower_bound: True}. `pairs` = the whole paired corpus (propose ∪ holdout)."""
     epochs, lr_budget = _loop_defaults()
 
+    # READ-ONLY: mint=False so merely previewing a cost never mutates the corpus or spends
+    # generation tokens (E9-b). But keep the estimate HONEST — project the synthetic holdout
+    # top-up the REAL run (mint=True) would do, WITHOUT minting: when the real holdout is below
+    # the floor, the gate will top the holdout up to MIN_HOLDOUT_N, so add those projected pairs
+    # to the pair/dispatch/judge counts (mirrors replay_gate.build_corpus's mint condition
+    # exactly). The generation LLM cost of minting is still excluded (surfaced via lower_bound).
     corpus = await replay_gate.build_corpus(db, spawn_id, baseline_started_at=None)
-    pairs = len(corpus)
+    real_holdout = sum(1 for p in corpus
+                       if p["corpus_label"] == "real" and p["split_side"] == "holdout")
+    total_holdout = sum(1 for p in corpus if p["split_side"] == "holdout")
+    proj_topup = (replay_gate.MIN_HOLDOUT_N - total_holdout) if (
+        real_holdout < replay_gate.MIN_HOLDOUT_N
+        and total_holdout < replay_gate.MIN_HOLDOUT_N) else 0
+    pairs = len(corpus) + proj_topup
 
     # Both the optimizer's bounded-edit evaluations AND the final gate replay dispatch each
     # pair twice (baseline arm + candidate arm) — spec §E4 note.

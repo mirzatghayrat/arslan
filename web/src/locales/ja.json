@@ -965,6 +965,26 @@
       "status_rejected": "却下",
       "status_stale": "失効",
       "status_proposed": "審査待ち"
+    },
+    "diag": {
+      "title": "提案がまだ無い理由",
+      "pick_spawn": "上でスポーンを選ぶと、その進化の資格が表示されます。",
+      "verdict_in_flight_hung": "試行（#{{attempt_id}}）が {{age_min}} 分間実行され続け、完了していません — ランナーが停止している可能性があります。",
+      "verdict_drought_no_runs": "採点済みの実行がまだありません — このスポーンは進化する前に実際の利用が必要です。",
+      "verdict_drought_non_replayable": "採点済み実行のうち {{non_replayable}}/{{total_scored}} は密閉再現できず、残りは {{replayable}} 件のみです（< {{min}}）。",
+      "verdict_drought_too_few": "採点済み実行はまだ {{total_scored}} 件だけです（{{min}} 件必要）。",
+      "verdict_baseline_flooring": "宣言されたベースラインによりコーパスは {{scored_ge_baseline}} 件に制限されています（< {{min}}）。",
+      "verdict_holdout_via_synthetic_topup": "実ホールドアウトは {{real_holdout}} ペアです。次回の進化で合成タスクにより {{min}} まで補充されます — 実行するにはキューに入れてください。",
+      "verdict_gate_failure": "直近の試行（#{{attempt_id}}）はゲートで失敗しました：{{reason}}。",
+      "verdict_skipped_budget": "直近の試行（#{{attempt_id}}）は予算のためスキップされました：{{reason}}。",
+      "verdict_eligible_looking": "コーパスとバックオフは準備できているようです — オプティマイザがまだベースラインを上回っていないか、進化がキューに入っていない可能性があります。",
+      "chain_replayable": "再現可能な実行：{{replayable}}/{{total_scored}}",
+      "chain_holdout": "ホールドアウトのペア：実 {{real_holdout}} → 補充後 {{effective_holdout}}（{{min}} 必要）",
+      "chain_holdout_plain": "ホールドアウトのペア：{{holdout_ceiling}} / {{min}} 必要",
+      "chain_backoff": "バックオフ：新規実行 {{count_since}} 件 対 しきい値 {{threshold}}",
+      "chain_last_attempt": "直近の試行：{{outcome}}（{{reason}}）",
+      "chain_none": "試行はまだありません",
+      "auto_off": "自動進化はオフです"
     }
   },
   "usage": {

@@ -183,8 +183,11 @@ async def evaluate_candidate(candidate_id: int, target_spawn_id: int, *,
     # not-passed gate on any build/replay/judge failure; never crash (evolution I1).
     try:
         async with db_session.AsyncSessionLocal() as db:
+            # mint=True (E9-b): this is a REAL certifying gate (like evolution) — top a thin
+            # holdout up to the floor so a skill can be certified on a thin-corpus spawn. The
+            # read-only estimate preview never mints; this committed eval does.
             corpus = await replay_gate.build_corpus(
-                db, target_spawn_id, baseline_started_at=baseline_started_at)
+                db, target_spawn_id, baseline_started_at=baseline_started_at, mint=True)
             result = await replay_gate.run_gate(
                 db, spawn_id=target_spawn_id, candidate_prompt=skill_on_prompt,
                 baseline_prompt=skill_off_prompt, corpus=corpus, persona=persona)

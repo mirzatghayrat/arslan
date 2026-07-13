@@ -40,6 +40,8 @@ DIMENSIONS = ("fabrication", "identity", "completion")
 # ── thresholds (spec §E4; user-locked 60% / holdout N>=10) ───────────────────────────
 MAX_PROMPT_LEN = 12000
 LENGTH_MULT = 1.25
+HEADROOM_CHARS = 2000   # E9-b: absolute per-attempt growth room so short baselines aren't
+                        # strangled by the 1.25x multiplier (~one added markdown section).
 MIN_HOLDOUT_N = 10
 WIN_RATE_MIN = 0.60
 REAL_FLOOR_MIN_N = 3
@@ -171,6 +173,13 @@ def _tier(p: float) -> str:
     return "weak"
 
 
+def _capped_tier(p: float, real_n: int) -> str:
+    """E9-b: the evidence-tier LABEL, capped to 'weak' when the real holdout is too thin
+    (< REAL_FLOOR_MIN_N) — synthetic-only evidence must never read 'strong'/'medium'. Aligns
+    with the synthetic_driven flag (same threshold). The pass DECISION is unchanged (real floor)."""
+    return "weak" if real_n < REAL_FLOOR_MIN_N else _tier(p)
+
+
 # ── GateResult ───────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -227,7 +236,7 @@ class Corpus(list):
     excluded: int = 0
 
 
-async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus:
+async def build_corpus(db, spawn_id: int, *, baseline_started_at=None, mint: bool = False) -> Corpus:
     """Assemble the paired corpus for `spawn_id`.
 
     real: clean-corpus live runs (kind='live', epoch>=1, status='scored', created_at >=
@@ -240,7 +249,12 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
 
     E9: `baseline_started_at=None` (the default) means READ the developer-declared baseline
     from settings; an explicit value (the living-proposal `since`) overrides it. When no
-    baseline is declared, no created_at floor applies (back-compat)."""
+    baseline is declared, no created_at floor applies (back-compat).
+
+    E9-b: `mint` (default FALSE = read-only) is the write switch for the synthetic holdout
+    top-up. Only the REAL gate paths (evolution propose / skill-forge eval) pass mint=True;
+    the cost PREVIEW (evolution_estimate) and every read-only caller (diagnostics, refresh)
+    leave it False so merely inspecting a spawn never mutates the corpus or spends tokens."""
     if baseline_started_at is None:
         baseline_started_at = await settings_service.get_baseline_started_at(db)
     pairs: Corpus = Corpus()
@@ -286,6 +300,31 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
                 "split_side": st.split_side,
             })
 
+    # E9-b: synthetic holdout top-up — a WRITE, so it runs ONLY when the caller opts in via
+    # mint=True (the real gate paths). Threshold-1 needs >= MIN_HOLDOUT_N holdout pairs; when the
+    # REAL holdout side can't reach it (thin corpus), mint fresh DOMAIN synthetic tasks tagged
+    # holdout so the gate becomes reachable. Isolation is free (optimizer only reads propose);
+    # provenance is honest (corpus_label='synthetic' → the card marks them); the real floor
+    # (Threshold-4) is untouched so synthetic evidence can never carry a real regression. No
+    # dilution of mature corpora: only tops up when real holdout is below the floor. Convergent —
+    # each build tops up the residual holdout gap until the floor is reached (a partial mint on
+    # one build is completed on the next), then stops.
+    if mint:
+        from server.services import synthetic_corpus  # local import avoids a circular import
+        real_holdout = sum(1 for p in pairs
+                           if p["corpus_label"] == "real" and p["split_side"] == "holdout")
+        total_holdout = sum(1 for p in pairs if p["split_side"] == "holdout")
+        if real_holdout < MIN_HOLDOUT_N and total_holdout < MIN_HOLDOUT_N:
+            minted = await synthetic_corpus.mint_domain_holdout(
+                db, spawn_id, MIN_HOLDOUT_N - total_holdout)
+            for st in minted:
+                pairs.append({
+                    "task": st.task, "corpus_label": "synthetic",
+                    "source_ref": {"synth_id": st.id, "version": st.version},
+                    "source_run_id": st.source_run_id,   # None (domain) → own independence root
+                    "split_side": st.split_side,          # 'holdout'
+                })
+
     pairs.excluded = excluded
     return pairs
 
@@ -311,6 +350,14 @@ def routing_triggered(changed_fields) -> bool:
     return bool(ROUTING_CONSUMED_FIELDS & set(changed_fields or ()))
 
 
+def _length_ceiling(baseline_prompt: str) -> int:
+    """Max candidate length before the length_cap trips: the larger of the 1.25x multiplier
+    and an absolute headroom over the baseline (E9-b — short baselines get real room; long
+    ones keep the proportional guard). Shared by run_gate and the optimizer inner loop so the
+    candidate is bounded by construction, not only rejected at the final gate."""
+    return max(int(len(baseline_prompt) * LENGTH_MULT), len(baseline_prompt) + HEADROOM_CHARS)
+
+
 def _fail_prerun(reason: str) -> GateResult:
     return GateResult(
         passed=False, reason=reason, flags=[],
@@ -327,7 +374,7 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
     and apply the holdout thresholds. Returns a GateResult. `corpus` is a list of pairtasks
     {task, corpus_label, source_ref, split_side}."""
     # Threshold 5 — length cap, BEFORE any judge call (saves cost on a bloated candidate).
-    if len(candidate_prompt) > len(baseline_prompt) * LENGTH_MULT or \
+    if len(candidate_prompt) > _length_ceiling(baseline_prompt) or \
             len(candidate_prompt) > MAX_PROMPT_LEN:
         return _fail_prerun("length_cap")
 
@@ -378,7 +425,7 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
     h_wins, h_losses, _ = _tally(holdout)
     h_n = h_wins + h_losses
     eff_wins, eff_n = _effective_counts(holdout)
-    tier = _tier(binom.p_value(eff_wins, eff_n))
+    tier = _capped_tier(binom.p_value(eff_wins, eff_n), real_delta["n"])
 
     protected = [p["baseline_run_id"] for p in pairs] + [p["candidate_run_id"] for p in pairs]
     protected = [r for r in protected if r is not None]
@@ -474,7 +521,7 @@ def recompute_verdict(holdout_pairs: list[dict]) -> dict:
     h_wins, h_losses, _ = _tally(holdout_pairs)
     h_n = h_wins + h_losses
     eff_wins, eff_n = _effective_counts(holdout_pairs)
-    tier = _tier(binom.p_value(eff_wins, eff_n))
+    tier = _capped_tier(binom.p_value(eff_wins, eff_n), real_delta["n"])
 
     flags: list[str] = []
     reason: str | None = None

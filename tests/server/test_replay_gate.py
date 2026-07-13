@@ -9,7 +9,7 @@ import itertools
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db.models import Base, Run, RunStep, SyntheticTask
+from server.db.models import Base, Run, RunStep, Spawn, SyntheticTask
 from server.services import binom, compare_judge, replay_gate, replay_run
 from server.services.replay_gate import DIMENSIONS, HoldoutViolation, run_gate
 
@@ -144,7 +144,7 @@ async def test_insufficient_holdout(monkeypatch):
 
 
 async def test_length_cap_fails_before_judging(monkeypatch):
-    # Candidate > 1.25x baseline → fail BEFORE any arm/judge is called.
+    # Candidate above the (headroom-inclusive) ceiling → fail BEFORE any arm/judge is called.
     called = {"arms": 0}
 
     async def boom(*a, **k):
@@ -153,17 +153,42 @@ async def test_length_cap_fails_before_judging(monkeypatch):
 
     monkeypatch.setattr(replay_run, "run_arm", boom)
     monkeypatch.setattr(replay_run, "snapshot_ambient", boom)
-    res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 100,
-                         baseline_prompt="x" * 10,
+    # baseline 9000 → ceiling = max(11250, 11000) = 11250; candidate 11500 > 11250 (multiplier
+    # branch), and 11500 < 12000 so it is NOT the absolute cap — proves the multiplier still guards.
+    res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 11500,
+                         baseline_prompt="x" * 9000,
                          corpus=[_pt("real", "holdout", 0, "b")], persona="p")
     assert res.passed is False and res.reason == "length_cap"
     assert called["arms"] == 0
+
+
+def test_length_ceiling_gives_short_baselines_absolute_headroom():
+    from server.services.replay_gate import _length_ceiling, LENGTH_MULT, HEADROOM_CHARS
+    # short baseline: the absolute headroom dominates the 1.25x multiplier
+    assert _length_ceiling("x" * 800) == 800 + HEADROOM_CHARS      # 2800, not 1000
+    # long baseline: the 1.25x multiplier dominates the headroom
+    assert _length_ceiling("x" * 9000) == int(9000 * LENGTH_MULT)  # 11250, not 11000
+    # one added ~1500-char section on an 800-char baseline now fits
+    assert 800 + 1500 <= _length_ceiling("x" * 800)
+    # the pre-fix 1.25x-only ceiling would have rejected it
+    assert 800 + 1500 > int(800 * LENGTH_MULT)
 
 
 async def test_length_cap_absolute_12000(monkeypatch):
     res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 12001,
                          baseline_prompt="x" * 12001, corpus=[], persona="p")
     assert res.passed is False and res.reason == "length_cap"
+
+
+async def test_length_cap_allows_one_section_on_short_baseline(monkeypatch):
+    # A short (800-char) baseline + one added ~1500-char section must get PAST the length gate
+    # (reason is anything other than 'length_cap'). Stub arms/judge so the corpus loop can run.
+    _stub_arms(monkeypatch)
+    _stub_judge(monkeypatch)
+    res = await run_gate(None, spawn_id=1, candidate_prompt="x" * 2300,
+                         baseline_prompt="x" * 800,
+                         corpus=[_pt("real", "holdout", 0, "b")], persona="p")
+    assert res.reason != "length_cap"   # 2300 < ceiling 2800 → not strangled
 
 
 async def test_verbose_fail_and_warn(monkeypatch):
@@ -424,3 +449,100 @@ async def test_build_corpus_baseline_started_at_filter(memdb):
     tasks = [c["task"] for c in corpus]
     assert "after baseline" in tasks
     assert "before baseline" not in tasks   # created before baseline_started_at → excluded
+
+
+# ── FIX b: synthetic holdout top-up + tier cap on thin real evidence ────────────────────
+
+async def test_build_corpus_tops_up_synthetic_holdout_when_real_thin(memdb, monkeypatch):
+    from datetime import datetime
+    from server.services import synthetic_corpus
+
+    # deterministic mint: return exactly `n` holdout domain rows, no LLM.
+    async def fake_mint(db, spawn_id, n, *, adapter=None):
+        rows = [SyntheticTask(spawn_id=spawn_id, version=1, task=f"synth h{i}",
+                              source="domain", source_run_id=None, split_side="holdout",
+                              status="active") for i in range(n)]
+        db.add_all(rows)
+        await db.commit()
+        return rows
+
+    monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", fake_mint)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        # Seed 3 replayable real runs (thin) → real holdout can never reach MIN_HOLDOUT_N.
+        for i in range(3):
+            db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+    async with memdb() as db:
+        corpus = await replay_gate.build_corpus(db, 1, mint=True)   # real gate path opts in
+    holdout = [p for p in corpus if p["split_side"] == "holdout"]
+    assert len(holdout) >= replay_gate.MIN_HOLDOUT_N
+    # the top-up pairs are synthetic + holdout; isolation: none leak to propose.
+    synth_holdout = [p for p in holdout if p["corpus_label"] == "synthetic"]
+    assert synth_holdout and all(p["split_side"] == "holdout" for p in synth_holdout)
+    assert all(p["split_side"] != "propose" for p in synth_holdout)
+    # provenance: minted pairs carry source_run_id=None (their own independence root).
+    assert all(p["source_run_id"] is None for p in synth_holdout)
+
+
+async def test_build_corpus_no_topup_when_real_holdout_sufficient(memdb, monkeypatch):
+    from datetime import datetime
+    from server.services import synthetic_corpus
+    called = {"n": 0}
+
+    async def spy_mint(db, spawn_id, n, *, adapter=None):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", spy_mint)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        # Seed 60 real runs: the ~40% hash split near-certainly yields >= MIN_HOLDOUT_N holdout,
+        # so even with mint=True the mature corpus is NEVER topped up (non-vacuous check below).
+        for i in range(60):
+            db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+    async with memdb() as db:
+        corpus = await replay_gate.build_corpus(db, 1, mint=True)   # mint enabled, yet no top-up
+    real_holdout = sum(1 for p in corpus
+                       if p["corpus_label"] == "real" and p["split_side"] == "holdout")
+    assert real_holdout >= replay_gate.MIN_HOLDOUT_N   # precondition really holds (non-vacuous)
+    assert called["n"] == 0                            # mature corpus → never diluted
+
+
+async def test_build_corpus_mint_false_is_read_only_no_topup(memdb, monkeypatch):
+    from datetime import datetime
+    from sqlalchemy import func, select as sa_select
+    from server.db.models import SyntheticTask as _ST
+    from server.services import synthetic_corpus
+    called = {"n": 0}
+
+    async def spy_mint(db, spawn_id, n, *, adapter=None):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", spy_mint)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        for i in range(3):   # thin corpus — WOULD top up if mint were True
+            db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+    async with memdb() as db:
+        corpus = await replay_gate.build_corpus(db, 1)   # default mint=False (the preview path)
+        rows = (await db.execute(sa_select(func.count()).select_from(_ST))).scalar()
+    holdout = [p for p in corpus if p["split_side"] == "holdout"]
+    assert called["n"] == 0                              # no mint call — pure read
+    assert rows == 0                                     # no SyntheticTask rows written
+    assert len(holdout) < replay_gate.MIN_HOLDOUT_N      # thin corpus left thin (not topped up)
+
+
+def test_capped_tier_clamps_when_real_thin():
+    from server.services.replay_gate import _capped_tier, REAL_FLOOR_MIN_N
+    # a significant p-value would be 'strong', but with < REAL_FLOOR_MIN_N real pairs it clamps.
+    assert _capped_tier(0.01, real_n=0) == "weak"
+    assert _capped_tier(0.01, real_n=REAL_FLOOR_MIN_N - 1) == "weak"
+    # enough real evidence → the real tier stands.
+    assert _capped_tier(0.01, real_n=REAL_FLOOR_MIN_N) == "strong"

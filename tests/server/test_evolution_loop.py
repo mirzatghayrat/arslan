@@ -95,7 +95,7 @@ def _rich(propose_n=3):
 
 def _patch_common(monkeypatch, *, edits_by_epoch, corpus=None, rich=None):
     the_corpus = corpus if corpus is not None else _corpus()
-    async def fake_corpus(db, spawn_id, *, baseline_started_at=None): return the_corpus
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False): return the_corpus
     monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
     async def fake_build(spawn_id, **k): return rich if rich is not None else _rich()
     monkeypatch.setattr(replay_set, "build", fake_build)
@@ -153,7 +153,8 @@ def test_loop_rejects_and_buffers(monkeypatch, memdb):
 
 
 def test_loop_no_op_on_insufficient(monkeypatch, memdb):
-    async def fake_corpus(db, spawn_id, *, baseline_started_at=None): return replay_gate.Corpus()
+    async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
+        return replay_gate.Corpus()
     monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
     async def fake_build(spawn_id, **k): return []
     monkeypatch.setattr(replay_set, "build", fake_build)
@@ -161,6 +162,24 @@ def test_loop_no_op_on_insufficient(monkeypatch, memdb):
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
     assert res["proposal_id"] is None and res["gate"]["passed"] is False
     assert res["gate"]["reason"] == "insufficient scored runs"
+
+
+def test_propose_improvement_builds_corpus_with_mint_true(monkeypatch, memdb):
+    # E9-b: the REAL evolution path must build its corpus with mint=True so a thin holdout is
+    # topped up to the gate floor — unlike the read-only cost preview (evolution_estimate), which
+    # passes mint=False and never mutates. Spy the exact mint kwarg propose_improvement passes.
+    _patch_common(monkeypatch, edits_by_epoch=[[]])   # sets up replay_set/optimizer/eval stubs
+    captured = {}
+
+    async def spy_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
+        captured["mint"] = mint
+        return _corpus()
+
+    monkeypatch.setattr(replay_gate, "build_corpus", spy_corpus)   # override _patch_common's
+    _patch_gate(monkeypatch, passed=True)
+    _seed_spawn(memdb, _Spawn)
+    anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=1))
+    assert captured["mint"] is True
 
 
 def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
@@ -188,6 +207,31 @@ def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
     _seed_spawn(memdb, _Spawn)
     res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))  # must not raise
     assert res["proposal_id"] is None
+
+
+def test_inner_loop_rejects_overlength_edit_without_judging(monkeypatch, memdb):
+    # E9-b: an edit whose applied doc would exceed _length_ceiling(original) must be rejected in
+    # the optimizer inner loop WITHOUT calling evaluator.evaluate (bounded by construction — the
+    # candidate can never reach the final holdout gate only to blow the length cap).
+    from server.services import skill_doc
+    evaluated = {"n": 0}
+    big = "x" * 3000                                     # one huge added section
+    _patch_common(monkeypatch,
+                  edits_by_epoch=[[{"op": "add", "section": "Bloat", "content": big}], []])
+
+    async def boom_eval(**k):
+        evaluated["n"] += 1
+        raise AssertionError("must not evaluate an over-length candidate")
+    monkeypatch.setattr(evaluator, "evaluate", boom_eval)
+    _seed_spawn(memdb, _Spawn)
+    # sanity: the applied candidate really does exceed the ceiling for this short baseline
+    original = skill_doc.apply_edits(_Spawn.system_prompt, [])
+    cand = skill_doc.apply_edits(original, [{"op": "add", "section": "Bloat", "content": big}])
+    assert len(cand) > replay_gate._length_ceiling(original)
+    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    assert res["proposal_id"] is None                    # nothing accepted
+    assert evaluated["n"] == 0                            # never judged
+    assert res["gate"]["reason"] == "no accepted edit beats the original"
 
 
 # ── confirm_proposal tests (unchanged behavior) ──────────────────────────────

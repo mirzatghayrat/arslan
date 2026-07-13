@@ -6,8 +6,10 @@ import type {
   ProposalDetail,
   EvolveEstimate,
   SpawnSummary,
+  SpawnDiagnosis,
 } from "../api/client.types";
 import PromotionCard from "./PromotionCard";
+import { EvolutionEligibilityPanel } from "./EvolutionEligibilityPanel";
 
 interface Props {
   /** Opens the run-trace replay for a pair arm (wired to DiagnosisView's RunReplay). */
@@ -45,6 +47,23 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
   const [estimate, setEstimate] = useState<EvolveEstimate | null>(null);
   const [enqueued, setEnqueued] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // per-spawn eligibility diagnosis for the empty-state panel (read-only; keyed off runSpawn).
+  const [diag, setDiag] = useState<SpawnDiagnosis | null>(null);
+  useEffect(() => {
+    if (runSpawn === "") {
+      setDiag(null);
+      return;
+    }
+    let alive = true;
+    api
+      .getEvolutionDiagnosis(Number(runSpawn))
+      .then((d) => alive && setDiag(d))
+      .catch(() => alive && setDiag(null));
+    return () => {
+      alive = false;
+    };
+  }, [runSpawn]);
 
   async function load() {
     setError(null);
@@ -212,7 +231,14 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
       {rows == null ? (
         <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.loading")}</div>
       ) : rows.length === 0 ? (
-        <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.empty")}</div>
+        <div className="space-y-2">
+          <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.empty")}</div>
+          {diag ? (
+            <EvolutionEligibilityPanel diag={diag} />
+          ) : (
+            <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.diag.pick_spawn")}</div>
+          )}
+        </div>
       ) : (
         <ul className="space-y-2">
           {rows.map((p) => {

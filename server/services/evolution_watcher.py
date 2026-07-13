@@ -42,6 +42,17 @@ BASE_THRESHOLD = 10
 MAX_BACKOFF_MULT = 8            # 10 → 20 → 40 → 80 then flat
 DEFAULT_INTERVAL = 300.0       # 5 minutes; injectable (short in tests)
 
+# E9-b: gate/pre-gate reasons that are CONSTRUCTION/precondition failures, not quality
+# verdicts — they say nothing about the spawn's prompt, so they must NOT drive the
+# exponential backoff. Recorded as outcome='skipped_structural' (transparent to the streak).
+# NOTE: "insufficient scored runs" is arguably the same class but is intentionally excluded
+# here to stay faithful to the approved spec's two — revisit only on the user's word.
+STRUCTURAL_REASONS = frozenset({"length_cap", "insufficient_holdout"})
+
+
+def _is_structural(reason: str) -> bool:
+    return (reason or "").strip() in STRUCTURAL_REASONS
+
 # ── supervised task bookkeeping ──────────────────────────────────────────────────────
 _tasks: set[asyncio.Task] = set()
 _running_spawns: set[int] = set()   # concurrency = 1 per spawn
@@ -84,7 +95,9 @@ async def _last_attempt_started_at(db, spawn_id: int):
 
 async def _consecutive_fails(db, spawn_id: int) -> int:
     """Trailing run of failed/error attempts (newest → oldest). A 'passed' resets to 0; a
-    'skipped_budget' or an in-flight (outcome=None) attempt stops the count (neutral)."""
+    'skipped_budget' or an in-flight (outcome=None) attempt stops the count (neutral). A
+    'skipped_structural' (E9-b construction/precondition fail) is TRANSPARENT — the scan
+    continues past it, so it neither counts toward the streak nor resets it."""
     outcomes = (await db.execute(
         select(EvolutionAttempt.outcome)
         .where(EvolutionAttempt.spawn_id == spawn_id)
@@ -94,8 +107,10 @@ async def _consecutive_fails(db, spawn_id: int) -> int:
     for outcome in outcomes:
         if outcome in ("failed", "error"):
             fails += 1
+        elif outcome == "skipped_structural":
+            continue  # E9-b: structural no-fault skip — transparent (neither counts nor resets)
         else:
-            break
+            break     # 'passed' / 'skipped_budget' / in-flight (None) stop the streak
     return fails
 
 
@@ -182,7 +197,8 @@ async def _perform_attempt(attempt_id: int, spawn_id: int) -> None:
                                 proposal_id=proposal_id)
     else:
         reason = (result.get("gate") or {}).get("reason") or "gate did not pass"
-        await _finalize_attempt(attempt_id, outcome="failed", reason=reason)
+        outcome = "skipped_structural" if _is_structural(reason) else "failed"
+        await _finalize_attempt(attempt_id, outcome=outcome, reason=reason)
 
 
 async def _run_and_release(attempt_id: int, spawn_id: int) -> None:

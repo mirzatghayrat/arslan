@@ -965,6 +965,26 @@
       "status_rejected": "rejetée",
       "status_stale": "périmée",
       "status_proposed": "proposée"
+    },
+    "diag": {
+      "title": "Pourquoi aucune proposition",
+      "pick_spawn": "Sélectionnez un spawn ci-dessus pour voir son éligibilité à l'évolution.",
+      "verdict_in_flight_hung": "Une tentative (#{{attempt_id}}) s'exécute depuis {{age_min}} min sans jamais se terminer — l'exécuteur est peut-être bloqué.",
+      "verdict_drought_no_runs": "Aucune exécution évaluée pour l'instant — ce spawn a besoin d'un usage réel avant de pouvoir évoluer.",
+      "verdict_drought_non_replayable": "{{non_replayable}}/{{total_scored}} exécutions évaluées ne sont pas rejouables de façon hermétique, il n'en reste que {{replayable}} (< {{min}}).",
+      "verdict_drought_too_few": "Seulement {{total_scored}} exécutions évaluées jusqu'ici (il en faut {{min}}).",
+      "verdict_baseline_flooring": "La référence déclarée limite le corpus à {{scored_ge_baseline}} exécutions (< {{min}}).",
+      "verdict_holdout_via_synthetic_topup": "Le holdout réel a {{real_holdout}} paires ; la prochaine évolution le complète à {{min}} avec des tâches synthétiques — mettez-le en file pour l'exécuter.",
+      "verdict_gate_failure": "La dernière tentative (#{{attempt_id}}) a échoué au portail : {{reason}}.",
+      "verdict_skipped_budget": "La dernière tentative (#{{attempt_id}}) a été ignorée pour cause de budget : {{reason}}.",
+      "verdict_eligible_looking": "Le corpus et le backoff semblent prêts — l'optimiseur n'a peut-être simplement pas encore battu la référence, ou l'évolution n'a pas été mise en file.",
+      "chain_replayable": "Exécutions rejouables : {{replayable}}/{{total_scored}}",
+      "chain_holdout": "Paires de holdout : {{real_holdout}} réelles → {{effective_holdout}} après complément (il en faut {{min}})",
+      "chain_holdout_plain": "Paires de holdout : {{holdout_ceiling}} / {{min}} requis",
+      "chain_backoff": "Backoff : {{count_since}} nouvelles exécutions vs seuil {{threshold}}",
+      "chain_last_attempt": "Dernière tentative : {{outcome}} ({{reason}})",
+      "chain_none": "aucune tentative pour l'instant",
+      "auto_off": "L'auto-évolution est désactivée"
     }
   },
   "usage": {

@@ -147,6 +147,7 @@ async def test_skill_forge_uses_shared_run_gate_with_skill_on_off(maker, monkeyp
     its kwargs and prove skill_forge feeds skill-ON (candidate) vs skill-OFF (baseline)."""
     sid = await _spawn(maker, prompt="You are the base prompt.")
     cid = await _candidate()
+    await _synth_holdout(maker, sid)   # >=10 holdout already → build_corpus(mint=True) never mints
 
     captured = {}
 
@@ -173,6 +174,7 @@ async def test_skill_forge_uses_shared_run_gate_with_skill_on_off(maker, monkeyp
 async def test_gate_fails_stays_observing(maker, monkeypatch):
     sid = await _spawn(maker)
     cid = await _candidate()
+    await _synth_holdout(maker, sid)   # >=10 holdout already → build_corpus(mint=True) never mints
 
     async def fake_run_gate(db, **k):
         return _failing_gate()

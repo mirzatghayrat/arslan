@@ -32,7 +32,10 @@ async def test_estimate_endpoint_shape(client):
                 "synth_calls", "est_tokens", "lower_bound"):
         assert key in body
     assert body["lower_bound"] is True
-    assert body["pairs"] == 3
+    # E9-b: thin corpus (3 real) → the estimate PROJECTS the synthetic holdout top-up the real
+    # run would mint (up to MIN_HOLDOUT_N), without minting — so the previewed pair count reaches
+    # the floor rather than staying at 3.
+    assert body["pairs"] >= 10
     assert body["est_tokens"] > 0
 
 
@@ -55,6 +58,41 @@ async def test_evolve_returns_202_and_does_not_block(client, monkeypatch):
     assert r.status_code == 202
     assert r.json()["attempt_id"] == 55
     assert blocked["propose"] is False   # the loop was NOT run inline
+
+
+async def test_get_evolution_diagnosis(client):
+    """E9-b Task 4d: the read-only eligibility diagnosis behind the inbox panel. A spawn with
+    12 replayable real runs but a thin real holdout gets the informational top-up verdict."""
+    sid = await _seed_spawn(client, name="RA")
+    async with client.db_maker() as db:
+        for i in range(12):
+            db.add(Run(conversation_id="c", spawn_id=sid, user_message=f"task-{i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+
+    r = await client.get(f"/api/v1/spawns/{sid}/evolution/diagnosis")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["spawn_id"] == sid and body["spawn_name"] == "RA"
+    assert body["total_scored"] == 12 and body["replayable"] == 12
+    assert body["min_holdout_n"] == 10
+    assert body["verdict_code"] == "holdout_via_synthetic_topup"
+    assert body["verdict_params"] == {"real_holdout": body["real_holdout"], "min": 10}
+    assert body["effective_holdout"] == 10 and body["real_holdout"] < 10
+    assert isinstance(body["last_attempts"], list)
+    assert "auto_on" in body and "max_est_tokens" in body
+
+    # READ-ONLY: the diagnosis must not have minted any synthetic tasks.
+    from sqlalchemy import func, select
+    from server.db.models import SyntheticTask
+    async with client.db_maker() as db:
+        n = (await db.execute(select(func.count()).select_from(SyntheticTask))).scalar()
+    assert n == 0
+
+
+async def test_get_evolution_diagnosis_404(client):
+    r = await client.get("/api/v1/spawns/999999/evolution/diagnosis")
+    assert r.status_code == 404
 
 
 async def test_list_proposals_inbox(client):

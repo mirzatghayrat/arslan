@@ -23,8 +23,10 @@ from server.schemas import (
     ProposalListItemOut,
     RefreshProposalOut,
     RollbackProposalOut,
+    SpawnDiagnosisOut,
 )
 from server.services import (
+    evolution_diagnostics,
     evolution_estimate,
     evolution_loop,
     evolution_service,
@@ -137,6 +139,35 @@ async def get_baseline(
         baseline_started_at=baseline.isoformat() if baseline else None,
         epoch1_runs_after=count,
     )
+
+
+@router.get("/spawns/{spawn_id}/evolution/diagnosis", response_model=SpawnDiagnosisOut)
+async def get_evolution_diagnosis(
+    spawn_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> SpawnDiagnosisOut:
+    """Read-only evolution eligibility diagnosis for one spawn — the data behind the inbox's
+    'why no proposals yet' panel. Reuses the shared evolution_diagnostics service (one source of
+    truth with the CLI); SELECT-only within the request session (build_corpus mint defaults to
+    False, so inspecting a spawn never mints synthetic tasks or spends tokens)."""
+    spawn = await spawn_service.get_spawn(session, spawn_id)
+    if spawn is None:
+        raise HTTPException(status_code=404, detail="spawn not found")
+    d = await evolution_diagnostics.diagnose_spawn(session, spawn)
+    return SpawnDiagnosisOut(
+        spawn_id=spawn.id, spawn_name=spawn.name, generation_level=d["generation_level"],
+        total_scored=d["total_scored"], replayable=d["replayable"],
+        non_replayable=d["non_replayable"], offending_tools=d["offending_tools"],
+        baseline_started_at=d["baseline"].isoformat() if d["baseline"] else None,
+        scored_ge_baseline=d["scored_ge_baseline"], corpus_total=d["corpus_total"],
+        holdout_ceiling=d["holdout_ceiling"], real_holdout=d["real_holdout"],
+        effective_holdout=d["effective_holdout"], propose_count=d["propose_count"],
+        corpus_excluded=d["corpus_excluded"], min_holdout_n=d["min_holdout_n"],
+        consecutive_fails=d["consec_fails"], threshold=d["threshold"],
+        count_since_last_attempt=d["count_since"], auto_eligible=d["auto_eligible"],
+        open_proposals=d["open_props"], auto_on=d["auto_on"],
+        max_est_tokens=d["max_est_tokens"], last_attempts=d["last_attempts"],
+        verdict_code=d["verdict_code"], verdict_params=d["verdict_params"])
 
 
 @router.get("/evolution/proposals", response_model=list[ProposalListItemOut])
