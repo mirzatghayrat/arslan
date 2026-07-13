@@ -18,6 +18,24 @@ def _safe(enc: str) -> str:
         return ""
 
 
+def _key_status(enc: str | None) -> str:
+    """Distinguish a genuinely-absent key from one that is STORED but undecryptable.
+
+    An undecryptable key means the row was encrypted under a DIFFERENT
+    ``ARSLAN_SECRET_KEY`` than the one the server runs under now — so every BYOK
+    key silently reads as empty and the adapter has no credential. The UI needs to
+    tell these apart to show an honest reason (not a misleading "requires API key").
+    Returns 'unset' | 'set' | 'undecryptable'.
+    """
+    if not enc:
+        return "unset"
+    try:
+        dec = crypto.decrypt(enc)
+    except Exception:  # noqa: BLE001 — stored under a different ARSLAN_SECRET_KEY
+        return "undecryptable"
+    return "set" if dec else "unset"
+
+
 def _require_custom_base_url(provider: str, base_url: str) -> None:
     """P3: a "custom" config has no preset to fall back on — expand_preset
     passes it through verbatim, so a blank base_url would silently talk to
@@ -34,10 +52,21 @@ def _to_public(row: ProviderConfig) -> dict:
         "id": row.id, "label": row.label, "provider": row.provider, "model": row.model,
         "base_url": row.base_url or "", "is_primary": bool(row.is_primary),
         "api_key": mask_secret(_safe(row.api_key)),
+        # Honest key state so the UI can distinguish "no key" from "stored but
+        # undecryptable" (secret changed) instead of showing a misleading "requires key".
+        "key_status": _key_status(row.api_key),
         # P4: last connectivity probe (null until the first probe)
         "last_health": row.last_health,
         "last_health_at": row.last_health_at.isoformat() if row.last_health_at else None,
     }
+
+
+async def count_undecryptable_keys(session: AsyncSession) -> int:
+    """Count provider configs whose api_key is STORED but cannot be decrypted (encrypted
+    under a now-changed ARSLAN_SECRET_KEY). A non-zero count means every affected BYOK key
+    silently reads as empty. A boot canary reads this to warn the operator."""
+    rows = (await session.execute(select(ProviderConfig))).scalars().all()
+    return sum(1 for r in rows if _key_status(r.api_key) == "undecryptable")
 
 
 async def list_configs(session: AsyncSession) -> list[dict]:

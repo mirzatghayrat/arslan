@@ -87,6 +87,7 @@ class ProviderConfigOut(BaseModel):
     model: str
     base_url: str = ""
     api_key: str = ""   # masked
+    key_status: str = "unset"   # unset | set | undecryptable (secret changed)
     is_primary: bool = False
     # Provider-P4: last connectivity probe result (null until first probe).
     last_health: str | None = None       # reachable_models|reachable_no_list|unreachable
