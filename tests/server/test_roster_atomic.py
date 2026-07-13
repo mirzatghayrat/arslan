@@ -13,13 +13,13 @@ All three join paths (dispatch/create/invite) call the idempotent, single-spawn
 The reported symptom was likely a frontend display issue or fixed in a prior
 roster change. These tests stand as permanent regression guards.
 """
-import anyio
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
 from server.db.models import Base, Spawn
+from tests.server.conftest import build_ws_client
 
 
 # ---------------------------------------------------------------------------
@@ -36,20 +36,8 @@ _SEED_SPAWNS = [
 
 
 @pytest.fixture
-def staged_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'staged.db'}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+def staged_client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
         async with maker() as s:
             for sid, name, cat in _SEED_SPAWNS:
                 s.add(
@@ -63,12 +51,7 @@ def staged_client(tmp_path, monkeypatch):
                 )
             await s.commit()
 
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-
-    return TestClient(create_app())
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="staged.db")
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +120,8 @@ def test_reinvite_same_spawn_no_duplicate(staged_client):
 # (B) Direct roster_service path: join + list_roster atomicity.
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'r.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -150,7 +133,7 @@ def maker(tmp_path, monkeypatch):
                 s.add(Spawn(id=sid, name=name, domain_category=cat, capabilities=[], system_prompt="x"))
             await s.commit()
 
-    anyio.run(_seed)
+    await _seed()
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

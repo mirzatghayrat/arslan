@@ -1,8 +1,7 @@
-import anyio
 from server.services import spawn_drafter
 
 
-def test_draft_is_capable(monkeypatch):
+async def test_draft_is_capable(monkeypatch):
     # Stub the persona LLM draft.
     class Resp:
         content = ('{"name":"game-numeric","domain":"game-design.numerical",'
@@ -37,7 +36,7 @@ def test_draft_is_capable(monkeypatch):
 
     monkeypatch.setattr(spawn_drafter.equipment_service, "curate", fake_curate)
 
-    d = anyio.run(lambda: spawn_drafter.draft_from_text("做个手游数值策划分身"))
+    d = await spawn_drafter.draft_from_text("做个手游数值策划分身")
     assert d["domain"] == "game-design.numerical"
     assert d["tools"] == ["web-search"]
     assert d["skills"] == ["statistical-analysis"]

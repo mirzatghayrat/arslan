@@ -6,34 +6,19 @@ stub ``spawn_loop.run``/``build_spawn_system`` to keep the LLM offline while
 exercising the same WS contract (stream frames, persistence, resume) and the
 unchanged attach/storage-intent path.
 """
-import anyio
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+import server.ws.chat as chat_module
 from starlette.websockets import WebSocketDisconnect
 
-import server.db.session as db_session
-import server.ws.chat as chat_module
-from server.db.models import Base, Spawn
+from server.db.models import Spawn
 from server.orchestrator import spawn_loop
 from server.orchestrator import dispatcher
+from tests.server.conftest import build_ws_client
 
 
 @pytest.fixture
-def app_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'chat.db'}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+def app_client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
         async with maker() as s:
             s.add(
                 Spawn(
@@ -45,11 +30,6 @@ def app_client(tmp_path, monkeypatch):
                 )
             )
             await s.commit()
-
-    anyio.run(_seed)
-
-    # Point the WS handlers' session factory at the isolated temp DB.
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
     # Stub build_spawn_system so we don't need the full registry/seeder here;
     # echoes the persona + any KB/attached context so KB/attach tests can assert.
@@ -80,9 +60,7 @@ def app_client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(spawn_loop, "run", _fake_run)
 
-    from server.main import create_app
-
-    return TestClient(create_app())
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="chat.db")
 
 
 def test_chat_streams_and_persists(app_client):

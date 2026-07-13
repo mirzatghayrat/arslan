@@ -11,8 +11,8 @@ Root-cause regression suite for the Gemini-primary-LLM no-response bug:
 """
 from __future__ import annotations
 
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -23,16 +23,14 @@ from server.db.models import Base
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def db(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def db(tmp_path, monkeypatch):
     """Isolated in-memory SQLite database for each test."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'err.db'}")
 
-    async def _init():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_init)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     return maker

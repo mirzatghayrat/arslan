@@ -34,16 +34,10 @@ jobs:
         run: .venv/bin/ruff check server/ arslan/ tests/ scripts/
 
       - name: Pytest
-        # --only-rerun scopes retries to the ONE confirmed infra non-determinism:
-        # SQLite "database is locked" (rare cross-loop lock from tests that drive several
-        # anyio.run() loops on a shared async engine). ANY other failure is red on the first
-        # attempt. -rR prints a rerun summary so flakes are counted/managed, never buried.
-        # ACCEPTED tech debt: docs/tech-debt/single-loop-sqlite-flake.md (root fix archived at
-        # tag archive/single-loop-refactor). IRON RULE: this match string never widens — a
-        # need for a second signature = open the root-fix ticket, do NOT broaden the retry.
-        run: >-
-          .venv/bin/pytest tests/ -q -rR
-          --reruns 2 --reruns-delay 1 --only-rerun "database is locked"
+        # No rerun bridge: the cross-loop SQLite "database is locked" flake was root-fixed
+        # (single-loop test harness — see docs/tech-debt/single-loop-sqlite-flake.md, RESOLVED).
+        # Any failure is red on the first attempt. -rR prints a short-test summary.
+        run: .venv/bin/pytest tests/ -q -rR
 
   frontend:
     runs-on: ubuntu-latest

@@ -1,5 +1,4 @@
-import anyio
-import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -9,33 +8,28 @@ from server.registry import service as registry_service
 from server.services import equipment_service, spawn_service
 
 
-@pytest.fixture
-def db(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def db(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'b.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _prep():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_prep)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     return maker
 
 
-def _persisted_caps(maker, spawn_id):
+async def _persisted_caps(maker, spawn_id):
     """Return the set of (kind, ref_key) SpawnCapability rows for a spawn."""
 
-    async def _caps():
-        async with maker() as s:
-            rows = (await s.execute(select(SpawnCapability).where(
-                SpawnCapability.spawn_id == spawn_id))).scalars().all()
-            return {(r.kind, r.ref_key) for r in rows}
-
-    return anyio.run(_caps)
+    async with maker() as s:
+        rows = (await s.execute(select(SpawnCapability).where(
+            SpawnCapability.spawn_id == spawn_id))).scalars().all()
+        return {(r.kind, r.ref_key) for r in rows}
 
 
-def test_create_uses_drafter_tools_skills_mcps(db, monkeypatch):
+async def test_create_uses_drafter_tools_skills_mcps(db, monkeypatch):
     async def fake_assert(kind, key, **kw):
         assert kind in ("toolset", "skill")
         return None
@@ -51,16 +45,16 @@ def test_create_uses_drafter_tools_skills_mcps(db, monkeypatch):
              "capabilities": ["balance"], "persona_role": "数值策划",
              "tools": ["web_search_scraping"], "skills": ["statistical-analysis"],
              "mcps": ["mcp_7"]}
-    spawn_id, name, equipment, intro = anyio.run(lambda: spawn_service.create_from_draft(draft))
+    spawn_id, name, equipment, intro = await spawn_service.create_from_draft(draft)
 
-    caps = _persisted_caps(db, spawn_id)
+    caps = await _persisted_caps(db, spawn_id)
     assert ("toolset", "web_search_scraping") in caps
     assert ("skill", "statistical-analysis") in caps
     assert ("toolset", "mcp_7") in caps
     assert ("skill", "mcp_7") not in caps
 
 
-def test_explicit_equipment_still_wins(db, monkeypatch):
+async def test_explicit_equipment_still_wins(db, monkeypatch):
     async def fake_assert(kind, key, **kw):
         return None
 
@@ -73,14 +67,14 @@ def test_explicit_equipment_still_wins(db, monkeypatch):
     draft = {"name": "x", "domain": "a.b", "capabilities": [],
              "equipment": {"toolsets": ["web_search_scraping"], "skills": []},
              "tools": ["should_be_ignored"]}
-    spawn_id, *_ = anyio.run(lambda: spawn_service.create_from_draft(draft))
+    spawn_id, *_ = await spawn_service.create_from_draft(draft)
 
-    caps = _persisted_caps(db, spawn_id)
+    caps = await _persisted_caps(db, spawn_id)
     assert ("toolset", "web_search_scraping") in caps
     assert ("toolset", "should_be_ignored") not in caps
 
 
-def test_curate_fallback_folds_mcps(db, monkeypatch):
+async def test_curate_fallback_folds_mcps(db, monkeypatch):
     # No explicit equipment AND no drafter tools/skills/mcps keys at all → fall
     # through to curate. Curate's mcps must be folded into the toolsets bucket
     # (persisted kind="toolset" with the mcp_ key), not dropped or kind="skill"/"mcp".
@@ -99,9 +93,9 @@ def test_curate_fallback_folds_mcps(db, monkeypatch):
 
     draft = {"name": "fallback-pal", "domain": "research.general",
              "capabilities": ["research"], "persona_role": "researcher"}
-    spawn_id, *_ = anyio.run(lambda: spawn_service.create_from_draft(draft))
+    spawn_id, *_ = await spawn_service.create_from_draft(draft)
 
-    caps = _persisted_caps(db, spawn_id)
+    caps = await _persisted_caps(db, spawn_id)
     assert ("toolset", "web_search_scraping") in caps
     assert ("skill", "statistical-analysis") in caps
     assert ("toolset", "mcp_9") in caps

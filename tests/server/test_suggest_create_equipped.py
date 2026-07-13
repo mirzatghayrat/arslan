@@ -4,8 +4,8 @@ The router's RouterResult.suggested_spawn lacks equipment fields. The orchestrat
 loop (server/orchestrator/arslan.py) enriches the draft via equipment_service.curate
 (the same L1 mapping) best-effort before emitting the suggest_create frame.
 """
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -17,16 +17,14 @@ async def _ready_slots(history_text):
     return {"domain": "x.y", "capability": "do-x", "first_task": "run x", "recurrence": True}
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'equip.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

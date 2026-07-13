@@ -5,15 +5,14 @@ the product cannot actually ship. lint_delivery_claims is a deterministic, advis
 check run at spawn create / suggest_update time — warnings attach to the response frame,
 nothing is ever hard-rejected.
 """
-import anyio
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
 from server.db.models import Base
 from server.services.persona_lint import lint_delivery_claims
+from tests.server.conftest import build_ws_client
 
 # ── unit: format detectors vs tool keys ───────────────────────────────────────
 
@@ -111,27 +110,8 @@ def test_multiple_claims_accumulate():
 
 
 @pytest.fixture
-def app_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'plint.db'}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _setup():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    anyio.run(_setup)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-
-    return TestClient(create_app())
+def app_client(tmp_path, monkeypatch, portal):
+    return build_ws_client(portal, tmp_path, monkeypatch, db_name="plint.db")
 
 
 def _drain_roster_after_created(ws) -> None:
@@ -185,16 +165,14 @@ def test_confirm_create_plain_persona_has_no_warnings(app_client):
 # ── flow: suggest_update proposal carries capability_warnings ─────────────────
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'plint_u.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _setup():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_setup)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

@@ -11,12 +11,10 @@ server/mcp/discovery.py + server/services/mcp_service.py):
     and surfaces them under the additive out["mcps"] list. "gaps" passes
     through (needs the LLM flagged as having no menu match).
 """
-import anyio
-
 from server.services import equipment_service
 
 
-def test_curate_returns_mcps_and_gaps(monkeypatch):
+async def test_curate_returns_mcps_and_gaps(monkeypatch):
     async def fake_safe_menu():
         # MCP entries are toolsets with an mcp_ key; tier already flipped to safe.
         return {
@@ -54,7 +52,7 @@ def test_curate_returns_mcps_and_gaps(monkeypatch):
 
     monkeypatch.setattr(equipment_service, "_get_adapter", lambda: A())
 
-    out = anyio.run(lambda: equipment_service.curate("拆解手游数值,需要实时榜单数据"))
+    out = await equipment_service.curate("拆解手游数值,需要实时榜单数据")
     assert out["toolsets"] == ["web_search_scraping"]  # mcp_7 excluded from toolsets
     assert "mcp_7" not in out["toolsets"]
     assert out["skills"] == ["statistical-analysis"]
@@ -62,7 +60,7 @@ def test_curate_returns_mcps_and_gaps(monkeypatch):
     assert out["gaps"] == ["实时榜单/营收数据"]
 
 
-def test_curate_drops_non_assignable_mcp_and_caps_gaps(monkeypatch):
+async def test_curate_drops_non_assignable_mcp_and_caps_gaps(monkeypatch):
     async def fake_safe_menu():
         return {
             "toolsets": [{"key": "mcp_7", "name": "GitHub MCP", "description": "gh",
@@ -89,7 +87,7 @@ def test_curate_drops_non_assignable_mcp_and_caps_gaps(monkeypatch):
 
     monkeypatch.setattr(equipment_service, "_get_adapter", lambda: A())
 
-    out = anyio.run(lambda: equipment_service.curate("need"))
+    out = await equipment_service.curate("need")
     assert out["mcps"] == ["mcp_7"]
     assert out["gaps"] == ["a", "b", "c", "d", "e", "f"]
     # toolsets fallback still kicks in (additive change must not break it)

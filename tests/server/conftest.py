@@ -3,15 +3,20 @@ from __future__ import annotations
 
 import importlib
 import os
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 import pytest
 import pytest_asyncio
+from anyio.from_thread import start_blocking_portal
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -116,3 +121,118 @@ class MockAdapter:
 def mock_adapter():
     """Factory: `mock_adapter(stream_chunks=[...], raise_on_call=...)`."""
     return MockAdapter
+
+
+# ---------------------------------------------------------------------------
+# Single-loop WS/TestClient harness — the root fix for the cross-loop aiosqlite
+# flake (`database is locked` / `Event loop is closed` / portal-teardown hang).
+# See docs/tech-debt/single-loop-sqlite-flake.md. Every TestClient-backed test
+# seeds its DB and serves every websocket_connect on ONE portal loop, over a
+# NullPool engine, so no pooled connection is ever reused across event loops.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def portal():
+    """One blocking portal per test: its single event loop drives BOTH the DB
+    seed and every TestClient/websocket_connect built via ``build_ws_client``,
+    so no pooled aiosqlite connection is reused across loops (the flake root).
+
+    Teardown order is load-bearing: dispose every engine ON the portal loop
+    BEFORE stopping the portal, else the portal thread's ``join()`` blocks
+    terminating a live connection. ``portal.stop(cancel_remaining=True)`` also
+    cancels fire-and-forget stragglers (distill/ledger ``create_task``) that
+    anyio's own ``__exit__`` (cancel_remaining=False) would otherwise wait on —
+    the source of the >120s teardown hangs seen on slow CI.
+    """
+    with start_blocking_portal() as p:
+        p._test_engines = []  # populated by build_ws_client, disposed below
+        try:
+            yield p
+        finally:
+            try:
+                for _engine in p._test_engines:
+                    p.call(_engine.dispose)
+            finally:
+                p.call(p.stop, True)
+
+
+def build_ws_client(
+    portal,
+    tmp_path,
+    monkeypatch,
+    seed: Callable[[async_sessionmaker], Awaitable[None]] | None = None,
+    *,
+    db_name: str = "app.db",
+    env: dict[str, str] | None = None,
+) -> "TestClient":
+    """Build a TestClient whose app, DB seed, and every websocket_connect run on
+    ONE loop (``portal``). NullPool engine + seed-on-portal-loop is the root fix.
+
+    ``seed(maker)`` is an async callback receiving the sessionmaker; each WS test
+    file supplies its own (different Spawn configs). It runs via ``portal.call``
+    so it executes on the same loop the TestClient will serve on. Schema creation
+    (``Base.metadata.create_all``) is done here, before ``seed`` is invoked.
+
+    Env order mirrors the hand-rolled fixtures: set env -> reload config ->
+    monkeypatch AsyncSessionLocal -> create_app, so config-dependent app wiring
+    reads the intended settings.
+    """
+    from fastapi.testclient import TestClient
+    from sqlalchemy.pool import NullPool
+
+    from server.db import session as db_session
+
+    for _k, _v in (env or {}).items():
+        monkeypatch.setenv(_k, _v)
+    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
+    import server.config as _config
+
+    importlib.reload(_config)
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path/db_name}", poolclass=NullPool
+    )
+    portal._test_engines.append(engine)  # disposed at portal-fixture teardown
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _seed() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        if seed is not None:
+            await seed(maker)
+
+    portal.call(_seed)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+
+    from server.main import create_app
+
+    client = TestClient(create_app())
+    client.portal = portal  # websocket_connect + HTTP calls reuse this loop
+    client.db_maker = maker  # type: ignore[attr-defined]  # mid-test DB reads via portal.call
+    return client
+
+
+def _assert_testclient_portal_seam() -> None:
+    """Fail loudly if a starlette upgrade drops the settable ``.portal`` seam that
+    ``build_ws_client`` relies on — otherwise the single-loop fix silently
+    regresses to a fresh per-connection loop with no visible test failure."""
+    import inspect
+
+    from fastapi.testclient import TestClient as _TC
+
+    factory = getattr(_TC, "_portal_factory", None)
+    if factory is None:
+        raise AssertionError(
+            "starlette TestClient no longer exposes _portal_factory — the single-loop "
+            "flake fix relies on a settable .portal seam. See conftest.build_ws_client."
+        )
+    try:
+        src = inspect.getsource(factory)
+    except (OSError, TypeError):
+        return  # source unavailable (compiled) — cannot introspect; skip.
+    assert "self.portal" in src, (
+        "starlette TestClient no longer honors a settable .portal — the single-loop "
+        "flake fix silently regresses to per-connection loops. See conftest.build_ws_client."
+    )
+
+
+_assert_testclient_portal_seam()

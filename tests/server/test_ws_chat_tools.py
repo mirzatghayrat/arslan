@@ -1,33 +1,25 @@
-import anyio
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from starlette.testclient import TestClient
 
-import server.db.session as db_session
-from server.db.models import Base, Spawn
+from server.db.models import Spawn
+from tests.server.conftest import build_ws_client
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'wc.db'}")
-    m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        from server.registry.seeder import seed_registry
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-        await seed_registry()
-        async with m() as s:
+def app_client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
+        async with maker() as s:
+            from server.registry.seeder import seed_registry_with
+            await seed_registry_with(s)
             s.add(Spawn(id=7, name="小美", domain_category="content", system_prompt="sp"))
             await s.commit()
-    anyio.run(_seed)
-    monkeypatch.setenv("ARSLAN_API_TOKEN", "")
-    from server.main import app
-    return app, monkeypatch
+
+    return build_ws_client(
+        portal, tmp_path, monkeypatch, _seed,
+        db_name="wc.db", env={"ARSLAN_API_TOKEN": ""},
+    )
 
 
-def test_direct_chat_emits_tool_frames(client):
-    app, monkeypatch = client
+def test_direct_chat_emits_tool_frames(app_client, monkeypatch):
     from server.orchestrator import spawn_loop
 
     async def fake_run(*, spawn_id, system, user_content, history, current_turn, emit, on_chunk, allow_escalation):
@@ -43,7 +35,7 @@ def test_direct_chat_emits_tool_frames(client):
         return {"final": "Here is your chart.", "escalation": None, "tool_trace": []}
 
     monkeypatch.setattr(spawn_loop, "run", fake_run)
-    with TestClient(app).websocket_connect("/ws/chat/7?token=") as ws:
+    with app_client.websocket_connect("/ws/chat/7?token=") as ws:
         ws.receive_json()  # history frame
         ws.send_json({"type": "user_message", "content": "chart AAPL"})
         frames = []

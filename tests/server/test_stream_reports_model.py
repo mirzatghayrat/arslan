@@ -3,13 +3,11 @@ chat does, so spawn runs streamed to the UI still surface a model on the detail 
 (tokens stay estimated for the stream path)."""
 from __future__ import annotations
 
-import anyio
-
 from arslan.llm import usage_sink
 from arslan.llm.adapter import LLMAdapter
 
 
-def test_chat_stream_reports_model():
+async def test_chat_stream_reports_model():
     class _Provider:
         def build_messages(self, system, user, history):
             return []
@@ -23,12 +21,9 @@ def test_chat_stream_reports_model():
     adapter.model = "claude-x"
     adapter.provider_name = "anthropic"
 
-    async def _run():
-        with usage_sink.collecting():
-            async for _ in adapter.chat_stream("sys", "hi"):
-                pass
-            return usage_sink.detail()
-
-    d = anyio.run(_run)
+    with usage_sink.collecting():
+        async for _ in adapter.chat_stream("sys", "hi"):
+            pass
+        d = usage_sink.detail()
     assert d["model"] == "claude-x"
     assert d["provider"] == "anthropic"

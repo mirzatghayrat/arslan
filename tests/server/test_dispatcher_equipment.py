@@ -1,37 +1,34 @@
 """Dispatch injects an equipment block; zero-equipment spawns get the no-tools clause."""
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
 from server.db.models import Base, Spawn, SpawnCapability
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'de.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        from server.registry.seeder import seed_registry
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    from server.registry.seeder import seed_registry
 
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-        await seed_registry()
-        async with m() as s:
-            s.add(Spawn(id=7, name="小美", domain_category="content",
-                        system_prompt="You are a beauty expert."))
-            s.add(Spawn(id=8, name="plain", domain_category="other",
-                        system_prompt="You are plain."))
-            s.add(Spawn(id=9, name="artist", domain_category="creative",
-                        system_prompt="You are an image artist."))
-            s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
-            s.add(SpawnCapability(spawn_id=7, kind="skill", ref_key="baoyu-infographic"))
-            s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="session_search"))
-            await s.commit()
-
-    anyio.run(_seed)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    await seed_registry()
+    async with m() as s:
+        s.add(Spawn(id=7, name="小美", domain_category="content",
+                    system_prompt="You are a beauty expert."))
+        s.add(Spawn(id=8, name="plain", domain_category="other",
+                    system_prompt="You are plain."))
+        s.add(Spawn(id=9, name="artist", domain_category="creative",
+                    system_prompt="You are an image artist."))
+        s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
+        s.add(SpawnCapability(spawn_id=7, kind="skill", ref_key="baoyu-infographic"))
+        s.add(SpawnCapability(spawn_id=9, kind="toolset", ref_key="session_search"))
+        await s.commit()
     return m
 
 

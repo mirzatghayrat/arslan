@@ -1,36 +1,20 @@
 """Sandbox WS: in-memory session, confirm_merge merges to main, discard is a no-op."""
 from __future__ import annotations
 
-import anyio
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-import server.db.session as db_session
-from server.db.models import ArslanMessage, Base, Spawn
+from server.db.models import ArslanMessage, Spawn
+from tests.server.conftest import build_ws_client
 
 
 @pytest.fixture
-def sandbox_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    monkeypatch.setenv("ARSLAN_API_TOKEN", "")  # disable WS token gate in tests
-    import importlib
-    import server.config as config
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'sandbox.db'}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+def sandbox_client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
         async with maker() as s:
             s.add(Spawn(id=5, name="Mermer", domain_category="personal-assistant",
                         capabilities=[], system_prompt="You are Mermer.", memory_facts=[]))
             await s.commit()
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
     # Stub the LLM turn so the WS test never calls a real provider.
     from server.orchestrator import spawn_loop
@@ -47,8 +31,8 @@ def sandbox_client(tmp_path, monkeypatch):
         return None
     monkeypatch.setattr(distill_service, "distill_from_signals", fake_distill)
 
-    from server.main import create_app
-    return TestClient(create_app())
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="sandbox.db",
+                           env={"ARSLAN_API_TOKEN": ""})  # disable WS token gate in tests
 
 
 def _read_until(ws, type_, limit=20):
@@ -72,10 +56,10 @@ def test_sandbox_confirm_merges_to_main(sandbox_client, monkeypatch):
         assert merged is not None
 
     async def _check():
-        async with db_session.AsyncSessionLocal() as s:
+        async with sandbox_client.db_maker() as s:
             return (await s.execute(select(ArslanMessage).where(
                 ArslanMessage.role == "spawn_summary", ArslanMessage.conversation_id == "main"))).scalars().all()
-    rows = anyio.run(_check)
+    rows = sandbox_client.portal.call(_check)
     assert len(rows) == 1
     assert "精简版周报" in rows[0].display_content
 
@@ -105,7 +89,7 @@ def test_sandbox_discard_writes_nothing(sandbox_client):
         assert _read_until(ws, "discarded") is not None
 
     async def _check():
-        async with db_session.AsyncSessionLocal() as s:
+        async with sandbox_client.db_maker() as s:
             return (await s.execute(select(ArslanMessage).where(
                 ArslanMessage.role == "spawn_summary"))).scalars().all()
-    assert anyio.run(_check) == []
+    assert sandbox_client.portal.call(_check) == []

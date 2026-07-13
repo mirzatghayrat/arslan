@@ -1,15 +1,11 @@
 """/ws/arslan endpoint: answer streaming, routing, suggest+confirm create."""
-import anyio
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.pool import NullPool
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-import server.db.session as db_session
 import server.orchestrator.arslan as arslan_mod
 import server.orchestrator.dispatcher as dispatcher_mod
-from server.db.models import Base, Spawn
+from server.db.models import Spawn
+from tests.server.conftest import build_ws_client
 
 
 class _FakeAdapter:
@@ -31,26 +27,8 @@ def _stub_spawn_adapter(monkeypatch, text: str = "OK") -> _FakeAdapter:
 
 
 @pytest.fixture
-def app_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-
-    importlib.reload(config)
-
-    # NullPool: the fixture seeds via anyio.run (its own short-lived loop) while the
-    # TestClient portal runs another — a POOLED aiosqlite connection created in the
-    # seed loop and reused by the portal loop is the known cross-loop flake root
-    # (memory: test-hygiene round). No pooling = every session opens a fresh
-    # connection on the current loop.
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'wsar.db'}",
-                                 poolclass=NullPool)
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+def app_client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
         async with maker() as s:
             s.add(
                 Spawn(
@@ -63,12 +41,7 @@ def app_client(tmp_path, monkeypatch):
             )
             await s.commit()
 
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-
-    return TestClient(create_app())
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="wsar.db")
 
 
 def test_answer_turn_streams(app_client, monkeypatch):
@@ -100,7 +73,7 @@ def test_history_rows_carry_run_id(app_client):
         # No hardcoded PK / spawn FK: after ~1900 earlier tests the autoincrement
         # sequence (or fixture spawn state) collides with fixed ids in the full
         # suite — let the DB assign the Run id and link the message to it.
-        async with db_session.AsyncSessionLocal() as s:
+        async with app_client.db_maker() as s:
             run = Run(conversation_id="histconv", spawn_name="beauty-guru",
                       user_message="analyze")
             s.add(run)
@@ -111,7 +84,7 @@ def test_history_rows_carry_run_id(app_client):
             await s.commit()
             return run.id
 
-    run_id = anyio.run(_seed_history)
+    run_id = app_client.portal.call(_seed_history)
 
     with app_client.websocket_connect("/ws/arslan/histconv") as ws:
         hist = ws.receive_json()
@@ -143,11 +116,11 @@ def test_confirm_create_makes_spawn(app_client):
         _drain_roster_after_created(ws)  # drain roster_event + roster_update
 
     async def _check():
-        async with db_session.AsyncSessionLocal() as s:
+        async with app_client.db_maker() as s:
             rows = (await s.execute(select(Spawn).where(Spawn.name == "translator"))).scalars().all()
             return rows
 
-    assert len(anyio.run(_check)) == 1
+    assert len(app_client.portal.call(_check)) == 1
 
 
 def test_confirm_create_dedups_duplicate_name(app_client):
@@ -240,7 +213,7 @@ def test_confirm_create_domain_collision_no_differentiation(app_client):
     """
     # Seed a spawn with full domain content-creator.makeup.
     async def _seed_domain_spawn():
-        async with db_session.AsyncSessionLocal() as s:
+        async with app_client.db_maker() as s:
             s.add(
                 Spawn(
                     id=99,
@@ -253,7 +226,7 @@ def test_confirm_create_domain_collision_no_differentiation(app_client):
             )
             await s.commit()
 
-    anyio.run(_seed_domain_spawn)
+    app_client.portal.call(_seed_domain_spawn)
 
     # Draft with a unique name but identical full domain content-creator.makeup.
     draft = {
@@ -275,13 +248,13 @@ def test_confirm_create_domain_collision_no_differentiation(app_client):
 
     # Verify nothing was inserted with the new name.
     async def _check():
-        async with db_session.AsyncSessionLocal() as s:
+        async with app_client.db_maker() as s:
             rows = (
                 await s.execute(select(Spawn).where(Spawn.name == "totally-new-makeup-agent"))
             ).scalars().all()
             return rows
 
-    assert len(anyio.run(_check)) == 0
+    assert len(app_client.portal.call(_check)) == 0
 
 
 def test_confirm_create_without_task_brief_does_not_dispatch(app_client, monkeypatch):
@@ -330,11 +303,11 @@ def test_refine_passes_instruction(app_client, monkeypatch):
 
     # Seed a prior assistant output so _last_spawn_output returns non-None.
     async def _seed_prior():
-        async with db_session.AsyncSessionLocal() as s:
+        async with app_client.db_maker() as s:
             s.add(ChatMessage(spawn_id=7, role="assistant", content="DULL PRIOR RESULT"))
             await s.commit()
 
-    anyio.run(_seed_prior)
+    app_client.portal.call(_seed_prior)
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
@@ -481,7 +454,7 @@ def test_arslan_storage_named(app_client, monkeypatch):
     # Put the seeded spawn (id=7, beauty-guru) onto the roster for this conversation.
     async def _join():
         await roster_service.join("main", 7, via="invited")
-    anyio.run(_join)
+    app_client.portal.call(_join)
 
     async def _fake_classify(message, names, spawn_names):
         return si_mod.StorageIntent(store=True, target="beauty-guru")
@@ -555,7 +528,7 @@ def test_arslan_storage_reflow_resolves(app_client, monkeypatch):
     # Put the seeded spawn (id=7, beauty-guru) onto the roster.
     async def _join():
         await roster_service.join("main", 7, via="invited")
-    anyio.run(_join)
+    app_client.portal.call(_join)
 
     # classify: turn 1 → store but no target; turn 2 → store with target resolved.
     call_count = {"n": 0}

@@ -2,8 +2,8 @@
 endpoint, and the full route→dispatch regression (acceptance criteria 2, 3, 4-B)."""
 from __future__ import annotations
 
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -137,20 +137,18 @@ async def test_download_endpoint_rejects_wrong_run_prefix(client, tmp_path, monk
 
 # --- route→dispatch regression (acceptance #4-B) ------------------------------
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'hx2.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
-            s.add(Spawn(id=6, name="deck-master", domain_category="content-creator",
-                        capabilities=["deck"], system_prompt="You build decks."))
-            await s.commit()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as s:
+        s.add(Spawn(id=6, name="deck-master", domain_category="content-creator",
+                    capabilities=["deck"], system_prompt="You build decks."))
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

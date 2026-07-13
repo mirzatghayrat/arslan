@@ -1,7 +1,6 @@
 """P2 conversational spawn editing: drafter filtering, apply-path prompt regeneration,
 router action guards. The confirm card is the only apply trigger; equipment still passes
 the Layer-2 choke (covered by replace_user_equipment's own tests + the honesty layer)."""
-import anyio
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,16 +11,14 @@ from server.db.models import Base, Spawn
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'u.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _setup():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_setup)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

@@ -1,6 +1,6 @@
 """build_adapter assembles an LLMAdapter from stored settings."""
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -8,8 +8,8 @@ from server.db.models import Base
 from server.services import provider_config_service, settings_service
 
 
-@pytest.fixture
-def temp_db(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def temp_db(tmp_path, monkeypatch):
     monkeypatch.setenv("ARSLAN_SECRET_KEY", "unit-test")
     import importlib
 
@@ -19,16 +19,14 @@ def temp_db(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'f.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with maker() as s:
-            await settings_service.update_settings(
-                s,
-                {"llm_provider": "openai", "llm_model": "gpt-4o", "llm_api_key": "sk-x"},
-            )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with maker() as s:
+        await settings_service.update_settings(
+            s,
+            {"llm_provider": "openai", "llm_model": "gpt-4o", "llm_api_key": "sk-x"},
+        )
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     return maker
 

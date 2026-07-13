@@ -23,6 +23,7 @@ from arslan.models import LLMResponse
 from server.db import session as db_session
 from server.db.models import Base, Run, Spawn, UsageLedger
 from server.services import run_recorder, usage_ledger
+from tests.server.conftest import build_ws_client
 
 
 @pytest.fixture
@@ -389,31 +390,15 @@ async def test_titler_writes_titler_row(memdb, monkeypatch):
 # Capture point: direct spawn chat (ws/chat.py)
 # ---------------------------------------------------------------------------
 
-def test_direct_chat_writes_direct_chat_row(tmp_path, monkeypatch):
-    import anyio
-    from fastapi.testclient import TestClient
-
+def test_direct_chat_writes_direct_chat_row(tmp_path, monkeypatch, portal):
     import server.ws.chat as chat_module
     from server.orchestrator import dispatcher, spawn_loop
 
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'chat.db'}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async def _seed(maker):
         async with maker() as s:
             s.add(Spawn(name="beauty-guru", domain_category="content",
                         system_prompt="You are a beauty expert."))
             await s.commit()
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
     async def _fake_build_spawn_system(spawn, *, retrieval_query, current_turn,
                                        attached_context=None, system_prompt_override=None):
@@ -431,8 +416,7 @@ def test_direct_chat_writes_direct_chat_row(tmp_path, monkeypatch):
         return {"final": "reply", "escalation": None, "tool_trace": []}
     monkeypatch.setattr(spawn_loop, "run", _fake_run)
 
-    from server.main import create_app
-    client = TestClient(create_app())
+    client = build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="chat.db")
     with client.websocket_connect("/ws/chat/1") as ws:
         assert ws.receive_json()["type"] == "history"
         ws.send_json({"type": "user_message", "content": "hi"})
@@ -441,9 +425,9 @@ def test_direct_chat_writes_direct_chat_row(tmp_path, monkeypatch):
             frame = ws.receive_json()
 
     async def _read():
-        async with maker() as db:
+        async with client.db_maker() as db:
             return list((await db.execute(select(UsageLedger))).scalars().all())
-    rows = anyio.run(_read)
+    rows = client.portal.call(_read)
     assert len(rows) == 1
     r = rows[0]
     assert (r.scope, r.conversation_id) == ("direct_chat", "spawn-1")

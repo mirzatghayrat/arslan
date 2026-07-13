@@ -1,7 +1,7 @@
 """Deleting a spawn with orchestrator-thread references must succeed and
 preserve the conversation (spawn_id nulled), and remove equipment rows."""
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -12,19 +12,17 @@ from server.db.models import (
 from server.services import spawn_service
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'del.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _setup():
-        async with engine.begin() as conn:
-            # Enforce FKs so the test actually reproduces the production failure mode.
-            from sqlalchemy import text
-            await conn.execute(text("PRAGMA foreign_keys=ON"))
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        # Enforce FKs so the test actually reproduces the production failure mode.
+        from sqlalchemy import text
+        await conn.execute(text("PRAGMA foreign_keys=ON"))
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_setup)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

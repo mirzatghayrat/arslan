@@ -2,7 +2,6 @@
 single-file HTML deck (raw-document rendering contract, Ember tokens, print-to-PDF),
 with render_deck (.pptx) reserved for explicit editable-PowerPoint asks. The skill
 seeds with a real body, is assignable, and the deck-capable default spawns carry it."""
-import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -12,24 +11,22 @@ from server.registry.service import skill_is_assignable
 from server.services.default_spawns import DEFAULT_SPAWNS
 
 
-def _seeded_row(tmp_path) -> SkillPack:
+async def _seeded_row(tmp_path) -> SkillPack:
     """Seed the real catalog (real seeds dir, no monkeypatch) into a scratch DB."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'s.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _run():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as db:
-            await seeder.seed_registry_with(db)
-        async with m() as db:
-            return (await db.execute(
-                select(SkillPack).where(SkillPack.key == "deck-authoring"))).scalar_one()
-    return anyio.run(_run)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as db:
+        await seeder.seed_registry_with(db)
+    async with m() as db:
+        return (await db.execute(
+            select(SkillPack).where(SkillPack.key == "deck-authoring"))).scalar_one()
 
 
-def test_seeds_with_html_default_body_and_is_assignable(tmp_path):
-    row = _seeded_row(tmp_path)
+async def test_seeds_with_html_default_body_and_is_assignable(tmp_path):
+    row = await _seeded_row(tmp_path)
     body = row.body or ""
     # Raw-document rendering contract: the reply must BE the HTML document (no fences),
     # which is what makes the client show the preview/download card.

@@ -7,8 +7,7 @@ output flows through `_native_tool_schemas` via `run_native`) — must pass that
 through as the OpenAI `function.parameters`, instead of an empty/permissive `{}` that
 forces the model to guess argument names.
 """
-import anyio
-import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -68,31 +67,29 @@ def test_json_string_schema_parsed_defensively():
         "additionalProperties") is True
 
 
-@pytest.fixture
-def host_maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def host_maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'host.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-        async with m() as s:
-            s.add(MCPServer(id=1, label="docs", command="x", args=[], env=None, status="connected"))
-            s.add(Toolset(key="mcp_1", name="docs", description="d", tier="orchestrator", status="registered"))
-            s.add(Tool(key="mcp_1__search", toolset_key="mcp_1", description="search docs",
-                       tier="orchestrator", status="wired", input_schema=_MCP_SCHEMA,
-                       external_name="search", host_enabled=True))
-            await s.commit()
-    anyio.run(_seed)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    async with m() as s:
+        s.add(MCPServer(id=1, label="docs", command="x", args=[], env=None, status="connected"))
+        s.add(Toolset(key="mcp_1", name="docs", description="d", tier="orchestrator", status="registered"))
+        s.add(Tool(key="mcp_1__search", toolset_key="mcp_1", description="search docs",
+                   tier="orchestrator", status="wired", input_schema=_MCP_SCHEMA,
+                   external_name="search", host_enabled=True))
+        await s.commit()
     return m
 
 
-def test_arslan_host_mcp_tool_schema_reaches_model(host_maker):
+async def test_arslan_host_mcp_tool_schema_reaches_model(host_maker):
     """Arslan's host MCP tools must carry input_schema through `_arslan_tools` so it
     survives the `_native_tool_schemas` conversion in run_native."""
     from server.orchestrator.arslan import _arslan_tools
 
-    tools = anyio.run(_arslan_tools)
+    tools = await _arslan_tools()
     schemas = _native_tool_schemas(tools, allow_escalation=False)
     assert _params_for(schemas, "mcp_1__search") == _MCP_SCHEMA

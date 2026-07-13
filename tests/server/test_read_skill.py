@@ -1,5 +1,5 @@
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -8,23 +8,21 @@ from server.db.models import Base, SkillPack
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture
-def seeded(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def seeded(tmp_path, monkeypatch):
     eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'s.db'}")
     m = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
 
-    async def _s():
-        async with eng.begin() as c:
-            await c.run_sync(Base.metadata.create_all)
-        async with m() as db:
-            db.add(SkillPack(key="writing-plans", name="Writing Plans", category="dev",
-                             description="d", tier="safe", status="registered",
-                             body="## First\nalpha\n## Second\n" + "beta " * 4000))
-            db.add(SkillPack(key="short", name="Short", category="dev", description="d",
-                             tier="safe", status="registered", body="tiny"))
-            await db.commit()
+    async with eng.begin() as c:
+        await c.run_sync(Base.metadata.create_all)
+    async with m() as db:
+        db.add(SkillPack(key="writing-plans", name="Writing Plans", category="dev",
+                         description="d", tier="safe", status="registered",
+                         body="## First\nalpha\n## Second\n" + "beta " * 4000))
+        db.add(SkillPack(key="short", name="Short", category="dev", description="d",
+                         tier="safe", status="registered", body="tiny"))
+        await db.commit()
 
-    anyio.run(_s)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

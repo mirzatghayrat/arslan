@@ -3,84 +3,87 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import anyio
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 import server.db.session as db_session
 import server.orchestrator.arslan as arslan_mod
 from server.db.models import ArslanMessage, Base, Spawn
 from server.services import evolution_service
+from tests.server.conftest import build_ws_client
 
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
-def _make_engine_and_maker(tmp_path, db_name="verdict.db"):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / db_name}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    return engine, maker
 
+@pytest_asyncio.fixture
+async def verdict_db(tmp_path, monkeypatch):
+    """SQLite DB seeded with a spawn, a prior user message, and a deliverable.
 
-@pytest.fixture
-def verdict_db(tmp_path, monkeypatch):
-    """In-memory SQLite DB seeded with a spawn, a prior user message, and a deliverable."""
+    Async fixture: the seed and every test's DB access run on the one
+    pytest-asyncio event loop over a NullPool engine, so no pooled aiosqlite
+    connection is reused across event loops (the cross-loop flake root).
+    """
     monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
     import importlib
     import server.config as config
     importlib.reload(config)
 
-    engine, maker = _make_engine_and_maker(tmp_path, "verdict_unit.db")
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'verdict_unit.db'}", poolclass=NullPool
+    )
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     CONVERSATION_ID = "conv-test-1"
     # Timestamp ~2s ago so elapsed is measurable
     deliverable_ts = datetime.utcnow() - timedelta(seconds=2)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with maker() as s:
-            s.add(Spawn(
-                id=7,
-                name="TestSpawn",
-                domain_category="test",
-                capabilities=[],
-                system_prompt="You are a test spawn.",
-            ))
-            # Prior user message (id=1)
-            s.add(ArslanMessage(
-                id=1,
-                conversation_id=CONVERSATION_ID,
-                role="user",
-                content="write me a poem",
-                timestamp=datetime.utcnow() - timedelta(seconds=10),
-            ))
-            # Deliverable (id=2) — role="deliverable" so confirm_sandbox_merge tests can
-            # assert exactly 1 spawn_summary row after the merge without colliding here.
-            s.add(ArslanMessage(
-                id=2,
-                conversation_id=CONVERSATION_ID,
-                role="deliverable",
-                content="[summary]",
-                display_content="Roses are red, violets are blue.",
-                spawn_id=7,
-                timestamp=deliverable_ts,
-            ))
-            await s.commit()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with maker() as s:
+        s.add(Spawn(
+            id=7,
+            name="TestSpawn",
+            domain_category="test",
+            capabilities=[],
+            system_prompt="You are a test spawn.",
+        ))
+        # Prior user message (id=1)
+        s.add(ArslanMessage(
+            id=1,
+            conversation_id=CONVERSATION_ID,
+            role="user",
+            content="write me a poem",
+            timestamp=datetime.utcnow() - timedelta(seconds=10),
+        ))
+        # Deliverable (id=2) — role="deliverable" so confirm_sandbox_merge tests can
+        # assert exactly 1 spawn_summary row after the merge without colliding here.
+        s.add(ArslanMessage(
+            id=2,
+            conversation_id=CONVERSATION_ID,
+            role="deliverable",
+            content="[summary]",
+            display_content="Roses are red, violets are blue.",
+            spawn_id=7,
+            timestamp=deliverable_ts,
+        ))
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-    return CONVERSATION_ID
+    yield CONVERSATION_ID
+    await engine.dispose()
 
 
 # ---------------------------------------------------------------------------
 # Unit test: record_deliverable_verdict
 # ---------------------------------------------------------------------------
 
-def test_record_deliverable_verdict_accept(verdict_db, monkeypatch, tmp_path):
+async def test_record_deliverable_verdict_accept(verdict_db, monkeypatch, tmp_path):
     """record_deliverable_verdict must call record_verdict with correct args and emit ack."""
     conversation_id = verdict_db
     captured = {}
@@ -102,12 +105,9 @@ def test_record_deliverable_verdict_accept(verdict_db, monkeypatch, tmp_path):
     def emit(ev):
         emitted.append(ev)
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            conversation_id, spawn_id=7, action="accept", message_id=2, emit=emit
-        )
-
-    anyio.run(_run)
+    await arslan_mod.record_deliverable_verdict(
+        conversation_id, spawn_id=7, action="accept", message_id=2, emit=emit
+    )
 
     assert captured["action"] == "accept"
     assert captured["agent_output"] == "Roses are red, violets are blue."
@@ -123,7 +123,7 @@ def test_record_deliverable_verdict_accept(verdict_db, monkeypatch, tmp_path):
     assert acks[0]["action"] == "accept"
 
 
-def test_record_deliverable_verdict_persists_feedback_row(verdict_db, monkeypatch):
+async def test_record_deliverable_verdict_persists_feedback_row(verdict_db, monkeypatch):
     """A verdict must also persist a per-conversation Feedback DB row (keyed by the real
     conversation_id, action mapped to thumbs vocabulary) so session-end distillation can
     read 👍/👎 as a signal."""
@@ -132,41 +132,37 @@ def test_record_deliverable_verdict_persists_feedback_row(verdict_db, monkeypatc
     conversation_id = verdict_db
     monkeypatch.setattr(evolution_service, "record_verdict", lambda *a, **kw: None)
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            conversation_id, spawn_id=7, action="accept", message_id=2, emit=lambda e: None
-        )
-        async with db_session.AsyncSessionLocal() as s:
-            return (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
+    await arslan_mod.record_deliverable_verdict(
+        conversation_id, spawn_id=7, action="accept", message_id=2, emit=lambda e: None
+    )
+    async with db_session.AsyncSessionLocal() as s:
+        rows = (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
 
-    rows = anyio.run(_run)
     assert len(rows) == 1
     assert rows[0].session_id == conversation_id
     assert rows[0].user_action == "thumbs_up"
     assert rows[0].quality_signal == 1
 
 
-def test_record_deliverable_verdict_discard_persists_thumbs_down(verdict_db, monkeypatch):
+async def test_record_deliverable_verdict_discard_persists_thumbs_down(verdict_db, monkeypatch):
     """A discard verdict persists a thumbs_down Feedback row with quality_signal -1."""
     from server.db.models import Feedback
 
     conversation_id = verdict_db
     monkeypatch.setattr(evolution_service, "record_verdict", lambda *a, **kw: None)
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            conversation_id, spawn_id=7, action="discard", message_id=2, emit=lambda e: None
-        )
-        async with db_session.AsyncSessionLocal() as s:
-            return (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
+    await arslan_mod.record_deliverable_verdict(
+        conversation_id, spawn_id=7, action="discard", message_id=2, emit=lambda e: None
+    )
+    async with db_session.AsyncSessionLocal() as s:
+        rows = (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
 
-    rows = anyio.run(_run)
     assert len(rows) == 1
     assert rows[0].user_action == "thumbs_down"
     assert rows[0].quality_signal == -1
 
 
-def test_record_deliverable_verdict_missing_message(verdict_db, monkeypatch):
+async def test_record_deliverable_verdict_missing_message(verdict_db, monkeypatch):
     """When message_id is None, elapsed defaults to large value and agent_output is empty."""
     conversation_id = verdict_db
     captured = {}
@@ -178,12 +174,9 @@ def test_record_deliverable_verdict_missing_message(verdict_db, monkeypatch):
 
     emitted = []
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            conversation_id, spawn_id=7, action="discard", message_id=None, emit=emitted.append
-        )
-
-    anyio.run(_run)
+    await arslan_mod.record_deliverable_verdict(
+        conversation_id, spawn_id=7, action="discard", message_id=None, emit=emitted.append
+    )
 
     assert captured["elapsed_seconds"] == 999.0  # _MISSING_ELAPSED_SECONDS sentinel
     assert captured["agent_output"] == ""
@@ -191,7 +184,7 @@ def test_record_deliverable_verdict_missing_message(verdict_db, monkeypatch):
     assert acks[0]["action"] == "discard"
 
 
-def test_record_deliverable_verdict_leveling_failure_does_not_raise(verdict_db, monkeypatch):
+async def test_record_deliverable_verdict_leveling_failure_does_not_raise(verdict_db, monkeypatch):
     """A leveling failure must not propagate — the ack must still be emitted."""
     conversation_id = verdict_db
 
@@ -202,18 +195,15 @@ def test_record_deliverable_verdict_leveling_failure_does_not_raise(verdict_db, 
 
     emitted = []
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            conversation_id, spawn_id=7, action="accept", message_id=2, emit=emitted.append
-        )
-
-    anyio.run(_run)  # must not raise
+    await arslan_mod.record_deliverable_verdict(
+        conversation_id, spawn_id=7, action="accept", message_id=2, emit=emitted.append
+    )  # must not raise
 
     acks = [e for e in emitted if e.get("type") == "verdict_recorded"]
     assert len(acks) == 1
 
 
-def test_record_deliverable_verdict_unknown_spawn_emits_error(verdict_db, monkeypatch):
+async def test_record_deliverable_verdict_unknown_spawn_emits_error(verdict_db, monkeypatch):
     """An unknown spawn_id (get_spawn_name returns None) must emit an error frame and
     must NOT call record_verdict."""
     conversation_id = verdict_db
@@ -230,12 +220,9 @@ def test_record_deliverable_verdict_unknown_spawn_emits_error(verdict_db, monkey
 
     emitted = []
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            conversation_id, spawn_id=9999, action="accept", message_id=None, emit=emitted.append
-        )
-
-    anyio.run(_run)
+    await arslan_mod.record_deliverable_verdict(
+        conversation_id, spawn_id=9999, action="accept", message_id=None, emit=emitted.append
+    )
 
     assert record_called == [], "record_verdict must NOT be called for unknown spawn"
     errors = [e for e in emitted if e.get("type") == "error"]
@@ -252,18 +239,11 @@ def test_record_deliverable_verdict_unknown_spawn_emits_error(verdict_db, monkey
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def verdict_client(tmp_path, monkeypatch):
-    """TestClient fixture matching staged_client style from test_ws_staged.py."""
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-    import server.config as config
-    importlib.reload(config)
+def verdict_client(tmp_path, monkeypatch, portal):
+    """TestClient over the shared single-loop portal (build_ws_client): the seed and
+    every websocket_connect run on ONE loop over a NullPool engine."""
 
-    engine, maker = _make_engine_and_maker(tmp_path, "verdict_ws.db")
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async def _seed(maker):
         async with maker() as s:
             s.add(Spawn(
                 id=4,
@@ -274,11 +254,7 @@ def verdict_client(tmp_path, monkeypatch):
             ))
             await s.commit()
 
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-    return TestClient(create_app())
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="verdict_ws.db")
 
 
 def test_accept_deliverable_calls_record_verdict(verdict_client, monkeypatch):
@@ -368,7 +344,7 @@ def test_accept_deliverable_bad_spawn_id(verdict_client, monkeypatch):
     assert 4 in calls
 
 
-def test_record_deliverable_verdict_elapsed_override(verdict_db, monkeypatch):
+async def test_record_deliverable_verdict_elapsed_override(verdict_db, monkeypatch):
     """An explicit elapsed_override is passed through to record_verdict verbatim
     (sandbox confirm measures open→confirm, not message-timestamp age)."""
     captured = {}
@@ -376,16 +352,14 @@ def test_record_deliverable_verdict_elapsed_override(verdict_db, monkeypatch):
         captured["elapsed_seconds"] = elapsed_seconds
     monkeypatch.setattr(evolution_service, "record_verdict", fake_record_verdict)
 
-    async def _run():
-        await arslan_mod.record_deliverable_verdict(
-            verdict_db, spawn_id=7, action="accept", message_id=2, emit=lambda e: None,
-            elapsed_override=3.5,
-        )
-    anyio.run(_run)
+    await arslan_mod.record_deliverable_verdict(
+        verdict_db, spawn_id=7, action="accept", message_id=2, emit=lambda e: None,
+        elapsed_override=3.5,
+    )
     assert captured["elapsed_seconds"] == 3.5
 
 
-def test_confirm_sandbox_merge_posts_summary_card_and_accepts(verdict_db, monkeypatch):
+async def test_confirm_sandbox_merge_posts_summary_card_and_accepts(verdict_db, monkeypatch):
     """confirm_sandbox_merge appends a spawn_summary whose display_content carries the
     TL;DR caption + full content, emits deliverable_finalized(+summary), and records an
     accept verdict with the supplied elapsed."""
@@ -398,17 +372,14 @@ def test_confirm_sandbox_merge_posts_summary_card_and_accepts(verdict_db, monkey
     monkeypatch.setattr(evolution_service, "record_verdict", fake_record_verdict)
 
     emitted = []
-    async def _run():
-        await arslan_mod.confirm_sandbox_merge(
-            verdict_db, spawn_id=7, content="精简版周报全文",
-            summary="精简版周报", elapsed_seconds=2.0, emit=emitted.append,
-        )
-        async with db_session.AsyncSessionLocal() as s:
-            rows = (await s.execute(select(ArslanMessage).where(
-                ArslanMessage.role == "spawn_summary", ArslanMessage.spawn_id == 7))).scalars().all()
-            fb = (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
-        return rows, fb
-    rows, fb = anyio.run(_run)
+    await arslan_mod.confirm_sandbox_merge(
+        verdict_db, spawn_id=7, content="精简版周报全文",
+        summary="精简版周报", elapsed_seconds=2.0, emit=emitted.append,
+    )
+    async with db_session.AsyncSessionLocal() as s:
+        rows = (await s.execute(select(ArslanMessage).where(
+            ArslanMessage.role == "spawn_summary", ArslanMessage.spawn_id == 7))).scalars().all()
+        fb = (await s.execute(select(Feedback).where(Feedback.spawn_id == 7))).scalars().all()
 
     assert len(rows) == 1
     assert rows[0].content == "精简版周报全文"

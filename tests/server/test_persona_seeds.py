@@ -1,5 +1,4 @@
-import anyio
-import pytest
+import pytest_asyncio
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -7,121 +6,114 @@ import server.db.session as db_session
 from server.db.models import Base, PersonaSeed
 
 
-def test_persona_seed_table_and_fts(tmp_path):
+async def test_persona_seed_table_and_fts(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'p.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async def _run():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            # FTS virtual table is created by the migration's upgrade_sync, not create_all:
-            from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
-            await conn.run_sync(upgrade_sync)
-        async with maker() as s:
-            row = PersonaSeed(slug="game-economy-designer", division="Game Development",
-                              name="Game Economy Designer", identity="i", mission="m", rules="r",
-                              deliverables="d", workflow="w", success_metrics="s", raw="raw text",
-                              source="agency-agents@abc")
-            s.add(row)
-            await s.flush()
-            await s.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r, :t)"),
-                            {"r": row.id, "t": "game economy balance monetization"})
-            await s.commit()
-            hit = (await s.execute(sa_text(
-                "SELECT ps.slug FROM persona_seeds_fts f JOIN persona_seeds ps ON ps.id=f.rowid "
-                "WHERE f.text MATCH :q"), {"q": "economy"})).scalar_one_or_none()
-            return hit
-    assert anyio.run(_run) == "game-economy-designer"
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        # FTS virtual table is created by the migration's upgrade_sync, not create_all:
+        from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
+        await conn.run_sync(upgrade_sync)
+    async with maker() as s:
+        row = PersonaSeed(slug="game-economy-designer", division="Game Development",
+                          name="Game Economy Designer", identity="i", mission="m", rules="r",
+                          deliverables="d", workflow="w", success_metrics="s", raw="raw text",
+                          source="agency-agents@abc")
+        s.add(row)
+        await s.flush()
+        await s.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r, :t)"),
+                        {"r": row.id, "t": "game economy balance monetization"})
+        await s.commit()
+        hit = (await s.execute(sa_text(
+            "SELECT ps.slug FROM persona_seeds_fts f JOIN persona_seeds ps ON ps.id=f.rowid "
+            "WHERE f.text MATCH :q"), {"q": "economy"})).scalar_one_or_none()
+    assert hit == "game-economy-designer"
 
 
-@pytest.fixture
-def seeded(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def seeded(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'ps.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
-            await conn.run_sync(upgrade_sync)
-        async with maker() as s:
-            for slug, kw in [("game-economy-designer", "game economy balance monetization numerical"),
-                             ("seo-copywriter", "seo content writing keywords marketing")]:
-                row = PersonaSeed(slug=slug, name=slug, raw=kw, source="x")
-                s.add(row)
-                await s.flush()
-                await s.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r,:t)"),
-                                {"r": row.id, "t": kw})
-            await s.commit()
-    anyio.run(_seed)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
+        await conn.run_sync(upgrade_sync)
+    async with maker() as s:
+        for slug, kw in [("game-economy-designer", "game economy balance monetization numerical"),
+                         ("seo-copywriter", "seo content writing keywords marketing")]:
+            row = PersonaSeed(slug=slug, name=slug, raw=kw, source="x")
+            s.add(row)
+            await s.flush()
+            await s.execute(sa_text("INSERT INTO persona_seeds_fts (rowid, text) VALUES (:r,:t)"),
+                            {"r": row.id, "t": kw})
+        await s.commit()
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     return maker
 
 
-def test_search_returns_relevant_seed(seeded):
+async def test_search_returns_relevant_seed(seeded):
     from server.services import persona_seed_service
-    hits = anyio.run(lambda: persona_seed_service.search("game numerical balance", k=3))
+    hits = await persona_seed_service.search("game numerical balance", k=3)
     assert any(h["slug"] == "game-economy-designer" for h in hits)
     assert all(set(h.keys()) >= {"slug", "name", "raw"} for h in hits)
 
 
-def test_search_empty_query_returns_empty(seeded):
+async def test_search_empty_query_returns_empty(seeded):
     from server.services import persona_seed_service
-    assert anyio.run(lambda: persona_seed_service.search("", k=3)) == []
+    assert await persona_seed_service.search("", k=3) == []
 
 
-def test_count_returns_seed_total(seeded):
+async def test_count_returns_seed_total(seeded):
     from server.services import persona_seed_service
-    assert anyio.run(persona_seed_service.count) == 2
+    assert await persona_seed_service.count() == 2
 
 
-def test_list_seeds_browse_returns_all_with_fields(seeded):
+async def test_list_seeds_browse_returns_all_with_fields(seeded):
     from server.services import persona_seed_service
-    seeds = anyio.run(lambda: persona_seed_service.list_seeds())
+    seeds = await persona_seed_service.list_seeds()
     assert len(seeds) == 2
     assert {s["slug"] for s in seeds} == {"game-economy-designer", "seo-copywriter"}
     assert all(set(s.keys()) == {"slug", "name", "division", "summary"} for s in seeds)
 
 
-def test_list_seeds_query_filters(seeded):
+async def test_list_seeds_query_filters(seeded):
     from server.services import persona_seed_service
-    hits = anyio.run(lambda: persona_seed_service.list_seeds("game balance"))
+    hits = await persona_seed_service.list_seeds("game balance")
     assert [h["slug"] for h in hits] == ["game-economy-designer"]
 
 
-def test_get_by_slugs_resolves_in_order_dropping_unknown(seeded):
+async def test_get_by_slugs_resolves_in_order_dropping_unknown(seeded):
     from server.services import persona_seed_service
-    out = anyio.run(lambda: persona_seed_service.get_by_slugs(
-        ["seo-copywriter", "ghost-slug", "game-economy-designer"]))
+    out = await persona_seed_service.get_by_slugs(
+        ["seo-copywriter", "ghost-slug", "game-economy-designer"])
     assert [o["slug"] for o in out] == ["seo-copywriter", "game-economy-designer"]
-    assert anyio.run(lambda: persona_seed_service.get_by_slugs([])) == []
+    assert await persona_seed_service.get_by_slugs([]) == []
 
 
-def test_get_detail_resolves_composed_seeds_from_config(seeded):
+async def test_get_detail_resolves_composed_seeds_from_config(seeded):
     # config.seed_refs persisted at create → SpawnDetailOut.seeds resolved (unknown dropped).
     from server.services import spawn_service
     from server.db.models import Spawn
-    async def _run():
-        async with seeded() as s:
-            spawn = Spawn(name="econ-bot", domain_category="game", capabilities=[],
-                          system_prompt="x", config={"seed_refs": ["game-economy-designer", "ghost"]})
-            s.add(spawn)
-            await s.commit()
-            await s.refresh(spawn)
-            return await spawn_service.get_detail(s, spawn.id)
-    detail = anyio.run(_run)
+    async with seeded() as s:
+        spawn = Spawn(name="econ-bot", domain_category="game", capabilities=[],
+                      system_prompt="x", config={"seed_refs": ["game-economy-designer", "ghost"]})
+        s.add(spawn)
+        await s.commit()
+        await s.refresh(spawn)
+        detail = await spawn_service.get_detail(s, spawn.id)
     assert [sd.slug for sd in detail.seeds] == ["game-economy-designer"]
 
 
-def test_get_detail_no_seeds_when_config_empty(seeded):
+async def test_get_detail_no_seeds_when_config_empty(seeded):
     from server.services import spawn_service
     from server.db.models import Spawn
-    async def _run():
-        async with seeded() as s:
-            spawn = Spawn(name="plain", domain_category="x", capabilities=[], system_prompt="x")
-            s.add(spawn)
-            await s.commit()
-            await s.refresh(spawn)
-            return await spawn_service.get_detail(s, spawn.id)
-    assert anyio.run(_run).seeds == []
+    async with seeded() as s:
+        spawn = Spawn(name="plain", domain_category="x", capabilities=[], system_prompt="x")
+        s.add(spawn)
+        await s.commit()
+        await s.refresh(spawn)
+        detail = await spawn_service.get_detail(s, spawn.id)
+    assert detail.seeds == []
 
 
 def test_is_persona_path_filters():
@@ -148,15 +140,13 @@ def test_is_persona_path_filters():
         assert _is_persona_path(p) is False, f"should exclude {p}"
 
 
-def test_import_parses_and_upserts(tmp_path, monkeypatch):
+async def test_import_parses_and_upserts(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'imp.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async def _prep():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
-            await conn.run_sync(upgrade_sync)
-    anyio.run(_prep)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        from server.db.migrations.versions._0015_persona_seeds import upgrade_sync
+        await conn.run_sync(upgrade_sync)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
     from server.services import persona_seed_service
@@ -171,10 +161,10 @@ def test_import_parses_and_upserts(tmp_path, monkeypatch):
     monkeypatch.setattr(persona_seed_service, "_list_md_paths", fake_list_md)
     monkeypatch.setattr(persona_seed_service, "_fetch_md", fake_fetch_md)
 
-    n = anyio.run(lambda: persona_seed_service.import_from_repo("msitarzewski", "agency-agents"))
+    n = await persona_seed_service.import_from_repo("msitarzewski", "agency-agents")
     assert n == 1
-    hits = anyio.run(lambda: persona_seed_service.search("backend architect services", k=3))
+    hits = await persona_seed_service.search("backend architect services", k=3)
     assert hits and hits[0]["slug"] == "backend-architect"
     # idempotent: re-import doesn't duplicate
-    anyio.run(lambda: persona_seed_service.import_from_repo("msitarzewski", "agency-agents"))
-    assert anyio.run(persona_seed_service.count) == 1
+    await persona_seed_service.import_from_repo("msitarzewski", "agency-agents")
+    assert await persona_seed_service.count() == 1

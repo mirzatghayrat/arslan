@@ -1,6 +1,4 @@
 
-import anyio
-
 from server.orchestrator import dispatcher
 from server.services import compare_judge, evaluator
 
@@ -59,7 +57,7 @@ async def test_empty_replay_fails_gate(monkeypatch):
     assert out["gate"]["passed"] is False
 
 
-def test_evaluate_uses_custom_scorer_and_dims(monkeypatch):
+async def test_evaluate_uses_custom_scorer_and_dims(monkeypatch):
     async def fake_dispatch(conv, *, spawn_id, task_brief, system_prompt_override, persist):
         return {"full_output": "candidate-out"}
     monkeypatch.setattr(evaluator.dispatcher, "dispatch", fake_dispatch)
@@ -69,14 +67,14 @@ def test_evaluate_uses_custom_scorer_and_dims(monkeypatch):
     fake_scorer.dimensions = ("benchmark",)
 
     items = [{"run_id": 1, "task": "t", "baseline_output": "base"}]
-    res = anyio.run(lambda: evaluator.evaluate(
+    res = await evaluator.evaluate(
         spawn_id=1, persona="p", candidate_prompt="## Role\nX", replay_items=items,
-        scorer=fake_scorer))
+        scorer=fake_scorer)
     assert res["gate"]["passed"] is True
     assert "benchmark" in res["aggregate"]["dims"]
 
 
-def test_evaluate_uses_running_best_baseline(monkeypatch):
+async def test_evaluate_uses_running_best_baseline(monkeypatch):
     captured = {}
 
     async def fake_dispatch(conv, *, spawn_id, task_brief, system_prompt_override, persist):
@@ -89,7 +87,7 @@ def test_evaluate_uses_running_best_baseline(monkeypatch):
     fake_scorer.dimensions = ("completion",)
 
     items = [{"run_id": 1, "task": "t", "baseline_output": "STORED"}]
-    anyio.run(lambda: evaluator.evaluate(
+    await evaluator.evaluate(
         spawn_id=1, persona="p", candidate_prompt="## Role\nX", replay_items=items,
-        scorer=fake_scorer, baseline_outputs={1: "RUNNING_BEST"}))
+        scorer=fake_scorer, baseline_outputs={1: "RUNNING_BEST"})
     assert captured["a"] == "RUNNING_BEST"  # compared vs running-best, not the stored baseline

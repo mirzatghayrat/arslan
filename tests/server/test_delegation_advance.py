@@ -13,8 +13,8 @@ outline re-pasted 3×. These tests pin the two fixes:
   验收②: short-confirm recognition is a deterministic bilingual lexicon — trim +
          lowercase + edge de-punctuation, exact or prefix match, zero LLM.
 """
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -91,22 +91,20 @@ def test_lexicon_length_cap_boundary():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'advance.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
-            # NON-trusted by construction: a fresh spawn row, zero trust records (the
-            # incident's Deck Master shape).
-            s.add(Spawn(id=6, name="Deck Master", domain_category="content-creator",
-                        capabilities=["deck"], system_prompt="You make decks."))
-            await s.commit()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as s:
+        # NON-trusted by construction: a fresh spawn row, zero trust records (the
+        # incident's Deck Master shape).
+        s.add(Spawn(id=6, name="Deck Master", domain_category="content-creator",
+                    capabilities=["deck"], system_prompt="You make decks."))
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

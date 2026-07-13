@@ -1,5 +1,4 @@
 """Local fastembed provider: absent-safe, download state machine."""
-import anyio
 
 
 def test_provider_none_when_model_absent(tmp_path, monkeypatch):
@@ -9,7 +8,7 @@ def test_provider_none_when_model_absent(tmp_path, monkeypatch):
     assert le.download_status()["status"] == "absent"
 
 
-def test_download_status_error_when_fastembed_missing(tmp_path, monkeypatch):
+async def test_download_status_error_when_fastembed_missing(tmp_path, monkeypatch):
     """fastembed 未安装时 download 报 error 状态而非炸。"""
     import builtins
     from server.services import local_embedding as le
@@ -20,7 +19,7 @@ def test_download_status_error_when_fastembed_missing(tmp_path, monkeypatch):
             raise ImportError("No module named 'fastembed'")
         return real_import(name, *a, **kw)
     monkeypatch.setattr(builtins, "__import__", block)
-    anyio.run(le.download_local_model)
+    await le.download_local_model()
     st = le.download_status()
     assert st["status"] == "error" and "fastembed" in (st["error"] or "")
 
@@ -36,7 +35,7 @@ def test_provider_ready_when_onnx_present(tmp_path, monkeypatch):
     assert le.download_status()["status"] == "ready"
 
 
-def test_embed_preserves_order_and_coerces_float(monkeypatch):
+async def test_embed_preserves_order_and_coerces_float(monkeypatch):
     """LocalEmbeddingProvider.embed() must return vectors in the same order
     as the input texts (providers/models must not silently reorder), and
     every component must be a plain float (not numpy scalar/int) since the
@@ -54,7 +53,7 @@ def test_embed_preserves_order_and_coerces_float(monkeypatch):
     monkeypatch.setattr(le, "_model", FakeModel())
     provider = le.LocalEmbeddingProvider()
     texts = ["第一", "第二", "第三"]
-    vecs = anyio.run(lambda: provider.embed(texts))
+    vecs = await provider.embed(texts)
 
     assert len(vecs) == len(texts)
     for i, vec in enumerate(vecs):
