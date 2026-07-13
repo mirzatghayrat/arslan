@@ -13,6 +13,7 @@ import type {
   EvolveEnqueued,
   ProposalListItem,
   ProposalDetail,
+  SpawnDiagnosis,
   RefreshResult,
   RollbackResult,
   IngestResult,
@@ -322,6 +323,8 @@ export const api = {
     ),
   getProposalDetail: (proposalId: number) =>
     request<ProposalDetail>(`/evolution/proposals/${proposalId}`),
+  getEvolutionDiagnosis: (spawnId: number) =>
+    request<SpawnDiagnosis>(`/spawns/${spawnId}/evolution/diagnosis`),
   refreshProposal: (proposalId: number) =>
     request<RefreshResult>(`/evolution/proposals/${proposalId}/refresh`, { method: "POST" }),
   confirmProposal: (proposalId: number) =>

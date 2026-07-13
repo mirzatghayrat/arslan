@@ -737,6 +737,60 @@ export interface EvolveEnqueued {
   attempt_id: number | null;
 }
 
+/**
+ * Stable machine verdict for the evolution eligibility diagnosis (E9-b). The panel maps each
+ * to a localized `evolution.diag.verdict_${code}` sentence. `holdout_via_synthetic_topup` is
+ * INFORMATIONAL (the mint=True top-up fills a thin real holdout at evolve time);
+ * `drought_holdout_split` is retained for back-compat but the top-up makes it unreachable.
+ */
+export type VerdictCode =
+  | "in_flight_hung"
+  | "drought_no_runs"
+  | "drought_non_replayable"
+  | "drought_too_few"
+  | "baseline_flooring"
+  | "drought_holdout_split"
+  | "holdout_via_synthetic_topup"
+  | "gate_failure"
+  | "skipped_budget"
+  | "eligible_looking";
+
+/** GET /spawns/{id}/evolution/diagnosis — read-only evolution eligibility for one spawn. */
+export interface SpawnDiagnosis {
+  spawn_id: number;
+  spawn_name: string;
+  generation_level: number;
+  total_scored: number;
+  replayable: number;
+  non_replayable: number;
+  offending_tools: Record<string, number>;
+  baseline_started_at: string | null;
+  scored_ge_baseline: number;
+  corpus_total: number;
+  holdout_ceiling: number;
+  real_holdout: number;
+  effective_holdout: number;
+  propose_count: number;
+  corpus_excluded: number;
+  min_holdout_n: number;
+  consecutive_fails: number;
+  threshold: number;
+  count_since_last_attempt: number;
+  auto_eligible: boolean;
+  open_proposals: number;
+  auto_on: boolean;
+  max_est_tokens: number | null;
+  last_attempts: {
+    id: number;
+    outcome: string | null;
+    reason: string;
+    started_at: string | null;
+    finished_at: string | null;
+  }[];
+  verdict_code: VerdictCode;
+  verdict_params: Record<string, unknown>;
+}
+
 /** POST /evolution/proposals/{id}/refresh. */
 export interface RefreshResult {
   ok: boolean;
