@@ -965,6 +965,26 @@
       "status_rejected": "abgelehnt",
       "status_stale": "veraltet",
       "status_proposed": "vorgeschlagen"
+    },
+    "diag": {
+      "title": "Warum noch keine Vorschläge",
+      "pick_spawn": "Wähle oben einen Spawn, um seine Evolutions-Eignung zu sehen.",
+      "verdict_in_flight_hung": "Ein Versuch (#{{attempt_id}}) läuft seit {{age_min}} Min und wurde nie abgeschlossen — der Runner hängt möglicherweise.",
+      "verdict_drought_no_runs": "Noch keine bewerteten Läufe — dieser Spawn braucht echte Nutzung, bevor er evolvieren kann.",
+      "verdict_drought_non_replayable": "{{non_replayable}}/{{total_scored}} bewertete Läufe sind nicht hermetisch wiederholbar, es bleiben nur {{replayable}} (< {{min}}).",
+      "verdict_drought_too_few": "Bisher nur {{total_scored}} bewertete Läufe (nötig sind {{min}}).",
+      "verdict_baseline_flooring": "Die deklarierte Baseline begrenzt den Korpus auf {{scored_ge_baseline}} Läufe (< {{min}}).",
+      "verdict_drought_holdout_split": "Die Holdout-Seite hat nur {{holdout_ceiling}} Paare (< {{min}}) — das Gate kann noch nicht zertifizieren.",
+      "verdict_holdout_via_synthetic_topup": "Das echte Holdout hat {{real_holdout}} Paare; die nächste Evolution füllt es mit synthetischen Aufgaben auf {{min}} auf — zum Ausführen einreihen.",
+      "verdict_gate_failure": "Der letzte Versuch (#{{attempt_id}}) ist am Gate gescheitert: {{reason}}.",
+      "verdict_skipped_budget": "Der letzte Versuch (#{{attempt_id}}) wurde wegen Budget übersprungen: {{reason}}.",
+      "verdict_eligible_looking": "Korpus und Backoff sehen bereit aus — der Optimierer hat die Baseline evtl. nur noch nicht geschlagen, oder die Evolution wurde nicht eingereiht.",
+      "chain_replayable": "Wiederholbare Läufe: {{replayable}}/{{total_scored}}",
+      "chain_holdout": "Holdout-Paare: {{real_holdout}} echt → {{effective_holdout}} nach Auffüllung (nötig {{min}})",
+      "chain_backoff": "Backoff: {{count_since}} neue Läufe vs. Schwelle {{threshold}}",
+      "chain_last_attempt": "Letzter Versuch: {{outcome}} ({{reason}})",
+      "chain_none": "noch keine Versuche",
+      "auto_off": "Auto-Evolution ist aus"
     }
   },
   "usage": {

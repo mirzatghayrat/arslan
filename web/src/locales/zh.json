@@ -965,6 +965,26 @@
       "status_rejected": "已拒绝",
       "status_stale": "已过期",
       "status_proposed": "待审"
+    },
+    "diag": {
+      "title": "为什么还没有提案",
+      "pick_spawn": "在上方选择一个分身，查看其进化资格。",
+      "verdict_in_flight_hung": "有一次尝试（#{{attempt_id}}）已运行 {{age_min}} 分钟且从未结束——运行器可能卡住了。",
+      "verdict_drought_no_runs": "还没有已评分的运行——该分身需要真实使用后才能进化。",
+      "verdict_drought_non_replayable": "{{non_replayable}}/{{total_scored}} 次已评分运行无法密闭重放，仅剩 {{replayable}} 次（< {{min}}）。",
+      "verdict_drought_too_few": "目前只有 {{total_scored}} 次已评分运行（需要 {{min}} 次）。",
+      "verdict_baseline_flooring": "已声明的基线将语料限制为 {{scored_ge_baseline}} 次运行（< {{min}}）。",
+      "verdict_drought_holdout_split": "留出集一侧仅有 {{holdout_ceiling}} 对（< {{min}}）——闸门尚无法认证。",
+      "verdict_holdout_via_synthetic_topup": "真实留出集有 {{real_holdout}} 对；下次进化会用合成任务补足到 {{min}}——入队即可运行。",
+      "verdict_gate_failure": "上一次尝试（#{{attempt_id}}）未通过闸门：{{reason}}。",
+      "verdict_skipped_budget": "上一次尝试（#{{attempt_id}}）因预算被跳过：{{reason}}。",
+      "verdict_eligible_looking": "语料与退避看起来已就绪——优化器可能只是还没有超过基线，或进化尚未入队。",
+      "chain_replayable": "可重放运行：{{replayable}}/{{total_scored}}",
+      "chain_holdout": "留出集对数：{{real_holdout}} 真实 → 补足后 {{effective_holdout}}（需要 {{min}}）",
+      "chain_backoff": "退避：{{count_since}} 次新运行 对 阈值 {{threshold}}",
+      "chain_last_attempt": "上一次尝试：{{outcome}}（{{reason}}）",
+      "chain_none": "还没有尝试",
+      "auto_off": "自动进化已关闭"
     }
   },
   "usage": {

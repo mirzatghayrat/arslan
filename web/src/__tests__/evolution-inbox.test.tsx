@@ -17,6 +17,7 @@ vi.mock("../api/client", () => {
       getEvolutionProposals: vi.fn(),
       listSpawns: vi.fn(),
       getProposalDetail: vi.fn(),
+      getEvolutionDiagnosis: vi.fn(),
       getEvolveEstimate: vi.fn(),
       runEvolve: vi.fn(),
       confirmProposal: vi.fn(),
@@ -29,7 +30,7 @@ vi.mock("../api/client", () => {
 
 import EvolutionInbox from "../components/EvolutionInbox";
 import { api } from "../api/client";
-import type { ProposalListItem, ProposalDetail } from "../api/client.types";
+import type { ProposalListItem, ProposalDetail, SpawnDiagnosis } from "../api/client.types";
 
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
@@ -56,6 +57,7 @@ beforeEach(() => {
   m.getEvolutionProposals.mockResolvedValue([ROW]);
   m.listSpawns.mockResolvedValue([{ id: 7, name: "小美" }]);
   m.getProposalDetail.mockResolvedValue(DETAIL);
+  m.getEvolutionDiagnosis.mockResolvedValue(null); // per-spawn eligibility panel fetch (E9-b)
 });
 
 describe("EvolutionInbox", () => {
@@ -100,5 +102,24 @@ describe("EvolutionInbox", () => {
     m.getEvolutionProposals.mockResolvedValue([]);
     render(<EvolutionInbox onOpenRun={() => {}} />);
     await waitFor(() => expect(screen.getByText("evolution.inbox.empty")).toBeTruthy());
+  });
+
+  it("shows the eligibility panel in the empty state once a spawn is selected", async () => {
+    m.getEvolutionProposals.mockResolvedValue([]);
+    const diag: SpawnDiagnosis = {
+      spawn_id: 7, spawn_name: "小美", generation_level: 1, total_scored: 12, replayable: 12,
+      non_replayable: 0, offending_tools: {}, baseline_started_at: null, scored_ge_baseline: 12,
+      corpus_total: 12, holdout_ceiling: 6, real_holdout: 6, effective_holdout: 10,
+      propose_count: 6, corpus_excluded: 0, min_holdout_n: 10, consecutive_fails: 0,
+      threshold: 10, count_since_last_attempt: 0, auto_eligible: false, open_proposals: 0,
+      auto_on: true, max_est_tokens: null, last_attempts: [],
+      verdict_code: "holdout_via_synthetic_topup", verdict_params: { real_holdout: 6, min: 10 },
+    };
+    m.getEvolutionDiagnosis.mockResolvedValue(diag);
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+    await waitFor(() => expect(screen.getByText("evolution.inbox.empty")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "7" } });
+    await waitFor(() => expect(m.getEvolutionDiagnosis).toHaveBeenCalledWith(7));
+    expect(await screen.findByTestId("eligibility-panel")).toBeTruthy();
   });
 });

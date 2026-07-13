@@ -61,7 +61,10 @@ describe("locale parity", () => {
     // 885 → 886: Settings-T6 replaced the top Save button with instant auto-save
     // — removed the now-dead btnSave/btnSaving (−2) and added the auto-save
     // status keys savingLabel/savedTick/saveFailed (+3) → net +1.
-    expect(enKeys).toHaveLength(886);
+    // 886 → 904: E9-b Task 4d added the evolution.diag.* block for the inbox
+    // eligibility panel (title + pick_spawn + 10 verdict_* codes + 5 chain_* +
+    // auto_off = 18 keys).
+    expect(enKeys).toHaveLength(904);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
