@@ -5,8 +5,8 @@ capped (per-file size + per-skill count), stored to data_dir/skill_scripts/<key>
 listed in a "## Bundled references" body section, and reported. Optional read side:
 read_skill(section="references/<file>") fetches one reference, caged + traversal-guarded.
 """
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -26,16 +26,14 @@ Body that references references/guide.md for detail.
 """
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'i.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _setup():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    anyio.run(_setup)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
     return m

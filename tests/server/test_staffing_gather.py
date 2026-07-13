@@ -1,5 +1,5 @@
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -33,14 +33,14 @@ def test_missing_slots_lists_nulls():
                              "first_task": None, "recurrence": True}) == ["capability", "first_task"]
 
 
-def test_extract_slots_returns_nullable(monkeypatch):
+async def test_extract_slots_returns_nullable(monkeypatch):
     class Resp:
         content = ('{"domain":"game-design.numerical","capability":"概率建模",'
                    '"first_task":null,"recurrence":null}')
     class A:
         async def chat(self, *, system, user): return Resp()
     monkeypatch.setattr(sg, "_get_adapter", lambda: A())
-    out = anyio.run(lambda: sg.extract_slots("做个手游数值的分身，要做概率建模"))
+    out = await sg.extract_slots("做个手游数值的分身，要做概率建模")
     assert out["domain"] == "game-design.numerical"
     assert out["capability"] == "概率建模"
     assert out["first_task"] is None and out["recurrence"] is None
@@ -51,18 +51,18 @@ def test_is_ready_with_false_recurrence():
     assert sg.is_ready({"domain": "a.b", "capability": "c", "first_task": "t", "recurrence": False}) is True
 
 
-def test_extract_slots_normalizes_false_recurrence(monkeypatch):
+async def test_extract_slots_normalizes_false_recurrence(monkeypatch):
     # A literal false recurrence must pass through, NOT be coerced to None.
     class Resp:
         content = '{"domain":"a","capability":"b","first_task":"c","recurrence":false}'
     class A:
         async def chat(self, *, system, user): return Resp()
     monkeypatch.setattr(sg, "_get_adapter", lambda: A())
-    out = anyio.run(lambda: sg.extract_slots("one-off task, not recurring"))
+    out = await sg.extract_slots("one-off task, not recurring")
     assert out["recurrence"] is False
 
 
-def test_extract_slots_wraps_history_in_external_delimiters(monkeypatch):
+async def test_extract_slots_wraps_history_in_external_delimiters(monkeypatch):
     """Fix #4: extract_slots must wrap history_text with wrap_external before
     sending to the LLM so injected spawn/attached content cannot forge slot values."""
     captured = {}
@@ -77,7 +77,7 @@ def test_extract_slots_wraps_history_in_external_delimiters(monkeypatch):
 
     monkeypatch.setattr(sg, "_get_adapter", lambda: A())
     history = "user: build me a researcher spawn\narslan: on it"
-    anyio.run(lambda: sg.extract_slots(history))
+    await sg.extract_slots(history)
     wrapped = captured.get("user", "")
     from server.orchestrator.untrusted import DELIM_OPEN, DELIM_CLOSE
     assert DELIM_OPEN in wrapped, "wrap_external opening delimiter must appear in LLM user arg"
@@ -88,16 +88,14 @@ def test_extract_slots_wraps_history_in_external_delimiters(monkeypatch):
 # --- Phase round-trip tests (use real in-memory DB like test_phase_service.py) ---
 
 
-@pytest.fixture
-def temp_db(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def temp_db(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'p.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as c:
-            await c.run_sync(Base.metadata.create_all)
+    async with engine.begin() as c:
+        await c.run_sync(Base.metadata.create_all)
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     return maker
 

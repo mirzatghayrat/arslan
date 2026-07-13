@@ -15,8 +15,8 @@ way — never a weaker parallel copy. These tests pin:
     the legacy chat_stream branch) appends + streams the honest correction and keeps the
     original text; an honest reply passes through byte-for-byte with no extra LLM call.
 """
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -121,21 +121,19 @@ async def test_correct_zero_tool_fail_open_on_llm_error(monkeypatch):
 # ---------------------------------------------------------------------------
 # Flow: dispatcher.dispatch on a ZERO-TOOL spawn (unseeded registry → no wired tools)
 # ---------------------------------------------------------------------------
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'zt.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
-            # NO registry seed → wired_tools_for_spawn returns [] → the zero-tool branch.
-            s.add(Spawn(id=7, name="persona", domain_category="content-creator",
-                        system_prompt="You are a persona-only assistant with no tools."))
-            await s.commit()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as s:
+        # NO registry seed → wired_tools_for_spawn returns [] → the zero-tool branch.
+        s.add(Spawn(id=7, name="persona", domain_category="content-creator",
+                    system_prompt="You are a persona-only assistant with no tools."))
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

@@ -1,4 +1,3 @@
-import anyio
 from server.services import spawn_match_service as sms
 
 
@@ -20,11 +19,11 @@ def test_structural_score_accepts_single_domain_string():
     assert sms._structural_score(need, spawn) == 1.0
 
 
-def test_llm_coverage_empty_spawns_short_circuits(monkeypatch):
+async def test_llm_coverage_empty_spawns_short_circuits(monkeypatch):
     def _boom():
         raise AssertionError("_get_adapter must not be called for empty spawns")
     monkeypatch.setattr(sms, "_get_adapter", _boom)
-    result = anyio.run(lambda: sms._llm_coverage({"capabilities": ["x"]}, []))
+    result = await sms._llm_coverage({"capabilities": ["x"]}, [])
     assert result == {}
 
 
@@ -58,7 +57,7 @@ def test_classify_band_create_all_low():
     assert sms.classify_band([])[0] == "create"
 
 
-def test_score_spawns_combines_and_ranks(monkeypatch):
+async def test_score_spawns_combines_and_ranks(monkeypatch):
     need = {"domain": "data-analysis.finance", "capabilities": ["forecasting"]}
     spawns = [
         {"id": 1, "name": "fin", "domain_category": "data-analysis",
@@ -69,6 +68,6 @@ def test_score_spawns_combines_and_ranks(monkeypatch):
     async def fake_coverage(need_, spawns_):
         return {1: 1.0, 2: 0.0}  # by spawn id
     monkeypatch.setattr(sms, "_llm_coverage", fake_coverage)
-    ranked = anyio.run(lambda: sms.score_spawns(need, spawns))
+    ranked = await sms.score_spawns(need, spawns)
     assert ranked[0]["spawn_id"] == 1 and ranked[0]["score"] > ranked[1]["score"]
     assert set(ranked[0].keys()) >= {"spawn_id", "name", "score", "why"}

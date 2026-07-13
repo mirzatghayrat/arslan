@@ -1,6 +1,6 @@
 """Spawn loop (now on run_native): gate enforcement, bounds, events, escalate, final streaming."""
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -8,24 +8,21 @@ from server.db.models import Base, Spawn, SpawnCapability
 from server.registry import executors
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'lp.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-        from server.registry.seeder import seed_registry
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    from server.registry.seeder import seed_registry
 
-        await seed_registry()
-        async with m() as s:
-            s.add(Spawn(id=7, name="小美", domain_category="c", system_prompt="sp"))
-            s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
-            await s.commit()
-
-    anyio.run(_seed)
+    await seed_registry()
+    async with m() as s:
+        s.add(Spawn(id=7, name="小美", domain_category="c", system_prompt="sp"))
+        s.add(SpawnCapability(spawn_id=7, kind="toolset", ref_key="web_search_scraping"))
+        await s.commit()
     return m
 
 
@@ -195,7 +192,7 @@ async def test_escalate_disabled_feeds_back_and_continues(maker, monkeypatch):
     assert out["final"] == "final answer without escalation"
 
 
-def test_spawn_loop_forces_tools(maker, monkeypatch):
+async def test_spawn_loop_forces_tools(maker, monkeypatch):
     """spawn_loop must pass force_tools=True to tool_loop.run_native (spawns structurally use tools)."""
     from server.orchestrator import spawn_loop, tool_loop
 
@@ -206,8 +203,8 @@ def test_spawn_loop_forces_tools(maker, monkeypatch):
         return {"final": "ok", "escalation": None, "tool_trace": []}
 
     monkeypatch.setattr(tool_loop, "run_native", fake_run_native)
-    anyio.run(lambda: spawn_loop.run(
+    await spawn_loop.run(
         spawn_id=7, system="s", user_content="u", history=[],
         current_turn=1, emit=lambda e: None, on_chunk=lambda c: None,
-    ))
+    )
     assert seen["force_tools"] is True

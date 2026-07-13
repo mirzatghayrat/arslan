@@ -14,8 +14,8 @@ The arbitration is tested deterministically with monkeypatch stubs (no real LLM)
 `_handle_answer`, `dispatch_routed`, `roster_service.is_member`, `score_spawns` (over which
 the REAL `classify_band` runs), `roster_service.join`, and an `emit` frame capture.
 """
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -63,24 +63,22 @@ def _stub_arbitration_env(monkeypatch, *, is_member, ranked=None):
         _stub_member_scoring(monkeypatch, ranked)
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     """Real sqlite for the accept-path cells (typed-「好」 spine goes through
     `handle_user_message` + `phase_service` + `memory`, which need a live DB)."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'arb.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
-            s.add(Spawn(
-                id=7, name="Deck Master", domain_category="marketing",
-                domain_subcategory="deck", capabilities=["deck"],
-                persona_role="builds decks", system_prompt="You build decks."))
-            await s.commit()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as s:
+        s.add(Spawn(
+            id=7, name="Deck Master", domain_category="marketing",
+            domain_subcategory="deck", capabilities=["deck"],
+            persona_role="builds decks", system_prompt="You build decks."))
+        await s.commit()
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 
