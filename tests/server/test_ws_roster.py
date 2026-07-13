@@ -1,12 +1,9 @@
 """Tests for T4: roster_update frame builder + roster_invite/roster_kick WS handlers + on-connect roster."""
-import anyio
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-import server.db.session as db_session
-from server.db.models import Base, Spawn
+from server.db.models import Spawn
 from server.ws import protocol
+from tests.server.conftest import build_ws_client
 
 
 # ---------------------------------------------------------------------------
@@ -29,20 +26,8 @@ def test_roster_update_frame_empty():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def staged_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'staged.db'}")
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+def staged_client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
         async with maker() as s:
             s.add(
                 Spawn(
@@ -55,12 +40,7 @@ def staged_client(tmp_path, monkeypatch):
             )
             await s.commit()
 
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-
-    return TestClient(create_app())
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="staged.db")
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +180,7 @@ def test_roster_invite_with_pending_dispatches_parked_task(staged_client, monkey
     async def _park():
         await phase_service.set_inviting(
             "main", 4, task_brief="draft a post", user_message="help me on linkedin")
-    anyio.run(_park)
+    staged_client.portal.call(_park)
 
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
@@ -217,7 +197,7 @@ def test_roster_invite_with_pending_dispatches_parked_task(staged_client, monkey
     assert dispatched[0]["user_message"] == "help me on linkedin"
     assert dispatched[0]["needs_proposal"] is False
     # The inviting phase is cleared on accept.
-    assert anyio.run(phase_service.get_pending_invite, "main") is None
+    assert staged_client.portal.call(phase_service.get_pending_invite, "main") is None
 
 
 def test_roster_invite_accept_propose_mode_dispatches_in_propose_mode(staged_client, monkeypatch):
@@ -239,7 +219,7 @@ def test_roster_invite_accept_propose_mode_dispatches_in_propose_mode(staged_cli
         await phase_service.set_inviting(
             "main", 4, task_brief="optimize linkedin", user_message="帮我优化",
             needs_proposal=True)
-    anyio.run(_park)
+    staged_client.portal.call(_park)
 
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
@@ -287,8 +267,8 @@ def test_dismiss_invite_clears_pending(staged_client):
     async def _park():
         await phase_service.set_inviting(
             "main", 4, task_brief="draft a post", user_message="help")
-    anyio.run(_park)
-    assert anyio.run(phase_service.get_pending_invite, "main") is not None
+    staged_client.portal.call(_park)
+    assert staged_client.portal.call(phase_service.get_pending_invite, "main") is not None
 
     with staged_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
@@ -300,4 +280,4 @@ def test_dismiss_invite_clears_pending(staged_client):
         ws.receive_json()  # roster_event "joined"
         ws.receive_json()  # roster_update
 
-    assert anyio.run(phase_service.get_pending_invite, "main") is None
+    assert staged_client.portal.call(phase_service.get_pending_invite, "main") is None

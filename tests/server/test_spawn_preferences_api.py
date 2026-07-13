@@ -1,28 +1,18 @@
-import anyio
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from starlette.testclient import TestClient
 
-import server.db.session as db_session
-from server.db.models import Base, Spawn
+from server.db.models import Spawn
+from tests.server.conftest import build_ws_client
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'p.db'}")
-    m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as s:
+def client(tmp_path, monkeypatch, portal):
+    async def _seed(maker):
+        async with maker() as s:
             s.add(Spawn(id=3, name="小美", domain_category="content", system_prompt="sp",
                         memory_facts=["输出更简短", "标注来源"]))
             await s.commit()
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    monkeypatch.setenv("ARSLAN_API_TOKEN", "")
-    from server.main import app
-    return TestClient(app)
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="p.db",
+                           env={"ARSLAN_API_TOKEN": ""})
 
 
 def test_get_preferences(client):

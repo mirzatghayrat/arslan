@@ -9,21 +9,13 @@ confirm/cancel frame before executing (or declining).
 Harness modeled on tests/server/test_ws_arslan.py: fresh sqlite DB per test,
 stubbed adapters, TestClient websocket.
 """
-import contextlib
-
-import anyio
-import anyio.from_thread
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
-import server.db.session as db_session
 import server.orchestrator.arslan as arslan_mod
 import server.orchestrator.router as router_mod
 import server.orchestrator.tool_loop as tool_loop_mod
 import server.registry.executors as executors_mod
-from server.db.models import Base
+from tests.server.conftest import build_ws_client
 
 
 # --------------------------------------------------------------------------- #
@@ -98,36 +90,21 @@ class _FakeRunCommandExecutor:
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture
-def app_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import importlib
-
-    import server.config as config
-
-    importlib.reload(config)
-
-    # NullPool: this fixture drives the same file DB from multiple event loops
-    # (anyio.run(_seed)/anyio.run(_do) each spin a throwaway loop, while the WS
-    # traffic runs on TestClient's portal loop). A pooled aiosqlite connection
-    # opened on one loop and reused on another hangs forever — NullPool opens a
-    # fresh connection per use and never reuses one across loops.
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'rc.db'}", poolclass=NullPool)
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    anyio.run(_seed)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.main import create_app
-
-    return TestClient(create_app())
+def app_client(tmp_path, monkeypatch, portal):
+    # Single-loop harness: schema seed + every websocket_connect + mid-test DB
+    # reads all run on ONE portal loop over a NullPool engine (see
+    # conftest.build_ws_client), so no pooled aiosqlite connection is reused
+    # across event loops (the flake root). No row seed needed here — schema only.
+    return build_ws_client(portal, tmp_path, monkeypatch, db_name="rc.db")
 
 
-def _enable_shell(policy: str | None = None) -> None:
-    """Enable the orchestrator shell (and optionally set the confirm policy)."""
+def _enable_shell(app_client, policy: str | None = None) -> None:
+    """Enable the orchestrator shell (and optionally set the confirm policy).
+
+    Runs the settings write on the client's portal loop (via the sessionmaker the
+    factory attached), so this mid-test DB write shares the WS traffic's loop
+    instead of spinning a throwaway one — which would reintroduce the cross-loop
+    aiosqlite flake."""
     from server.services import settings_service
 
     data = {"orchestrator_shell_enabled": "true"}
@@ -135,10 +112,10 @@ def _enable_shell(policy: str | None = None) -> None:
         data["shell_confirm_policy"] = policy
 
     async def _do():
-        async with db_session.AsyncSessionLocal() as db:
+        async with app_client.db_maker() as db:
             await settings_service.update_settings(db, data)
 
-    anyio.run(_do)
+    app_client.portal.call(_do)
 
 
 def _stub_answer_route(monkeypatch) -> None:
@@ -178,31 +155,12 @@ def _collect_until(ws, want_type: str, max_frames: int = 40) -> list[dict]:
     return frames
 
 
-@contextlib.contextmanager
-def _shared_loop(client: TestClient):
-    """One blocking portal shared by every WS session — required whenever a test
-    opens TWO sockets, so both run on a single app event loop (asyncio queues in
-    the registry fan-out are loop-bound; see test_ws_reattach.py docstring)."""
-    with anyio.from_thread.start_blocking_portal(backend="asyncio") as portal:
-        client.portal = portal
-        try:
-            yield portal
-        finally:
-            client.portal = None
-            # SL-round gotcha: the portal context exit WAITS for outstanding tasks
-            # (cancel_remaining=False default) — a turn's fire-and-forget stragglers
-            # (distill/ledger create_tasks) on slow CI make thread.join() hang until
-            # pytest-timeout (>120s, seen twice on run 29158926706). Cancel them:
-            # every assertion has already run by the time we get here.
-            portal.stop(cancel_remaining=True)
-
-
 # --------------------------------------------------------------------------- #
 # Tests
 # --------------------------------------------------------------------------- #
 
 def test_confirm_run_command_executes(app_client, monkeypatch):
-    _enable_shell()
+    _enable_shell(app_client)
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
     fake_exec = _stub_run_command_executor(monkeypatch)
@@ -232,7 +190,7 @@ def test_confirm_run_command_executes(app_client, monkeypatch):
 
 
 def test_cancel_run_command_declines(app_client, monkeypatch):
-    _enable_shell()
+    _enable_shell(app_client)
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
     fake_exec = _stub_run_command_executor(monkeypatch)
@@ -257,7 +215,7 @@ def test_cancel_run_command_declines(app_client, monkeypatch):
 
 
 def test_ask_risky_auto_runs_low_no_card(app_client, monkeypatch):
-    _enable_shell(policy="ask_risky")
+    _enable_shell(app_client, policy="ask_risky")
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])  # LOW risk
     fake_exec = _stub_run_command_executor(monkeypatch)
@@ -277,7 +235,7 @@ def test_ask_risky_auto_runs_low_no_card(app_client, monkeypatch):
 
 
 def test_ask_risky_still_cards_medium(app_client, monkeypatch):
-    _enable_shell(policy="ask_risky")
+    _enable_shell(app_client, policy="ask_risky")
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["commit", "-m", "x"])  # MEDIUM risk
     fake_exec = _stub_run_command_executor(monkeypatch)
@@ -298,7 +256,7 @@ def test_ask_risky_still_cards_medium(app_client, monkeypatch):
 
 
 def test_remember_auto_approves_same_shape(app_client, monkeypatch):
-    _enable_shell()  # ask_all default → both would normally card
+    _enable_shell(app_client)  # ask_all default → both would normally card
     _stub_answer_route(monkeypatch)
     fake_exec = _stub_run_command_executor(monkeypatch)
 
@@ -332,7 +290,7 @@ def test_remember_low_does_not_auto_approve_high(app_client, monkeypatch):
     subcommand to '·', so both hashed to `git\\x1f·` and remembering status
     silently allowlisted push. Fix keeps the subcommand literal AND never
     remembers HIGH-risk commands — so git push must still show a fresh card."""
-    _enable_shell()  # ask_all default → LOW cards (so we can remember it)
+    _enable_shell(app_client)  # ask_all default → LOW cards (so we can remember it)
     _stub_answer_route(monkeypatch)
     fake_exec = _stub_run_command_executor(monkeypatch)
 
@@ -374,34 +332,36 @@ def test_confirm_card_private_to_originating_socket(app_client, monkeypatch):
     this call_id — a card fanned out to a second tab is unanswerable there (the
     other tab's reply is just a stale-call_id BUSY). The second socket must see
     the shared run frames (tool_result, stream_end) but NO propose_run_command."""
-    _enable_shell()
+    _enable_shell(app_client)
     _stub_answer_route(monkeypatch)
     _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
     fake_exec = _stub_run_command_executor(monkeypatch)
 
-    with _shared_loop(app_client):
-        with app_client.websocket_connect("/ws/arslan/main") as ws1, \
-             app_client.websocket_connect("/ws/arslan/main") as ws2:
-            for ws in (ws1, ws2):
-                assert ws.receive_json()["type"] == "history"
-                assert ws.receive_json()["type"] == "roster_update"
+    # Both sockets already share app_client.portal's single loop (installed by
+    # build_ws_client), so the two concurrent WS sessions run on one app event
+    # loop — required because the registry fan-out queues are loop-bound.
+    with app_client.websocket_connect("/ws/arslan/main") as ws1, \
+         app_client.websocket_connect("/ws/arslan/main") as ws2:
+        for ws in (ws1, ws2):
+            assert ws.receive_json()["type"] == "history"
+            assert ws.receive_json()["type"] == "roster_update"
 
-            ws1.send_json({"type": "user_message", "content": "check the repo"})
+        ws1.send_json({"type": "user_message", "content": "check the repo"})
 
-            # The originating socket gets the card…
-            frames1 = _collect_until(ws1, "propose_run_command")
-            propose = frames1[-1]
-            assert propose["type"] == "propose_run_command"
-            ws1.send_json({"type": "confirm_run_command", "call_id": propose["call_id"]})
-            after1 = _collect_until(ws1, "stream_end")
-            assert any(f.get("type") == "tool_result" for f in after1)
+        # The originating socket gets the card…
+        frames1 = _collect_until(ws1, "propose_run_command")
+        propose = frames1[-1]
+        assert propose["type"] == "propose_run_command"
+        ws1.send_json({"type": "confirm_run_command", "call_id": propose["call_id"]})
+        after1 = _collect_until(ws1, "stream_end")
+        assert any(f.get("type") == "tool_result" for f in after1)
 
-            # …the second tab gets the broadcast run frames but NEVER the card.
-            frames2 = _collect_until(ws2, "stream_end")
-            types2 = [f["type"] for f in frames2]
-            assert "propose_run_command" not in types2, (
-                f"confirm card leaked to a non-originating socket: {types2}"
-            )
-            assert "tool_result" in types2  # broadcast frames still fan out
+        # …the second tab gets the broadcast run frames but NEVER the card.
+        frames2 = _collect_until(ws2, "stream_end")
+        types2 = [f["type"] for f in frames2]
+        assert "propose_run_command" not in types2, (
+            f"confirm card leaked to a non-originating socket: {types2}"
+        )
+        assert "tool_result" in types2  # broadcast frames still fan out
 
     assert len(fake_exec.calls) == 1
