@@ -1,5 +1,4 @@
 """Arslan direct chat retrieves from shared collections (never spawn wells)."""
-import anyio
 
 
 def _patch_common(monkeypatch, arslan_mod):
@@ -17,7 +16,7 @@ def _patch_common(monkeypatch, arslan_mod):
     monkeypatch.setattr(arslan_mod.memory, "add_message", fake_add)
 
 
-def test_handle_answer_injects_collection_kb(monkeypatch):
+async def test_handle_answer_injects_collection_kb(monkeypatch):
     from server.orchestrator import arslan as arslan_mod
     from server.services import knowledge
     captured = {}
@@ -34,11 +33,11 @@ def test_handle_answer_injects_collection_kb(monkeypatch):
     monkeypatch.setattr(arslan_mod.tool_loop, "run_native", fake_run_native)
     _patch_common(monkeypatch, arslan_mod)
 
-    anyio.run(lambda: arslan_mod._handle_answer("c1", "报销上限多少", lambda e: None))
+    await arslan_mod._handle_answer("c1", "报销上限多少", lambda e: None)
     assert "[公司手册.pdf] 报销上限 500 元" in captured["system"]
 
 
-def test_handle_answer_survives_retrieve_failure(monkeypatch):
+async def test_handle_answer_survives_retrieve_failure(monkeypatch):
     from server.orchestrator import arslan as arslan_mod
     from server.services import knowledge
     captured = {}
@@ -54,5 +53,5 @@ def test_handle_answer_survives_retrieve_failure(monkeypatch):
     monkeypatch.setattr(arslan_mod.tool_loop, "run_native", fake_run_native)
     _patch_common(monkeypatch, arslan_mod)
 
-    anyio.run(lambda: arslan_mod._handle_answer("c1", "hi", lambda e: None))
+    await arslan_mod._handle_answer("c1", "hi", lambda e: None)
     assert "system" in captured  # answered despite retrieval failure

@@ -1,22 +1,20 @@
 """A-wiring: list_my_capabilities is offered to Arslan, and the prompt points at it."""
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
 from server.db.models import Base
 
 
-@pytest.fixture
-def db(monkeypatch, tmp_path):
+@pytest_asyncio.fixture
+async def db(monkeypatch, tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'w.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _create():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    import anyio
-    anyio.run(_create)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

@@ -1,5 +1,5 @@
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
@@ -8,17 +8,15 @@ from server.db.models import Base
 from server.services import note_service
 
 
-@pytest.fixture
-def maker(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'g.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as c:
-            await c.run_sync(Base.metadata.create_all)
-            await c.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(text)")
+    async with engine.begin() as c:
+        await c.run_sync(Base.metadata.create_all)
+        await c.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(text)")
 
-    anyio.run(_seed)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 
