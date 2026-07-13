@@ -121,78 +121,90 @@ class RunRecorder:
     def _derive_steps(self, full_output: str) -> list[dict]:
         steps: list[dict] = []
         dispatch_start: datetime | None = None
-        pending_tool: tuple[datetime, dict] | None = None
-        pending_esc: tuple[datetime, dict] | None = None
+        dispatch_start_order: int = -1
+        # (start_ts, event, arrival_index) — arrival_index is captured at the step's
+        # START event so ties on started_at break by the order events streamed.
+        pending_tool: tuple[datetime, dict, int] | None = None
+        pending_esc: tuple[datetime, dict, int] | None = None
 
-        def add(kind, ref, detail, start, end, duration_ms=None):
+        def add(kind, ref, detail, start, end, order, duration_ms=None):
             ms = duration_ms
             if ms is None:
                 ms = int((end - start).total_seconds() * 1000) if start and end else None
             steps.append({
-                "seq": len(steps), "kind": kind, "ref": ref, "detail": detail,
+                "seq": len(steps), "order": order, "kind": kind, "ref": ref, "detail": detail,
                 "started_at": start, "ended_at": end, "duration_ms": ms,
             })
 
-        for ts, ev in self._events:
+        for idx, (ts, ev) in enumerate(self._events):
             t = ev.get("type")
             if t == "routing":
                 add("route", {"spawn_name": ev.get("spawn_name")}, {},
-                    self.started_at, ts, duration_ms=self.route_ms)
+                    self.started_at, ts, idx, duration_ms=self.route_ms)
             elif t == "stream_start" and ev.get("source") == "spawn":
                 dispatch_start = ts
+                dispatch_start_order = idx
             elif t == "tool_call":
-                pending_tool = (ts, ev)
+                pending_tool = (ts, ev, idx)
             elif t == "tool_result" and pending_tool is not None:
-                call_ts, call_ev = pending_tool
+                call_ts, call_ev, call_idx = pending_tool
                 add("tool_call",
                     {"tool": ev.get("tool"), "ok": bool(ev.get("ok"))},
                     {"args_summary": call_ev.get("args_summary", ""),
                      "summary": ev.get("summary", "")},
-                    call_ts, ts)
+                    call_ts, ts, call_idx)
                 pending_tool = None
             elif t == "escalation":
-                pending_esc = (ts, ev)
+                pending_esc = (ts, ev, idx)
             elif t in ("escalation_resolved", "escalation_refused") and pending_esc is not None:
-                esc_ts, esc_ev = pending_esc
+                esc_ts, esc_ev, esc_idx = pending_esc
                 add("escalation",
                     {"kind": esc_ev.get("kind", "data"), "need": esc_ev.get("need", "")},
                     {"how": ev.get("how", ""), "detail": ev.get("detail", ""),
                      "why": ev.get("why", "")},
-                    esc_ts, ts)
+                    esc_ts, ts, esc_idx)
                 pending_esc = None
             elif t == "spawn_meta" and dispatch_start is not None:
                 add("dispatch",
                     {"spawn_name": ev.get("spawn_name") or self.spawn_name},
                     {"output_preview": (full_output or "")[:500]},
-                    dispatch_start, ts)
+                    dispatch_start, ts, dispatch_start_order)
                 dispatch_start = None
 
         if pending_tool is not None:
-            call_ts, call_ev = pending_tool
+            call_ts, call_ev, call_idx = pending_tool
             last_ts = self._events[-1][0] if self._events else call_ts
             add("tool_call",
                 {"tool": call_ev.get("tool"), "ok": False},
                 {"args_summary": call_ev.get("args_summary", ""), "summary": ""},
-                call_ts, last_ts)
+                call_ts, last_ts, call_idx)
 
         if pending_esc is not None:
-            esc_ts, esc_ev = pending_esc
+            esc_ts, esc_ev, esc_idx = pending_esc
             last_ts = self._events[-1][0] if self._events else esc_ts
             add("escalation",
                 {"kind": esc_ev.get("kind", "data"), "need": esc_ev.get("need", "")},
                 {"how": "no_resolution", "detail": "", "why": ""},
-                esc_ts, last_ts)
+                esc_ts, last_ts, esc_idx)
 
         # Normal path: finalize runs BEFORE spawn_meta is emitted, so spawn_meta is
         # usually absent here and the dispatch step is closed by the fallback below.
         if dispatch_start is not None:
             last_ts = self._events[-1][0] if self._events else dispatch_start
             add("dispatch", {"spawn_name": self.spawn_name},
-                {"output_preview": (full_output or "")[:500]}, dispatch_start, last_ts)
+                {"output_preview": (full_output or "")[:500]}, dispatch_start, last_ts,
+                dispatch_start_order)
 
-        steps.sort(key=lambda s: (s["started_at"] or self.started_at, s["seq"]))
+        # Tie-break by event-ARRIVAL order (the step's start-event index), NOT the
+        # order steps happened to close. Steps close at a later event than they start
+        # (tool_call at tool_result, escalation at escalation_resolved, dispatch at
+        # spawn_meta), so append/close order (seq) diverges from arrival; under the
+        # single-loop refactor equal started_at ties are common, making the tie-break
+        # load-bearing. Re-number seq densely and drop the transient ordering key.
+        steps.sort(key=lambda s: (s["started_at"] or self.started_at, s["order"]))
         for i, s in enumerate(steps):
             s["seq"] = i
+            del s["order"]
         return steps
 
     async def finalize(self, *, summary_message_id: int | None, full_output: str,
