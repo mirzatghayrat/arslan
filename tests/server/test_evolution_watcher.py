@@ -202,6 +202,29 @@ async def test_consecutive_fails_sees_through_structural_skips(wdb):
         assert await evolution_watcher._consecutive_fails(db, sid) == 2
 
 
+async def test_consecutive_fails_sees_through_error_attempts(wdb):
+    """An 'error' outcome (an infra/adapter failure surfaced by the loop, or a crash) is
+    TRANSPARENT to the QUALITY backoff — like a structural skip it neither counts toward the
+    streak nor resets it. A dead judge adapter must not inflate the run-count threshold as if
+    the spawn's prompt were un-improvable."""
+    Session = wdb
+    sid = await _spawn(Session)
+    async with Session() as db:
+        # oldest → newest: failed, error, failed.
+        db.add_all([
+            EvolutionAttempt(spawn_id=sid, outcome="failed", reason="holdout_winrate",
+                             started_at=datetime(2026, 7, 1)),
+            EvolutionAttempt(spawn_id=sid, outcome="error", reason="RuntimeError: llm down",
+                             started_at=datetime(2026, 7, 2)),
+            EvolutionAttempt(spawn_id=sid, outcome="failed", reason="holdout_winrate",
+                             started_at=datetime(2026, 7, 3)),
+        ])
+        await db.commit()
+    async with Session() as db:
+        # both genuine fails count; the infra 'error' is transparent (not counted, not a wall).
+        assert await evolution_watcher._consecutive_fails(db, sid) == 2
+
+
 def test_is_structural_covers_all_three_construction_reasons():
     """The three CONSTRUCTION/precondition reasons are structural (transparent to backoff);
     genuine QUALITY reasons are not (they still escalate the streak). 'insufficient scored runs'

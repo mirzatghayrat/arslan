@@ -1,3 +1,5 @@
+import pytest
+
 from server.services import optimizer
 
 # ── propose_edits tests ──────────────────────────────────────────────────────
@@ -48,11 +50,14 @@ async def test_propose_edits_drops_avoided(monkeypatch):
     assert edits == []  # the only proposed edit was in the avoid buffer
 
 
-async def test_propose_edits_empty_on_failure(monkeypatch):
+async def test_propose_edits_raises_on_adapter_failure(monkeypatch):
+    # An adapter/chat failure is INFRA, not "the LLM proposed no edits" — it must PROPAGATE so
+    # the evolution loop can surface it as outcome='error' instead of masking it as a no-op
+    # round that later reads as the quality verdict "no accepted edit beats the original".
     class _Boom:
         async def chat(self, *, system, user): raise RuntimeError("llm down")
 
     async def fake_build(role): return _Boom()
     monkeypatch.setattr(optimizer, "build_adapter", fake_build)
-    edits = await optimizer.propose_edits(_SpawnEdits(), _items(), lr_budget=2, avoid=[])
-    assert edits == []
+    with pytest.raises(RuntimeError, match="llm down"):
+        await optimizer.propose_edits(_SpawnEdits(), _items(), lr_budget=2, avoid=[])

@@ -131,8 +131,16 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
                 last_best_doc = doc
             candidates = await optimizer.propose_edits(
                 spawn, train, lr_budget=lr_budget, avoid=rejected)
-        except Exception as exc:  # noqa: BLE001  -- I1: finalize accumulated work, don't crash
-            logger.warning("evolution epoch aborted, finalizing early: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            # I1: finalize accumulated work, don't crash — BUT only once there IS work. A failure
+            # with NO accepted edit yet is an infra/adapter failure that produced nothing (E9-b
+            # dead-adapter bug): re-raise so _perform_attempt records outcome='error' with the real
+            # reason, instead of masking it as a ~0-second "no accepted edit beats the original"
+            # quality verdict that also inflates the quality backoff.
+            if not accepted:
+                raise
+            logger.warning("evolution epoch aborted after %d accepted edit(s), finalizing early: %s",
+                           len(accepted), exc)
             break
         if not candidates:
             break  # optimizer is out of ideas (converged / plateau)

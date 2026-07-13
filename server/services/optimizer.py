@@ -66,8 +66,11 @@ async def propose_edits(
         parsed = parse_json_object(resp.content or "") or {}
         raw = parsed.get("edits") or []
     except Exception as exc:  # noqa: BLE001
-        logger.warning("optimizer.propose_edits failed, no edits: %s", exc)
-        return []
+        # An adapter/chat failure is INFRA, not "the LLM proposed no edits" — propagate it so the
+        # evolution loop surfaces outcome='error' with the real reason instead of masking a dead
+        # adapter as a no-op round (which later reads as "no accepted edit beats the original").
+        logger.warning("optimizer.propose_edits adapter/LLM call failed: %s", exc)
+        raise
 
     edits: list[dict] = []
     for e in raw:

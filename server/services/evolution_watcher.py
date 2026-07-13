@@ -96,10 +96,12 @@ async def _last_attempt_started_at(db, spawn_id: int):
 
 
 async def _consecutive_fails(db, spawn_id: int) -> int:
-    """Trailing run of failed/error attempts (newest → oldest). A 'passed' resets to 0; a
-    'skipped_budget' or an in-flight (outcome=None) attempt stops the count (neutral). A
-    'skipped_structural' (E9-b construction/precondition fail) is TRANSPARENT — the scan
-    continues past it, so it neither counts toward the streak nor resets it."""
+    """Trailing run of genuine-QUALITY 'failed' attempts (newest → oldest). A 'passed' resets to
+    0; a 'skipped_budget' or an in-flight (outcome=None) attempt stops the count (neutral). Both a
+    'skipped_structural' (E9-b construction/precondition fail) AND an 'error' (an infra/adapter
+    failure surfaced by the loop, or a crash) are TRANSPARENT — the scan continues past them, so
+    they neither count toward the streak nor reset it. A dead judge adapter must not inflate the
+    quality backoff threshold as if the spawn's prompt were un-improvable."""
     outcomes = (await db.execute(
         select(EvolutionAttempt.outcome)
         .where(EvolutionAttempt.spawn_id == spawn_id)
@@ -107,10 +109,10 @@ async def _consecutive_fails(db, spawn_id: int) -> int:
     )).scalars().all()
     fails = 0
     for outcome in outcomes:
-        if outcome in ("failed", "error"):
+        if outcome == "failed":
             fails += 1
-        elif outcome == "skipped_structural":
-            continue  # E9-b: structural no-fault skip — transparent (neither counts nor resets)
+        elif outcome in ("skipped_structural", "error"):
+            continue  # non-quality (structural precondition / infra-or-crash) — transparent
         else:
             break     # 'passed' / 'skipped_budget' / in-flight (None) stop the streak
     return fails
