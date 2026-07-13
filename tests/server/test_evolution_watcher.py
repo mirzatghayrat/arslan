@@ -181,6 +181,34 @@ async def test_structural_fail_is_skipped_structural_and_does_not_back_off(wdb, 
             await evolution_watcher._consecutive_fails(db, sid)) == evolution_watcher.BASE_THRESHOLD
 
 
+async def _raising_propose(spawn_id, **k):
+    raise RuntimeError("judgment adapter down: 401 Unauthorized")
+
+
+async def test_infra_error_recorded_as_error_not_failed_and_transparent(wdb, monkeypatch):
+    """The honesty-critical link: when propose_improvement RAISES (a dead judge/optimizer adapter),
+    _perform_attempt records outcome='error' with the real reason — NOT a quality 'failed' — and
+    that error is transparent to the backoff (a lone error leaves the streak at 0, threshold BASE).
+    This is the E9-b dead-adapter fix: an infra failure is never masked as a quality verdict."""
+    Session = wdb
+    monkeypatch.setattr(evolution_loop, "propose_improvement", _raising_propose)
+    sid = await _spawn(Session)
+
+    aid = await evolution_watcher.enqueue_attempt(sid, manual=True)
+    assert aid is not None
+    await _drain()
+
+    async with Session() as db:
+        att = await db.get(EvolutionAttempt, aid)
+        assert att.outcome == "error"                          # infra failure, not quality 'failed'
+        assert "judgment adapter down" in (att.reason or "")   # the real exception surfaced
+        assert att.finished_at is not None                     # finalized, not left in-flight
+        # transparent to the quality backoff — a lone error leaves the streak at 0 (threshold BASE).
+        assert await evolution_watcher._consecutive_fails(db, sid) == 0
+        assert evolution_watcher._threshold(
+            await evolution_watcher._consecutive_fails(db, sid)) == evolution_watcher.BASE_THRESHOLD
+
+
 async def test_consecutive_fails_sees_through_structural_skips(wdb):
     """Transparency: two genuine quality fails on either side of a structural skip still both
     count (streak 2) — the skip is neither counted nor a wall that resets the streak."""
@@ -199,6 +227,29 @@ async def test_consecutive_fails_sees_through_structural_skips(wdb):
         await db.commit()
     async with Session() as db:
         # both genuine fails count; the structural skip is transparent (not counted, not a wall).
+        assert await evolution_watcher._consecutive_fails(db, sid) == 2
+
+
+async def test_consecutive_fails_sees_through_error_attempts(wdb):
+    """An 'error' outcome (an infra/adapter failure surfaced by the loop, or a crash) is
+    TRANSPARENT to the QUALITY backoff — like a structural skip it neither counts toward the
+    streak nor resets it. A dead judge adapter must not inflate the run-count threshold as if
+    the spawn's prompt were un-improvable."""
+    Session = wdb
+    sid = await _spawn(Session)
+    async with Session() as db:
+        # oldest → newest: failed, error, failed.
+        db.add_all([
+            EvolutionAttempt(spawn_id=sid, outcome="failed", reason="holdout_winrate",
+                             started_at=datetime(2026, 7, 1)),
+            EvolutionAttempt(spawn_id=sid, outcome="error", reason="RuntimeError: llm down",
+                             started_at=datetime(2026, 7, 2)),
+            EvolutionAttempt(spawn_id=sid, outcome="failed", reason="holdout_winrate",
+                             started_at=datetime(2026, 7, 3)),
+        ])
+        await db.commit()
+    async with Session() as db:
+        # both genuine fails count; the infra 'error' is transparent (not counted, not a wall).
         assert await evolution_watcher._consecutive_fails(db, sid) == 2
 
 

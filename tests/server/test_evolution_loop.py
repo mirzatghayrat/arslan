@@ -195,13 +195,55 @@ async def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
     assert res["gate"]["passed"] is False and res["gate"]["reason"] == "holdout_winrate"
 
 
-async def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
+async def test_loop_raises_on_infra_failure_before_any_progress(monkeypatch, memdb):
+    # E9-b dead-adapter bug: an infra/adapter failure on the FIRST epoch (nothing accepted yet)
+    # must PROPAGATE so _perform_attempt records outcome='error' with the real reason — NOT be
+    # masked as a ~0-second "no accepted edit beats the original" quality verdict.
+    import pytest
     _patch_common(monkeypatch, edits_by_epoch=[[{"op": "add", "section": "X", "content": "c"}]])
     async def boom(spawn_id, doc, val): raise RuntimeError("dispatch down")
     monkeypatch.setattr(evolution_loop, "_val_outputs", boom)
     await _seed_spawn(memdb, _Spawn)
-    res = await evolution_loop.propose_improvement(1, epochs=2)  # must not raise
+    with pytest.raises(RuntimeError, match="dispatch down"):
+        await evolution_loop.propose_improvement(1, epochs=2)
+
+
+async def test_loop_finalizes_gracefully_after_progress(monkeypatch, memdb):
+    # I1 preserved: a failure AFTER at least one accepted edit finalizes the accumulated work
+    # (does NOT raise) — only a no-progress failure surfaces as an error. Epoch 1 accepts an
+    # edit; epoch 2's dispatch booms; the loop must still gate + persist the epoch-1 proposal.
+    _patch_common(monkeypatch,
+                  edits_by_epoch=[[{"op": "add", "section": "Style", "content": "Be terse."}],
+                                  [{"op": "add", "section": "Y", "content": "more"}]])
+
+    async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
+        better = "Be terse." in candidate_prompt
+        o = {"better": 1, "worse": 0, "tie": 0} if better else {"better": 0, "worse": 0, "tie": 1}
+        return {"items": [], "aggregate": {"overall": o, "dims": {}},
+                "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
+    monkeypatch.setattr(evaluator, "evaluate", fake_eval)
+
+    calls = {"n": 0}
+    async def val_then_boom(spawn_id, doc, val):
+        calls["n"] += 1
+        if calls["n"] >= 2:                      # epoch-2 recompute (doc changed) fails
+            raise RuntimeError("dispatch down on epoch 2")
+        return {it["run_id"]: "best" for it in val}
+    monkeypatch.setattr(evolution_loop, "_val_outputs", val_then_boom)
+    _patch_gate(monkeypatch, passed=True)
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)   # must NOT raise
+    assert res["proposal_id"] is not None        # the epoch-1 accepted edit was finalized
+
+
+async def test_loop_no_beat_when_optimizer_returns_no_candidates(monkeypatch, memdb):
+    # A genuine convergence — the optimizer LLM responds but proposes nothing (no exception) —
+    # stays the honest quality verdict "no accepted edit beats the original", NOT an error.
+    _patch_common(monkeypatch, edits_by_epoch=[[]])      # optimizer returns a valid EMPTY list
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)   # must NOT raise
     assert res["proposal_id"] is None
+    assert res["gate"]["reason"] == "no accepted edit beats the original"
 
 
 async def test_inner_loop_rejects_overlength_edit_without_judging(monkeypatch, memdb):
