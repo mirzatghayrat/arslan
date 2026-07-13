@@ -173,6 +173,13 @@ def _tier(p: float) -> str:
     return "weak"
 
 
+def _capped_tier(p: float, real_n: int) -> str:
+    """E9-b: the evidence-tier LABEL, capped to 'weak' when the real holdout is too thin
+    (< REAL_FLOOR_MIN_N) — synthetic-only evidence must never read 'strong'/'medium'. Aligns
+    with the synthetic_driven flag (same threshold). The pass DECISION is unchanged (real floor)."""
+    return "weak" if real_n < REAL_FLOOR_MIN_N else _tier(p)
+
+
 # ── GateResult ───────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -288,6 +295,28 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None) -> Corpus
                 "split_side": st.split_side,
             })
 
+    # E9-b: synthetic holdout top-up. Threshold-1 needs >= MIN_HOLDOUT_N holdout pairs. When the
+    # REAL holdout side can't reach it (thin corpus), mint fresh DOMAIN synthetic tasks tagged
+    # holdout so the gate becomes reachable. Isolation is free (optimizer only reads propose);
+    # provenance is honest (corpus_label='synthetic' → the card marks them); the real floor
+    # (Threshold-4) is untouched so synthetic evidence can never carry a real regression. No
+    # dilution of mature corpora: only tops up when real holdout is below the floor. Idempotent:
+    # once minted (persisted), a later build sees total_holdout >= floor and mints nothing.
+    from server.services import synthetic_corpus  # local import avoids a circular import
+    real_holdout = sum(1 for p in pairs
+                       if p["corpus_label"] == "real" and p["split_side"] == "holdout")
+    total_holdout = sum(1 for p in pairs if p["split_side"] == "holdout")
+    if real_holdout < MIN_HOLDOUT_N and total_holdout < MIN_HOLDOUT_N:
+        minted = await synthetic_corpus.mint_domain_holdout(
+            db, spawn_id, MIN_HOLDOUT_N - total_holdout)
+        for st in minted:
+            pairs.append({
+                "task": st.task, "corpus_label": "synthetic",
+                "source_ref": {"synth_id": st.id, "version": st.version},
+                "source_run_id": st.source_run_id,   # None (domain) → own independence root
+                "split_side": st.split_side,          # 'holdout'
+            })
+
     pairs.excluded = excluded
     return pairs
 
@@ -388,7 +417,7 @@ async def run_gate(db, *, spawn_id: int, candidate_prompt: str, baseline_prompt:
     h_wins, h_losses, _ = _tally(holdout)
     h_n = h_wins + h_losses
     eff_wins, eff_n = _effective_counts(holdout)
-    tier = _tier(binom.p_value(eff_wins, eff_n))
+    tier = _capped_tier(binom.p_value(eff_wins, eff_n), real_delta["n"])
 
     protected = [p["baseline_run_id"] for p in pairs] + [p["candidate_run_id"] for p in pairs]
     protected = [r for r in protected if r is not None]
@@ -484,7 +513,7 @@ def recompute_verdict(holdout_pairs: list[dict]) -> dict:
     h_wins, h_losses, _ = _tally(holdout_pairs)
     h_n = h_wins + h_losses
     eff_wins, eff_n = _effective_counts(holdout_pairs)
-    tier = _tier(binom.p_value(eff_wins, eff_n))
+    tier = _capped_tier(binom.p_value(eff_wins, eff_n), real_delta["n"])
 
     flags: list[str] = []
     reason: str | None = None

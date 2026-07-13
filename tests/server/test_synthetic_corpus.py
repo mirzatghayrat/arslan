@@ -298,6 +298,58 @@ async def test_validate_and_prune_marks_disabled_tool_task_invalid(memdb, monkey
     assert bad not in tasks
 
 
+# ── mint_domain_holdout (E9-b: forced-holdout domain top-up) ──────────────────────────
+
+class _FakeAdapter:
+    """A no-op adapter; `_gen_domain` is stubbed in these tests so it is never used, but the
+    adapter=None branch still resolves build_adapter → we point that at this stub off-network."""
+
+    async def chat(self, *, system, user):
+        return _Resp(json.dumps({"tasks": []}))
+
+
+async def test_mint_domain_holdout_forces_holdout_split(memdb, monkeypatch):
+    from server.services import synthetic_corpus as sc
+    from server.db.models import Spawn
+
+    async def fake_domain(adapter, spawn, budget):
+        return [f"domain task {i}" for i in range(budget)]
+
+    async def fake_build(**k):   # build_adapter is async; keep the adapter=None path off-network
+        return _FakeAdapter()
+
+    monkeypatch.setattr(sc, "_gen_domain", fake_domain)
+    monkeypatch.setattr(sc, "build_adapter", fake_build)   # unused by fake_domain
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        await db.commit()
+    async with memdb() as db:
+        rows = await sc.mint_domain_holdout(db, 1, 4)
+    assert len(rows) == 4
+    assert all(r.source == "domain" and r.source_run_id is None for r in rows)
+    assert all(r.split_side == "holdout" and r.status == "active" for r in rows)
+
+
+async def test_mint_domain_holdout_zero_or_missing_spawn_is_empty(memdb, monkeypatch):
+    from server.services import synthetic_corpus as sc
+    from server.db.models import Spawn
+
+    async def fake_domain(adapter, spawn, budget):
+        return [f"domain task {i}" for i in range(budget)]
+
+    async def fake_build(**k):
+        return _FakeAdapter()
+
+    monkeypatch.setattr(sc, "_gen_domain", fake_domain)
+    monkeypatch.setattr(sc, "build_adapter", fake_build)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        await db.commit()
+    async with memdb() as db:
+        assert await sc.mint_domain_holdout(db, 1, 0) == []      # n<=0 → nothing minted
+        assert await sc.mint_domain_holdout(db, 999, 4) == []    # unknown spawn → nothing minted
+
+
 async def test_mark_invalid_idempotent(memdb):
     await _seed_spawn(memdb)
     async with memdb() as db:

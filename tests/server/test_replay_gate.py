@@ -9,7 +9,7 @@ import itertools
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db.models import Base, Run, RunStep, SyntheticTask
+from server.db.models import Base, Run, RunStep, Spawn, SyntheticTask
 from server.services import binom, compare_judge, replay_gate, replay_run
 from server.services.replay_gate import DIMENSIONS, HoldoutViolation, run_gate
 
@@ -449,3 +449,72 @@ async def test_build_corpus_baseline_started_at_filter(memdb):
     tasks = [c["task"] for c in corpus]
     assert "after baseline" in tasks
     assert "before baseline" not in tasks   # created before baseline_started_at → excluded
+
+
+# ── FIX b: synthetic holdout top-up + tier cap on thin real evidence ────────────────────
+
+async def test_build_corpus_tops_up_synthetic_holdout_when_real_thin(memdb, monkeypatch):
+    from datetime import datetime
+    from server.services import synthetic_corpus
+
+    # deterministic mint: return exactly `n` holdout domain rows, no LLM.
+    async def fake_mint(db, spawn_id, n, *, adapter=None):
+        rows = [SyntheticTask(spawn_id=spawn_id, version=1, task=f"synth h{i}",
+                              source="domain", source_run_id=None, split_side="holdout",
+                              status="active") for i in range(n)]
+        db.add_all(rows)
+        await db.commit()
+        return rows
+
+    monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", fake_mint)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        # Seed 3 replayable real runs (thin) → real holdout can never reach MIN_HOLDOUT_N.
+        for i in range(3):
+            db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+    async with memdb() as db:
+        corpus = await replay_gate.build_corpus(db, 1)
+    holdout = [p for p in corpus if p["split_side"] == "holdout"]
+    assert len(holdout) >= replay_gate.MIN_HOLDOUT_N
+    # the top-up pairs are synthetic + holdout; isolation: none leak to propose.
+    synth_holdout = [p for p in holdout if p["corpus_label"] == "synthetic"]
+    assert synth_holdout and all(p["split_side"] == "holdout" for p in synth_holdout)
+    assert all(p["split_side"] != "propose" for p in synth_holdout)
+    # provenance: minted pairs carry source_run_id=None (their own independence root).
+    assert all(p["source_run_id"] is None for p in synth_holdout)
+
+
+async def test_build_corpus_no_topup_when_real_holdout_sufficient(memdb, monkeypatch):
+    from datetime import datetime
+    from server.services import synthetic_corpus
+    called = {"n": 0}
+
+    async def spy_mint(db, spawn_id, n, *, adapter=None):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr(synthetic_corpus, "mint_domain_holdout", spy_mint)
+    async with memdb() as db:
+        db.add(Spawn(id=1, name="RA", domain_category="research", system_prompt="p"))
+        # Force >= MIN_HOLDOUT_N real holdout pairs by seeding many real runs; mint never called.
+        for i in range(40):
+            db.add(Run(conversation_id="c", spawn_id=1, user_message=f"real {i}",
+                       status="scored", kind="live", epoch=1, created_at=datetime(2026, 7, 1)))
+        await db.commit()
+    async with memdb() as db:
+        corpus = await replay_gate.build_corpus(db, 1)
+    real_holdout = sum(1 for p in corpus
+                       if p["corpus_label"] == "real" and p["split_side"] == "holdout")
+    if real_holdout >= replay_gate.MIN_HOLDOUT_N:
+        assert called["n"] == 0   # mature corpus → never diluted
+
+
+def test_capped_tier_clamps_when_real_thin():
+    from server.services.replay_gate import _capped_tier, REAL_FLOOR_MIN_N
+    # a significant p-value would be 'strong', but with < REAL_FLOOR_MIN_N real pairs it clamps.
+    assert _capped_tier(0.01, real_n=0) == "weak"
+    assert _capped_tier(0.01, real_n=REAL_FLOOR_MIN_N - 1) == "weak"
+    # enough real evidence → the real tier stands.
+    assert _capped_tier(0.01, real_n=REAL_FLOOR_MIN_N) == "strong"

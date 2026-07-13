@@ -195,6 +195,43 @@ async def generate(db, spawn_id: int, *, n: int = 24, adapter=None) -> list[Synt
     return rows
 
 
+async def mint_domain_holdout(db, spawn_id: int, n: int, *, adapter=None) -> list[SyntheticTask]:
+    """E9-b: mint `n` fresh DOMAIN synthetic tasks FORCED to the holdout side, persisted at the
+    current version (or version 1 if the spawn has none yet). Domain tasks have source_run_id=None
+    (their own independence root) so forcing them to holdout never violates split inheritance
+    (only a variant would need its source's side). Used to top the holdout side up to the gate
+    floor when the real holdout is too thin — provenance stays honest (corpus_label='synthetic')."""
+    if n <= 0:
+        return []
+    spawn = await db.get(Spawn, spawn_id)
+    if spawn is None:
+        logger.warning("mint_domain_holdout: spawn %s not found", spawn_id)
+        return []
+    if adapter is None:
+        adapter = await build_adapter(role="judgment")
+    domain_tasks = await _gen_domain(adapter, spawn, n)
+    cur = (await db.execute(
+        select(func.max(SyntheticTask.version)).where(SyntheticTask.spawn_id == spawn_id)
+    )).scalar()
+    version = cur or 1   # append to the current active version so build_corpus reads them
+    rows: list[SyntheticTask] = []
+    for text in domain_tasks:
+        task = _valid_task(text)
+        if task is None:
+            continue
+        rows.append(SyntheticTask(
+            spawn_id=spawn_id, version=version, task=task, source="domain",
+            source_run_id=None, split_side="holdout", status="active"))
+        if len(rows) >= n:
+            break
+    if not rows:
+        logger.info("mint_domain_holdout: no valid domain tasks for spawn %s", spawn_id)
+        return []
+    db.add_all(rows)
+    await db.commit()
+    return rows
+
+
 async def mark_invalid(db, task_id: int) -> None:
     """Mark one synthetic task status='invalid' (idempotent) so build_corpus drops it."""
     st = await db.get(SyntheticTask, task_id)
