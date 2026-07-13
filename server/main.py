@@ -226,6 +226,26 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
 
+    # Undecryptable-key canary: if any stored BYOK provider key can't be decrypted, the
+    # ARSLAN_SECRET_KEY differs from the one that stored it — EVERY such key silently reads
+    # as empty and the LLM adapter has no credential (a dead-adapter root cause; see E9-b).
+    # Surface it loudly so the operator re-enters keys and pins a stable secret, instead of
+    # chasing a "reachable_no_list"/"requires API key" ghost. Best-effort; never blocks boot.
+    try:
+        from server.services import provider_config_service
+
+        async with AsyncSessionLocal() as db:
+            n_undecryptable = await provider_config_service.count_undecryptable_keys(db)
+        if n_undecryptable:
+            logger.warning(
+                "%d stored provider API key(s) cannot be decrypted — ARSLAN_SECRET_KEY has "
+                "changed since they were saved, so they read as EMPTY (the BYOK adapter has no "
+                "credential). Re-enter them in Settings and pin a stable ARSLAN_SECRET_KEY.",
+                n_undecryptable,
+            )
+    except Exception as exc:  # noqa: BLE001 — key canary must never block boot
+        logger.warning("provider-key decryptability canary failed (non-fatal): %s", exc)
+
     # E9 baseline canary: once the developer has declared a clean-corpus baseline, count LIVE
     # runs created after it that STILL carry epoch=0. A non-zero count means some run-creation
     # path is missing the epoch=1 stamp — those runs will never enter the corpus, silently

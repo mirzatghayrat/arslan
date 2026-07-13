@@ -65,6 +65,12 @@ export interface ProviderDetailPaneProps {
   ) => void;
   onBaseUrlChange: (config: ProviderConfig, value: string) => void;
   onBaseUrlBlur: (config: ProviderConfig, value: string) => void;
+  // ── saved-config API key (fresh-entry, decoupled from the masked server value) ──
+  /** Local draft value for the selected config's key input (starts empty). */
+  apiKeyDraft: string;
+  onApiKeyDraftChange: (config: ProviderConfig, value: string) => void;
+  /** Commit-on-blur: a non-empty draft persists as the NEW key, then clears. */
+  onApiKeyDraftBlur: (config: ProviderConfig, value: string) => void;
   onSetPrimary: (id: number) => void;
   onDelete: (id: number) => void;
   registerBaseUrlRef: (id: number, el: HTMLInputElement | null) => void;
@@ -177,6 +183,17 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           </button>
         </div>
 
+        {/* Add-flow error: a rejected addProviderConfig must surface here (never
+            silent) so the draft stays open with an actionable reason. */}
+        {draft.testState === 'failed' && draft.testError && (
+          <p
+            data-testid="provider-draft-error"
+            className="w-full text-[10px] font-mono text-danger"
+          >
+            {draft.testError}
+          </p>
+        )}
+
         {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
         {props.draftCustomExtras}
       </div>
@@ -271,16 +288,36 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         </div>
       )}
 
-      {/* API key */}
+      {/* API key — a FRESH-ENTRY field, deliberately decoupled from the masked
+          server value. The input starts empty (local draft) and commits the
+          NEW typed value on BLUR (mirrors base_url's blur-save). Placeholder +
+          the inline status line are driven by the honest key_status so an
+          undecryptable key (ARSLAN_SECRET_KEY changed) never reads as a plain
+          "requires API key". */}
       <div className="flex-1 min-w-[100px]">
         <input
           type="password"
           data-testid={`provider-config-key-${index}`}
-          value={config.api_key}
-          onChange={(e) => props.onFieldChange(config, 'api_key', e.target.value)}
-          placeholder={t('settings.labelConfigApiKey')}
+          value={props.apiKeyDraft}
+          onChange={(e) => props.onApiKeyDraftChange(config, e.target.value)}
+          onBlur={(e) => props.onApiKeyDraftBlur(config, e.target.value)}
+          placeholder={
+            config.key_status === 'set'
+              ? t('settings.keySavedReplace')
+              : config.key_status === 'undecryptable'
+                ? t('settings.keyReenter')
+                : t('settings.keyEnter')
+          }
           className={INPUT_CLS}
         />
+        {config.key_status === 'undecryptable' && (
+          <p
+            data-testid={`provider-config-key-undecryptable-${index}`}
+            className="mt-1 text-[10px] font-mono text-danger"
+          >
+            {t('settings.keyUndecryptableReason')}
+          </p>
+        )}
       </div>
 
       {/* Set primary button (only for non-primary rows) */}
