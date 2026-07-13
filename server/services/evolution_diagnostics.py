@@ -181,7 +181,9 @@ async def diagnose_spawn(db, spawn: Spawn) -> dict:
     else:
         effective_holdout = holdout_ceiling
     corpus_excluded = getattr(corpus, "excluded", 0)
-    replay_items = await replay_set.build(sid, cap=64)
+    # Read within THIS session (not the global one) so the whole diagnosis is one consistent,
+    # read-only source — the endpoint's request session and the CLI's read-only engine both work.
+    replay_items = await replay_set.build(sid, cap=64, db=db)
 
     # (6) Last 5 attempts (newest first).
     attempts = (await db.execute(

@@ -461,6 +461,43 @@ class BaselineStatusOut(BaseModel):
     epoch1_runs_after: int = 0
 
 
+class SpawnDiagnosisOut(BaseModel):
+    """GET /spawns/{id}/evolution/diagnosis — the read-only evolution eligibility diagnosis for
+    one spawn (E9-b). verdict_code is a stable machine code; verdict_params carries the numbers /
+    tool names / attempt id used to render the localized sentence in the inbox panel.
+
+    holdout_ceiling is the un-topped (read-only) holdout side; real_holdout is its truly-real
+    slice; effective_holdout projects what the mint=True synthetic top-up would reach at evolve
+    time (so the panel is honest that a thin real holdout is fillable, not a wall)."""
+
+    spawn_id: int
+    spawn_name: str
+    generation_level: int
+    total_scored: int
+    replayable: int
+    non_replayable: int
+    offending_tools: dict[str, int] = {}
+    baseline_started_at: str | None = None
+    scored_ge_baseline: int
+    corpus_total: int
+    holdout_ceiling: int
+    real_holdout: int
+    effective_holdout: int
+    propose_count: int
+    corpus_excluded: int
+    min_holdout_n: int
+    consecutive_fails: int
+    threshold: int
+    count_since_last_attempt: int
+    auto_eligible: bool
+    open_proposals: int
+    auto_on: bool
+    max_est_tokens: int | None = None
+    last_attempts: list[dict] = []
+    verdict_code: str
+    verdict_params: dict = {}
+
+
 class ProposalListItemOut(BaseModel):
     """One row of the evolution inbox (GET /evolution/proposals)."""
 
