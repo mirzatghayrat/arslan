@@ -202,6 +202,17 @@ async def test_consecutive_fails_sees_through_structural_skips(wdb):
         assert await evolution_watcher._consecutive_fails(db, sid) == 2
 
 
+def test_is_structural_covers_all_three_construction_reasons():
+    """The three CONSTRUCTION/precondition reasons are structural (transparent to backoff);
+    genuine QUALITY reasons are not (they still escalate the streak). 'insufficient scored runs'
+    was user-confirmed 2026-07-13 as the same class as insufficient_holdout."""
+    for reason in ("length_cap", "insufficient_holdout", "insufficient scored runs"):
+        assert evolution_watcher._is_structural(reason) is True
+    for reason in ("holdout_winrate", "real_floor", "verbose_fail",
+                   "dim_regressed:fabrication", "no accepted edit beats the original"):
+        assert evolution_watcher._is_structural(reason) is False
+
+
 # ── evolution_auto gate ─────────────────────────────────────────────────────────────────
 
 async def test_evolution_auto_off_never_runs(wdb, monkeypatch):

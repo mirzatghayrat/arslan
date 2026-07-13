@@ -45,9 +45,11 @@ DEFAULT_INTERVAL = 300.0       # 5 minutes; injectable (short in tests)
 # E9-b: gate/pre-gate reasons that are CONSTRUCTION/precondition failures, not quality
 # verdicts — they say nothing about the spawn's prompt, so they must NOT drive the
 # exponential backoff. Recorded as outcome='skipped_structural' (transparent to the streak).
-# NOTE: "insufficient scored runs" is arguably the same class but is intentionally excluded
-# here to stay faithful to the approved spec's two — revisit only on the user's word.
-STRUCTURAL_REASONS = frozenset({"length_cap", "insufficient_holdout"})
+# "insufficient scored runs" is the pre-gate not-enough-material precondition (evolution_loop
+# emits it before the gate runs) — the same construction class as insufficient_holdout, so it
+# is transparent too (user-confirmed 2026-07-13). Genuine quality reasons (no-beat /
+# holdout_winrate / dim_regressed / real_floor / verbose_fail) are NOT here — they still back off.
+STRUCTURAL_REASONS = frozenset({"length_cap", "insufficient_holdout", "insufficient scored runs"})
 
 
 def _is_structural(reason: str) -> bool:
