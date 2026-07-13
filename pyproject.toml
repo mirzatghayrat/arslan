@@ -52,7 +52,6 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
-    "pytest-rerunfailures>=14.0",  # CI-only: retry the confirmed "database is locked"
     "ruff>=0.4",
     "websockets>=12.0",
     "asgi-lifespan>=2.1",

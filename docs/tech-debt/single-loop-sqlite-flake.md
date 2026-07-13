@@ -1,6 +1,23 @@
 # Tech debt: cross-event-loop SQLite "database is locked" test flake
 
-**Status:** ACCEPTED MITIGATION (2026-07-11) · **Owner:** maintainer · **Escalation:** see below
+**Status:** ✅ RESOLVED (2026-07-14) — root fix landed on branch `fix/portal-teardown-rootfix`. · **Owner:** maintainer
+
+## Resolution (2026-07-14) — root fix landed
+
+The four moves were **re-derived on frozen `main` (`43c4506`)** per the maintainer decision below (the `archive/single-loop-refactor` tag was used only as read-only reference, never rebased). The CI `--only-rerun "database is locked"` bridge and the `pytest-rerunfailures` dependency have been **removed**; CI now runs plain `pytest tests/ -q -rR`.
+
+**What landed:**
+1. **Move 1 — single-loop seed fixtures (116 non-WS files, 194 call-sites):** every `anyio.run(_seed)` sync fixture became a `@pytest_asyncio.fixture async` fixture, and its consuming test bodies became `async def test_` (asyncio_mode="auto"). **Zero `anyio.run`/`asyncio.run` remain anywhere under `tests/server`** — the fresh-loop-per-call root cause is gone, so `database is locked` is structurally impossible.
+2. **Moves 2+3 — one shared blocking portal + NullPool factory (14 WS/TestClient files):** a single `portal` fixture and a `build_ws_client(portal, tmp_path, monkeypatch, seed, ...)` factory in `tests/server/conftest.py` (the single source of truth — all per-file `_shared_loop` dupes deleted). The factory builds a `poolclass=NullPool` engine, seeds **on the portal loop** (`portal.call`), monkeypatches `AsyncSessionLocal`, sets `client.portal`, and the fixture teardown **disposes each engine on the portal loop BEFORE `portal.stop(cancel_remaining=True)`** — the exact ordering that fixes the `BlockingPortal.join()` teardown hang. A starlette-seam guard fails loudly if a future upgrade drops the settable `.portal`.
+3. **Move 4 — `run_recorder` deterministic ordering:** `_derive_steps` tie-breaks steps by **event-arrival index** (captured at each step's start event) instead of close order, so equal-`started_at` ties (common under one loop) order deterministically. Covered by `tests/server/test_run_recorder_ordering.py`.
+
+**Verification:** full backend suite **2206 passed, bridge-free**; a **10× bridge-free flake-soak was 10/10 green — zero failures, zero hangs, zero `database is locked`** (per-run ~160–170s, well under the 120s-per-test pytest-timeout that a teardown hang would trip). A whole-branch adversarial review returned **0 blockers**; the 116-file conversion was adversarially diff-reviewed (0 semantic changes); test count went **1700 → 1702** (only the two new ordering tests added — no test deleted, no assertion weakened).
+
+**Honest residual (benign, non-blocking):** a low-level, **non-deterministic** aiosqlite `_connection_worker_thread` "Event loop is closed" GC warning still appears (`PytestUnhandledThreadExceptionWarning`, ~30–70 per full run) when the connection worker thread of an **undisposed non-WS test engine** is finalized after its loop closed. It is **pre-existing** (measured **72 on base `43c4506`, ~40 on the fixed branch — this work reduced it**), it **never fails or hangs the suite** (all 10 soak runs green), and it is a *warning*, not the teardown-*hang* failure mode (which is fixed). Fully silencing it would require per-fixture `await engine.dispose()` across the ~90 non-WS engine fixtures; `poolclass=NullPool` everywhere was tried and **rejected** (it gives each connection a fresh DB and broke 171 in-memory-`sqlite+aiosqlite://` tests). Left as a low-priority test-hygiene follow-up; it does not gate the RESOLVED status.
+
+The historical record below (mitigation rationale, escalation log, occurrence ledger) is retained as-is.
+
+---
 
 ## Symptom
 

@@ -219,8 +219,14 @@ def _assert_testclient_portal_seam() -> None:
 
     from fastapi.testclient import TestClient as _TC
 
+    factory = getattr(_TC, "_portal_factory", None)
+    if factory is None:
+        raise AssertionError(
+            "starlette TestClient no longer exposes _portal_factory — the single-loop "
+            "flake fix relies on a settable .portal seam. See conftest.build_ws_client."
+        )
     try:
-        src = inspect.getsource(_TC._portal_factory)
+        src = inspect.getsource(factory)
     except (OSError, TypeError):
         return  # source unavailable (compiled) — cannot introspect; skip.
     assert "self.portal" in src, (
