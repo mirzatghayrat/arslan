@@ -8,7 +8,6 @@ constructs a corpus with a KNOWN propose/holdout partition, records every task t
 touches (edit generation + running-best snapshot + candidate scoring), and asserts that set is
 DISJOINT from the holdout tasks that certify the proposal.
 """
-import anyio
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -27,17 +26,15 @@ async def memdb(monkeypatch):
     yield Session
 
 
-def _seed_spawn(Session):
-    async def _ins():
-        async with Session() as db:
-            s = Spawn(name="fin", domain_category="x", persona_role="analyst",
-                      persona_tone="terse", system_prompt="## Role\nYou are an analyst.",
-                      generation_level=1, config={})
-            db.add(s)
-            await db.commit()
-            await db.refresh(s)
-            return s.id
-    return anyio.run(_ins)
+async def _seed_spawn(Session):
+    async with Session() as db:
+        s = Spawn(name="fin", domain_category="x", persona_role="analyst",
+                  persona_tone="terse", system_prompt="## Role\nYou are an analyst.",
+                  generation_level=1, config={})
+        db.add(s)
+        await db.commit()
+        await db.refresh(s)
+        return s.id
 
 
 # Known partition: 6 PROPOSE real tasks (the optimizer may see these) + 12 HOLDOUT real tasks
@@ -57,7 +54,7 @@ def _corpus():
     return c
 
 
-def test_optimizer_never_sees_holdout_tasks(monkeypatch, memdb):
+async def test_optimizer_never_sees_holdout_tasks(monkeypatch, memdb):
     seen: set[str] = set()
 
     async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
@@ -114,8 +111,8 @@ def test_optimizer_never_sees_holdout_tasks(monkeypatch, memdb):
         return _pass()
     monkeypatch.setattr(replay_gate, "run_gate", fake_run_gate)
 
-    _seed_spawn(memdb)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=3))
+    await _seed_spawn(memdb)
+    res = await evolution_loop.propose_improvement(1, epochs=3)
 
     # the proposal was produced …
     assert res["proposal_id"] is not None

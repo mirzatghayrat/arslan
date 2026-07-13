@@ -1,4 +1,3 @@
-import anyio
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -60,18 +59,16 @@ class _Spawn:
     system_prompt = "## Role\nYou are an analyst."
 
 
-def _seed_spawn(Session, spawn_like):
+async def _seed_spawn(Session, spawn_like):
     """Insert a real Spawn row (id=1 in the fresh in-memory DB) mirroring spawn_like."""
-    async def _ins():
-        async with Session() as db:
-            s = Spawn(name=spawn_like.name, domain_category="x",
-                      persona_role=spawn_like.persona_role, persona_tone=spawn_like.persona_tone,
-                      system_prompt=spawn_like.system_prompt, generation_level=1, config={})
-            db.add(s)
-            await db.commit()
-            await db.refresh(s)
-            return s.id
-    return anyio.run(_ins)
+    async with Session() as db:
+        s = Spawn(name=spawn_like.name, domain_category="x",
+                  persona_role=spawn_like.persona_role, persona_tone=spawn_like.persona_tone,
+                  system_prompt=spawn_like.system_prompt, generation_level=1, config={})
+        db.add(s)
+        await db.commit()
+        await db.refresh(s)
+        return s.id
 
 
 def _corpus(*, propose_n=3, holdout_n=2):
@@ -110,7 +107,7 @@ def _patch_common(monkeypatch, *, edits_by_epoch, corpus=None, rich=None):
     return seen_avoid
 
 
-def test_loop_accepts_improving_edit_and_proposes(monkeypatch, memdb):
+async def test_loop_accepts_improving_edit_and_proposes(monkeypatch, memdb):
     _patch_common(monkeypatch,
                   edits_by_epoch=[[{"op": "add", "section": "Style", "content": "Be terse."}], []])
     async def fake_eval(*, spawn_id, persona, candidate_prompt, replay_items, scorer=None, baseline_outputs=None):
@@ -120,24 +117,22 @@ def test_loop_accepts_improving_edit_and_proposes(monkeypatch, memdb):
                 "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
     monkeypatch.setattr(evaluator, "evaluate", fake_eval)
     _patch_gate(monkeypatch, passed=True)          # ReplayGate passes on holdout
-    _seed_spawn(memdb, _Spawn)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)
     assert res["proposal_id"] is not None
     assert res["gate"]["passed"] is True
     assert res["evidence"]["diff"] == [{"op": "add", "section": "Style", "content": "Be terse."}]
     # The persisted proposal is a LIVING one: status='open', base_prompt_sha pinned,
     # gate evidence (protected_run_ids) carried on it for E2's redact exemption.
-    async def _read():
-        async with memdb() as db:
-            return await db.get(EvolutionProposal, res["proposal_id"])
-    prop = anyio.run(_read)
+    async with memdb() as db:
+        prop = await db.get(EvolutionProposal, res["proposal_id"])
     assert prop.status == "open"
     assert prop.base_prompt_sha and len(prop.base_prompt_sha) == 64
     assert prop.evidence["protected_run_ids"] == [101, 102]
     assert "real_delta" in prop.evidence and "synthetic_delta" in prop.evidence
 
 
-def test_loop_rejects_and_buffers(monkeypatch, memdb):
+async def test_loop_rejects_and_buffers(monkeypatch, memdb):
     seen_avoid = _patch_common(monkeypatch,
                                edits_by_epoch=[[{"op": "add", "section": "X", "content": "bad"}],
                                                [{"op": "add", "section": "Y", "content": "also"}]])
@@ -146,25 +141,25 @@ def test_loop_rejects_and_buffers(monkeypatch, memdb):
         return {"items": [], "aggregate": {"overall": o, "dims": {}},
                 "gate": {"passed": False, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
     monkeypatch.setattr(evaluator, "evaluate", fake_eval)
-    _seed_spawn(memdb, _Spawn)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)
     assert res["proposal_id"] is None
     assert {"op": "add", "section": "X", "content": "bad"} in seen_avoid[1]  # rejected edit buffered into next epoch
 
 
-def test_loop_no_op_on_insufficient(monkeypatch, memdb):
+async def test_loop_no_op_on_insufficient(monkeypatch, memdb):
     async def fake_corpus(db, spawn_id, *, baseline_started_at=None, mint=False):
         return replay_gate.Corpus()
     monkeypatch.setattr(replay_gate, "build_corpus", fake_corpus)
     async def fake_build(spawn_id, **k): return []
     monkeypatch.setattr(replay_set, "build", fake_build)
-    _seed_spawn(memdb, _Spawn)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)
     assert res["proposal_id"] is None and res["gate"]["passed"] is False
     assert res["gate"]["reason"] == "insufficient scored runs"
 
 
-def test_propose_improvement_builds_corpus_with_mint_true(monkeypatch, memdb):
+async def test_propose_improvement_builds_corpus_with_mint_true(monkeypatch, memdb):
     # E9-b: the REAL evolution path must build its corpus with mint=True so a thin holdout is
     # topped up to the gate floor — unlike the read-only cost preview (evolution_estimate), which
     # passes mint=False and never mutates. Spy the exact mint kwarg propose_improvement passes.
@@ -177,12 +172,12 @@ def test_propose_improvement_builds_corpus_with_mint_true(monkeypatch, memdb):
 
     monkeypatch.setattr(replay_gate, "build_corpus", spy_corpus)   # override _patch_common's
     _patch_gate(monkeypatch, passed=True)
-    _seed_spawn(memdb, _Spawn)
-    anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=1))
+    await _seed_spawn(memdb, _Spawn)
+    await evolution_loop.propose_improvement(1, epochs=1)
     assert captured["mint"] is True
 
 
-def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
+async def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
     # An edit is accepted against the running-best propose signal, but the paired
     # ReplayGate FAILS on holdout → no proposal (the gate, not the optimizer, decides).
     _patch_common(monkeypatch,
@@ -194,22 +189,22 @@ def test_loop_final_gate_fails_on_holdout(monkeypatch, memdb):
                 "gate": {"passed": better, "reason": "", "aggregate": {"overall": o, "dims": {}}}}
     monkeypatch.setattr(evaluator, "evaluate", fake_eval)
     _patch_gate(monkeypatch, passed=False)         # ReplayGate FAILS on holdout
-    _seed_spawn(memdb, _Spawn)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)
     assert res["proposal_id"] is None
     assert res["gate"]["passed"] is False and res["gate"]["reason"] == "holdout_winrate"
 
 
-def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
+async def test_loop_degrades_on_dispatch_failure(monkeypatch, memdb):
     _patch_common(monkeypatch, edits_by_epoch=[[{"op": "add", "section": "X", "content": "c"}]])
     async def boom(spawn_id, doc, val): raise RuntimeError("dispatch down")
     monkeypatch.setattr(evolution_loop, "_val_outputs", boom)
-    _seed_spawn(memdb, _Spawn)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))  # must not raise
+    await _seed_spawn(memdb, _Spawn)
+    res = await evolution_loop.propose_improvement(1, epochs=2)  # must not raise
     assert res["proposal_id"] is None
 
 
-def test_inner_loop_rejects_overlength_edit_without_judging(monkeypatch, memdb):
+async def test_inner_loop_rejects_overlength_edit_without_judging(monkeypatch, memdb):
     # E9-b: an edit whose applied doc would exceed _length_ceiling(original) must be rejected in
     # the optimizer inner loop WITHOUT calling evaluator.evaluate (bounded by construction — the
     # candidate can never reach the final holdout gate only to blow the length cap).
@@ -223,12 +218,12 @@ def test_inner_loop_rejects_overlength_edit_without_judging(monkeypatch, memdb):
         evaluated["n"] += 1
         raise AssertionError("must not evaluate an over-length candidate")
     monkeypatch.setattr(evaluator, "evaluate", boom_eval)
-    _seed_spawn(memdb, _Spawn)
+    await _seed_spawn(memdb, _Spawn)
     # sanity: the applied candidate really does exceed the ceiling for this short baseline
     original = skill_doc.apply_edits(_Spawn.system_prompt, [])
     cand = skill_doc.apply_edits(original, [{"op": "add", "section": "Bloat", "content": big}])
     assert len(cand) > replay_gate._length_ceiling(original)
-    res = anyio.run(lambda: evolution_loop.propose_improvement(1, epochs=2))
+    res = await evolution_loop.propose_improvement(1, epochs=2)
     assert res["proposal_id"] is None                    # nothing accepted
     assert evaluated["n"] == 0                            # never judged
     assert res["gate"]["reason"] == "no accepted edit beats the original"

@@ -6,8 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import anyio
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -22,21 +22,19 @@ _spec.loader.exec_module(_mod)
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture
-def maker(tmp_path):
+@pytest_asyncio.fixture
+async def maker(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'pa5.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _setup():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with m() as db:
-            for name in ("Deck Master", "Research Analyst",
-                         "Financial Research Analyst", "Coding Assistant"):
-                db.add(Spawn(name=name, domain_category="general", system_prompt="x"))
-            await db.commit()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with m() as db:
+        for name in ("Deck Master", "Research Analyst",
+                     "Financial Research Analyst", "Coding Assistant"):
+            db.add(Spawn(name=name, domain_category="general", system_prompt="x"))
+        await db.commit()
 
-    anyio.run(_setup)
     return m
 
 

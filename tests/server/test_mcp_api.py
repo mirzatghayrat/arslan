@@ -1,5 +1,4 @@
-import anyio
-import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -8,16 +7,14 @@ import server.db.session as db_session
 from server.db.models import Base, Tool, Toolset
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
+@pytest_asyncio.fixture
+async def client(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'api.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _seed():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    anyio.run(_seed)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     monkeypatch.setenv("ARSLAN_API_TOKEN", "")
     from server.main import app
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://t"), m
