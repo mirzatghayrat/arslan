@@ -3,8 +3,10 @@
 
 Run this against YOUR live instance's brain (it does NOT touch the running server; it
 opens the SQLite file directly and STRICTLY read-only). It reuses the REAL eligibility
-and gate helpers the watcher/loop use — it never re-derives the rules — so what it prints
-is what the actual code decides.
+and gate helpers the watcher/loop use — via the shared `evolution_diagnostics` service,
+the SAME code the GET /spawns/{id}/evolution/diagnosis endpoint calls — so what it prints
+is what the actual code decides. This script is now a thin, read-only CLI shell: engine
+guard + argparse + renderers + a local English verdict table over the shared verdict_code.
 
     cd <your arslan repo>
     PYTHONPATH=$PWD ARSLAN_SECRET_KEY=<anything> ARSLAN_DATA_DIR=data \
@@ -19,9 +21,10 @@ READ-ONLY GUARANTEE (defence in depth):
   * The app's AsyncSessionLocal is repointed at a private engine whose every connection
     runs `PRAGMA query_only=ON` — SQLite itself rejects any write, so even a buggy helper
     cannot mutate your brain.
-  * The script only ever calls SELECT-shaped helpers (is_replayable, build_corpus,
-    replay_set.build, settings_service getters) and reads Run/RunStep/EvolutionAttempt
-    rows. It never calls _create_attempt / enqueue / set_* / commit.
+  * The service only ever calls SELECT-shaped helpers (is_replayable, build_corpus with
+    the default mint=False, replay_set.build, settings_service getters) and reads
+    Run/RunStep/EvolutionAttempt rows. It never calls _create_attempt / enqueue / set_* /
+    commit, and never mints synthetic tasks.
 
 Nothing here decrypts anything, so ARSLAN_SECRET_KEY can be any placeholder.
 """
@@ -29,9 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 # ── Read-only engine install (must happen before any helper opens a session) ──────────
@@ -39,7 +40,7 @@ from pathlib import Path
 # read-only engine. Helpers that open their own session (e.g. replay_set.build does
 # `db_session.AsyncSessionLocal()`) look the attribute up at call time, so this covers
 # them too. query_only=ON makes the guarantee enforced by SQLite, not just by discipline.
-from sqlalchemy import event, func, select  # noqa: E402
+from sqlalchemy import event, select  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -48,21 +49,16 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 
 from server.config import settings  # noqa: E402
 from server.db import session as db_session  # noqa: E402
-from server.db.models import (  # noqa: E402
-    ArslanMessage,
-    EvolutionAttempt,
-    EvolutionProposal,
-    Run,
-    RunStep,
-    Spawn,
-)
-from server.services import replay_gate, replay_run, replay_set, settings_service  # noqa: E402
+from server.db.models import Spawn  # noqa: E402
+from server.services import evolution_diagnostics as ed  # noqa: E402
+from server.services import settings_service  # noqa: E402
 from server.services.replay_safety import REPLAY_SAFE_BUILTINS  # noqa: E402
-from server.services import evolution_watcher as ew  # noqa: E402
 
-MIN_HOLDOUT_N = replay_gate.MIN_HOLDOUT_N  # 10 (reused, not hard-coded)
-WIN_RATE_MIN = replay_gate.WIN_RATE_MIN    # 0.60
-HUNG_AGE_SECONDS = 10 * 60                  # an in-flight attempt older than this looks hung
+# Reused from the shared service (never re-derived) so the CLI header/renderers agree with it.
+MIN_HOLDOUT_N = ed.MIN_HOLDOUT_N  # 10
+WIN_RATE_MIN = ed.WIN_RATE_MIN    # 0.60
+_fmt_dt = ed._fmt_dt
+_trunc = ed._trunc
 
 
 def install_readonly_engine(db_path: str):
@@ -85,187 +81,55 @@ def install_readonly_engine(db_path: str):
     return engine
 
 
-# ── small helpers ─────────────────────────────────────────────────────────────────────
+# ── local English verdict table ───────────────────────────────────────────────────────
+# The shared service returns a stable machine `verdict_code` + a `verdict_params` dict of
+# DATA. This table maps that back to the exact English (label, detail) strings the old
+# script printed, so `--spawn` CLI output stays byte-identical. The one intentional change
+# is `holdout_via_synthetic_topup` (E9-b Task 3): a thin real holdout is no longer a blocker
+# — the mint=True top-up fills it at evolve time — so a spawn that formerly read "holdout
+# split too small" now reads the informational top-up sentence (consistent with the inbox
+# panel, which shares this verdict_code).
 
-def _fmt_dt(dt) -> str:
-    if dt is None:
-        return "—"
-    if isinstance(dt, datetime):
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    return str(dt)
-
-
-def _trunc(text, n: int = 200) -> str:
-    s = (text or "").strip().replace("\n", " ")
-    return s if len(s) <= n else s[: n - 1] + "…"
-
-
-GATE_REASONS = frozenset({
-    "length_cap", "insufficient_holdout", "holdout_winrate", "real_floor",
-    "verbose_fail", "no accepted edit beats the original", "insufficient scored runs",
-    "gate did not pass",
-})
-
-
-def _is_gate_reason(reason: str) -> bool:
-    r = (reason or "").strip()
-    return r in GATE_REASONS or r.startswith("dim_regressed") or r.startswith("gate failed")
-
-
-# ── per-spawn diagnosis ────────────────────────────────────────────────────────────────
-
-async def diagnose_spawn(db, spawn: Spawn) -> dict:
-    """Gather every read-only signal for one spawn. Returns a dict the printer renders."""
-    sid = spawn.id
-
-    # (2) Raw epoch>=1 live scored runs — the universe the corpus is drawn from.
-    scored_runs = (await db.execute(
-        select(Run).where(
-            Run.spawn_id == sid, Run.kind == "live", Run.epoch >= 1, Run.status == "scored",
-        ).order_by(Run.id)
-    )).scalars().all()
-    total_scored = len(scored_runs)
-
-    # (3) Replayability — the prime suspect. Reuse replay_run.is_replayable (the SAME
-    # function the eligibility count and the gate corpus use). For each NON-replayable run,
-    # pull the offending tool names straight from its tool_call steps.
-    replayable = 0
-    non_replayable_run_ids: list[int] = []
-    offending_tools: dict[str, int] = {}
-    for run in scored_runs:
-        if await replay_run.is_replayable(db, run.id):
-            replayable += 1
-            continue
-        non_replayable_run_ids.append(run.id)
-        steps = (await db.execute(
-            select(RunStep).where(RunStep.run_id == run.id, RunStep.kind == "tool_call")
-        )).scalars().all()
-        for s in steps:
-            ref = s.ref if isinstance(s.ref, dict) else {}
-            tool = ref.get("tool")
-            if tool and tool not in REPLAY_SAFE_BUILTINS:
-                offending_tools[tool] = offending_tools.get(tool, 0) + 1
-    non_replayable = total_scored - replayable
-
-    # Faithfulness self-check: our count must match the watcher's own helper.
-    watcher_replayable = await ew._new_replayable_run_count(db, sid, None)
-
-    # (4) Baseline floor.
-    baseline = await settings_service.get_baseline_started_at(db)
-    if baseline is not None:
-        scored_ge_baseline = sum(1 for r in scored_runs if r.created_at and r.created_at >= baseline)
-    else:
-        scored_ge_baseline = total_scored
-
-    # (5) The corpus the gate actually builds (replayable + baseline floor + propose/holdout
-    # split). This is the authoritative answer to "can the gate reach 10 holdout pairs?".
-    corpus = await replay_gate.build_corpus(db, sid, baseline_started_at=None)
-    holdout_pairs = [p for p in corpus if p.get("split_side") == "holdout"]
-    propose_pairs = [p for p in corpus if p.get("split_side") == "propose"]
-    corpus_excluded = getattr(corpus, "excluded", 0)
-    # Also reuse replay_set.build (the optimizer's rich-baseline items) as requested.
-    replay_items = await replay_set.build(sid, cap=64)
-
-    # (6) Last 5 attempts.
-    attempts = (await db.execute(
-        select(EvolutionAttempt).where(EvolutionAttempt.spawn_id == sid)
-        .order_by(EvolutionAttempt.id.desc()).limit(5)
-    )).scalars().all()
-
-    # (7) Backoff state — reuse the watcher's own math.
-    consec_fails = await ew._consecutive_fails(db, sid)
-    threshold = ew._threshold(consec_fails)
-    last_started = await ew._last_attempt_started_at(db, sid)
-    count_since = await ew._new_replayable_run_count(db, sid, last_started)
-    auto_eligible = count_since >= threshold
-
-    # Any existing proposals? ("No evolution proposals yet" == none open/proposed.)
-    open_props = (await db.execute(
-        select(func.count()).select_from(EvolutionProposal).where(
-            EvolutionProposal.spawn_id == sid,
-            EvolutionProposal.status.in_(("open", "proposed")),
-        )
-    )).scalar() or 0
-
-    verdict, verdict_detail = _verdict(
-        total_scored=total_scored, replayable=replayable, non_replayable=non_replayable,
-        offending_tools=offending_tools, baseline=baseline,
-        scored_ge_baseline=scored_ge_baseline, holdout_ceiling=len(holdout_pairs),
-        propose_count=len(propose_pairs), attempts=attempts,
-    )
-
-    return {
-        "spawn": spawn, "total_scored": total_scored, "replayable": replayable,
-        "non_replayable": non_replayable, "non_replayable_run_ids": non_replayable_run_ids,
-        "offending_tools": offending_tools, "watcher_replayable": watcher_replayable,
-        "baseline": baseline, "scored_ge_baseline": scored_ge_baseline,
-        "corpus_total": len(corpus), "holdout_ceiling": len(holdout_pairs),
-        "propose_count": len(propose_pairs), "corpus_excluded": corpus_excluded,
-        "replay_items": len(replay_items), "attempts": attempts,
-        "consec_fails": consec_fails, "threshold": threshold,
-        "count_since": count_since, "last_started": last_started,
-        "auto_eligible": auto_eligible, "open_props": open_props,
-        "verdict": verdict, "verdict_detail": verdict_detail,
-    }
-
-
-def _verdict(*, total_scored, replayable, non_replayable, offending_tools, baseline,
-             scored_ge_baseline, holdout_ceiling, propose_count, attempts) -> tuple[str, str]:
-    """Deterministic verdict. First matching cause wins (root causes before symptoms)."""
-    latest = attempts[0] if attempts else None
-
-    # 1. In-flight and old → the runner may be hung.
-    if latest is not None and latest.outcome is None and latest.started_at is not None:
-        age = (datetime.utcnow() - latest.started_at).total_seconds()
-        if age > HUNG_AGE_SECONDS:
-            return ("IN-FLIGHT/POSSIBLY HUNG",
-                    f"attempt #{latest.id} started {_fmt_dt(latest.started_at)} "
-                    f"({int(age // 60)} min ago) and never finalized.")
-
-    # 2. No scored runs at all.
-    if total_scored == 0:
+def _render_verdict_en(code: str, p: dict) -> tuple[str, str]:
+    if code == "in_flight_hung":
+        return ("IN-FLIGHT/POSSIBLY HUNG",
+                f"attempt #{p['attempt_id']} started {p['started_at']} "
+                f"({p['age_min']} min ago) and never finalized.")
+    if code == "drought_no_runs":
         return ("CORPUS DROUGHT — too few runs",
                 "0 epoch>=1 live scored runs exist for this spawn.")
-
-    # 3. Non-replayable exclusion is what starves the corpus (the E9-a case).
-    if replayable < MIN_HOLDOUT_N and non_replayable > 0:
+    if code == "drought_non_replayable":
         tools = ", ".join(f"{t}×{c}" for t, c in sorted(
-            offending_tools.items(), key=lambda kv: -kv[1])) or "(unnamed tools)"
+            p["tools"].items(), key=lambda kv: -kv[1])) or "(unnamed tools)"
         return ("CORPUS DROUGHT — non-replayable",
-                f"{non_replayable}/{total_scored} scored runs are NOT hermetically "
-                f"replayable → excluded from the corpus (replayable={replayable} < "
-                f"{MIN_HOLDOUT_N}). Offending tools: {tools}.")
-
-    # 4. Too few raw runs (all replayable, but simply not enough).
-    if total_scored < MIN_HOLDOUT_N:
+                f"{p['non_replayable']}/{p['total_scored']} scored runs are NOT hermetically "
+                f"replayable → excluded from the corpus (replayable={p['replayable']} < "
+                f"{p['min']}). Offending tools: {tools}.")
+    if code == "drought_too_few":
         return ("CORPUS DROUGHT — too few runs",
-                f"only {total_scored} scored runs (< {MIN_HOLDOUT_N}); "
-                f"replayable={replayable}.")
-
-    # 5. A declared baseline floors the eligible set below threshold.
-    if baseline is not None and scored_ge_baseline < MIN_HOLDOUT_N and total_scored >= MIN_HOLDOUT_N:
+                f"only {p['total_scored']} scored runs (< {p['min']}); "
+                f"replayable={p['replayable']}.")
+    if code == "baseline_flooring":
         return ("BASELINE FLOORING CORPUS",
-                f"declared baseline {_fmt_dt(baseline)} floors the corpus to "
-                f"{scored_ge_baseline} runs (< {MIN_HOLDOUT_N}) out of {total_scored} scored.")
-
-    # 6. Enough replayable raw runs, but the ~40% holdout split can't reach 10 pairs.
-    if holdout_ceiling < MIN_HOLDOUT_N:
+                f"declared baseline {p['baseline']} floors the corpus to "
+                f"{p['scored_ge_baseline']} runs (< {p['min']}) out of {p['total_scored']} "
+                f"scored.")
+    if code == "holdout_via_synthetic_topup":
+        return ("HOLDOUT VIA SYNTHETIC TOP-UP",
+                f"the real holdout side has {p['real_holdout']} pairs (< {p['min']}); the next "
+                f"evolve tops it up to {p['min']} with fresh synthetic domain tasks (isolated to "
+                f"the holdout side) so the gate becomes reachable — enqueue evolution to run.")
+    if code == "drought_holdout_split":   # retained defensively; the top-up makes it unreachable
         return ("CORPUS DROUGHT — holdout split too small",
-                f"corpus holdout side has only {holdout_ceiling} pairs (< {MIN_HOLDOUT_N}); "
+                f"corpus holdout side has only {p['holdout_ceiling']} pairs (< {p['min']}); "
                 f"the gate's threshold-1 (insufficient_holdout) can never pass. Add more "
                 f"replayable real runs and/or synthetic holdout tasks.")
-
-    # 7. A recent attempt failed on a real gate threshold.
-    latest_final = next((a for a in attempts if a.outcome is not None), None)
-    if latest_final is not None and latest_final.outcome == "failed" and _is_gate_reason(latest_final.reason):
+    if code == "gate_failure":
         return ("GATE FAILURE",
-                f"attempt #{latest_final.id} failed: {_trunc(latest_final.reason, 300)}")
-
-    # 8. A recent attempt was skipped for budget.
-    if latest_final is not None and latest_final.outcome == "skipped_budget":
+                f"attempt #{p['attempt_id']} failed: {_trunc(p['reason'], 300)}")
+    if code == "skipped_budget":
         return ("SKIPPED_BUDGET",
-                f"attempt #{latest_final.id} skipped: {_trunc(latest_final.reason, 300)}")
-
+                f"attempt #{p['attempt_id']} skipped: {_trunc(p['reason'], 300)}")
     return ("ELIGIBLE-LOOKING — investigate attempt runner",
             "corpus can reach the holdout floor and no attempt records a blocking reason; "
             "the optimizer may simply not have found an edit that beats the baseline yet, "
@@ -390,7 +254,10 @@ async def run(spawn_substr: str | None) -> int:
         diags = []
         focus = None
         for s in to_dump:
-            d = await diagnose_spawn(db, s)
+            d = await ed.diagnose_spawn(db, s)
+            # Render the shared verdict_code into the script's English (label, detail) pair.
+            d["verdict"], d["verdict_detail"] = _render_verdict_en(
+                d["verdict_code"], d["verdict_params"])
             diags.append(d)
             is_match = bool(needle) and s in targeted
             if is_match and focus is None:
