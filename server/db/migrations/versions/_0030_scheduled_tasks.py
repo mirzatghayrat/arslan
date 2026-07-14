@@ -17,8 +17,6 @@ Create Date: 2026-07-12
 """
 from __future__ import annotations
 
-from alembic import op
-
 revision = "0030"
 down_revision = "0029"
 branch_labels = None
@@ -68,14 +66,6 @@ def _upgrade(connection) -> None:  # noqa: ANN001
 def _downgrade(connection) -> None:  # noqa: ANN001
     connection.exec_driver_sql("DROP TABLE IF EXISTS scheduled_task_runs")
     connection.exec_driver_sql("DROP TABLE IF EXISTS scheduled_tasks")
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

@@ -7,7 +7,6 @@ Fresh DBs get the final shape from Base.metadata.create_all (runs BEFORE this
 in main.py boot), making this a no-op there. collections/spawn_collections are
 likewise created by create_all; this migration only creates them when running
 under plain alembic against an old DB."""
-from alembic import op
 import sqlalchemy as sa
 
 revision = "0018"
@@ -111,16 +110,8 @@ def _downgrade(bind) -> None:  # noqa: ANN001
         bind.exec_driver_sql("DROP TABLE collections")
 
 
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
 def upgrade_sync(connection) -> None:  # noqa: ANN001
     _upgrade(connection)
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def downgrade_sync(connection) -> None:  # noqa: ANN001

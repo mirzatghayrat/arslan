@@ -43,7 +43,6 @@ server = [
     "sqlalchemy>=2.0",
     "greenlet>=3.0",
     "aiosqlite>=0.19",
-    "alembic>=1.13",
     "cryptography>=42.0",
     "numpy>=1.26",
 ]

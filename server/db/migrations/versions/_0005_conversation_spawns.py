@@ -9,7 +9,6 @@ Per-conversation spawn roster membership for the conversation-workbench feature.
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0005"
 down_revision = "0004"
@@ -57,14 +56,6 @@ def _downgrade(bind) -> None:  # noqa: ANN001
             "DROP INDEX IF EXISTS ix_conversation_spawns_conversation_id"
         )
     )
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 # Test helper: apply against a raw (sync) connection.

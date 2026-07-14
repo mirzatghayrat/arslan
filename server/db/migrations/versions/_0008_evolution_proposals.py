@@ -7,7 +7,6 @@ Create Date: 2026-06-23
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0008"
 down_revision = "0007"
@@ -44,14 +43,6 @@ def _downgrade(bind) -> None:  # noqa: ANN001
     sa.Table("spawns", metadata, sa.Column("id", sa.Integer(), primary_key=True),
              keep_existing=True)
     _table(metadata).drop(bind, checkfirst=True)
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

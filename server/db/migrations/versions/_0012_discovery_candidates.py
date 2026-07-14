@@ -1,6 +1,5 @@
 """discovery_candidates table (curated discovery catalog)."""
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0012"
 down_revision = "0011"
@@ -19,16 +18,8 @@ def _upgrade(bind) -> None:
         ).create(bind)
 
 
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
 def upgrade_sync(connection) -> None:
     _upgrade(connection)
-
-
-def downgrade() -> None:
-    pass
 
 
 def downgrade_sync(connection) -> None:

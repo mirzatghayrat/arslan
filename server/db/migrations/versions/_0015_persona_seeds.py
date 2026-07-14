@@ -7,7 +7,6 @@ Create Date: 2026-06-29
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0015"
 down_revision = "0014"
@@ -23,14 +22,6 @@ def _upgrade(bind) -> None:  # noqa: ANN001
 
 def _downgrade(bind) -> None:  # noqa: ANN001
     bind.exec_driver_sql("DROP TABLE IF EXISTS persona_seeds_fts")
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

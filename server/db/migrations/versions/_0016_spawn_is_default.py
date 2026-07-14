@@ -1,5 +1,4 @@
 """add is_default flag to spawns (built-in, undeletable agents)."""
-from alembic import op
 import sqlalchemy as sa
 
 revision = "0016"
@@ -18,17 +17,5 @@ def _upgrade(bind) -> None:
             bind.exec_driver_sql("ALTER TABLE spawns ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0")
 
 
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
 def upgrade_sync(connection) -> None:
     _upgrade(connection)
-
-
-def downgrade() -> None:
-    op.drop_column("spawns", "is_default")
-
-
-def downgrade_sync(connection) -> None:
-    op.drop_column("spawns", "is_default")

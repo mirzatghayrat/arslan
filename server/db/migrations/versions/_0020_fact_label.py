@@ -26,16 +26,6 @@ def _downgrade(bind) -> None:  # noqa: ANN001
         bind.exec_driver_sql("ALTER TABLE user_facts DROP COLUMN label")
 
 
-def upgrade() -> None:
-    from alembic import op
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    from alembic import op
-    _downgrade(op.get_bind())
-
-
 def upgrade_sync(connection) -> None:  # noqa: ANN001
     _upgrade(connection)
 

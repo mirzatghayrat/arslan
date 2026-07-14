@@ -18,8 +18,6 @@ Create Date: 2026-07-12
 """
 from __future__ import annotations
 
-from alembic import op
-
 revision = "0031"
 down_revision = "0030"
 branch_labels = None
@@ -60,14 +58,6 @@ def _downgrade(connection) -> None:  # noqa: ANN001
                 f"ALTER TABLE provider_configs DROP COLUMN {name}")
         except Exception:  # noqa: BLE001 — downgrade is best-effort on old SQLite
             pass
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

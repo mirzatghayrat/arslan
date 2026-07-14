@@ -15,8 +15,6 @@ Create Date: 2026-07-11
 """
 from __future__ import annotations
 
-from alembic import op
-
 revision = "0029"
 down_revision = "0028"
 branch_labels = None
@@ -49,14 +47,6 @@ def _upgrade(connection) -> None:  # noqa: ANN001
 
 def _downgrade(connection) -> None:  # noqa: ANN001
     connection.exec_driver_sql("DROP TABLE IF EXISTS usage_ledger")
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

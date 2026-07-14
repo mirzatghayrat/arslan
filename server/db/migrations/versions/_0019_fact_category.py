@@ -3,7 +3,6 @@
 Forward: ALTER TABLE ADD COLUMN. Downgrade: SQLite 3.35+ supports ALTER TABLE
 DROP COLUMN (Python 3.12 bundles 3.4x); we use it directly. Idempotent both ways
 via column inspection so the main.py boot backfill can re-run safely."""
-from alembic import op
 import sqlalchemy as sa
 
 revision = "0019"
@@ -27,14 +26,6 @@ def _upgrade(bind) -> None:  # noqa: ANN001
 def _downgrade(bind) -> None:  # noqa: ANN001
     if "category" in _cols(bind):
         bind.exec_driver_sql("ALTER TABLE user_facts DROP COLUMN category")
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

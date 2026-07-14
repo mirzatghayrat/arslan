@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from sqlalchemy import text
-from alembic import op
 
 revision = "0002"
 down_revision = "0001"
@@ -135,14 +134,6 @@ def _downgrade(bind) -> None:  # noqa: ANN001
     fb_cols = {c["name"] for c in insp.get_columns("feedback")} if "feedback" in existing else set()
     if "quality_signal" in fb_cols:
         bind.execute(sa.text("ALTER TABLE feedback DROP COLUMN quality_signal"))
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 # Test helper: apply against a raw (sync) connection, like _0001_initial.upgrade_sync.

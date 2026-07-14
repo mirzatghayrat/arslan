@@ -14,7 +14,6 @@ dual-path pattern established in ``_0002_orchestrator.py``.
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0003"
 down_revision = "0002"
@@ -121,14 +120,6 @@ def _downgrade(bind) -> None:  # noqa: ANN001
     tables = _table_defs(metadata)
     for name in ("spawn_capabilities", "skill_packs", "tools", "toolsets"):
         tables[name].drop(bind, checkfirst=True)
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 # Test helper: apply against a raw (sync) connection, like _0001_initial.upgrade_sync.

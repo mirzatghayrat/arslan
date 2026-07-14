@@ -1,6 +1,5 @@
 """mcp_servers table + tools.external_name column."""
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0010"
 down_revision = "0009"
@@ -28,16 +27,8 @@ def _upgrade(bind) -> None:
             bind.exec_driver_sql("ALTER TABLE tools ADD COLUMN external_name VARCHAR(120)")
 
 
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
 def upgrade_sync(connection) -> None:
     _upgrade(connection)
-
-
-def downgrade() -> None:
-    pass
 
 
 def downgrade_sync(connection) -> None:

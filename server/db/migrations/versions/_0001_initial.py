@@ -6,8 +6,6 @@ Create Date: 2026-06-08
 """
 from __future__ import annotations
 
-from alembic import op
-
 revision = "0001"
 down_revision = None
 branch_labels = None
@@ -25,14 +23,6 @@ def _drop_all(bind) -> None:  # noqa: ANN001
     from server.db.models import Base
 
     Base.metadata.drop_all(bind)
-
-
-def upgrade() -> None:
-    _create_all(op.get_bind())
-
-
-def downgrade() -> None:
-    _drop_all(op.get_bind())
 
 
 # Test helper: apply/revert against a raw (sync) connection.

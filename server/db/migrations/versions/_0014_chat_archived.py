@@ -1,5 +1,4 @@
 """add archived flag to chat_messages."""
-from alembic import op
 import sqlalchemy as sa
 
 revision = "0014"
@@ -18,17 +17,5 @@ def _upgrade(bind) -> None:
             bind.exec_driver_sql("ALTER TABLE chat_messages ADD COLUMN archived BOOLEAN NOT NULL DEFAULT 0")
 
 
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
 def upgrade_sync(connection) -> None:
     _upgrade(connection)
-
-
-def downgrade() -> None:
-    op.drop_column("chat_messages", "archived")
-
-
-def downgrade_sync(connection) -> None:
-    op.drop_column("chat_messages", "archived")

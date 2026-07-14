@@ -18,8 +18,6 @@ Create Date: 2026-07-10
 """
 from __future__ import annotations
 
-from alembic import op
-
 revision = "0028"
 down_revision = "0027"
 branch_labels = None
@@ -98,14 +96,6 @@ def _downgrade(connection) -> None:  # noqa: ANN001
         connection.exec_driver_sql("ALTER TABLE evolution_proposals DROP COLUMN base_prompt_sha")
     except Exception:  # noqa: BLE001 — downgrade is best-effort on old SQLite
         pass
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001

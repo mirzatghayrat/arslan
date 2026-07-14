@@ -7,7 +7,6 @@ Create Date: 2026-06-23
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
 
 revision = "0007"
 down_revision = "0006"
@@ -80,14 +79,6 @@ def _downgrade(bind) -> None:  # noqa: ANN001
     metadata = sa.MetaData()
     for tbl in reversed(_tables(metadata)):
         tbl.drop(bind, checkfirst=True)
-
-
-def upgrade() -> None:
-    _upgrade(op.get_bind())
-
-
-def downgrade() -> None:
-    _downgrade(op.get_bind())
 
 
 def upgrade_sync(connection) -> None:  # noqa: ANN001
