@@ -22,6 +22,8 @@ Backend: FastAPI + async SQLAlchemy/SQLite (`server/`). Frontend: React 19 + Typ
 
 **Prerequisites:** Python (managed with [`uv`](https://docs.astral.sh/uv/)) and Node.js.
 
+> **New here?** For the full 5-minute first-run walkthrough — connect a model, get your first spawn to answer, and (optionally) watch it improve itself — see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**. The commands below are the terse version.
+
 ```bash
 # 1. Clone
 git clone https://github.com/mirzatghayrat/arslan.git
