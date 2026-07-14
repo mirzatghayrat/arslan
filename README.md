@@ -27,16 +27,25 @@ Backend: FastAPI + async SQLAlchemy/SQLite (`server/`). Frontend: React 19 + Typ
 git clone https://github.com/mirzatghayrat/arslan.git
 cd arslan
 
-# 2. Backend deps (creates .venv from uv.lock / pyproject.toml)
-uv sync
+# 2. Backend deps — include the server (runtime) + dev extras.
+#    Plain `uv sync` installs only core deps; the backend imports SQLAlchemy/
+#    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
+uv sync --extra dev --extra server
 
-# 3. Run the backend — set a real ARSLAN_SECRET_KEY to store LLM keys at rest
-PYTHONPATH=$PWD \
-ARSLAN_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))') \
-ARSLAN_DATA_DIR=data \
+# 3. Generate ARSLAN_SECRET_KEY ONCE into .env, then reuse it on every run.
+#    It derives the key that encrypts your stored BYOK secrets at rest, so
+#    regenerating it makes previously-stored keys undecryptable — never mint a
+#    fresh one per boot. (This is only added if .env doesn't already have one.)
+grep -q '^ARSLAN_SECRET_KEY=' .env 2>/dev/null \
+  || echo "ARSLAN_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+
+# 4. Run the backend. Load .env into the shell first — the dev server reads the
+#    process environment, so `source` it before starting uvicorn.
+set -a; source .env; set +a
+PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
   .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
 
-# 4. In a second terminal, run the frontend dev server
+# 5. In a second terminal, run the frontend dev server
 cd web && npm install && npm run dev
 ```
 
