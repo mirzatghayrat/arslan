@@ -15,7 +15,6 @@ COPY arslan/ ./arslan/
 RUN pip install --no-cache-dir -e ".[server]"
 
 COPY server/ ./server/
-COPY alembic.ini ./
 COPY --from=frontend /app/web/dist ./server/static/
 
 # Release artifacts pin production mode: a missing ARSLAN_SECRET_KEY now becomes
@@ -24,4 +23,7 @@ COPY --from=frontend /app/web/dist ./server/static/
 ENV ARSLAN_ENV=prod
 
 EXPOSE 8741
-CMD ["sh", "-c", "alembic upgrade head && uvicorn server.main:app --host 0.0.0.0 --port 8741 --ws-ping-interval 20 --ws-ping-timeout 20"]
+# Migrations run automatically at boot: server.main's lifespan does
+# Base.metadata.create_all + the versioned runner's apply_pending in one
+# transaction (see server/db/migrations/runner.py). No separate migrate step.
+CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8741", "--ws-ping-interval", "20", "--ws-ping-timeout", "20"]

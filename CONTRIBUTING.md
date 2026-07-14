@@ -132,15 +132,15 @@ For reproducible installs matching CI, use `npm ci` instead of `npm install` (it
 
 This repo is written test-first. **Write the failing test before the implementation**, then make it pass. New behavior lands with tests under `tests/` (most backend tests live in `tests/server/`). A change to product code without corresponding test coverage is unlikely to be accepted.
 
-### Hand-wired migrations
+### Versioned migrations
 
-Schema changes are **not** run via `alembic upgrade` at boot — they are hand-wired idempotent functions executed in `server/main.py`'s `lifespan()`. To add a migration:
+Schema changes are **not** run via `alembic upgrade` (alembic is gone). They are idempotent `upgrade_sync` functions registered in an explicit, ordered runner — `server/db/migrations/runner.py` — which boot applies via its `schema_version` ledger (`server/main.py`'s `lifespan()` calls `apply_pending` after `Base.metadata.create_all`, in one transaction). To add a migration, update **three places in lockstep**:
 
-1. Create `server/db/migrations/versions/_00NN_<name>.py` (bump `NN` past the latest — currently `_0028_*`).
-2. Expose an **idempotent** `upgrade_sync(connection)`. Guard every change so re-running is a no-op — the pattern is to read `PRAGMA table_info(<table>)` and only `connection.exec_driver_sql("ALTER TABLE … ADD COLUMN …")` for columns that don't exist yet. (See `_0027_mcp_health.py` for a minimal example.)
-3. **Wire it into the boot chain** in `server/main.py`: add `from server.db.migrations.versions._00NN_<name> import upgrade_sync as _<name>` and `await conn.run_sync(_<name>)` in `lifespan()`, after `Base.metadata.create_all`, in sequence with the others.
+1. Create `server/db/migrations/versions/_00NN_<name>.py` (bump `NN` past the latest — currently `_0031_*`). Expose an **idempotent** `upgrade_sync(connection)`: guard every change so re-running is a net no-op — the pattern is to read `PRAGMA table_info(<table>)` and only `connection.exec_driver_sql("ALTER TABLE … ADD COLUMN …")` for columns that don't exist yet. (See `_0027_mcp_health.py` for a minimal example.)
+2. **Register it** in `server/db/migrations/runner.py`: add `from .versions._00NN_<name> import upgrade_sync as _m00NN` and append `("00NN", _m00NN)` to `MIGRATIONS` — **at the end, in order; never reorder existing entries** (the order is the zero-behavior-change guarantee).
+3. **Update the hardcoded id list** in `tests/server/test_migration_runner.py::test_registry_matches_boot_chain_verbatim`.
 
-> **Gotcha:** a migration file that is *not* wired into `main.py` never runs. Adding-a-column / FTS migrations must be appended to the boot chain, or fresh installs boot but existing DBs never get the new column.
+> **Gotcha:** a version file that is *not* registered in `MIGRATIONS` never runs. The completeness test (`test_every_upgrade_sync_file_is_registered_or_documented_subsumed`) turns that into a **CI failure** rather than a silent runtime skip — so a forgotten registration is caught before merge. (`_0001`–`_0005` predate `create_all` and are allow-listed as `SUBSUMED`.)
 
 ### Commit & branch style
 

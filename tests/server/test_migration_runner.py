@@ -60,6 +60,10 @@ def test_registry_matches_boot_chain_verbatim():
         "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016",
         "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027",
         "0028", "0029", "0030", "0031"]
+    # id→function binding: each registered fn must come from its own _00NN_ module.
+    # Guards a copy-paste mis-binding like ("0032", _m0031) that the order check alone misses.
+    for vid, fn in runner.MIGRATIONS:
+        assert f"_{vid}_" in fn.__module__, f"{vid} bound to wrong module {fn.__module__}"
 
 
 def test_every_upgrade_sync_file_is_registered_or_documented_subsumed():
