@@ -10,7 +10,6 @@ from datetime import datetime
 from arslan.core.param_registry import DEFAULT_REGISTRY
 from server.db import session as db_session
 from server.db.models import ConversationEvent, EvolutionProposal, Spawn
-from server.orchestrator import dispatcher
 from server.services import evaluator, optimizer, replay_gate, replay_set, skill_doc
 
 logger = logging.getLogger(__name__)
@@ -26,13 +25,18 @@ def _persona(spawn: Spawn) -> str:
 
 
 async def _val_outputs(spawn_id: int, doc: str, val: list[dict]) -> dict:
-    """Run `doc` over val, return {run_id: output} for the running-best baseline."""
+    """Run `doc` over val hermetically, return {run_id: output} for the running-best
+    baseline. Byte-identical ambient across the val split (one snapshot)."""
+    from server.db import session as db_session
+    from server.services import replay_run
     out = {}
-    for it in val:
-        gen = await dispatcher.dispatch("evolution-eval", spawn_id=spawn_id,
-                                        task_brief=it["task"], system_prompt_override=doc,
-                                        persist=False)
-        out[it["run_id"]] = gen.get("full_output", "")
+    async with db_session.AsyncSessionLocal() as db:
+        ambient = await replay_run.snapshot_ambient(
+            db, spawn_id=spawn_id, conversation_id=replay_run.REPLAY_CONVERSATION_ID)
+        for it in val:
+            arm = await replay_run.run_arm(
+                db, spawn_id=spawn_id, task=it["task"], system_prompt=doc, ambient=ambient)
+            out[it["run_id"]] = arm["output"]
     return out
 
 

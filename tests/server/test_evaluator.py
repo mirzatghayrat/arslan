@@ -1,6 +1,5 @@
 
-from server.orchestrator import dispatcher
-from server.services import compare_judge, evaluator
+from server.services import compare_judge, evaluator, replay_run
 
 
 def _items(n):
@@ -8,12 +7,23 @@ def _items(n):
              "baseline_overall": 6.0, "baseline_dims": {}} for i in range(n)]
 
 
+def _stub_replay_run(monkeypatch, output="cand"):
+    """evaluate() now dispatches candidates via replay_run.run_arm sharing ONE
+    replay_run.snapshot_ambient — stub both (module-level, so it applies wherever they're
+    imported from) instead of the old bare dispatcher.dispatch."""
+    async def fake_snapshot(db, *, spawn_id, conversation_id, task=""):
+        return {"facts": "", "kb_block": "", "kb_sources": None}
+
+    async def fake_run_arm(db, *, spawn_id, task, system_prompt, ambient,
+                           conversation_id=replay_run.REPLAY_CONVERSATION_ID):
+        return {"run_id": 1, "output": output, "evidence": {}}
+
+    monkeypatch.setattr(replay_run, "snapshot_ambient", fake_snapshot)
+    monkeypatch.setattr(replay_run, "run_arm", fake_run_arm)
+
+
 def _stub_gen(monkeypatch):
-    async def fake_dispatch(conversation_id, *, spawn_id, task_brief, system_prompt_override=None,
-                            persist=True, **kw):
-        return {"full_output": "cand", "spawn_name": "S",
-                "summary_message_id": None, "assistant_message_id": None, "escalation": None}
-    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
+    _stub_replay_run(monkeypatch, output="cand")
 
 
 def _stub_compare(monkeypatch, verdicts):
@@ -58,9 +68,7 @@ async def test_empty_replay_fails_gate(monkeypatch):
 
 
 async def test_evaluate_uses_custom_scorer_and_dims(monkeypatch):
-    async def fake_dispatch(conv, *, spawn_id, task_brief, system_prompt_override, persist):
-        return {"full_output": "candidate-out"}
-    monkeypatch.setattr(evaluator.dispatcher, "dispatch", fake_dispatch)
+    _stub_replay_run(monkeypatch, output="candidate-out")
 
     async def fake_scorer(*, task, persona, output_a, output_b, item):
         return {"dimensions": {"benchmark": "b"}, "overall": "b", "margin": 1.0}
@@ -76,10 +84,7 @@ async def test_evaluate_uses_custom_scorer_and_dims(monkeypatch):
 
 async def test_evaluate_uses_running_best_baseline(monkeypatch):
     captured = {}
-
-    async def fake_dispatch(conv, *, spawn_id, task_brief, system_prompt_override, persist):
-        return {"full_output": "candidate-out"}
-    monkeypatch.setattr(evaluator.dispatcher, "dispatch", fake_dispatch)
+    _stub_replay_run(monkeypatch, output="candidate-out")
 
     async def fake_scorer(*, task, persona, output_a, output_b, item):
         captured["a"] = output_a

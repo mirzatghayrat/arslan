@@ -16,8 +16,8 @@ baseline per item, overriding the stored `baseline_output` for that run_id.
 """
 from __future__ import annotations
 
-from server.orchestrator import dispatcher
-from server.services import compare_judge
+from server.db import session as db_session
+from server.services import compare_judge, replay_run
 
 _DEFAULT_DIMENSIONS = ("fabrication", "identity", "completion")
 
@@ -56,19 +56,25 @@ async def evaluate(*, spawn_id: int, persona: str, candidate_prompt: str,
         else:
             bucket["tie"] += 1
 
-    for it in replay_items:
-        gen = await dispatcher.dispatch(
-            "evolution-eval", spawn_id=spawn_id, task_brief=it["task"],
-            system_prompt_override=candidate_prompt, persist=False,
-        )
-        candidate_output = gen.get("full_output", "")
-        baseline = baseline_outputs.get(it.get("run_id"), it["baseline_output"])
-        v = await scorer(task=it["task"], persona=persona,
-                         output_a=baseline, output_b=candidate_output, item=it)
-        _bump(overall, v.get("overall", "tie"))
-        for d in dimensions:
-            _bump(dims[d], (v.get("dimensions") or {}).get(d, "tie"))
-        items.append({"run_id": it.get("run_id"), "task": it["task"], "verdict": v})
+    # Hermetic, byte-identical arms: one ambient snapshot for the whole eval; each candidate
+    # dispatch goes through run_arm (dispatch(replay=True) + shared ambient), matching the
+    # final ReplayGate. Sealed = the model sees only replay-safe tools (candidate scored on
+    # the read-only subset — see plan honesty note).
+    async with db_session.AsyncSessionLocal() as db:
+        ambient = await replay_run.snapshot_ambient(
+            db, spawn_id=spawn_id, conversation_id=replay_run.REPLAY_CONVERSATION_ID)
+        for it in replay_items:
+            arm = await replay_run.run_arm(
+                db, spawn_id=spawn_id, task=it["task"],
+                system_prompt=candidate_prompt, ambient=ambient)
+            candidate_output = arm["output"]
+            baseline = baseline_outputs.get(it.get("run_id"), it["baseline_output"])
+            v = await scorer(task=it["task"], persona=persona,
+                             output_a=baseline, output_b=candidate_output, item=it)
+            _bump(overall, v.get("overall", "tie"))
+            for d in dimensions:
+                _bump(dims[d], (v.get("dimensions") or {}).get(d, "tie"))
+            items.append({"run_id": it.get("run_id"), "task": it["task"], "verdict": v})
 
     aggregate = {"overall": overall, "dims": dims}
     return {"items": items, "aggregate": aggregate, "gate": _gate(aggregate, dimensions)}

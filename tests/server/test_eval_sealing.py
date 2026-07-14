@@ -183,3 +183,37 @@ async def test_dispatch_real_conversation_stays_live(monkeypatch):
     with pytest.raises(RuntimeError, match="LIVE_BRANCH_TAKEN"):
         await dispatcher.dispatch("conv_realuser", spawn_id=1, task_brief="t")
     assert sealed["v"] is False  # real conversation stayed on the live branch
+
+
+async def test_evaluate_dispatches_hermetically_and_shares_one_ambient(monkeypatch):
+    """evaluate routes every candidate dispatch through run_arm with ONE shared ambient
+    snapshot (byte-identical arms), never a bare live dispatch."""
+    from server.services import evaluator, replay_run
+
+    snapshots = {"count": 0}
+    arm_calls = []
+
+    async def fake_snapshot(db, *, spawn_id, conversation_id, task=""):
+        snapshots["count"] += 1
+        return {"facts": "F", "kb_block": "K", "kb_sources": None}
+
+    async def fake_run_arm(db, *, spawn_id, task, system_prompt, ambient,
+                           conversation_id=replay_run.REPLAY_CONVERSATION_ID):
+        arm_calls.append({"ambient": ambient, "task": task})
+        return {"run_id": len(arm_calls), "output": "cand-out", "evidence": {}}
+
+    monkeypatch.setattr(replay_run, "snapshot_ambient", fake_snapshot)
+    monkeypatch.setattr(replay_run, "run_arm", fake_run_arm)
+
+    async def fake_scorer(*, task, persona, output_a, output_b, item):
+        return {"dimensions": {}, "overall": "b", "margin": 1.0}
+
+    items = [{"run_id": 1, "task": "t1", "baseline_output": "b1"},
+             {"run_id": 2, "task": "t2", "baseline_output": "b2"}]
+    res = await evaluator.evaluate(spawn_id=1, persona="p", candidate_prompt="CAND",
+                                   replay_items=items, scorer=fake_scorer)
+    assert len(arm_calls) == 2                       # both items via run_arm
+    assert snapshots["count"] == 1                   # ONE shared ambient for the eval
+    assert all(a["ambient"] == {"facts": "F", "kb_block": "K", "kb_sources": None}
+               for a in arm_calls)                   # byte-identical ambient
+    assert res["gate"]["passed"] is True
