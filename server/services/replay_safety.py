@@ -42,3 +42,26 @@ def filter_replay_tools(wired: list[dict]) -> list[dict]:
     """Narrow a resolved wired-tool list to the replay-safe builtins, dropping every
     MCP tool and any non-hermetic builtin. Order preserved; input never mutated."""
     return [t for t in wired if t.get("key") in REPLAY_SAFE_BUILTINS]
+
+
+# Synthetic conversation ids used ONLY by evolution eval/replay dispatch. A dispatch
+# under one of these must be hermetic — the single source of truth both the structural
+# rule (dispatcher.dispatch) and the throat backstop (tool_loop._dispatch_tool) read,
+# so the two layers can never drift on "is this an eval context".
+#   "evolution-eval"    — evaluator.evaluate / evolution_loop._val_outputs
+#   "evolution-replay"  — replay_run.REPLAY_CONVERSATION_ID (run_arm / replay_gate / synthetic_corpus)
+#
+# 🔴 DRIFT RULE (do not violate): this frozenset is the ONE registry of eval/replay
+# sentinel ids. Any NEW eval/replay dispatch path MUST reuse a sentinel from here (or add
+# its id to this set) — never hand-write a fresh eval conversation id at a call site. A
+# hand-written id that isn't a member here would silently ESCAPE sealing (the whole hole
+# this change closes). Adjacent-but-live ids (e.g. the scheduler's "scheduled-{task_id}")
+# must NOT be added — they are real work and must run real tools.
+_HERMETIC_CONVERSATION_IDS: frozenset[str] = frozenset({"evolution-eval", "evolution-replay"})
+
+
+def is_hermetic_context(conversation_id: str | None) -> bool:
+    """True iff `conversation_id` is an evolution eval/replay sentinel (never a real
+    user conversation). Both the structural hermetic rule and the fail-closed throat
+    assertion derive hermeticity from THIS predicate."""
+    return conversation_id in _HERMETIC_CONVERSATION_IDS
