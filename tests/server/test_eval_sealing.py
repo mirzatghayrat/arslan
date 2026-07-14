@@ -1,4 +1,53 @@
 # tests/server/test_eval_sealing.py
+#
+# ── Task 5 audit: eval-context dispatch caller sweep ────────────────────────────────
+# Goal: confirm EVERY eval-context dispatch caller is sealed by Task 3's structural
+# no-override rule (dispatcher.dispatch: `if replay or is_hermetic_context(conversation_id):
+# return await _dispatch_replay(...)`, server/orchestrator/dispatcher.py:576), and that the
+# boundary is NOT over-sealed (real/scheduled conversation ids must stay live). Verdict for
+# all three audited callers below: SEALED-BY-TASK-3 or OUT-OF-SCOPE. No production code
+# change was required — this task adds only the audit record + the boundary test below.
+#
+# 1. server/api/discovery.py:33-34 `POST /discovery/evaluate` → discovery_service.evaluate_ref
+#    (server/services/discovery_service.py:15) → github_eval.fetch_repo/fetch_readme +
+#    mcp_suggest.classify_and_suggest (server/services/mcp_suggest.py:16, ONE non-tool-calling
+#    adapter.chat() classification call). VERDICT: OUT OF SCOPE, not merely "intentionally
+#    live" — this handler never calls dispatcher.dispatch/run_arm/tool_loop at all, so it has
+#    no conversation_id and no dispatch surface for Task 3's rule to seal or over-seal. It is
+#    a manual, auth-gated (require_auth), read-only "evaluate this GitHub repo as an MCP
+#    candidate" endpoint — semantically unrelated to spawn/evolution eval. Confirmed via grep:
+#    no "dispatch"/"conversation_id"/"run_arm"/"tool_loop" hits in discovery_service.py,
+#    mcp_suggest.py, github_eval.py, or skill_suggest.py. No seal applicable; no change made.
+#
+# 2. server/services/evolution_loop.py `refresh_proposal` (:236-310) reaches dispatch only
+#    via `replay_gate.run_gate(...)` at :275-277 → replay_gate.run_gate (server/services/
+#    replay_gate.py:386-391) calls `replay_run.run_arm(...)` for BOTH the baseline and
+#    candidate arms → replay_run.run_arm (server/services/replay_run.py:51-58) calls
+#    `dispatcher.dispatch(conversation_id, ..., replay=True, ambient=ambient)` where
+#    `conversation_id` defaults to `REPLAY_CONVERSATION_ID = "evolution-replay"`
+#    (replay_run.py:24,52) — a member of `_HERMETIC_CONVERSATION_IDS`. Double-sealed: explicit
+#    `replay=True` AND a hermetic-sentinel conversation_id. `refresh_proposal` has no other
+#    dispatch call site. VERDICT: SEALED-BY-TASK-3 (already, via Task 4's run_arm routing).
+#    No change needed.
+#
+# 3. server/orchestrator/dispatcher.py:614 `html_artifact.package_spawn_output(run_id, full)`
+#    (run_id defaults to None per `dispatch()`'s signature, :532) sits on the LIVE branch of
+#    `dispatch()`, AFTER the no-override hermetic check at :572-583 (`if replay or
+#    is_hermetic_context(conversation_id): return await _dispatch_replay(...)`). Any dispatch
+#    under an eval/replay sentinel OR replay=True returns from `_dispatch_replay` (:437-515)
+#    before this line is ever reached. `_dispatch_replay` itself contains an explicit comment
+#    at :495-497 ("Deliberately DO NOT call html_artifact.package_spawn_output with a real
+#    run_id...") and has NO call to html_artifact anywhere in its body — confirmed by grep
+#    (only the live branch at :614 calls it). VERDICT: SEALED-BY-TASK-3 (structurally
+#    unreachable from a hermetic dispatch). No change needed.
+#
+# Boundary check (Step 2 below): the scheduler mints REAL conversation ids that must NOT be
+# swept up as hermetic. Confirmed via grep "scheduled-" in server/services/scheduler.py: the
+# actual literal is `f"scheduled-{task.id}"` / `f"scheduled-{task_id}"` (scheduler.py:330 and
+# :480, used by `_fire` at :480,505 for a REAL `dispatcher.dispatch` via `_dispatch_recorded`)
+# — i.e. "scheduled-42", NOT "scheduled-task-42". `test_scheduled_and_real_conversation_ids_
+# are_not_hermetic` below pins the REAL format plus a near-miss variant, a real user id, and
+# empty string as all non-hermetic.
 import json
 
 import pytest
@@ -217,3 +266,17 @@ async def test_evaluate_dispatches_hermetically_and_shares_one_ambient(monkeypat
     assert all(a["ambient"] == {"facts": "F", "kb_block": "K", "kb_sources": None}
                for a in arm_calls)                   # byte-identical ambient
     assert res["gate"]["passed"] is True
+
+
+def test_scheduled_and_real_conversation_ids_are_not_hermetic():
+    """Guard against over-sealing — the biggest adjacent mis-seal surface is the S3-M4
+    scheduler, which mints conversation ids as f"scheduled-{task_id}" (scheduler.py:330,480,
+    confirmed by grep — NOT "scheduled-task-{id}"). Those LOOK sentinel-ish but are REAL work
+    dispatched via `_fire`/`_dispatch_recorded` and MUST run real tools. Pin the exact format
+    plus a near-miss variant and a real user id as non-hermetic."""
+    from server.services import replay_safety
+    # Exact scheduler format (scheduler.py:330,480) + a couple ids — all must be live:
+    assert replay_safety.is_hermetic_context("scheduled-42") is False
+    assert replay_safety.is_hermetic_context("scheduled-task-42") is False
+    assert replay_safety.is_hermetic_context("conv_realuser") is False
+    assert replay_safety.is_hermetic_context("") is False
