@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from collections.abc import Awaitable, Callable
 
@@ -315,6 +316,36 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         approved = await confirm_command(command, argv)
         if not approved:
             result = {"ok": False, "error": "user declined this command"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+
+    # Fail-closed hermetic backstop (eval sealing): in an evolution eval/replay context,
+    # refuse ANY tool that isn't read-only-safe, independent of resolve_tools() and the
+    # replay flag. This is the throat every tool call passes through (model-driven AND the
+    # force_tools pre-run), so a forgotten upstream replay=True cannot silently re-open a
+    # side-effecting tool. run_python's unsandboxed escape valve is also refused here — a
+    # networked run_python is not hermetic.
+    from server.services.replay_safety import is_hermetic_context, is_replay_safe
+    if is_hermetic_context(conversation_id):
+        # Honest, model-readable refusal: the model's behavior here is scored by the judge,
+        # so name the eval context explicitly and tell it not to retry side-effecting tools
+        # (a generic "failed" would make it flail with compensatory actions that pollute the
+        # score). The refusal itself is deterministic and identical across arms.
+        if not is_replay_safe(tool_key):
+            result = {"ok": False, "external": False,
+                      "error": f"evaluation context: '{tool_key}' is unavailable here. This "
+                               "run is a hermetic evaluation replay that exposes read-only "
+                               "tools only (no side-effecting or external tools). Do not retry "
+                               "this tool — answer with the read-only tools you have."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if tool_key == "run_python" and os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY"):
+            result = {"ok": False, "external": False,
+                      "error": "evaluation context: run_python is unavailable because the "
+                               "unsandboxed escape valve (ARSLAN_ALLOW_UNSANDBOXED_PY) is set; "
+                               "a networked run_python is not hermetic. Answer without it."}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
