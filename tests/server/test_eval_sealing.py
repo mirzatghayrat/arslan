@@ -1,9 +1,39 @@
 # tests/server/test_eval_sealing.py
 import json
 
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from server.db import session as db_session
+from server.db.models import Base
 from server.services import replay_safety
 from server.services.replay_run import REPLAY_CONVERSATION_ID
 from server.orchestrator import tool_loop
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolated_db(tmp_path, monkeypatch):
+    """Autouse, file-scoped DB isolation.
+
+    The new test_dispatch_* tests (below) call dispatcher.dispatch() for a real
+    conversation_id with no other DB setup; on the live branch that reaches
+    memory.user_turn_count(), which reads server.db.session.AsyncSessionLocal
+    directly (bypassing FastAPI's dependency injection some other tests override).
+    Without this, those tests would hit whichever real DB ARSLAN_DATA_DIR happens
+    to resolve to in the ambient environment and fail with "no such table" on a
+    fresh checkout — unrelated to the behavior under test. Every other dispatcher
+    test file in this suite (e.g. test_dispatcher.py's `maker` fixture) sets up an
+    isolated schema-created engine the same way; this mirrors that convention as
+    an autouse fixture so the given test bodies stay untouched.
+    """
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'eval_seal.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+    yield
+    await engine.dispose()
 
 
 def test_is_hermetic_context_matches_both_eval_sentinels():
@@ -86,3 +116,70 @@ async def test_throat_allows_safe_tool_in_hermetic_context():
     finally:
         tl.resolve_executor = orig
     assert out.get("ok") is True
+
+
+async def test_dispatch_defaults_to_hermetic_for_eval_sentinel(monkeypatch):
+    """An eval-sentinel conversation_id with no explicit replay flag routes to the
+    SEALED path (_dispatch_replay), not the live branch."""
+    from server.orchestrator import dispatcher
+
+    seen = {}
+
+    async def fake_dispatch_replay(conversation_id, **kw):
+        seen["sealed"] = True
+        return {"run_id": 1, "full_output": "ok"}
+
+    async def fake_load_spawn(sid):
+        return object()  # non-None; _dispatch_replay is faked so the object is unused
+
+    monkeypatch.setattr(dispatcher, "_dispatch_replay", fake_dispatch_replay)
+    monkeypatch.setattr(dispatcher, "_load_spawn", fake_load_spawn)
+
+    await dispatcher.dispatch("evolution-eval", spawn_id=1, task_brief="t")
+    assert seen.get("sealed") is True
+
+
+async def test_dispatch_replay_false_under_sentinel_still_sealed(monkeypatch):
+    """No opt-out: even an EXPLICIT replay=False under an eval sentinel is sealed (routes
+    to _dispatch_replay), because a safety control is no-override."""
+    from server.orchestrator import dispatcher
+
+    sealed = {"v": False}
+
+    async def fake_dispatch_replay(conversation_id, **kw):
+        sealed["v"] = True
+        return {"run_id": 1, "full_output": "ok"}
+
+    async def fake_load_spawn(sid):
+        return object()
+
+    monkeypatch.setattr(dispatcher, "_dispatch_replay", fake_dispatch_replay)
+    monkeypatch.setattr(dispatcher, "_load_spawn", fake_load_spawn)
+
+    await dispatcher.dispatch("evolution-eval", spawn_id=1, task_brief="t", replay=False)
+    assert sealed["v"] is True  # replay=False did NOT open a live dispatch under the sentinel
+
+
+async def test_dispatch_real_conversation_stays_live(monkeypatch):
+    """A real conversation id with no replay flag does NOT route to the sealed path."""
+    from server.orchestrator import dispatcher
+
+    sealed = {"v": False}
+
+    async def fake_dispatch_replay(conversation_id, **kw):
+        sealed["v"] = True
+        return {"run_id": 1, "full_output": "ok"}
+
+    async def fake_load_spawn(sid):
+        return object()
+
+    async def fake_build(*a, **k):
+        raise RuntimeError("LIVE_BRANCH_TAKEN")
+
+    monkeypatch.setattr(dispatcher, "_dispatch_replay", fake_dispatch_replay)
+    monkeypatch.setattr(dispatcher, "_load_spawn", fake_load_spawn)
+    monkeypatch.setattr(dispatcher, "build_spawn_system", fake_build)
+
+    with pytest.raises(RuntimeError, match="LIVE_BRANCH_TAKEN"):
+        await dispatcher.dispatch("conv_realuser", spawn_id=1, task_brief="t")
+    assert sealed["v"] is False  # real conversation stayed on the live branch

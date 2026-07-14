@@ -554,6 +554,12 @@ async def dispatch(
     whose id it returns as result["run_id"]. `ambient` is the per-pair snapshot shared by
     both arms (see build_spawn_system / replay_run.snapshot_ambient).
 
+    No-override hermetic rule (eval sealing): a dispatch is hermetic iff `replay=True` OR
+    `is_hermetic_context(conversation_id)`. An eval-sentinel conversation_id is ALWAYS
+    sealed — `replay=False` cannot override it (a safety control is no-override, and the
+    throat keys off conversation_id anyway); `replay=True` remains an explicit-hardening
+    path for any other conversation_id.
+
     Design: current_turn and wired are computed once here and shared between the
     equipment block builder and the spawn_loop call, avoiding duplicate DB queries.
     Equipment is fetched first (cheap); wired is skipped entirely for unequipped
@@ -563,7 +569,11 @@ async def dispatch(
     if spawn is None:
         raise ValueError(f"spawn {spawn_id} not found")
 
-    if replay:
+    # No-override hermetic rule (eval sealing): an evolution eval/replay conversation_id is
+    # ALWAYS sealed — replay=False cannot opt out (a safety control is no-override, and the
+    # throat keys off conversation_id anyway). replay=True stays an explicit-hardening path.
+    from server.services.replay_safety import is_hermetic_context
+    if replay or is_hermetic_context(conversation_id):
         return await _dispatch_replay(
             conversation_id, spawn=spawn, task_brief=task_brief, on_chunk=on_chunk,
             on_event=on_event, prior_output=prior_output, instruction=instruction,
