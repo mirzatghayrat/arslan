@@ -280,3 +280,113 @@ def test_scheduled_and_real_conversation_ids_are_not_hermetic():
     assert replay_safety.is_hermetic_context("scheduled-task-42") is False
     assert replay_safety.is_hermetic_context("conv_realuser") is False
     assert replay_safety.is_hermetic_context("") is False
+
+
+# ── Task 6: regression guard — end-to-end + the throat's run_python escape-valve gap ───────
+async def test_evolution_eval_never_exposes_mcp_tool_end_to_end(monkeypatch):
+    """End-to-end: an eval dispatch for a spawn wired with an MCP tool must narrow the
+    model's toolset to the replay-safe subset (MCP absent) AND, if the model somehow
+    calls it, the throat refuses execution (proven separately by the throat tests above).
+    This test asserts the seal at the build_spawn_system layer, exactly as it happens on
+    a real dispatch — no mocking of dispatcher internals.
+
+    Seeding: reused verbatim from tests/server/test_hermetic_replay.py's `seeded` fixture +
+    test_replay_no_mcp_tools (the existing convention in this suite for "a spawn wired with
+    an MCP tool") — seed_registry() for the universal safe/wired builtins (web_search,
+    web_extract, render_chart), then a hand-added MCPServer/Toolset/Tool row for the MCP
+    tool plus a Spawn equipped with that toolset via SpawnCapability(kind="toolset").
+    """
+    from server.db.models import MCPServer, Spawn, SpawnCapability, Tool, Toolset
+    from server.orchestrator import dispatcher
+    from server.registry.seeder import seed_registry
+
+    captured = {"wired_keys": None}
+
+    # Spy on build_spawn_system to capture what the model would SEE.
+    orig_build = dispatcher.build_spawn_system
+
+    async def spy_build(spawn, **kw):
+        system, wired = await orig_build(spawn, **kw)
+        captured["wired_keys"] = {t.get("key") for t in wired}
+        return system, wired
+
+    monkeypatch.setattr(dispatcher, "build_spawn_system", spy_build)
+
+    # Minimal real spawn wired with an MCP tool (+ the universal web_search from
+    # seed_registry), same pattern as test_hermetic_replay.py::test_replay_no_mcp_tools.
+    await seed_registry()
+    async with db_session.AsyncSessionLocal() as s:
+        s.add(MCPServer(id=1, label="msg", command="x", args=[], env=None, status="connected"))
+        s.add(Toolset(key="mcp_1", name="msg", description="d", tier="safe", status="wired"))
+        s.add(Tool(key="mcp_1__send_message", toolset_key="mcp_1", description="send a message",
+                   tier="safe", status="wired", input_schema={}, external_name="send_message"))
+        spawn = Spawn(name="EvalTarget", domain_category="x", system_prompt="BASE")
+        s.add(spawn)
+        await s.flush()
+        sid = spawn.id
+        s.add(SpawnCapability(spawn_id=sid, kind="toolset", ref_key="mcp_1"))
+        await s.commit()
+
+    # Deterministic adapter stub — answers immediately with no tool calls (same
+    # content/tool_calls shape as test_hermetic_replay.py's _NativeAdapter/_LLMResp).
+    class _LLMResp:
+        def __init__(self, content):
+            self.content = content
+            self.tool_calls = []
+
+    class _NativeAdapter:
+        async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+            return _LLMResp("done")
+
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _NativeAdapter())
+
+    # Dispatch under the eval sentinel with NO explicit replay — relies on Task 3's
+    # structural default (dispatcher.dispatch: `if replay or is_hermetic_context(...)`).
+    await dispatcher.dispatch("evolution-eval", spawn_id=sid, task_brief="do it")
+
+    assert captured["wired_keys"] is not None
+    assert "mcp_1__send_message" not in captured["wired_keys"]   # filtered from the menu
+    assert captured["wired_keys"] <= replay_safety.REPLAY_SAFE_BUILTINS
+
+
+async def test_throat_refuses_run_python_when_unsandboxed_escape_valve_set(monkeypatch):
+    """Task 2 review gap: the throat's run_python-specific branch (tool_loop.py:344-351)
+    was untested — run_python IS replay-safe in general (it's in REPLAY_SAFE_BUILTINS), but
+    when the unsandboxed escape valve (ARSLAN_ALLOW_UNSANDBOXED_PY) is set it becomes
+    networked and therefore NOT hermetic, so the throat must refuse it too even though it
+    passes the plain is_replay_safe() check. Mirrors the structure of
+    test_throat_refuses_nonsafe_tool_in_hermetic_context_even_if_resolver_leaks /
+    test_throat_allows_safe_tool_in_hermetic_context above (manual resolve_executor
+    swap-and-restore + an executed[] spy)."""
+    monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
+
+    executed = []
+
+    async def resolve():
+        return [{"key": "run_python"}]
+
+    orig = tool_loop.resolve_executor
+
+    async def fake_resolve_executor(key):
+        executed.append(key)
+        class _E:
+            async def execute(self, args):
+                executed.append(("EXECUTED", key))
+                return {"ok": True}
+        return _E()
+
+    tool_loop.resolve_executor = fake_resolve_executor
+    try:
+        out = await tool_loop._dispatch_tool(
+            "run_python", {"code": "print(1)"},
+            json.dumps({"tool": "run_python", "args": {"code": "print(1)"}}),
+            resolve_tools=resolve, emit=lambda e: None,
+            tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
+            conversation_id="evolution-eval")
+    finally:
+        tool_loop.resolve_executor = orig
+
+    assert out["ok"] is False
+    err = (out.get("error") or "").lower()
+    assert "escape valve" in err or "not hermetic" in err
+    assert executed == []  # resolve_executor was never even reached, let alone executed
