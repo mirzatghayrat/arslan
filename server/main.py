@@ -117,60 +117,8 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        from server.db.migrations.versions._0006_provider_configs import (
-            upgrade_sync as _backfill_provider_configs,
-        )
-        await conn.run_sync(_backfill_provider_configs)
-        from server.db.migrations.versions._0007_runs import upgrade_sync as _runs_upgrade
-        await conn.run_sync(_runs_upgrade)
-        from server.db.migrations.versions._0008_evolution_proposals import upgrade_sync as _evo_upgrade
-        await conn.run_sync(_evo_upgrade)
-        from server.db.migrations.versions._0009_knowledge import upgrade_sync as _kb_upgrade
-        await conn.run_sync(_kb_upgrade)
-        from server.db.migrations.versions._0010_mcp_servers import upgrade_sync as _mcp_upgrade
-        await conn.run_sync(_mcp_upgrade)
-        from server.db.migrations.versions._0011_mcp_http_host import upgrade_sync as _mcp2_upgrade
-        await conn.run_sync(_mcp2_upgrade)
-        from server.db.migrations.versions._0012_discovery_candidates import upgrade_sync as _disc_upgrade
-        await conn.run_sync(_disc_upgrade)
-        from server.db.migrations.versions._0013_distilled_sessions import upgrade_sync as _distilled_upgrade
-        await conn.run_sync(_distilled_upgrade)
-        from server.db.migrations.versions._0014_chat_archived import upgrade_sync as _chat_archived_upgrade
-        await conn.run_sync(_chat_archived_upgrade)
-        from server.db.migrations.versions._0015_persona_seeds import upgrade_sync as _persona_fts_upgrade
-        await conn.run_sync(_persona_fts_upgrade)
-        from server.db.migrations.versions._0016_spawn_is_default import upgrade_sync as _spawn_default_upgrade
-        await conn.run_sync(_spawn_default_upgrade)
-        from server.db.migrations.versions._0017_skill_candidates import upgrade_sync as _skill_candidates_upgrade
-        await conn.run_sync(_skill_candidates_upgrade)
-        from server.db.migrations.versions._0018_second_brain import upgrade_sync as _second_brain_upgrade
-        await conn.run_sync(_second_brain_upgrade)
-        from server.db.migrations.versions._0019_fact_category import upgrade_sync as _fact_cat_upgrade
-        await conn.run_sync(_fact_cat_upgrade)
-        from server.db.migrations.versions._0020_fact_label import upgrade_sync as _fact_label_upgrade
-        await conn.run_sync(_fact_label_upgrade)
-        from server.db.migrations.versions._0021_run_detail import upgrade_sync as _run_detail_upgrade
-        await conn.run_sync(_run_detail_upgrade)
-        from server.db.migrations.versions._0022_run_created_idx import upgrade_sync as _run_created_idx_upgrade
-        await conn.run_sync(_run_created_idx_upgrade)
-        from server.db.migrations.versions._0023_run_kb_sources import upgrade_sync as _run_kb_sources_upgrade
-        await conn.run_sync(_run_kb_sources_upgrade)
-        from server.db.migrations.versions._0024_conversation_events import upgrade_sync as _conversation_events_upgrade
-        await conn.run_sync(_conversation_events_upgrade)
-        from server.db.migrations.versions._0025_second_brain_rebuild import upgrade_sync as _sb_rebuild_upgrade
-        await conn.run_sync(_sb_rebuild_upgrade)
-        from server.db.migrations.versions._0026_notes import upgrade_sync as _notes_upgrade
-        await conn.run_sync(_notes_upgrade)
-        from server.db.migrations.versions._0027_mcp_health import upgrade_sync as _mcp_health_upgrade
-        await conn.run_sync(_mcp_health_upgrade)
-        from server.db.migrations.versions._0028_evolution_real import upgrade_sync as _evolution_real_upgrade
-        await conn.run_sync(_evolution_real_upgrade)
-        from server.db.migrations.versions._0029_usage_ledger import upgrade_sync as _usage_ledger_upgrade
-        await conn.run_sync(_usage_ledger_upgrade)
-        from server.db.migrations.versions._0030_scheduled_tasks import upgrade_sync as _scheduled_tasks_upgrade
-        await conn.run_sync(_scheduled_tasks_upgrade)
-        from server.db.migrations.versions._0031_model_catalog import upgrade_sync as _model_catalog_upgrade
-        await conn.run_sync(_model_catalog_upgrade)
+        from server.db.migrations import runner as migration_runner
+        await conn.run_sync(migration_runner.apply_pending)
 
     from server.registry.seeder import seed_registry
 

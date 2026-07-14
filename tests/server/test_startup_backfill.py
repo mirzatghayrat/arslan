@@ -39,15 +39,25 @@ async def test_startup_backfill_populates_primary_from_legacy_key():
 
 
 def test_main_lifespan_calls_backfill():
-    """Source-check: ensure main.py wires the backfill after create_all."""
+    """Source-check: main.py wires the versioned migration runner after create_all,
+    and the _0006 provider_configs backfill still runs as the runner's first entry.
+
+    (Boot now goes through server.db.migrations.runner.apply_pending instead of the
+    old hand-wired per-migration import chain; the backfill behavior is unchanged.)
+    """
     import inspect
 
     import server.main
+    from server.db.migrations import runner
 
     src = inspect.getsource(server.main)
-    assert "_0006_provider_configs" in src, (
-        "server/main.py must import _0006_provider_configs for the startup backfill"
+    assert "apply_pending" in src, (
+        "server/main.py must call the migration runner's apply_pending after create_all"
     )
     assert "run_sync" in src, (
-        "server/main.py must call conn.run_sync(...) to invoke the backfill"
+        "server/main.py must call conn.run_sync(...) to invoke the migrations"
+    )
+    assert runner.MIGRATIONS[0][0] == "0006", (
+        "the _0006 provider_configs backfill must stay first in the runner registry "
+        "so it still runs at boot"
     )
