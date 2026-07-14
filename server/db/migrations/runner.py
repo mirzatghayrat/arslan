@@ -114,3 +114,59 @@ def apply_pending(conn) -> list[str]:
                      {"v": vid, "t": datetime.utcnow().isoformat()})
         done.append(vid)
     return done
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: bring the configured SQLite DB up to head via a standalone SYNC engine.
+
+    Mirrors boot's DB-prep exactly — ``Base.metadata.create_all`` then
+    ``apply_pending`` in ONE transaction — because the migrations ALTER tables that
+    ``create_all`` builds (a bare ``apply_pending`` on an empty file fails), so the
+    two must run together for this to work on a fresh DB. Uses a sync
+    ``create_engine`` so it runs with no event loop. ``--db PATH`` overrides the
+    location; otherwise the app's configured ``db_path`` is used.
+    """
+    import argparse
+    from pathlib import Path
+
+    from sqlalchemy import create_engine
+
+    from server.db.models import Base
+
+    parser = argparse.ArgumentParser(
+        prog="python -m server.db.migrations.runner",
+        description="Apply pending Arslan DB migrations (bring the DB up to head).",
+    )
+    parser.add_argument(
+        "--db",
+        dest="db_path",
+        default=None,
+        help="SQLite DB file path (default: the app's configured db_path).",
+    )
+    args = parser.parse_args(argv)
+
+    if args.db_path is None:
+        from server.config import load_settings
+
+        db_path = load_settings().db_path
+    else:
+        db_path = args.db_path
+
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            Base.metadata.create_all(conn)
+            pending = [vid for vid, _ in MIGRATIONS if vid not in current_versions(conn)]
+            print(f"db:      {db_path}")
+            print(f"head:    {head()}")
+            print(f"pending: {' '.join(pending) if pending else '(none)'}")
+            applied = apply_pending(conn)
+        print(f"applied: {' '.join(applied) if applied else '(none)'}")
+    finally:
+        engine.dispose()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

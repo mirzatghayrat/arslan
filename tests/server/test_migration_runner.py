@@ -107,3 +107,22 @@ async def test_each_migration_second_run_is_net_noop(tmp_path, idx):
         await c.run_sync(fn)
     after = await _snapshot(eng)
     assert after == before, f"migration {vid} is not idempotent"
+
+
+def test_cli_main_applies_pending_and_fills_ledger(tmp_path, capsys):
+    """CLI smoke: runner.main(["--db", ...]) brings a fresh DB up to head (via a
+    sync engine, no event loop) and backfills the schema_version ledger. Direct
+    call — no subprocess — so the temp DB path plumbing stays simple."""
+    db = tmp_path / "cli.db"
+    rc = runner.main(["--db", str(db)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert runner.head() in out                       # printed the head id
+    eng = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with eng.connect() as c:
+            rows = c.execute(sa.text(
+                "SELECT version FROM schema_version ORDER BY version")).scalars().all()
+    finally:
+        eng.dispose()
+    assert list(rows) == sorted(v for v, _ in runner.MIGRATIONS)   # ledger filled with every id
