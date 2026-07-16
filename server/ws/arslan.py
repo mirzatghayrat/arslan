@@ -18,6 +18,7 @@ from server.orchestrator import arslan, dispatcher, memory
 from server.services import (
     distill_service,
     ingest,
+    mcp_service,
     phase_service,
     roster_service,
     run_registry,
@@ -182,6 +183,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
         )
 
+    async def run_connect_mcp_followup(server_id: int) -> None:
+        """Task 3: after a connect card completes, report the honest tier split —
+        counts are ALWAYS recomputed from the DB here, never trusted from the client."""
+        async def _followup() -> None:
+            counts = await mcp_service.tier_counts(server_id)
+            emit(protocol.mcp_connect_followup(server_id=server_id, **counts))
+        await run_with_live_frames(_followup())
+
     async def run_routed(spawn_id: int, task_brief: str, needs_proposal: bool, **kw) -> None:
         """Dispatch via the shared propose-vs-execute path (same first response a
         roster-member route gives). Used when accepting an inline invite."""
@@ -342,6 +351,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 if task_brief.strip():
                     await run_spawn(spawn_id, task_brief)
+                continue
+
+            if msg_type == "confirm_connect_mcp":
+                raw_id = data.get("server_id")
+                try:
+                    sid = int(raw_id)
+                except (TypeError, ValueError):
+                    await ws.send_json(protocol.error("INVALID_INPUT", "server_id required"))
+                    continue
+                await run_connect_mcp_followup(sid)
                 continue
 
             if msg_type == "confirm_update":
@@ -705,4 +724,15 @@ def _to_frame(ev: dict) -> dict:
         return protocol.roster_event(ev.get("action", ""), ev.get("spawn_id"), ev.get("spawn_name"))
     if t == "roster_update":
         return protocol.roster_update(ev.get("members", []))
+    if t == "propose_connect_mcp":
+        return protocol.propose_connect_mcp(
+            call_id=ev.get("call_id", ""), key=ev.get("key", ""), label=ev.get("label", ""),
+            transport=ev.get("transport", ""), command=ev.get("command", ""),
+            argv=ev.get("argv") or [], url=ev.get("url"), env_keys=ev.get("env_keys") or [],
+            prerequisites=ev.get("prerequisites", ""))
+    if t == "mcp_connect_followup":
+        return protocol.mcp_connect_followup(
+            server_id=ev.get("server_id"), tool_count=ev.get("tool_count", 0),
+            safe_count=ev.get("safe_count", 0), restricted_count=ev.get("restricted_count", 0),
+            assignable=bool(ev.get("assignable")))
     return ev  # stream_chunk / stream_end / error / spawn_meta already match the wire shape

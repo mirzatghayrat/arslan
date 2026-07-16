@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re as _re
+import uuid
 from collections.abc import Callable
 from datetime import datetime
 
@@ -645,6 +646,36 @@ async def handle_user_message(
             attached_context=attached_context,
             confirm_command=confirm_command,
         )
+    elif result.action == "suggest_connect_mcp":
+        # NEXT BUILD (conversation-driven MCP, Task 3): the router named a connector
+        # ("connect my GitHub"). Deterministic — no LLM: find_connector is an exact
+        # key/label match against the static catalog, so either the confirm card or
+        # the honest redirect below needs no generation. NOTE: find_connector returns
+        # a shallow copy sharing its nested env/args LISTS with the module-level
+        # CONNECTORS data (server/mcp/catalog.py) — never mutate conn["env"] /
+        # conn["args"] in place; only read from them here.
+        from server.mcp import catalog
+        conn = catalog.find_connector(result.connector_query or "")
+        if conn is None:
+            # Honest redirect, not a wall — arbitrary/unlisted connectors are v2.
+            # Deterministic canned text (no LLM call needed): same stream_start /
+            # stream_chunk / persist / stream_end idiom used elsewhere in this file
+            # for a direct Arslan reply that bypasses the answer-generation LLM call
+            # (mirrors the CELL_EXPLICIT_NONMEMBER brief announcement above).
+            text = (
+                f"I don't have a preset for “{result.connector_query or 'that'}” yet — "
+                "you can add it manually in Settings → MCP servers."
+            )
+            emit({"type": "stream_start", "source": "arslan"})
+            emit({"type": "stream_chunk", "content": text})
+            msg_id = await memory.add_message(conversation_id, "arslan", text)
+            emit({"type": "stream_end", "message_id": msg_id})
+        else:
+            prereq = ("Needs: " + ", ".join(e["name"] for e in conn["env"])) if conn["env"] else ""
+            emit(protocol.propose_connect_mcp(
+                call_id=str(uuid.uuid4()), key=conn["key"], label=conn["label"],
+                transport=conn["transport"], command=conn["command"], argv=conn["args"],
+                url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq))
     elif result.action == "clarify":
         # Router no longer sees create-intent — release any gather phase.
         if gathering:

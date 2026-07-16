@@ -222,6 +222,29 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
             "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
 
 
+def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
+                        command: str, argv: list[str], url: str | None,
+                        env_keys: list[dict], prerequisites: str = "") -> dict[str, Any]:
+    """Arslan proposes connecting a preset MCP server. Emitting this frame connects
+    NOTHING — the frontend renders a confirm card; the user reviews prerequisites, enters
+    any required credentials (in the card's password fields, NEVER here), and the apply
+    runs over REST. `env_keys` carries credential NAMES + metadata only, never values."""
+    return {"type": "propose_connect_mcp", "call_id": call_id, "key": key, "label": label,
+            "transport": transport, "command": command, "argv": argv, "url": url,
+            "env_keys": [{"name": str(e["name"]), "description": str(e.get("description", "")),
+                          "get_it_url": str(e.get("get_it_url", "")), "paid": bool(e.get("paid", False))}
+                         for e in env_keys],
+            "prerequisites": prerequisites}
+
+
+def mcp_connect_followup(*, server_id: int, tool_count: int, safe_count: int,
+                         restricted_count: int, assignable: bool) -> dict[str, Any]:
+    """Honest, tier-aware result after a connect card completed. assignable=False means
+    no tool is safe+wired → connected but must be reviewed in Settings before equipping."""
+    return {"type": "mcp_connect_followup", "server_id": server_id, "tool_count": tool_count,
+            "safe_count": safe_count, "restricted_count": restricted_count, "assignable": assignable}
+
+
 def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:
     """Arslan needs the user to pick a direction (PA-3): a structured choice card.
 

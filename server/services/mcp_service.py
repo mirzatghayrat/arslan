@@ -94,6 +94,28 @@ async def list_tools(server_id: int) -> list[dict]:
                 for t in rows]
 
 
+async def tier_counts(server_id: int) -> dict:
+    """DB-authoritative tier split for the connect-card follow-up (conversation-driven
+    MCP Task 3): {tool_count, safe_count, restricted_count, assignable}. Never trusts a
+    frontend-supplied count — always recomputed from the mcp_<id> Toolset's Tool rows.
+
+    `assignable = safe_count >= 1` replicates registry.service.assert_assignable's
+    per-toolset `has_wired` gate (server/registry/service.py:377-384: `Tool.tier ==
+    "safe", Tool.status == "wired"`) rather than reusing is_assignable(), because that
+    helper's status set also admits "registered" — a safe-but-not-yet-wired tool would
+    then count as ready when Layer 3 still cannot resolve it. Replicated deliberately so
+    the two predicates cannot silently drift: any future edit to the wired-gate in
+    assert_assignable should update this comment/predicate pair too."""
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(Tool).where(Tool.toolset_key == f"mcp_{server_id}")
+        )).scalars().all()
+    safe_count = sum(1 for t in rows if t.tier == "safe" and t.status == "wired")
+    tool_count = len(rows)
+    return {"tool_count": tool_count, "safe_count": safe_count,
+            "restricted_count": tool_count - safe_count, "assignable": safe_count >= 1}
+
+
 async def set_exposed(server_id: int, exposed: bool) -> None:
     async with db_session.AsyncSessionLocal() as db:
         ts = await db.get(Toolset, f"mcp_{server_id}")
