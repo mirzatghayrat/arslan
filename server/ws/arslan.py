@@ -729,7 +729,9 @@ def _to_frame(ev: dict) -> dict:
             call_id=ev.get("call_id", ""), key=ev.get("key", ""), label=ev.get("label", ""),
             transport=ev.get("transport", ""), command=ev.get("command", ""),
             argv=ev.get("argv") or [], url=ev.get("url"), env_keys=ev.get("env_keys") or [],
-            prerequisites=ev.get("prerequisites", ""))
+            prerequisites=ev.get("prerequisites", ""),
+            requires_path=ev.get("requires_path", False),
+            path_placeholder=ev.get("path_placeholder"))
     if t == "mcp_connect_followup":
         return protocol.mcp_connect_followup(
             server_id=ev.get("server_id"), tool_count=ev.get("tool_count", 0),

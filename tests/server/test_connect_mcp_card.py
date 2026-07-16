@@ -42,6 +42,31 @@ def test_propose_connect_mcp_carries_requires_path_for_local_path_connectors():
     assert frame["path_placeholder"] == "/absolute/path/to/expose"
 
 
+def test_to_frame_preserves_requires_path_and_path_placeholder():
+    """_to_frame is on the LIVE primary send path (emit -> _drain -> ws.send_json).
+    A propose_connect_mcp event dict for Filesystem must survive the rebuild through
+    _to_frame with requires_path/path_placeholder intact — dropping them means the
+    browser renders a card with no path input and the connect silently fails
+    (Filesystem/Git launch without their required path)."""
+    from server.ws.arslan import _to_frame
+
+    ev = {
+        "type": "propose_connect_mcp",
+        "call_id": "c3", "key": "filesystem", "label": "Filesystem", "transport": "stdio",
+        "command": "npx", "argv": ["-y", "@modelcontextprotocol/server-filesystem"],
+        "url": None, "env_keys": [], "prerequisites": "",
+        "requires_path": True, "path_placeholder": "/absolute/path/to/expose",
+    }
+    frame = _to_frame(ev)
+    assert frame == protocol.propose_connect_mcp(
+        call_id="c3", key="filesystem", label="Filesystem", transport="stdio",
+        command="npx", argv=["-y", "@modelcontextprotocol/server-filesystem"], url=None,
+        env_keys=[], prerequisites="",
+        requires_path=True, path_placeholder="/absolute/path/to/expose")
+    assert frame["requires_path"] is True
+    assert frame["path_placeholder"] == "/absolute/path/to/expose"
+
+
 @pytest_asyncio.fixture
 async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'card.db'}")

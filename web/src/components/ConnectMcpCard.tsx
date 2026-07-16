@@ -17,7 +17,7 @@ export interface ConnectMcpAdd {
 export interface ApplyConnectMcpResult {
   ok: boolean;
   /** Present only on failure — the stage where the chain stopped. */
-  stage?: 'add' | 'connect' | 'expose';
+  stage?: 'add' | 'connect' | 'expose' | 'wire';
   serverId?: number;
   /** Human-readable outcome: on failure, names the stopped state + where to fix it
    *  (never a bare "failed"); on success, unset (the card renders its own copy from
@@ -86,12 +86,21 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
 
   let safe = 0;
   let restricted = 0;
-  for (const t of tools) {
-    // NEVER blanket "safe" — wire each tool at its own suggested_tier.
-    const tier = t.suggested_tier === 'safe' ? 'safe' : 'orchestrator';
-    await wireMcpTool(t.key, tier, true);
-    if (tier === 'safe') safe++;
-    else restricted++;
+  try {
+    for (const t of tools) {
+      // NEVER blanket "safe" — wire each tool at its own suggested_tier.
+      const tier = t.suggested_tier === 'safe' ? 'safe' : 'orchestrator';
+      await wireMcpTool(t.key, tier, true);
+      if (tier === 'safe') safe++;
+      else restricted++;
+    }
+  } catch {
+    return {
+      ok: false,
+      stage: 'wire',
+      serverId,
+      message: "Connected but couldn't finish wiring its tools — finish in Settings → MCP.",
+    };
   }
 
   return {

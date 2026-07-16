@@ -67,6 +67,25 @@ describe('applyConnectMcp', () => {
     expect(res.message).toMatch(/Settings/);
   });
 
+  test('a wire failure mid-loop returns a stage "wire" failure, not a throw', async () => {
+    vi.spyOn(mcpApi, 'addMcpServer').mockResolvedValue({ id: 13 } as any);
+    vi.spyOn(mcpApi, 'connectMcpServer').mockResolvedValue([
+      { key: 'mcp_13__list_repos', name: 'list_repos', suggested_tier: 'safe' },
+      { key: 'mcp_13__delete_repo', name: 'delete_repo', suggested_tier: 'orchestrator' },
+    ] as any);
+    vi.spyOn(mcpApi, 'exposeMcpServer').mockResolvedValue({ ok: true });
+    vi.spyOn(mcpApi, 'wireMcpTool').mockRejectedValue(new Error('wire boom'));
+
+    const res = await applyConnectMcp({
+      label: 'GitHub', transport: 'stdio', command: 'npx', args: ['-y', 'x'], url: null, env: {},
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.stage).toBe('wire');
+    expect(res.serverId).toBe(13);
+    expect(res.message).toMatch(/Settings/);
+  });
+
   test('secret values reach addMcpServer only — never appear on wireMcpTool/connectMcpServer calls', async () => {
     const add = vi.spyOn(mcpApi, 'addMcpServer').mockResolvedValue({ id: 12 } as any);
     const connect = vi.spyOn(mcpApi, 'connectMcpServer').mockResolvedValue([
@@ -187,6 +206,28 @@ describe('ConnectMcpCard', () => {
     );
     fireEvent.click(screen.getByTestId('connect-mcp-connect'));
     expect(await screen.findByText(/retry in Settings/)).toBeInTheDocument();
+  });
+
+  test('wire failure unsticks the card from "Connecting…" and shows the wire message', async () => {
+    vi.spyOn(mcpApi, 'addMcpServer').mockResolvedValue({ id: 24 } as any);
+    vi.spyOn(mcpApi, 'connectMcpServer').mockResolvedValue([
+      { key: 'a', name: 'a', suggested_tier: 'safe' },
+    ] as any);
+    vi.spyOn(mcpApi, 'exposeMcpServer').mockResolvedValue({ ok: true });
+    vi.spyOn(mcpApi, 'wireMcpTool').mockRejectedValue(new Error('wire boom'));
+
+    const onApplied = vi.fn();
+    render(
+      <ConnectMcpCard
+        callId="c1" label="X" transport="stdio" command="c" args={[]} url={null}
+        envKeys={[]} onApplied={onApplied} onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('connect-mcp-connect'));
+    expect(await screen.findByText(/couldn't finish wiring/i)).toBeInTheDocument();
+    // Not stuck: the button no longer reads "Connecting…" and onApplied fired.
+    expect(screen.queryByText(/Connecting…/)).not.toBeInTheDocument();
+    expect(onApplied).toHaveBeenCalledWith(expect.objectContaining({ ok: false, stage: 'wire' }));
   });
 
   test('cancel fires onCancel with the call id and makes no API calls', () => {
