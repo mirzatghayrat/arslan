@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from server.auth import require_auth
+from server.mcp import catalog
 from server.services import mcp_service
 
 # PB-4 条件3: the health probe must sit behind require_auth. The MCP router historically
@@ -45,6 +46,12 @@ async def add_server(body: AddServerBody):
 @router.get("/servers")
 async def list_servers():
     return await mcp_service.list_servers()
+
+
+@router.get("/catalog")
+async def get_catalog():
+    """Preset connector catalog (single source; also feeds the Settings recommended list)."""
+    return catalog.list_connectors()
 
 
 @router.post("/servers/{server_id}/connect")
