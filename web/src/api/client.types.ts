@@ -1006,7 +1006,9 @@ export interface McpConnectorEnvVar {
 
 /** GET /mcp/catalog — the backend's single source of truth for preset MCP connectors
  * (feeds both the Settings recommended list and conversation-driven connect). Static,
- * versioned, reviewed data; `one_click` is true iff `env` is empty. */
+ * versioned, reviewed data; `one_click` is true iff `env` is empty. `requires_path` is
+ * orthogonal to `env`/`one_click` — Filesystem/Git need no credential but DO need a local
+ * path (appended to `args` by the caller) before they can actually connect. */
 export interface McpConnector {
   key: string;
   label: string;
@@ -1018,6 +1020,8 @@ export interface McpConnector {
   description: string;
   one_click: boolean;
   env: McpConnectorEnvVar[];
+  requires_path: boolean;
+  path_placeholder?: string | null;
 }
 
 /** Prefill payload for the MCP add-server form (built from a McpConnector or a saved

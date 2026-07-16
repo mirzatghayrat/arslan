@@ -26,12 +26,14 @@ vi.mock('../api/mcp', () => ({
 
 import RecommendedMcp from '../components/RecommendedMcp';
 
-// Two fixture connectors shaped exactly like GET /mcp/catalog (server/mcp/catalog.py) —
-// one credential-free (one_click), one credentialed (env non-empty).
+// Three fixture connectors shaped exactly like GET /mcp/catalog (server/mcp/catalog.py) —
+// one credential-free (one_click), one credentialed (env non-empty), one credential-free
+// but path-gated (requires_path — the Filesystem/Git shape this regression test guards).
 const MEMORY: McpConnector = {
   key: 'memory', label: 'Memory', transport: 'stdio', command: 'npx',
   args: ['-y', '@modelcontextprotocol/server-memory'], url: null, runtime: 'node',
   description: 'Persistent knowledge-graph memory (stored locally).', one_click: true, env: [],
+  requires_path: false, path_placeholder: null,
 };
 const GITHUB: McpConnector = {
   key: 'github', label: 'GitHub', transport: 'stdio', command: 'npx',
@@ -43,6 +45,14 @@ const GITHUB: McpConnector = {
     get_it_url: 'https://github.com/settings/tokens',
     paid: false,
   }],
+  requires_path: false, path_placeholder: null,
+};
+const FILESYSTEM: McpConnector = {
+  key: 'filesystem', label: 'Filesystem', transport: 'stdio', command: 'npx',
+  args: ['-y', '@modelcontextprotocol/server-filesystem'], url: null, runtime: 'node',
+  description: 'Read and write files under a directory you choose. Takes a local path.',
+  one_click: true, env: [],
+  requires_path: true, path_placeholder: '/absolute/path/to/expose',
 };
 
 describe('RecommendedMcp (reads GET /mcp/catalog via getMcpCatalog)', () => {
@@ -71,6 +81,37 @@ describe('RecommendedMcp (reads GET /mcp/catalog via getMcpCatalog)', () => {
       label: 'Memory', command: 'npx', env: {},
     }));
     // add → connect chained on the returned id
+    await waitFor(() => expect(connectMcpServer).toHaveBeenCalledWith(7));
+  });
+
+  it('requires_path connector renders a path input and does NOT connect until a path is entered', async () => {
+    getMcpCatalog.mockResolvedValue([FILESYSTEM]);
+    render(<RecommendedMcp />);
+    const fs = await screen.findByText('Filesystem');
+    const card = fs.closest('div.rounded-xl') as HTMLElement;
+    const connectBtn = within(card).getByRole('button', { name: /connect/i });
+
+    // Clicking Connect with no path typed must not add/connect — it's a deterministic
+    // client-side gate (the old RecommendedMcp.tsx behavior ported from mcpPresets.ts),
+    // and it must show an actionable error rather than silently doing nothing.
+    fireEvent.click(connectBtn);
+    expect(addMcpServer).not.toHaveBeenCalled();
+    expect(connectMcpServer).not.toHaveBeenCalled();
+    expect(await within(card).findByText(/enter a path/i)).toBeInTheDocument();
+
+    // Placeholder disclosed to the user before they type.
+    const input = within(card).getByPlaceholderText('/absolute/path/to/expose');
+    expect(input).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: '/Users/me/projects/demo' } });
+    fireEvent.click(connectBtn);
+
+    await waitFor(() => expect(addMcpServer).toHaveBeenCalledTimes(1));
+    // The typed path is appended to args, matching the old mcpPresets.ts contract:
+    // filesystem → [...args, "<path>"].
+    expect(addMcpServer).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'Filesystem', command: 'npx', env: {},
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '/Users/me/projects/demo'],
+    }));
     await waitFor(() => expect(connectMcpServer).toHaveBeenCalledWith(7));
   });
 

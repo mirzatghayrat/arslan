@@ -32,6 +32,32 @@ def test_one_click_connector_has_no_env():
     assert fetch["env"] == [] and fetch["one_click"] is True
 
 
+def test_filesystem_and_git_require_a_local_path():
+    # Regression guard: the Task-1 backend catalog port dropped needsPath/pathPlaceholder
+    # from the old web/src/data/mcpPresets.ts. Filesystem and Git are credential-free
+    # (env == [], one_click True in that sense) but still need a local path before they
+    # can actually connect — requires_path is the orthogonal gate for that.
+    fs = catalog.find_connector("filesystem")
+    assert fs["requires_path"] is True
+    assert fs["path_placeholder"] == "/absolute/path/to/expose"
+    assert fs["env"] == []  # no credential — requires_path is orthogonal to env/one_click
+
+    git = catalog.find_connector("git")
+    assert git["requires_path"] is True
+    assert git["path_placeholder"] == "/absolute/path/to/git/repo"
+    assert git["env"] == []
+
+
+def test_credentialed_and_plain_one_click_connectors_do_not_require_a_path():
+    gh = catalog.find_connector("github")
+    assert gh["requires_path"] is False
+    assert gh["path_placeholder"] is None
+
+    fetch = catalog.find_connector("fetch")
+    assert fetch["requires_path"] is False
+    assert fetch["path_placeholder"] is None
+
+
 def test_list_connectors_returns_all_nine():
     keys = {c["key"] for c in catalog.list_connectors()}
     assert {"fetch", "memory", "github", "brave-search", "filesystem", "git"} <= keys

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Zap, KeyRound, Check, RefreshCcw, Plug, X } from 'lucide-react';
+import { Zap, KeyRound, Check, RefreshCcw, Plug, FolderOpen, X } from 'lucide-react';
 import { getMcpCatalog } from '../api/catalog';
 import { listMcpServers, addMcpServer, connectMcpServer } from '../api/mcp';
 import type { McpServer, McpConnector, McpPrefill } from '../api/client.types';
@@ -43,6 +43,7 @@ export default function RecommendedMcp({
   const [connectors, setConnectors] = useState<McpConnector[]>([]);
   const [servers, setServers] = useState<McpServer[]>([]);
   const [status, setStatus] = useState<Record<string, Status>>({});
+  const [paths, setPaths] = useState<Record<string, string>>({});
 
   useEffect(() => {
     getMcpCatalog().then(setConnectors).catch(() => { /* offline: no presets to show */ });
@@ -60,10 +61,21 @@ export default function RecommendedMcp({
   const setStat = (key: string, s: Status) => setStatus(prev => ({ ...prev, [key]: s }));
 
   const connect = async (c: McpConnector) => {
+    // requires_path connectors (Filesystem/Git) are credential-free but still need a local
+    // path — ported from the old mcpPresets.ts needsPath/pathPlaceholder contract: the typed
+    // path is appended to args before add/connect (git's base args already end in
+    // "--repository", so appending the path completes that flag; filesystem just takes the
+    // bare path as its final arg).
+    const path = (paths[c.key] || '').trim();
+    if (c.requires_path && !path) {
+      setStat(c.key, { state: 'error', msg: 'Enter a path first.' });
+      return;
+    }
+    const args = c.requires_path ? [...c.args, path] : c.args;
     setStat(c.key, { state: 'connecting' });
     try {
       const srv = await addMcpServer({
-        label: c.label, transport: c.transport, command: c.command, args: c.args, env: {},
+        label: c.label, transport: c.transport, command: c.command, args, env: {},
       });
       await connectMcpServer(srv.id);
       setStat(c.key, { state: 'ok' });
@@ -98,6 +110,19 @@ export default function RecommendedMcp({
             <p className="text-[11px] text-subtle-foreground font-sans mt-1 leading-snug">{c.description}</p>
           </div>
         </div>
+
+        {c.one_click && c.requires_path && !already && (
+          <div className="flex items-center gap-1.5">
+            <FolderOpen className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />
+            <input
+              type="text"
+              value={paths[c.key] ?? ''}
+              onChange={e => setPaths(prev => ({ ...prev, [c.key]: e.target.value }))}
+              placeholder={c.path_placeholder ?? undefined}
+              className="flex-1 bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-md px-2 py-1 text-[10.5px] text-foreground font-mono placeholder-subtle-foreground"
+            />
+          </div>
+        )}
 
         <div className="flex items-center gap-2 min-h-[24px]">
           {already ? (
