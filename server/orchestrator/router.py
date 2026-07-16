@@ -15,7 +15,7 @@ from server.services.llm_factory import build_adapter
 
 from arslan.llm.cached_system import build_cached_system
 
-_VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify", "suggest_update"}
+_VALID_ACTIONS = {"answer", "route", "suggest_create", "clarify", "suggest_update", "suggest_connect_mcp"}
 
 
 @dataclass
@@ -28,18 +28,20 @@ class RouterResult:
     new_facts: list[dict[str, Any]] = field(default_factory=list)
     reason: str = ""
     needs_proposal: bool = False
+    connector_query: str | None = None
 
 
 _SYSTEM = (
     "You are Arslan, a meta-agent orchestrator. Decide how to handle the user's latest "
     "message. Reply with ONE JSON object and nothing else:\n"
-    '{"action": "answer" | "route" | "suggest_create" | "clarify" | "suggest_update", '
+    '{"action": "answer" | "route" | "suggest_create" | "clarify" | "suggest_update" | "suggest_connect_mcp", '
     '"spawn_id": <int, for route AND suggest_update>, '
     '"task_brief": "<self-contained task for the spawn; REQUIRED for route AND suggest_create>", '
     '"suggested_spawn": {"name","domain","capabilities","persona_role","persona_tone"}, '
     '"overlaps": {"spawn_id": <int>, "name": "<existing spawn>", "axes": ["<how a new one could differ>"]}, '
     '"new_facts": [{"content": "<durable user fact>", "sensitive": <bool>}], '
     '"needs_proposal": <bool, only for route — true if the task is open-ended and the spawn should propose a direction first>, '
+    '"connector_query": "<connector name, for suggest_connect_mcp>", '
     '"reason": "<short>"}\n'
     "- needs_proposal (route only): set TRUE when the routed task is open-ended/ambiguous (the spawn should propose a direction + ask clarifying questions before producing). Set FALSE when the task is crisp and the spawn can produce the deliverable directly. Examples TRUE: 'help with my LinkedIn', 'do some marketing'. Examples FALSE: 'summarize this article: …', 'draft 3 xiaohongshu posts about retinol'.\n"
     "- answer: This is the DEFAULT. Respond directly AS Arslan (the host). Arslan has its own "
@@ -73,6 +75,9 @@ _SYSTEM = (
     "deck 工具', 'make Deck Master more formal'). Set spawn_id to the target spawn and put the "
     "requested change (verbatim intent) in task_brief. This is about EDITING the agent, NOT "
     "giving it a task to run (that is route) and NOT creating a new one (that is suggest_create).\n"
+    "- suggest_connect_mcp: the user wants to connect/add a NAMED MCP server/connector "
+    "(\"connect my GitHub\", \"add the Notion MCP\"). Put the connector name in connector_query. "
+    "Do NOT use this for running a connected tool.\n"
     "- clarify: the request is too under-specified to act well (no identifiable topic/subject "
     "AND/OR no inferable deliverable shape — format/angle/output/data source). Do NOT route or "
     "create; the handler will ask clarifying questions. If a topic IS present and a reasonable "
@@ -194,6 +199,7 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
         ],
         reason=parsed.get("reason", ""),
         needs_proposal=bool(parsed.get("needs_proposal", False)),
+        connector_query=parsed.get("connector_query"),
     )
     await _persist(conversation_id, user_message, action, result, _audit_payload(parsed, raw))
     return result
