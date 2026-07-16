@@ -25,6 +25,21 @@ def test_propose_connect_mcp_carries_env_names_not_values():
     # Names + metadata present; NO value field anywhere.
     assert frame["env_keys"][0]["name"] == "GITHUB_PERSONAL_ACCESS_TOKEN"
     assert "value" not in {k for e in frame["env_keys"] for k in e}   # schema has no value key
+    # requires_path/path_placeholder default off for a credential-only connector.
+    assert frame["requires_path"] is False
+    assert frame["path_placeholder"] is None
+
+
+def test_propose_connect_mcp_carries_requires_path_for_local_path_connectors():
+    """Filesystem/Git need a local path (non-secret) — the card must know to collect
+    it in a plain text field, not a password field."""
+    frame = protocol.propose_connect_mcp(
+        call_id="c2", key="filesystem", label="Filesystem", transport="stdio",
+        command="npx", argv=["-y", "@modelcontextprotocol/server-filesystem"], url=None,
+        env_keys=[], prerequisites="",
+        requires_path=True, path_placeholder="/absolute/path/to/expose")
+    assert frame["requires_path"] is True
+    assert frame["path_placeholder"] == "/absolute/path/to/expose"
 
 
 @pytest_asyncio.fixture
@@ -59,6 +74,28 @@ async def test_suggest_connect_mcp_known_connector_emits_propose_card(maker, mon
     assert card["env_keys"][0]["name"] == "GITHUB_PERSONAL_ACCESS_TOKEN"
     assert "value" not in {k for e in card["env_keys"] for k in e}
     assert "GITHUB_PERSONAL_ACCESS_TOKEN" in card["prerequisites"]
+    assert card["requires_path"] is False
+
+
+@pytest.mark.asyncio
+async def test_suggest_connect_mcp_filesystem_card_carries_requires_path(maker, monkeypatch):
+    """The card-build branch reads requires_path/path_placeholder off the catalog
+    connector (Filesystem needs a local path, no credential) — regression guard for
+    the requires_path wiring added alongside the ConnectMcpCard apply chain."""
+    from server.orchestrator import arslan, router
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="suggest_connect_mcp", connector_query="filesystem")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+
+    events = []
+    await arslan.handle_user_message("main", "connect my filesystem", lambda ev: events.append(ev))
+
+    card = next(e for e in events if e["type"] == "propose_connect_mcp")
+    assert card["key"] == "filesystem"
+    assert card["requires_path"] is True
+    assert card["path_placeholder"] == "/absolute/path/to/expose"
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,23 @@ interface ArslanState {
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
   pendingCommand: { callId: string; pretty: string; reason: string } | null;
+  // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
+  // frame arrives. env_keys carries credential NAMES + metadata only — the card
+  // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
+  // once the connect card's follow-up (`mcp_connect_followup`) lands, or on cancel.
+  pendingConnectMcp: {
+    callId: string;
+    key: string;
+    label: string;
+    transport: string;
+    command: string;
+    argv: string[];
+    url: string | null;
+    envKeys: { name: string; description: string; get_it_url: string; paid: boolean }[];
+    prerequisites: string;
+    requiresPath: boolean;
+    pathPlaceholder: string | null;
+  } | null;
   // Pending staffing decision: set when a `propose_staffing` frame arrives.
   // Candidates are mapped snake→camel. Cleared once the user picks or dismisses.
   pendingStaffing: { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null;
@@ -74,6 +91,7 @@ interface ArslanState {
   markClarifyAnswered: (itemId: number) => void;
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
+  clearPendingConnectMcp: () => void;
   clearPendingStaffing: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
@@ -91,6 +109,25 @@ export const STALL_MS = 90_000;
 // so they never collide with server message ids.
 let clientSeq = -1;
 const nextClientId = () => clientSeq--;
+
+// Honest, tier-aware copy for the `mcp_connect_followup` chat note. Counts are the
+// server's recomputed-from-DB truth (Task 3) — never the client's own tally.
+// assignable=false (no tool wired "safe") gets a needs-review note pointed at
+// Settings, never phrasing that implies the connector is ready to equip.
+function _mcpConnectFollowupText(frame: {
+  tool_count: number;
+  safe_count: number;
+  restricted_count: number;
+  assignable: boolean;
+}): string {
+  if (!frame.assignable) {
+    const n = frame.tool_count;
+    return `Connected — all ${n} tool${n === 1 ? "" : "s"} need review in Settings → MCP before any spawn can use ${n === 1 ? "it" : "them"}.`;
+  }
+  return frame.restricted_count > 0
+    ? `Connected — ${frame.safe_count} ready, ${frame.restricted_count} restricted; equip which spawn?`
+    : `Connected — ${frame.safe_count} ready; equip which spawn?`;
+}
 
 // Data-only initial state. Actions are attached separately and merged in so a
 // `setState(initialArslanState(), true)` full-replace (used by tests) keeps the
@@ -117,6 +154,19 @@ function initialData() {
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
     pendingCommand: null as { callId: string; pretty: string; reason: string } | null,
+    pendingConnectMcp: null as {
+      callId: string;
+      key: string;
+      label: string;
+      transport: string;
+      command: string;
+      argv: string[];
+      url: string | null;
+      envKeys: { name: string; description: string; get_it_url: string; paid: boolean }[];
+      prerequisites: string;
+      requiresPath: boolean;
+      pathPlaceholder: string | null;
+    } | null,
     pendingStaffing: null as { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null,
     pendingUpdate: null as { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null,
     thinking: false,
@@ -173,6 +223,7 @@ function makeActions(set: SetState, get: GetState) {
       }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingCommand: () => set({ pendingCommand: null }),
+    clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null }),
 
@@ -211,7 +262,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_connect_mcp", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -700,6 +751,45 @@ function makeActions(set: SetState, get: GetState) {
         case "propose_run_command":
           set({ pendingCommand: { callId: frame.call_id, pretty: frame.pretty,
                                   reason: frame.reason || "" } });
+          break;
+        case "propose_connect_mcp":
+          // NEXT BUILD (conversation-driven MCP, Task 5): env_keys carries credential
+          // NAMES + metadata only (never a value) — the ConnectMcpCard collects values
+          // locally and sends them ONLY over REST (addMcpServer's body).
+          set({
+            pendingConnectMcp: {
+              callId: frame.call_id,
+              key: frame.key,
+              label: frame.label,
+              transport: frame.transport,
+              command: frame.command,
+              argv: frame.argv,
+              url: frame.url,
+              envKeys: frame.env_keys,
+              prerequisites: frame.prerequisites,
+              requiresPath: frame.requires_path,
+              pathPlaceholder: frame.path_placeholder,
+            },
+          });
+          break;
+        case "mcp_connect_followup":
+          // Honest, tier-aware result recomputed server-side from the DB (Task 3) —
+          // clears the card and appends a plain chat note, same idiom as
+          // attachment_stored below. assignable=false means connected but nothing is
+          // safe+wired yet, so the note points at Settings instead of implying it's
+          // ready to equip.
+          set({
+            pendingConnectMcp: null,
+            items: [
+              ...state.items,
+              {
+                id: nextClientId(),
+                kind: "system",
+                role: "arslan",
+                content: _mcpConnectFollowupText(frame),
+              },
+            ],
+          });
           break;
         case "propose_staffing":
           set({

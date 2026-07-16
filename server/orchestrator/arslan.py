@@ -675,7 +675,8 @@ async def handle_user_message(
             emit(protocol.propose_connect_mcp(
                 call_id=str(uuid.uuid4()), key=conn["key"], label=conn["label"],
                 transport=conn["transport"], command=conn["command"], argv=conn["args"],
-                url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq))
+                url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq,
+                requires_path=conn["requires_path"], path_placeholder=conn.get("path_placeholder")))
     elif result.action == "clarify":
         # Router no longer sees create-intent — release any gather phase.
         if gathering:

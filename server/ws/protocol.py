@@ -224,17 +224,24 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
 
 def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
                         command: str, argv: list[str], url: str | None,
-                        env_keys: list[dict], prerequisites: str = "") -> dict[str, Any]:
+                        env_keys: list[dict], prerequisites: str = "",
+                        requires_path: bool = False,
+                        path_placeholder: str | None = None) -> dict[str, Any]:
     """Arslan proposes connecting a preset MCP server. Emitting this frame connects
     NOTHING — the frontend renders a confirm card; the user reviews prerequisites, enters
     any required credentials (in the card's password fields, NEVER here), and the apply
-    runs over REST. `env_keys` carries credential NAMES + metadata only, never values."""
+    runs over REST. `env_keys` carries credential NAMES + metadata only, never values.
+    `requires_path`/`path_placeholder` (Filesystem/Git) flag a local filesystem path the
+    card must collect in a PLAIN TEXT field (not a secret) and append to `argv` client-side
+    before connecting."""
     return {"type": "propose_connect_mcp", "call_id": call_id, "key": key, "label": label,
             "transport": transport, "command": command, "argv": argv, "url": url,
             "env_keys": [{"name": str(e["name"]), "description": str(e.get("description", "")),
                           "get_it_url": str(e.get("get_it_url", "")), "paid": bool(e.get("paid", False))}
                          for e in env_keys],
-            "prerequisites": prerequisites}
+            "prerequisites": prerequisites,
+            "requires_path": requires_path,
+            "path_placeholder": path_placeholder}
 
 
 def mcp_connect_followup(*, server_id: int, tool_count: int, safe_count: int,

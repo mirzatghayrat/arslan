@@ -497,6 +497,17 @@ export type ArslanServerMessage =
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
   | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string }
+  // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
+  // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
+  // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
+  // local path the card must collect in a PLAIN TEXT field and append to argv itself.
+  | { type: "propose_connect_mcp"; call_id: string; key: string; label: string; transport: string;
+      command: string; argv: string[]; url: string | null; env_keys: McpConnectorEnvVar[];
+      prerequisites: string; requires_path: boolean; path_placeholder: string | null }
+  // Honest, tier-aware result after a connect card completed — counts are ALWAYS
+  // recomputed server-side from the DB, never trusted from the client's apply chain.
+  | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
+      restricted_count: number; assignable: boolean }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "message"; message_id: number; content: string; role: string }

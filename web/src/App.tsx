@@ -33,6 +33,7 @@ import SuggestUpdateCard from './components/SuggestUpdateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RunCommandCard from './components/RunCommandCard';
+import ConnectMcpCard from './components/ConnectMcpCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
@@ -130,6 +131,10 @@ export default function App() {
   // propose_run_command state — per-command confirmation card
   const pendingCommand = useArslanStore((s) => s.pendingCommand);
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
+  // propose_connect_mcp state — in-chat MCP connect card (security-load-bearing:
+  // secrets never leave this card except over REST; see ConnectMcpCard.tsx)
+  const pendingConnectMcp = useArslanStore((s) => s.pendingConnectMcp);
+  const clearPendingConnectMcp = useArslanStore((s) => s.clearPendingConnectMcp);
   // Returns true if a spawn (identified by its UI string id) is in the current roster
   const isRosterMember = (spawnId: string) => roster.some((m) => m.spawnId === Number(spawnId));
 
@@ -798,6 +803,38 @@ export default function App() {
                     wsSend({ type: 'cancel_run_command', call_id: callId });
                     clearPendingCommand();
                   }}
+                />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingConnectMcp && (
+              <div className="suggest-create-card-overlay">
+                <ConnectMcpCard
+                  callId={pendingConnectMcp.callId}
+                  label={pendingConnectMcp.label}
+                  transport={pendingConnectMcp.transport}
+                  command={pendingConnectMcp.command}
+                  args={pendingConnectMcp.argv}
+                  url={pendingConnectMcp.url}
+                  envKeys={pendingConnectMcp.envKeys}
+                  prerequisites={pendingConnectMcp.prerequisites}
+                  requiresPath={pendingConnectMcp.requiresPath}
+                  pathPlaceholder={pendingConnectMcp.pathPlaceholder}
+                  onApplied={(res) => {
+                    // Secret-free confirm: server_id + tool_count only — no env
+                    // values, no client-computed tier counts (the backend
+                    // recomputes the honest tier split from the DB and emits the
+                    // mcp_connect_followup note, which clears this card).
+                    if (res.ok) {
+                      wsSend({
+                        type: 'confirm_connect_mcp',
+                        call_id: pendingConnectMcp.callId,
+                        server_id: res.serverId,
+                        tool_count: res.toolCount,
+                      });
+                    }
+                  }}
+                  onCancel={() => clearPendingConnectMcp()}
                 />
               </div>
             )}
