@@ -10,7 +10,7 @@ import SkillForge from "./SkillForge";
 import RecommendedMcp from "./RecommendedMcp";
 import SkillImportPanel from "./SkillImportPanel";
 import FilterChips from "./FilterChips";
-import { MCP_PRESETS } from "../data/mcpPresets";
+import { getMcpCatalog } from "../api/catalog";
 import { listMcpServers } from "../api/mcp";
 
 type CapTab = "discover" | "tools" | "skills" | "forge" | "mcps" | "saved";
@@ -30,14 +30,18 @@ export default function Capabilities() {
   const [mcpRefreshKey, setMcpRefreshKey] = useState(0);
 
   // MCPS tab chip row: jump between the curated presets and the registered
-  // server list. Server count is fetched for the chip badge (null = unknown/offline).
+  // server list. Both counts are fetched for the chip badges (null = unknown/offline).
   const [mcpChip, setMcpChip] = useState<McpChip>("all");
   const [mcpServerCount, setMcpServerCount] = useState<number | null>(null);
+  const [mcpPresetCount, setMcpPresetCount] = useState<number | null>(null);
   useEffect(() => {
     let alive = true;
     listMcpServers()
       .then((s) => { if (alive) setMcpServerCount(s.length); })
       .catch(() => { if (alive) setMcpServerCount(null); });
+    getMcpCatalog()
+      .then((c) => { if (alive) setMcpPresetCount(c.length); })
+      .catch(() => { if (alive) setMcpPresetCount(null); });
     return () => { alive = false; };
   }, [mcpRefreshKey]);
 
@@ -93,7 +97,7 @@ export default function Capabilities() {
             <FilterChips
               chips={[
                 { id: "all", label: t("capabilities.chips.all") },
-                { id: "recommended", label: t("capabilities.chips.recommended"), count: MCP_PRESETS.length },
+                { id: "recommended", label: t("capabilities.chips.recommended"), count: mcpPresetCount ?? undefined },
                 { id: "registered", label: t("capabilities.chips.registered"), count: mcpServerCount ?? undefined },
               ]}
               active={mcpChip}

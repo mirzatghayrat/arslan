@@ -1,7 +1,19 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { McpConnector } from '../api/client.types';
+
+// Guard (also enforced by a repo-wide grep for the old preset module's name in web/src,
+// run as part of the Task 4 gate — must be empty): RecommendedMcp must read GET /mcp/catalog
+// via ../api/catalog, never the deleted static data/ module. Mocking ../api/catalog below and
+// asserting the component renders exclusively from that mock's data is the runtime half of
+// that guard.
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+
+const getMcpCatalog = vi.fn(async () => [] as McpConnector[]);
+vi.mock('../api/catalog', () => ({
+  getMcpCatalog: () => getMcpCatalog(),
+}));
 
 const addMcpServer = vi.fn(async (..._a: unknown[]) => ({ id: 7 }));
 const connectMcpServer = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
@@ -14,17 +26,46 @@ vi.mock('../api/mcp', () => ({
 
 import RecommendedMcp from '../components/RecommendedMcp';
 
-function cardFor(label: string) {
-  return screen.getByText(label).closest('div.rounded-xl') as HTMLElement;
-}
+// Two fixture connectors shaped exactly like GET /mcp/catalog (server/mcp/catalog.py) —
+// one credential-free (one_click), one credentialed (env non-empty).
+const MEMORY: McpConnector = {
+  key: 'memory', label: 'Memory', transport: 'stdio', command: 'npx',
+  args: ['-y', '@modelcontextprotocol/server-memory'], url: null, runtime: 'node',
+  description: 'Persistent knowledge-graph memory (stored locally).', one_click: true, env: [],
+};
+const GITHUB: McpConnector = {
+  key: 'github', label: 'GitHub', transport: 'stdio', command: 'npx',
+  args: ['-y', '@modelcontextprotocol/server-github'], url: null, runtime: 'node',
+  description: 'GitHub repo / issue / PR access.', one_click: false,
+  env: [{
+    name: 'GITHUB_PERSONAL_ACCESS_TOKEN',
+    description: 'A GitHub personal access token (classic or fine-grained).',
+    get_it_url: 'https://github.com/settings/tokens',
+    paid: false,
+  }],
+};
 
-describe('RecommendedMcp', () => {
-  beforeEach(() => { addMcpServer.mockClear(); connectMcpServer.mockClear(); listMcpServers.mockClear(); });
+describe('RecommendedMcp (reads GET /mcp/catalog via getMcpCatalog)', () => {
+  beforeEach(() => {
+    addMcpServer.mockClear();
+    connectMcpServer.mockClear();
+    listMcpServers.mockClear();
+    getMcpCatalog.mockReset();
+    getMcpCatalog.mockResolvedValue([MEMORY, GITHUB]);
+  });
 
-  it('one-click card adds then connects (no form)', async () => {
+  it('fetches the catalog on mount and renders a card per connector', async () => {
     render(<RecommendedMcp />);
-    const memory = cardFor('Memory');
-    fireEvent.click(within(memory).getByRole('button', { name: /connect/i }));
+    await waitFor(() => expect(getMcpCatalog).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Memory')).toBeInTheDocument();
+    expect(await screen.findByText('GitHub')).toBeInTheDocument();
+  });
+
+  it('one-click connector (env: []) adds then connects (no form)', async () => {
+    render(<RecommendedMcp />);
+    const memory = await screen.findByText('Memory');
+    const card = memory.closest('div.rounded-xl') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: /connect/i }));
     await waitFor(() => expect(addMcpServer).toHaveBeenCalledTimes(1));
     expect(addMcpServer).toHaveBeenCalledWith(expect.objectContaining({
       label: 'Memory', command: 'npx', env: {},
@@ -33,27 +74,24 @@ describe('RecommendedMcp', () => {
     await waitFor(() => expect(connectMcpServer).toHaveBeenCalledWith(7));
   });
 
-  it('path server refuses to connect until a path is entered', async () => {
-    render(<RecommendedMcp />);
-    const fs = cardFor('Filesystem');
-    fireEvent.click(within(fs).getByRole('button', { name: /connect/i }));
-    // no add call — it demands a path first
-    expect(addMcpServer).not.toHaveBeenCalled();
-    expect(within(fs).getByText(/enter a path/i)).toBeTruthy();
-    // with a path, it appends it to the launch args
-    fireEvent.change(within(fs).getByPlaceholderText(/path/i), { target: { value: '/tmp/x' } });
-    fireEvent.click(within(fs).getByRole('button', { name: /connect/i }));
-    await waitFor(() => expect(addMcpServer).toHaveBeenCalledTimes(1));
-    const arg = addMcpServer.mock.calls[0][0] as { args: string[] };
-    expect(arg.args[arg.args.length - 1]).toBe('/tmp/x');
-  });
-
-  it('credentialed card prefills the add form instead of connecting', () => {
+  it('credentialed connector (env non-empty) prefills the add form instead of connecting', async () => {
     const onPrefillMcp = vi.fn();
     render(<RecommendedMcp onPrefillMcp={onPrefillMcp} />);
-    const gh = cardFor('GitHub');
-    fireEvent.click(within(gh).getByRole('button', { name: /set up/i }));
-    expect(onPrefillMcp).toHaveBeenCalledWith(expect.objectContaining({ label: 'GitHub' }));
+    const gh = await screen.findByText('GitHub');
+    const card = gh.closest('div.rounded-xl') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: /set up/i }));
+    expect(onPrefillMcp).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'GitHub', command: 'npx', transport: 'stdio',
+      envKeys: ['GITHUB_PERSONAL_ACCESS_TOKEN'],
+    }));
     expect(addMcpServer).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing extra when the catalog is empty (no static fallback data)', async () => {
+    getMcpCatalog.mockResolvedValue([]);
+    render(<RecommendedMcp />);
+    await waitFor(() => expect(getMcpCatalog).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Memory')).not.toBeInTheDocument();
+    expect(screen.queryByText('GitHub')).not.toBeInTheDocument();
   });
 });

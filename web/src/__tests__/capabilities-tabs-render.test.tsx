@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // i18n passthrough
@@ -47,10 +47,30 @@ vi.mock("../api/mcp", () => ({
   wireMcpTool: vi.fn(),
 }));
 
+vi.mock("../api/catalog", () => ({
+  getMcpCatalog: vi.fn(),
+}));
+
 import { api } from "../api/client";
 import * as discovery from "../api/discovery";
 import * as mcp from "../api/mcp";
+import * as catalog from "../api/catalog";
 import Capabilities from "../components/Capabilities";
+
+// Mirrors GET /mcp/catalog (server/mcp/catalog.py) — 9 preset connectors, "Memory" among
+// the credential-free ones. Used to keep the chip-count + card-render assertions grounded
+// in real fetched data (the old static data/ preset module was deleted in Task 4).
+const CATALOG_FIXTURE = [
+  { key: "fetch", label: "Fetch", transport: "stdio", command: "uvx", args: ["mcp-server-fetch"], url: null, runtime: "python", description: "Fetch a URL and convert it to clean markdown.", one_click: true, env: [] },
+  { key: "memory", label: "Memory", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], url: null, runtime: "node", description: "Persistent knowledge-graph memory (stored locally).", one_click: true, env: [] },
+  { key: "sequential-thinking", label: "Sequential Thinking", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], url: null, runtime: "node", description: "A structured step-by-step reasoning scaffold.", one_click: true, env: [] },
+  { key: "time", label: "Time", transport: "stdio", command: "uvx", args: ["mcp-server-time"], url: null, runtime: "python", description: "Current time and timezone conversion.", one_click: true, env: [] },
+  { key: "filesystem", label: "Filesystem", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem"], url: null, runtime: "node", description: "Read and write files under a directory you choose.", one_click: true, env: [] },
+  { key: "git", label: "Git", transport: "stdio", command: "uvx", args: ["mcp-server-git", "--repository"], url: null, runtime: "python", description: "Read, search, and commit a local git repository.", one_click: true, env: [] },
+  { key: "everything", label: "Everything", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"], url: null, runtime: "node", description: "Reference server with sample tools.", one_click: true, env: [] },
+  { key: "brave-search", label: "Brave Search", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-brave-search"], url: null, runtime: "node", description: "Web search via the Brave Search API.", one_click: false, env: [{ name: "BRAVE_API_KEY", description: "A Brave Search API key.", get_it_url: "https://brave.com/search/api/", paid: false }] },
+  { key: "github", label: "GitHub", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], url: null, runtime: "node", description: "GitHub repo / issue / PR access.", one_click: false, env: [{ name: "GITHUB_PERSONAL_ACCESS_TOKEN", description: "A GitHub personal access token.", get_it_url: "https://github.com/settings/tokens", paid: false }] },
+];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -61,6 +81,7 @@ beforeEach(() => {
   (discovery.listCandidates as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (discovery.searchRepos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (mcp.listMcpServers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+  (catalog.getMcpCatalog as ReturnType<typeof vi.fn>).mockResolvedValue(CATALOG_FIXTURE);
 });
 
 describe("Capabilities page structure (one tab bar, Discover first)", () => {
@@ -104,9 +125,10 @@ describe("Capabilities page structure (one tab bar, Discover first)", () => {
   it("MCPS chips filter between the presets section and the server list; all resets", async () => {
     render(<Capabilities />);
     fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.mcps" }));
-    // Chip row derived from real data: presets count (static) + registered servers count (fetched)
+    // Chip row derived from real data: both counts are fetched (presets via GET /mcp/catalog,
+    // registered servers via GET /mcp/servers) — wait for the async catalog fetch to resolve.
     const recommendedChip = screen.getByRole("button", { name: /capabilities\.chips\.recommended/ });
-    expect(recommendedChip).toHaveTextContent(/9/); // MCP_PRESETS.length
+    await waitFor(() => expect(recommendedChip).toHaveTextContent(/9/)); // CATALOG_FIXTURE.length
     expect(screen.getByRole("button", { name: /capabilities\.chips\.registered/ })).toBeInTheDocument();
     // Both sections visible by default (all)
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();

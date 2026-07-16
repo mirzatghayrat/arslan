@@ -6,7 +6,7 @@ import {
   type EvalResult, type SearchItem,
 } from '../api/discovery';
 import RepoDossier from './RepoDossier';
-import type { McpPrefill } from '../data/mcpPresets';
+import type { McpPrefill } from '../api/client.types';
 
 // Re-export McpPrefill so existing importers (SavedCandidates) keep their path.
 export type { McpPrefill };
