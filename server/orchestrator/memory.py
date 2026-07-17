@@ -329,7 +329,9 @@ async def facts_text(*, include_sensitive: bool = False,
     """
     facts = await list_facts()
     if not include_sensitive:
-        facts = [f for f in facts if not f.sensitive]
+        # NULL⇒sensitive:隐私过滤 fail-closed——只有显式 False 放行
+        # (raw insert 可产生 NULL sensitive;truthiness 会把 NULL 当非敏感放漏)。
+        facts = [f for f in facts if f.sensitive is False]
     if not facts:
         return ""
     total = len(facts)

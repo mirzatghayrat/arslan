@@ -88,6 +88,20 @@ async def test_null_fields_do_not_crash(db_env):
 
 
 @pytest.mark.asyncio
+async def test_null_sensitive_treated_as_sensitive(db_env):
+    # 隐私过滤器的 NULL 语义 fail-closed:raw insert 遗漏 sensitive 列 → NULL →
+    # 按敏感处理,不进 include_sensitive=False 输出;显式特权(True)仍可见。
+    async with db_env() as db:
+        await db.execute(sa_text("INSERT INTO user_facts (content) VALUES ('NULL哨兵行')"))
+        await db.commit()
+    await _add(db_env, "普通行")
+    out = await memory.facts_text()
+    assert "普通行" in out and "NULL哨兵行" not in out
+    out_host = await memory.facts_text(include_sensitive=True)
+    assert "NULL哨兵行" in out_host
+
+
+@pytest.mark.asyncio
 async def test_empty_returns_empty_string(db_env):
     assert await memory.facts_text() == ""
 
