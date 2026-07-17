@@ -72,16 +72,24 @@ async def distill_meta_upflow(spawn, new_facts: list[str]) -> str | None:
     if not new_facts:
         return None
     try:
+        from server.orchestrator import memory
+        # Active-only existing profile for the prompt ONLY (blind-free generation:
+        # the upflow LLM must know what's already known so it doesn't re-propose it).
+        # This is STRICTLY BETTER than the old code, which fed the LLM ALL rows
+        # including superseded ones (a latent staleness bug). It is NOT a dedup scan:
+        # save_facts's active-only two-phase owns dedup — do not re-add one here.
+        existing = await memory.list_facts()  # default: active-only
         prompt = (
             f"分身「{spawn.name}」(领域:{spawn.domain_category})刚学到的偏好:\n"
             + "\n".join(f"- {f}" for f in new_facts)
+            + "\n\n已有的用户画像(别重复):\n"
+            + ("\n".join(f"- {e.content}" for e in existing) if existing else "(空)")
         )
         adapter = await build_adapter(role="judgment")
         resp = await adapter.chat(system=_META_UPFLOW_SYSTEM, user=prompt)
         fact = (resp.content or "").strip().strip('"').strip("「」").strip()
         if not fact:
             return None
-        from server.orchestrator import memory
         created = await memory.save_facts(
             [{"content": fact, "source": "upflow"}],
             provenance={"source_kind": "upflow", "spawn_id": getattr(spawn, "id", None)},

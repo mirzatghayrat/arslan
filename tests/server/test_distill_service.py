@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Spawn, ArslanMessage, DistilledSession, Feedback
+from server.db.models import Base, Spawn, ArslanMessage, DistilledSession, Feedback, UserFact
 
 
 @pytest_asyncio.fixture
@@ -33,6 +33,68 @@ async def test_distill_writes_facts_and_marks(maker, monkeypatch):
             DistilledSession.conversation_id == "c1", DistilledSession.spawn_id == 3))).scalars().all()
     facts, marks = spawn.memory_facts, marks
     assert facts == ["用户偏好更简短的输出"] and len(marks) == 1
+
+
+async def test_distill_nested_upflow_persists_without_session_lock(maker, monkeypatch, caplog):
+    """Nested-session regression (brain-P1 Task 3): rerouting distill_meta_upflow
+    through memory.save_facts introduced session NESTING that didn't exist before —
+    _distill_one holds an OUTER session open (uncommitted) while distill_meta_upflow
+    opens INNER sessions (list_facts for the prompt context + save_facts for the
+    write, each committing on its own). Given this repo's 'database is locked'
+    nested-session flake history, drive the REAL production entry (distill_session
+    -> _distill_one -> distill_meta_upflow) end-to-end and lock down that:
+      (a) the upflow UserFact persisted, carrying mandatory provenance + valid_from,
+      (b) no 'database is locked' / distill_meta_upflow failure was logged,
+      (c) the per-spawn distill still committed: DistilledSession marker +
+          spawn.memory_facts, proving the outer transaction survived the nesting.
+    """
+    from server.services import distill_service
+
+    async def fake_distill_facts(existing, signals):
+        return ["用户偏好更简短的输出"]
+
+    monkeypatch.setattr(distill_service, "distill_facts", fake_distill_facts)
+
+    # Stub ONLY the meta-upflow LLM call (distill_facts is already stubbed, so the
+    # sole remaining build_adapter reach is inside distill_meta_upflow).
+    class _MetaAdapter:
+        async def chat(self, system, user, **kw):
+            class _R:
+                content = "用户偏口语、忌硬广"
+            return _R()
+
+    async def _fake_build_adapter(*a, **k):
+        return _MetaAdapter()
+
+    monkeypatch.setattr(distill_service, "build_adapter", _fake_build_adapter)
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        n = await distill_service.distill_session("c1")
+
+    assert n == 1  # the one producing spawn was distilled
+
+    # (b) no lock / no swallowed upflow failure — the nested commit went clean
+    joined = "\n".join(r.getMessage() for r in caplog.records)
+    assert "database is locked" not in joined
+    assert "distill_meta_upflow" not in joined  # its except-branch warning never fired
+
+    async with maker() as s:
+        # (a) upflow fact persisted through the nested save_facts, with provenance
+        facts = (await s.execute(
+            select(UserFact).where(UserFact.source == "upflow"))).scalars().all()
+        assert len(facts) == 1
+        assert facts[0].content == "用户偏口语、忌硬广"
+        assert facts[0].provenance == {"source_kind": "upflow", "spawn_id": 3}
+        assert facts[0].valid_from is not None
+
+        # (c) the outer per-spawn transaction also committed
+        spawn = await s.get(Spawn, 3)
+        assert spawn.memory_facts == ["用户偏好更简短的输出"]
+        marks = (await s.execute(select(DistilledSession).where(
+            DistilledSession.conversation_id == "c1",
+            DistilledSession.spawn_id == 3))).scalars().all()
+        assert len(marks) == 1
 
 
 async def test_distill_includes_per_conversation_feedback(maker, monkeypatch):
