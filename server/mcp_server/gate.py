@@ -22,7 +22,9 @@ class McpServerGate:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "websocket":
             # A browser can open a cross-site WS to the mount; reject cleanly
-            # (streamable-http is HTTP-only). Never reaches the MCP app.
+            # (streamable-http is HTTP-only). Never reaches the MCP app. Audited
+            # like every other reject so an untrusted WS probe leaves a trace.
+            audit.record(tool="-", status="reject:ws")
             await send({"type": "websocket.close", "code": 1008})
             return
         if scope["type"] != "http":

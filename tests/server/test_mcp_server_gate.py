@@ -122,6 +122,27 @@ async def test_reject_emits_audit_line_without_the_bearer(env, caplog):
     assert "some-secret-xyz" not in " ".join(lines)   # the bearer is never logged
 
 
+async def test_websocket_is_closed_1008_and_audited(env, caplog):
+    # An untrusted cross-site WS probe must leave a trace: reject:ws audit line,
+    # clean 1008 close, and the MCP app is never reached — even when enabled.
+    import logging
+    tmp_path, set_enabled = env
+    await set_enabled(True)
+    inner = _Inner()
+    scope = {"type": "websocket", "path": "/", "headers": []}
+    sent = []
+    async def receive():  # noqa: ANN202
+        return {"type": "websocket.connect"}
+    async def send(msg):  # noqa: ANN202
+        sent.append(msg)
+    with caplog.at_level(logging.INFO, logger="arslan.mcp_server.audit"):
+        await McpServerGate(inner)(scope, receive, send)
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+    assert inner.called is False
+    lines = [r.getMessage() for r in caplog.records if r.name == "arslan.mcp_server.audit"]
+    assert len(lines) == 1 and "reject:ws" in lines[0]
+
+
 async def test_non_ascii_bearer_is_401_not_500(env):
     tmp_path, set_enabled = env
     token_store.generate_mcp_token(data_dir=tmp_path)
