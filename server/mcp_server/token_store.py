@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import secrets
 import stat
+import tempfile
 from pathlib import Path
 
 MCP_TOKEN_FILENAME = "mcp_token"
@@ -36,14 +37,27 @@ def read_mcp_token(data_dir=None) -> str:
 
 def _write(path: Path, token: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    # O_CREAT honours the mode only for a *new* file; chmod afterwards makes an
-    # overwrite of an existing, laxer file safe too.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # Write to a sibling temp file then atomically rename it into place, so a
+    # reader racing a rotation always sees either the old token or the new one,
+    # never a truncated/partial write. os.replace() is atomic on POSIX and
+    # replaces any existing, laxer file wholesale — no separate chmod needed.
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+    tmp = Path(tmp_name)
     try:
+        os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
         os.write(fd, token.encode("utf-8"))
-    finally:
         os.close(fd)
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def generate_mcp_token(data_dir=None) -> str:

@@ -15,6 +15,8 @@ def test_generate_is_random_persisted_0600_and_matches(tmp_path):
     assert token_store.read_mcp_token(data_dir=tmp_path) == t2
     assert token_store.mcp_token_matches(t2, data_dir=tmp_path) is True
     assert token_store.mcp_token_matches(t1, data_dir=tmp_path) is False  # old rejected → rotate is real
+    # Atomic temp-then-rename write must leave no stray temp file behind.
+    assert [p.name for p in tmp_path.iterdir()] == ["mcp_token"]
 
 
 def test_matches_is_false_for_empty_or_absent(tmp_path):
