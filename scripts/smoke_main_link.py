@@ -12,7 +12,16 @@ What it does (real process, no network LLM, no touching your real data/):
        [routing]  a router_decisions row was persisted for the turn
        [reply]    stream_start → non-empty stream_chunk(s) → stream_end came back
        [persist]  arslan_messages holds the user row + an assistant/spawn_summary row
-  5. prints a ✓/✗ report and exits 0 (all pass) / 1 (any fail)
+  5. (S4.1-C, permanent) asserts the inbound-MCP-server invariant against the SAME
+     booted process — the door is fail-closed by default, opens when enabled+tokened,
+     serves exactly the 3 read tools, rejects a wrong token, and closes again
+     immediately on disable-restore:
+       [mcp] disabled → 403
+       [mcp] enabled+valid initialize → 200
+       [mcp] tools/list → 3 read tools
+       [mcp] wrong token → 401
+       [mcp] disable-restore → 403
+  6. prints a ✓/✗ report and exits 0 (all pass) / 1 (any fail)
 """
 from __future__ import annotations
 
@@ -103,6 +112,81 @@ def db_state(db_path: Path) -> dict:
     return {"router_decisions": decisions, "messages": rows}
 
 
+MCP_INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "smoke", "version": "0"}}}
+MCP_TOOLS_LIST = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+MCP_HEADERS = {"Content-Type": "application/json",
+               "Accept": "application/json, text/event-stream"}
+
+
+def _mcp_post(base: str, path: str, body, headers=None, timeout=10):
+    """POST returning (status, bytes); HTTP errors return their status, never raise."""
+    import urllib.error
+
+    req = urllib.request.Request(
+        base + path, data=json.dumps(body).encode() if body is not None else None,
+        method="POST", headers={**MCP_HEADERS, **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def check_mcp_server(port: int) -> list[tuple[str, bool, str]]:
+    """Permanent MCP-server invariant (S4.1-C): the inbound door is fail-closed by
+    default, serves MCP when enabled+tokened (real lifespan drives the session
+    manager), and closes again immediately on disable (state restored).
+
+    Sequence: disabled→403 · enable+generate · initialize→200 · tools/list→3 tools ·
+    wrong token→401 · disable-restore→403.
+    """
+    base = f"http://127.0.0.1:{port}"
+    checks: list[tuple[str, bool, str]] = []
+
+    # 1. fail-closed by default
+    c, _ = _mcp_post(base, "/mcp-server/", MCP_INIT)
+    checks.append(("[mcp] disabled → 403", c == 403, f"got {c}"))
+
+    # 2. enable + generate the dedicated token
+    req = urllib.request.Request(
+        f"{base}/api/v1/settings", data=json.dumps({"mcp_server_enabled": True}).encode(),
+        method="PUT", headers={"Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=10).read()
+    _, gen_body = _mcp_post(base, "/api/v1/settings/mcp-token/generate", None)
+    token = json.loads(gen_body)["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # 3. initialize through the REAL lifespan-driven session manager
+    c, _ = _mcp_post(base, "/mcp-server/", MCP_INIT, auth)
+    checks.append(("[mcp] enabled+valid initialize → 200", c == 200, f"got {c}"))
+
+    # 4. tools/list exposes exactly the 3 read tools
+    c, body = _mcp_post(base, "/mcp-server/", MCP_TOOLS_LIST, auth)
+    try:
+        names = sorted(t["name"] for t in json.loads(body)["result"]["tools"])
+    except Exception:
+        names = []
+    expected = ["get_run_status", "list_capabilities", "list_spawns"]
+    checks.append(("[mcp] tools/list → 3 read tools", c == 200 and names == expected,
+                   f"got {c} {names}"))
+
+    # 5. wrong token rejected
+    c, _ = _mcp_post(base, "/mcp-server/", MCP_INIT, {"Authorization": "Bearer wrong"})
+    checks.append(("[mcp] wrong token → 401", c == 401, f"got {c}"))
+
+    # 6. disable-restore: toggle off + drop the token; the door closes immediately
+    req = urllib.request.Request(
+        f"{base}/api/v1/settings", data=json.dumps({"mcp_server_enabled": False}).encode(),
+        method="PUT", headers={"Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=10).read()
+    _mcp_post(base, "/api/v1/settings/mcp-token/disable", None)
+    c, _ = _mcp_post(base, "/mcp-server/", MCP_INIT, auth)
+    checks.append(("[mcp] disable-restore → 403", c == 403, f"got {c}"))
+    return checks
+
+
 def main() -> int:
     port = free_port()
     tmp = Path(tempfile.mkdtemp(prefix="arslan-smoke-"))
@@ -144,6 +228,8 @@ def main() -> int:
                               if r in ("arslan", "assistant", "spawn_summary") and (c or "").strip()), None)
             checks.append(("persist: user + arslan/spawn_summary reply in arslan_messages",
                            bool(has_user and reply_row), f"roles={roles}"))
+
+            checks.extend(check_mcp_server(port))
         except Exception as e:  # noqa: BLE001
             checks.append(("smoke run", False, f"{type(e).__name__}: {e}"))
         finally:
