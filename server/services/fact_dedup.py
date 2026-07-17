@@ -23,8 +23,12 @@ def norm(content: str) -> str:
 
 
 async def existing_norms() -> set[str]:
+    """Active-only (superseded_by IS NULL): a superseded row's content must never
+    block a new write from being inserted (it would look like a live duplicate
+    of a fact that's actually dead)."""
     async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.execute(sa_text("SELECT content FROM user_facts"))).all()
+        rows = (await db.execute(
+            sa_text("SELECT content FROM user_facts WHERE superseded_by IS NULL"))).all()
     return {norm(r[0]) for r in rows}
 
 
@@ -43,12 +47,15 @@ def similar(a: str, b: str) -> bool:
 
 
 async def exact_norm_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
-    """Return an existing fact whose normalized content EXACTLY equals `content`'s.
-    First phase of the two-phase write check (exact→merge / fuzzy→coexist).
-    Fail-open: any error → None (the write proceeds)."""
+    """Return an ACTIVE existing fact (superseded_by IS NULL) whose normalized
+    content EXACTLY equals `content`'s. First phase of the two-phase write check
+    (exact→merge / fuzzy→coexist). Active-only: a superseded row must never be
+    treated as a live duplicate target. Fail-open: any error → None (the write
+    proceeds)."""
     try:
         target = norm(content)
-        rows = (await db.execute(select(UserFact))).scalars().all()
+        rows = (await db.execute(
+            select(UserFact).where(UserFact.superseded_by.is_(None)))).scalars().all()
         for row in rows:
             if norm(row.content) == target:
                 return row
@@ -59,15 +66,17 @@ async def exact_norm_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
 
 
 async def find_near_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
-    """Return an existing fact that is a near-duplicate (exact OR fuzzy) of
-    `content`, else None. Fail-open: any error → None (treated as no dup, so the
-    write proceeds). NOTE: this returns the FIRST similar row in scan order,
+    """Return an ACTIVE existing fact that is a near-duplicate (exact OR fuzzy) of
+    `content`, else None. Active-only: a superseded row must never be treated as
+    a live near-dup target. Fail-open: any error → None (treated as no dup, so
+    the write proceeds). NOTE: this returns the FIRST similar row in scan order,
     which may be a fuzzy sibling even when an exact-norm dup exists elsewhere in
     the table — callers that need to distinguish exact-merge from fuzzy-coexist
     must run `exact_norm_dup` as an independent first phase, not re-derive
     exactness from this call's result (see memory.save_facts / two-phase)."""
     try:
-        rows = (await db.execute(select(UserFact))).scalars().all()
+        rows = (await db.execute(
+            select(UserFact).where(UserFact.superseded_by.is_(None)))).scalars().all()
         for row in rows:
             if similar(content, row.content):
                 return row
@@ -77,19 +86,36 @@ async def find_near_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
         return None
 
 
+async def _supersede_targets(db) -> set[int]:  # noqa: ANN001
+    """Ids referenced as the WINNER of some supersede pointer (any user_facts.id
+    that appears as another row's superseded_by). These must never be deleted by
+    dedup — doing so would leave the pointing row's superseded_by dangling."""
+    rows = (await db.execute(sa_text(
+        "SELECT DISTINCT superseded_by FROM user_facts WHERE superseded_by IS NOT NULL"))).all()
+    return {r[0] for r in rows}
+
+
 async def dedup_merge_facts() -> int:
     """One-shot backfill: collapse existing near-dup groups (keep earliest, bump its
-    confidence per collapsed sibling, delete the rest). Returns rows deleted.
+    confidence per collapsed sibling, delete the rest). Active-only scan (a
+    superseded row is dead history, never a merge candidate) and never deletes a
+    row that is itself a supersede-pointer TARGET (would dangle the pointer) —
+    such a row survives as a coexisting duplicate instead. Returns rows deleted.
     Best-effort."""
     try:
         async with db_session.AsyncSessionLocal() as db:
-            rows = list((await db.execute(select(UserFact).order_by(UserFact.id))).scalars().all())
+            rows = list((await db.execute(
+                select(UserFact).where(UserFact.superseded_by.is_(None)).order_by(UserFact.id)
+            )).scalars().all())
+            targets = await _supersede_targets(db)
             kept: list[UserFact] = []
             dup_ids: list[int] = []
             for row in rows:
                 match = next((k for k in kept if similar(row.content, k.content)), None)
                 if match is None:
                     kept.append(row)
+                elif row.id in targets:
+                    kept.append(row)  # can't delete a supersede target; keep as coexisting dup
                 else:
                     match.confidence = min(1.0, (match.confidence or 0.6) + 0.1)
                     dup_ids.append(row.id)
@@ -104,17 +130,22 @@ async def dedup_merge_facts() -> int:
 
 async def dedup_facts() -> int:
     """Keep the earliest (min id) row of each norm-group, delete the rest.
+    Active-only scan (superseded rows are dead history, excluded) and never
+    deletes a row that is itself a supersede-pointer TARGET (would dangle the
+    pointer) — such a row survives even if it norm-duplicates an earlier row.
     Returns number deleted. Best-effort: any failure logs and returns 0."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             rows = (await db.execute(sa_text(
-                "SELECT id, content FROM user_facts ORDER BY id"))).all()
+                "SELECT id, content FROM user_facts WHERE superseded_by IS NULL ORDER BY id"))).all()
+            targets = await _supersede_targets(db)
             seen: set[str] = set()
             dup_ids: list[int] = []
             for rid, content in rows:
                 k = norm(content)
                 if k in seen:
-                    dup_ids.append(rid)
+                    if rid not in targets:
+                        dup_ids.append(rid)
                 else:
                     seen.add(k)
             for rid in dup_ids:

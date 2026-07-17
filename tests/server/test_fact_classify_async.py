@@ -53,14 +53,18 @@ async def test_save_facts_schedules_classify_for_created_ids(maker, monkeypatch)
     captured = _capture(monkeypatch)
     created = await memory.save_facts([
         {"content": "用户在广州工作"}, {"content": "用户喜欢简短回答"},
-    ])
+    ], provenance={"source_kind": "test"})
     assert [r.id for r in created] == [1, 2]      # both written + committed (ids assigned)
     assert captured == [[1, 2]]                    # scheduled once, for exactly the created ids
 
 
 async def test_distill_meta_upflow_schedules_after_flush(maker, monkeypatch):
-    """distill_meta_upflow flushes the new UserFact (id assigned, caller commits) and
-    schedules classify for that id — without awaiting it."""
+    """distill_meta_upflow (brain-P1 Task 3, BLOCKER #1) now routes through
+    memory.save_facts, which durably commits the new UserFact in ITS OWN session
+    and fire-and-forget schedules classify for its id — without awaiting it.
+    (Previously this asserted flush-only semantics on a caller-supplied session;
+    save_facts owns its own session/commit now, so distill_meta_upflow no longer
+    takes a `db` argument at all.)"""
     from server.services import distill_service
 
     class _Spawn:
@@ -80,8 +84,6 @@ async def test_distill_meta_upflow_schedules_after_flush(maker, monkeypatch):
     monkeypatch.setattr(distill_service, "build_adapter", _fake)
     captured = _capture(monkeypatch)
 
-    async with db_session.AsyncSessionLocal() as db:
-        fact = await distill_service.distill_meta_upflow(db, _Spawn(), ["数据驱动"])
-        await db.commit()  # caller owns the commit
+    fact = await distill_service.distill_meta_upflow(_Spawn(), ["数据驱动"])
     assert fact == "用户偏好数据驱动决策"
-    assert captured == [[1]]  # the flushed row's id was scheduled for classify
+    assert captured == [[1]]  # the created row's id was scheduled for classify

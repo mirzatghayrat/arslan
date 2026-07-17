@@ -42,7 +42,10 @@ async def test_add_and_assemble_working_context(maker):
 async def test_facts_roundtrip_and_injection(maker):
     from server.orchestrator import memory
 
-    await memory.save_facts([{"content": "prefers metric units", "sensitive": False}])
+    await memory.save_facts(
+        [{"content": "prefers metric units", "sensitive": False}],
+        provenance={"source_kind": "test"},
+    )
     facts = await memory.list_facts()
     assert facts[0].content == "prefers metric units"
     text = await memory.facts_text()

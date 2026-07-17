@@ -47,10 +47,11 @@ async def test_save_facts_near_dup_coexists_not_merged(maker):
     # paraphrases must never be silently conflated (see the 喜欢猫/喜欢狗
     # regression this round fixes). Only exact-normalized duplicates merge —
     # see test_dedup_tightened.py::test_exact_dup_merges_and_bumps.
-    a = await memory.save_facts([{"content": "用户偏好使用中文沟通"}])
+    a = await memory.save_facts([{"content": "用户偏好使用中文沟通"}], provenance={"source_kind": "test"})
     assert len(a) == 1
     fid = a[0].id
-    b = await memory.save_facts([{"content": "用户偏好使用中文进行沟通和输出"}])
+    b = await memory.save_facts(
+        [{"content": "用户偏好使用中文进行沟通和输出"}], provenance={"source_kind": "test"})
     assert len(b) == 1  # NOT merged → a new row is created (coexist)
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(sa_text(
@@ -62,7 +63,8 @@ async def test_save_facts_near_dup_coexists_not_merged(maker):
 
 @pytest.mark.asyncio
 async def test_dedup_merge_backfill_collapses(maker):
-    await memory.save_facts([{"content": "用户是甲语母语者,来自甲城"}])
+    await memory.save_facts(
+        [{"content": "用户是甲语母语者,来自甲城"}], provenance={"source_kind": "test"})
     # inject an exact near-dup directly (bypass save's own merge) to backfill
     async with db_session.AsyncSessionLocal() as db:
         await db.execute(sa_text(

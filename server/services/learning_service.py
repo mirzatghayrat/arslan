@@ -6,6 +6,7 @@ producing something fake."""
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from sqlalchemy import text as sa_text
 
@@ -31,17 +32,22 @@ async def _write(content: str, label: str, source_kind: str, source_ref: dict,
         return 0
     try:
         async with db_session.AsyncSessionLocal() as db:
-            existing = (await db.execute(sa_text("SELECT content FROM learnings"))).all()
+            # Scanner #5 (brain-P1 Task 3, BLOCKER #2): active-only — a superseded
+            # learning must never block/merge-collide with a new write. Fetches
+            # (id, content), not just content — Task 4's rule-supersede needs the id.
+            existing = (await db.execute(sa_text(
+                "SELECT id, content FROM learnings WHERE superseded_by IS NULL"))).all()
             target = norm(content)
-            if any(norm(e[0]) == target for e in existing):
+            if any(norm(c) == target for _id, c in existing):
                 return 0                                    # 精确重复:跳过(不变)
-            fuzzy = [e[0] for e in existing if similar(content, e[0])]
+            fuzzy = [c for _id, c in existing if similar(content, c)]
             if fuzzy:
                 logger.info("learning: near-dup coexist (P1 will propose supersede): %r ~ %r",
                             content, fuzzy[0])
             row = Learning(content=content, label=(label or content)[:60],
                            source_kind=source_kind, source_ref=source_ref,
-                           spawn_id=spawn_id, confidence=0.6)
+                           spawn_id=spawn_id, confidence=0.6,
+                           valid_from=datetime.utcnow())
             db.add(row)
             await db.commit()
             await db.refresh(row)

@@ -15,7 +15,7 @@ import logging
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn, UserFact
+from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.distill import DISTILL_SYSTEM
@@ -50,47 +50,43 @@ async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
     return [str(f).strip() for f in facts if str(f).strip()][:_MAX_FACTS]
 
 
-async def distill_meta_upflow(db, spawn, new_facts: list[str]) -> str | None:
+async def distill_meta_upflow(spawn, new_facts: list[str]) -> str | None:
     """After per-spawn distillation, bubble ONE cross-spawn META fact up to Arslan's
-    user profile (UserFact, source='upflow'). Meta = a user preference OR a
-    domain-ownership hint ('X 内容找 <spawn>'). Domain depth stays in the spawn; only
-    meta rises. Returns the fact written, or None. Dedup: skip if an existing UserFact
-    already covers it (simple containment). Best-effort: any exception → None."""
+    user profile. Meta = a user preference OR a domain-ownership hint
+    ('X 内容找 <spawn>'). Domain depth stays in the spawn; only meta rises.
+
+    Routes through memory.save_facts(source='upflow', provenance={"source_kind":
+    "upflow", "spawn_id": ...}) — the SAME two-phase active-only dedup + mandatory
+    provenance + temporal discipline every other fact write gets (brain-P1 Task 3,
+    BLOCKER #1: this function used to construct UserFact directly and bypass
+    save_facts entirely, so its facts landed with provenance=NULL forever and its
+    own ad-hoc containment dedup scanned superseded rows as if they were live).
+    Because save_facts owns its own session/commit, this is no longer atomic with
+    the caller's spawn.memory_facts + DistilledSession write (a deliberate,
+    already-flagged semantic upgrade — see the P1 plan's Task 3 deviation note).
+
+    Returns the fact content actually written, or None: the LLM said nothing
+    worth upflowing, OR save_facts's exact-norm dedup merge-bumped an existing
+    active row instead of inserting a new one. Best-effort: any exception → None.
+    """
     if not new_facts:
         return None
     try:
-        existing = [
-            (f.content or "").strip()
-            for f in (await db.execute(select(UserFact))).scalars().all()
-        ]
-        existing = [e for e in existing if e]
         prompt = (
             f"分身「{spawn.name}」(领域:{spawn.domain_category})刚学到的偏好:\n"
             + "\n".join(f"- {f}" for f in new_facts)
-            + "\n\n已有的用户画像(别重复):\n"
-            + ("\n".join(f"- {e}" for e in existing) if existing else "(空)")
         )
         adapter = await build_adapter(role="judgment")
         resp = await adapter.chat(system=_META_UPFLOW_SYSTEM, user=prompt)
         fact = (resp.content or "").strip().strip('"').strip("「」").strip()
         if not fact:
             return None
-        # cheap dedup guard: skip if an existing fact contains / is contained by it
-        if any(fact in e or e in fact for e in existing):
-            return None
-        row = UserFact(content=fact, source="upflow")
-        db.add(row)
-        try:
-            # flush (not commit) assigns row.id; the caller (_distill_one) owns the
-            # commit. If that later commit rolls back, this scheduled classify targets
-            # a now-nonexistent id — a safe no-op, since classify_ids matches on
-            # `WHERE id=:id AND category IS NULL` and simply finds nothing.
-            await db.flush()
-            from server.services import fact_classify
-            fact_classify.schedule(fact_classify.classify_ids([row.id]))
-        except Exception:  # noqa: BLE001 — scheduling never blocks distillation
-            pass
-        return fact
+        from server.orchestrator import memory
+        created = await memory.save_facts(
+            [{"content": fact, "source": "upflow"}],
+            provenance={"source_kind": "upflow", "spawn_id": getattr(spawn, "id", None)},
+        )
+        return created[0].content if created else None
     except Exception as exc:  # noqa: BLE001
         logger.warning("distill_meta_upflow(spawn=%s) failed: %s", getattr(spawn, "id", "?"), exc)
         return None
@@ -165,7 +161,9 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> bool:
             spawn.memory_facts = new_facts
             # Best-effort metaknowledge upflow: bubble ONE cross-spawn meta-fact up to
             # Arslan's user profile. A failure here must not break the per-spawn distill.
-            await distill_meta_upflow(db, spawn, new_facts)
+            # NOTE: save_facts (which this now routes through) owns its own session/
+            # commit, independent of this block's — see distill_meta_upflow's docstring.
+            await distill_meta_upflow(spawn, new_facts)
         db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
     return True

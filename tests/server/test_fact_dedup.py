@@ -67,7 +67,7 @@ async def test_fail_open_when_norm_raises(maker, monkeypatch):
     # save_facts: two identical auto facts — dedup broken → BOTH written
     await memory.save_facts([
         {"content": "别的偏好"}, {"content": "别的偏好"},
-    ])
+    ], provenance={"source_kind": "test"})
     assert await _count_facts(maker) == 4  # 2 manual + 2 auto, nothing dropped
 
 
@@ -88,5 +88,5 @@ async def test_fail_open_when_existing_norms_raises(maker, monkeypatch):
     assert await _count_facts(maker) == 2  # both written; store-lookup failure never blocked a write
     # (save_facts' intra-batch dedup via the local `seen` set is unaffected here —
     # only the store lookup fails — so we assert only the cross-store fail-open above.)
-    await memory.save_facts([{"content": "别的偏好"}])
+    await memory.save_facts([{"content": "别的偏好"}], provenance={"source_kind": "test"})
     assert await _count_facts(maker) == 3

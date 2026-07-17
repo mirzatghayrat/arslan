@@ -244,6 +244,9 @@ class FactOut(BaseModel):
     sensitive: bool
     category: str | None = None
     label: str | None = None
+    valid_from: datetime | None = None
+    superseded_by: int | None = None
+    provenance: dict | None = None
 
 
 class ToolOut(BaseModel):

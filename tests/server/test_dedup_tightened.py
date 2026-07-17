@@ -41,6 +41,9 @@ async def maker(tmp_path, monkeypatch):
     await engine.dispose()
 
 
+_PROV = {"source_kind": "test"}
+
+
 async def _contents(maker):
     from sqlalchemy import select
     from server.db.models import UserFact
@@ -51,18 +54,18 @@ async def _contents(maker):
 
 async def test_exact_dup_merges_and_bumps(maker):
     from server.orchestrator.memory import save_facts
-    await save_facts([{"content": "喜欢猫"}])
-    await save_facts([{"content": "喜欢猫"}])
+    await save_facts([{"content": "喜欢猫"}], provenance=_PROV)
+    await save_facts([{"content": "喜欢猫"}], provenance=_PROV)
     rows = await _contents(maker)
     assert len(rows) == 1 and rows[0][1] > 0.6            # 一行,confidence 升
 
 
 async def test_fuzzy_coexists_not_dropped(maker, caplog):
     from server.orchestrator.memory import save_facts
-    await save_facts([{"content": "喜欢猫"}])
+    await save_facts([{"content": "喜欢猫"}], provenance=_PROV)
     with caplog.at_level(logging.INFO):
-        await save_facts([{"content": "喜欢狗"}])          # 0.667 < 0.85:非近重,直接存
-        await save_facts([{"content": "喜欢猫咪们呀"}])    # 若模糊命中则并存+留痕
+        await save_facts([{"content": "喜欢狗"}], provenance=_PROV)          # 0.667 < 0.85:非近重,直接存
+        await save_facts([{"content": "喜欢猫咪们呀"}], provenance=_PROV)    # 若模糊命中则并存+留痕
     rows = await _contents(maker)
     contents = [c for c, _ in rows]
     assert "喜欢猫" in contents and "喜欢狗" in contents   # 不再丢弃
@@ -71,10 +74,10 @@ async def test_fuzzy_coexists_not_dropped(maker, caplog):
 async def test_two_phase_exact_wins_over_fuzzy_sibling(maker):
     # I1 锚定:模糊兄弟排在精确重复之前,不许误插
     from server.orchestrator.memory import save_facts
-    await save_facts([{"content": "我喜欢猫咪"}])          # id1(与目标 ratio 0.889 模糊)
-    await save_facts([{"content": "我喜欢猫"}])            # id2(精确目标;与 id1 模糊并存)
+    await save_facts([{"content": "我喜欢猫咪"}], provenance=_PROV)          # id1(与目标 ratio 0.889 模糊)
+    await save_facts([{"content": "我喜欢猫"}], provenance=_PROV)            # id2(精确目标;与 id1 模糊并存)
     n_before = len(await _contents(maker))
-    await save_facts([{"content": "我喜欢猫"}])            # 再写:必须与 id2 精确合并
+    await save_facts([{"content": "我喜欢猫"}], provenance=_PROV)            # 再写:必须与 id2 精确合并
     rows = await _contents(maker)
     assert len(rows) == n_before                           # 不新增行
     assert any(c == "我喜欢猫" and conf > 0.6 for c, conf in rows)  # id2 被 bump

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 
 from sqlalchemy import select
 
@@ -184,15 +185,26 @@ async def _summarize(adapter, text: str) -> str:  # noqa: ANN001
 
 # ---- Scope 3: long-term facts ----
 
-async def save_facts(facts: list[dict]) -> list[UserFact]:
+async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
     """Persist auto-extracted facts; return the created rows.
+
+    `provenance` is MANDATORY (programmer guard, not the dedup's fail-open
+    discipline — see below): every write must declare where it came from
+    ({"source_kind": ..., ...}). Callers: arslan.py's router-extraction path
+    ({"source_kind": "router", "conversation_id": <cid>}) and
+    distill_service.distill_meta_upflow ({"source_kind": "upflow", "spawn_id": <id>}).
 
     Write-time dedup is two-phase: exact-normalized duplicates merge (bump the
     existing fact's confidence, don't append); fuzzy near-dups coexist (both
-    rows kept, logged) pending a P1 supersede/proposal flow. Fail-open: any
-    failure in either dedup check is swallowed and treated as no-dup — a
-    user's fact must always get saved.
+    rows kept, logged) pending a P1 supersede/proposal flow. Both scanners are
+    active-only (superseded_by IS NULL) — a new write must never collide with a
+    dead row. Fail-open: any failure in either dedup check is swallowed and
+    treated as no-dup — a user's fact must always get saved. This fail-open
+    discipline is SEPARATE from the provenance guard above: a missing/empty
+    provenance is a programmer error and always raises, dedup failures never do.
     """
+    if not provenance:
+        raise ValueError("save_facts: provenance is mandatory (programmer guard)")
     created: list[UserFact] = []
     if not facts:
         return created
@@ -205,7 +217,7 @@ async def save_facts(facts: list[dict]) -> list[UserFact]:
             if not content:
                 continue
             # P0-b 两阶段:精确归一相等 → merge-bump(真重复);模糊命中 → 并存+留痕
-            # (宁可暂存不可错杀;SUPERSEDE/提案是 P1)。两阶段皆 fail-open。
+            # (宁可暂存不可错杀;SUPERSEDE/提案是 P1)。两阶段皆 fail-open+活跃-only。
             exact = await exact_norm_dup(db, content)
             if exact is not None:
                 exact.confidence = min(1.0, (exact.confidence or 0.6) + 0.1)
@@ -219,6 +231,8 @@ async def save_facts(facts: list[dict]) -> list[UserFact]:
                 source=f.get("source", "auto"),
                 sensitive=bool(f.get("sensitive", False)),
                 confidence=0.9 if f.get("source") == "manual" else 0.6,
+                provenance=dict(provenance),
+                valid_from=datetime.utcnow(),
             )
             db.add(row)
             created.append(row)
@@ -246,16 +260,24 @@ async def existing_norms_safe() -> set[str]:
         return set()
 
 
-async def list_facts() -> list[UserFact]:
+async def list_facts(*, include_superseded: bool = False) -> list[UserFact]:
+    """Active-only by default (superseded_by IS NULL) — the P0 single throat: every
+    injection site renders facts via facts_text() -> list_facts(), so this default
+    makes all of them active-only for free. include_superseded=True is for the
+    Settings/Memory admin view (audit trail)."""
     async with db_session.AsyncSessionLocal() as db:
-        rows = await db.execute(select(UserFact).order_by(UserFact.id))
+        stmt = select(UserFact).order_by(UserFact.id)
+        if not include_superseded:
+            stmt = stmt.where(UserFact.superseded_by.is_(None))
+        rows = await db.execute(stmt)
         return list(rows.scalars().all())
 
 
 async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
     """Add a user-authored fact (source='manual').
 
-    Write-time dedup (exact-normalized): if a fact with the same normalized
+    Write-time dedup (exact-normalized, active-only — superseded rows never
+    collide with a new write): if an ACTIVE fact with the same normalized
     content already exists, return that existing row instead of inserting a
     duplicate. Fail-open: any exception in the dedup check is swallowed and
     falls through to a normal insert — a user's fact must always get saved.
@@ -270,7 +292,9 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
         target = norm(text)
         if target in await existing_norms_safe():
             async with db_session.AsyncSessionLocal() as db:
-                rows = await db.execute(select(UserFact).order_by(UserFact.id))
+                rows = await db.execute(
+                    select(UserFact).where(UserFact.superseded_by.is_(None)).order_by(UserFact.id)
+                )
                 for row in rows.scalars().all():
                     if norm(row.content) == target:
                         return row
@@ -278,7 +302,14 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
         logger.warning("add_manual_fact: dedup check failed; proceeding with insert", exc_info=True)
 
     async with db_session.AsyncSessionLocal() as db:
-        row = UserFact(content=text, source="manual", sensitive=bool(sensitive))
+        row = UserFact(
+            content=text,
+            source="manual",
+            sensitive=bool(sensitive),
+            confidence=0.9,  # debt#5 fix: manual facts were previously unset (NULL)
+            provenance={"source_kind": "manual", "via": "api"},
+            valid_from=datetime.utcnow(),
+        )
         db.add(row)
         await db.commit()
         await db.refresh(row)
@@ -291,7 +322,13 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
 
 
 async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None) -> UserFact | None:
-    """Edit a fact's content/sensitivity. Returns None if not found."""
+    """Edit a fact's content/sensitivity. Returns None if not found.
+
+    An edit merges `edited_by_user_at` into the row's provenance dict (rather than
+    replacing it) — an auto-extracted fact a human later hand-edits becomes
+    distinguishable from a still-pristine auto fact, without losing its original
+    source_kind/spawn_id/conversation_id.
+    """
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(UserFact, fact_id)
         if row is None:
@@ -300,6 +337,10 @@ async def update_fact(fact_id: int, content: str | None = None, sensitive: bool 
             row.content = content.strip()
         if sensitive is not None:
             row.sensitive = bool(sensitive)
+        if content is not None or sensitive is not None:
+            prov = dict(row.provenance or {})
+            prov["edited_by_user_at"] = datetime.utcnow().isoformat()
+            row.provenance = prov
         await db.commit()
         await db.refresh(row)
         return row

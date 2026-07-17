@@ -551,7 +551,10 @@ async def handle_user_message(
 
     # 3. persist + announce extracted facts (transparency note)
     if result.new_facts:
-        created = await memory.save_facts(result.new_facts)
+        created = await memory.save_facts(
+            result.new_facts,
+            provenance={"source_kind": "router", "conversation_id": conversation_id},
+        )
         for fact in created:
             emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
         if created:

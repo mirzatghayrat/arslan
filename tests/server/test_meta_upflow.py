@@ -47,9 +47,7 @@ async def test_upflow_writes_userfact(maker, monkeypatch):
 
     async with maker() as db:
         spawn = await db.get(Spawn, 3)
-        written = await distill_service.distill_meta_upflow(
-            db, spawn, ["输出更简短", "标注信息来源"])
-        await db.commit()
+    written = await distill_service.distill_meta_upflow(spawn, ["输出更简短", "标注信息来源"])
     async with maker() as s:
         rows = (await s.execute(select(UserFact))).scalars().all()
 
@@ -57,6 +55,10 @@ async def test_upflow_writes_userfact(maker, monkeypatch):
     assert len(rows) == 1
     assert rows[0].content == "用户偏口语、忌硬广"
     assert rows[0].source == "upflow"
+    # brain-P1 Task 3 (BLOCKER #1): now routed through save_facts, so it carries
+    # mandatory provenance + valid_from like every other fact write.
+    assert rows[0].provenance == {"source_kind": "upflow", "spawn_id": 3}
+    assert rows[0].valid_from is not None
 
 
 async def test_upflow_empty_reply_writes_nothing(maker, monkeypatch):
@@ -65,8 +67,7 @@ async def test_upflow_empty_reply_writes_nothing(maker, monkeypatch):
 
     async with maker() as db:
         spawn = await db.get(Spawn, 3)
-        written = await distill_service.distill_meta_upflow(db, spawn, ["细节偏好"])
-        await db.commit()
+    written = await distill_service.distill_meta_upflow(spawn, ["细节偏好"])
     async with maker() as s:
         rows = (await s.execute(select(UserFact))).scalars().all()
 
@@ -74,22 +75,25 @@ async def test_upflow_empty_reply_writes_nothing(maker, monkeypatch):
     assert rows == []
 
 
-async def test_upflow_dedup_skips_existing(maker, monkeypatch):
+async def test_upflow_exact_dup_of_existing_merges_not_written_again(maker, monkeypatch):
+    """brain-P1 Task 3: distill_meta_upflow's own ad-hoc containment dedup (which
+    scanned ALL rows, including superseded ones — the BLOCKER #2 bug) is gone;
+    dedup is now save_facts's disciplined two-phase (exact-norm merge / fuzzy
+    coexist), active-only. An EXACT (norm) match merge-bumps rather than
+    inserting a duplicate row."""
     from server.services import distill_service
-    _stub_adapter(monkeypatch, "用户偏口语")
+    _stub_adapter(monkeypatch, "用户偏口语、忌硬广")
 
     async with maker() as s:
         s.add(UserFact(content="用户偏口语、忌硬广", source="manual"))
         await s.commit()
     async with maker() as db:
         spawn = await db.get(Spawn, 3)
-        written = await distill_service.distill_meta_upflow(db, spawn, ["偏好"])
-        await db.commit()
+    written = await distill_service.distill_meta_upflow(spawn, ["偏好"])
     async with maker() as s:
         rows = (await s.execute(select(UserFact))).scalars().all()
 
-    # "用户偏口语" is contained in the existing fact → dedup, not written again
-    assert written is None
+    assert written is None  # merge-bumped, not appended as a new row
     assert len(rows) == 1
 
 
@@ -105,8 +109,7 @@ async def test_upflow_empty_new_facts_noop(maker, monkeypatch):
 
     async with maker() as db:
         spawn = await db.get(Spawn, 3)
-        written = await distill_service.distill_meta_upflow(db, spawn, [])
-        await db.commit()
+    written = await distill_service.distill_meta_upflow(spawn, [])
     async with maker() as s:
         rows = (await s.execute(select(UserFact))).scalars().all()
 

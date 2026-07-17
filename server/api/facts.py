@@ -18,12 +18,15 @@ def _to_out(row) -> FactOut:  # noqa: ANN001
         sensitive=row.sensitive,
         category=row.category,
         label=row.label,
+        valid_from=row.valid_from,
+        superseded_by=row.superseded_by,
+        provenance=row.provenance,
     )
 
 
 @router.get("/facts", response_model=list[FactOut])
-async def list_facts() -> list[FactOut]:
-    return [_to_out(r) for r in await memory.list_facts()]
+async def list_facts(include_superseded: bool = False) -> list[FactOut]:
+    return [_to_out(r) for r in await memory.list_facts(include_superseded=include_superseded)]
 
 
 @router.post("/facts", response_model=FactOut, status_code=201)

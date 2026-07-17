@@ -113,7 +113,8 @@ async def _learnings_route(db, query: str, spawn_id: int | None) -> dict[int, st
         scope = "l.spawn_id IS NULL" if spawn_id is None else "(l.spawn_id IS NULL OR l.spawn_id = :sid)"
         rows = (await db.execute(sa_text(
             "SELECT l.id, l.content FROM learnings_fts f JOIN learnings l ON l.id = f.rowid "
-            f"WHERE f.text MATCH :q AND {scope} ORDER BY rank LIMIT :lim"),
+            f"WHERE f.text MATCH :q AND l.superseded_by IS NULL AND {scope} "
+            "ORDER BY rank LIMIT :lim"),
             {"q": match, "sid": spawn_id, "lim": CANDIDATES})).all()
         return {r[0]: r[1] for r in rows}
     except Exception as exc:  # noqa: BLE001 — learnings route never fatal
