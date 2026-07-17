@@ -11,7 +11,7 @@ from sqlalchemy import text as sa_text
 
 from server.db import session as db_session
 from server.db.models import Learning
-from server.services.fact_dedup import similar
+from server.services.fact_dedup import norm, similar
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,13 @@ async def _write(content: str, label: str, source_kind: str, source_ref: dict,
     try:
         async with db_session.AsyncSessionLocal() as db:
             existing = (await db.execute(sa_text("SELECT content FROM learnings"))).all()
-            if any(similar(content, e[0]) for e in existing):
-                return 0
+            target = norm(content)
+            if any(norm(e[0]) == target for e in existing):
+                return 0                                    # 精确重复:跳过(不变)
+            fuzzy = [e[0] for e in existing if similar(content, e[0])]
+            if fuzzy:
+                logger.info("learning: near-dup coexist (P1 will propose supersede): %r ~ %r",
+                            content, fuzzy[0])
             row = Learning(content=content, label=(label or content)[:60],
                            source_kind=source_kind, source_ref=source_ref,
                            spawn_id=spawn_id, confidence=0.6)

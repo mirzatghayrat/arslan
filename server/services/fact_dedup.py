@@ -12,7 +12,8 @@ from server.db.models import UserFact
 
 logger = logging.getLogger(__name__)
 
-_SIM_THRESHOLD = 0.6
+_SIM_THRESHOLD = 0.85          # 0.6 → 0.85:短 CJK 事实(喜欢猫/喜欢狗=0.667)不再误撞
+_MIN_CONTAINMENT_LEN = 8       # containment 仅当两串均 >= 8 字符(短串禁用)
 
 
 def norm(content: str) -> str:
@@ -28,21 +29,43 @@ async def existing_norms() -> set[str]:
 
 
 def similar(a: str, b: str) -> bool:
-    """Deterministic near-dup: exact-norm equal, OR one normalized string contains
-    the other, OR difflib ratio >= threshold. difflib is used (not token overlap)
-    because it works across CJK — Chinese runs share no whole-run tokens even when
-    the sentences are near-identical. No embeddings (v1)."""
+    """Deterministic near-dup: exact-norm equal; containment only when BOTH sides
+    >= _MIN_CONTAINMENT_LEN chars; or difflib ratio >= _SIM_THRESHOLD. difflib is
+    used (not token overlap) because it works across CJK. No embeddings (v1)."""
     na, nb = norm(a), norm(b)
     if not na or not nb:
         return False
-    if na == nb or na in nb or nb in na:
+    if na == nb:
+        return True
+    if min(len(na), len(nb)) >= _MIN_CONTAINMENT_LEN and (na in nb or nb in na):
         return True
     return difflib.SequenceMatcher(None, na, nb).ratio() >= _SIM_THRESHOLD
 
 
+async def exact_norm_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
+    """Return an existing fact whose normalized content EXACTLY equals `content`'s.
+    First phase of the two-phase write check (exact→merge / fuzzy→coexist).
+    Fail-open: any error → None (the write proceeds)."""
+    try:
+        target = norm(content)
+        rows = (await db.execute(select(UserFact))).scalars().all()
+        for row in rows:
+            if norm(row.content) == target:
+                return row
+        return None
+    except Exception:  # noqa: BLE001 — fail-open
+        logger.warning("exact_norm_dup failed; treating as no-dup", exc_info=True)
+        return None
+
+
 async def find_near_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
-    """Return an existing fact that is a near-duplicate of `content`, else None.
-    Fail-open: any error → None (treated as no dup, so the write proceeds)."""
+    """Return an existing fact that is a near-duplicate (exact OR fuzzy) of
+    `content`, else None. Fail-open: any error → None (treated as no dup, so the
+    write proceeds). NOTE: this returns the FIRST similar row in scan order,
+    which may be a fuzzy sibling even when an exact-norm dup exists elsewhere in
+    the table — callers that need to distinguish exact-merge from fuzzy-coexist
+    must run `exact_norm_dup` as an independent first phase, not re-derive
+    exactness from this call's result (see memory.save_facts / two-phase)."""
     try:
         rows = (await db.execute(select(UserFact))).scalars().all()
         for row in rows:

@@ -187,28 +187,33 @@ async def _summarize(adapter, text: str) -> str:  # noqa: ANN001
 async def save_facts(facts: list[dict]) -> list[UserFact]:
     """Persist auto-extracted facts; return the created rows.
 
-    Write-time dedup (exact-normalized) skips facts that already exist, within
-    the batch and against the existing store. Fail-open: any failure computing
-    the existing-norm set is swallowed and treated as empty (i.e. dedup is
-    skipped, not the write) — a user's fact must always get saved.
+    Write-time dedup is two-phase: exact-normalized duplicates merge (bump the
+    existing fact's confidence, don't append); fuzzy near-dups coexist (both
+    rows kept, logged) pending a P1 supersede/proposal flow. Fail-open: any
+    failure in either dedup check is swallowed and treated as no-dup — a
+    user's fact must always get saved.
     """
     created: list[UserFact] = []
     if not facts:
         return created
 
-    from server.services.fact_dedup import find_near_dup
+    from server.services.fact_dedup import exact_norm_dup, find_near_dup
 
     async with db_session.AsyncSessionLocal() as db:
         for f in facts:
             content = (f.get("content") or "").strip()
             if not content:
                 continue
-            # Near-dup → merge (bump the existing fact's confidence), don't append.
-            # This collapses the "广告科技 ×3 / OKX 模板 ×4" duplication at the source.
-            dup = await find_near_dup(db, content)
-            if dup is not None:
-                dup.confidence = min(1.0, (dup.confidence or 0.6) + 0.1)
+            # P0-b 两阶段:精确归一相等 → merge-bump(真重复);模糊命中 → 并存+留痕
+            # (宁可暂存不可错杀;SUPERSEDE/提案是 P1)。两阶段皆 fail-open。
+            exact = await exact_norm_dup(db, content)
+            if exact is not None:
+                exact.confidence = min(1.0, (exact.confidence or 0.6) + 0.1)
                 continue
+            fuzzy = await find_near_dup(db, content)
+            if fuzzy is not None:
+                logger.info("save_facts: near-dup coexist (P1 will propose supersede): %r ~ %r",
+                            content, fuzzy.content)
             row = UserFact(
                 content=content,
                 source=f.get("source", "auto"),
