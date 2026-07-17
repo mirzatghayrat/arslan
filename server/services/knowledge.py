@@ -7,6 +7,7 @@ leaving exactly today's FTS5 behavior."""
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 from sqlalchemy import bindparam, text as sa_text
@@ -25,6 +26,12 @@ _TOKEN_RE = re.compile(r"[0-9A-Za-z]+|[一-鿿]+")
 
 RRF_K = 60          # standard reciprocal-rank-fusion constant
 CANDIDATES = 20     # per-route candidate pool before fusion
+
+# Recall-biased default: 4 BYOK providers have different similarity scales,
+# openai-3-small true-relevant pairs commonly land 0.15–0.30. Better to let a
+# low-quality neighbor through (rerank backstops it) than silently kill a real
+# one. env-tunable, not precision-tuned.
+_MIN_COSINE = float(os.environ.get("ARSLAN_MIN_COSINE", "0.15"))
 
 
 def _safe_match_query(query: str) -> str:
@@ -48,8 +55,17 @@ def rrf_merge(rankings: list[list[int]], *, k: int) -> list[int]:
 
 
 def rerank(query: str, candidates: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Re-ranking seam (cross-encoder / LLM later). v1: passthrough."""
-    return candidates
+    """轻量确定性重排:按 query 词元(_TOKEN_RE,CJK-run aware)与候选文本的
+    重叠数降序;稳定排序 → 同分保持上游 RRF 顺序。非语义精排(cross-encoder/LLM
+    是未来);纯 CJK 无共享分隔 run 时安全退回 RRF 原序。零依赖、零网络。"""
+    qtokens = {t.lower() for t in _TOKEN_RE.findall(query or "")}
+    if not qtokens or not candidates:
+        return candidates
+
+    def _overlap(item: tuple[str, str]) -> int:
+        return len(qtokens & {t.lower() for t in _TOKEN_RE.findall(item[1] or "")})
+
+    return sorted(candidates, key=lambda c: -_overlap(c))
 
 
 def _scope_clause(spawn_id: int | None, coll_ids: list[int]) -> tuple[str, dict]:
@@ -147,8 +163,12 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
         q = np.array(qvec, dtype=np.float32)
         sims = mat @ q / (np.linalg.norm(mat, axis=1) * (np.linalg.norm(q) or 1e-9) + 1e-9)
         order = np.argsort(-sims, kind="stable")[:CANDIDATES]
-        return ([rows[i][0] for i in order],
-                {rows[i][0]: (rows[i][1], rows[i][2], rows[i][4], rows[i][5]) for i in order})
+        kept = [i for i in order if sims[i] >= _MIN_COSINE]
+        if len(kept) < len(order):
+            logger.debug("vector route: dropped %d/%d below _MIN_COSINE=%.2f",
+                         len(order) - len(kept), len(order), _MIN_COSINE)
+        return ([rows[i][0] for i in kept],
+                {rows[i][0]: (rows[i][1], rows[i][2], rows[i][4], rows[i][5]) for i in kept})
     except Exception as exc:  # noqa: BLE001 — vector route is never fatal
         logger.warning("vector route failed (non-fatal): %s", exc)
         return [], {}
