@@ -17,7 +17,7 @@ _SECTION = re.compile(r"^#{1,3}\s*(identity|mission|rules?|deliverables?|workflo
                       re.IGNORECASE | re.MULTILINE)
 
 # Word tokens: alphanumeric runs or CJK chars. Mirrors knowledge.py's safe-FTS helper.
-_TOKEN = re.compile(r"[A-Za-z0-9]+|[一-鿿]")
+_TOKEN = re.compile(r"[A-Za-z0-9]+|[一-鿿]+")
 
 # Top-level dirs in agency-agents that are NOT persona divisions (tooling/docs/examples).
 _NON_PERSONA_DIRS = {".github", "scripts", "examples", "docs", "tests"}
