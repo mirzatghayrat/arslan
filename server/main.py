@@ -231,7 +231,15 @@ async def lifespan(app: FastAPI):
         scheduler.start()
     except Exception as exc:  # noqa: BLE001 — scheduler start must never block boot
         logger.warning("scheduler start failed (non-fatal): %s", exc)
-    yield
+
+    # Drive the inbound MCP server's streamable-http session manager for the app's
+    # lifetime (Nail 1: a mounted sub-app's lifespan is NOT auto-run by Starlette).
+    mcp_server = getattr(app.state, "mcp_server", None)
+    if mcp_server is not None:
+        async with mcp_server.session_manager.run():
+            yield
+    else:  # defensive: app built without the mount
+        yield
 
     try:
         from server.services import evolution_watcher as _evo_watcher
@@ -396,6 +404,18 @@ def create_app() -> FastAPI:
     from server.api import skills as skills_api
 
     app.include_router(skills_api.router, prefix="/api/v1")
+
+    # --- S4.1-C inbound MCP server: off-by-default, dedicated-token-gated mount ---
+    # Mounted BEFORE the SPA catch-all so /mcp-server is not swallowed. The gate is
+    # fail-closed & independent of require_auth; session_manager.run() is driven from
+    # lifespan() below (Starlette does not auto-run a mounted sub-app's lifespan).
+    from server.mcp_server.gate import McpServerGate
+    from server.mcp_server.server import build_mcp_server
+
+    mcp_server = build_mcp_server()
+    app.state.mcp_server = mcp_server
+    _mcp_app = mcp_server.streamable_http_app()  # lazily creates session_manager
+    app.mount("/mcp-server", McpServerGate(_mcp_app))
 
     @app.get("/api/v1/_authcheck", dependencies=[Depends(require_auth)])
     async def _authcheck() -> dict[str, bool]:
