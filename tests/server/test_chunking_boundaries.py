@@ -28,16 +28,32 @@ def test_progress_floor_terminates_high_overlap():
 
 
 def test_coverage_no_text_lost():
+    # Prove the KB's load-bearing "no text lost" invariant: chunk spans are ordered,
+    # every consecutive pair overlaps-or-touches (no gap), and coverage reaches
+    # end-of-text. A tail-only check (e.g. text.endswith(chunks[-1])) would miss a
+    # mid-text gap, so we walk each chunk's true span in the source.
+    #
+    # Source is whitespace-free so chunk.strip() can't shift indices. `text.index`
+    # is lower-bounded at each chunk's minimum possible start (prev_end - overlap):
+    # the source is highly repetitive, so an unbounded search returns an earlier
+    # false match and understates coverage. The bound never skips the true span
+    # because start_{i+1} = max(start_i + 1, end_i - overlap) >= end_i - overlap.
+    # Verified this FAILS if any chunk is dropped (interior gap or short coverage).
+    #
+    # (The brief's original literal assertion built its target from a period-STRIPPED
+    # copy of `text` but tested membership in an un-stripped chunk — unsatisfiable by
+    # any non-corrupting chunker; this contiguous-span check replaces it.)
     text = "甲乙丙。" * 300
-    chunks = chunk_text(text, size=400, overlap=50)
-    # NOTE: brief's literal assertion (`text.replace("。", "")[-6:] in chunks[-1]`)
-    # builds its target from a period-STRIPPED copy of `text` but checks membership
-    # in a non-stripped chunk — since every "甲乙丙" unit is separated by "。" in the
-    # source, that 6-char run never occurs anywhere in `text` itself (verified:
-    # `target in text` is False), so it's unsatisfiable by any non-corrupting
-    # chunker. Testing the actual intent instead: the last chunk reaches the true
-    # end of `text` with nothing dropped.
-    assert text.endswith(chunks[-1])                         # 尾部内容在最后一块,覆盖到文末
+    overlap = 50
+    chunks = chunk_text(text, size=400, overlap=overlap)
+    prev_end = 0
+    search_from = 0
+    for c in chunks:
+        start = text.index(c, search_from)                   # true span, lower-bounded
+        assert start <= prev_end, f"gap before chunk at {start}, prev ended {prev_end}"
+        prev_end = start + len(c)                             # no whitespace => strip is a no-op
+        search_from = max(0, prev_end - overlap)              # next chunk's earliest start
+    assert prev_end == len(text)                             # contiguous coverage to end-of-text
 
 
 def test_persona_seed_cjk_run_tokens():
