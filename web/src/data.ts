@@ -17,5 +17,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
   shellConfirmPolicy: 'ask_all',
-  runDebugRetentionDays: 30
+  runDebugRetentionDays: 30,
+  mcpServerEnabled: false
 };

@@ -151,6 +151,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
         spawnMode={localSettings.spawnMode}
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
+        mcpServerEnabled={localSettings.mcpServerEnabled ?? false}
+        onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
       />
     ),
   };

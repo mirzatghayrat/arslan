@@ -39,6 +39,7 @@ const base: AppSettings = {
   shellConfirmPolicy: "ask_all",
   embeddingConfigId: "",
   runDebugRetentionDays: 30,
+  mcpServerEnabled: false,
 };
 
 /**

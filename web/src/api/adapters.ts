@@ -52,6 +52,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
     embeddingConfigId: backend.embedding_config_id ?? "",
     runDebugRetentionDays: backend.run_debug_retention_days ?? 30,
+    mcpServerEnabled: backend.mcp_server_enabled ?? false,
   };
 }
 
@@ -72,6 +73,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     shell_confirm_policy: ui.shellConfirmPolicy,
     embedding_config_id: ui.embeddingConfigId ?? "",
     run_debug_retention_days: ui.runDebugRetentionDays ?? 30,
+    mcp_server_enabled: ui.mcpServerEnabled,
   };
 
   // Only send the search key if the user entered something new (non-empty, non-masked).

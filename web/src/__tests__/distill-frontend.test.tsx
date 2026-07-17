@@ -69,6 +69,7 @@ const defaultSettings: AppSettings = {
   distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all",
+  mcpServerEnabled: false,
 };
 
 const providers: ProviderOption[] = [

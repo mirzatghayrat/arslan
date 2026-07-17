@@ -255,6 +255,9 @@ export interface AppSettings {
   embedding_config_id?: string;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
   run_debug_retention_days?: number;
+  /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
+   *  to external MCP clients like Claude Code/Codex) is enabled. Default off. */
+  mcp_server_enabled?: boolean;
 }
 
 export interface ProviderOption {

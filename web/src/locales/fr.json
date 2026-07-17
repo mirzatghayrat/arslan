@@ -407,6 +407,13 @@
     "labelShellConfirmPolicy": "Confirm policy",
     "shellPolicyAskAll": "Confirm every command",
     "shellPolicyAskRisky": "Confirm risky commands only (auto-run read-only)",
+    "labelMcpServer": "Serveur MCP (entrant)",
+    "mcpServerDesc": "Permet aux clients MCP externes (Claude Code, Codex) d'appeler des outils en lecture seule. Désactivé par défaut ; nécessite un jeton MCP généré. Localhost uniquement.",
+    "mcpToken": {
+      "generate": "Générer un jeton",
+      "generating": "Génération…",
+      "generateError": "La génération n'est possible qu'en local."
+    },
     "accessToken": {
       "section": "Jeton d'accès",
       "checking": "Vérification de l'état du jeton…",

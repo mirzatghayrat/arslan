@@ -407,6 +407,13 @@
     "labelShellConfirmPolicy": "确认策略",
     "shellPolicyAskAll": "每条命令都确认",
     "shellPolicyAskRisky": "仅高风险命令确认(只读自动跑)",
+    "labelMcpServer": "MCP 服务器（入站）",
+    "mcpServerDesc": "允许外部 MCP 客户端（Claude Code、Codex）调用只读工具。默认关闭；需生成 MCP 令牌。仅限本机。",
+    "mcpToken": {
+      "generate": "生成令牌",
+      "generating": "正在生成…",
+      "generateError": "仅本机可生成。"
+    },
     "accessToken": {
       "section": "访问令牌",
       "checking": "正在检查令牌状态…",

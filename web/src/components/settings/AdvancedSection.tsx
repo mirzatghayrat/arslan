@@ -20,6 +20,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sliders } from 'lucide-react';
 import Select from '../Select';
+import McpTokenControl from './McpTokenControl';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
 export type SpawnMode = 'auto' | 'interactive' | 'strict';
@@ -37,6 +38,9 @@ export interface AdvancedSectionProps {
   /** How sub-agents are created. */
   spawnMode: SpawnMode;
   onSpawnModeChange: (value: SpawnMode) => void;
+  /** Inbound MCP server — expose read-only tools to external MCP clients. */
+  mcpServerEnabled: boolean;
+  onMcpServerChange: (value: boolean) => void;
 }
 
 export default function AdvancedSection({
@@ -48,6 +52,8 @@ export default function AdvancedSection({
   onShellConfirmPolicyChange,
   spawnMode,
   onSpawnModeChange,
+  mcpServerEnabled,
+  onMcpServerChange,
 }: AdvancedSectionProps) {
   const { t } = useTranslation();
 
@@ -140,6 +146,27 @@ export default function AdvancedSection({
             ariaLabel={t('settings.labelSpawnMode')}
           />
         </div>
+
+        {/* Separation divider */}
+        <div className="h-[1px] bg-border/40"></div>
+
+        {/* Inbound MCP server — expose read-only metadata tools to external MCP clients (default off) */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelMcpServer')}</h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.mcpServerDesc')}
+            </p>
+          </div>
+          <input
+            id="settings-mcp-server-toggle"
+            type="checkbox"
+            checked={mcpServerEnabled}
+            onChange={(e) => onMcpServerChange(e.target.checked)}
+            className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
+        </div>
+        <McpTokenControl />
       </div>
     </div>
   );

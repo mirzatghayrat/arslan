@@ -68,7 +68,10 @@ describe("locale parity", () => {
     // 904 → 908: provider-key-input fix added the saved-config key-field keys
     // (settings.keyEnter/keySavedReplace/keyReenter/keyUndecryptableReason —
     // fresh-entry placeholder states + the honest undecryptable reason, 4 keys).
-    expect(enKeys).toHaveLength(908);
+    // 908 → 913: Task 10 (S4.1-C) added the inbound-MCP-server toggle +
+    // generate-token control keys (settings.labelMcpServer/mcpServerDesc +
+    // settings.mcpToken.generate/generating/generateError — 5 keys).
+    expect(enKeys).toHaveLength(913);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

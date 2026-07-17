@@ -32,6 +32,8 @@ function setup(overrides: Partial<Props> = {}) {
     onShellConfirmPolicyChange: vi.fn(),
     spawnMode: "auto",
     onSpawnModeChange: vi.fn(),
+    mcpServerEnabled: false,
+    onMcpServerChange: vi.fn(),
     ...overrides,
   };
   render(<AdvancedSection {...props} />);

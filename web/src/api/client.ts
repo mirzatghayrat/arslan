@@ -187,6 +187,9 @@ export const api = {
   /** Rotate the access token (localhost-gated). Returns the freshly minted token. */
   resetAccessToken: () =>
     request<{ token: string }>("/settings/access-token/reset", { method: "POST" }),
+  /** Generate/rotate the dedicated MCP-server token (localhost-gated). Returns it once. */
+  generateMcpToken: () =>
+    request<{ token: string }>("/settings/mcp-token/generate", { method: "POST" }),
   listProviders: () => request<ProviderOption[]>("/settings/providers"),
   listSearchProviders: () => request<string[]>("/settings/search-providers"),
   updateSettings: (body: Partial<AppSettings>) =>

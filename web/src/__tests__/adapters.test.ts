@@ -108,6 +108,7 @@ describe("toBackendSettings", () => {
     distillOnSessionEnd: true,
     orchestratorShellEnabled: false,
     shellConfirmPolicy: "ask_all",
+    mcpServerEnabled: false,
   };
 
   it("omits search_api_key when empty", () => {
