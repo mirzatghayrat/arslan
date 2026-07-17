@@ -139,6 +139,9 @@ class UserFact(Base):
     label = Column(String(40), nullable=True)
     confidence = Column(Float, default=0.6)
     created_at = Column(DateTime, default=datetime.utcnow)
+    valid_from = Column(DateTime, nullable=True)  # 生效时刻;NULL=自古有效(纯审计字段,不参与过滤)
+    superseded_by = Column(Integer, nullable=True, index=True)  # 指向取代者 user_facts.id(约定引用)
+    provenance = Column(JSON, nullable=True)  # {source_kind, spawn_id?, conversation_id?, via?...};写入层强制,列级放宽供 legacy backfill
 
 
 class RouterDecision(Base):
@@ -552,7 +555,11 @@ class ConversationEvent(Base):
 
 class Learning(Base):
     """心得 (know-how) distilled from concrete signals (a distill event, a user
-    correction, or a repeated run pattern). Always carries a traceable source_ref."""
+    correction, or a repeated run pattern). Always carries a traceable source_ref.
+
+    NOTE: provenance ≡ source_kind + source_ref(写入即强制)。不要再加 provenance 列——
+    那会造出双真相源;时态概念的 provenance 在本表由这两列承载(P1 spec 定档)。
+    """
 
     __tablename__ = "learnings"
 
@@ -564,6 +571,26 @@ class Learning(Base):
     spawn_id = Column(Integer, nullable=True, index=True)
     confidence = Column(Float, default=0.6)
     created_at = Column(DateTime, default=datetime.utcnow)
+    valid_from = Column(DateTime, nullable=True)
+    superseded_by = Column(Integer, nullable=True, index=True)
+
+
+class MemoryProposal(Base):
+    """记忆软标记提案:规则拿不准的疑似取代/矛盾对——并存 + 人工裁决(P1 spec)。
+    整理层后续把它接进可视 inbox;本表只承载 pending→accepted|dismissed 最小状态机。"""
+
+    __tablename__ = "memory_proposals"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(30), nullable=False, default="supersede_suspect")
+    table_name = Column(String(20), nullable=False)     # "user_facts" | "learnings"
+    new_id = Column(Integer, nullable=False)
+    old_id = Column(Integer, nullable=False)
+    reason = Column(Text, nullable=False, default="")
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    provenance = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
 
 
 class Note(Base):
