@@ -1,4 +1,4 @@
-from server.mcp_server.server import build_mcp_server
+from server.mcp_server.server import LOOPBACK_HOSTS, build_mcp_server
 
 
 def test_transport_security_is_loopback_and_rebinding_on():
@@ -6,7 +6,7 @@ def test_transport_security_is_loopback_and_rebinding_on():
     ts = mcp.settings.transport_security
     assert ts.enable_dns_rebinding_protection is True
     assert ts.allowed_origins == []                 # any browser Origin rejected
-    assert "127.0.0.1" in ts.allowed_hosts and "localhost:*" in ts.allowed_hosts
+    assert ts.allowed_hosts == LOOPBACK_HOSTS
     assert mcp.settings.stateless_http is True and mcp.settings.json_response is True
 
 
