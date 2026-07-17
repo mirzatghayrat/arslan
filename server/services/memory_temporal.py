@@ -88,13 +88,18 @@ async def execute_supersede(
         async with db_session.AsyncSessionLocal() as session:
             await _apply(session)
             await session.commit()
+        logger.info(
+            "supersede: %s %d -> superseded_by %d (committed, provenance=%s)",
+            table, old_id, new_id, provenance.get("source_kind", "?"),
+        )
     else:
         await _apply(db)
-
-    logger.info(
-        "supersede: %s %d -> superseded_by %d (provenance=%s)",
-        table, old_id, new_id, provenance.get("source_kind", "?"),
-    )
+        # Honesty-in-logging: in db= mode the caller owns the commit — the write is only
+        # staged here; a Task-4 batch rollback would discard it. Do NOT claim "committed".
+        logger.info(
+            "supersede: %s %d -> superseded_by %d (staged, caller commits, provenance=%s)",
+            table, old_id, new_id, provenance.get("source_kind", "?"),
+        )
 
 
 async def undo_supersede(table: str, old_id: int, *, provenance: dict) -> None:
@@ -110,7 +115,7 @@ async def undo_supersede(table: str, old_id: int, *, provenance: dict) -> None:
         row.superseded_by = None
         await db.commit()
     logger.info(
-        "undo_supersede: %s %d restored to active (provenance=%s)",
+        "undo_supersede: %s %d restored to active (committed, provenance=%s)",
         table, old_id, provenance.get("source_kind", "?"),
     )
 

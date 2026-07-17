@@ -140,10 +140,10 @@ async def test_cross_supersede_after_a_supersedes_b_is_rejected(maker):
 
     with pytest.raises(SupersedeError) as exc:
         await execute_supersede("user_facts", b_id, a_id, provenance=_PROV)  # B -> A
-    # Recording the actual code for documentation purposes (not hard-asserting a
-    # specific value beyond "a structured rejection occurred").
-    assert exc.value.code  # non-empty structured code
-    assert exc.value.code == "new_is_superseded"  # actual current behavior
+    # Assert rejection ONLY, never the exact code: currently new_is_superseded fires
+    # first; cycle guard is the inert backstop. A future refactor that removed
+    # new_is_superseded (leaving cycle as the live lock) must still pass this test.
+    assert exc.value.code  # non-empty structured code == a structured rejection occurred
 
 
 async def test_dangling_new_rejected(maker):
