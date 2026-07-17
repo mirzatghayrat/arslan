@@ -140,7 +140,7 @@ async def route(conversation_id: str, user_message: str) -> RouterResult:
     still re-check that the spawn id actually exists at dispatch time.
     """
     ctx = await memory.assemble_working_context(conversation_id)
-    facts = await memory.facts_text()
+    facts = await memory.facts_text(include_sensitive=True)
     registry = await _spawn_registry()
 
     prompt = (

@@ -32,6 +32,10 @@ def estimate_tokens(text: str) -> int:
     return cjk + other // 4
 
 
+_FACTS_MAX_COUNT = 40      # 注入事实条数硬上限
+_FACTS_TOKEN_BUDGET = 600  # facts 块 token 预算(estimate_tokens 计)
+
+
 def _token_budget() -> int:
     return int(os.environ.get("ARSLAN_WORKING_TOKEN_BUDGET", str(_DEFAULT_TOKEN_BUDGET)))
 
@@ -307,12 +311,41 @@ async def delete_fact(fact_id: int) -> bool:
         return True
 
 
-async def facts_text() -> str:
-    """Render facts as a bullet block for injection into prompts ('' if none)."""
+async def facts_text(*, include_sensitive: bool = False,
+                     limit_tokens: int = _FACTS_TOKEN_BUDGET) -> str:
+    """Render facts as a bullet block for injection into prompts ('' if none).
+
+    P0-a:确定性上限——confidence 优先、recency 破平、id 终平,再按
+    _FACTS_MAX_COUNT 与 token 预算截断(estimate_tokens,CJK-aware)。
+    默认 include_sensitive=False 是 FAIL-CLOSED:敏感事实只在 host 调用点
+    显式声明特权(router / host answer / spawn_drafter)时进入 prompt;
+    spawn dispatch / sandbox 草稿 / replay ambient 走安全默认,零改动即正确。
+    忘传 flag 的泄漏方向永远是"少给",不是"私密进 spawn prompt"。
+    """
     facts = await list_facts()
+    if not include_sensitive:
+        facts = [f for f in facts if not f.sensitive]
     if not facts:
         return ""
-    return "Known facts about the user:\n" + "\n".join(f"- {f.content}" for f in facts)
+    total = len(facts)
+
+    def _ordinal(f) -> float:  # noqa: ANN001 — NULL-safe recency(raw insert 可为 NULL)
+        return f.created_at.timestamp() if f.created_at is not None else 0.0
+
+    ranked = sorted(facts, key=lambda f: (-(f.confidence or 0.6), -_ordinal(f), -f.id))
+    chosen = []
+    spent = 0
+    for f in ranked[:_FACTS_MAX_COUNT]:
+        line_tokens = estimate_tokens(f"- {f.content}")
+        if chosen and spent + line_tokens > limit_tokens:
+            break
+        chosen.append(f)
+        spent += line_tokens
+    if len(chosen) < total:
+        # 诚实:截断留痕,不静默
+        logger.debug("facts_text: capped %d/%d facts (count/token budget)", len(chosen), total)
+    chosen.sort(key=lambda f: f.id)  # 渲染回 id 升序:注入文本稳定,利缓存
+    return "Known facts about the user:\n" + "\n".join(f"- {f.content}" for f in chosen)
 
 
 async def user_turn_count(conversation_id: str) -> int:

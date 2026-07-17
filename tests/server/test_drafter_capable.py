@@ -19,7 +19,7 @@ async def test_draft_is_capable(monkeypatch):
 
     monkeypatch.setattr(spawn_drafter._router, "_spawn_registry", fake_registry)
 
-    async def fake_facts():
+    async def fake_facts(**kwargs):
         return ""
 
     monkeypatch.setattr(spawn_drafter.memory, "facts_text", fake_facts)

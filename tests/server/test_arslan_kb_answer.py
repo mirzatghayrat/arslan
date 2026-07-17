@@ -4,7 +4,7 @@
 def _patch_common(monkeypatch, arslan_mod):
     async def fake_assemble(cid):
         return {"summary": "", "history": [{"role": "user", "content": "hi"}]}
-    async def fake_facts():
+    async def fake_facts(**kwargs):
         return ""
     async def fake_roster():
         return "(none)"

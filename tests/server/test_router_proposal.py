@@ -33,7 +33,7 @@ async def test_route_carries_needs_proposal(monkeypatch):
     monkeypatch.setattr(
         router.memory, "assemble_working_context", lambda conv_id: _async_str({"summary": "", "history": []})
     )
-    monkeypatch.setattr(router.memory, "facts_text", lambda: _async_str(""))
+    monkeypatch.setattr(router.memory, "facts_text", lambda **kw: _async_str(""))
     monkeypatch.setattr(router, "_persist", lambda *a, **kw: _async_str(None))
     r = await router.route("conv-t1", "help with my linkedin")
     assert r.action == "route"
@@ -50,7 +50,7 @@ async def test_route_needs_proposal_false_by_default(monkeypatch):
     monkeypatch.setattr(
         router.memory, "assemble_working_context", lambda conv_id: _async_str({"summary": "", "history": []})
     )
-    monkeypatch.setattr(router.memory, "facts_text", lambda: _async_str(""))
+    monkeypatch.setattr(router.memory, "facts_text", lambda **kw: _async_str(""))
     monkeypatch.setattr(router, "_persist", lambda *a, **kw: _async_str(None))
     r = await router.route("conv-t2", "summarize this article: X")
     assert r.action == "route"

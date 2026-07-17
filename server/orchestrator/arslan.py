@@ -940,7 +940,7 @@ async def _handle_answer_body(
     turn_delegated: bool = False,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
-    facts = await memory.facts_text()
+    facts = await memory.facts_text(include_sensitive=True)
     roster = await _team_roster()
     # Prompt-cache reorder (spec 2026-07-13): KB is per-query volatile → gather it, then
     # assemble via _build_answer_system so the static guards stay a byte-stable cacheable

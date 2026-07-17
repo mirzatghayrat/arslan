@@ -28,7 +28,7 @@ def _isolate_context(monkeypatch):
     async def _registry():
         return "(no spawns yet)"
 
-    async def _facts():
+    async def _facts(**kwargs):
         return ""
 
     monkeypatch.setattr(spawn_drafter._router, "_spawn_registry", _registry)

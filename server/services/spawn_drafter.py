@@ -39,7 +39,7 @@ async def draft_from_text(description: str, *, previous: dict[str, Any] | None =
     """Return a draft dict {name, domain, capabilities, persona_role, persona_tone, reason}.
     When `previous` is given, this is a refinement: revise that draft per the description."""
     registry = await _router._spawn_registry()
-    facts = await memory.facts_text()
+    facts = await memory.facts_text(include_sensitive=True)
     parts = [f"Existing spawns:\n{registry}"]
     if facts:
         parts.append(facts)
