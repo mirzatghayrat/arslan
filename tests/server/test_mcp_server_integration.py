@@ -76,7 +76,8 @@ async def test_enabled_valid_token_initialize_and_list_tools_succeed(harness):
     await set_enabled(True)
     auth = {**H, "Authorization": f"Bearer {tok}"}
     r = await ac.post("/mcp-server/", json=INIT, headers=auth)
-    assert r.status_code == 200 and "application/json" in r.headers["content-type"]
+    assert r.status_code == 200
+    assert "application/json" in r.headers["content-type"]
     tl = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
     r2 = await ac.post("/mcp-server/", json=tl, headers=auth)
     names = {t["name"] for t in r2.json()["result"]["tools"]}
@@ -87,8 +88,14 @@ async def test_foreign_origin_rejected(harness):
     ac, set_enabled, tmp = harness
     tok = token_store.generate_mcp_token(data_dir=tmp)
     await set_enabled(True)
+    auth = {**H, "Authorization": f"Bearer {tok}"}
+    # Positive control: the same enabled+valid-token request WITHOUT an Origin
+    # header succeeds — so the 403 below is proven to come from the Origin, not
+    # from an always-reject.
+    ok = await ac.post("/mcp-server/", json=INIT, headers=auth)
+    assert ok.status_code == 200
     r = await ac.post("/mcp-server/", json=INIT,
-                      headers={**H, "Authorization": f"Bearer {tok}", "Origin": "http://evil.example"})
+                      headers={**auth, "Origin": "http://evil.example"})
     assert r.status_code == 403  # transport_security rejects a foreign Origin
 
 
@@ -106,8 +113,13 @@ async def test_rotate_immediately_rejects_old_token(harness):
     ac, set_enabled, tmp = harness
     old = token_store.generate_mcp_token(data_dir=tmp)
     await set_enabled(True)
+    old_auth = {**H, "Authorization": f"Bearer {old}"}
+    # Positive control: `old` works BEFORE rotation (routes through the real
+    # driven-lifespan mounted app) — so the 401 below is proven to come from the
+    # rotation, not from an always-401 gate.
+    assert (await ac.post("/mcp-server/", json=INIT, headers=old_auth)).status_code == 200
     token_store.generate_mcp_token(data_dir=tmp)     # rotate
-    r = await ac.post("/mcp-server/", json=INIT, headers={**H, "Authorization": f"Bearer {old}"})
+    r = await ac.post("/mcp-server/", json=INIT, headers=old_auth)
     assert r.status_code == 401
 
 
@@ -115,4 +127,5 @@ async def test_spa_still_served_for_non_mount_path(harness):
     ac, set_enabled, tmp = harness
     await set_enabled(True)
     r = await ac.get("/somewhere-else")
-    assert r.status_code == 200 and r.json() == {"spa": True}
+    assert r.status_code == 200
+    assert r.json() == {"spa": True}
