@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.api import brain as brain_api
-from server.db.models import Base
+from server.db.models import Base, Learning, UserFact
 from server.services import note_service
 
 
@@ -61,3 +61,71 @@ async def test_graph_orphan_note_falls_back_to_self(maker):
     g = await brain_api.brain_graph()
     assert any(edge["type"] == "hub" and edge["source"] == "self" and edge["target"] == f"note:{n.id}"
                for edge in g["links"])
+
+
+# --- brain-P1 Task 5: temporal field exposure (source/confidence/superseded_by) ---
+# The fact/learning SELECTs widen (arity 4->7 for facts, 4->5 for learnings) to carry
+# these fields; every tuple-unpack/index site downstream must track the new width or
+# the endpoint crashes at runtime (brain.py's tag-linking loops unpack these rows by
+# position). These tests exercise brain_graph() end-to-end with both tables populated,
+# so a stale unpack raises ValueError and fails the test — not just "field missing".
+
+
+@pytest.mark.asyncio
+async def test_graph_fact_node_has_source_confidence_superseded_by(maker):
+    async with db_session.AsyncSessionLocal() as db:
+        old = UserFact(content="旧偏好", category="口味", source="auto", confidence=0.6)
+        new = UserFact(content="新偏好", category="口味", source="manual", confidence=0.9)
+        db.add_all([old, new])
+        await db.commit()
+        await db.refresh(old)
+        await db.refresh(new)
+        old.superseded_by = new.id
+        await db.commit()
+        new_id, old_id = new.id, old.id
+
+    g = await brain_api.brain_graph()
+    old_node = next(n for n in g["nodes"] if n["id"] == f"fact:{old_id}")
+    new_node = next(n for n in g["nodes"] if n["id"] == f"fact:{new_id}")
+    assert old_node["source"] == "auto"
+    assert old_node["confidence"] == 0.6
+    assert old_node["superseded_by"] == new_id
+    assert new_node["source"] == "manual"
+    assert new_node["confidence"] == 0.9
+    assert new_node["superseded_by"] is None
+
+
+@pytest.mark.asyncio
+async def test_graph_learning_node_has_superseded_by(maker):
+    async with db_session.AsyncSessionLocal() as db:
+        old = Learning(content="旧心得", source_kind="distill", source_ref={}, confidence=0.6)
+        new = Learning(content="新心得更完整", source_kind="distill", source_ref={}, confidence=0.6)
+        db.add_all([old, new])
+        await db.commit()
+        await db.refresh(old)
+        await db.refresh(new)
+        old.superseded_by = new.id
+        await db.commit()
+        new_id, old_id = new.id, old.id
+
+    g = await brain_api.brain_graph()
+    old_node = next(n for n in g["nodes"] if n["id"] == f"learning:{old_id}")
+    new_node = next(n for n in g["nodes"] if n["id"] == f"learning:{new_id}")
+    assert old_node["superseded_by"] == new_id
+    assert new_node["superseded_by"] is None
+
+
+@pytest.mark.asyncio
+async def test_graph_survives_mixed_facts_learnings_notes_no_arity_crash(maker):
+    """Combined smoke: facts + learnings + tagged notes all present at once, so every
+    widened-SELECT unpack site in brain_graph() (tag-linking loops included) runs."""
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(UserFact(content="事实", category="cat", source="auto", confidence=0.5))
+        db.add(Learning(content="心得", source_kind="distill", source_ref={"spawn_id": 1}, confidence=0.5))
+        await db.commit()
+    await note_service.create("笔记", "内容", ["cat"])
+
+    g = await brain_api.brain_graph()
+    assert g["nodes"]
+    kinds = {n["kind"] for n in g["nodes"]}
+    assert {"profile", "learning", "note"} <= kinds

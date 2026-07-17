@@ -84,6 +84,49 @@ async def test_brain_entry_material_excerpt(maker):
     assert entry["provenance"] == "投喂"
 
 
+# --- brain-P1 Task 5: temporal fields on /brain/entry (fact/learning) ------------
+# NOTE: this endpoint already had a "provenance" key before P1 — a human-readable
+# composite display string (category/source or source_kind/source_ref), asserted
+# above (test_brain_entry_material_excerpt) and consumed by the shipped frontend
+# (BrainEntryDetail.tsx renders `entry.provenance` as text; BrainNav.tsx groups by
+# it). The real temporal audit payload is therefore exposed under a NON-colliding
+# key, "provenance_record", so it doesn't silently turn that existing string field
+# into an object and break the live frontend read. See task-5-report.md for the
+# full rationale.
+
+
+@pytest.mark.asyncio
+async def test_brain_entry_fact_has_temporal_fields(maker):
+    async with db_session.AsyncSessionLocal() as db:
+        await db.execute(sa_text(
+            "INSERT INTO user_facts (content, label, category, source, confidence, provenance) "
+            "VALUES ('在北京工作', '北京', '身份背景', 'auto', 0.9, '{\"source_kind\": \"test\"}')"))
+        await db.commit()
+        fid = (await db.execute(sa_text("SELECT id FROM user_facts"))).scalar()
+
+    entry = await brain.brain_entry("profile", f"fact:{fid}")
+    assert entry["provenance"] == "身份背景 · auto"          # unchanged display string
+    assert "valid_from" in entry
+    assert entry["superseded_by"] is None
+    assert entry["provenance_record"] == {"source_kind": "test"}
+
+
+@pytest.mark.asyncio
+async def test_brain_entry_learning_has_temporal_fields(maker):
+    async with db_session.AsyncSessionLocal() as db:
+        await db.execute(sa_text(
+            "INSERT INTO learnings (content, label, source_kind, source_ref, confidence) "
+            "VALUES ('心得', '标签', 'distill', '{\"conversation_id\": \"c\"}', 0.6)"))
+        await db.commit()
+        lid = (await db.execute(sa_text("SELECT id FROM learnings"))).scalar()
+
+    entry = await brain.brain_entry("learning", f"learning:{lid}")
+    assert "valid_from" in entry
+    assert "superseded_by" in entry
+    assert entry["provenance_record"] == {
+        "source_kind": "distill", "source_ref": {"conversation_id": "c"}}
+
+
 # --- auth gating (brain reads user profile/facts/notes structure) ----------
 # require_auth reads config.settings at call time, so swapping the frozen
 # Settings for one with a token set (auto-restored by monkeypatch) exercises
