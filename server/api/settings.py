@@ -13,7 +13,7 @@ from server import auth, config, token_bootstrap
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, McpTokenOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
 # model_catalog + provider_health are Settings-only: this module is their ONLY
 # allowed import site outside their own tests (Provider-round iron rule —
 # never from the chat path).
@@ -98,6 +98,43 @@ async def reset_access_token(request: Request) -> AccessTokenOut:
             headers={"WWW-Authenticate": "Bearer"})
     token = token_bootstrap.reset_api_token(config.settings)
     return AccessTokenOut(token_required=True, token=token)
+
+
+# S4.1-C: dedicated inbound-MCP token (separate from the app api_token, see
+# server/mcp_server/token_store.py). Generation is localhost-gated only — no old-token
+# challenge — because this feature is optional (no lockout risk the way the app's own
+# access token has): a fresh generate simply rotates. Show-once (spec Q3 detail 2): the
+# full plaintext is returned ONLY by generate, exactly once; GET never re-shows it.
+mcp_token_router = APIRouter()
+
+
+@mcp_token_router.get("/settings/mcp-token", response_model=McpTokenOut)
+async def get_mcp_token(db: AsyncSession = Depends(get_session)) -> McpTokenOut:
+    # Show-once: GET reports only whether a token exists + the enabled flag; the full
+    # token value is returned ONLY by the generate endpoint, once.
+    from server.mcp_server import token_store
+    enabled = await settings_service.mcp_server_enabled(db)
+    return McpTokenOut(enabled=enabled, token_set=bool(token_store.read_mcp_token()), token=None)
+
+
+@mcp_token_router.post("/settings/mcp-token/generate", response_model=McpTokenOut)
+async def generate_mcp_token(request: Request, db: AsyncSession = Depends(get_session)) -> McpTokenOut:
+    if not _is_direct_localhost(request):
+        raise HTTPException(status_code=403, detail="MCP token generation is localhost-only")
+    from server.mcp_server import token_store
+    token = token_store.generate_mcp_token()
+    enabled = await settings_service.mcp_server_enabled(db)
+    return McpTokenOut(enabled=enabled, token_set=True, token=token)
+
+
+@mcp_token_router.post("/settings/mcp-token/disable", response_model=McpTokenOut)
+async def disable_mcp_token(request: Request, db: AsyncSession = Depends(get_session)) -> McpTokenOut:
+    if not _is_direct_localhost(request):
+        raise HTTPException(status_code=403, detail="MCP token control is localhost-only")
+    from server.mcp_server import token_store
+    token_store.clear_mcp_token()
+    enabled = await settings_service.mcp_server_enabled(db)
+    return McpTokenOut(enabled=enabled, token_set=False, token=None)
 
 
 @router.get("/settings/providers", response_model=list[ProviderOption])

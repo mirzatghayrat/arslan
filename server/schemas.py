@@ -55,6 +55,20 @@ class AccessTokenOut(BaseModel):
     token: str | None = None
 
 
+class McpTokenOut(BaseModel):
+    """GET/POST /settings/mcp-token* — S4.1-C inbound MCP token view/generate/disable.
+
+    Show-once: ``token`` carries the full plaintext ONLY on the ``generate`` response,
+    exactly once. ``GET`` reports only ``{enabled, token_set}`` — the value is never
+    re-shown, matching the spec's "shown in full exactly once" contract (a deliberate
+    divergence from ``AccessTokenOut``, which does re-show its value on localhost).
+    """
+
+    enabled: bool
+    token_set: bool
+    token: str | None = None
+
+
 class ProviderOption(BaseModel):
     """One entry in the Settings provider dropdown (Tier-0 preset or native)."""
 

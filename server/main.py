@@ -306,6 +306,8 @@ def create_app() -> FastAPI:
     # S1-3: access-token view/reset — NO require_auth (a packaged user must be able
     # to discover the token), localhost-gated inside the handlers instead.
     app.include_router(settings_api.access_token_router, prefix="/api/v1")
+    # S4.1-C: MCP-token generate/view/disable — NO require_auth, localhost-gated in handlers.
+    app.include_router(settings_api.mcp_token_router, prefix="/api/v1")
 
     from server.api import spawns as spawns_api
 
