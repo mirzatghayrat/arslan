@@ -46,6 +46,35 @@ def similar(a: str, b: str) -> bool:
     return difflib.SequenceMatcher(None, na, nb).ratio() >= _SIM_THRESHOLD
 
 
+def fuzzy_kind(new: str, old: str) -> str | None:
+    """Classify the DIRECTION of a fuzzy hit (call only after `similar()` is True
+    — P1 brain rule-supersede, direction lock):
+
+    - "extension" = both norm-strings >= _MIN_CONTAINMENT_LEN AND old is contained
+      in new (new is the EXTENSION of old) -> auto-supersede candidate: the new,
+      more informative write auto-wins.
+    - "shrink" = same length gate AND new is contained in old (new is the
+      SHRUNK/less-informative version) -> never auto-wins (a downgrade must not
+      auto-supersede) -> propose instead.
+    - "other" = similar()-true but neither containment direction (the pure
+      difflib-ratio band) -> propose.
+    - None = not similar at all (`similar()` False), OR exact-norm-equal (that's
+      phase 1's job in save_facts/_write's two-phase write -- it must never reach
+      this classifier).
+    """
+    if not similar(new, old):
+        return None
+    nn, no = norm(new), norm(old)
+    if nn == no:
+        return None  # exact belongs to phase 1, must not land here
+    if min(len(nn), len(no)) >= _MIN_CONTAINMENT_LEN:
+        if no in nn:
+            return "extension"
+        if nn in no:
+            return "shrink"
+    return "other"
+
+
 async def exact_norm_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
     """Return an ACTIVE existing fact (superseded_by IS NULL) whose normalized
     content EXACTLY equals `content`'s. First phase of the two-phase write check

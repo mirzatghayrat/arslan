@@ -11,7 +11,8 @@ from datetime import datetime
 from sqlalchemy import text as sa_text
 
 from server.db import session as db_session
-from server.db.models import Learning
+from server.db.models import Learning, MemoryProposal
+from server.services import fact_dedup, memory_temporal
 from server.services.fact_dedup import norm, similar
 from server.services.llm_factory import build_adapter
 
@@ -27,6 +28,12 @@ def _get_adapter():
 
 async def _write(content: str, label: str, source_kind: str, source_ref: dict,
                  spawn_id: int | None) -> int:
+    """Persist one learning. Fuzzy near-dups mirror save_facts's P1 three-way
+    rule-supersede (fact_dedup.fuzzy_kind): "extension" auto-supersedes via the
+    memory_temporal executor (in-transaction, full guards); "shrink"/"other"
+    coexist and get a MemoryProposal soft-mark; below-threshold pairs never
+    reach fuzzy_kind at all (fail-open two-phase: exact-norm skip unchanged).
+    """
     content = (content or "").strip()
     if not content:
         return 0
@@ -40,15 +47,30 @@ async def _write(content: str, label: str, source_kind: str, source_ref: dict,
             target = norm(content)
             if any(norm(c) == target for _id, c in existing):
                 return 0                                    # 精确重复:跳过(不变)
-            fuzzy = [c for _id, c in existing if similar(content, c)]
-            if fuzzy:
-                logger.info("learning: near-dup coexist (P1 will propose supersede): %r ~ %r",
-                            content, fuzzy[0])
+            fuzzy_hit = next(
+                ((eid, ec) for eid, ec in existing if similar(content, ec)), None)
             row = Learning(content=content, label=(label or content)[:60],
                            source_kind=source_kind, source_ref=source_ref,
                            spawn_id=spawn_id, confidence=0.6,
                            valid_from=datetime.utcnow())
             db.add(row)
+            if fuzzy_hit is not None:
+                old_id, old_content = fuzzy_hit
+                # HARD requirement: row.id is None until flushed — without this,
+                # the auto-supersede below silently no-ops (new_id=None).
+                await db.flush()
+                kind = fact_dedup.fuzzy_kind(content, old_content)
+                prov = {"source_kind": source_kind, **source_ref}
+                if kind == "extension":
+                    await memory_temporal.execute_supersede(
+                        "learnings", row.id, old_id, provenance=prov, db=db)
+                elif kind in ("shrink", "other"):
+                    db.add(MemoryProposal(
+                        table_name="learnings", new_id=row.id, old_id=old_id,
+                        reason=f"{kind}: near-dup coexist", provenance=prov))
+                    logger.info(
+                        "learning: near-dup coexist -> proposal (%s): %d ~ %d",
+                        kind, row.id, old_id)
             await db.commit()
             await db.refresh(row)
             rid = row.id

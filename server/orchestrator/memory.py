@@ -195,13 +195,24 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
     distill_service.distill_meta_upflow ({"source_kind": "upflow", "spawn_id": <id>}).
 
     Write-time dedup is two-phase: exact-normalized duplicates merge (bump the
-    existing fact's confidence, don't append); fuzzy near-dups coexist (both
-    rows kept, logged) pending a P1 supersede/proposal flow. Both scanners are
-    active-only (superseded_by IS NULL) — a new write must never collide with a
-    dead row. Fail-open: any failure in either dedup check is swallowed and
-    treated as no-dup — a user's fact must always get saved. This fail-open
-    discipline is SEPARATE from the provenance guard above: a missing/empty
-    provenance is a programmer error and always raises, dedup failures never do.
+    existing fact's confidence, don't append); fuzzy near-dups route through
+    `fact_dedup.fuzzy_kind` (P1 rule-initiated supersede, direction lock):
+    "extension" (new extends old) auto-supersedes via the memory_temporal
+    executor (in-transaction, full guards — never a bare pointer write);
+    "shrink"/"other" coexist and get a MemoryProposal soft-mark for human
+    adjudication; below-threshold pairs (fuzzy_kind returns None) never reach
+    this branch at all — pure coexist, zero proposal (P0 semantics preserved).
+    All scanners are active-only (superseded_by IS NULL) — a new write must
+    never collide with a dead row. Fail-open: any failure in the dedup checks
+    is swallowed and treated as no-dup — a user's fact must always get saved.
+    This fail-open discipline is SEPARATE from the provenance guard above: a
+    missing/empty provenance is a programmer error and always raises, dedup
+    failures never do.
+
+    NOTE (#13, multi-sibling): find_near_dup returns the FIRST active similar
+    row in scan order — P1 semantics is "at most one near-dup pair handled per
+    write". A write that fuzzy-matches a non-extension sibling is safe-biased
+    toward coexist+proposal (deterministic), not a full-table optimal match.
     """
     if not provenance:
         raise ValueError("save_facts: provenance is mandatory (programmer guard)")
@@ -209,6 +220,8 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
     if not facts:
         return created
 
+    from server.db.models import MemoryProposal
+    from server.services import fact_dedup, memory_temporal
     from server.services.fact_dedup import exact_norm_dup, find_near_dup
 
     async with db_session.AsyncSessionLocal() as db:
@@ -216,16 +229,13 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
             content = (f.get("content") or "").strip()
             if not content:
                 continue
-            # P0-b 两阶段:精确归一相等 → merge-bump(真重复);模糊命中 → 并存+留痕
-            # (宁可暂存不可错杀;SUPERSEDE/提案是 P1)。两阶段皆 fail-open+活跃-only。
+            # P0-b 两阶段:精确归一相等 → merge-bump(真重复);模糊命中 → 三路
+            # (P1: extension 自动取代/shrink+other 提案)。两阶段皆 fail-open+活跃-only。
             exact = await exact_norm_dup(db, content)
             if exact is not None:
                 exact.confidence = min(1.0, (exact.confidence or 0.6) + 0.1)
                 continue
             fuzzy = await find_near_dup(db, content)
-            if fuzzy is not None:
-                logger.info("save_facts: near-dup coexist (P1 will propose supersede): %r ~ %r",
-                            content, fuzzy.content)
             row = UserFact(
                 content=content,
                 source=f.get("source", "auto"),
@@ -236,6 +246,26 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
             )
             db.add(row)
             created.append(row)
+            if fuzzy is not None:
+                # HARD requirement: row.id is None until flushed — without this,
+                # the auto-supersede below silently no-ops (new_id=None).
+                await db.flush()
+                kind = fact_dedup.fuzzy_kind(content, fuzzy.content)
+                if kind == "extension":
+                    # new extends old -> auto-supersede (direction lock), through
+                    # the EXECUTOR's full guards -- never a bare pointer write.
+                    await memory_temporal.execute_supersede(
+                        "user_facts", row.id, fuzzy.id, provenance=provenance, db=db)
+                elif kind in ("shrink", "other"):
+                    db.add(MemoryProposal(
+                        table_name="user_facts", new_id=row.id, old_id=fuzzy.id,
+                        reason=f"{kind}: near-dup coexist", provenance=provenance))
+                    logger.info(
+                        "save_facts: near-dup coexist -> proposal (%s): %d ~ %d",
+                        kind, row.id, fuzzy.id)
+                # kind is None here only if fuzzy_kind's exact-norm-equal guard
+                # fires, which exact_norm_dup (active-only) should already have
+                # caught above -- defensive, not expected in normal flow.
         await db.commit()
         for row in created:
             await db.refresh(row)
