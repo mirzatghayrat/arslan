@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
-               "evolution_auto")
+               "evolution_auto", "mcp_server_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_est_tokens")
 # Secret keys stored encrypted, returned masked.
@@ -136,6 +136,13 @@ async def shell_enabled(session: AsyncSession) -> bool:
     """Whether the orchestrator-only run_command tool is exposed to Arslan.
     Default OFF (opt-in): only an explicit 'true' enables it."""
     raw = await _get_raw(session, "orchestrator_shell_enabled")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def mcp_server_enabled(session: AsyncSession) -> bool:
+    """Whether the inbound MCP server mount accepts requests. Default OFF (opt-in):
+    only an explicit 'true' enables it (lowercased so a stored 'True' still matches)."""
+    raw = await _get_raw(session, "mcp_server_enabled")
     return str(raw).strip().lower() == "true" if raw is not None else False
 
 

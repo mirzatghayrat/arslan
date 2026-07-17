@@ -22,6 +22,7 @@ class SettingsIn(BaseModel):
     run_debug_retention_days: int | None = None
     evolution_auto: str | None = None
     evolution_max_est_tokens: int | None = None
+    mcp_server_enabled: bool | None = None
 
 
 class SettingsOut(BaseModel):
@@ -39,6 +40,7 @@ class SettingsOut(BaseModel):
     run_debug_retention_days: int = 30
     evolution_auto: str = "on"
     evolution_max_est_tokens: int | None = None
+    mcp_server_enabled: bool = False
 
 
 class AccessTokenOut(BaseModel):
