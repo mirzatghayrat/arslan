@@ -21,6 +21,20 @@ async def _aw(v):
     return v
 
 
+@pytest.fixture(autouse=True)
+def _gate_no_llm(monkeypatch):
+    """BUG1 cell-6 domain gate: evaluate it DETERMINISTICALLY here (no contradiction),
+    so the PA-2 band-independence tests below prove the chip floats on the intended
+    path. Without this they pass only because the gate's DB leg explodes against
+    _NullSession and the blanket fail-open catches it — and a later refactor that
+    removes that DB call would silently turn them into live-LLM tests."""
+    from server.services import staffing_gather
+
+    async def _none(*a, **k):
+        return None
+    monkeypatch.setattr(staffing_gather, "extract_conflicting_domain", _none)
+
+
 @pytest.mark.asyncio
 async def test_user_named_spawn_matches_name_and_at_mention(monkeypatch):
     monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
@@ -99,6 +113,51 @@ async def test_inference_does_it_itself_and_chips(monkeypatch):
     assert any(f.get("type") == "propose_invite" for f in frames)
     assert parked and parked[-1].get("announced") is True
     assert parked[-1].get("answered") is True   # cell 6: recruiting invite, accept join-only
+
+
+@pytest.mark.asyncio
+async def test_pa2_chip_floats_with_the_domain_gate_actually_evaluating(monkeypatch):
+    """PA-2 band-independence, proven through the INTENDED path: the BUG1 domain gate
+    runs to completion (real registry list, no contradiction found) and the chip still
+    floats. The sibling tests reach the same outcome via the gate's fail-open catch
+    (their _NullSession explodes its DB leg) — this one pins that a fully-evaluating
+    gate does not eat the advancement channel."""
+    from types import SimpleNamespace
+
+    answered, frames, parked = [], [], []
+
+    async def _answer(conv, msg, emit, **kw):
+        answered.append(msg)
+        emit({"type": "stream_end", "message_id": 1})
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+    monkeypatch.setattr(arslan.dispatcher, "get_spawn_name", lambda sid: _aw("Research Analyst"))
+    monkeypatch.setattr(arslan.roster_service, "is_member", lambda *a, **k: _aw(False))
+    monkeypatch.setattr(arslan.router, "previous_decision", lambda conv: _aw(None))
+    monkeypatch.setattr(arslan, "_dispatch_spawn", lambda *a, **k: None)
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
+    monkeypatch.setattr(arslan.phase_service, "set_inviting",
+                        lambda *a, **k: parked.append(k) or _aw(None))
+    from server.services import recap_service
+
+    async def _recap(*a, **k):
+        return None
+    monkeypatch.setattr(recap_service, "log_event", _recap)
+    # Gate DB leg: a real two-domain registry, so the gate evaluates instead of raising.
+    monkeypatch.setattr(arslan.spawn_service, "load_all_spawns", lambda: _aw([
+        SimpleNamespace(id=7, name="Research Analyst", domain_category="research",
+                        domain_subcategory="web-research", capabilities=[]),
+        SimpleNamespace(id=3, name="Copywriter", domain_category="marketing",
+                        domain_subcategory="content-copywriting", capabilities=[]),
+    ]))
+    # (extract_conflicting_domain is stubbed to None by the autouse fixture: no contradiction.)
+
+    result = arslan.router.RouterResult(action="route", spawn_id=7, task_brief="深挖 X")
+    await arslan._handle_route("main", result, frames.append, user_message="帮我深挖一下 X")
+
+    assert answered == ["帮我深挖一下 X"]
+    assert any(f.get("type") == "propose_invite" for f in frames), (
+        "the domain gate must not suppress the chip when it finds no contradiction")
+    assert parked and parked[-1].get("answered") is True
 
 
 @pytest.mark.asyncio
