@@ -49,8 +49,22 @@ async def _write(content: str, label: str, source_kind: str, source_ref: dict,
             # Scanner #5 (brain-P1 Task 3, BLOCKER #2): active-only — a superseded
             # learning must never block/merge-collide with a new write. Fetches
             # (id, content), not just content — Task 4's rule-supersede needs the id.
+            #
+            # brain-P2 Task 4 cross-well fix (whole-branch review): the candidate
+            # set is scoped to the SAME WELL as the row being written
+            # (spawn_id IS :sid, NULL-safe). Without this, the implicit fuzzy
+            # "extension" auto-supersede below (:execute_supersede) could silently
+            # deactivate ANOTHER spawn's — or a global (spawn_id IS NULL) —
+            # learning: a spawn appending content that fuzzy-extends a row it
+            # doesn't own would cross the boundary with no proposal and no human
+            # gate. A spawn's learnings are its own well; global learnings are the
+            # host's; neither dedups or auto-supersedes across the boundary. This
+            # is correct for BOTH the agentic append AND the pre-existing distill
+            # path (distill already writes per-spawn, so same-well matches intent).
             existing = (await db.execute(sa_text(
-                "SELECT id, content FROM learnings WHERE superseded_by IS NULL"))).all()
+                "SELECT id, content FROM learnings "
+                "WHERE superseded_by IS NULL AND spawn_id IS :sid"),
+                {"sid": spawn_id})).all()
             target = norm(content)
             if any(norm(c) == target for _id, c in existing):
                 return 0                                    # 精确重复:跳过(不变)

@@ -566,7 +566,7 @@ class Learning(Base):
     id = Column(Integer, primary_key=True)
     content = Column(Text, nullable=False)
     label = Column(String(60), nullable=True)
-    source_kind = Column(String(20), nullable=False)   # distill|feedback|run_pattern
+    source_kind = Column(String(20), nullable=False)   # distill|feedback|run_pattern|agentic (P2 remember tool)
     source_ref = Column(JSON, nullable=False)
     spawn_id = Column(Integer, nullable=True, index=True)
     confidence = Column(Float, default=0.6)
@@ -583,7 +583,7 @@ class MemoryProposal(Base):
 
     id = Column(Integer, primary_key=True)
     kind = Column(String(30), nullable=False, default="supersede_suspect")
-    table_name = Column(String(20), nullable=False)     # "user_facts" | "learnings"
+    table_name = Column(String(20), nullable=False)     # "user_facts"|"learnings"|"notes"|"spawns" (P2 Tier2 kinds)
     new_id = Column(Integer, nullable=True)   # NULL for Tier2 kinds with no replacing row (0033)
     old_id = Column(Integer, nullable=False)
     reason = Column(Text, nullable=False, default="")

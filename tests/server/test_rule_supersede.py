@@ -330,3 +330,84 @@ async def test_learnings_other_kind_coexists_and_proposes(maker):
     assert p.reason.startswith("other:")
     assert p.status == "pending"
     assert p.provenance == {"source_kind": "distill", "conversation_id": "c2"}
+
+
+# ---------------------------------------------------------------------------
+# brain-P2 Task 4 cross-well fix (whole-branch review): _write's dedup/fuzzy
+# candidate set is scoped to the SAME WELL (spawn_id IS :sid, NULL-safe). The
+# implicit "extension" auto-supersede must NEVER deactivate a learning the
+# writer doesn't own — otherwise a spawn appending extending content could
+# silently supersede another spawn's (or a global) learning with no proposal
+# and no human gate, bypassing the explicit supersede path's scope check.
+# ---------------------------------------------------------------------------
+
+async def test_extension_does_not_cross_well_from_spawn_to_other_spawn(maker):
+    from server.services.learning_service import _write
+
+    # spawn B owns the base learning.
+    await _write(_L_BASE, "l1", "agentic", {"actor": "spawn:2"}, 2)
+    async with maker() as s:
+        b_id = (await s.execute(
+            select(Learning.id).where(Learning.content == _L_BASE))).scalar_one()
+
+    # spawn A appends content that fuzzy-EXTENDS B's learning. Same content,
+    # different well -> must NOT auto-supersede B's row; a NEW row is written
+    # in A's own well.
+    a_new = await _write(_L_EXT, "l2", "agentic", {"actor": "spawn:1"}, 1)
+    assert a_new > 0
+    async with maker() as s:
+        b_row = await s.get(Learning, b_id)
+        a_row = await s.get(Learning, a_new)
+        proposals = (await s.execute(select(MemoryProposal))).scalars().all()
+    assert b_row.superseded_by is None       # other spawn's row stays ACTIVE
+    assert a_row.spawn_id == 1                # new row is in A's own well
+    assert a_row.superseded_by is None
+    assert proposals == []                    # no cross-well proposal either
+
+
+async def test_extension_does_not_cross_well_from_spawn_to_global(maker):
+    from server.services.learning_service import _write
+
+    # A GLOBAL (host, spawn_id=None) learning.
+    await _write(_L_BASE, "l1", "agentic", {"actor": "host"}, None)
+    async with maker() as s:
+        g_id = (await s.execute(
+            select(Learning.id).where(Learning.content == _L_BASE))).scalar_one()
+
+    # A spawn appends extending content -> must NOT touch the global row.
+    a_new = await _write(_L_EXT, "l2", "agentic", {"actor": "spawn:1"}, 1)
+    assert a_new > 0
+    async with maker() as s:
+        g_row = await s.get(Learning, g_id)
+    assert g_row.superseded_by is None       # global row stays ACTIVE
+
+
+async def test_same_content_two_spawns_coexist_no_cross_well_dedup(maker):
+    from server.services.learning_service import _write
+
+    n1 = await _write(_L_BASE, "l1", "agentic", {"actor": "spawn:1"}, 1)
+    n2 = await _write(_L_BASE, "l2", "agentic", {"actor": "spawn:2"}, 2)
+    assert n1 > 0 and n2 > 0 and n1 != n2    # exact-dup skip is same-well only
+    async with maker() as s:
+        rows = (await s.execute(
+            select(Learning).where(Learning.content == _L_BASE))).scalars().all()
+    assert len(rows) == 2
+    assert {r.spawn_id for r in rows} == {1, 2}
+    assert all(r.superseded_by is None for r in rows)
+
+
+async def test_extension_still_auto_supersedes_within_own_well(maker):
+    """The scoping fix must NOT break same-well auto-supersede: a spawn
+    extending its OWN prior learning still auto-wins (own well unaffected)."""
+    from server.services.learning_service import _write
+
+    await _write(_L_BASE, "l1", "agentic", {"actor": "spawn:1"}, 1)
+    async with maker() as s:
+        old_id = (await s.execute(
+            select(Learning.id).where(Learning.content == _L_BASE))).scalar_one()
+
+    new_id = await _write(_L_EXT, "l2", "agentic", {"actor": "spawn:1"}, 1)
+    assert new_id > 0
+    async with maker() as s:
+        old_row = await s.get(Learning, old_id)
+    assert old_row.superseded_by == new_id   # own-well extension still auto-supersedes

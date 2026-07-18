@@ -113,6 +113,13 @@ class RememberExecutor:
             # never guess host vs. spawn.
             return {"ok": False, "error": "no caller context; refusing to write"}
 
+        if caller.actor not in ("host", "spawn"):
+            # Fail-closed on identity (whole-branch review): the routing below
+            # treats "not spawn" as host, so an unknown/garbage actor string
+            # would otherwise inherit HOST privileges (direct global writes).
+            # Refuse anything that isn't one of the two known actors.
+            return {"ok": False, "error": "unknown caller actor; refusing to write"}
+
         actor, spawn_id = caller.actor, caller.spawn_id
         if actor == "spawn" and spawn_id is None:
             # An actor=="spawn" caller with no real spawn_id is exactly as

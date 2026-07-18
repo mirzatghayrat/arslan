@@ -82,6 +82,21 @@ async def test_spawn_actor_without_real_spawn_id_is_refused(maker):
     assert "spawn_id" in out["error"]
 
 
+async def test_unknown_actor_is_refused_not_treated_as_host(maker):
+    """Fail-closed on identity (whole-branch review): the routing treats
+    'not spawn' as host, so a garbage actor string must be refused explicitly
+    rather than inherit host privileges (direct global writes)."""
+    out = await _remember(
+        {"kind": "fact", "action": "append", "content": "别把我当 host"},
+        ToolCaller(actor="root", spawn_id=None, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "unknown caller actor" in out["error"]
+    # and nothing was written
+    async with maker() as db:
+        facts = (await db.execute(select(UserFact))).scalars().all()
+    assert facts == []
+
+
 async def test_contextvar_has_zero_residue_across_two_dispatches(maker):
     from server.orchestrator import tool_caller
 
