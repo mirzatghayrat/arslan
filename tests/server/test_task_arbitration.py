@@ -122,6 +122,10 @@ async def test_cell6_inferred_nonmember_answers_and_recruit_invite(monkeypatch):
     """Cell 6 (route side): an INFERRED route to a NON-member → Arslan answers doer-first
     AND pops a RECRUITING invite whose park carries answered=True."""
     _stub_arbitration_env(monkeypatch, is_member=False)
+    # The BUG1 domain gate has its own tests below; force it OFF here so this test
+    # (no maker fixture → production sessionmaker) never reaches the real DB/LLM
+    # through the gate's load_all_spawns/draft-adapter path.
+    monkeypatch.setattr(arslan, "_recruit_domain_conflict", lambda *a, **k: _aw(False))
     answered, dispatched, parked, frames = [], [], [], []
 
     async def _answer(conv, msg, emit, **kw):
@@ -185,6 +189,138 @@ async def test_cell6_accept_joins_only_no_redispatch(maker, monkeypatch):
     assert invite_recaps, "recruit accept must log an invite recap"
     assert all("下次" not in s for s in invite_recaps), "recap claims an unbacked 下次 promise"
     assert any("本次会话" in s for s in invite_recaps), "recap should state the session scope"
+
+
+# --------------------------------------------------------------------------- cell 6 gate (BUG1)
+
+
+def _spawn_ns(sid, name, cat, sub):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=sid, name=name, domain_category=cat,
+                           domain_subcategory=sub, capabilities=[])
+
+
+def _cell6_env(monkeypatch):
+    """Deterministic cell-6 flow env + capture lists (answered/parked/frames/dual).
+
+    Registry: pick 7 = engineering.software-development, other = marketing.* — the
+    gate's DB leg is stubbed here; its LLM leg is stubbed per-test."""
+    _stub_arbitration_env(monkeypatch, is_member=False)
+    answered, parked, frames, dual = [], [], [], []
+
+    async def _answer(conv, msg, emit, **kw):
+        answered.append(msg)
+        emit({"type": "stream_end", "message_id": 1})
+        return "详实产出" * 60  # ≥ _DUAL_TRACK_MIN_CHARS
+    monkeypatch.setattr(arslan, "_handle_answer", _answer)
+    monkeypatch.setattr(arslan.phase_service, "set_inviting",
+                        lambda *a, **k: parked.append(k) or _aw(None))
+    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: dual.append(a))
+    monkeypatch.setattr(
+        arslan.spawn_service, "load_all_spawns",
+        lambda: _aw([_spawn_ns(7, "Coding Assistant", "engineering", "software-development"),
+                     _spawn_ns(3, "Copywriter", "marketing", "content-copywriting")]))
+    return answered, parked, frames, dual
+
+
+@pytest.mark.asyncio
+async def test_cell6_domain_contradiction_suppresses_chip_and_dual_track(monkeypatch):
+    """BUG1: an affirmative, registry-anchored domain contradiction suppresses the
+    RECRUITING chip AND the dual-track feed (feeding the deliverable would grow the
+    WRONG spawn's well). The doer-first answer stands alone."""
+    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    seen = {}
+
+    async def _conflict(task_text, pick_domain, others):
+        seen.update(text=task_text, pick=pick_domain, others=others)
+        return "marketing.content-copywriting"
+    monkeypatch.setattr(arslan.staffing_gather, "extract_conflicting_domain", _conflict)
+
+    await arslan._handle_route("main", _route_result(7, task_brief="报告图表改 Mermaid"),
+                               frames.append, user_message="把报告里的 CSS 图换成 Mermaid")
+
+    assert answered, "doer-first answer unchanged"
+    assert not any(f.get("type") == "propose_invite" for f in frames), "chip suppressed"
+    assert parked == [], "no park on suppression"
+    assert dual == [], "dual-track must not grow the wrong-domain spawn"
+    assert seen["pick"] == "engineering.software-development"
+    assert seen["others"] == ["marketing.content-copywriting"]
+
+
+@pytest.mark.asyncio
+async def test_cell6_no_contradiction_keeps_chip_and_dual_track(monkeypatch):
+    """PA-2 preserved: a null (no clear contradiction) floats the chip exactly as
+    before, park answered=True, dual-track fires."""
+    answered, parked, frames, dual = _cell6_env(monkeypatch)
+
+    async def _conflict(*a, **k):
+        return None
+    monkeypatch.setattr(arslan.staffing_gather, "extract_conflicting_domain", _conflict)
+
+    await arslan._handle_route("main", _route_result(7, task_brief="修个 CI 脚本"),
+                               frames.append, user_message="帮我修 CI 脚本")
+
+    assert any(f.get("type") == "propose_invite" for f in frames), "chip floats on null"
+    assert parked and parked[-1].get("answered") is True
+    assert dual, "dual-track fires when the chip is not suppressed"
+
+
+@pytest.mark.asyncio
+async def test_cell6_off_list_answer_and_none_task_brief_float(monkeypatch):
+    """Belt: an off-list answer (LLM went off the registry vocabulary) is treated as
+    unknown → chip floats; a None task_brief must not leak a literal 'None' into the
+    extraction text."""
+    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    seen = {}
+
+    async def _conflict(task_text, pick_domain, others):
+        seen["text"] = task_text
+        return "weird-freeform.x"  # category not in the registry → must NOT suppress
+    monkeypatch.setattr(arslan.staffing_gather, "extract_conflicting_domain", _conflict)
+
+    await arslan._handle_route("main", _route_result(7, task_brief=None),
+                               frames.append, user_message="帮我整理一下")
+
+    assert any(f.get("type") == "propose_invite" for f in frames), "off-list → chip floats"
+    assert "None" not in seen["text"]
+
+
+@pytest.mark.asyncio
+async def test_cell6_gate_failure_floats_chip_no_crash(monkeypatch):
+    """Fail-open: ANY infrastructure failure inside the gate (DB here) floats the chip
+    and never crashes the turn — the answer already streamed (PA-2: chip-death is the
+    documented worse failure)."""
+    answered, parked, frames, dual = _cell6_env(monkeypatch)
+
+    async def _boom():
+        raise RuntimeError("db exploded")
+    monkeypatch.setattr(arslan.spawn_service, "load_all_spawns", _boom)
+
+    await arslan._handle_route("main", _route_result(7), frames.append,
+                               user_message="帮我做点事")
+
+    assert any(f.get("type") == "propose_invite" for f in frames), "fail-open: chip floats"
+    assert parked and parked[-1].get("answered") is True
+
+
+@pytest.mark.asyncio
+async def test_cell6_gate_timeout_floats_chip(monkeypatch):
+    """A dead-but-reachable draft adapter must not hang the turn: the gate is bounded
+    by _RECRUIT_GATE_TIMEOUT_S and a timeout floats the chip."""
+    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    monkeypatch.setattr(arslan, "_RECRUIT_GATE_TIMEOUT_S", 0.05)
+    import asyncio as _asyncio
+
+    async def _slow(*a, **k):
+        await _asyncio.sleep(0.5)
+        return "marketing.content-copywriting"
+    monkeypatch.setattr(arslan.staffing_gather, "extract_conflicting_domain", _slow)
+
+    await arslan._handle_route("main", _route_result(7), frames.append,
+                               user_message="帮我做点事")
+
+    assert any(f.get("type") == "propose_invite" for f in frames), "timeout → chip floats"
 
 
 # --------------------------------------------------------------------------- cell 3

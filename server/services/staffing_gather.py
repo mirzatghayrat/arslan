@@ -60,3 +60,49 @@ async def extract_slots(history_text: str) -> dict:
         logger.warning("gather: extract failed: %s", exc)
         parsed = {}
     return {k: (parsed.get(k) if parsed.get(k) not in ("", []) else None) for k in SLOTS}
+
+
+# System prompt is STATIC on purpose (prompt-cache discipline — all dynamic content,
+# including the registry domain lists, goes in the user turn; see the router's
+# build_cached_system precedent). The "small edit to work already in progress" clause
+# exists because the BUG1 incident's real shape was an in-context tweak the host should
+# simply do — that shape must resolve to null, not to a domain guess.
+_DOMAIN_CONFLICT_SYSTEM = (
+    "You check whether a task was routed to the WRONG domain specialist. The user "
+    "message names the ASSIGNED specialist's domain, the OTHER available domains, and "
+    "the task. Return JSON {\"domain\": \"<one of the OTHER domains>\"} ONLY when the "
+    "task clearly does NOT belong to the assigned domain AND clearly belongs to that "
+    "other domain. In every other case — the task plausibly fits the assigned domain, "
+    "no listed domain clearly fits, you are unsure, or the task is a small "
+    "edit/adjustment to work already in progress in this conversation — return "
+    "{\"domain\": null}. Do NOT guess."
+)
+
+
+async def extract_conflicting_domain(
+    task_text: str, pick_domain: str, other_domains: list[str]
+) -> str | None:
+    """One LLM call → a clearly-better OTHER registry domain for the task, else None.
+
+    Registry-anchored and pick-referenced (the BUG1 cell-6 gate): the model may only
+    answer from ``other_domains``; the pick's own domain, an off-list string, null, or
+    ANY failure all yield None. Callers treat None as "no affirmative contradiction"
+    (the recruit chip floats — PA-2 keeps that chip band-independent)."""
+    try:
+        adapter = _get_adapter()
+        adapter = await adapter if hasattr(adapter, "__await__") else adapter
+        user = (
+            f"ASSIGNED domain: {pick_domain}\n"
+            f"OTHER available domains: {', '.join(other_domains)}\n\n"
+            f"TASK:\n{wrap_external(task_text)}"
+        )
+        resp = await adapter.chat(system=_DOMAIN_CONFLICT_SYSTEM, user=user)
+        parsed = parse_json_object(resp.content or "") or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("gather: domain-conflict extract failed: %s", exc)
+        return None
+    domain = parsed.get("domain")
+    if not isinstance(domain, str) or not domain.strip():
+        return None
+    domain = domain.strip()
+    return domain if domain in other_domains else None

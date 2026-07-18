@@ -120,3 +120,70 @@ async def test_get_gathered_slots_returns_empty_when_wrong_phase(temp_db):
     await phase_service.set_proposing("conv-proposing", 5, "some direction")
     result = await phase_service.get_gathered_slots("conv-proposing")
     assert result == {}
+
+
+# --------------------------------------------------------------------------- BUG1 domain-conflict extraction
+
+
+async def test_extract_conflicting_domain_affirmative(monkeypatch):
+    """Happy path: the model names one of the OTHER registry domains -> returned.
+    The allowed list + pick domain live in the USER turn (prompt-cache discipline:
+    system stays static) and the task text is wrap_external'd."""
+    captured = {}
+
+    class Resp:
+        content = '{"domain":"marketing.content-copywriting"}'
+
+    class A:
+        async def chat(self, *, system, user):
+            captured.update(system=system, user=user)
+            return Resp()
+
+    monkeypatch.setattr(sg, "_get_adapter", lambda: A())
+    out = await sg.extract_conflicting_domain(
+        "把报告里的 CSS 图换成 Mermaid", "engineering.software-development",
+        ["design.presentation", "marketing.content-copywriting"])
+    assert out == "marketing.content-copywriting"
+    assert "engineering.software-development" in captured["user"]
+    assert "design.presentation" in captured["user"]
+    assert "marketing.content-copywriting" not in captured["system"]
+    from server.orchestrator.untrusted import DELIM_CLOSE, DELIM_OPEN
+    assert DELIM_OPEN in captured["user"] and DELIM_CLOSE in captured["user"]
+
+
+async def test_extract_conflicting_domain_null_and_off_list(monkeypatch):
+    """null -> None; the pick's own domain or anything off the OTHER list -> None."""
+    responses = iter(['{"domain": null}',
+                      '{"domain": "engineering.software-development"}',
+                      '{"domain": "made-up.thing"}'])
+
+    class A:
+        async def chat(self, *, system, user):
+            class R:
+                content = next(responses)
+            return R()
+
+    monkeypatch.setattr(sg, "_get_adapter", lambda: A())
+    args = ("task", "engineering.software-development", ["marketing.content-copywriting"])
+    assert await sg.extract_conflicting_domain(*args) is None
+    assert await sg.extract_conflicting_domain(*args) is None
+    assert await sg.extract_conflicting_domain(*args) is None
+
+
+async def test_extract_conflicting_domain_garbage_and_raise(monkeypatch):
+    """Best-effort: unparseable output or a raising adapter -> None, never an exception."""
+    class Bad:
+        async def chat(self, *, system, user):
+            class R:
+                content = "not json at all"
+            return R()
+
+    monkeypatch.setattr(sg, "_get_adapter", lambda: Bad())
+    assert await sg.extract_conflicting_domain("t", "a.b", ["c.d"]) is None
+
+    class Boom:
+        async def chat(self, *, system, user):
+            raise RuntimeError("adapter dead")
+
+    monkeypatch.setattr(sg, "_get_adapter", lambda: Boom())
+    assert await sg.extract_conflicting_domain("t", "a.b", ["c.d"]) is None

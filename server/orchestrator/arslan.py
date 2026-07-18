@@ -1328,6 +1328,59 @@ async def _arbitrate_task(conversation_id, result, user_message):  # noqa: ANN00
     return _CELL_ANSWER_ONLY, None, None, None              # create band → cell 7
 
 
+# Upper bound on the BUG1 recruit gate: a dead-but-reachable draft adapter must not
+# hang the turn (E9-b precedent: first LLM call failing slowly). Timeout → chip floats.
+_RECRUIT_GATE_TIMEOUT_S = 8.0
+
+
+async def _recruit_domain_conflict(result, user_message):  # noqa: ANN001
+    """BUG1 gate for the cell-6 RECRUITING chip: True = suppress.
+
+    Suppresses ONLY on an affirmative, registry-anchored, pick-referenced domain
+    contradiction — the task clearly belongs to another registry domain's category,
+    not the router pick's (词面 similarity across domains was the observed mis-invite).
+    The chip stays band-independent (PA-2: band-gating this chip once killed the only
+    advancement channel — see test_boundary_doer_first's module docstring), so EVERY
+    other outcome floats it: no pick domain, no cross-category alternatives, null/off-
+    list extraction, DB/LLM failure, timeout. A wrong chip is dismissible; a dead chip
+    is the documented worse failure. Known accepted residual: a router re-pick next
+    turn can still invite via the PA-2 advance path (cells 1/2), which is ungated by
+    design — gating it would collide with the advancement channel itself.
+    """
+    def _dom(s) -> str:  # router-registry style: bare category when sub is None
+        cat = (getattr(s, "domain_category", "") or "").strip()
+        sub = (getattr(s, "domain_subcategory", "") or "").strip()
+        return f"{cat}.{sub}" if cat and sub else cat
+
+    async def _check() -> bool:
+        spawns = await spawn_service.load_all_spawns()
+        pick = next((s for s in spawns if getattr(s, "id", None) == result.spawn_id), None)
+        pick_cat = (getattr(pick, "domain_category", "") or "").strip().lower()
+        if not pick_cat:
+            return False  # undecidable → chip floats
+        pick_domain = _dom(pick)
+        others = sorted(
+            d for d in {_dom(s) for s in spawns}
+            if d and d.partition(".")[0].strip().lower() != pick_cat
+        )
+        if not others:
+            return False  # nothing to contradict with
+        text = f"{user_message}\n\n{result.task_brief or ''}".rstrip()
+        found = await staffing_gather.extract_conflicting_domain(text, pick_domain, others)
+        if not found:
+            return False
+        # Belt: only a KNOWN registry category different from the pick's suppresses.
+        found_cat = found.partition(".")[0].strip().lower()
+        known_cats = {d.partition(".")[0].strip().lower() for d in others}
+        return found_cat in known_cats and found_cat != pick_cat
+
+    try:
+        return await asyncio.wait_for(_check(), timeout=_RECRUIT_GATE_TIMEOUT_S)
+    except Exception:  # noqa: BLE001 — never kill the chip on infrastructure failure
+        logger.warning("recruit domain gate failed; chip floats", exc_info=True)
+        return False
+
+
 async def _accept_recruit(conversation_id, spawn_id, emit: EventSink) -> None:  # noqa: ANN001
     """Accept a RECRUITING invite (cell 6, behavior a): ENROLL the spawn and post the
     recruit note — do NOT dispatch, because Arslan already answered the task doer-first
@@ -1468,9 +1521,20 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         conversation_id, user_message, emit,
         attached_context=attached_context, confirm_command=confirm_command,
         intercept_spawn_name=_guard_spawn_name, turn_delegated=False)
+
+    # BUG1 gate (cell 6 only): suppress the RECRUITING chip on an affirmative,
+    # registry-anchored domain contradiction. Runs AFTER the answer streamed, so it
+    # delays only the chip, never the reply. Every failure mode floats the chip.
+    recruit_suppressed = (
+        cell == _CELL_RECRUIT and await _recruit_domain_conflict(result, user_message)
+    )
+
     # Dual-track growth (boundary component 5): feed Arslan's own deliverable to the
-    # inferred spawn in the background so it learns without having acted.
-    if answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS:
+    # inferred spawn in the background so it learns without having acted — but not when
+    # the gate just concluded the spawn is wrong-domain (feeding the deliverable would
+    # grow the WRONG spawn's well).
+    if (answer_text and len(answer_text.strip()) >= _DUAL_TRACK_MIN_CHARS
+            and not recruit_suppressed):
         _fire_dual_track(conversation_id, result.spawn_id, _guard_spawn_name,
                          _dual_track_signals(user_message, answer_text))
 
@@ -1480,6 +1544,11 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     # (Bug 1 fix). Cell 7 (no capable member) stops at the doer-first answer — the
     # suggest_create staffing spine is the `suggest_create` router action, untouched.
     if cell == _CELL_RECRUIT:
+        if recruit_suppressed:
+            logger.info(
+                "recruit chip suppressed (cell 6): task domain contradicts pick %s (%s)",
+                result.spawn_id, _guard_spawn_name)
+            return
         reason = (f"让「{_guard_spawn_name}」接手更专业?" if _is_cjk(user_message)
                   else f"Let {_guard_spawn_name} take this for more depth?")
         await phase_service.set_inviting(

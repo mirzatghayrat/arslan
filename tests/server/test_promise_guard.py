@@ -26,6 +26,20 @@ import server.db.session as db_session
 from server.db.models import ArslanMessage, Base, ConversationEvent, Run, Spawn
 from server.orchestrator import promise_guard
 
+
+@pytest.fixture(autouse=True)
+def _gate_no_llm(monkeypatch):
+    """BUG1 cell-6 domain gate hygiene: this file's maker harness is a REAL sqlite with
+    EMPTY provider tables, so the gate's draft adapter would legacy-fall-back to a LIVE
+    api.openai.com call from inside a unit test. Neutralize the gate's LLM leg (null =
+    no contradiction = chip floats, the pre-gate behavior these tests pin). The gate
+    itself is tested in test_task_arbitration.py."""
+    from server.services import staffing_gather
+
+    async def _none(*a, **k):
+        return None
+    monkeypatch.setattr(staffing_gather, "extract_conflicting_domain", _none)
+
 # ---------------------------------------------------------------------------
 # Unit tier: the deterministic regexes
 # ---------------------------------------------------------------------------
