@@ -13,6 +13,19 @@ from server.db.session import engine
 
 logger = logging.getLogger(__name__)
 
+# Undecryptable-key canary message (module-level so tests can pin the guidance).
+# The last sentence points at the most common real-world cause since first-run
+# secret auto-generation landed: switching between an explicit ARSLAN_SECRET_KEY
+# and the persisted dev file changes the effective secret.
+_UNDECRYPTABLE_KEYS_MSG = (
+    "%d stored provider API key(s) cannot be decrypted — ARSLAN_SECRET_KEY has "
+    "changed since they were saved, so they read as EMPTY (the BYOK adapter has no "
+    "credential). Re-enter them in Settings and pin a stable ARSLAN_SECRET_KEY. "
+    "If you recently switched between an explicit ARSLAN_SECRET_KEY and the "
+    "auto-generated dev secret (~/.arslan/secret_key, or ARSLAN_SECRET_KEY_FILE), "
+    "that mismatch is the likely cause."
+)
+
 
 def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Logger = logger) -> None:
     """Boot-fatal + advisory checks on effective settings.
@@ -40,7 +53,10 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
     if active_token is None:
         active_token = cfg.api_token
 
-    if cfg.is_prod and not cfg.secret_key:
+    # Stripped on purpose: crypto treats a whitespace-only secret as UNSET
+    # (server.crypto._active_secret), so booting prod with one would only defer
+    # the failure to the first encrypt(). Fail fast at boot instead.
+    if cfg.is_prod and not cfg.secret_key.strip():
         # NOTE: do not interpolate any configured secret (api_token/secret_key/
         # etc.) into this message — only name what is missing.
         raise RuntimeError(
@@ -48,7 +64,7 @@ def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Log
             "refusing to start. Set it in the environment."
         )
 
-    if not cfg.secret_key:
+    if not cfg.secret_key.strip():
         log.warning(
             "ARSLAN_SECRET_KEY not set: using an insecure fixed dev key. Stored "
             "LLM keys are only weakly protected — set ARSLAN_SECRET_KEY (a long "
@@ -185,12 +201,7 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as db:
             n_undecryptable = await provider_config_service.count_undecryptable_keys(db)
         if n_undecryptable:
-            logger.warning(
-                "%d stored provider API key(s) cannot be decrypted — ARSLAN_SECRET_KEY has "
-                "changed since they were saved, so they read as EMPTY (the BYOK adapter has no "
-                "credential). Re-enter them in Settings and pin a stable ARSLAN_SECRET_KEY.",
-                n_undecryptable,
-            )
+            logger.warning(_UNDECRYPTABLE_KEYS_MSG, n_undecryptable)
     except Exception as exc:  # noqa: BLE001 — key canary must never block boot
         logger.warning("provider-key decryptability canary failed (non-fatal): %s", exc)
 

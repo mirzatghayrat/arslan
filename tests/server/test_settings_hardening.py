@@ -78,10 +78,48 @@ def test_prod_refuse_message_does_not_echo_secrets(monkeypatch):
 
 
 def test_dev_missing_secret_does_not_raise_and_warns(monkeypatch, caplog):
-    main, cfg = _validate(monkeypatch)  # dev, no secret
+    # The suite-wide ARSLAN_SECRET_KEY_FILE="" (tests/conftest.py) disables secret
+    # auto-generation, so a reload with no ARSLAN_SECRET_KEY still yields an empty
+    # secret here — pinning the pre-existing warn-and-continue dev behaviour.
+    main, cfg = _validate(monkeypatch)  # dev, no secret, auto-gen disabled
     with caplog.at_level(logging.WARNING):
         main._validate_settings(cfg)  # must not raise
     assert any("ARSLAN_SECRET_KEY not set" in r.message for r in caplog.records)
+
+
+def test_dev_missing_secret_autogenerates_when_enabled(monkeypatch, caplog, tmp_path):
+    """Keyless dev boot + feature enabled -> a real secret, no insecure-dev warning."""
+    main, cfg = _validate(monkeypatch, ARSLAN_SECRET_KEY_FILE=str(tmp_path / "sk"))
+    assert cfg.secret_key
+    assert (tmp_path / "sk").read_text(encoding="utf-8") == cfg.secret_key
+    with caplog.at_level(logging.WARNING):
+        main._validate_settings(cfg)
+    assert not any("ARSLAN_SECRET_KEY not set" in r.message for r in caplog.records)
+
+
+def test_prod_whitespace_secret_refuses_boot(monkeypatch):
+    """Whitespace-only is UNSET to crypto (strip) — prod boot check must agree."""
+    main, cfg = _validate(monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY="   ")
+    with pytest.raises(RuntimeError):
+        main._validate_settings(cfg)
+
+
+def test_prod_never_reads_persisted_secret_file(monkeypatch, tmp_path):
+    """prod + keyless + a populated secret file -> still refuses boot (file ignored)."""
+    f = tmp_path / "sk"
+    f.write_text("persisted-secret", encoding="utf-8")
+    main, cfg = _validate(monkeypatch, ARSLAN_ENV="prod", ARSLAN_SECRET_KEY_FILE=str(f))
+    assert cfg.secret_key == ""
+    with pytest.raises(RuntimeError):
+        main._validate_settings(cfg)
+
+
+def test_undecryptable_canary_mentions_secret_file_mismatch():
+    """The canary must point at the env-vs-persisted-file mismatch as a likely cause."""
+    import server.main as main
+
+    assert "auto-generated" in main._UNDECRYPTABLE_KEYS_MSG
+    assert "ARSLAN_SECRET_KEY_FILE" in main._UNDECRYPTABLE_KEYS_MSG
 
 
 def test_prod_with_secret_does_not_raise(monkeypatch):
