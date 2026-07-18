@@ -62,6 +62,7 @@
     "roster_joined": "{{name}} が会話に参加しました",
     "roster_left": "{{name}} が会話を退出しました",
     "roster_recruited": "{{name}} が本セッションに参加 · タスクは @ で直接依頼できます",
+    "roster_joined_no_pending": "{{name}} が参加 · 今回の保留タスクはありません。@ で直接依頼してください",
     "stopRun": "停止"
   },
   "conversation": {

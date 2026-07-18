@@ -62,6 +62,7 @@
     "roster_joined": "{{name}} joined the conversation",
     "roster_left": "{{name}} left the conversation",
     "roster_recruited": "{{name}} joined this session · @ them to hand off tasks",
+    "roster_joined_no_pending": "{{name}} joined · nothing was queued for them this round — @ them to hand off a task",
     "stopRun": "Stop"
   },
   "conversation": {

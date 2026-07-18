@@ -62,6 +62,7 @@
     "roster_joined": "{{name}} se unió a la conversación",
     "roster_left": "{{name}} salió de la conversación",
     "roster_recruited": "{{name}} se unió a esta sesión · usa @ para asignarle tareas",
+    "roster_joined_no_pending": "{{name}} se unió · no había nada pendiente esta vez — usa @ para asignarle tareas",
     "stopRun": "Detener"
   },
   "conversation": {

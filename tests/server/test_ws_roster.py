@@ -281,3 +281,118 @@ def test_dismiss_invite_clears_pending(staged_client):
         ws.receive_json()  # roster_update
 
     assert staged_client.portal.call(phase_service.get_pending_invite, "main") is None
+
+
+# ---------------------------------------------------------------------------
+# BUG2: Accept must never be silent — an invite/staffing-card accept whose park
+# is gone (cleared / clobbered / parked for another spawn) joins AND explains
+# via a joined_no_pending roster_event. Ledger invites (no origin) are untouched.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def two_spawn_client(tmp_path, monkeypatch, portal):
+    """staged_client plus a SECOND real spawn: roster_service.join does not validate
+    spawn existence, so the park-mismatch case needs a real spawn 5 — a ghost id
+    would make the test pass vacuously (spawn_name would just be null)."""
+    async def _seed(maker):
+        async with maker() as s:
+            s.add(Spawn(id=4, name="领英智囊", domain_category="social-media",
+                        capabilities=["content-generation"],
+                        system_prompt="You are a LinkedIn advisor."))
+            s.add(Spawn(id=5, name="数据研析", domain_category="analytics",
+                        capabilities=["charting"], system_prompt="You chart."))
+            await s.commit()
+
+    return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="bug2.db")
+
+
+def test_card_accept_without_park_joins_and_notices(two_spawn_client):
+    """BUG2 death line: the card promised a consequence; with the park gone the
+    accept must join AND explain — never silently just-join."""
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
+        joined = ws.receive_json()
+        assert joined["type"] == "roster_event" and joined["action"] == "joined"
+        notice = ws.receive_json()
+        assert notice["type"] == "roster_event"
+        assert notice["action"] == "joined_no_pending"
+        assert notice["spawn_id"] == 4 and notice["spawn_name"] == "领英智囊"
+        assert ws.receive_json()["type"] == "roster_update"
+
+
+def test_ledger_accept_without_origin_unchanged(two_spawn_client):
+    """No origin (Ledger pull / legacy client) → exact pre-fix frames, no notice."""
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        assert ws.receive_json()["action"] == "joined"
+        assert ws.receive_json()["type"] == "roster_update"  # and nothing in between
+
+
+def test_card_accept_after_stale_clear_notices(two_spawn_client):
+    """Stale: the park died via the Bug-B non-confirm clear (mechanism pinned in
+    test_delegation_advance; arslan.py:477 is literally phase_service.clear) —
+    reproduced via phase_service.clear. The card accept must explain."""
+    from server.services import phase_service
+
+    async def _park_then_clear():
+        await phase_service.set_inviting("main", 4, task_brief="t", user_message="u")
+        await phase_service.clear("main")
+    two_spawn_client.portal.call(_park_then_clear)
+
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
+        assert ws.receive_json()["action"] == "joined"
+        assert ws.receive_json()["action"] == "joined_no_pending"
+
+
+def test_card_accept_for_other_spawn_keeps_park_and_notices(two_spawn_client, monkeypatch):
+    """park for spawn 4; a (stale) card accept of spawn 5 must not dispatch, must
+    not clear 4's park, and must explain."""
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import phase_service
+
+    dispatched = []
+
+    async def _fake(*a, **k):  # pragma: no cover - asserts NOT called
+        dispatched.append(a)
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _fake)
+
+    async def _park():
+        await phase_service.set_inviting("main", 4, task_brief="t", user_message="u")
+    two_spawn_client.portal.call(_park)
+
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "roster_invite", "spawn_id": 5, "origin": "invite_card"})
+        assert ws.receive_json()["action"] == "joined"
+        notice = ws.receive_json()
+        assert notice["action"] == "joined_no_pending"
+        assert notice["spawn_name"] == "数据研析"
+        assert ws.receive_json()["type"] == "roster_update"
+
+    assert dispatched == []
+    pending = two_spawn_client.portal.call(phase_service.get_pending_invite, "main")
+    assert pending is not None and pending["spawn_id"] == 4
+
+
+def test_card_accept_already_member_still_notices(two_spawn_client):
+    """Already a member → no joined event (idempotence pinned elsewhere), but the
+    honest notice must STILL fire — it explains the missing dispatch, not membership."""
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "roster_invite", "spawn_id": 4})
+        ws.receive_json()  # joined
+        ws.receive_json()  # roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
+        notice = ws.receive_json()
+        assert notice["type"] == "roster_event"
+        assert notice["action"] == "joined_no_pending"
+        assert ws.receive_json()["type"] == "roster_update"

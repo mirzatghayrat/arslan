@@ -33,6 +33,8 @@ vi.mock("react-i18next", () => ({
       if (key === "chat.roster_joined") return `${opts?.name ?? ""} joined`;
       if (key === "chat.roster_left") return `${opts?.name ?? ""} left`;
       if (key === "chat.roster_recruited") return `${opts?.name ?? ""} recruited-notice`;
+      if (key === "chat.roster_joined_no_pending")
+        return `${opts?.name ?? ""} joined-no-pending-notice`;
       return key;
     },
   }),
@@ -242,5 +244,70 @@ describe("roster_recruited locale copy is honest (session-scoped, no next-time c
     expect(value).not.toMatch(staleClaim);
     expect(value).toMatch(marker);
     expect(value).toContain("{{name}}");
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// 6. BUG2 — honest notice when an accept found no parked task, and a NEUTRAL
+//    fallback for unknown roster actions (an unknown action must never render
+//    as the spawn LEAVING).
+// ---------------------------------------------------------------------------
+describe("OrchestratorChat joined_no_pending + unknown-action fallback", () => {
+  const base = {
+    id: "notice-np-1",
+    sender: "arslan" as const,
+    senderName: "Arslan",
+    senderAvatar: "🦁",
+    text: "",
+    timestamp: "",
+    rosterSpawnName: "数据研析",
+  };
+
+  it("renders the honest no-pending notice", () => {
+    render(
+      <OrchestratorChat
+        chatHistory={[{ ...base, rosterAction: "joined_no_pending" }]}
+        setChatHistory={() => {}}
+        spawns={[]}
+        currentStyle="quartz"
+        setCurrentStyle={() => {}}
+        activeThread={null}
+      />
+    );
+    expect(screen.getByText(/数据研析 joined-no-pending-notice/)).toBeTruthy();
+  });
+
+  it("renders an UNKNOWN roster action as a neutral joined-style line, never as left", () => {
+    render(
+      <OrchestratorChat
+        chatHistory={[{ ...base, id: "notice-np-2", rosterAction: "future_action" }]}
+        setChatHistory={() => {}}
+        spawns={[]}
+        currentStyle="quartz"
+        setCurrentStyle={() => {}}
+        activeThread={null}
+      />
+    );
+    expect(screen.getByText(/数据研析 joined/)).toBeTruthy();
+    expect(screen.queryByText(/数据研析 left/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. BUG2 locale guard — the new key must exist in all 6 locales, carry the
+//    name placeholder, point at @ hand-off, and never promise a dispatch.
+// ---------------------------------------------------------------------------
+describe("roster_joined_no_pending locale copy", () => {
+  const dicts: Array<[string, Record<string, any>]> = [
+    ["en", en], ["zh", zh], ["ja", ja], ["de", de], ["fr", fr], ["es", es],
+  ];
+
+  it.each(dicts)("%s: honest, @-directed, no dispatch promise", (_id, dict) => {
+    const value: string = dict.chat.roster_joined_no_pending;
+    expect(value).toBeTruthy();
+    expect(value).toContain("{{name}}");
+    expect(value).toContain("@");
+    expect(value).not.toMatch(/下次|next time|次回|nächste|prochaine|próxima/i);
   });
 });

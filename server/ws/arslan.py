@@ -537,9 +537,19 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     )
                     continue
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")
+                spawn_name = await dispatcher.get_spawn_name(spawn_id)
                 if newly_joined:
-                    spawn_name = await dispatcher.get_spawn_name(spawn_id)
                     await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
+                if (data.get("origin") or "") == "invite_card":
+                    # BUG2 death line: an invite/staffing CARD promised a consequence, but
+                    # the park is gone (cleared by a later message, clobbered by a phase
+                    # write, or parked for another spawn). Never silent — say what actually
+                    # happened (enrolled only) and what to do (@ it to hand off). Emitted
+                    # regardless of membership novelty: a stale card over an existing
+                    # member still needs the explanation. Ledger pulls send no origin and
+                    # keep the plain joined event.
+                    await ws.send_json(
+                        protocol.roster_event("joined_no_pending", spawn_id, spawn_name))
                 await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 continue
 

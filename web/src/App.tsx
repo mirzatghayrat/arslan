@@ -768,7 +768,10 @@ export default function App() {
                   candidates={pendingStaffing.candidates}
                   createDraft={pendingStaffing.createDraft}
                   onInvite={(spawnId) => {
-                    wsSend({ type: 'roster_invite', spawn_id: spawnId });
+                    // Staffing-picker picks never park a task (only the invite_one band
+                    // parks), so the honest "nothing queued — @ them" notice is exactly
+                    // the right guidance after this join too (BUG2).
+                    wsSend({ type: 'roster_invite', spawn_id: spawnId, origin: 'invite_card' });
                     clearPendingStaffing();
                   }}
                   onCreateNew={(draft) => {
@@ -869,7 +872,10 @@ export default function App() {
                 conversationId={activeThreadId}
                 pendingInvite={pendingInvite}
                 onAcceptInvite={(spawnId) => {
-                  wsSend({ type: 'roster_invite', spawn_id: spawnId });
+                  // origin marks a CARD accept: if the parked task is gone by the time
+                  // the backend sees this, it answers with an honest joined_no_pending
+                  // notice instead of a silent join (BUG2).
+                  wsSend({ type: 'roster_invite', spawn_id: spawnId, origin: 'invite_card' });
                   clearPendingInvite();
                 }}
                 onDismissInvite={() => {

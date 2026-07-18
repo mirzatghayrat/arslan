@@ -203,7 +203,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
           isRouteAnnouncement: true,
         };
       }
-      // Roster notice: rosterAction is "joined" | "left"
+      // Roster notice: rosterAction is "joined" | "left" | "recruited" | "joined_no_pending"
       if (item.rosterAction) {
         return {
           id,

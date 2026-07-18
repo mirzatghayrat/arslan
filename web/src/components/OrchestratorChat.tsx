@@ -537,11 +537,15 @@ export default function OrchestratorChat({
               // "recruited" (delegation cell 6): Arslan already answered the task doer-first;
               // accepting the invite enrolls the spawn into THIS session's roster (rosters are
               // session-ephemeral) so the user can @ it directly.
-              const label = msg.rosterAction === 'joined'
-                ? t('chat.roster_joined', { name })
+              // 'left' is matched explicitly; unknown future actions fall back to the
+              // neutral joined label — an unknown action must never render as a LEAVE.
+              const label = msg.rosterAction === 'left'
+                ? t('chat.roster_left', { name })
                 : msg.rosterAction === 'recruited'
                   ? t('chat.roster_recruited', { name })
-                  : t('chat.roster_left', { name });
+                  : msg.rosterAction === 'joined_no_pending'
+                    ? t('chat.roster_joined_no_pending', { name })
+                    : t('chat.roster_joined', { name });
               return (
                 <div key={msg.id} className="flex items-center gap-3 py-1 select-none">
                   <div className="flex-1 h-px bg-border/60" />
