@@ -81,7 +81,7 @@ def test_blank_file_self_heals_and_tightens_perms(keyfile):
     value = _boot()
     assert value.strip()
     assert keyfile.read_text(encoding="utf-8") == value
-    # overwrite of a laxer pre-existing file must end owner-only (trailing chmod)
+    # overwrite of a laxer pre-existing file must end owner-only (pre-write fchmod)
     assert stat.S_IMODE(keyfile.stat().st_mode) == 0o600
 
 
@@ -150,6 +150,22 @@ def test_disabled_set_but_empty_returns_explicit_verbatim(monkeypatch, caplog):
 
 
 # --- path handling -----------------------------------------------------------
+
+
+def test_unset_env_uses_the_default_home_path_end_to_end(tmp_path, monkeypatch):
+    """THE path every real user takes: ARSLAN_SECRET_KEY_FILE UNSET (not empty).
+
+    Unset must mean "use the default ~/.arslan/secret_key", NOT "disabled" — a
+    natural-looking simplification of that gate (`if not raw_override`) would put
+    every keyless first boot back on the public dev-fallback key, which is the whole
+    bug this module exists to fix. HOME is redirected so this never touches the
+    developer's real ~/.arslan."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv(secret_bootstrap.SECRET_FILE_ENV, raising=False)
+    value = _boot()
+    assert value
+    assert (tmp_path / ".arslan" / "secret_key").read_text(encoding="utf-8") == value
+    assert _boot() == value  # and it is reused, not re-minted
 
 
 def test_default_path_is_home_dotarslan_outside_default_data_dir():

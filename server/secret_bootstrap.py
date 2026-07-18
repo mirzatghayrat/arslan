@@ -87,11 +87,14 @@ def _persist_secret(path: Path, secret: str, *, overwrite_blank: bool) -> None:
     flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if overwrite_blank else os.O_EXCL)
     fd = os.open(path, flags, 0o600)
     try:
-        os.fchmod(fd, 0o600)
+        # fchmod BEFORE the bytes land: O_CREAT's mode applies only to NEW files, so
+        # on the blank-file self-heal path the secret would otherwise sit in a
+        # possibly-lax file until a trailing chmod. This single call is the whole
+        # permission guarantee — no trailing chmod is needed.
+        os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
         os.write(fd, secret.encode("utf-8"))
     finally:
         os.close(fd)
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
 
 def _tighten_permissions(path: Path, *, log: logging.Logger) -> None:
