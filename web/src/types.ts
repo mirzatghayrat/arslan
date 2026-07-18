@@ -87,7 +87,8 @@ export interface Message {
   };
   /** Routing brief (need + @-mention duty lines) — rendered with mention chips. */
   isRouteAnnouncement?: boolean;
-  /** Roster notice: "joined" | "left" — present on system messages from roster_event frames. */
+  /** Roster notice: "joined" | "left" | "recruited" | "joined_no_pending" — present on
+   *  system messages from roster_event frames (see server/ws/protocol.py::roster_event). */
   rosterAction?: string;
   /** The spawn name for a roster notice item. */
   rosterSpawnName?: string | null;

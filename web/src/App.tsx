@@ -10,6 +10,7 @@ import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/sessionPersistence';
 import { firstLiveThread } from './lib/threadLifecycle';
+import { cardAcceptInvite, ledgerInvite } from './lib/rosterInvite';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
@@ -587,7 +588,7 @@ export default function App() {
         wsSend({ type: 'roster_kick', spawn_id: numericId });
       }
     } else {
-      wsSend({ type: 'roster_invite', spawn_id: numericId });
+      wsSend(ledgerInvite(numericId));
     }
   };
 
@@ -771,7 +772,7 @@ export default function App() {
                     // Staffing-picker picks never park a task (only the invite_one band
                     // parks), so the honest "nothing queued — @ them" notice is exactly
                     // the right guidance after this join too (BUG2).
-                    wsSend({ type: 'roster_invite', spawn_id: spawnId, origin: 'invite_card' });
+                    wsSend(cardAcceptInvite(spawnId));
                     clearPendingStaffing();
                   }}
                   onCreateNew={(draft) => {
@@ -875,7 +876,7 @@ export default function App() {
                   // origin marks a CARD accept: if the parked task is gone by the time
                   // the backend sees this, it answers with an honest joined_no_pending
                   // notice instead of a silent join (BUG2).
-                  wsSend({ type: 'roster_invite', spawn_id: spawnId, origin: 'invite_card' });
+                  wsSend(cardAcceptInvite(spawnId));
                   clearPendingInvite();
                 }}
                 onDismissInvite={() => {
@@ -1373,7 +1374,7 @@ export default function App() {
                       <LedgerRow
                         spawn={{ id: numericId, name: spawn.name }}
                         isMember={isRosterMember(spawn.id)}
-                        onInvite={(id) => wsSend({ type: 'roster_invite', spawn_id: id })}
+                        onInvite={(id) => wsSend(ledgerInvite(id))}
                         onKick={(id) => {
                           if (window.confirm(t('ledger.kickConfirm'))) {
                             wsSend({ type: 'roster_kick', spawn_id: id });

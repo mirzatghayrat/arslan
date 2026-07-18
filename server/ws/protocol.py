@@ -267,8 +267,16 @@ def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, A
 
 
 def roster_event(action: str, spawn_id: int, spawn_name: str | None) -> dict[str, Any]:
-    """Notify the client that a spawn joined or left the roster.
+    """Notify the client of a roster membership change.
 
-    `action` is "joined" or "left".
+    `action` is one of:
+      • "joined"            — the spawn entered the roster
+      • "left"              — the spawn was kicked
+      • "recruited"         — a cell-6 recruiting invite was accepted (enroll only,
+                              the task Arslan already answered is NOT re-dispatched)
+      • "joined_no_pending" — a CARD accept found no parked task: joined only, so the
+                              client explains that nothing was queued (BUG2: never silent)
+    The renderer falls back to the neutral joined label for unknown actions, so adding
+    one here is safe — but update web/src/types.ts and adapters.ts alongside it.
     """
     return {"type": "roster_event", "action": action, "spawn_id": spawn_id, "spawn_name": spawn_name}
