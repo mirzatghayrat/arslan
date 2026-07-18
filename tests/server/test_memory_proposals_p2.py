@@ -274,6 +274,59 @@ async def test_edit_high_conf_accept_idempotent_when_save_facts_own_dedup_fires(
     assert new_row.content == "user prefers dark mode and large fonts"
 
 
+async def test_edit_high_conf_old_hard_deleted_returns_410_no_orphan(client):
+    """Race guard (coordinator Important): old_id was hard-deleted out-of-band
+    between propose and accept. accept must 410 BEFORE materializing the new
+    fact — otherwise a re-accept would leak a fresh orphan fact each time and
+    fail identically forever. Assert: 410, fact count unchanged (no orphan),
+    proposal still pending (dismissable)."""
+    old_id = await _seed_fact(client, content="待编辑但会被删的事实")
+    pid = await _seed_proposal(
+        client, kind="edit_high_conf_suspect", table_name="user_facts", old_id=old_id,
+        provenance={"content": "编辑内容永远不该落地"})
+    async with client.db_maker() as db:
+        old = await db.get(UserFact, old_id)
+        await db.delete(old)
+        await db.commit()
+
+    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
+    assert r.status_code == 410
+
+    async with client.db_maker() as db:
+        from sqlalchemy import select
+        facts = (await db.execute(select(UserFact))).scalars().all()
+        p = await db.get(MemoryProposal, pid)
+    assert facts == []                    # NO orphan fact was materialized
+    assert p.status == "pending"          # still dismissable, not stuck
+
+
+async def test_edit_high_conf_old_superseded_out_of_band_returns_409_no_orphan(client):
+    """Race guard (coordinator Important): old_id was superseded by a DIFFERENT
+    row out-of-band between propose and accept. accept must 409 BEFORE
+    materializing — no new orphan fact, proposal untouched."""
+    old_id = await _seed_fact(client, content="会被别的行取代的事实")
+    other_id = await _seed_fact(client, content="抢先取代的第三行")
+    async with client.db_maker() as db:
+        old = await db.get(UserFact, old_id)
+        old.superseded_by = other_id
+        await db.commit()
+
+    pid = await _seed_proposal(
+        client, kind="edit_high_conf_suspect", table_name="user_facts", old_id=old_id,
+        provenance={"content": "编辑内容永远不该落地"})
+    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept")
+    assert r.status_code == 409
+
+    async with client.db_maker() as db:
+        from sqlalchemy import select
+        facts = (await db.execute(select(UserFact))).scalars().all()
+        old = await db.get(UserFact, old_id)
+        p = await db.get(MemoryProposal, pid)
+    assert len(facts) == 2                # only the two seeded rows — no orphan
+    assert old.superseded_by == other_id  # untouched (still points at the out-of-band winner)
+    assert p.status == "pending"
+
+
 # --------------------------------------------------------------------- delete_suspect
 
 async def test_delete_suspect_accept_user_facts_reconciles_predecessor(client):

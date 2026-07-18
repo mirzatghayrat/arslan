@@ -441,6 +441,26 @@ async def _accept_edit_high_conf(session: AsyncSession, p: MemoryProposal, pid: 
                             detail=f"proposal {pid}: edit_high_conf_suspect unsupported for "
                                    f"table {p.table_name!r}")
 
+    # Validate old_id is present AND active BEFORE materializing anything. The
+    # materialize step below (save_facts) opens its OWN session and self-commits
+    # the new fact durably. If we let it run and only THEN discovered old_id was
+    # deleted or superseded out-of-band between propose and accept,
+    # execute_supersede would raise 410 (dangling_old) / 409 (already superseded
+    # by a different row) while the freshly-committed new fact stays behind AND
+    # the proposal stays pending — so every re-accept would leak ANOTHER orphan
+    # fact and fail identically. Checking up front eliminates the orphan on the
+    # common out-of-band cases. A tiny TOCTOU window remains between this check
+    # and the execute_supersede below; the idempotency guard there already covers
+    # the one way it can legitimately fire (save_facts' own extension-dedup),
+    # so the residual window is acceptable.
+    old = await session.get(UserFact, p.old_id)
+    if old is None:
+        raise HTTPException(status_code=410, detail=f"user_facts id {p.old_id} does not exist")
+    if old.superseded_by is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"user_facts id {p.old_id} already superseded by {old.superseded_by}")
+
     from server.orchestrator import memory
 
     # Drop "content" from the fact's own provenance blob — it would otherwise
