@@ -17,6 +17,12 @@ import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 import { toUiMessages } from "../api/adapters";
 import type { ArslanThreadItem } from "../api/client.types";
 import OrchestratorChat from "../components/OrchestratorChat";
+import en from "../locales/en.json";
+import zh from "../locales/zh.json";
+import ja from "../locales/ja.json";
+import de from "../locales/de.json";
+import fr from "../locales/fr.json";
+import es from "../locales/es.json";
 
 // jsdom does not implement scrollIntoView — suppress
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -26,6 +32,7 @@ vi.mock("react-i18next", () => ({
     t: (key: string, opts?: Record<string, string>) => {
       if (key === "chat.roster_joined") return `${opts?.name ?? ""} joined`;
       if (key === "chat.roster_left") return `${opts?.name ?? ""} left`;
+      if (key === "chat.roster_recruited") return `${opts?.name ?? ""} recruited-notice`;
       return key;
     },
   }),
@@ -195,5 +202,45 @@ describe("OrchestratorChat roster notice rendering", () => {
       />
     );
     expect(screen.getByText(/数据研析 left/)).toBeTruthy();
+  });
+
+  it("renders a recruited notice through chat.roster_recruited (cell 6 enroll)", () => {
+    const recruitedMsg = { ...joinedMsg, id: "notice-3", rosterAction: "recruited" };
+    render(
+      <OrchestratorChat
+        chatHistory={[recruitedMsg]}
+        setChatHistory={() => {}}
+        spawns={[]}
+        currentStyle="quartz"
+        setCurrentStyle={() => {}}
+        activeThread={null}
+      />
+    );
+    expect(screen.getByText(/数据研析 recruited-notice/)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Honest recruit copy — the roster is SESSION-scoped and no routing
+//    preference is ever persisted, so no locale may claim "next time tasks
+//    like this go straight to X" (BUG1: unbacked claim). Pin the REAL values.
+// ---------------------------------------------------------------------------
+describe("roster_recruited locale copy is honest (session-scoped, no next-time claim)", () => {
+  const locales: Array<[string, Record<string, any>, RegExp]> = [
+    ["en", en, /session/i],
+    ["zh", zh, /本次会话/],
+    ["ja", ja, /セッション/],
+    ["de", de, /Sitzung/],
+    ["fr", fr, /session/i],
+    ["es", es, /sesión/i],
+  ];
+  const staleClaim = /下次|next time|次回|nächste|prochaine|próxima/i;
+
+  it.each(locales)("%s: no unbacked next-time claim, session-scoped", (_id, dict, marker) => {
+    const value: string = dict.chat.roster_recruited;
+    expect(value).toBeTruthy();
+    expect(value).not.toMatch(staleClaim);
+    expect(value).toMatch(marker);
+    expect(value).toContain("{{name}}");
   });
 });

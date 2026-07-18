@@ -1339,7 +1339,7 @@ async def _accept_recruit(conversation_id, spawn_id, emit: EventSink) -> None:  
     from server.services import recap_service
     await recap_service.log_event(
         conversation_id, "invite", {"spawn_id": spawn_id, "spawn_name": spawn_name},
-        f"招募入编 {spawn_name or '分身'} · 下次这类任务直接接手")
+        f"招募入编 {spawn_name or '分身'} · 本次会话可直接 @ 交办")
 
 
 def _match_choice(user_message, candidates):  # noqa: ANN001
@@ -1475,10 +1475,10 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
                          _dual_track_signals(user_message, answer_text))
 
     # Cell 6: the router picked a NON-member as best fit → RECRUITING invite. The park
-    # carries answered=True so Accept ONLY enrolls ("下次这类任务由 TA 直接接手") and does
-    # NOT re-dispatch the task Arslan already answered (Bug 1 fix). Cell 7 (no capable
-    # member) stops at the doer-first answer — the suggest_create staffing spine is the
-    # `suggest_create` router action, untouched.
+    # carries answered=True so Accept ONLY enrolls (session-scoped roster; the user can
+    # then @ it directly) and does NOT re-dispatch the task Arslan already answered
+    # (Bug 1 fix). Cell 7 (no capable member) stops at the doer-first answer — the
+    # suggest_create staffing spine is the `suggest_create` router action, untouched.
     if cell == _CELL_RECRUIT:
         reason = (f"让「{_guard_spawn_name}」接手更专业?" if _is_cjk(user_message)
                   else f"Let {_guard_spawn_name} take this for more depth?")

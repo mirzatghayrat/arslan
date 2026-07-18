@@ -61,7 +61,7 @@
     "thinking": "Pensando...",
     "roster_joined": "{{name}} se unió a la conversación",
     "roster_left": "{{name}} salió de la conversación",
-    "roster_recruited": "{{name}} se unió · la próxima vez tareas como esta van directo a {{name}}",
+    "roster_recruited": "{{name}} se unió a esta sesión · usa @ para asignarle tareas",
     "stopRun": "Detener"
   },
   "conversation": {

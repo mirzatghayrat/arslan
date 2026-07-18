@@ -108,7 +108,7 @@ Arslan is a **team**, not a single chatbot. Six specialist spawns are seeded on 
    > Research the current state of AI agent frameworks and give me a sourced briefing.
 3. Research Analyst streams its answer **under its own name** — a distinct specialist, not the host. That's the "my agent team works" moment.
 
-> **The doer-first trap — read this or you'll think it's just one chatbot.** If you type a task with an *empty* roster, **Arslan answers it itself** and offers a small "let Research Analyst take this?" card. Accepting that card only *enrolls* the spawn for next time — it does **not** re-run the task. So either **pull the spawn into the chat / @-mention it first** (recommended, one step), or accept the card and **send the task again**.
+> **The doer-first trap — read this or you'll think it's just one chatbot.** If you type a task with an *empty* roster, **Arslan answers it itself** and offers a small "let Research Analyst take this?" card. Accepting that card only *enrolls* the spawn into this session's roster — it does **not** re-run the task. So either **pull the spawn into the chat / @-mention it first** (recommended, one step), or accept the card and **send the task again**.
 
 **Alternatives:**
 

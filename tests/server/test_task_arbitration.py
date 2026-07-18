@@ -152,7 +152,7 @@ async def test_cell6_accept_joins_only_no_redispatch(maker, monkeypatch):
     """Cell 6 accept (Bug 1 reproduce→fix): accepting a RECRUITING invite (answered=True)
     ONLY enrolls the spawn + posts a note — it must NOT re-dispatch the already-answered
     task. (Pre-fix: the typed-「好」 spine re-dispatched the parked brief — RED.)"""
-    joined, dispatched, frames = [], [], []
+    joined, dispatched, frames, recaps = [], [], [], []
 
     async def _join(conv, sid, *, via):
         joined.append((conv, sid, via))
@@ -162,6 +162,12 @@ async def test_cell6_accept_joins_only_no_redispatch(maker, monkeypatch):
     async def _disp(*a, **k):
         dispatched.append((a, k))
     monkeypatch.setattr(arslan, "dispatch_routed", _disp)
+
+    from server.services import recap_service
+
+    async def _recap(conv, kind, payload, summary):
+        recaps.append((kind, summary))
+    monkeypatch.setattr(recap_service, "log_event", _recap)
 
     await phase_service.set_inviting("main", 7, task_brief="做半导体 PPT",
                                      user_message="帮我做半导体行业 PPT", answered=True)
@@ -173,6 +179,12 @@ async def test_cell6_accept_joins_only_no_redispatch(maker, monkeypatch):
     assert any(f.get("type") == "roster_event" and f.get("action") == "recruited"
                for f in frames), "a recruit note must be posted"
     assert await phase_service.get_pending_invite("main") is None, "pending invite cleared"
+    # Honest copy (BUG1): the roster is session-ephemeral and no routing preference
+    # is persisted, so the recap must not claim "下次这类任务直接接手".
+    invite_recaps = [s for k, s in recaps if k == "invite"]
+    assert invite_recaps, "recruit accept must log an invite recap"
+    assert all("下次" not in s for s in invite_recaps), "recap claims an unbacked 下次 promise"
+    assert any("本次会话" in s for s in invite_recaps), "recap should state the session scope"
 
 
 # --------------------------------------------------------------------------- cell 3

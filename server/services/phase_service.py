@@ -100,8 +100,8 @@ async def set_inviting(
 
     `answered` (delegation route-to-member, cell 6): TRUE marks a RECRUITING invite —
     Arslan already fully answered the task doer-first, so Accept must ONLY enroll the
-    spawn ("下次这类任务由 TA 直接接手") and must NOT re-dispatch the already-answered
-    task. The key is written ONLY when True so pre-existing parks (staffing / cell 2,
+    spawn into this session's roster (the user can then @ it directly) and must NOT
+    re-dispatch the already-answered task. The key is written ONLY when True so pre-existing parks (staffing / cell 2,
     which carry an UNanswered task that Accept must still dispatch) keep their exact
     payload shape — the accept side reads `pending.get("answered")`, falsy for those.
     """

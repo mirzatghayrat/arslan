@@ -535,7 +535,8 @@ export default function OrchestratorChat({
             if (msg.rosterAction) {
               const name = msg.rosterSpawnName ?? '';
               // "recruited" (delegation cell 6): Arslan already answered the task doer-first;
-              // accepting the invite enrolls the spawn so it takes this KIND of task next time.
+              // accepting the invite enrolls the spawn into THIS session's roster (rosters are
+              // session-ephemeral) so the user can @ it directly.
               const label = msg.rosterAction === 'joined'
                 ? t('chat.roster_joined', { name })
                 : msg.rosterAction === 'recruited'
