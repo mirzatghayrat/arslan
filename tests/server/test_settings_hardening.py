@@ -104,6 +104,15 @@ def test_prod_whitespace_secret_refuses_boot(monkeypatch):
         main._validate_settings(cfg)
 
 
+def test_dev_whitespace_secret_warns(monkeypatch, caplog):
+    """Dev half of the strip alignment: whitespace-only must trigger the same
+    insecure-dev warning as unset (crypto derives from the PUBLIC fallback)."""
+    main, cfg = _validate(monkeypatch, ARSLAN_SECRET_KEY="   ")
+    with caplog.at_level(logging.WARNING):
+        main._validate_settings(cfg)
+    assert any("ARSLAN_SECRET_KEY not set" in r.message for r in caplog.records)
+
+
 def test_prod_never_reads_persisted_secret_file(monkeypatch, tmp_path):
     """prod + keyless + a populated secret file -> still refuses boot (file ignored)."""
     f = tmp_path / "sk"
@@ -115,11 +124,21 @@ def test_prod_never_reads_persisted_secret_file(monkeypatch, tmp_path):
 
 
 def test_undecryptable_canary_mentions_secret_file_mismatch():
-    """The canary must point at the env-vs-persisted-file mismatch as a likely cause."""
+    """The canary must point at the env-vs-persisted-file mismatch as a likely cause,
+    stay %-formattable (a stray literal % would make the logging handler swallow the
+    whole line), and actually be the string the lifespan canary emits."""
+    from pathlib import Path
+
     import server.main as main
 
     assert "auto-generated" in main._UNDECRYPTABLE_KEYS_MSG
     assert "ARSLAN_SECRET_KEY_FILE" in main._UNDECRYPTABLE_KEYS_MSG
+    assert "3 stored provider" in (main._UNDECRYPTABLE_KEYS_MSG % 3)
+    # Source-level pin against re-inlining a literal at the call site, which would
+    # orphan this constant while the test kept passing.
+    assert "logger.warning(_UNDECRYPTABLE_KEYS_MSG" in Path(main.__file__).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_prod_with_secret_does_not_raise(monkeypatch):

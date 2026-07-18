@@ -63,23 +63,31 @@ def _resolve_secret_path(raw: str | None) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(str(p)))).resolve()
 
 
-def _persist_secret(path: Path, secret: str) -> None:
+def _persist_secret(path: Path, secret: str, *, overwrite_blank: bool) -> None:
     """Write owner-only; chmod 0o700 ONLY a parent dir we created ourselves.
 
     Same fd pattern as ``server.token_bootstrap._write_token`` (duplicated —
-    importing it here would cycle via ``server.auth``): O_CREAT honours 0o600
-    only for NEW files, so the trailing chmod makes overwriting a laxer
-    pre-existing (blank) file safe too. A PRE-existing parent is never
-    chmod'ed — it could be ``$HOME`` when ``ARSLAN_SECRET_KEY_FILE`` points
-    directly under it.
+    importing it here would cycle via ``server.auth``), hardened two ways:
+    fchmod(0o600) runs BEFORE the secret bytes land (O_CREAT's mode applies
+    only to NEW files, so on the blank-file self-heal path the bytes would
+    otherwise sit in a still-lax file until the trailing chmod), and creation
+    is O_EXCL unless we are deliberately healing a KNOWN-blank file — two
+    concurrent keyless first boots must not each persist a different secret
+    (the loser would serve an unpersisted one; the caller converts the
+    FileExistsError loss into loading the winner's value). The O_TRUNC
+    self-heal path keeps a tiny same-shape race, confined to already-blank
+    (poisoned) files. A PRE-existing parent is never chmod'ed — it could be
+    ``$HOME`` when ``ARSLAN_SECRET_KEY_FILE`` points directly under it.
     """
     parent = path.parent
     created_parent = not parent.exists()
     parent.mkdir(parents=True, exist_ok=True)
     if created_parent:
         os.chmod(parent, 0o700)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if overwrite_blank else os.O_EXCL)
+    fd = os.open(path, flags, 0o600)
     try:
+        os.fchmod(fd, 0o600)
         os.write(fd, secret.encode("utf-8"))
     finally:
         os.close(fd)
@@ -108,8 +116,11 @@ def _warn_on_mismatch(path: Path, explicit: str, *, log: logging.Logger) -> None
     """
     try:
         persisted = path.read_text(encoding="utf-8")
-    except OSError:
-        return  # absent or unreadable: nothing to compare, explicit wins anyway
+    except (OSError, UnicodeDecodeError):
+        # Absent, unreadable, or non-UTF-8 (e.g. a raw `openssl rand 32` file):
+        # nothing to compare, explicit wins anyway — never let the mismatch
+        # check crash an explicit-key boot.
+        return
     if persisted.strip() and persisted.strip() != explicit.strip():
         log.warning(
             "ARSLAN_SECRET_KEY is set explicitly and differs from the persisted secret at "
@@ -182,7 +193,9 @@ def bootstrap_secret_key(
         persisted = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         persisted = None
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
+        # UnicodeDecodeError included: a non-UTF-8 file (raw random bytes) is a
+        # read failure on an EXISTING file, not "absent" — never regenerate over it.
         log.warning(
             "Could not read the persisted ARSLAN_SECRET_KEY at %s (%s); refusing to "
             "regenerate over it — falling back to the insecure dev key for this boot.",
@@ -198,7 +211,25 @@ def bootstrap_secret_key(
     # Precedence 3 — first run (absent or blank file): generate + persist + disclose.
     secret = secrets.token_urlsafe(32)
     try:
-        _persist_secret(path, secret)
+        _persist_secret(path, secret, overwrite_blank=persisted is not None)
+    except FileExistsError:
+        # Lost a concurrent first-boot race (another process created the file
+        # between our read and our O_EXCL create). Serve the WINNER's persisted
+        # value so every process runs on the same secret — returning our own
+        # unpersisted candidate would brick any BYOK key saved through it.
+        try:
+            won = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            won = ""
+        if won.strip():
+            log.info("Loaded ARSLAN_SECRET_KEY from %s (concurrent first boot).", path)
+            return won.strip()
+        log.warning(
+            "Concurrent first boot left %s unreadable/blank; falling back to the "
+            "insecure dev key for this boot.",
+            path,
+        )
+        return ""
     except OSError as exc:
         log.warning(
             "Could not persist an auto-generated ARSLAN_SECRET_KEY to %s (%s); falling "

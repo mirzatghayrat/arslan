@@ -226,6 +226,44 @@ def test_unreadable_existing_file_is_never_overwritten(keyfile, caplog):
     assert "refusing to regenerate" in _own_messages(caplog)
 
 
+def test_non_utf8_file_falls_back_and_is_never_overwritten(keyfile, caplog):
+    """A raw-bytes key file (e.g. `openssl rand 32 > ...`) is a READ FAILURE on an
+    existing file — keyless boot falls back to "" (file untouched), and an explicit
+    boot still wins without crashing (UnicodeDecodeError is not an OSError)."""
+    keyfile.parent.mkdir(parents=True)
+    raw = b"\xff\xfe\x00binary-key"
+    keyfile.write_bytes(raw)
+    with caplog.at_level(logging.WARNING):
+        assert _boot() == ""
+        assert _boot(explicit="env-secret") == "env-secret"
+    assert keyfile.read_bytes() == raw
+    assert "refusing to regenerate" in _own_messages(caplog)
+
+
+def test_explicit_with_absent_file_never_creates_it(keyfile):
+    """The explicit key must NEVER be copied to disk (lock-and-box: the user's own
+    secret stays wherever the user manages it)."""
+    assert _boot(explicit="env-secret") == "env-secret"
+    assert not keyfile.exists()
+    assert not keyfile.parent.exists()
+
+
+def test_lost_first_boot_race_returns_winner_value(keyfile, monkeypatch, caplog):
+    """Two concurrent keyless first boots: the O_EXCL loser must serve the WINNER's
+    persisted secret, never its own unpersisted candidate."""
+    real_persist = secret_bootstrap._persist_secret
+
+    def race_winner_then_lose(path, secret, *, overwrite_blank):
+        real_persist(path, "winner-secret", overwrite_blank=overwrite_blank)
+        return real_persist(path, secret, overwrite_blank=overwrite_blank)
+
+    monkeypatch.setattr(secret_bootstrap, "_persist_secret", race_winner_then_lose)
+    with caplog.at_level(logging.INFO):
+        assert _boot() == "winner-secret"
+    assert keyfile.read_text(encoding="utf-8") == "winner-secret"
+    assert "concurrent first boot" in _own_messages(caplog)
+
+
 # --- integration through load_settings ---------------------------------------
 
 
