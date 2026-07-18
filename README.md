@@ -34,16 +34,20 @@ cd arslan
 #    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
 uv sync --extra dev --extra server
 
-# 3. Generate ARSLAN_SECRET_KEY ONCE into .env, then reuse it on every run.
-#    It derives the key that encrypts your stored BYOK secrets at rest, so
-#    regenerating it makes previously-stored keys undecryptable — never mint a
-#    fresh one per boot. (This is only added if .env doesn't already have one.)
-grep -q '^ARSLAN_SECRET_KEY=' .env 2>/dev/null \
-  || echo "ARSLAN_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+# 3. Secret key — nothing to do by default. On the FIRST dev boot the server
+#    auto-generates ARSLAN_SECRET_KEY, persists it to ~/.arslan/secret_key
+#    (outside the data dir on purpose — backup = data dir + that file), and
+#    reuses it on every later boot.
+#    OPTIONAL — pin it yourself in .env instead. It derives the key that
+#    encrypts stored BYOK secrets at rest; a changed value makes previously-
+#    stored keys undecryptable, so generate ONCE and reuse:
+grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
+  || { key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env && chmod 600 .env; }
 
-# 4. Run the backend. Load .env into the shell first — the dev server reads the
-#    process environment, so `source` it before starting uvicorn.
-set -a; source .env; set +a
+# 4. Run the backend (sources .env only if you created one in step 3 — the dev
+#    server reads the process environment, not .env directly).
+[ -f .env ] && set -a && source .env && set +a
 PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
   .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
 
@@ -68,7 +72,8 @@ Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **refuses to
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `ARSLAN_SECRET_KEY` | *(dev fallback)* | Derives the Fernet key that encrypts stored BYOK secrets at rest. **Must be set to store API keys** — if unset the app refuses to write new encrypted secrets (the built-in dev key is public). In `prod` a missing value is boot-fatal. |
+| `ARSLAN_SECRET_KEY` | *(auto-generated in dev)* | Derives the Fernet key that encrypts stored BYOK secrets at rest. Dev: unset → auto-generated on the first boot, persisted to `~/.arslan/secret_key`, and reused thereafter; an explicit value always wins (a mismatch vs the persisted file logs a warning). In `prod` a missing value is boot-fatal and the persisted dev file is **never** read. |
+| `ARSLAN_SECRET_KEY_FILE` | `~/.arslan/secret_key` | Dev-only: where the auto-generated secret persists — kept **outside** the data dir on purpose (backup = data dir **+** this file). Set **empty** to disable auto-generation entirely. Ignored in `prod`. Any dev entry point that loads server config (server, migration CLI, diagnostics) may mint it on first use; generation always prints one line saying where. |
 | `ARSLAN_API_TOKEN` | *(empty)* | API/WS bearer token. **Empty in dev + localhost = no auth** (zero-friction local). For prod / packaged / non-loopback binds a token is auto-generated on first run (see below). |
 | `ARSLAN_DATA_DIR` | platform app-data dir | Where the DB, notes, and secrets live. Unset → macOS `~/Library/Application Support/Arslan`, Linux `~/.local/share/Arslan`, Windows `%APPDATA%/Arslan`. **This directory IS the backup unit.** |
 | `ARSLAN_ENV` | `dev` | `dev` or `prod`. `prod` requires a token and hardens defaults; a missing `ARSLAN_SECRET_KEY` in `prod` is boot-fatal. |
@@ -92,7 +97,9 @@ Arslan is **safe by default**:
 
 ## Data & backup
 
-Everything that matters lives in one directory — the DB, your notes, and your encrypted secrets — resolved from `ARSLAN_DATA_DIR` (or the platform app-data dir if unset). **That directory IS the backup unit:** copy it to back Arslan up, and restore by copying it back. Keep its `api_token` and `crypto_salt` files with it — new-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`, so losing (or mismatching) `crypto_salt` makes those stored secrets undecryptable even with the right `ARSLAN_SECRET_KEY`. Back up and restore the whole directory as a unit.
+Everything that matters lives in one directory — the DB, your notes, and your encrypted secrets — resolved from `ARSLAN_DATA_DIR` (or the platform app-data dir if unset). **That directory IS the backup unit:** copy it to back Arslan up, and restore by copying it back. Keep its `api_token` and `crypto_salt` files with it — new-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`, so losing (or mismatching) `crypto_salt` makes those stored secrets undecryptable even with the right `ARSLAN_SECRET_KEY`.
+
+One deliberate exception: the secret itself lives **outside** that directory. If you never set `ARSLAN_SECRET_KEY` yourself, the dev auto-generated value sits at `~/.arslan/secret_key` — so a copied data dir alone can't decrypt your stored provider keys (lock and box travel separately). A complete backup is therefore **two pieces**: the data dir **and** the secret (your env value or that file).
 
 ## Status
 

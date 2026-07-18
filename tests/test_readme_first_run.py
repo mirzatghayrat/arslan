@@ -1,54 +1,198 @@
-"""Guards on the README Quickstart against the two known first-run blockers.
+"""Guards on the first-run docs against the known first-run blockers.
 
-These are the top two things that break a stranger following README.md verbatim.
-Both are pure text assertions on README.md so a future edit can't silently
-reintroduce them. See docs/superpowers/plans (S4.0-B) for context.
+These pin the things that break a stranger following README.md / docs/QUICKSTART.md
+verbatim. Static assertions run over BOTH docs (the original suite covered README
+only, while QUICKSTART carried the identical broken snippet unguarded), and the
+secret-key snippet is additionally executed for real (behavioral tests) so the
+documented command line provably does what the docs claim.
+
+Logical lines: the secret snippet spans backslash-continuation lines, so static
+checks fold continuations first — a per-physical-line scan would miss `>> .env`
+landing on a continuation line.
 """
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
-README = Path(__file__).resolve().parents[1] / "README.md"
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = [ROOT / "README.md", ROOT / "docs" / "QUICKSTART.md"]
+DOC_IDS = ["README", "QUICKSTART"]
 
 
-def _readme_text() -> str:
-    return README.read_text(encoding="utf-8")
+def _text(doc: Path) -> str:
+    return doc.read_text(encoding="utf-8")
 
 
-def test_quickstart_install_command_includes_server_extra():
-    """#1 first-run blocker: a bare ``uv sync`` installs only the CORE deps, but
-    the backend imports SQLAlchemy/aiosqlite/cryptography which live in the
-    OPTIONAL ``server`` extra (pyproject ``[project.optional-dependencies]``).
-    Following a bare ``uv sync`` yields an ImportError at ``uvicorn server.main:app``
-    boot. Pin the canonical command so the README can't regress to bare ``uv sync``.
-    """
-    text = _readme_text()
+def _logical_lines(text: str) -> list[str]:
+    """Fold backslash-newline continuations into single logical lines."""
+    return re.sub(r"\\\n\s*", " ", text).splitlines()
+
+
+# --- static guards (both docs) ----------------------------------------------
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_install_command_includes_server_extra(doc):
+    """#1 first-run blocker: a bare ``uv sync`` installs only the CORE deps; the
+    backend imports SQLAlchemy/aiosqlite/cryptography from the optional ``server``
+    extra, so a bare sync yields ImportError at uvicorn boot."""
+    text = _text(doc)
     for line in text.splitlines():
         stripped = line.strip()
-        # ignore prose mentions like "plain `uv sync`"; only guard command lines
         if stripped.startswith("uv sync"):
             assert "--extra server" in stripped, (
-                f"README has a `uv sync` command missing `--extra server` "
+                f"{doc.name} has a `uv sync` command missing `--extra server` "
                 f"(the #1 first-run blocker): {stripped!r}"
             )
     assert "uv sync --extra dev --extra server" in text, (
-        "README Quickstart must use the canonical `uv sync --extra dev --extra server`"
+        f"{doc.name} must show the canonical `uv sync --extra dev --extra server`"
     )
 
 
-def test_quickstart_secret_key_is_generated_once_and_reused():
-    """Regenerating ARSLAN_SECRET_KEY on every boot makes previously-stored BYOK
-    secrets undecryptable (the key is derived from ARSLAN_SECRET_KEY + a per-install
-    salt). The Quickstart must generate the secret ONCE and reuse it. Concretely:
-    any line that generates a random secret must PERSIST it to ``.env`` — never
-    inline a fresh ``$(python -c 'secrets...')`` straight into the run command.
-    """
-    text = _readme_text()
-    for line in text.splitlines():
-        if "secrets.token_urlsafe" in line:
-            assert ".env" in line, (
-                "README generates a random ARSLAN_SECRET_KEY without persisting it to "
-                ".env — a fresh key each boot makes previously-stored BYOK keys "
-                f"undecryptable. Generate once and reuse: {line.strip()!r}"
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_secret_generation_uses_python3_and_persists(doc):
+    """Generation lines must use python3 (stock macOS has no `python`) and persist
+    to .env (a fresh key each boot makes previously-stored BYOK keys undecryptable).
+    Checked on LOGICAL lines: the snippet splits generation and `>> .env` across
+    backslash continuations."""
+    lines = [ln for ln in _logical_lines(_text(doc)) if "secrets.token_urlsafe" in ln]
+    assert lines, f"{doc.name} lost the secret-generation snippet entirely"
+    for ln in lines:
+        assert "python3 -c" in ln, f"{doc.name} generation must use python3: {ln.strip()!r}"
+        assert ".env" in ln, f"{doc.name} generation must persist to .env: {ln.strip()!r}"
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_no_bare_python_command(doc):
+    """Stock macOS ships no `python`; every documented command must say python3.
+    (`python -c` is not a substring of `python3 -c`, so a raw scan suffices.)"""
+    assert "python -c" not in _text(doc), (
+        f"{doc.name} documents a bare `python -c` command — stock macOS has no "
+        f"`python`, the $() substitutes empty and poisons .env"
+    )
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_secret_guard_requires_nonempty_value(doc):
+    """The re-entry guard must NOT match an empty `ARSLAN_SECRET_KEY=` line: a
+    failed generation used to write that line, and a guard matching it blocked
+    self-healing forever. `^ARSLAN_SECRET_KEY=.` requires a non-empty value."""
+    guards = [
+        ln
+        for ln in _logical_lines(_text(doc))
+        if "grep" in ln and "ARSLAN_SECRET_KEY" in ln
+    ]
+    assert guards, f"{doc.name} lost the secret re-entry guard"
+    for ln in guards:
+        assert "^ARSLAN_SECRET_KEY=." in ln, (
+            f"{doc.name} guard must require a NON-EMPTY value so a poisoned empty "
+            f"line self-heals: {ln.strip()!r}"
+        )
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_source_env_line_is_guarded(doc):
+    """With auto-generation the default flow has NO .env — an unguarded
+    `source .env` errors exactly on the happy path."""
+    for ln in _logical_lines(_text(doc)):
+        if "source .env" in ln:
+            assert "[ -f .env ]" in ln, (
+                f"{doc.name} sources .env unguarded (errors when .env is absent, "
+                f"which is now the default): {ln.strip()!r}"
             )
-    assert ".env" in text, (
-        "README should persist ARSLAN_SECRET_KEY to .env and reuse it across restarts"
+
+
+# --- behavioral guards: run the documented snippet for real ------------------
+
+
+def _extract_secret_snippet(doc: Path) -> str:
+    """The literal snippet: the grep-guard line plus its backslash continuations."""
+    lines = _text(doc).splitlines()
+    start = next(
+        i for i, ln in enumerate(lines) if "grep -q '^ARSLAN_SECRET_KEY=" in ln
+    )
+    block = [lines[start]]
+    while block[-1].rstrip().endswith("\\"):
+        block.append(lines[start + len(block)])
+    return "\n".join(block)
+
+
+def _run_snippet(snippet: str, cwd: Path, path_env: str) -> subprocess.CompletedProcess:
+    # /bin/sh by absolute path: with a restricted PATH the shell itself must not
+    # need a PATH lookup (subprocess resolves argv[0] via the CHILD env's PATH).
+    return subprocess.run(
+        ["/bin/sh", "-c", snippet],
+        cwd=cwd,
+        env={"PATH": path_env},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def _env_value_after_source(cwd: Path) -> str:
+    """What the documented `source .env` flow actually exports."""
+    out = subprocess.run(
+        ["/bin/sh", "-c", 'set -a; . ./.env; set +a; printf %s "$ARSLAN_SECRET_KEY"'],
+        cwd=cwd,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return out.stdout
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_snippet_without_python3_writes_nothing(doc, tmp_path):
+    """No python3 on PATH -> the snippet must write NOTHING (the old version
+    appended an empty `ARSLAN_SECRET_KEY=` line that permanently blocked
+    regeneration and exported an empty secret)."""
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    real_grep = shutil.which("grep")
+    assert real_grep, "grep required for this test"
+    (fakebin / "grep").symlink_to(real_grep)
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    _run_snippet(_extract_secret_snippet(doc), cwd, str(fakebin))
+    env_file = cwd / ".env"
+    assert not env_file.exists() or "ARSLAN_SECRET_KEY" not in env_file.read_text(
+        encoding="utf-8"
+    ), f"{doc.name} snippet poisoned .env despite python3 being unavailable"
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_snippet_is_idempotent_and_writes_owner_only(doc, tmp_path):
+    """Two runs -> ONE non-empty line, same value both times, .env owner-only."""
+    snippet = _extract_secret_snippet(doc)
+    path_env = os.environ.get("PATH", "/usr/bin:/bin")
+    _run_snippet(snippet, tmp_path, path_env)
+    first = (tmp_path / ".env").read_text(encoding="utf-8")
+    _run_snippet(snippet, tmp_path, path_env)
+    second = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert second == first, f"{doc.name} snippet is not idempotent"
+    values = re.findall(r"^ARSLAN_SECRET_KEY=(.+)$", second, flags=re.M)
+    assert len(values) == 1 and len(values[0]) >= 32, (
+        f"{doc.name} snippet must persist exactly one strong secret: {second!r}"
+    )
+    assert (tmp_path / ".env").stat().st_mode & 0o077 == 0, (
+        f"{doc.name} snippet leaves .env readable by group/other"
+    )
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_snippet_heals_poisoned_env(doc, tmp_path):
+    """A pre-poisoned empty `ARSLAN_SECRET_KEY=` line (from the old broken
+    snippet) must not block regeneration; the sourced result is non-empty."""
+    (tmp_path / ".env").write_text("ARSLAN_SECRET_KEY=\n", encoding="utf-8")
+    _run_snippet(_extract_secret_snippet(doc), tmp_path, os.environ.get("PATH", ""))
+    assert _env_value_after_source(tmp_path).strip(), (
+        f"{doc.name} snippet fails to heal a poisoned empty ARSLAN_SECRET_KEY line"
     )

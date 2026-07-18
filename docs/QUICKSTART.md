@@ -35,20 +35,24 @@ uv sync --extra dev --extra server
 
 You'll run the backend and the frontend as two long-lived processes, so open **two terminals**.
 
-**Terminal 1 — backend.** First generate a stable secret once and reuse it on every run:
+**Terminal 1 — backend.** Just start it — on the first boot the server auto-generates `ARSLAN_SECRET_KEY`, persists it to `~/.arslan/secret_key` (it prints where), and reuses it on every later boot:
 
 ```bash
-# Generate ARSLAN_SECRET_KEY ONCE into .env (only if it isn't there already).
-grep -q '^ARSLAN_SECRET_KEY=' .env 2>/dev/null \
-  || echo "ARSLAN_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
-
-# Load .env into the shell, then start the backend.
-set -a; source .env; set +a
+# Sources .env only if you created one (see the optional pin below).
+[ -f .env ] && set -a && source .env && set +a
 PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
   .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
 ```
 
-> **Why generate the secret once and reuse it?** `ARSLAN_SECRET_KEY` derives the key that encrypts your stored BYOK secrets at rest. If it changes between runs, previously-stored keys become **undecryptable** — so never mint a fresh one each boot. `.env` is gitignored, and the same value also serves the Docker path below. The dev server reads the *process* environment (not `.env` directly), which is why you `source` it first.
+**Optional — manage the secret yourself.** Pin it in `.env` instead (generated ONCE; `.env` is gitignored, and the same value also serves the Docker path below):
+
+```bash
+grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
+  || { key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env && chmod 600 .env; }
+```
+
+> **Why one stable secret?** `ARSLAN_SECRET_KEY` derives the key that encrypts your stored BYOK secrets at rest. If it changes between runs, previously-stored keys become **undecryptable** — the auto-generated file (and the optional `.env` pin) exists precisely so the value stays stable. A complete backup is **two pieces**: your data dir **plus** the secret (`~/.arslan/secret_key`, or your own value). The dev server reads the *process* environment (not `.env` directly), which is why an explicit pin must be `source`d first.
 
 **Terminal 2 — frontend:**
 
@@ -85,7 +89,7 @@ Your key is encrypted at rest (Fernet / PBKDF2-HMAC-SHA256), and the first model
     -d '{"label":"DeepSeek","provider":"deepseek","model":"deepseek-v4-flash","base_url":"https://api.deepseek.com","api_key":"<YOUR_DEEPSEEK_KEY>"}'
   ```
 
-> **Make sure `ARSLAN_SECRET_KEY` is set (step 2) before saving a key.** Without it, the save fails closed and the wizard quietly closes without storing anything. If you followed step 2, you're fine.
+> **Key saves just work by default** — the server auto-generates `ARSLAN_SECRET_KEY` on first boot (step 2). If you disabled that (`ARSLAN_SECRET_KEY_FILE=` set empty) or the boot log warned that persisting failed, set `ARSLAN_SECRET_KEY` yourself before saving a key — without any secret the save fails closed and the wizard quietly closes without storing anything.
 
 ---
 
@@ -155,7 +159,7 @@ Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **enforces a
 | Only the host answers, never a spawn | Roster is empty — **+ Pull Into Chat** or `@`-mention a spawn first (see step 4). |
 | Unstyled page | You bypassed `npm run dev` — use it, not a direct `vite` call. |
 | `/api` or `/ws` refused | Use `127.0.0.1:5173`, not `localhost:5173`. |
-| Stored keys suddenly "undecryptable" | `ARSLAN_SECRET_KEY` changed between runs — keep it stable (that's why step 2 persists it to `.env`). |
+| Stored keys suddenly "undecryptable" | `ARSLAN_SECRET_KEY` changed between runs — keep it stable. Common cause: switching between an explicit env value and the auto-generated `~/.arslan/secret_key`. |
 
 **Back up your data.** Everything — the DB, notes, and encrypted secrets — lives under `ARSLAN_DATA_DIR` (here, `data/`). Back it up and restore it **as a whole**; keep its `crypto_salt` with it, or PBKDF2-encrypted secrets become undecryptable. See the [README](../README.md#data--backup) for details.
 
