@@ -109,6 +109,10 @@ Arslan is a **team**, not a single chatbot. Six specialist spawns are seeded on 
 
 > Each turn makes two or three LLM calls (a routing decision, sometimes a roster-scoring step when a member fits, then the answer/spawn run), so the *first* response has a little latency. That's expected.
 
+> **Second brain — recall/remember, honest caveats.** Arslan (and any spawn equipped with the "Second Brain" toolset) can search and write your second brain directly by calling `recall`/`remember` tools mid-conversation. Two things to know:
+> - **Needs a native-tool-calling provider** (e.g. DeepSeek). Over a direct Anthropic connection those tools never fire — that backend is intentionally text-in/text-out, so no tool schema is ever sent. Your memory still forms automatically regardless (facts extracted from what you say, plus end-of-session distillation) — this only affects the model's ability to actively search/write it mid-turn.
+> - **High-confidence proposals (delete / overwrite / edit) are REST-only.** When the model wants to delete or overwrite something instead of just appending, it proposes the change rather than applying it — today that proposal is only visible/actionable via `GET`/`POST /brain/proposals`, not an in-app inbox yet.
+
 ---
 
 ## 5. (Optional) Watch it improve itself

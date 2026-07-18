@@ -57,6 +57,13 @@ class RecallExecutor:
     caller. A spawn actor and a missing caller (current_caller() is None) both see
     the sensitive-filtered set — the leak direction on a forgotten/omitted caller
     is always "give less", never "let sensitive data reach a spawn prompt".
+
+    🔴 DEBT follow-up (brain-P2 decision point 2, recorded Task 6 — see the fuller
+    note at server.services.replay_safety.REPLAY_SAFE_BUILTINS): despite being
+    read-only, `recall` deliberately does NOT enter REPLAY_SAFE_BUILTINS yet. The
+    sensitive-fact filter above is verified fail-closed on the LIVE path only; its
+    prerequisite for ever joining the replay-safe set is a test proving replay-path
+    sensitive-exclusion is byte-for-byte identical to live's — not yet written.
     """
 
     key = "recall"

@@ -19,6 +19,20 @@ Why exactly these six:
 MCP tools are identified structurally by NOT being in this set (their keys are
 `mcp_<sid>__<name>` and carry a non-NULL Tool.external_name); the whitelist needs no
 prefix check — an MCP key simply is not a member.
+
+🔴 DEBT (brain-P2 decision point 2, follow-up recorded Task 6 — not yet actioned):
+`recall` (server.registry.memory_executors.RecallExecutor) is deliberately EXCLUDED
+here even though it is read-only, because a replay run must reproduce EXACTLY what
+the live turn saw. This round hardened `recall`'s sensitive-fact filter to be
+fail-closed on the LIVE path (host sees sensitive facts; spawn/no-caller never do —
+see RecallExecutor's docstring), but that filter's behavior has NOT been separately
+verified against the REPLAY path (a hermetic replay reconstructs its own caller
+context; nothing today asserts replay's sensitive-exclusion is byte-for-byte
+identical to live's). The PREREQUISITE for ever reconsidering `recall` here is:
+prove replay-path sensitive-exclusion == live-path sensitive-exclusion, with a test
+that exercises both paths side by side — not just live. Do not add `recall` to this
+set until that verification exists; `remember` (a write tool) must never join this
+set regardless.
 """
 from __future__ import annotations
 
