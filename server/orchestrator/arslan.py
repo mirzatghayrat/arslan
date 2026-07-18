@@ -23,6 +23,7 @@ from server.orchestrator import (
     tool_loop,
 )
 from server.orchestrator.json_protocol import parse_json_object
+from server.orchestrator.tool_caller import ToolCaller
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
 from arslan.llm import prices, usage_sink
@@ -978,6 +979,7 @@ async def _handle_answer_body(
             allow_escalation=False,
             confirm_command=confirm_command,
             conversation_id=conversation_id,
+            caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
         )
     except Exception as exc:  # noqa: BLE001
         emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})

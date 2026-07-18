@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from server.orchestrator import tool_loop
+from server.orchestrator.tool_caller import ToolCaller
 from server.registry.service import wired_tools_for_spawn
 
 # Re-export so existing imports keep working.
@@ -50,4 +51,5 @@ async def run(
         emit=emit, on_chunk=on_chunk, resolve_tools=_resolve,
         allow_escalation=allow_escalation, force_tools=True,
         conversation_id=conversation_id, log_events=not replay,
+        caller=ToolCaller(actor="spawn", spawn_id=spawn_id, conversation_id=conversation_id),
     )

@@ -12,12 +12,16 @@ import json
 import os
 import re
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from server.orchestrator import run_trace
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
+
+if TYPE_CHECKING:
+    from server.orchestrator.tool_caller import ToolCaller
 
 # P4 tuning: 5 was too tight for real research turns (the finance-primer live run burned
 # 4 searches + 1 extract + 1 chart and hit the forced step). 8 gives long tasks headroom
@@ -294,7 +298,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                          mcp_fail_counts: dict | None = None,
                          mcp_hint_logged: set | None = None,
                          conversation_id: str | None = None,
-                         log_events: bool = True) -> dict:
+                         log_events: bool = True,
+                         caller: ToolCaller | None = None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
     assistant turn + framed tool result into convo. Returns the raw result dict.
 
@@ -356,12 +361,21 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         result = {"ok": False,
                   "error": f"tool '{tool_key}' is not available to you; you may escalate a need instead"}
     else:
+        # Caller identity (brain-P2 Task 1): set ONLY around the executor call so a
+        # memory-write executor can read who is calling (host vs. spawn) and fail-closed
+        # (refuse) when no caller was threaded through. Reset in finally — zero residual
+        # pollution across dispatches/turns, including on the exception paths below.
+        from server.orchestrator import tool_caller
+        _ct = tool_caller.set_caller(caller) if caller is not None else None
         try:
             result = await asyncio.wait_for(executor.execute(args), timeout=tool_timeout_s)
         except TimeoutError:
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
+        finally:
+            if _ct is not None:
+                tool_caller.reset_caller(_ct)
     out = _record_tool_result(tool_key, args, result, emit, tool_trace,
                               assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
     if (log_events and mcp_fail_counts is not None and mcp_hint_logged is not None
@@ -929,6 +943,7 @@ async def run_native(
     confirm_command: ConfirmCommand | None = None,
     conversation_id: str | None = None,
     log_events: bool = True,
+    caller: ToolCaller | None = None,
 ) -> dict:
     """Native tool-calling twin of run(). Same signature, same return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -979,7 +994,7 @@ async def run_native(
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events)
+                conversation_id=conversation_id, log_events=log_events, caller=caller)
             searches_done += 1
 
     for step in range(max_tool_calls + 1):
@@ -1036,7 +1051,7 @@ async def run_native(
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
                     confirm_command=confirm_command, mcp_fail_counts=mcp_fail_counts,
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                    log_events=log_events)
+                    log_events=log_events, caller=caller)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})
