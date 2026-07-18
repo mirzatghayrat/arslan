@@ -19,13 +19,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import Learning, MemoryProposal, UserFact
+from server.db.models import Learning, MemoryProposal, Note, Spawn, UserFact
 from server.services import brain_usage, memory_temporal
 from server.services.memory_temporal import SupersedeError
 
 router = APIRouter(tags=["brain"], dependencies=[Depends(require_auth)])
 
-_TABLE_MODELS = {"user_facts": UserFact, "learnings": Learning}
+# brain-P2 Task 5: "notes" and "spawns" added — accept_proposal materializes
+# Tier2 kinds onto both (append_suspect/delete_suspect on notes;
+# delete_suspect/preference_overwrite_suspect on spawns), and list_proposals
+# needs both to render excerpts instead of silently going blank (self-check
+# MINOR: notes proposals used to always excerpt None since Note wasn't here).
+_TABLE_MODELS = {"user_facts": UserFact, "learnings": Learning, "notes": Note, "spawns": Spawn}
 
 # Sentinel distinguishing "caller didn't pass this kwarg" from "caller passed None"
 # — valid_from/superseded_by are legitimately NULL for most rows (legacy backfill,
@@ -354,6 +359,20 @@ def _proposal_dict(p: MemoryProposal, *, new_excerpt=_UNSET, old_excerpt=_UNSET)
     return out
 
 
+def _excerpt_for(row) -> str | None:
+    """Best-effort human-readable excerpt for a proposal's new/old referent —
+    display-only, used by list_proposals. user_facts/learnings/notes all carry
+    the text under `.content`; a "spawns" referent (preference proposals) has
+    no free-text column, so its memory_facts array is joined instead."""
+    if row is None:
+        return None
+    if hasattr(row, "content"):
+        return (row.content or "")[:200]
+    if hasattr(row, "memory_facts"):
+        return "; ".join(row.memory_facts or [])[:200] or None
+    return None
+
+
 @router.get("/brain/proposals")
 async def list_proposals(
     status: str = "pending", session: AsyncSession = Depends(db_session.get_session)
@@ -366,28 +385,194 @@ async def list_proposals(
     out = []
     for p in rows:
         model = _TABLE_MODELS.get(p.table_name)
-        new_row = await session.get(model, p.new_id) if model else None
-        old_row = await session.get(model, p.old_id) if model else None
+        # brain-P2 Task 5 self-check MINOR: new_id is nullable (0033) and every
+        # Tier2 proposal kind has new_id=None at propose time (nothing
+        # materialized yet) — session.get(model, None) degrades to a "fully
+        # NULL primary key" SAWarning rather than a real lookup, so skip the
+        # call outright instead of relying on that degrade-path.
+        new_row = await session.get(model, p.new_id) if (model and p.new_id is not None) else None
+        old_row = await session.get(model, p.old_id) if (model and p.old_id is not None) else None
         out.append(_proposal_dict(
-            p,
-            new_excerpt=(new_row.content[:200] if new_row else None),
-            old_excerpt=(old_row.content[:200] if old_row else None),
-        ))
+            p, new_excerpt=_excerpt_for(new_row), old_excerpt=_excerpt_for(old_row)))
     return out
+
+
+def _supersede_error_response(exc: SupersedeError) -> HTTPException:
+    """Shared SupersedeError -> 4xx mapping (plan #19), reused by both
+    supersede_suspect (unchanged) and edit_high_conf_suspect (which
+    materializes a new row first, then reuses the same guarded executor for
+    the pointer write): dangling_new/dangling_old -> 410 (referenced row was
+    deleted out from under a still-pending proposal); already_superseded/
+    new_is_superseded/cycle/self_supersede -> 409 (state conflict); bad_table
+    -> 422 (the proposal row's own table_name is corrupt — a data-integrity
+    defect, not a conflict)."""
+    if exc.code in ("dangling_new", "dangling_old"):
+        return HTTPException(status_code=410, detail=exc.detail)
+    if exc.code == "bad_table":
+        return HTTPException(status_code=422, detail=exc.detail)
+    return HTTPException(status_code=409, detail=exc.detail)
+
+
+async def _accept_edit_high_conf(session: AsyncSession, p: MemoryProposal, pid: int,
+                                 human_prov: dict) -> None:
+    """Materialize the edited content as a NEW user_facts row — new_id is
+    ALWAYS None at propose time (Task 4 never writes ahead of human
+    confirmation; the content lives in provenance JSON) — then supersede the
+    old row through the same guarded executor supersede_suspect uses.
+
+    RememberExecutor's scope-downgrade branch only ever proposes
+    edit_high_conf_suspect for kind="fact" (table_name="user_facts") — a
+    spawn attempting to supersede/mark_stale a kind="note" is refused
+    upfront by RememberExecutor itself (notes have no superseded_by column,
+    no temporal concept at all, plan's "矩阵按表能力"; see
+    test_memory_scope_isolation.py::test_spawn_supersede_note_is_a_clean_error_not_a_proposal),
+    so it never reaches a MemoryProposal row in the first place. The
+    table_name != "user_facts" guard below is defense in depth for a stale
+    row from before that fix, or a malformed/manually-inserted proposal —
+    refused cleanly (422) rather than writing an orphan fact that could
+    never actually supersede anything.
+    """
+    content = (p.provenance or {}).get("content")
+    if not content:
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: edit_high_conf_suspect missing 'content'")
+    if p.table_name != "user_facts":
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: edit_high_conf_suspect unsupported for "
+                                   f"table {p.table_name!r}")
+
+    from server.orchestrator import memory
+
+    # Drop "content" from the fact's own provenance blob — it would otherwise
+    # duplicate the row's `content` column inside its own audit JSON. Every
+    # edit_high_conf_suspect proposal is agentic-originated by construction
+    # (RememberExecutor is its only writer) — if stripping "content" leaves
+    # nothing behind (a minimal/degenerate provenance payload), fall back to
+    # that honest default rather than letting save_facts' mandatory-provenance
+    # guard raise an unhandled ValueError (500) here.
+    fact_provenance = {k: v for k, v in (p.provenance or {}).items() if k != "content"}
+    if not fact_provenance:
+        fact_provenance = {"source_kind": "agentic"}
+    new_rows = await memory.save_facts([{"content": content}], provenance=fact_provenance)
+    if not new_rows:
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: edit content could not be materialized "
+                                   "(merged into an existing active fact)")
+    new_id = new_rows[0].id
+
+    try:
+        await memory_temporal.execute_supersede(
+            "user_facts", new_id, p.old_id, provenance=human_prov, db=session)
+    except SupersedeError as exc:
+        if exc.code == "already_superseded":
+            # save_facts() runs its OWN exact/fuzzy dedup on every write
+            # (active-only): if the edit content is an "extension" of
+            # old_id's content, save_facts may have already auto-superseded
+            # old_id onto this very new_id before we got here. That's not a
+            # conflict — it's the same materialization via a different code
+            # path — so only re-raise if old_id ended up pointed somewhere
+            # else (a genuine out-of-band conflict).
+            old_row = await session.get(UserFact, p.old_id)
+            if old_row is not None and old_row.superseded_by == new_id:
+                return
+        raise _supersede_error_response(exc) from exc
+
+
+async def _accept_append_suspect(session: AsyncSession, p: MemoryProposal, pid: int) -> None:
+    content = (p.provenance or {}).get("content")
+    if not content:
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: append_suspect missing 'content'")
+    if p.table_name == "user_facts":
+        from server.orchestrator import memory
+        await memory.save_facts([{"content": content}], provenance=p.provenance)
+    elif p.table_name == "notes":
+        from server.services import note_service
+        await note_service.create(title=content[:200], content=content)
+    else:
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: append_suspect unsupported for "
+                                   f"table {p.table_name!r}")
+
+
+async def _accept_delete_suspect(session: AsyncSession, p: MemoryProposal, pid: int) -> None:
+    """🔴 Dangling-pointer guard: reconcile FIRST — any row whose
+    superseded_by points at the row we're about to delete becomes active
+    again — committed durably before the delete itself runs, so a still-live
+    predecessor's pointer never ends up dangling at a now-gone id even if the
+    delete step below then 410s. THEN delete. A target that's already gone
+    (someone deleted it out of band, or a double-accept race) -> 410, same
+    mapping as the supersede branches."""
+    if p.table_name == "user_facts":
+        await session.execute(sa_text(
+            "UPDATE user_facts SET superseded_by = NULL WHERE superseded_by = :o"),
+            {"o": p.old_id})
+        await session.commit()
+        from server.orchestrator import memory
+        ok = await memory.delete_fact(p.old_id)
+        if not ok:
+            raise HTTPException(status_code=410,
+                                detail=f"user_facts id {p.old_id} does not exist")
+    elif p.table_name == "learnings":
+        await session.execute(sa_text(
+            "UPDATE learnings SET superseded_by = NULL WHERE superseded_by = :o"),
+            {"o": p.old_id})
+        await session.commit()
+        row = await session.get(Learning, p.old_id)
+        if row is None:
+            raise HTTPException(status_code=410,
+                                detail=f"learnings id {p.old_id} does not exist")
+        await session.delete(row)
+        await session.execute(sa_text("DELETE FROM learnings_fts WHERE rowid = :r"),
+                              {"r": p.old_id})
+    elif p.table_name == "notes":
+        # No temporal concept on notes (no superseded_by column) — nothing to
+        # reconcile; note_service.delete already sweeps the FTS row.
+        from server.services import note_service
+        ok = await note_service.delete(p.old_id)
+        if not ok:
+            raise HTTPException(status_code=410, detail=f"notes id {p.old_id} does not exist")
+    elif p.table_name == "spawns":
+        # Preference delete (RememberExecutor._propose stores target_spawn_id
+        # explicitly; old_id mirrors it) — clears the whole preference array,
+        # the only granularity memory_facts (a plain string list, no per-item
+        # id) supports. No temporal concept, so no reconcile needed.
+        sid = (p.provenance or {}).get("target_spawn_id", p.old_id)
+        spawn = await session.get(Spawn, sid)
+        if spawn is None:
+            raise HTTPException(status_code=410, detail=f"spawns id {sid} does not exist")
+        spawn.memory_facts = []
+    else:
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: delete_suspect unsupported for "
+                                   f"table {p.table_name!r}")
+
+
+async def _accept_preference_overwrite(session: AsyncSession, p: MemoryProposal, pid: int) -> None:
+    prov = p.provenance or {}
+    sid, new_arr = prov.get("target_spawn_id"), prov.get("new_array")
+    if sid is None or new_arr is None:
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: preference_overwrite_suspect missing "
+                                   "target_spawn_id/new_array")
+    spawn = await session.get(Spawn, sid)
+    if spawn is None:
+        raise HTTPException(status_code=410, detail=f"spawns id {sid} does not exist")
+    spawn.memory_facts = new_arr
 
 
 @router.post("/brain/proposals/{pid}/accept")
 async def accept_proposal(
     pid: int, session: AsyncSession = Depends(db_session.get_session)
 ) -> dict:
-    """Human confirms -> deterministic execution via the same guarded executor the
-    rule path uses (db=session: staged in this request's transaction, committed once
-    below alongside the proposal's own status flip, so the pointer write and the
-    resolution are atomic). SupersedeError.code maps to structured 4xx (plan #19):
-    dangling_new/dangling_old -> 410 (the referenced row was deleted out from under
-    a still-pending proposal); already_superseded/new_is_superseded/cycle/
-    self_supersede -> 409 (state conflict); bad_table -> 422 (the proposal row's own
-    table_name is corrupt — a data-integrity defect, not a conflict)."""
+    """Human confirms -> deterministic materialization, branched by kind
+    (brain-P2 Task 5). supersede_suspect keeps the original P1 behavior
+    unchanged (both rows already exist — pure pointer write). The four Tier2
+    kinds Task 4's RememberExecutor can emit each get their own branch below;
+    every one of them ends by falling through to the shared status=accepted +
+    resolved_at write so there is exactly one success path. Each branch's own
+    docstring/comments carry its specific error mapping; the common shape is
+    dangling referent -> 410, state conflict -> 409, bad/missing data -> 422."""
     p = await session.get(MemoryProposal, pid)
     if p is None:
         raise HTTPException(status_code=404, detail=f"proposal {pid} not found")
@@ -395,18 +580,24 @@ async def accept_proposal(
         raise HTTPException(status_code=409,
                             detail=f"proposal {pid} already resolved (status={p.status})")
 
-    try:
-        await memory_temporal.execute_supersede(
-            p.table_name, p.new_id, p.old_id,
-            provenance={"source_kind": "human", "via": "proposal", "proposal_id": pid},
-            db=session,
-        )
-    except SupersedeError as exc:
-        if exc.code in ("dangling_new", "dangling_old"):
-            raise HTTPException(status_code=410, detail=exc.detail) from exc
-        if exc.code == "bad_table":
-            raise HTTPException(status_code=422, detail=exc.detail) from exc
-        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    human_prov = {"source_kind": "human", "via": "proposal", "proposal_id": pid}
+
+    if p.kind == "supersede_suspect":
+        try:
+            await memory_temporal.execute_supersede(
+                p.table_name, p.new_id, p.old_id, provenance=human_prov, db=session)
+        except SupersedeError as exc:
+            raise _supersede_error_response(exc) from exc
+    elif p.kind == "edit_high_conf_suspect":
+        await _accept_edit_high_conf(session, p, pid, human_prov)
+    elif p.kind == "append_suspect":
+        await _accept_append_suspect(session, p, pid)
+    elif p.kind == "delete_suspect":
+        await _accept_delete_suspect(session, p, pid)
+    elif p.kind == "preference_overwrite_suspect":
+        await _accept_preference_overwrite(session, p, pid)
+    else:
+        raise HTTPException(status_code=422, detail=f"proposal {pid}: unmapped kind {p.kind!r}")
 
     p.status = "accepted"
     p.resolved_at = datetime.utcnow()

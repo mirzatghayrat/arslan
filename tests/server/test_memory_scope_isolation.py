@@ -163,6 +163,24 @@ async def test_spawn_append_fact_downgrades_to_append_suspect_proposal(maker):
     assert p.provenance["content"] == "分身想记的事实"       # accept() materializes from here (Task 5)
 
 
+async def test_spawn_supersede_note_is_a_clean_error_not_a_proposal(maker):
+    """Notes have no superseded_by column (no temporal concept, plan's "矩阵
+    按表能力") — unlike fact, a spawn attempting to supersede/mark_stale a
+    note must be refused cleanly, not downgraded to an edit_high_conf_suspect
+    proposal Task 5's accept endpoint could never actually resolve (every
+    accept attempt would 422 forever — a permanent dismiss-only dead end)."""
+    await _seed_spawn(maker, 22, "分身22")
+    out = await _remember(
+        {"kind": "note", "action": "supersede", "target_id": 1, "content": "编辑笔记?"},
+        ToolCaller(actor="spawn", spawn_id=22, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "unsupported" in out["error"]
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert proposals == []
+
+
 async def test_spawn_edit_fact_downgrades_to_edit_high_conf_proposal(maker):
     """'编辑高置信 fact' anchor: a spawn attempting to supersede a global fact
     never writes directly — it downgrades to an edit_high_conf_suspect
@@ -222,6 +240,73 @@ async def test_host_preference_append_missing_target_id_is_a_clean_error(maker):
         ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
     assert out["ok"] is False
     assert "target_id" in out["error"]
+
+
+# ---------------------------------------------------------------------------
+# preference delete — ownership guard (Task 5 self-check, Minor #3): a spawn
+# may only ever propose deleting its OWN preferences; host always needs an
+# explicit target (mirrors the append/overwrite case above). Task 5's accept
+# endpoint reads provenance["target_spawn_id"] to materialize the delete, so
+# it must always be present and correct on the proposal row.
+# ---------------------------------------------------------------------------
+
+async def test_spawn_delete_own_preference_creates_scoped_proposal(maker):
+    await _seed_spawn(maker, 12, "分身12", memory_facts=["旧偏好"])
+    out = await _remember(
+        {"kind": "preference", "action": "delete"},
+        ToolCaller(actor="spawn", spawn_id=12, conversation_id="c1"))
+    assert out["ok"] is True and out["proposed"] is True
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+        spawn = await db.get(Spawn, 12)
+    assert len(proposals) == 1
+    p = proposals[0]
+    assert p.kind == "delete_suspect"
+    assert p.table_name == "spawns"
+    assert p.old_id == 12
+    assert p.provenance["target_spawn_id"] == 12
+    assert spawn.memory_facts == ["旧偏好"]                  # not applied yet — pending accept
+
+
+async def test_spawn_cannot_propose_deleting_another_spawns_preference(maker):
+    await _seed_spawn(maker, 13, "分身13", memory_facts=["A的偏好"])
+    await _seed_spawn(maker, 14, "分身14", memory_facts=["B的偏好"])
+    out = await _remember(
+        {"kind": "preference", "action": "delete", "target_id": 14},
+        ToolCaller(actor="spawn", spawn_id=13, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "another spawn" in out["error"]
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+        spawn14 = await db.get(Spawn, 14)
+    assert proposals == []                                   # nothing was proposed either
+    assert spawn14.memory_facts == ["B的偏好"]                # untouched
+
+
+async def test_host_delete_preference_creates_scoped_proposal_with_target(maker):
+    await _seed_spawn(maker, 15, "分身15", memory_facts=["旧偏好"])
+    out = await _remember(
+        {"kind": "preference", "action": "delete", "target_id": 15},
+        ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
+    assert out["ok"] is True and out["proposed"] is True
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert len(proposals) == 1
+    assert proposals[0].provenance["target_spawn_id"] == 15
+
+
+async def test_host_delete_preference_missing_target_id_is_a_clean_error(maker):
+    out = await _remember(
+        {"kind": "preference", "action": "delete"},
+        ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "target_id" in out["error"]
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert proposals == []
 
 
 # ---------------------------------------------------------------------------

@@ -155,6 +155,17 @@ class RememberExecutor:
                     "delete_suspect", table=table, old_id=target_id, provenance=prov,
                     reason=f"{prov['actor']} proposes deleting {table}#{target_id}")
             if action in ("supersede", "mark_stale"):
+                if kind != "fact":
+                    # notes have no superseded_by column (no temporal concept,
+                    # plan's "矩阵按表能力") -- same "unsupported" contract as
+                    # preference's supersede/mark_stale gate above and
+                    # _mark_stale_tier1/_supersede_tier1's own kind gates on
+                    # the host path. Refuse cleanly here too rather than
+                    # creating a Tier2 proposal Task 5's accept endpoint could
+                    # never actually resolve (a permanent dismiss-only dead
+                    # end -- there is no new_id materialization that could
+                    # make a note "superseded").
+                    return {"ok": False, "error": f"{action} unsupported for this kind"}
                 payload = dict(prov)
                 if content:
                     payload["content"] = content
@@ -169,9 +180,32 @@ class RememberExecutor:
             if action in ("supersede", "mark_stale"):
                 return {"ok": False, "error": f"{action} unsupported for this kind"}
             if action == "delete":
+                # Ownership guard (Task 5 self-check, Minor #3): a spawn may only
+                # ever propose deleting its OWN preferences, never another
+                # spawn's. Omitting target_id defaults to the caller's own well
+                # (mirrors _append_own_preference's implicit self-scope below);
+                # an explicit target_id that disagrees with the caller's own
+                # spawn_id is a cross-well attempt and is refused outright --
+                # never silently redirected to "own well" nor silently honored
+                # against the mismatched id.
+                if actor == "spawn":
+                    if target_id is not None and target_id != spawn_id:
+                        return {"ok": False, "code": "out_of_scope",
+                               "error": "cannot delete another spawn's preference; refusing"}
+                    target_spawn_id = spawn_id
+                else:
+                    # host (or any non-spawn actor): needs an explicit target,
+                    # same requirement as the append/overwrite branch below --
+                    # there's no "own well" for host to default into.
+                    if target_id is None:
+                        return {"ok": False,
+                               "error": "missing 'target_id' (target spawn id required "
+                                        "for a preference delete proposal)"}
+                    target_spawn_id = target_id
                 return await self._propose(
-                    "delete_suspect", table="spawns", old_id=target_id, provenance=prov,
-                    reason=f"{prov['actor']} proposes deleting a preference")
+                    "delete_suspect", table="spawns", old_id=target_spawn_id,
+                    provenance={**prov, "target_spawn_id": target_spawn_id},
+                    reason=f"{prov['actor']} proposes deleting spawn {target_spawn_id}'s preferences")
             if action != "append":
                 return {"ok": False, "error": f"unsupported action {action!r}"}
             if not content:
