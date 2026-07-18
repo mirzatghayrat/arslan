@@ -36,7 +36,9 @@ def _upgrade(connection) -> None:
         return
     connection.exec_driver_sql(_NEW_DDL)
     connection.exec_driver_sql(
-        "INSERT INTO memory_proposals_new SELECT id, kind, table_name, new_id, old_id, "
+        "INSERT INTO memory_proposals_new "
+        "(id, kind, table_name, new_id, old_id, reason, status, provenance, created_at, resolved_at) "
+        "SELECT id, kind, table_name, new_id, old_id, "
         "reason, status, provenance, created_at, resolved_at FROM memory_proposals")
     connection.exec_driver_sql("DROP TABLE memory_proposals")
     connection.exec_driver_sql("ALTER TABLE memory_proposals_new RENAME TO memory_proposals")
