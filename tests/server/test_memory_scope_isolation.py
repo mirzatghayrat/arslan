@@ -181,6 +181,58 @@ async def test_spawn_supersede_note_is_a_clean_error_not_a_proposal(maker):
     assert proposals == []
 
 
+async def test_spawn_mark_stale_fact_is_refused_not_proposed(maker):
+    """Fix 1 (whole-branch review): mark_stale toggles a provenance flag
+    (_mark_stale_tier1) -- it never carries content, and a spawn's fact is
+    always global (this scope-downgrade branch), so there's no "own well"
+    for a spawn's mark_stale to ever apply to. Folding it into an
+    edit_high_conf_suspect proposal would need content
+    _accept_edit_high_conf hard-requires and can never get -- a permanent
+    dismiss-only 422 dead end. Must be refused upfront, not proposed."""
+    await _seed_spawn(maker, 23, "分身23")
+    async with maker() as db:
+        target = UserFact(content="某条事实", source="manual",
+                          provenance={"source_kind": "manual"})
+        db.add(target)
+        await db.commit()
+        target_id = target.id
+
+    out = await _remember(
+        {"kind": "fact", "action": "mark_stale", "target_id": target_id},
+        ToolCaller(actor="spawn", spawn_id=23, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "mark_stale" in out["error"]
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+        untouched = await db.get(UserFact, target_id)
+    assert proposals == []                                    # no dead-end proposal created
+    assert untouched.provenance.get("stale") is not True       # never touched
+
+
+async def test_spawn_supersede_fact_without_content_is_refused_not_proposed(maker):
+    """Same dead-end shape as mark_stale above: edit_high_conf_suspect's
+    accept path hard-requires provenance["content"] -- a contentless
+    supersede proposal could only ever be dismissed, never accepted."""
+    await _seed_spawn(maker, 24, "分身24")
+    async with maker() as db:
+        target = UserFact(content="某条事实2", source="manual",
+                          provenance={"source_kind": "manual"})
+        db.add(target)
+        await db.commit()
+        target_id = target.id
+
+    out = await _remember(
+        {"kind": "fact", "action": "supersede", "target_id": target_id, "content": ""},
+        ToolCaller(actor="spawn", spawn_id=24, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "content" in out["error"]
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert proposals == []
+
+
 async def test_spawn_edit_fact_downgrades_to_edit_high_conf_proposal(maker):
     """'编辑高置信 fact' anchor: a spawn attempting to supersede a global fact
     never writes directly — it downgrades to an edit_high_conf_suspect
@@ -335,6 +387,121 @@ async def test_spawn_cannot_supersede_another_spawns_learning(maker):
         rows = (await db.execute(select(Learning))).scalars().all()
     assert untouched.superseded_by is None
     assert len(rows) == 1                                    # no new row was written either
+
+
+# ---------------------------------------------------------------------------
+# Fix 2 (whole-branch review, cross-well ownership symmetry): a spawn
+# proposing to delete a learning must be scoped to its OWN well, exactly
+# like supersede above and preference-delete's ownership guard -- otherwise
+# the human accepting the proposal is blind to it being another spawn's
+# memory. Note-delete has no per-spawn ownership concept (notes are global)
+# so it stays an unrestricted Tier2 proposal, but the reason is annotated
+# so the cross-scope nature is visible to the human. Host is unrestricted.
+# ---------------------------------------------------------------------------
+
+async def test_spawn_cannot_propose_deleting_another_spawns_learning(maker):
+    await _seed_spawn(maker, 25, "分身25")
+    await _seed_spawn(maker, 26, "分身26")
+    async with maker() as db:
+        other = Learning(content="别人分身的心得2", source_kind="agentic",
+                         source_ref={"actor": "spawn:26"}, spawn_id=26)
+        db.add(other)
+        await db.commit()
+        other_id = other.id
+
+    out = await _remember(
+        {"kind": "learning", "action": "delete", "target_id": other_id},
+        ToolCaller(actor="spawn", spawn_id=25, conversation_id="c1"))
+    assert out["ok"] is False
+    assert "own memory" in out["error"] or "scope" in out["error"].lower()
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+        untouched = await db.get(Learning, other_id)
+    assert proposals == []
+    assert untouched is not None                              # nothing deleted either
+
+
+async def test_spawn_can_propose_deleting_own_learning(maker):
+    await _seed_spawn(maker, 27, "分身27")
+    async with maker() as db:
+        mine = Learning(content="我自己的心得", source_kind="agentic",
+                        source_ref={"actor": "spawn:27"}, spawn_id=27)
+        db.add(mine)
+        await db.commit()
+        mine_id = mine.id
+
+    out = await _remember(
+        {"kind": "learning", "action": "delete", "target_id": mine_id},
+        ToolCaller(actor="spawn", spawn_id=27, conversation_id="c1"))
+    assert out["ok"] is True and out["proposed"] is True
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert len(proposals) == 1
+    p = proposals[0]
+    assert p.kind == "delete_suspect"
+    assert p.table_name == "learnings"
+    assert p.old_id == mine_id
+
+
+async def test_spawn_delete_orphan_learning_with_no_spawn_id_is_refused(maker):
+    """spawn_id is nullable on Learning -- an orphaned/legacy row with no
+    owner at all is exactly as out-of-scope for a spawn as another spawn's
+    row (never silently treated as "fair game" just because it's unowned)."""
+    await _seed_spawn(maker, 28, "分身28")
+    async with maker() as db:
+        orphan = Learning(content="没有主人的心得", source_kind="distill",
+                          source_ref={}, spawn_id=None)
+        db.add(orphan)
+        await db.commit()
+        orphan_id = orphan.id
+
+    out = await _remember(
+        {"kind": "learning", "action": "delete", "target_id": orphan_id},
+        ToolCaller(actor="spawn", spawn_id=28, conversation_id="c1"))
+    assert out["ok"] is False
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert proposals == []
+
+
+async def test_spawn_delete_note_creates_proposal_with_cross_scope_reason(maker):
+    await _seed_spawn(maker, 29, "分身29")
+    out = await _remember(
+        {"kind": "note", "action": "delete", "target_id": 1},
+        ToolCaller(actor="spawn", spawn_id=29, conversation_id="c1"))
+    assert out["ok"] is True and out["proposed"] is True
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert len(proposals) == 1
+    p = proposals[0]
+    assert p.kind == "delete_suspect"
+    assert p.table_name == "notes"
+    assert "global" in p.reason.lower()                       # cross-scope visible to human
+
+
+async def test_host_delete_learning_is_unrestricted(maker):
+    await _seed_spawn(maker, 32, "分身32")
+    async with maker() as db:
+        row = Learning(content="任意分身的心得", source_kind="agentic",
+                       source_ref={"actor": "spawn:32"}, spawn_id=32)
+        db.add(row)
+        await db.commit()
+        row_id = row.id
+
+    out = await _remember(
+        {"kind": "learning", "action": "delete", "target_id": row_id},
+        ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
+    assert out["ok"] is True and out["proposed"] is True
+
+    async with maker() as db:
+        proposals = (await db.execute(select(MemoryProposal))).scalars().all()
+    assert len(proposals) == 1
+    assert proposals[0].table_name == "learnings"
+    assert proposals[0].old_id == row_id
 
 
 # ---------------------------------------------------------------------------

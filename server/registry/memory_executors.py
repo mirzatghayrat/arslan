@@ -158,9 +158,19 @@ class RememberExecutor:
                     provenance={**prov, "content": content},
                     reason=f"{prov['actor']} proposes appending a {kind}")
             if action == "delete":
+                reason = f"{prov['actor']} proposes deleting {table}#{target_id}"
+                if kind == "note":
+                    # Cross-well visibility (whole-branch review Fix 2):
+                    # notes are global with no per-spawn ownership at all --
+                    # unlike learning's real ownership guard below, there's
+                    # no "own well" a note could belong to, so the human
+                    # accepting this proposal has no other signal that the
+                    # spawn proposing the delete may not be the note's
+                    # originator. Annotate the reason so that's visible.
+                    reason += " (note is global, not owned by any single spawn)"
                 return await self._propose(
                     "delete_suspect", table=table, old_id=target_id, provenance=prov,
-                    reason=f"{prov['actor']} proposes deleting {table}#{target_id}")
+                    reason=reason)
             if action in ("supersede", "mark_stale"):
                 if kind != "fact":
                     # notes have no superseded_by column (no temporal concept,
@@ -173,12 +183,31 @@ class RememberExecutor:
                     # end -- there is no new_id materialization that could
                     # make a note "superseded").
                     return {"ok": False, "error": f"{action} unsupported for this kind"}
-                payload = dict(prov)
-                if content:
-                    payload["content"] = content
+                if action == "mark_stale":
+                    # Fix 1 (whole-branch review, Important): mark_stale
+                    # toggles a provenance flag (_mark_stale_tier1) -- it
+                    # never carries content, and there's no "own well" for a
+                    # spawn's mark_stale to apply to (a spawn's fact is
+                    # always global -- this scope-downgrade branch). Folding
+                    # it into an edit_high_conf_suspect proposal would need
+                    # content the accept endpoint (_accept_edit_high_conf)
+                    # hard-requires and can never get -- a permanent
+                    # dismiss-only 422 dead end (every emitted kind must be
+                    # landable). Refuse upfront instead of proposing.
+                    return {"ok": False,
+                           "error": "mark_stale is only supported on your own facts; "
+                                    "ask the user to mark a global fact stale"}
+                if not content:
+                    # Same dead-end shape for a contentless supersede:
+                    # edit_high_conf_suspect's accept path hard-requires
+                    # provenance["content"] -- a proposal without it could
+                    # only ever be dismissed, never accepted. Refuse rather
+                    # than emit an un-acceptable proposal.
+                    return {"ok": False,
+                           "error": "missing 'content' (supersede requires replacement content)"}
                 return await self._propose(
                     "edit_high_conf_suspect", table=table, old_id=target_id,
-                    provenance=payload,
+                    provenance={**prov, "content": content},
                     reason=f"{prov['actor']} proposes editing {table}#{target_id}")
             return {"ok": False, "error": f"unsupported action {action!r}"}
 
@@ -243,6 +272,22 @@ class RememberExecutor:
             table = _SUPERSEDE_TABLE.get(kind) or _GLOBAL_TABLE.get(kind)
             if table is None:
                 return {"ok": False, "error": f"unsupported kind {kind!r}"}
+            if actor == "spawn" and kind == "learning":
+                # Ownership guard (whole-branch review Fix 2, cross-well
+                # symmetry with _supersede_tier1's spawn_id equality check
+                # above and preference-delete's ownership guard): a spawn
+                # may only ever propose deleting its OWN learning -- another
+                # spawn's, or an orphaned/global one (spawn_id is nullable),
+                # is refused outright rather than silently proposed, which
+                # would leave the human accepting it blind to it being
+                # someone else's memory.
+                from server.db import session as db_session
+                from server.db.models import Learning
+                async with db_session.AsyncSessionLocal() as db:
+                    row = await db.get(Learning, target_id) if target_id is not None else None
+                if row is None or row.spawn_id != spawn_id:
+                    return {"ok": False, "code": "out_of_scope",
+                           "error": "you can only propose deleting learnings in your own memory"}
             return await self._propose(
                 "delete_suspect", table=table, old_id=target_id, provenance=prov,
                 reason=f"{prov['actor']} proposes deleting {table}#{target_id}")
