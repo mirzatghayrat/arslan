@@ -584,7 +584,7 @@ class MemoryProposal(Base):
     id = Column(Integer, primary_key=True)
     kind = Column(String(30), nullable=False, default="supersede_suspect")
     table_name = Column(String(20), nullable=False)     # "user_facts" | "learnings"
-    new_id = Column(Integer, nullable=False)
+    new_id = Column(Integer, nullable=True)   # NULL for Tier2 kinds with no replacing row (0033)
     old_id = Column(Integer, nullable=False)
     reason = Column(Text, nullable=False, default="")
     status = Column(String(20), nullable=False, default="pending", index=True)
