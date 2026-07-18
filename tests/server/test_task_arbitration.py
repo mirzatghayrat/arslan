@@ -126,6 +126,13 @@ async def test_cell6_inferred_nonmember_answers_and_recruit_invite(monkeypatch):
     # (no maker fixture → production sessionmaker) never reaches the real DB/LLM
     # through the gate's load_all_spawns/draft-adapter path.
     monkeypatch.setattr(arslan, "_recruit_domain_conflict", lambda *a, **k: _aw(False))
+    # The float branch logs an invite recap through the PRODUCTION sessionmaker —
+    # stub it so a no-fixture run never writes the developer's real brain DB.
+    from server.services import recap_service
+
+    async def _recap_noop(*a, **k):
+        return None
+    monkeypatch.setattr(recap_service, "log_event", _recap_noop)
     answered, dispatched, parked, frames = [], [], [], []
 
     async def _answer(conv, msg, emit, **kw):
@@ -202,12 +209,15 @@ def _spawn_ns(sid, name, cat, sub):
 
 
 def _cell6_env(monkeypatch):
-    """Deterministic cell-6 flow env + capture lists (answered/parked/frames/dual).
+    """Deterministic cell-6 flow env + capture lists (answered/parked/frames/dual/recaps).
 
     Registry: pick 7 = engineering.software-development, other = marketing.* — the
-    gate's DB leg is stubbed here; its LLM leg is stubbed per-test."""
+    gate's DB leg is stubbed here; its LLM leg is stubbed per-test. recap_service.
+    log_event is ALSO stubbed: the chip float branch logs an invite recap through the
+    production AsyncSessionLocal, which with no fixture would append junk rows to the
+    developer's real brain DB (review catch)."""
     _stub_arbitration_env(monkeypatch, is_member=False)
-    answered, parked, frames, dual = [], [], [], []
+    answered, parked, frames, dual, recaps = [], [], [], [], []
 
     async def _answer(conv, msg, emit, **kw):
         answered.append(msg)
@@ -221,7 +231,12 @@ def _cell6_env(monkeypatch):
         arslan.spawn_service, "load_all_spawns",
         lambda: _aw([_spawn_ns(7, "Coding Assistant", "engineering", "software-development"),
                      _spawn_ns(3, "Copywriter", "marketing", "content-copywriting")]))
-    return answered, parked, frames, dual
+    from server.services import recap_service
+
+    async def _recap(conv, kind, payload, summary):
+        recaps.append((kind, summary))
+    monkeypatch.setattr(recap_service, "log_event", _recap)
+    return answered, parked, frames, dual, recaps
 
 
 @pytest.mark.asyncio
@@ -229,7 +244,7 @@ async def test_cell6_domain_contradiction_suppresses_chip_and_dual_track(monkeyp
     """BUG1: an affirmative, registry-anchored domain contradiction suppresses the
     RECRUITING chip AND the dual-track feed (feeding the deliverable would grow the
     WRONG spawn's well). The doer-first answer stands alone."""
-    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    answered, parked, frames, dual, recaps = _cell6_env(monkeypatch)
     seen = {}
 
     async def _conflict(task_text, pick_domain, others):
@@ -244,6 +259,7 @@ async def test_cell6_domain_contradiction_suppresses_chip_and_dual_track(monkeyp
     assert not any(f.get("type") == "propose_invite" for f in frames), "chip suppressed"
     assert parked == [], "no park on suppression"
     assert dual == [], "dual-track must not grow the wrong-domain spawn"
+    assert not [s for k, s in recaps if k == "invite"], "no 招募邀请 recap on suppression"
     assert seen["pick"] == "engineering.software-development"
     assert seen["others"] == ["marketing.content-copywriting"]
 
@@ -252,7 +268,7 @@ async def test_cell6_domain_contradiction_suppresses_chip_and_dual_track(monkeyp
 async def test_cell6_no_contradiction_keeps_chip_and_dual_track(monkeypatch):
     """PA-2 preserved: a null (no clear contradiction) floats the chip exactly as
     before, park answered=True, dual-track fires."""
-    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    answered, parked, frames, dual, recaps = _cell6_env(monkeypatch)
 
     async def _conflict(*a, **k):
         return None
@@ -271,7 +287,7 @@ async def test_cell6_off_list_answer_and_none_task_brief_float(monkeypatch):
     """Belt: an off-list answer (LLM went off the registry vocabulary) is treated as
     unknown → chip floats; a None task_brief must not leak a literal 'None' into the
     extraction text."""
-    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    answered, parked, frames, dual, recaps = _cell6_env(monkeypatch)
     seen = {}
 
     async def _conflict(task_text, pick_domain, others):
@@ -291,7 +307,7 @@ async def test_cell6_gate_failure_floats_chip_no_crash(monkeypatch):
     """Fail-open: ANY infrastructure failure inside the gate (DB here) floats the chip
     and never crashes the turn — the answer already streamed (PA-2: chip-death is the
     documented worse failure)."""
-    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    answered, parked, frames, dual, recaps = _cell6_env(monkeypatch)
 
     async def _boom():
         raise RuntimeError("db exploded")
@@ -308,7 +324,7 @@ async def test_cell6_gate_failure_floats_chip_no_crash(monkeypatch):
 async def test_cell6_gate_timeout_floats_chip(monkeypatch):
     """A dead-but-reachable draft adapter must not hang the turn: the gate is bounded
     by _RECRUIT_GATE_TIMEOUT_S and a timeout floats the chip."""
-    answered, parked, frames, dual = _cell6_env(monkeypatch)
+    answered, parked, frames, dual, recaps = _cell6_env(monkeypatch)
     monkeypatch.setattr(arslan, "_RECRUIT_GATE_TIMEOUT_S", 0.05)
     import asyncio as _asyncio
 
