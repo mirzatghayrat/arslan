@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import importlib
 import os
+
+# Belt to the root-conftest guard: disable secret auto-generation BEFORE the server.*
+# imports below build the frozen settings singleton (see tests/conftest.py for why).
+os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 import pytest

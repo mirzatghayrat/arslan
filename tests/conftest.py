@@ -1,4 +1,15 @@
 """Shared pytest fixtures for the Arslan test suite."""
+import os
+
+# Keep the dev secret auto-generation (server.secret_bootstrap) DISABLED suite-wide:
+# set-but-empty ARSLAN_SECRET_KEY_FILE means "never read/write any secret file".
+# Without this, any test that reloads server.config with ARSLAN_SECRET_KEY unset would
+# mint a real key file in the developer's ~/.arslan. Must execute before any server.*
+# import (the frozen settings singleton builds at first import); this root conftest
+# loads before every test module and sub-conftest. Tests that exercise the feature
+# opt back in by pointing ARSLAN_SECRET_KEY_FILE at a tmp path.
+os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
+
 import pytest
 
 from arslan.models import (

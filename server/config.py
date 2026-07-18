@@ -6,6 +6,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from server import secret_bootstrap
+
 
 def _default_data_dir() -> Path:
     """Per-platform application-data directory used when ``ARSLAN_DATA_DIR`` is unset.
@@ -143,9 +145,17 @@ def load_settings() -> Settings:
     else:
         allowed_origins = ("http://localhost:5173", "http://127.0.0.1:5173")
 
+    # Effective secret: explicit ARSLAN_SECRET_KEY > persisted dev file > first-boot
+    # auto-generation (dev-only; prod never touches the file). See server.secret_bootstrap.
+    secret_key = secret_bootstrap.bootstrap_secret_key(
+        env=env,
+        explicit=os.environ.get("ARSLAN_SECRET_KEY", ""),
+        data_dir=data_dir,
+    )
+
     return Settings(
         api_token=os.environ.get("ARSLAN_API_TOKEN", ""),
-        secret_key=os.environ.get("ARSLAN_SECRET_KEY", ""),
+        secret_key=secret_key,
         db_path=db_path,
         spawns_dir=spawns_dir,
         data_dir=data_dir,
