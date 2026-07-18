@@ -130,7 +130,7 @@ async def test_learnings_same_content_as_superseded_inserts_new_active_row(maker
     await execute_supersede("learnings", new_id, old_id, provenance=_PROV)
 
     n = await _write("总结要先给结论", "l1", "session", {}, None)
-    assert n == 1                                     # inserted, not skipped as dup
+    assert n > 0                                       # inserted, not skipped as dup (P2: n is now a real id)
     async with maker() as s:
         rows = (await s.execute(
             select(Learning).where(Learning.content == "总结要先给结论"))).scalars().all()

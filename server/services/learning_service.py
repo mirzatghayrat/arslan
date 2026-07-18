@@ -28,11 +28,18 @@ def _get_adapter():
 
 async def _write(content: str, label: str, source_kind: str, source_ref: dict,
                  spawn_id: int | None) -> int:
-    """Persist one learning. Fuzzy near-dups mirror save_facts's P1 three-way
+    """Persist one learning; return the new row's id (0 = not written: exact
+    duplicate skip or failure). Fuzzy near-dups mirror save_facts's P1 three-way
     rule-supersede (fact_dedup.fuzzy_kind): "extension" auto-supersedes via the
     memory_temporal executor (in-transaction, full guards); "shrink"/"other"
     coexist and get a MemoryProposal soft-mark; below-threshold pairs never
     reach fuzzy_kind at all (fail-open two-phase: exact-norm skip unchanged).
+
+    brain-P2 Task 4 BLOCKER fix: this used to return a bare 1/0 success flag —
+    callers that need the new row's id (RememberExecutor's supersede path) had
+    no way to get one. It now returns the real id; 0 still means "nothing was
+    written" (exact-dup skip, or the fail-open except below), so `id > 0` is
+    the correct success check wherever the old `== 1` check used to live.
     """
     content = (content or "").strip()
     if not content:
@@ -77,10 +84,20 @@ async def _write(content: str, label: str, source_kind: str, source_ref: dict,
             await db.execute(sa_text("INSERT INTO learnings_fts (rowid, text) VALUES (:r, :t)"),
                              {"r": rid, "t": content})
             await db.commit()
-        return 1
+        return rid
     except Exception as exc:  # noqa: BLE001
         logger.warning("learning _write failed (non-fatal): %s", exc)
         return 0
+
+
+async def append(content: str, *, label: str, source_kind: str, source_ref: dict,
+                 spawn_id: int | None) -> int:
+    """Public id-returning entry point (brain-P2 Task 4). Thin wrapper around
+    `_write` — preserves its two-phase exact/fuzzy dedup semantics unchanged;
+    returns the new row's id, or 0 if nothing was written (exact duplicate or
+    a swallowed failure). RememberExecutor's Tier1 learning append/supersede
+    paths depend on getting a real id back (supersede needs it as new_id)."""
+    return await _write(content, label, source_kind, source_ref, spawn_id)
 
 
 async def _distill_one(signal_text: str, label: str, source_kind: str,

@@ -173,7 +173,7 @@ async def test_learning_write_sets_valid_from(maker):
         await s.commit()
 
     n = await _write("总结要先给结论", "l1", "session", {"x": 1}, None)
-    assert n == 1
+    assert n > 0                                        # P2: n is now a real id, not a 1/0 flag
     async with maker() as s:
         row = (await s.execute(select(Learning).where(Learning.content == "总结要先给结论"))).scalar_one()
     assert row.valid_from is not None

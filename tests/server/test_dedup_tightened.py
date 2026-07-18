@@ -85,6 +85,6 @@ async def test_two_phase_exact_wins_over_fuzzy_sibling(maker):
 
 async def test_learning_fuzzy_coexists_exact_skips(maker):
     from server.services.learning_service import _write
-    assert await _write("总结要先给结论", "l1", "session", {}, None) == 1
+    assert await _write("总结要先给结论", "l1", "session", {}, None) > 0     # P2: real id, not a 1/0 flag
     assert await _write("总结要先给结论", "l1", "session", {}, None) == 0   # 精确跳过
-    assert await _write("总结时应当先给出结论呀", "l2", "session", {}, None) == 1  # 模糊并存
+    assert await _write("总结时应当先给出结论呀", "l2", "session", {}, None) > 0  # 模糊并存

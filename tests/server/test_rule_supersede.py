@@ -281,17 +281,19 @@ async def test_learnings_extension_auto_supersedes_with_concrete_id(maker):
     from server.services.learning_service import _write
 
     n1 = await _write(_L_BASE, "l1", "distill", {"conversation_id": "c1"}, None)
-    assert n1 == 1
+    assert n1 > 0                                       # P2: real id, not a 1/0 flag
     async with maker() as s:
         old_id = (await s.execute(
             select(Learning.id).where(Learning.content == _L_BASE))).scalar_one()
+    assert n1 == old_id                                 # P2 BLOCKER fix: _write returns the real row id
 
     n2 = await _write(_L_EXT, "l2", "distill", {"conversation_id": "c2"}, None)
-    assert n2 == 1
+    assert n2 > 0
     async with maker() as s:
         new_id = (await s.execute(
             select(Learning.id).where(Learning.content == _L_EXT))).scalar_one()
         old_row = await s.get(Learning, old_id)
+    assert n2 == new_id
 
     assert old_row.superseded_by == new_id  # concrete id -- catches missing flush
 
@@ -304,13 +306,14 @@ async def test_learnings_other_kind_coexists_and_proposes(maker):
     from server.services.learning_service import _write
 
     n1 = await _write(_L_OTHER_A, "l1", "distill", {"conversation_id": "c1"}, None)
-    assert n1 == 1
+    assert n1 > 0                                       # P2: real id, not a 1/0 flag
     async with maker() as s:
         old_id = (await s.execute(
             select(Learning.id).where(Learning.content == _L_OTHER_A))).scalar_one()
+    assert n1 == old_id
 
     n2 = await _write(_L_OTHER_B, "l2", "distill", {"conversation_id": "c2"}, None)
-    assert n2 == 1
+    assert n2 > 0
     async with maker() as s:
         new_id = (await s.execute(
             select(Learning.id).where(Learning.content == _L_OTHER_B))).scalar_one()

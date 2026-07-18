@@ -10,14 +10,14 @@ Covers:
   - RecallExecutor: 🔴 BLOCKER fix — sensitive-fact fail-closed isolation. Only an
     explicit host caller sees sensitive facts; a spawn actor OR a missing caller
     (current_caller() is None) must never see them.
-  - RememberExecutor: fail-closed on caller=None; Task-3 scope is ONLY
-    action=="append" for kind in {fact, learning, note} on the HOST path — every
-    other combination (other actions, non-host actor, kind="preference") returns
-    {"ok": False, "error": "not yet implemented"} (Task 4 completes the tiering).
+  - RememberExecutor: fail-closed on caller=None. Task 3 only wired the
+    HOST-path append for kind in {fact, learning, note}; the full three-tier
+    authorization (Tier1 direct / Tier2 propose / capability errors) is
+    covered by tests/server/test_memory_write_tiers.py (host) and
+    tests/server/test_memory_scope_isolation.py (spawn scope, brain-P2 Task 4).
 """
 from __future__ import annotations
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -253,35 +253,14 @@ async def test_remember_refuses_when_caller_is_none(maker):
     assert out == {"ok": False, "error": "no caller context; refusing to write"}
 
 
-@pytest.mark.parametrize("kind,action", [
-    ("fact", "supersede"),
-    ("fact", "mark_stale"),
-    ("fact", "delete"),
-    ("learning", "supersede"),
-    ("note", "delete"),
-    ("preference", "append"),   # kind not in Task-3 scope even though action=append
-])
-async def test_remember_returns_not_yet_implemented_for_out_of_scope_combos(maker, kind, action):
-    from server.registry.memory_executors import RememberExecutor
-    token = set_caller(ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
-    try:
-        out = await RememberExecutor().execute(
-            {"kind": kind, "action": action, "content": "x"})
-    finally:
-        reset_caller(token)
-    assert out == {"ok": False, "error": "not yet implemented"}
-
-
-async def test_remember_spawn_actor_append_is_not_yet_implemented(maker):
-    """Task 3 is host-path-only for append; spawn scope isolation is Task 4."""
-    from server.registry.memory_executors import RememberExecutor
-    token = set_caller(ToolCaller(actor="spawn", spawn_id=3, conversation_id="c1"))
-    try:
-        out = await RememberExecutor().execute(
-            {"kind": "fact", "action": "append", "content": "x"})
-    finally:
-        reset_caller(token)
-    assert out == {"ok": False, "error": "not yet implemented"}
+# Task 3's "every non-Task-3 combo returns not yet implemented" coverage is
+# superseded by Task 4, which completes the tiering for every (kind, action,
+# actor) combination (Tier1 direct / Tier2 propose / a clean capability error —
+# never a bare "not yet implemented" for anything in the schema's enum space).
+# See tests/server/test_memory_write_tiers.py (host Tier1/Tier2 + matrix
+# negatives) and tests/server/test_memory_scope_isolation.py (spawn scope,
+# cross-well rejection, preference ownership, fail-closed identity) for the
+# real coverage.
 
 
 async def test_remember_host_append_fact_direct_writes_with_provenance(maker):

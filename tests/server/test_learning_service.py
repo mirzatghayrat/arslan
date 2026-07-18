@@ -37,13 +37,38 @@ async def test_distill_writes_learning_with_source_ref(maker, monkeypatch):
     n = await learning_service.distill_from_event(
         conversation_id="conv-a", spawn_id=3, spawn_name="Deck Master",
         signal_text="用户要 OKX 报告,Arslan 亲自做了一版暗色磨砂玻璃 deck")
-    assert n == 1
+    assert n > 0                                        # P2: real id, not a 1/0 flag
     async with db_session.AsyncSessionLocal() as db:
         row = (await db.execute(sa_text(
             "SELECT content, source_kind, source_ref FROM learnings ORDER BY id DESC LIMIT 1"))).first()
     assert "OKX" in row[0]
     assert row[1] == "distill"
     assert row[2] is not None  # source_ref always present
+
+
+@pytest.mark.asyncio
+async def test_public_append_returns_real_row_id(maker):
+    """brain-P2 Task 4 BLOCKER fix: the public, id-returning entry point (a thin
+    wrapper over `_write`) RememberExecutor's supersede path depends on."""
+    from sqlalchemy import select
+
+    from server.db.models import Learning
+
+    n = await learning_service.append(
+        "先读文档再动手", label="l1", source_kind="agentic",
+        source_ref={"actor": "host", "conversation_id": "c1"}, spawn_id=None)
+    assert n > 0
+    async with db_session.AsyncSessionLocal() as db:
+        row = (await db.execute(
+            select(Learning).where(Learning.id == n))).scalar_one()
+    assert row.content == "先读文档再动手"
+    assert row.source_ref["actor"] == "host"
+
+    # exact-duplicate content is still skipped (dedup semantics preserved) -> 0
+    dup = await learning_service.append(
+        "先读文档再动手", label="l1", source_kind="agentic",
+        source_ref={"actor": "host", "conversation_id": "c1"}, spawn_id=None)
+    assert dup == 0
 
 
 @pytest.mark.asyncio
