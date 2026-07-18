@@ -147,6 +147,21 @@ TOOLSETS: list[dict] = [
         ],
     },
     {
+        "key": "second_brain",
+        "name": "Second Brain",
+        "description": "recall — search the user's memory; remember — write to it "
+                       "(append/supersede/mark_stale; deletes propose for human confirm).",
+        "tier": "safe",
+        "status": "wired",
+        "tools": [
+            ("recall", "Search the user's second brain (facts, learnings, notes) and "
+             "return active matches with provenance.", "safe", "wired"),
+            ("remember", "Write to the second brain: append a fact/learning/note/preference, "
+             "supersede an outdated one, or mark stale. Destructive edits/deletes are "
+             "proposed for the user to confirm, not executed.", "safe", "wired"),
+        ],
+    },
+    {
         "key": "skill_authoring",
         "name": "Skill Authoring",
         "description": "create_skill — package a reusable method into a skill candidate "

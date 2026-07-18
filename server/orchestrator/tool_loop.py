@@ -647,6 +647,21 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                     "body": {"type": "string"}}},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
+    "recall": {"type": "object",
+               "properties": {"query": {"type": "string"},
+                              "kind": {"type": "string",
+                                       "enum": ["fact", "material", "learning", "note"]}},
+               "required": ["query"]},
+    "remember": {"type": "object",
+                 "properties": {
+                     "kind": {"type": "string",
+                              "enum": ["fact", "learning", "note", "preference"]},
+                     "action": {"type": "string",
+                                "enum": ["append", "supersede", "mark_stale", "delete"]},
+                     "content": {"type": "string"},
+                     "target_id": {"type": "integer"},
+                 },
+                 "required": ["kind", "action", "content"]},
     "ask_user_choice": {
         "type": "object",
         "properties": {

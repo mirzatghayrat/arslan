@@ -19,6 +19,7 @@ import trafilatura
 
 from server import config
 from server.db.session import AsyncSessionLocal
+from server.registry.memory_executors import RecallExecutor, RememberExecutor
 from server.registry.search_providers import get_provider
 from server.services import chart_echarts, settings_service
 
@@ -637,7 +638,7 @@ class ReadSkillExecutor:
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
-    ReadSkillExecutor(),
+    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(),
 )}
 
 

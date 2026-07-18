@@ -1516,15 +1516,22 @@ def _arslan_fetch_executor():
 
 
 async def _arslan_tools() -> list[dict]:
-    """Arslan's host-level safe toolset: web + chart (no spawn wiring)."""
+    """Arslan's host-level safe toolset: web + chart + second-brain recall/remember
+    (no spawn wiring)."""
     from server.registry.executors import EXECUTORS
 
     desc = {
         "web_search": "Search the web for fresh/factual info; returns titles/urls/snippets.",
         "web_extract": "Fetch a URL and return its main text (SSRF-guarded).",
         "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
+        "recall": "Search the user's second brain (facts, learnings, notes) for relevant "
+                  "context before answering.",
+        "remember": "Write to the user's second brain: append a fact/learning/note worth "
+                    "remembering later.",
     }
-    tools = [{"key": k, "description": desc[k]} for k in ("web_search", "web_extract", "render_chart") if k in EXECUTORS]
+    tools = [{"key": k, "description": desc[k]}
+             for k in ("web_search", "web_extract", "render_chart", "recall", "remember")
+             if k in EXECUTORS]
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
     # the turn and _handle_answer emits the clarify_options card). Registered here so
     # Arslan's answer path can offer real choice buttons instead of a text counter-question.
