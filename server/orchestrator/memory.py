@@ -247,25 +247,43 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
             db.add(row)
             created.append(row)
             if fuzzy is not None:
-                # HARD requirement: row.id is None until flushed — without this,
-                # the auto-supersede below silently no-ops (new_id=None).
-                await db.flush()
-                kind = fact_dedup.fuzzy_kind(content, fuzzy.content)
-                if kind == "extension":
-                    # new extends old -> auto-supersede (direction lock), through
-                    # the EXECUTOR's full guards -- never a bare pointer write.
-                    await memory_temporal.execute_supersede(
-                        "user_facts", row.id, fuzzy.id, provenance=provenance, db=db)
-                elif kind in ("shrink", "other"):
-                    db.add(MemoryProposal(
-                        table_name="user_facts", new_id=row.id, old_id=fuzzy.id,
-                        reason=f"{kind}: near-dup coexist", provenance=provenance))
-                    logger.info(
-                        "save_facts: near-dup coexist -> proposal (%s): %d ~ %d",
-                        kind, row.id, fuzzy.id)
-                # kind is None here only if fuzzy_kind's exact-norm-equal guard
-                # fires, which exact_norm_dup (active-only) should already have
-                # caught above -- defensive, not expected in normal flow.
+                # Fail-open envelope (pre-merge hardening): the row insert above
+                # stays OUTSIDE this try — the fact itself is never hostage. A
+                # raise anywhere in the supersede/proposal step below would
+                # otherwise propagate and roll back the WHOLE batch (all facts
+                # in the call lost), violating "a user's fact must always get
+                # saved". Why-safe note: under v1 this sub-block cannot raise —
+                # the fuzzy hit comes from an active-only scan (so the executor's
+                # already_superseded guard can't fire), the flush precedes the
+                # pointer write, and provenance is non-empty (guarded at entry);
+                # the except is defense-in-depth for future batch/concurrency
+                # changes, not a live path.
+                try:
+                    # HARD requirement: row.id is None until flushed — without
+                    # this, the auto-supersede below silently no-ops (new_id=None).
+                    await db.flush()
+                    kind = fact_dedup.fuzzy_kind(content, fuzzy.content)
+                    if kind == "extension":
+                        # new extends old -> auto-supersede (direction lock),
+                        # through the EXECUTOR's full guards -- never a bare
+                        # pointer write.
+                        await memory_temporal.execute_supersede(
+                            "user_facts", row.id, fuzzy.id, provenance=provenance, db=db)
+                    elif kind in ("shrink", "other"):
+                        db.add(MemoryProposal(
+                            table_name="user_facts", new_id=row.id, old_id=fuzzy.id,
+                            reason=f"{kind}: near-dup coexist", provenance=provenance))
+                        logger.info(
+                            "save_facts: near-dup coexist -> proposal (%s): %d ~ %d",
+                            kind, row.id, fuzzy.id)
+                    # kind is None here only if fuzzy_kind's exact-norm-equal
+                    # guard fires, which exact_norm_dup (active-only) should
+                    # already have caught above -- defensive, not expected.
+                except Exception:  # noqa: BLE001 — fail-open: fact > pointer/proposal
+                    logger.warning(
+                        "save_facts: supersede/proposal step failed; falling back "
+                        "to pure coexist (fact already staged): %r",
+                        content, exc_info=True)
         await db.commit()
         for row in created:
             await db.refresh(row)

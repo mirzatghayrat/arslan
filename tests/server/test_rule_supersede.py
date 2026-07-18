@@ -209,6 +209,44 @@ async def test_save_facts_below_threshold_pair_pure_coexist_zero_proposal(maker)
 
 
 # ---------------------------------------------------------------------------
+# save_facts — fail-open hardening: a raise inside the fuzzy sub-block
+# (flush / fuzzy_kind / execute_supersede / proposal add) must NOT take the
+# whole batch hostage — the fact still persists as a plain coexisting row
+# (no pointer, no proposal), a warning is logged, and created still returns it.
+# ---------------------------------------------------------------------------
+
+async def test_save_facts_supersede_failure_falls_back_to_pure_coexist(
+        maker, monkeypatch, caplog):
+    import logging as _logging
+
+    from server.orchestrator import memory
+    from server.services import memory_temporal
+
+    async def _boom(*a, **k):
+        raise RuntimeError("simulated executor failure")
+
+    monkeypatch.setattr(memory_temporal, "execute_supersede", _boom)
+
+    a = await memory.save_facts([{"content": _SHORT}], provenance=_PROV)
+    old_id = a[0].id
+    with caplog.at_level(_logging.WARNING, logger="server.orchestrator.memory"):
+        b = await memory.save_facts([{"content": _LONG}], provenance=_PROV)
+    assert len(b) == 1                        # created list still returns the new row
+    new_id = b[0].id
+
+    async with maker() as s:
+        old_row = await s.get(UserFact, old_id)
+        new_row = await s.get(UserFact, new_id)
+    assert old_row.superseded_by is None       # no pointer written (fail-open)
+    assert new_row.superseded_by is None       # both rows persisted and ACTIVE
+    async with maker() as s:
+        proposals = (await s.execute(select(MemoryProposal))).scalars().all()
+    assert proposals == []                     # no proposal either — pure coexist
+
+    assert "falling back to pure coexist" in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # save_facts — writing content identical to a SUPERSEDED row: plain insert,
 # zero reaction (Task 3's active-only property preserved through Task 4's
 # fuzzy-branch upgrade)
