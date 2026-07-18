@@ -23,6 +23,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = [ROOT / "README.md", ROOT / "docs" / "QUICKSTART.md"]
 DOC_IDS = ["README", "QUICKSTART"]
+# CONTRIBUTING carries the dev variant of the same commands (uv sync, env pins) but no
+# secret snippet — it joins the command-level checks only.
+CMD_DOCS = DOCS + [ROOT / "CONTRIBUTING.md"]
+CMD_DOC_IDS = DOC_IDS + ["CONTRIBUTING"]
 
 
 def _text(doc: Path) -> str:
@@ -37,7 +41,7 @@ def _logical_lines(text: str) -> list[str]:
 # --- static guards (both docs) ----------------------------------------------
 
 
-@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+@pytest.mark.parametrize("doc", CMD_DOCS, ids=CMD_DOC_IDS)
 def test_install_command_includes_server_extra(doc):
     """#1 first-run blocker: a bare ``uv sync`` installs only the CORE deps; the
     backend imports SQLAlchemy/aiosqlite/cryptography from the optional ``server``
@@ -68,7 +72,7 @@ def test_secret_generation_uses_python3_and_persists(doc):
         assert ".env" in ln, f"{doc.name} generation must persist to .env: {ln.strip()!r}"
 
 
-@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+@pytest.mark.parametrize("doc", CMD_DOCS, ids=CMD_DOC_IDS)
 def test_no_bare_python_command(doc):
     """Stock macOS ships no `python`; every documented command must say python3.
     (`python -c` is not a substring of `python3 -c`, so a raw scan suffices.)"""
@@ -99,13 +103,19 @@ def test_secret_guard_requires_nonempty_value(doc):
 @pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
 def test_source_env_line_is_guarded(doc):
     """With auto-generation the default flow has NO .env — an unguarded
-    `source .env` errors exactly on the happy path."""
-    for ln in _logical_lines(_text(doc)):
-        if "source .env" in ln:
-            assert "[ -f .env ]" in ln, (
-                f"{doc.name} sources .env unguarded (errors when .env is absent, "
-                f"which is now the default): {ln.strip()!r}"
-            )
+    `source .env` errors exactly on the happy path. Asserts the guarded sourcing
+    line EXISTS (a reworded/unguarded rewrite must fail, not vacuously pass)."""
+    sourcing = [
+        ln
+        for ln in _logical_lines(_text(doc))
+        if "source .env" in ln or ". ./.env" in ln or re.search(r"(?<![\w.])\. \.env\b", ln)
+    ]
+    assert sourcing, f"{doc.name} lost its env-sourcing line entirely"
+    for ln in sourcing:
+        assert "[ -f .env ]" in ln, (
+            f"{doc.name} sources .env unguarded (errors when .env is absent, "
+            f"which is now the default): {ln.strip()!r}"
+        )
 
 
 # --- behavioral guards: run the documented snippet for real ------------------
@@ -123,13 +133,17 @@ def _extract_secret_snippet(doc: Path) -> str:
     return "\n".join(block)
 
 
-def _run_snippet(snippet: str, cwd: Path, path_env: str) -> subprocess.CompletedProcess:
+def _run_snippet(
+    snippet: str, cwd: Path, path_env: str, home: Path
+) -> subprocess.CompletedProcess:
     # /bin/sh by absolute path: with a restricted PATH the shell itself must not
     # need a PATH lookup (subprocess resolves argv[0] via the CHILD env's PATH).
+    # HOME is always an isolated tmp dir: the snippet seeds from
+    # $HOME/.arslan/secret_key, and tests must never read the developer's real one.
     return subprocess.run(
         ["/bin/sh", "-c", snippet],
         cwd=cwd,
-        env={"PATH": path_env},
+        env={"PATH": path_env, "HOME": str(home)},
         capture_output=True,
         text=True,
         timeout=30,
@@ -161,7 +175,9 @@ def test_snippet_without_python3_writes_nothing(doc, tmp_path):
     (fakebin / "grep").symlink_to(real_grep)
     cwd = tmp_path / "work"
     cwd.mkdir()
-    _run_snippet(_extract_secret_snippet(doc), cwd, str(fakebin))
+    home = tmp_path / "home"
+    home.mkdir()
+    _run_snippet(_extract_secret_snippet(doc), cwd, str(fakebin), home)
     env_file = cwd / ".env"
     assert not env_file.exists() or "ARSLAN_SECRET_KEY" not in env_file.read_text(
         encoding="utf-8"
@@ -173,9 +189,11 @@ def test_snippet_is_idempotent_and_writes_owner_only(doc, tmp_path):
     """Two runs -> ONE non-empty line, same value both times, .env owner-only."""
     snippet = _extract_secret_snippet(doc)
     path_env = os.environ.get("PATH", "/usr/bin:/bin")
-    _run_snippet(snippet, tmp_path, path_env)
+    home = tmp_path / "home"
+    home.mkdir()
+    _run_snippet(snippet, tmp_path, path_env, home)
     first = (tmp_path / ".env").read_text(encoding="utf-8")
-    _run_snippet(snippet, tmp_path, path_env)
+    _run_snippet(snippet, tmp_path, path_env, home)
     second = (tmp_path / ".env").read_text(encoding="utf-8")
     assert second == first, f"{doc.name} snippet is not idempotent"
     values = re.findall(r"^ARSLAN_SECRET_KEY=(.+)$", second, flags=re.M)
@@ -192,7 +210,47 @@ def test_snippet_heals_poisoned_env(doc, tmp_path):
     """A pre-poisoned empty `ARSLAN_SECRET_KEY=` line (from the old broken
     snippet) must not block regeneration; the sourced result is non-empty."""
     (tmp_path / ".env").write_text("ARSLAN_SECRET_KEY=\n", encoding="utf-8")
-    _run_snippet(_extract_secret_snippet(doc), tmp_path, os.environ.get("PATH", ""))
+    home = tmp_path / "home"
+    home.mkdir()
+    _run_snippet(_extract_secret_snippet(doc), tmp_path, os.environ.get("PATH", ""), home)
     assert _env_value_after_source(tmp_path).strip(), (
         f"{doc.name} snippet fails to heal a poisoned empty ARSLAN_SECRET_KEY line"
+    )
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_snippet_seeds_from_persisted_secret_not_a_fresh_mint(doc, tmp_path):
+    """A user who booted the default flow first (secret auto-generated + provider
+    keys stored under it) and later adopts the .env pin must get the SAME secret —
+    minting a fresh one would make every stored BYOK key undecryptable."""
+    home = tmp_path / "home"
+    (home / ".arslan").mkdir(parents=True)
+    persisted = "persisted-secret-0123456789-0123456789"
+    (home / ".arslan" / "secret_key").write_text(persisted, encoding="utf-8")
+    _run_snippet(
+        _extract_secret_snippet(doc), tmp_path, os.environ.get("PATH", ""), home
+    )
+    content = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"ARSLAN_SECRET_KEY={persisted}" in content, (
+        f"{doc.name} snippet minted a fresh secret instead of seeding the "
+        f"persisted one: {content!r}"
+    )
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=DOC_IDS)
+def test_snippet_tightens_preexisting_lax_env(doc, tmp_path):
+    """Old-snippet users hold the BYOK-decrypting secret in a 644 .env with no
+    chmod ever having run — a re-run of the documented snippet must tighten it
+    without touching the existing value."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("ARSLAN_SECRET_KEY=existing-value-0123456789012345\n", encoding="utf-8")
+    os.chmod(env_file, 0o644)
+    home = tmp_path / "home"
+    home.mkdir()
+    _run_snippet(_extract_secret_snippet(doc), tmp_path, os.environ.get("PATH", ""), home)
+    assert env_file.read_text(encoding="utf-8") == (
+        "ARSLAN_SECRET_KEY=existing-value-0123456789012345\n"
+    ), f"{doc.name} snippet must never rewrite an existing pinned secret"
+    assert env_file.stat().st_mode & 0o077 == 0, (
+        f"{doc.name} snippet left a pre-existing .env readable by group/other"
     )

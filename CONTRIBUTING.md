@@ -32,9 +32,11 @@ uv sync --extra dev --extra server
 #    (Optional) add local embeddings for the second brain's vector retrieval:
 #    uv sync --extra dev --extra server --extra embeddings
 
-# 3. Run the backend. ARSLAN_SECRET_KEY derives the key that encrypts your
-#    stored BYOK secrets at rest; any real value works in dev (the built-in
-#    default is public, so the app refuses to write secrets under it).
+# 3. Run the backend. Pinning ARSLAN_SECRET_KEY keeps every contributor boot on
+#    ONE stable secret (it derives the key that encrypts stored BYOK secrets).
+#    Left unset, dev auto-generates one into ~/.arslan/secret_key — also fine,
+#    but switching between the two styles changes the effective secret and makes
+#    previously-stored keys undecryptable: pick one style and stick to it.
 PYTHONPATH=$PWD \
 ARSLAN_SECRET_KEY=dev-secret-key \
 ARSLAN_API_TOKEN= \
@@ -59,16 +61,16 @@ Mirrors [README.md](README.md#environment-variables); every var below is read in
 
 | Env var | Dev value | Purpose |
 | --- | --- | --- |
-| `ARSLAN_SECRET_KEY` | `dev-secret-key` (any non-empty value) | Derives the Fernet key (PBKDF2-HMAC-SHA256 over a per-install salt) that encrypts stored BYOK secrets. The app refuses to write secrets under the built-in public default, so set *something*. In `prod` a missing value is boot-fatal. |
+| `ARSLAN_SECRET_KEY` | `dev-secret-key` (any non-empty value) | Derives the Fernet key (PBKDF2-HMAC-SHA256 over a per-install salt) that encrypts stored BYOK secrets. Unset in dev → auto-generated once and persisted to `~/.arslan/secret_key` (see the README env table). An explicit value always wins — don't flip-flop between explicit and auto-generated, or previously-stored keys become undecryptable. In `prod` a missing value is boot-fatal. |
 | `ARSLAN_API_TOKEN` | *(empty)* | API/WS bearer token. Empty + dev + localhost = no auth. For `prod` / packaged / non-loopback binds a token is auto-generated on first run. |
-| `ARSLAN_DATA_DIR` | `data` | Where the SQLite DB, notes, spawns, and encrypted secrets live. **This directory is the backup unit.** Unset → platform app-data dir. |
+| `ARSLAN_DATA_DIR` | `data` | Where the SQLite DB, notes, spawns, and encrypted secrets live. **This directory plus your secret are the backup unit** (the secret lives outside it — your env value or `~/.arslan/secret_key`). Unset → platform app-data dir. |
 | `ARSLAN_ENV` | `dev` (default) | `dev` or `prod`. `prod` hardens defaults and makes a missing secret boot-fatal. |
 | `ARSLAN_ALLOWED_HOSTS` | *(unset)* | Comma-separated TrustedHost allowlist for non-localhost / prod. Dev defaults to localhost + test hosts. |
 | `ARSLAN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated CORS + WS-Origin allowlist for non-localhost / prod. Dev defaults to the Vite origin `http://localhost:5173`. |
 | `ARSLAN_ALLOW_INSECURE_SECRETS` | *(off)* | Dev-only escape hatch: permits writing secrets under the public default key. Never use for real keys. |
 | `ARSLAN_ALLOW_UNSANDBOXED_PY` | *(off)* | Dev-only escape hatch: lets generated Python run **without** a sandbox where none is available (non-macOS). Runs then have the server's full privileges + network; marked `sandboxed=false`. Only enable on a machine you fully trust. |
 
-Other read-but-rarely-set vars (see `server/config.py`): `ARSLAN_DB_PATH`, `ARSLAN_SPAWNS_DIR`, `ARSLAN_STATIC_DIR`, `ARSLAN_BIND_HOST`, `ARSLAN_ATTACH_CHAR_LIMIT`, `ARSLAN_PACKAGED`, `ARSLAN_MCP_HEALTH_ON_BOOT`.
+Other read-but-rarely-set vars (see `server/config.py` + `server/secret_bootstrap.py`): `ARSLAN_DB_PATH`, `ARSLAN_SPAWNS_DIR`, `ARSLAN_STATIC_DIR`, `ARSLAN_BIND_HOST`, `ARSLAN_ATTACH_CHAR_LIMIT`, `ARSLAN_PACKAGED`, `ARSLAN_MCP_HEALTH_ON_BOOT`, `ARSLAN_SECRET_KEY_FILE` (dev secret persistence path; empty = disable auto-generation — the test suites pin it empty).
 
 ## Where things live
 

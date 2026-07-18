@@ -47,9 +47,13 @@ PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
 **Optional — manage the secret yourself.** Pin it in `.env` instead (generated ONCE; `.env` is gitignored, and the same value also serves the Docker path below):
 
 ```bash
+# Seeds from the already-persisted secret when one exists (never re-mint over a
+# secret that already encrypted stored keys); only a true first run generates.
 grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env && chmod 600 .env; }
+  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
+       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
+  && [ -f .env ] && chmod 600 .env
 ```
 
 > **Why one stable secret?** `ARSLAN_SECRET_KEY` derives the key that encrypts your stored BYOK secrets at rest. If it changes between runs, previously-stored keys become **undecryptable** — the auto-generated file (and the optional `.env` pin) exists precisely so the value stays stable. A complete backup is **two pieces**: your data dir **plus** the secret (`~/.arslan/secret_key`, or your own value). The dev server reads the *process* environment (not `.env` directly), which is why an explicit pin must be `source`d first.
@@ -161,7 +165,7 @@ Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **enforces a
 | `/api` or `/ws` refused | Use `127.0.0.1:5173`, not `localhost:5173`. |
 | Stored keys suddenly "undecryptable" | `ARSLAN_SECRET_KEY` changed between runs — keep it stable. Common cause: switching between an explicit env value and the auto-generated `~/.arslan/secret_key`. |
 
-**Back up your data.** Everything — the DB, notes, and encrypted secrets — lives under `ARSLAN_DATA_DIR` (here, `data/`). Back it up and restore it **as a whole**; keep its `crypto_salt` with it, or PBKDF2-encrypted secrets become undecryptable. See the [README](../README.md#data--backup) for details.
+**Back up your data — two pieces.** The DB, notes, and encrypted secrets live under `ARSLAN_DATA_DIR` (here, `data/`); back it up and restore it **as a whole**, keeping its `crypto_salt` with it (or PBKDF2-encrypted secrets become undecryptable). The **second piece is the secret itself**, which deliberately lives outside the data dir: your `ARSLAN_SECRET_KEY` value, or the auto-generated `~/.arslan/secret_key`. A data-dir-only backup restored on a fresh machine gets a NEW auto-generated secret and cannot decrypt the stored provider keys. See the [README](../README.md#data--backup) for details.
 
 ---
 

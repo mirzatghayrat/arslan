@@ -28,7 +28,7 @@ Please read these before exposing Arslan beyond a trusted local machine:
 
 ## Backup & durability
 
-The `<data_dir>/crypto_salt` and `<data_dir>/api_token` files are part of the backup unit — back them up **together with** the database, not separately. New-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`: **losing `crypto_salt` (or restoring a mismatched one) makes those stored secrets undecryptable**, even with the correct `ARSLAN_SECRET_KEY`. Restore the whole data directory as a unit.
+The `<data_dir>/crypto_salt` and `<data_dir>/api_token` files are part of the backup unit — back them up **together with** the database, not separately. New-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`: **losing `crypto_salt` (or restoring a mismatched one) makes those stored secrets undecryptable**, even with the correct `ARSLAN_SECRET_KEY`. Restore the whole data directory as a unit. The secret itself deliberately lives **outside** the data dir (your explicit env value, or the dev auto-generated `~/.arslan/secret_key` / `ARSLAN_SECRET_KEY_FILE`), so a complete backup is **two pieces**: the data directory **plus** that secret.
 
 ## Reporting a vulnerability
 

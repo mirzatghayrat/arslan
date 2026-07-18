@@ -40,10 +40,13 @@ uv sync --extra dev --extra server
 #    reuses it on every later boot.
 #    OPTIONAL — pin it yourself in .env instead. It derives the key that
 #    encrypts stored BYOK secrets at rest; a changed value makes previously-
-#    stored keys undecryptable, so generate ONCE and reuse:
+#    stored keys undecryptable, so the pin SEEDS from the already-persisted
+#    secret when one exists and only mints a fresh value on a true first run:
 grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env && chmod 600 .env; }
+  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
+       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
+  && [ -f .env ] && chmod 600 .env
 
 # 4. Run the backend (sources .env only if you created one in step 3 — the dev
 #    server reads the process environment, not .env directly).
@@ -75,7 +78,7 @@ Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **refuses to
 | `ARSLAN_SECRET_KEY` | *(auto-generated in dev)* | Derives the Fernet key that encrypts stored BYOK secrets at rest. Dev: unset → auto-generated on the first boot, persisted to `~/.arslan/secret_key`, and reused thereafter; an explicit value always wins (a mismatch vs the persisted file logs a warning). In `prod` a missing value is boot-fatal and the persisted dev file is **never** read. |
 | `ARSLAN_SECRET_KEY_FILE` | `~/.arslan/secret_key` | Dev-only: where the auto-generated secret persists — kept **outside** the data dir on purpose (backup = data dir **+** this file). Set **empty** to disable auto-generation entirely. Ignored in `prod`. Any dev entry point that loads server config (server, migration CLI, diagnostics) may mint it on first use; generation always prints one line saying where. |
 | `ARSLAN_API_TOKEN` | *(empty)* | API/WS bearer token. **Empty in dev + localhost = no auth** (zero-friction local). For prod / packaged / non-loopback binds a token is auto-generated on first run (see below). |
-| `ARSLAN_DATA_DIR` | platform app-data dir | Where the DB, notes, and secrets live. Unset → macOS `~/Library/Application Support/Arslan`, Linux `~/.local/share/Arslan`, Windows `%APPDATA%/Arslan`. **This directory IS the backup unit.** |
+| `ARSLAN_DATA_DIR` | platform app-data dir | Where the DB, notes, and secrets live. Unset → macOS `~/Library/Application Support/Arslan`, Linux `~/.local/share/Arslan`, Windows `%APPDATA%/Arslan`. **This directory plus your secret are the backup unit** (see [Data & backup](#data--backup)). |
 | `ARSLAN_ENV` | `dev` | `dev` or `prod`. `prod` requires a token and hardens defaults; a missing `ARSLAN_SECRET_KEY` in `prod` is boot-fatal. |
 | `ARSLAN_ALLOWED_HOSTS` | localhost only | Comma-separated TrustedHost allowlist for non-localhost / prod deploys. |
 | `ARSLAN_ALLOWED_ORIGINS` | localhost only | Comma-separated CORS + WebSocket-Origin allowlist for non-localhost / prod deploys. |
