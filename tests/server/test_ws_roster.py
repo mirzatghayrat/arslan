@@ -313,10 +313,10 @@ def test_card_accept_without_park_joins_and_notices(two_spawn_client):
         ws.receive_json()  # history
         ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
-        joined = ws.receive_json()
-        assert joined["type"] == "roster_event" and joined["action"] == "joined"
         notice = ws.receive_json()
         assert notice["type"] == "roster_event"
+        # The notice already says "joined" — the plain joined event is suppressed for
+        # card accepts so the chat renders ONE line, not two stacked ones.
         assert notice["action"] == "joined_no_pending"
         assert notice["spawn_id"] == 4 and notice["spawn_name"] == "领英智囊"
         assert ws.receive_json()["type"] == "roster_update"
@@ -347,7 +347,6 @@ def test_card_accept_after_stale_clear_notices(two_spawn_client):
         ws.receive_json()
         ws.receive_json()
         ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
-        assert ws.receive_json()["action"] == "joined"
         assert ws.receive_json()["action"] == "joined_no_pending"
 
 
@@ -371,7 +370,6 @@ def test_card_accept_for_other_spawn_keeps_park_and_notices(two_spawn_client, mo
         ws.receive_json()
         ws.receive_json()
         ws.send_json({"type": "roster_invite", "spawn_id": 5, "origin": "invite_card"})
-        assert ws.receive_json()["action"] == "joined"
         notice = ws.receive_json()
         assert notice["action"] == "joined_no_pending"
         assert notice["spawn_name"] == "数据研析"
@@ -396,3 +394,67 @@ def test_card_accept_already_member_still_notices(two_spawn_client):
         assert notice["type"] == "roster_event"
         assert notice["action"] == "joined_no_pending"
         assert ws.receive_json()["type"] == "roster_update"
+
+
+def test_card_accept_with_matching_park_dispatches_and_never_notices(two_spawn_client, monkeypatch):
+    """Production frame shape (origin present) on the park-HIT path: the parked task
+    dispatches and the honest no-pending notice must NOT fire — it would contradict
+    the dispatch that just happened."""
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import phase_service
+
+    dispatched, frames = [], []
+
+    async def _fake_dispatch_routed(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw):
+        dispatched.append(spawn_id)
+        emit({"type": "stream_end", "message_id": 0})
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _fake_dispatch_routed)
+
+    async def _park():
+        await phase_service.set_inviting("main", 4, task_brief="t", user_message="u")
+    two_spawn_client.portal.call(_park)
+
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.receive_json()  # on-connect roster_update
+        ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
+        for _ in range(10):
+            f = ws.receive_json()
+            frames.append(f)
+            if f.get("type") == "stream_end":
+                break
+
+    assert dispatched == [4]
+    assert not any(f.get("action") == "joined_no_pending" for f in frames), (
+        "a card accept that HIT its park must never also claim nothing was queued")
+
+
+def test_card_accept_with_answered_park_recruits_and_never_notices(two_spawn_client, monkeypatch):
+    """Same for the cell-6 recruiting park (answered=True): enroll-only + the
+    'recruited' note, never the no-pending notice."""
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import phase_service
+
+    dispatched, frames = [], []
+
+    async def _fake(*a, **k):  # pragma: no cover - asserts NOT called
+        dispatched.append(a)
+    monkeypatch.setattr(arslan_mod, "dispatch_routed", _fake)
+
+    async def _park():
+        await phase_service.set_inviting("main", 4, task_brief="t", user_message="u",
+                                         answered=True)
+    two_spawn_client.portal.call(_park)
+
+    with two_spawn_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json({"type": "roster_invite", "spawn_id": 4, "origin": "invite_card"})
+        for _ in range(6):
+            frames.append(ws.receive_json())
+            if frames[-1].get("type") == "roster_update":
+                break
+
+    assert dispatched == []
+    assert any(f.get("action") == "recruited" for f in frames), "recruit note expected"
+    assert not any(f.get("action") == "joined_no_pending" for f in frames)

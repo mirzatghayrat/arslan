@@ -538,9 +538,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     continue
                 newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")
                 spawn_name = await dispatcher.get_spawn_name(spawn_id)
-                if newly_joined:
+                from_card = (data.get("origin") or "") == "invite_card"
+                # The honest notice below already says "joined", so a plain joined event
+                # alongside it would render two stacked roster lines for the same event.
+                if newly_joined and not from_card:
                     await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
-                if (data.get("origin") or "") == "invite_card":
+                if from_card:
                     # BUG2 death line: an invite/staffing CARD promised a consequence, but
                     # the park is gone (cleared by a later message, clobbered by a phase
                     # write, or parked for another spawn). Never silent — say what actually

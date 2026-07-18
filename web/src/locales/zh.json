@@ -62,7 +62,7 @@
     "roster_joined": "{{name}} 加入了对话",
     "roster_left": "{{name}} 离开了对话",
     "roster_recruited": "{{name}} 已加入本次会话 · 直接 @ TA 交办",
-    "roster_joined_no_pending": "{{name}} 已加入 · 本轮没有待派任务,直接 @ TA 交办即可",
+    "roster_joined_no_pending": "{{name}} 已加入 · 本轮没有交给 TA 的任务,直接 @ TA 交办即可",
     "stopRun": "停止"
   },
   "conversation": {

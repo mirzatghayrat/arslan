@@ -62,7 +62,7 @@
     "roster_joined": "{{name}} ist dem Gespräch beigetreten",
     "roster_left": "{{name}} hat das Gespräch verlassen",
     "roster_recruited": "{{name}} ist dieser Sitzung beigetreten · Aufgaben direkt per @ übergeben",
-    "roster_joined_no_pending": "{{name}} ist beigetreten · diesmal war nichts eingeplant — Aufgaben direkt per @ übergeben",
+    "roster_joined_no_pending": "{{name}} ist beigetreten · für {{name}} war diesmal nichts eingeplant — Aufgaben direkt per @ übergeben",
     "stopRun": "Stoppen"
   },
   "conversation": {

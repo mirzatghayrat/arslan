@@ -299,15 +299,69 @@ describe("OrchestratorChat joined_no_pending + unknown-action fallback", () => {
 //    name placeholder, point at @ hand-off, and never promise a dispatch.
 // ---------------------------------------------------------------------------
 describe("roster_joined_no_pending locale copy", () => {
-  const dicts: Array<[string, Record<string, any>]> = [
-    ["en", en], ["zh", zh], ["ja", ja], ["de", de], ["fr", fr], ["es", es],
+  // The "nothing was queued" claim MUST be scoped to THIS spawn: another spawn's park
+  // can still be alive (the WS handler deliberately preserves it), so an unscoped
+  // "nothing is pending" would be a false statement. Each locale carries its own
+  // scoping marker — a pronoun or a repeat of the name inside the claim.
+  const dicts: Array<[string, Record<string, any>, RegExp]> = [
+    ["en", en, /for them|for \{\{name\}\}/i],
+    ["zh", zh, /交给 ?(TA|\{\{name\}\})/],
+    ["ja", ja, /宛て/],
+    ["de", de, /für \{\{name\}\}|für ihn|für sie/i],
+    ["fr", fr, /pour \{\{name\}\}|pour lui|pour elle/i],
+    ["es", es, /para \{\{name\}\}|para él|para ella/i],
   ];
 
-  it.each(dicts)("%s: honest, @-directed, no dispatch promise", (_id, dict) => {
+  it.each(dicts)("%s: honest, @-directed, spawn-scoped, no dispatch promise", (_id, dict, scoping) => {
     const value: string = dict.chat.roster_joined_no_pending;
     expect(value).toBeTruthy();
     expect(value).toContain("{{name}}");
     expect(value).toContain("@");
     expect(value).not.toMatch(/下次|next time|次回|nächste|prochaine|próxima/i);
+    expect(value).toMatch(scoping);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// 8. BUG2 end-to-end: the real card-accept frame sequence must render ONE line.
+//    The honest notice already says "joined", so the handler suppresses the plain
+//    joined event for card accepts — pinned here through store → adapter → render.
+// ---------------------------------------------------------------------------
+describe("card accept renders a single roster line", () => {
+  it("store + renderer produce one notice for the production frame sequence", () => {
+    useArslanStore.getState().handleFrame({
+      type: "roster_event",
+      action: "joined_no_pending",
+      spawn_id: 4,
+      spawn_name: "数据研析",
+    } as any);
+
+    const items = useArslanStore.getState().items;
+    expect(items).toHaveLength(1);
+
+    const msgs = toUiMessages(items as ArslanThreadItem[]).map((m, i) => ({
+      id: `e2e-${i}`,
+      sender: "arslan" as const,
+      senderName: "Arslan",
+      senderAvatar: "🦁",
+      text: m.text ?? "",
+      timestamp: "",
+      rosterAction: m.rosterAction,
+      rosterSpawnName: m.rosterSpawnName,
+    }));
+
+    render(
+      <OrchestratorChat
+        chatHistory={msgs}
+        setChatHistory={() => {}}
+        spawns={[]}
+        currentStyle="quartz"
+        setCurrentStyle={() => {}}
+        activeThread={null}
+      />
+    );
+    expect(screen.getAllByText(/数据研析/)).toHaveLength(1);
+    expect(screen.getByText(/joined-no-pending-notice/)).toBeTruthy();
   });
 });

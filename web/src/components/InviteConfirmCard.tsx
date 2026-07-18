@@ -17,8 +17,12 @@ interface Props {
  * one-line capability, with Accept / Dismiss. It is NOT a modal/overlay — it reads
  * as the last item in the chat flow.
  *
- * Accept → onConfirm(spawnId) (sends `roster_invite`, backend joins + dispatches the
- * parked task). Dismiss → onCancel() (sends `dismiss_invite`, clears the pending invite).
+ * Accept → onConfirm(spawnId), which sends `roster_invite` WITH `origin: 'invite_card'`
+ * (built by lib/rosterInvite — the origin is what marks this as a CARD accept). The
+ * backend then: dispatches the parked task if one is still parked; only enrolls for a
+ * recruiting invite (cell 6, already answered); and when the park is gone answers with
+ * an honest `joined_no_pending` notice instead of joining silently.
+ * Dismiss → onCancel() (sends `dismiss_invite`, clears the pending invite).
  */
 export default function InviteConfirmCard({ spawnId, spawnName, reason, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();

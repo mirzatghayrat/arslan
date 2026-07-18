@@ -176,8 +176,12 @@ def propose_invite(spawn_id: int, reason: str) -> dict[str, Any]:
     """Arslan proposes bringing an existing spawn into the conversation.
 
     The frontend renders a confirmation card; on confirm it sends the existing
-    `roster_invite {spawn_id}` frame which joins exactly that one spawn. Emitting
-    this frame does NOT join the roster — the join awaits the user's confirmation.
+    `roster_invite {spawn_id, origin: "invite_card"}` frame which joins exactly that
+    one spawn. The `origin` is load-bearing: it marks a CARD accept (which promised a
+    consequence) so the handler can answer with an honest `joined_no_pending` notice
+    when the parked task is gone, instead of joining silently. Build it via
+    web/src/lib/rosterInvite.ts, never inline. Emitting this frame does NOT join the
+    roster — the join awaits the user's confirmation.
     """
     return {"type": "propose_invite", "spawn_id": spawn_id, "reason": reason}
 
@@ -209,7 +213,8 @@ def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, An
 
     Like `propose_invite`, emitting this frame joins NOTHING and creates NOTHING —
     the frontend renders a picker card; the user's choice drives a `roster_invite`
-    (pick) or a `confirm_create` (create) on the existing single, idempotent paths.
+    (pick, sent with `origin: "invite_card"` — see propose_invite) or a
+    `confirm_create` (create) on the existing single, idempotent paths.
     """
     return {"type": "propose_staffing", "candidates": candidates, "create_draft": create_draft}
 

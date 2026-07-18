@@ -62,7 +62,7 @@
     "roster_joined": "{{name}} a rejoint la conversation",
     "roster_left": "{{name}} a quitté la conversation",
     "roster_recruited": "{{name}} a rejoint cette session · utilisez @ pour lui confier une tâche",
-    "roster_joined_no_pending": "{{name}} a rejoint · rien n'était en attente cette fois — utilisez @ pour confier une tâche",
+    "roster_joined_no_pending": "{{name}} a rejoint · rien n'était en attente pour {{name}} cette fois — utilisez @ pour confier une tâche",
     "stopRun": "Arrêter"
   },
   "conversation": {
