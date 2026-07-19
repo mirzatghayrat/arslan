@@ -55,6 +55,7 @@ from .versions._0030_scheduled_tasks import upgrade_sync as _m0030
 from .versions._0031_model_catalog import upgrade_sync as _m0031
 from .versions._0032_brain_temporal import upgrade_sync as _m0032
 from .versions._0033_memory_proposal_nullable import upgrade_sync as _m0033
+from .versions._0034_curation_layer import upgrade_sync as _m0034
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -86,6 +87,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0031", _m0031),
     ("0032", _m0032),
     ("0033", _m0033),
+    ("0034", _m0034),
 ]
 
 

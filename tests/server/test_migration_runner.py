@@ -59,7 +59,7 @@ def test_registry_matches_boot_chain_verbatim():
     assert [v for v, _ in runner.MIGRATIONS] == [
         "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016",
         "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027",
-        "0028", "0029", "0030", "0031", "0032", "0033"]
+        "0028", "0029", "0030", "0031", "0032", "0033", "0034"]
     # id→function binding: each registered fn must come from its own _00NN_ module.
     # Guards a copy-paste mis-binding like ("0032", _m0031) that the order check alone misses.
     for vid, fn in runner.MIGRATIONS:
@@ -130,3 +130,51 @@ def test_cli_main_applies_pending_and_fills_ledger(tmp_path, capsys):
     finally:
         eng.dispose()
     assert list(rows) == sorted(v for v, _ in runner.MIGRATIONS)   # ledger filled with every id
+
+
+# ---------------------------------------------------------------------------
+# 0034 — curation layer columns
+# ---------------------------------------------------------------------------
+
+
+def test_0034_adds_both_columns_and_is_idempotent(tmp_path):
+    """The give-up marker column and the proposal conversation_id must both land, and
+    re-applying (this repo re-runs every migration on every boot) must be a no-op."""
+    import sqlite3
+
+    from server.db.migrations.versions._0034_curation_layer import upgrade_sync
+
+    db = tmp_path / "m34.db"
+    raw = sqlite3.connect(db)
+    raw.executescript("""
+        CREATE TABLE distilled_sessions (
+            id INTEGER PRIMARY KEY, conversation_id VARCHAR(50) NOT NULL,
+            spawn_id INTEGER NOT NULL, timestamp DATETIME);
+        CREATE TABLE memory_proposals (
+            id INTEGER PRIMARY KEY, kind VARCHAR(30), table_name VARCHAR(20),
+            new_id INTEGER, old_id INTEGER NOT NULL, reason TEXT,
+            status VARCHAR(20), provenance JSON, created_at DATETIME,
+            resolved_at DATETIME);
+    """)
+    raw.commit()
+
+    class _Conn:
+        def __init__(self, c):
+            self._c = c
+
+        def exec_driver_sql(self, sql):
+            return self._c.execute(sql)
+
+    conn = _Conn(raw)
+    upgrade_sync(conn)
+    upgrade_sync(conn)   # second pass must not raise
+    raw.commit()
+
+    ds_cols = {r[1] for r in raw.execute("PRAGMA table_info(distilled_sessions)")}
+    mp_cols = {r[1] for r in raw.execute("PRAGMA table_info(memory_proposals)")}
+    idx = {r[1] for r in raw.execute("PRAGMA index_list(memory_proposals)")}
+    raw.close()
+
+    assert "reason" in ds_cols
+    assert "conversation_id" in mp_cols
+    assert "ix_memory_proposals_conversation_id" in idx

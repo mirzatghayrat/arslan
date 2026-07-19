@@ -90,6 +90,12 @@ class DistilledSession(Base):
     conversation_id = Column(String(50), nullable=False, index=True)
     spawn_id = Column(Integer, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    # NULL = a normal distillation marker. "curation_gave_up" = the background sweep
+    # permanently abandoned this pair after repeated failures; writing a real row is
+    # what makes the give-up terminal (the sweep anti-joins this table) and restart-safe.
+    # The INTERACTIVE path deliberately ignores a give-up row and upserts it back to
+    # NULL on success — a background give-up must never silence a user's manual retry.
+    reason = Column(String(30), nullable=True)
 
 
 class Setting(Base):
@@ -589,6 +595,10 @@ class MemoryProposal(Base):
     reason = Column(Text, nullable=False, default="")
     status = Column(String(20), nullable=False, default="pending", index=True)
     provenance = Column(JSON, nullable=True)
+    # Which conversation produced this proposal. A real column (not a JSON-path into
+    # provenance) so the curation sweep's dedup key can include it and be indexed:
+    # two conversations touching the same spawn must yield two proposals.
+    conversation_id = Column(String(50), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
 
