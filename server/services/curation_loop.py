@@ -157,6 +157,38 @@ async def _give_up(conversation_id: str) -> None:
         conversation_id, MAX_ATTEMPTS)
 
 
+async def ensure_backfill_boundary() -> None:
+    """Record where the sweep's scope starts, the first time curation is found enabled.
+
+    🔴 Without this, flipping `curation_enabled` makes the very next tick a HISTORICAL
+    BACKFILL: `_candidates` selects every conversation with an undistilled deliverable
+    and no activity for 6h, which at that moment is every such conversation ever
+    recorded. MAX_PER_TICK bounds the RATE (5 per 15 min ≈ 480/day), not the total — on
+    an install with months of history that is days of continuous LLM spend beginning
+    five minutes after the switch.
+
+    So enabling curation means "curate from here on". Reaching back over history is a
+    separate explicit act; this round does not add one, and the log says so rather than
+    letting the omission look like completeness.
+
+    Written ONCE. Re-recording on every tick would move the boundary forward forever and
+    the sweep would never run at all. Not written while curation is OFF — deciding, months
+    early, which history is permanently out of scope is not a decision a disabled loop
+    gets to make.
+    """
+    async with db_session.AsyncSessionLocal() as db:
+        if not await settings_service.curation_enabled(db):
+            return
+        if await settings_service.curation_backfill_from(db) is not None:
+            return
+        now = datetime.utcnow()
+        await settings_service.set_curation_backfill_from(db, now)
+    logger.info(
+        "curation: scope starts %s — conversations idle before that are NOT swept. "
+        "Distilling existing history is a separate action this build does not offer.",
+        now.isoformat())
+
+
 async def _candidates() -> list[str]:
     """Conversations with an undistilled spawn deliverable and no recent activity.
 
@@ -188,6 +220,13 @@ async def _candidates() -> list[str]:
         .scalar_subquery()
     )
     async with db_session.AsyncSessionLocal() as db:
+        # The backfill boundary. Absent (or unparsable) means "no scope recorded yet",
+        # and the fail-closed reading of that is to sweep NOTHING — ensure_backfill_boundary
+        # records one on the next tick. Falling through to "no gate" would silently
+        # reopen the whole historical backfill.
+        floor = await settings_service.curation_backfill_from(db)
+        if floor is None:
+            return []
         rows = (await db.execute(
             select(ArslanMessage.conversation_id)
             .where(
@@ -195,6 +234,7 @@ async def _candidates() -> list[str]:
                 ArslanMessage.spawn_id.isnot(None),
                 ~marked,
                 last_activity < cutoff,
+                last_activity >= floor,
             )
             .group_by(ArslanMessage.conversation_id)
         )).scalars().all()
@@ -311,6 +351,7 @@ async def watch_loop(*, interval: float = DEFAULT_INTERVAL,
                 pass
     while stop_event is None or not stop_event.is_set():
         try:
+            await ensure_backfill_boundary()
             await tick(stop_event)
         except Exception as exc:  # noqa: BLE001 — a tick failure must not kill the loop
             logger.warning("curation tick failed (non-fatal): %s", exc)

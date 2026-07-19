@@ -62,10 +62,20 @@ async def wdb(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def _enable(Session):
-    """The sweep is OPT-IN (it spends, and its output has no UI yet), so every test
-    that expects it to run must turn it on explicitly."""
+async def _enable(Session, *, backfill_days_ago: int = 365):
+    """The sweep is OPT-IN (it spends), so every test that expects it to run must turn
+    it on explicitly.
+
+    It also needs a BACKFILL BOUNDARY. Enabling curation now means "curate from here on":
+    without a boundary the candidate query returns nothing, because the first tick after
+    a real flip would otherwise sweep every conversation ever recorded (~480 LLM calls a
+    day for days on an install with history). These tests seed conversations aged in
+    HOURS, so the boundary is placed a year back — far enough to be out of the way, while
+    still exercising the same code path production uses.
+    """
     await _set(Session, "curation_enabled", "true")
+    await _set(Session, "curation_backfill_from",
+               (datetime.utcnow() - timedelta(days=backfill_days_ago)).isoformat())
 
 
 async def _seed(Session, *, conversation_id="c1", spawn_id=1, age_hours=48):

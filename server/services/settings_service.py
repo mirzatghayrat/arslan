@@ -15,7 +15,8 @@ from server.db.models import Setting
 logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
-_PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
+_PLAIN_KEYS = (
+    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled")
@@ -329,3 +330,26 @@ _BOOL_ACCESSORS = {
 
 #: The bool keys this registry is responsible for.
 _BOOL_KEYS = tuple(_BOOL_ACCESSORS)
+
+
+#: The moment curation was switched on. Everything idle BEFORE it is history and is not
+#: swept; see curation_loop.ensure_backfill_boundary for why.
+CURATION_BACKFILL_FROM_KEY = "curation_backfill_from"
+
+
+async def curation_backfill_from(session: AsyncSession) -> datetime | None:
+    """When the curation sweep's scope begins. None = not recorded yet.
+
+    An UNPARSABLE stored value returns None rather than falling through to "no gate":
+    reopening the historical backfill is the expensive direction, and it would happen
+    invisibly. The loop treats None as "record a boundary now and sweep only forward",
+    so a corrupt value costs a small amount of scope, never a surprise bill.
+    """
+    return _parse_iso_utc(await _get_raw(session, CURATION_BACKFILL_FROM_KEY))
+
+
+async def set_curation_backfill_from(session: AsyncSession, dt: datetime) -> None:
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    await _set_raw(session, CURATION_BACKFILL_FROM_KEY, dt.isoformat())
+    await session.commit()
