@@ -53,7 +53,16 @@ DEFAULT_INTERVAL = 300.0       # 5 minutes; injectable (short in tests)
 # to "eligible_looking" ("Nothing blocks") while auto evolution was permanently dead.
 # Writing the row and rate-limiting it keeps the refusal VISIBLE, which is the whole
 # point of recording an attempt for a skip.
+#
+# 6 HOURS, chosen so the derived daily ceiling is legible rather than incidental:
+#   86400 / BUDGET_REFUSAL_COOLDOWN_S = at most 4 refusal rows per spawn per day.
+# That is the number to reason about when changing this constant — it is the actual
+# bound on the growth this cooldown exists to cap, and it is pinned by
+# test_over_budget_spawn_cannot_exceed_the_daily_refusal_ceiling.
 BUDGET_REFUSAL_COOLDOWN_S = 6 * 3600
+
+#: The bound the cooldown actually buys, stated once so tests and humans agree on it.
+MAX_BUDGET_REFUSALS_PER_DAY = 86_400 // BUDGET_REFUSAL_COOLDOWN_S
 
 # E9-b: gate/pre-gate reasons that are CONSTRUCTION/precondition failures, not quality
 # verdicts — they say nothing about the spawn's prompt, so they must NOT drive the

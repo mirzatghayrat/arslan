@@ -60,9 +60,17 @@ const BASE = `${API_BASE}/api/v1`;
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** The parsed `detail` payload, when the server sent a STRUCTURED one.
+   *
+   * The evolve spend gate answers 409 with an object (code, last_attempt_id, reason,
+   * est_tokens…) that the confirmation dialog renders verbatim — the frontend must not
+   * invent the explanation. Stringifying it into `message` would throw those fields away
+   * and leave the UI with "[object Object]". */
+  detail?: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -84,15 +92,21 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
   if (!resp.ok) {
     let detail = `HTTP ${resp.status}`;
+    let structured: unknown;
     try {
       const body = await resp.json();
       // Prefer FastAPI's { detail }, but fall back to a plain-string error body.
       if (typeof body === "string") detail = body;
-      else detail = body.detail ?? detail;
+      else if (body.detail != null && typeof body.detail === "object") {
+        // a structured detail (e.g. the evolve spend gate) — keep the object, and give
+        // `message` something readable rather than "[object Object]"
+        structured = body.detail;
+        detail = (body.detail as { code?: string }).code ?? detail;
+      } else detail = body.detail ?? detail;
     } catch {
       // keep default
     }
-    throw new ApiError(detail, resp.status);
+    throw new ApiError(detail, resp.status, structured);
   }
   return (await resp.json()) as T;
 }
@@ -196,6 +210,19 @@ export interface BrainUsageEventsDto {
   /** true ⇒ the OLDEST part of the requested window is missing from `events` */
   truncated: boolean;
   events: BrainUsageEventDto[];
+}
+
+/** The evolve spend gate's 409 payload (批1 P5). Every field is supplied by the BACKEND
+ * so the dialog states facts rather than guesses — same rule as the brain usage-event
+ * coverage note. `est_tokens` is neither a ceiling nor a reliable floor; see the copy. */
+export interface EvolveRepeatRefusal {
+  code: "same_corpus_as_failed_attempt";
+  last_attempt_id: number;
+  last_outcome: string;
+  last_reason: string;
+  new_runs_since: number;
+  est_tokens: number | null;
+  est_is_lower_bound: boolean;
 }
 
 export const api = {
@@ -408,8 +435,14 @@ export const api = {
   // GET the estimate, POST to enqueue (202), then review the resulting proposal in the inbox.
   getEvolveEstimate: (spawnId: number) =>
     request<EvolveEstimate>(`/spawns/${spawnId}/evolve/estimate`),
-  runEvolve: (spawnId: number) =>
-    request<EvolveEnqueued>(`/spawns/${spawnId}/evolve`, { method: "POST" }),
+  /** POST the manual trigger. The server gates a click that would re-run a corpus which
+   * already failed: it answers 409 with a structured detail, and only `force` proceeds.
+   * The gate is fail-closed, so omitting force is the safe default, not a shortcut. */
+  runEvolve: (spawnId: number, opts?: { force?: boolean }) =>
+    request<EvolveEnqueued>(`/spawns/${spawnId}/evolve`, {
+      method: "POST",
+      body: JSON.stringify({ force: opts?.force ?? false }),
+    }),
   getEvolutionProposals: (status?: string) =>
     request<ProposalListItem[]>(
       `/evolution/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`,

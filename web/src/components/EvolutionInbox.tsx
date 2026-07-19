@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
+import type { EvolveRepeatRefusal } from "../api/client";
 import type {
   ProposalListItem,
   ProposalDetail,
@@ -48,7 +49,12 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
   const [enqueued, setEnqueued] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // per-spawn eligibility diagnosis for the empty-state panel (read-only; keyed off runSpawn).
+  // P5/P9 — the spend gate's structured 409, rendered as a confirmation.
+  const [refusal, setRefusal] = useState<EvolveRepeatRefusal | null>(null);
+  // P7 — the attempt this panel is currently following, tracked BY ID.
+  const [watching, setWatching] = useState<number | null>(null);
+
+  // per-spawn eligibility diagnosis (read-only; keyed off runSpawn).
   const [diag, setDiag] = useState<SpawnDiagnosis | null>(null);
   useEffect(() => {
     if (runSpawn === "") {
@@ -65,6 +71,54 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
     };
   }, [runSpawn]);
 
+  // P7 — the missing feedback loop. Before this, the panel fetched once on mount with no
+  // polling and no WS event, so a click produced "Enqueued · attempt N" and then nothing
+  // ever changed: the attempt finished minutes later in silence, and a refusal
+  // (skipped_budget) or a gate failure was never shown at all. A button that does nothing
+  // visible is a button people click again — which is exactly what was reported.
+  //
+  // Keyed on the attempt id we launched, NOT on last_attempts[0]: that slot can be taken
+  // by a DIFFERENT attempt (the auto watcher runs on the same spawn), which would make us
+  // attribute someone else's outcome to this click, and can also never settle.
+  useEffect(() => {
+    if (watching == null || runSpawn === "") return;
+    let alive = true;
+    let delay = 2000;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      if (!alive) return;
+      try {
+        const d = await api.getEvolutionDiagnosis(Number(runSpawn));
+        if (!alive) return;
+        setDiag(d);
+        const mine = d.last_attempts?.find((a) => a.id === watching);
+        if (mine && mine.outcome) {
+          setEnqueued(
+            t(`evolution.inbox.outcome_${mine.outcome}`, {
+              id: mine.id,
+              reason: mine.reason || "",
+              defaultValue: t("evolution.inbox.watch_lost", { id: mine.id }),
+            }),
+          );
+          setWatching(null);
+          return;
+        }
+      } catch {
+        // a failed poll is not worth surfacing — the next tick retries
+      }
+      delay = Math.min(delay * 1.5, 15000);   // back off; attempts take minutes
+      timer = setTimeout(poll, delay);
+    };
+
+    timer = setTimeout(poll, delay);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watching, runSpawn]);
+
   async function load() {
     setError(null);
     try {
@@ -74,6 +128,12 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
       ]);
       setRows(proposals);
       setNames(Object.fromEntries(spawns.map((s) => [s.id, s.name])));
+      // P8 — make the eligibility panel reachable on FIRST PAINT. It already existed, but
+      // it only rendered once `diag` was loaded, and `diag` only loaded once the user
+      // picked a spawn from a control labelled "Run evolution…" — a control whose whole
+      // affordance says "trigger", not "inspect". So the answer to "why are there no
+      // proposals?" was sitting behind the button the confused user was not going to press.
+      setRunSpawn((cur) => (cur === "" && spawns.length > 0 ? spawns[0].id : cur));
     } catch (e) {
       setError(String(e));
       setRows([]);
@@ -111,20 +171,30 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
     }
   }
 
-  async function enqueue() {
+  async function enqueue(force = false) {
     if (runSpawn === "") return;
     setBusy(true);
     setError(null);
     try {
-      const res = await api.runEvolve(runSpawn);
+      const res = await api.runEvolve(runSpawn, { force });
+      setRefusal(null);
       setEnqueued(
         res.attempt_id != null
           ? t("evolution.inbox.enqueued", { id: res.attempt_id })
           : t("evolution.inbox.already_running"),
       );
+      // P7 — follow THIS attempt. attempt_id is null when one is already running
+      // (concurrency = 1); there is nothing of ours to follow in that case.
+      setWatching(res.attempt_id ?? null);
       setEstimate(null);
     } catch (e) {
-      setError(String(e));
+      // P9 — the spend gate. Render the BACKEND's facts; do not compose an explanation
+      // here, or the dialog will drift from what the server actually decided.
+      if (e instanceof ApiError && e.status === 409 && e.detail) {
+        setRefusal(e.detail as EvolveRepeatRefusal);
+      } else {
+        setError(String(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -208,14 +278,61 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
               type="button"
               className="mt-1 px-3 py-1.5 text-[11px] font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50"
               disabled={busy}
-              onClick={enqueue}
+              onClick={() => enqueue(false)}
               data-testid="enqueue-btn"
             >
               {t("evolution.inbox.enqueue")}
             </button>
           </div>
         )}
-        {enqueued && (
+        {refusal && (
+          <div
+            className="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-2 text-[12px] font-mono"
+            role="alertdialog"
+            aria-labelledby="evo-confirm-title"
+            data-testid="repeat-confirm"
+          >
+            <div id="evo-confirm-title" className="font-bold text-warning">
+              {t("evolution.inbox.confirm_title")}
+            </div>
+            <div className="text-muted-foreground">
+              {t("evolution.inbox.confirm_body", {
+                id: refusal.last_attempt_id,
+                reason: refusal.last_reason,
+              })}
+            </div>
+            {refusal.est_tokens != null && (
+              <div className="text-muted-foreground tabular-nums">
+                {t("evolution.inbox.confirm_cost", { tokens: refusal.est_tokens })}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 text-[11px] font-bold font-sans uppercase rounded-lg border border-border text-muted-foreground hover:text-foreground transition-all"
+                onClick={() => setRefusal(null)}
+                data-testid="repeat-cancel"
+              >
+                {t("evolution.inbox.confirm_cancel")}
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 text-[11px] font-bold font-sans uppercase rounded-lg bg-warning/80 hover:bg-warning text-background transition-all disabled:opacity-50"
+                disabled={busy}
+                onClick={() => enqueue(true)}
+                data-testid="repeat-force"
+              >
+                {t("evolution.inbox.confirm_run")}
+              </button>
+            </div>
+          </div>
+        )}
+        {watching != null && (
+          <div className="text-[12px] font-mono text-muted-foreground" data-testid="watching-msg">
+            {t("evolution.inbox.watching", { id: watching })}
+          </div>
+        )}
+        {enqueued && watching == null && (
           <div className="text-[12px] font-mono text-success" data-testid="enqueued-msg">
             {enqueued}
           </div>
@@ -228,14 +345,17 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
         </div>
       )}
 
+      {/* P8 — the eligibility panel renders whenever a spawn is selected, not only when
+          the GLOBAL proposal list is empty. Gating it on that list meant a user holding
+          one proposal for spawn A could never find out why spawn B had none. */}
+      {diag && <EvolutionEligibilityPanel diag={diag} />}
+
       {rows == null ? (
         <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.loading")}</div>
       ) : rows.length === 0 ? (
         <div className="space-y-2">
           <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.empty")}</div>
-          {diag ? (
-            <EvolutionEligibilityPanel diag={diag} />
-          ) : (
+          {!diag && (
             <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.diag.pick_spawn")}</div>
           )}
         </div>

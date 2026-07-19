@@ -214,3 +214,46 @@ async def test_repeated_budget_refusals_are_rate_limited(wdb, monkeypatch):
     await _drain()
     assert second is None, "a second refusal inside the cooldown must not write a row"
     assert len(await _attempts(Session, sid)) == 1
+
+
+async def test_over_budget_spawn_cannot_exceed_the_daily_refusal_ceiling(wdb, monkeypatch):
+    """The bound the cooldown actually buys, pinned as a number rather than left implicit.
+
+    Without it the cursor change (skipped_budget no longer advances the cursor) would let
+    an over-budget spawn stay eligible forever and write one refusal row per tick — 288 a
+    day at the 300s interval, and more with notify_spawn firing on every scored run.
+
+    Simulated by walking a 24h day in tick-sized steps with a controllable clock, so the
+    assertion is about the POLICY (a refusal per cooldown window) and not about wall time.
+    """
+    Session = wdb
+    sid = await _spawn(Session)
+    async with Session() as db:
+        db.add(Setting(key="evolution_max_est_tokens", value="500"))
+        await db.commit()
+    await _seed_runs(Session, sid, 20)
+
+    now = datetime.utcnow()
+    ticks = int(86_400 // evolution_watcher.DEFAULT_INTERVAL)   # a full day of ticks
+
+    for i in range(ticks):
+        fake_now = now + timedelta(seconds=i * evolution_watcher.DEFAULT_INTERVAL)
+
+        class _Clock(datetime):
+            @classmethod
+            def utcnow(cls):
+                return fake_now
+
+        monkeypatch.setattr(evolution_watcher, "datetime", _Clock)
+        await evolution_watcher.trigger_spawn(sid)
+        await _drain()
+
+    monkeypatch.undo()
+    rows = await _attempts(Session, sid)
+    assert all(r.outcome == "skipped_budget" for r in rows), [r.outcome for r in rows]
+    assert len(rows) <= evolution_watcher.MAX_BUDGET_REFUSALS_PER_DAY, (
+        f"{len(rows)} refusal rows in a simulated day — the cooldown is not bounding "
+        f"growth (ceiling is {evolution_watcher.MAX_BUDGET_REFUSALS_PER_DAY})")
+    assert len(rows) >= 2, (
+        "a spawn that stays over budget all day should still leave MORE than one record "
+        "— the cooldown rate-limits the refusal, it does not silence it")

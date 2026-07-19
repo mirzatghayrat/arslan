@@ -6,9 +6,11 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }
 vi.mock("../api/client", () => {
   class ApiError extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    detail?: unknown;
+    constructor(message: string, status: number, detail?: unknown) {
       super(message);
       this.status = status;
+      this.detail = detail;
     }
   }
   return {
@@ -52,6 +54,16 @@ const DETAIL: ProposalDetail = {
   },
 };
 
+
+const DIAG = {
+  spawn_id: 7, generation_level: 1, total_scored: 12, replayable: 12, non_replayable: 0,
+  offending_tools: [], baseline_started_at: null, scored_ge_baseline: 12, corpus_total: 12,
+  holdout_ceiling: 5, real_holdout: 5, effective_holdout: 5, propose_count: 7,
+  corpus_excluded: 0, min_holdout_n: 10, consecutive_fails: 1, threshold: 20,
+  count_since_last_attempt: 0, auto_eligible: false, open_proposals: 1, auto_on: true,
+  max_est_tokens: null, last_attempts: [], verdict_code: "gate_failure", verdict_params: {},
+} as unknown as SpawnDiagnosis;
+
 beforeEach(() => {
   vi.clearAllMocks();
   m.getEvolutionProposals.mockResolvedValue([ROW]);
@@ -94,8 +106,13 @@ describe("EvolutionInbox", () => {
     expect(await screen.findByTestId("estimate-box")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("enqueue-btn"));
-    await waitFor(() => expect(m.runEvolve).toHaveBeenCalledWith(7));
-    expect(await screen.findByTestId("enqueued-msg")).toBeTruthy();
+    // 批1 P5: the click must NOT send force. The gate is fail-closed, so an ordinary
+    // click asks the server whether this would re-run an already-failed corpus; only the
+    // confirmation dialog's own button sends force: true.
+    await waitFor(() => expect(m.runEvolve).toHaveBeenCalledWith(7, { force: false }));
+    // P7: with an attempt_id we now FOLLOW the attempt, so the panel shows "running…"
+    // rather than a terminal-looking success line that never updates.
+    expect(await screen.findByTestId("watching-msg")).toBeTruthy();
   });
 
   it("renders the empty state when there are no proposals", async () => {
@@ -122,4 +139,110 @@ describe("EvolutionInbox", () => {
     await waitFor(() => expect(m.getEvolutionDiagnosis).toHaveBeenCalledWith(7));
     expect(await screen.findByTestId("eligibility-panel")).toBeTruthy();
   });
+
+  // ── P7/P8/P9 ────────────────────────────────────────────────────────────────────
+
+  it("P8: shows the eligibility panel on FIRST PAINT, without the user picking a spawn", async () => {
+    // The panel already existed but was unreachable in practice: `diag` loaded only after
+    // the user chose a spawn from a control labelled "Run evolution…", i.e. the answer to
+    // "why are there no proposals?" sat behind the button a confused user would not press.
+    m.getEvolutionDiagnosis.mockResolvedValue(DIAG);
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+
+    await waitFor(() => expect(m.getEvolutionDiagnosis).toHaveBeenCalledWith(7));
+    expect(await screen.findByTestId("eligibility-panel")).toBeTruthy();
+  });
+
+  it("P8: the panel is NOT gated on the global proposal list being empty", async () => {
+    // A user holding a proposal for one spawn could otherwise never learn why ANOTHER
+    // spawn has none — the old empty-state gate hid the explanation exactly when the
+    // fleet was partly working.
+    m.getEvolutionProposals.mockResolvedValue([ROW]);   // non-empty list
+    m.getEvolutionDiagnosis.mockResolvedValue(DIAG);
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+
+    expect(await screen.findByTestId("inbox-row")).toBeTruthy();
+    expect(await screen.findByTestId("eligibility-panel")).toBeTruthy();
+  });
+
+  it("P9: a 409 from the spend gate becomes a confirmation built from the SERVER's facts", async () => {
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+    });
+    const { ApiError } = await import("../api/client");
+    m.runEvolve.mockRejectedValueOnce(
+      new (ApiError as unknown as new (m: string, s: number, d: unknown) => Error)(
+        "same_corpus_as_failed_attempt", 409, {
+          code: "same_corpus_as_failed_attempt", last_attempt_id: 41,
+          last_outcome: "failed", last_reason: "holdout_winrate", new_runs_since: 0,
+          est_tokens: 48000, est_is_lower_bound: true,
+        }),
+    );
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+    await screen.findByTestId("inbox-row");
+    fireEvent.click(screen.getByTestId("estimate-btn"));
+    fireEvent.click(await screen.findByTestId("enqueue-btn"));
+
+    const dialog = await screen.findByTestId("repeat-confirm");
+    expect(dialog).toBeTruthy();
+    // it must NOT have silently enqueued anything
+    expect(await screen.queryByTestId("watching-msg")).toBeNull();
+  });
+
+  it("P9: confirming re-sends with force, cancelling sends nothing", async () => {
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+    });
+    const { ApiError } = await import("../api/client");
+    m.runEvolve
+      .mockRejectedValueOnce(
+        new (ApiError as unknown as new (m: string, s: number, d: unknown) => Error)(
+          "same_corpus_as_failed_attempt", 409, {
+            code: "same_corpus_as_failed_attempt", last_attempt_id: 41,
+            last_outcome: "failed", last_reason: "holdout_winrate", new_runs_since: 0,
+            est_tokens: 48000, est_is_lower_bound: true,
+          }))
+      .mockResolvedValueOnce({ attempt_id: 99 });
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+    await screen.findByTestId("inbox-row");
+    fireEvent.click(screen.getByTestId("estimate-btn"));
+    fireEvent.click(await screen.findByTestId("enqueue-btn"));
+    fireEvent.click(await screen.findByTestId("repeat-force"));
+
+    await waitFor(() => expect(m.runEvolve).toHaveBeenLastCalledWith(7, { force: true }));
+  });
+
+  it("P7: follows the attempt IT launched and reports the terminal outcome", async () => {
+    // Keyed on the launched attempt id, never on last_attempts[0]: the auto watcher runs
+    // on the same spawn, so that slot can hold a DIFFERENT attempt and we would report
+    // someone else's outcome as the result of this click.
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+    });
+    m.runEvolve.mockResolvedValue({ attempt_id: 99 });
+    m.getEvolutionDiagnosis
+      // an unrelated attempt occupies slot 0 while ours is still in flight
+      .mockResolvedValueOnce({ ...DIAG, last_attempts: [{ id: 100, outcome: "passed", reason: "" }] })
+      .mockResolvedValue({
+        ...DIAG,
+        last_attempts: [
+          { id: 100, outcome: "passed", reason: "" },
+          { id: 99, outcome: "skipped_budget", reason: "estimate 48000 exceeds budget 500" },
+        ],
+      });
+
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+    await screen.findByTestId("inbox-row");
+    fireEvent.click(screen.getByTestId("estimate-btn"));
+    fireEvent.click(await screen.findByTestId("enqueue-btn"));
+
+    expect(await screen.findByTestId("watching-msg")).toBeTruthy();
+    // 🔴 the refusal must SURFACE — before this, skipped_budget was decided server-side
+    // after the 202 and the UI never mentioned it at all.
+    const msg = await screen.findByTestId("enqueued-msg", {}, { timeout: 8000 });
+    expect(msg.textContent).toContain("outcome_skipped_budget");
+  }, 15000);
 });

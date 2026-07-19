@@ -74,7 +74,7 @@ describe("locale parity", () => {
     // 913 → 914: BUG2 (invite-accept honest notice) added
     // chat.roster_joined_no_pending — the never-silent explanation when a card
     // accept finds no parked task (joined only; @ to hand off).
-    expect(enKeys).toHaveLength(914);
+    expect(enKeys).toHaveLength(926);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
