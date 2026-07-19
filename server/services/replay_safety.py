@@ -66,10 +66,11 @@ def filter_replay_tools(wired: list[dict]) -> list[dict]:
 #                         dispatch path uses today (run_arm / replay_gate /
 #                         synthetic_corpus / evaluator / evolution_loop._val_outputs all
 #                         route through it).
-#   "evolution-eval"    — kept as a RESERVED member: a repo-wide grep finds this literal
-#                         nowhere but here, so nothing dispatches under it. It stays so a
-#                         future eval path can adopt it already-sealed; do not treat its
-#                         presence as evidence that some path uses it.
+#   "evolution-eval"    — RESERVED, not in use: no dispatch path under server/ or
+#                         arslan/ passes this id (it appears in this module and in the
+#                         tests that pin the set). It stays so a future eval path can
+#                         adopt it already-sealed; do not read its presence as evidence
+#                         that something dispatches under it.
 #
 # 🔴 DRIFT RULE (do not violate): this frozenset is the ONE registry of eval/replay
 # sentinel ids. Any NEW eval/replay dispatch path MUST reuse a sentinel from here (or add

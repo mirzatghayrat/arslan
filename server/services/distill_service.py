@@ -38,6 +38,9 @@ _MAX_FACTS = 8
 #: abandons a pair (see server/services/curation_loop.py).
 _GAVE_UP_REASON = "curation_gave_up"
 
+#: marker reason written when the sweep only PROPOSED (nothing reached memory yet)
+_PROPOSED_REASON = "curation_proposed"
+
 #: the Tier-2 kind whose existing acceptor writes spawn.memory_facts
 _PREFERENCE_KIND = "preference_overwrite_suspect"
 
@@ -130,7 +133,8 @@ class DistillOutcome:
     """
 
     ok: bool
-    reason: str | None = None   # already_distilled|no_spawn|nothing_to_distill|llm_failed|exception
+    # already_distilled|no_spawn|nothing_to_distill|llm_failed|write_failed|exception
+    reason: str | None = None
     spawn_id: int | None = None
 
     #: reasons that mean "we tried and it broke" (vs. a benign skip)
@@ -252,8 +256,13 @@ async def _distill_one_inner(
         # It is terminal for the sweep (that is what keeps a dead conversation from
         # costing money forever) but it must NOT silence the user: an interactive
         # caller ignores it and, on success, upserts the row back to a normal marker.
-        gave_up = already is not None and already.reason == _GAVE_UP_REASON
-        if already is not None and not (gave_up and not propose_only):
+        # Both background reasons are terminal for the SWEEP but invisible to an
+        # interactive caller: a give-up must not silence a manual retry, and a
+        # proposal-only marker means nothing was learned yet, so the user asking for a
+        # real distillation must get one.
+        background_only = already is not None and already.reason in (
+            _GAVE_UP_REASON, _PROPOSED_REASON)
+        if already is not None and not (background_only and not propose_only):
             return DistillOutcome(ok=False, reason="already_distilled", spawn_id=spawn_id)
         spawn = await db.get(Spawn, spawn_id)
         if spawn is None:
@@ -295,11 +304,16 @@ async def _distill_one_inner(
         # human approval — exactly the silent write this mode exists to prevent.
         # Filing it as an append_suspect proposal instead is a registered follow-up,
         # NOT part of this round; until then the sweep simply does not upflow.
-        filed = await _file_preference_proposal(conversation_id, spawn_id, new_facts)
+        filed = await _file_preference_proposal(conversation_id, spawn_id, new_facts,
+                                                based_on=existing)
         if not filed:
             return DistillOutcome(ok=False, reason="write_failed", spawn_id=spawn_id)
         async with db_session.AsyncSessionLocal() as db:
-            await _upsert_marker(db, conversation_id, spawn_id)
+            # A DISTINGUISHABLE marker: nothing reached memory, only a proposal was
+            # filed. A plain marker here would be indistinguishable from "actually
+            # learned" and would permanently answer the user's manual distill with
+            # "0 spawns" while their material sat in an inbox that has no UI yet.
+            await _upsert_marker(db, conversation_id, spawn_id, reason=_PROPOSED_REASON)
             await db.commit()
         return DistillOutcome(ok=True, spawn_id=spawn_id)
 
@@ -317,7 +331,8 @@ async def _distill_one_inner(
     return DistillOutcome(ok=True, spawn_id=spawn_id)
 
 
-async def _upsert_marker(db, conversation_id: str, spawn_id: int) -> None:
+async def _upsert_marker(db, conversation_id: str, spawn_id: int,
+                         *, reason: str | None = None) -> None:
     """Write the idempotency marker, UPSERTing within uq_distilled_conv_spawn.
 
     A successful distill replaces a background `curation_gave_up` marker with a normal
@@ -327,13 +342,15 @@ async def _upsert_marker(db, conversation_id: str, spawn_id: int) -> None:
         DistilledSession.conversation_id == conversation_id,
         DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
     if existing is not None:
-        existing.reason = None
+        existing.reason = reason
     else:
-        db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
+        db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id,
+                                reason=reason))
 
 
 async def _file_preference_proposal(
-    conversation_id: str, spawn_id: int, new_facts: list[str]
+    conversation_id: str, spawn_id: int, new_facts: list[str],
+    *, based_on: list[str] | None = None
 ) -> bool:
     """File (or refresh) the Tier-2 proposal that carries this distillation.
 
@@ -362,6 +379,10 @@ async def _file_preference_proposal(
                 "target_spawn_id": spawn_id,
                 "new_array": list(new_facts),
                 "conversation_id": conversation_id,
+                # memory_facts is a whole-array REPLACE, so accepting a stale proposal
+                # would silently revert anything written since. Record what it was
+                # derived from; accept refuses (409) when memory has moved on.
+                "based_on": list(based_on or []),
             }
             if existing is not None:
                 existing.provenance = provenance

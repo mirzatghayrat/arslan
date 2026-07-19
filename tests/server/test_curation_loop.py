@@ -62,6 +62,12 @@ async def wdb(tmp_path, monkeypatch):
     await engine.dispose()
 
 
+async def _enable(Session):
+    """The sweep is OPT-IN (it spends, and its output has no UI yet), so every test
+    that expects it to run must turn it on explicitly."""
+    await _set(Session, "curation_enabled", "true")
+
+
 async def _seed(Session, *, conversation_id="c1", spawn_id=1, age_hours=48):
     """A conversation with a spawn deliverable whose last message is `age_hours` old."""
     old = datetime.utcnow() - timedelta(hours=age_hours)
@@ -141,6 +147,7 @@ async def test_both_kill_switches_must_be_on(wdb, monkeypatch):
     monkeypatch.setattr(curation_loop, "_sweep_once",
                         lambda *a, **k: swept.append(1) or _aw(None))
     await _seed(wdb)
+    await _enable(wdb)
 
     await _set(wdb, "distill_on_session_end", "false")
     await curation_loop.tick()
@@ -163,13 +170,15 @@ async def test_sweep_distills_a_conversation_whose_session_ended_never_fired(wdb
         return ["用户偏好简短"]
     monkeypatch.setattr(distill_service, "distill_facts", _facts)
     await _seed(wdb)
+    await _enable(wdb)
 
     await curation_loop.tick()
 
     async with wdb() as db:
         marks = (await db.execute(select(DistilledSession).where(
             DistilledSession.conversation_id == "c1"))).scalars().all()
-    assert len(marks) == 1 and marks[0].reason is None
+    # the sweep PROPOSES; nothing reached memory, so the marker says so
+    assert len(marks) == 1 and marks[0].reason == "curation_proposed"
 
 
 async def test_live_conversation_is_not_swept(wdb, monkeypatch):
@@ -180,6 +189,7 @@ async def test_live_conversation_is_not_swept(wdb, monkeypatch):
     monkeypatch.setattr(distill_service, "distill_facts",
                         lambda e, s: calls.append(1) or _aw(["x"]))
     await _seed(wdb, conversation_id="live", age_hours=0)
+    await _enable(wdb)
 
     await curation_loop.tick()
     assert calls == []
@@ -190,6 +200,7 @@ async def test_synthetic_eval_traffic_is_never_swept(wdb, monkeypatch):
     monkeypatch.setattr(distill_service, "distill_facts",
                         lambda e, s: calls.append(1) or _aw(["x"]))
     await _seed(wdb, conversation_id="evolution-replay")
+    await _enable(wdb)
 
     await curation_loop.tick()
     assert calls == []
@@ -203,6 +214,7 @@ async def test_every_failure_shape_writes_exactly_one_strike(wdb, monkeypatch):
     would retry forever. The sweep writes one per attempt on any non-success —
     including the exception path — and is the ONLY writer of that kind."""
     await _seed(wdb)
+    await _enable(wdb)
 
     async def _fail(existing, signals):
         return None
@@ -223,6 +235,7 @@ async def test_gives_up_after_max_attempts_and_stops_being_a_candidate(wdb, monk
     Give-up is TERMINAL via a real marker row, so it also survives a restart and stops
     consuming the per-tick budget."""
     await _seed(wdb)
+    await _enable(wdb)
     attempts = []
 
     async def _fail(existing, signals):
@@ -249,6 +262,7 @@ async def test_interactive_failures_do_not_consume_the_sweep_budget(wdb, monkeyp
     kinds on purpose: a user retrying a manual distill during an outage must not
     disqualify the conversation from ever being swept."""
     await _seed(wdb)
+    await _enable(wdb)
 
     async def _fail(existing, signals):
         return None
@@ -270,6 +284,7 @@ async def test_give_up_marker_does_not_silence_a_manual_retry(wdb, monkeypatch):
     silent no-op. The interactive path ignores the marker and, on success, replaces it
     with a normal one."""
     await _seed(wdb)
+    await _enable(wdb)
     async with wdb() as db:
         db.add(DistilledSession(conversation_id="c1", spawn_id=1,
                                 reason="curation_gave_up"))
@@ -296,6 +311,7 @@ async def test_sweep_respects_the_per_tick_batch_limit(wdb, monkeypatch):
                         lambda cid, **k: swept.append(cid) or _aw(None))
     for i in range(curation_loop.MAX_PER_TICK + 3):
         await _seed(wdb, conversation_id=f"conv{i}", spawn_id=i + 1)
+    await _enable(wdb)
 
     await curation_loop.tick()
     assert len(swept) == curation_loop.MAX_PER_TICK
@@ -309,6 +325,7 @@ async def test_cooldown_blocks_an_immediate_retry(wdb, monkeypatch):
     """A failed conversation is not retried until RETRY_COOLDOWN_S has passed — three
     strikes must mean three ATTEMPTS over time, not three ticks in one minute."""
     await _seed(wdb)
+    await _enable(wdb)
     attempts = []
 
     async def _fail(existing, signals):
@@ -376,6 +393,7 @@ async def test_transient_strike_read_error_skips_but_does_not_give_up(wdb, monke
     """Fail-closed for SPEND means skip this tick — not brand the conversation dead
     forever after zero real attempts."""
     await _seed(wdb)
+    await _enable(wdb)
 
     async def _boom(*a, **k):
         raise RuntimeError("db down")
@@ -390,3 +408,46 @@ async def test_transient_strike_read_error_skips_but_does_not_give_up(wdb, monke
     async with wdb() as db:
         marks = (await db.execute(select(DistilledSession))).scalars().all()
     assert marks == [], "a transient read error must not write a TERMINAL give-up"
+
+
+async def test_the_sweep_is_opt_in(wdb, monkeypatch):
+    """Default OFF: the loop SPENDS, and until the proposal inbox has a UI its output
+    is invisible — so it must not run for anyone who did not ask for it."""
+    swept = []
+    monkeypatch.setattr(curation_loop, "_sweep_once",
+                        lambda cid, **k: swept.append(cid) or _aw(None))
+    await _seed(wdb)                      # deliberately NOT enabled
+
+    await curation_loop.tick()
+    assert swept == [], "the curation sweep must be opt-in, not default-on"
+
+    await _enable(wdb)
+    await curation_loop.tick()
+    assert swept == ["c1"], "and it must run once the user opts in"
+
+
+async def test_a_proposed_marker_does_not_block_the_manual_path(wdb, monkeypatch):
+    """propose_only writes a DISTINGUISHABLE marker: nothing reached memory, so the
+    user asking for a real distillation must still get one (a plain marker made the
+    manual path answer '0 spawns' forever while the material sat in an inbox with no
+    UI)."""
+    async def _facts(existing, signals):
+        return ["用户偏好简短"]
+    monkeypatch.setattr(distill_service, "distill_facts", _facts)
+    await _seed(wdb)
+    await _enable(wdb)
+
+    await curation_loop.tick()
+    async with wdb() as db:
+        marks = (await db.execute(select(DistilledSession))).scalars().all()
+        spawn = await db.get(Spawn, 1)
+    assert [m.reason for m in marks] == ["curation_proposed"]
+    assert spawn.memory_facts == [], "propose_only must not write memory"
+
+    n = await distill_service.distill_session("c1")
+    assert n == 1, "the manual path must still work after a proposal-only sweep"
+    async with wdb() as db:
+        marks = (await db.execute(select(DistilledSession))).scalars().all()
+        spawn = await db.get(Spawn, 1)
+    assert [m.reason for m in marks] == [None], "a real distill normalizes the marker"
+    assert spawn.memory_facts == ["用户偏好简短"]

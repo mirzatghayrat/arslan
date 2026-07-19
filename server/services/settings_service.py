@@ -133,12 +133,20 @@ async def distill_enabled(session: AsyncSession) -> bool:
 
 
 async def curation_enabled(session: AsyncSession) -> bool:
-    """Whether the sleep-time curation loop may run (default True; only an explicit
-    'false' disables). The loop ALSO requires distill_enabled — background distillation
-    that ignored the user's session-end distill switch would violate that consent and
-    spend money doing it."""
+    """Whether the sleep-time curation loop may run.
+
+    🔴 Default OFF (opt-in), unlike every other toggle here. The loop SPENDS money, and
+    its output currently lands in the brain proposal inbox, which has no UI yet (that
+    is the F2 frontend round) — so a default-on sweep would burn tokens producing
+    something the user cannot see. Per the project's standing rule, the proposing side
+    is fail-open but the EXECUTING side (writes, tools, spend) is fail-closed. Flip the
+    default once the inbox is visible.
+
+    The loop ALSO requires distill_enabled: ignoring the user's session-end distill
+    switch would violate that consent and spend money doing it.
+    """
     raw = await _get_raw(session, "curation_enabled")
-    return raw is None or str(raw).strip().lower() != "false"
+    return raw is not None and str(raw).strip().lower() == "true"
 
 
 async def shell_enabled(session: AsyncSession) -> bool:

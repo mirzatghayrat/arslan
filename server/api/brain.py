@@ -591,6 +591,15 @@ async def _accept_preference_overwrite(session: AsyncSession, p: MemoryProposal,
     spawn = await session.get(Spawn, sid)
     if spawn is None:
         raise HTTPException(status_code=410, detail=f"spawns id {sid} does not exist")
+    # Optimistic concurrency: memory_facts is a whole-array REPLACE, so accepting a
+    # proposal derived from an older array would silently REVERT everything written
+    # since it was filed. Curator proposals record what they were derived from.
+    based_on = prov.get("based_on")
+    if based_on is not None and list(spawn.memory_facts or []) != list(based_on):
+        raise HTTPException(
+            status_code=409,
+            detail=f"proposal {pid}: this spawn's memory changed after the proposal was "
+                   "filed; accepting it would revert that change. Dismiss and re-derive.")
     spawn.memory_facts = new_arr
 
 

@@ -298,3 +298,45 @@ async def test_list_proposals_is_paginated(client):
 
 async def _aw(v):
     return v
+
+
+async def test_the_curation_toggle_is_reachable_through_the_settings_api(client):
+    """The kill switch was implemented in the service layer and wired to NOTHING: it
+    was missing from SettingsIn/SettingsOut, so PUT /settings silently dropped it and
+    returned 200 while the sweep kept running. Drive the real HTTP round-trip."""
+    from server.services import settings_service
+
+    r = await client.get("/api/v1/settings", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["curation_enabled"] is False, "opt-in by default"
+
+    r = await client.put("/api/v1/settings", json={"curation_enabled": True}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    async with client.db_maker() as s:
+        assert await settings_service.curation_enabled(s) is True
+
+    r = await client.put("/api/v1/settings", json={"curation_enabled": False}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    async with client.db_maker() as s:
+        assert await settings_service.curation_enabled(s) is False
+
+
+async def test_accept_refuses_a_proposal_whose_memory_moved_on(client):
+    """memory_facts is a whole-array REPLACE, so accepting a proposal derived from an
+    older array would silently REVERT everything written since it was filed."""
+    async with client.db_maker() as s:
+        s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp",
+                    memory_facts=["用户后来写的偏好"]))
+        s.add(MemoryProposal(
+            kind="preference_overwrite_suspect", table_name="spawns", old_id=1,
+            conversation_id="c1", reason="r", status="pending",
+            provenance={"target_spawn_id": 1, "new_array": ["整理层提议"],
+                        "based_on": ["提案时的旧偏好"], "source_kind": "curator"}))
+        await s.commit()
+        pid = (await s.execute(select(MemoryProposal.id))).scalar_one()
+
+    r = await client.post(f"/api/v1/brain/proposals/{pid}/accept", headers=AUTH)
+    assert r.status_code == 409, r.text
+    async with client.db_maker() as s:
+        spawn = await s.get(Spawn, 1)
+    assert spawn.memory_facts == ["用户后来写的偏好"], "must not revert newer memory"

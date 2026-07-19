@@ -17,6 +17,9 @@ class SettingsIn(BaseModel):
     search_api_key: str | None = None
     llm_strategy: str | None = None
     distill_on_session_end: bool | None = None
+    # Sleep-time curation sweep. Opt-in: it spends, and its output is only visible
+    # once the proposal inbox has a UI.
+    curation_enabled: bool | None = None
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     run_debug_retention_days: int | None = None
@@ -35,6 +38,7 @@ class SettingsOut(BaseModel):
     search_api_key: str = ""  # masked
     llm_strategy: str = "single"
     distill_on_session_end: bool = True
+    curation_enabled: bool = False
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     run_debug_retention_days: int = 30
