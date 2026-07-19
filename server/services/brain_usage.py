@@ -32,8 +32,14 @@ PRUNE_BATCH_ROWS = 10_000
 
 #: Hard ceiling on one read-endpoint page. An unbounded limit over an append-only table
 #: is a self-inflicted DoS.
-MAX_EVENT_PAGE = 2_000
-DEFAULT_EVENT_PAGE = 500
+#:
+#: Sized for the ACTIVITY RASTER, which is the only consumer: it draws one tick per event
+#: across a month, so a page that truncates mid-month produces a picture that reads as a
+#: quiet period. (`truncated` warns about it, but a warning the user must reconcile against
+#: the drawing is worse than just fitting the data.) 2000/500 was too tight for an active
+#: month — a few hundred KB of JSON is the cheaper side of that trade.
+MAX_EVENT_PAGE = 5_000
+DEFAULT_EVENT_PAGE = 1_000
 
 #: Default window when the caller does not pass `since`.
 DEFAULT_EVENT_WINDOW_DAYS = 7
