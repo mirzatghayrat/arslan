@@ -28,6 +28,13 @@ def _addrinfo(ip: str):
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
 
 
+@pytest.fixture(autouse=True)
+def no_env_proxy(monkeypatch):
+    """See test_ssrf_dns_rebinding: a real developer machine here exports HTTPS_PROXY,
+    and https+proxy legitimately disables pinning."""
+    monkeypatch.setattr(executors, "getproxies", lambda: {})
+
+
 def _client_with(handler):
     return httpx.AsyncClient(
         transport=httpx.MockTransport(handler), follow_redirects=False, trust_env=False

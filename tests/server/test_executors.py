@@ -122,10 +122,22 @@ def test_is_private_host_public(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_web_extract_rejects_private_host(monkeypatch):
-    """Executor rejects when _is_private_host returns True."""
+    """Executor rejects a host that resolves to a private address.
+
+    Rewritten for FU-1. It used to monkeypatch `_is_private_host`, which the executor no
+    longer calls — so it passed with the private-address gate ENTIRELY DELETED, and only
+    "worked" because internal.example happens to be NXDOMAIN, which also meant it fired a
+    real DNS query on every run. Patch the resolver instead, which is where the gate now
+    lives.
+    """
+    import socket
+
     from server.registry import executors
 
-    monkeypatch.setattr(executors, "_is_private_host", lambda url: True)
+    monkeypatch.setattr(executors, "getproxies", lambda: {})
+    monkeypatch.setattr(
+        socket, "getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.1.2.3", 0))])
     out = await executors.EXECUTORS["web_extract"].execute(
         {"url": "https://internal.example"}
     )

@@ -30,6 +30,18 @@ def _addrinfo(ip: str):
     return [(fam, socket.SOCK_STREAM, 6, "", (ip, 0))]
 
 
+@pytest.fixture(autouse=True)
+def no_env_proxy(monkeypatch):
+    """🔴 Clear proxy env for every test in this file. A developer machine in this
+    project really does export HTTPS_PROXY, and https+proxy legitimately disables
+    pinning — so without this the suite would silently exercise the DELEGATED path and
+    report the pinning tests as failures (or, worse, as passes for the wrong reason)."""
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+                "http_proxy", "https_proxy", "all_proxy", "no_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(executors, "getproxies", lambda: {})
+
+
 @pytest.fixture
 def rebinding(monkeypatch):
     """A resolver that answers PUBLIC once, then PRIVATE forever after — the DNS an
@@ -179,3 +191,81 @@ async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
     res = await executors.EXECUTORS["web_extract"].execute({"url": "http://ok.test/a"})
     assert not res.get("ok")
 
+
+
+# ── the address predicate itself ───────────────────────────────────────────────────
+#
+# 🔴 These are driven THROUGH the executor, not against the predicate, because the whole
+# failure mode here was a predicate that looked right in isolation. The four-way
+# `is_private or is_loopback or is_link_local or is_reserved` check that shipped for
+# months admits RFC 6598 (100.64.0.0/10) — CGNAT, and the entirety of a Tailscale
+# tailnet. No rebinding needed: a static A record was enough.
+
+
+@pytest.mark.parametrize("addr", [
+    "100.64.1.1",          # RFC 6598 CGNAT / Tailscale tailnet — the one that got through
+    "100.127.255.254",     # far end of the same /10
+    "127.0.0.1",           # loopback
+    "10.0.0.5",            # RFC 1918
+    "192.168.1.1",         # RFC 1918
+    "169.254.169.254",     # cloud metadata
+    "0.0.0.0",             # unspecified
+    "198.18.0.1",          # benchmarking
+    "224.0.0.1",           # multicast
+    "::ffff:127.0.0.1",    # IPv4-mapped loopback
+    "fc00::1",             # IPv6 ULA
+    "ff02::1",             # IPv6 multicast
+])
+async def test_non_public_addresses_are_refused(monkeypatch, capture, addr):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(addr))
+    res = await executors.EXECUTORS["web_extract"].execute({"url": "http://attacker.test/x"})
+    assert not res.get("ok"), f"{addr} was FETCHED — it must be refused"
+    assert capture == [], f"a request was sent to {addr}"
+
+
+@pytest.mark.parametrize("addr", ["93.184.216.34", "8.8.8.8", "1.1.1.1",
+                                  "2606:4700:4700::1111"])
+async def test_public_addresses_still_work(monkeypatch, capture, addr):
+    """The allow-list must not be so tight that the tool stops working."""
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(addr))
+    res = await executors.EXECUTORS["web_extract"].execute({"url": "http://ok.test/x"})
+    assert res.get("ok"), res
+
+
+# ── proxy interaction ──────────────────────────────────────────────────────────────
+
+
+async def test_https_through_a_proxy_degrades_LOUDLY_not_silently(monkeypatch, capture, caplog):
+    """The one cell where pinning cannot work. It must still validate, must not mangle
+    the URL (that is what breaks TLS through a CONNECT tunnel), and must SAY so."""
+    monkeypatch.setattr(executors, "getproxies",
+                        lambda: {"https": "http://127.0.0.1:7899"})
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PUBLIC))
+
+    with caplog.at_level("WARNING"):
+        res = await executors.EXECUTORS["web_extract"].execute({"url": "https://ok.test/x"})
+    assert res.get("ok"), res
+    assert capture[0].url.host == "ok.test", (
+        "under a proxy the ORIGINAL host must be sent — rewriting it to the IP is what "
+        "breaks certificate validation on the tunnel path")
+    assert any("delegated to the proxy" in r.message for r in caplog.records)
+
+
+async def test_a_proxy_does_not_disable_the_address_check(monkeypatch, capture):
+    monkeypatch.setattr(executors, "getproxies",
+                        lambda: {"https": "http://127.0.0.1:7899"})
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo("127.0.0.1"))
+    res = await executors.EXECUTORS["web_extract"].execute({"url": "https://evil.test/x"})
+    assert not res.get("ok")
+    assert capture == []
+
+
+async def test_plain_http_through_a_proxy_still_pins(monkeypatch, capture):
+    """Only https+proxy degrades. HTTP has no SNI, and a proxy honours the address in an
+    absolute-form request line, so the pin survives."""
+    monkeypatch.setattr(executors, "getproxies",
+                        lambda: {"http": "http://127.0.0.1:7899"})
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PUBLIC))
+    res = await executors.EXECUTORS["web_extract"].execute({"url": "http://ok.test/x"})
+    assert res.get("ok"), res
+    assert capture[0].url.host == PUBLIC
