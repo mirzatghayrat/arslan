@@ -131,9 +131,15 @@ async def undo_supersede(table: str, old_id: int, *, provenance: dict, db=None) 
     else:
         async with db_session.AsyncSessionLocal() as own:
             await _apply_undo(own, model, table, old_id, commit=True)
+    # Do not claim "committed" in caller-session mode — there the commit belongs to
+    # the caller and may never happen (a later failure in the same request rolls this
+    # back). An audit line asserting a durable write that did not land is worse than a
+    # vaguer one.
     logger.info(
-        "undo_supersede: %s %d restored to active (committed, provenance=%s)",
-        table, old_id, provenance.get("source_kind", "?"),
+        "undo_supersede: %s %d restored to active (%s, provenance=%s)",
+        table, old_id,
+        "pending caller commit" if db is not None else "committed",
+        provenance.get("source_kind", "?"),
     )
 
 

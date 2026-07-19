@@ -19,7 +19,8 @@ RecallExecutor, because the column is nullable and raw inserts leave it NULL.
 from __future__ import annotations
 
 import json as _json
-from datetime import datetime, timedelta
+import re as _re
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -48,6 +49,10 @@ _TABLE_MODELS = {"user_facts": UserFact, "learnings": Learning, "notes": Note, "
 _UNSET = object()
 
 
+#: an ISO offset at the very end, e.g. "+08:00" / "-05:00" — NOT a date's hyphens
+_HAS_OFFSET = _re.compile(r"[+-]\d{2}:?\d{2}$")
+
+
 def _iso(ts):
     # usage_map reads via raw SQL, so SQLite hands back last_used_at as a str
     # already; only call isoformat() when it's a real datetime.
@@ -57,12 +62,19 @@ def _iso(ts):
     # on it is implementation-defined: Chrome accepts it, Safari returns Invalid Date.
     # Survivable while these timestamps were only rendered as text; the activity
     # timeline PLOTS them, so normalize here instead of making every caller remember.
+    # ...and it must carry a UTC designator. Every datetime the brain stores is written
+    # with datetime.utcnow() — naive UTC — so a bare "2026-07-19T10:19:03" is parsed by
+    # `new Date()` as LOCAL time and shifts the whole activity timeline by the viewer's
+    # offset. Emitting "Z" costs one character and is the difference between a plotted
+    # timeline being right and being off by hours for everyone outside UTC.
     if ts is None:
         return None
-    if hasattr(ts, "isoformat"):
-        return ts.isoformat()
-    text = str(ts)
-    return text.replace(" ", "T", 1) if " " in text else text
+    text = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+    text = text.replace(" ", "T", 1) if " " in text else text
+    # already carries an offset (a tz-aware value somewhere upstream) — leave it alone
+    if text.endswith("Z") or _HAS_OFFSET.search(text):
+        return text
+    return text + "Z"
 
 
 def _json_field(raw):
@@ -461,7 +473,14 @@ async def brain_usage_events(
             raise HTTPException(
                 status_code=422,
                 detail=f"since={since!r} is not an ISO-8601 timestamp") from exc
-        window_start = parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+        # CONVERT to UTC, never just drop the offset. The DB stores naive UTC
+        # (datetime.utcnow()), so stripping "+08:00" would compare a Beijing wall
+        # clock against UTC and shift the window by 8 hours — silently returning a
+        # DIFFERENT range than asked for, which is exactly what refusing an
+        # unparsable `since` two lines up exists to prevent. Same normalization
+        # settings_service._parse_iso_utc already does.
+        window_start = (parsed.astimezone(timezone.utc).replace(tzinfo=None)
+                        if parsed.tzinfo else parsed)
 
     try:
         async with db_session.AsyncSessionLocal() as db:
@@ -478,11 +497,17 @@ async def brain_usage_events(
     truncated = len(rows) > applied_limit
     rows = rows[:applied_limit]
 
+    # window_start is the QUERY bound, not the retention horizon — with the shipped
+    # defaults (7-day window, 30-day retention) the two are a fortnight apart, so the
+    # note must not claim that everything before window_start was pruned. It says the
+    # two separate true things instead: this page is bounded by the query, and the
+    # table is separately bounded by retention.
     note = (
         "Covers material / learning / note only — profile facts are not recorded as "
         "usage events, so their absence here does not mean they went unused. "
-        "Events older than the retention window are pruned; an empty stretch before "
-        "window_start means 'not retained', not 'not used'."
+        "This page is bounded by the requested window (window_start); events before "
+        "it were not queried, not necessarily absent. Separately, events older than "
+        "the configured retention are pruned and are gone for good."
     )
     if truncated:
         note += (" This page was TRUNCATED at the limit: events are newest-first, so "
@@ -813,7 +838,11 @@ async def undo_supersede(
                    f"{sorted(_UNDO_TABLES)} carry supersession")
 
     prefix, _, raw_id = body.ref.partition(":")
-    if prefix != _UNDO_REF_PREFIX[body.kind] or not raw_id.isdigit():
+    # `isdigit()` alone is not enough: it is True for superscripts and other Unicode
+    # digit forms that int() then rejects, turning an intended 422 into an uncaught
+    # ValueError -> 500. Require ASCII.
+    if (prefix != _UNDO_REF_PREFIX[body.kind]
+            or not raw_id.isascii() or not raw_id.isdigit()):
         raise HTTPException(
             status_code=422,
             detail=f"ref {body.ref!r} is not a valid {body.kind} ref "
@@ -829,8 +858,21 @@ async def undo_supersede(
             provenance={"source_kind": "human", "via": "undo_supersede"},
             db=session)
     except SupersedeError as exc:
-        # not_superseded -> 409 via the shared mapper's default branch.
-        raise _supersede_error_response(exc) from exc
+        # Same STATUS mapping as the proposal routes, but the detail is rebuilt in the
+        # caller's vocabulary. _supersede_error_response passes exc.detail verbatim,
+        # and those messages name the table ("user_facts id 9999 does not exist") —
+        # which is the exact leak the 422 above goes out of its way to avoid, so
+        # reusing it here would have made the route inconsistent with itself. The
+        # proposal routes keep the verbatim detail: their audience is an operator
+        # adjudicating a proposal whose own table_name is corrupt, so the table name
+        # is the useful part there.
+        status = _supersede_error_response(exc).status_code
+        raise HTTPException(
+            status_code=status,
+            detail=f"cannot restore {body.ref}: "
+                   + {"dangling_old": "no such entry",
+                      "not_superseded": "it is already active"}.get(
+                          exc.code, "supersession state conflict")) from exc
 
     await session.commit()
     return {"kind": body.kind, "ref": body.ref, "superseded_by": None}

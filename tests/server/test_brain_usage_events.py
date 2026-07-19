@@ -175,7 +175,12 @@ async def test_read_endpoint_returns_events_newest_first(usage_db):
     # Safari returns Invalid Date), and unlike the older fields these are PLOTTED.
     for e in body["events"]:
         assert "T" in e["used_at"] and " " not in e["used_at"], e["used_at"]
-        datetime.fromisoformat(e["used_at"])
+        # ...and it must be marked UTC. The DB stores datetime.utcnow() (naive UTC);
+        # a bare "2026-07-19T10:19:03" is parsed by `new Date()` as LOCAL time, which
+        # shifts the entire plotted timeline by the viewer's offset.
+        assert e["used_at"].endswith("Z"), e["used_at"]
+        datetime.fromisoformat(e["used_at"].replace("Z", "+00:00"))
+    assert body["window_start"].endswith("Z")
 
 
 async def test_read_endpoint_is_honest_about_what_it_covers(usage_db):
@@ -268,3 +273,72 @@ async def test_retention_runs_even_when_curation_is_switched_off(usage_db, monke
 
     assert calls, "retention must not sit behind the curation opt-in switch"
     assert await _count(usage_db.db_maker) == 0
+
+
+async def test_a_tz_aware_since_is_converted_not_stripped(usage_db):
+    """🔴 Dropping the offset instead of converting it shifts the window by the
+    caller's UTC offset, silently returning a DIFFERENT range than asked for.
+
+    Direction matters, and my first version of this test got it wrong — it asserted an
+    EMPTY result, which stripping also produces, so it passed against the bug. With a
+    +08:00 offset, stripping moves the bound eight hours FORWARD, i.e. narrows the
+    window and wrongly EXCLUDES events. So: seed one event an hour ago, ask for "since
+    2 hours ago" expressed in +08:00, and assert the event IS RETURNED. Under the
+    stripping bug the bound lands six hours in the future and the list comes back empty.
+    """
+    from datetime import timezone
+    from urllib.parse import quote
+
+    now = datetime.utcnow()
+    await _seed_events(usage_db.db_maker, [("note", "note:1", now - timedelta(hours=1))])
+
+    since = (now.replace(tzinfo=timezone.utc) - timedelta(hours=2)).astimezone(
+        timezone(timedelta(hours=8))).isoformat()
+    assert "+08:00" in since
+
+    # percent-encode: a bare "+" in a query string decodes to a SPACE, which the
+    # endpoint then (correctly) refuses as unparsable.
+    body = (await usage_db.get(f"/api/v1/brain/usage-events?since={quote(since)}",
+                               headers=AUTH)).json()
+    assert [e["ref_key"] for e in body["events"]] == ["note:1"], (
+        "a 1h-old event is inside a 2h window; an empty list means the +08:00 offset "
+        "was dropped rather than converted, pushing the bound into the future")
+
+
+async def test_a_negative_offset_since_is_also_converted(usage_db):
+    """The mirror direction: a -08:00 offset stripped would widen the window and
+    wrongly INCLUDE older events. Both signs are checked so neither can regress."""
+    from datetime import timezone
+    from urllib.parse import quote
+
+    now = datetime.utcnow()
+    await _seed_events(usage_db.db_maker, [("note", "note:9", now - timedelta(hours=3))])
+
+    since = (now.replace(tzinfo=timezone.utc) - timedelta(hours=2)).astimezone(
+        timezone(timedelta(hours=-8))).isoformat()
+    assert "-08:00" in since
+
+    body = (await usage_db.get(f"/api/v1/brain/usage-events?since={quote(since)}",
+                               headers=AUTH)).json()
+    assert body["events"] == [], (
+        "a 3h-old event is outside a 2h window; returning it means the -08:00 offset "
+        "was dropped rather than converted, pulling the bound into the past")
+
+
+async def test_coverage_note_does_not_equate_the_query_window_with_retention(usage_db):
+    """window_start is the QUERY bound (default 7 days); retention is separate
+    (default 30). Claiming everything before window_start was pruned is false for the
+    entire fortnight between them."""
+    note = (await usage_db.get("/api/v1/brain/usage-events", headers=AUTH)).json()[
+        "coverage_note"]
+    assert "not queried" in note
+    assert "retention" in note.lower()
+
+
+async def test_an_unencoded_offset_is_refused_rather_than_misread(usage_db):
+    """A bare "+" in a query string decodes to a space, so "…+08:00" arrives as
+    "… 08:00". Refusing it is right — silently reinterpreting it would be guessing at
+    the caller's timezone, and that is the failure this endpoint is careful about."""
+    r = await usage_db.get("/api/v1/brain/usage-events?since=2026-07-19T16:00:00+08:00",
+                           headers=AUTH)
+    assert r.status_code == 422, r.text

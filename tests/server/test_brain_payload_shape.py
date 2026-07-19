@@ -20,7 +20,14 @@ from __future__ import annotations
 
 import pytest
 
-from server.db.models import ArslanMessage, Learning, Note, Spawn, UserFact
+from server.db.models import (
+    ArslanMessage,
+    KnowledgeChunk,
+    Learning,
+    Note,
+    Spawn,
+    UserFact,
+)
 
 AUTH: dict[str, str] = {}
 
@@ -46,11 +53,21 @@ async def seeded(client, monkeypatch):
         # a superseded fact — exercises the temporal columns on the read path
         s.add(UserFact(content="旧偏好", source="auto", confidence=0.5,
                        category="偏好", superseded_by=1, sensitive=True))
+        # source_ref carries spawn_id ON PURPOSE: the learning->material provenance
+        # edge is keyed on it, so without it that loop never runs and the test below
+        # would pass vacuously.
         s.add(Learning(content="心得内容", label="心得", source_kind="distill",
-                       source_ref={"conversation_id": "c1"}, confidence=0.7))
+                       source_ref={"conversation_id": "c1", "spawn_id": 1},
+                       confidence=0.7))
         s.add(Note(title="笔记", content="正文 [[心得]]", tags=["t1"]))
         s.add(ArslanMessage(conversation_id="c1", role="spawn_summary",
                             content="x", display_content="x", spawn_id=1))
+        # A material chunk on the SAME spawn as the learning's source_ref. Without it
+        # the material node builder and the learning->material provenance loop — the
+        # FOURTH row-consuming loop the .mappings() refactor touched — never execute,
+        # and this guardrail passes while claiming to cover them.
+        s.add(KnowledgeChunk(spawn_id=1, source="handbook.pdf", chunk_index=0,
+                             text="材料正文"))
         await s.commit()
     return client
 
@@ -146,8 +163,9 @@ async def test_entry_payload_shape(seeded):
     r2 = await seeded.get("/api/v1/brain/entry/learning/learning:1", headers=AUTH)
     assert r2.status_code == 200, r2.text
     b2 = r2.json()
-    assert b2["provenance_record"] == {"source_kind": "distill",
-                                       "source_ref": {"conversation_id": "c1"}}
+    assert b2["provenance_record"] == {
+        "source_kind": "distill",
+        "source_ref": {"conversation_id": "c1", "spawn_id": 1}}
 
 
 # ---------------------------------------------------------------------------
@@ -256,8 +274,9 @@ async def test_graph_nodes_carry_usage_and_provenance(seeded, client):
         "needs to tell 'never used' apart from 'not reported'")
 
     learn = nodes["learning:1"]
-    assert learn["provenance_record"] == {"source_kind": "distill",
-                                          "source_ref": {"conversation_id": "c1"}}, (
+    assert learn["provenance_record"] == {
+        "source_kind": "distill",
+        "source_ref": {"conversation_id": "c1", "spawn_id": 1}}, (
         "learnings synthesize the record from source_kind+source_ref, same as "
         "/brain/entry — the two must not drift")
 
@@ -280,6 +299,20 @@ async def test_synthetic_nodes_stay_minimal(seeded):
     for n in body["nodes"]:
         if n["kind"] in ("tag", "self", "ghost"):
             assert set(n) == {"id", "ref", "kind", "label", "val"}, n
+
+
+async def test_the_material_node_and_its_provenance_edge_survive_the_refactor(seeded):
+    """The fourth consumer loop. `mats` rows build material nodes AND the
+    learning->material provenance edges; both index the row, so both had to convert."""
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    mat = next(n for n in body["nodes"] if n["kind"] == "material")
+    assert mat["label"] == "handbook.pdf"
+    assert mat["ref"].endswith("handbook.pdf")
+
+    prov = [e for e in body["links"] if e["type"] == "provenance"]
+    assert prov and prov[0]["source"] == "learning:1", (
+        "the learning->material provenance edge must survive the row-access refactor")
+    assert prov[0]["target"] == mat["ref"]
 
 
 async def test_material_and_note_nodes_report_usage_but_no_provenance(seeded):

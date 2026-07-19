@@ -110,9 +110,21 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     for secret_key in _SECRET_KEYS:
         enc = await _get_raw(session, secret_key)
         out[secret_key] = mask_secret(_safe_decrypt(enc)) if enc else ""
-    out["run_debug_retention_days"] = await run_debug_retention_days(session)
+    # 🔴 The int keys are emitted from ONE registry, not hand-listed.
+    #
+    # This used to be three literal lines, which made get_settings a SIXTH touch point
+    # that the "five touch points" rule does not name — and D5 promptly forgot it: both
+    # brain_usage_event_* keys were in _INT_KEYS (so PUT persisted them) and had
+    # accessors (so the pruner honored them) while GET returned the pydantic defaults.
+    # A user could set retention to 0, get a 200 saying 30, and have the ceiling
+    # silently removed with no way to observe it; worse, the ordinary settings-form
+    # round-trip (GET the body, PUT it back) would write the default back over a
+    # deliberately longer retention and delete the difference on the next tick.
+    # Deriving from _INT_ACCESSORS makes that class of omission impossible: the
+    # registry is asserted complete against _INT_KEYS by test_settings_int_keys.
+    for int_key, accessor in _INT_ACCESSORS.items():
+        out[int_key] = await accessor(session)
     out["evolution_auto"] = "on" if await evolution_auto(session) else "off"
-    out["evolution_max_est_tokens"] = await evolution_max_est_tokens(session)
     return out
 
 
@@ -280,3 +292,15 @@ async def brain_usage_event_max_rows(session: AsyncSession) -> int:
         return int(str(raw).strip())
     except ValueError:
         return DEFAULT_BRAIN_USAGE_EVENT_MAX_ROWS
+
+
+#: Read-path registry for _INT_KEYS. Defined at module bottom because it references the
+#: accessors above; resolved at call time by get_settings. Every key in _INT_KEYS MUST
+#: appear here — a key that is writable but not readable is a silent one-way setting
+#: (see the comment in get_settings). test_settings_int_keys pins the equality.
+_INT_ACCESSORS = {
+    "run_debug_retention_days": run_debug_retention_days,
+    "evolution_max_est_tokens": evolution_max_est_tokens,
+    "brain_usage_event_retention_days": brain_usage_event_retention_days,
+    "brain_usage_event_max_rows": brain_usage_event_max_rows,
+}

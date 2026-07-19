@@ -79,12 +79,16 @@ async def test_undoing_an_active_row_is_a_409(seeded):
     r = await seeded.post("/api/v1/brain/undo-supersede",
                           json={"kind": "profile", "ref": "fact:1"}, headers=AUTH)
     assert r.status_code == 409, r.text
+    assert "user_facts" not in r.json()["detail"], (
+        "the 4xx details must be as table-name-free as the 422 path — the service's "
+        "own messages name the table, so they must not be passed through verbatim")
 
 
 async def test_undoing_a_missing_row_is_a_410(seeded):
     r = await seeded.post("/api/v1/brain/undo-supersede",
                           json={"kind": "profile", "ref": "fact:9999"}, headers=AUTH)
     assert r.status_code == 410, r.text
+    assert "user_facts" not in r.json()["detail"], r.text
 
 
 async def test_malformed_ref_is_refused(seeded):
@@ -92,3 +96,32 @@ async def test_malformed_ref_is_refused(seeded):
         r = await seeded.post("/api/v1/brain/undo-supersede",
                               json={"kind": "profile", "ref": ref}, headers=AUTH)
         assert r.status_code == 422, f"{ref}: {r.text}"
+
+
+async def test_a_ref_from_the_other_kind_is_refused(seeded):
+    """🔴 The guard that actually prevents un-superseding the WRONG ROW. Both tables use
+    small integer ids, so {"kind": "profile", "ref": "learning:2"} without this check
+    would restore user_facts id 2 — a different entry entirely, silently, with a 200.
+
+    A mutation check proved this was untested: deleting the prefix comparison left every
+    other test in this file green.
+    """
+    async with seeded.db_maker() as s:
+        before = (await s.get(UserFact, 2)).superseded_by
+    assert before is not None
+
+    r = await seeded.post("/api/v1/brain/undo-supersede",
+                          json={"kind": "profile", "ref": "learning:2"}, headers=AUTH)
+    assert r.status_code == 422, r.text
+
+    async with seeded.db_maker() as s:
+        assert (await s.get(UserFact, 2)).superseded_by == before, (
+            "the fact must be untouched — a cross-kind ref must never reach the write")
+
+
+async def test_a_unicode_digit_ref_is_a_422_not_a_500(seeded):
+    """`isdigit()` is True for superscripts and other Unicode digit forms that int()
+    then rejects, which would surface as an uncaught ValueError."""
+    r = await seeded.post("/api/v1/brain/undo-supersede",
+                          json={"kind": "profile", "ref": "fact:\u00b2"}, headers=AUTH)
+    assert r.status_code == 422, r.text
