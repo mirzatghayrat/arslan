@@ -6,7 +6,16 @@ memory_proposals) and surfaces the temporal columns (valid_from/superseded_by, p
 the real audit provenance) added by migration 0032. Superseded rows are NOT filtered
 out here — unlike the active-only retrieval paths (facts_text/save_facts), the brain
 views are meant to stay visible/correctable; how to *render* a superseded node is a
-front-end concern for a later round."""
+front-end concern for a later round.
+
+🔴 `sensitive` ON THESE PAYLOADS IS A RENDERING HINT, NOT PROTECTION. The three read
+endpoints below return a sensitive fact's full text as `label` / `excerpt` and always
+have; exposing the flag lets the UI draw a lock badge, and changes nothing about what
+is on the wire. Real protection would mean masking the content too — a separate,
+larger decision. Do not describe this as "the second brain isolates sensitive facts".
+The flag is coerced FAIL-CLOSED (NULL ⇒ sensitive), mirroring memory.facts_text and
+RecallExecutor, because the column is nullable and raw inserts leave it NULL.
+"""
 from __future__ import annotations
 
 import json as _json
@@ -59,8 +68,22 @@ def _json_field(raw):
         return None
 
 
+def _sensitive(value) -> bool:
+    """FAIL-CLOSED: NULL means sensitive; only an explicit false value means it is not.
+
+    Two traps in one line:
+      * the column is nullable and raw inserts leave it NULL, so `bool(value)` would
+        render an unmarked fact as SAFE — the opposite of the house rule used by
+        memory.facts_text and RecallExecutor;
+      * those two use the idiom `f.sensitive is False`, which works on ORM objects but
+        NOT here: these endpoints read through `sa_text`, and SQLite hands back integers
+        0/1, so `0 is not False` is True and every fact would report sensitive.
+    """
+    return value is None or bool(value)
+
+
 def _leaf(kind, ref_key, label, provenance, confidence, umap, weight=1, category=None, tags=None,
-          valid_from=_UNSET, superseded_by=_UNSET):
+          valid_from=_UNSET, superseded_by=_UNSET, sensitive=_UNSET):
     """weight = content richness (material: chunk count; profile/learning: 1). The
     sunburst angular size is weight + usage_count. category/tags/valid_from/
     superseded_by are optional and only emitted when the caller passes them — they
@@ -83,6 +106,10 @@ def _leaf(kind, ref_key, label, provenance, confidence, umap, weight=1, category
         out["valid_from"] = _iso(valid_from)
     if superseded_by is not _UNSET:
         out["superseded_by"] = superseded_by
+    if sensitive is not _UNSET:
+        # profile leaves ONLY: user_facts is the sole table with the column, so a
+        # learning/material/note leaf must not carry a flag it never checked.
+        out["sensitive"] = sensitive
     return out
 
 
@@ -100,8 +127,8 @@ async def brain_tree() -> dict:
         # empty-DB smoke passed while production 500'd), while tree/entry indexed
         # r[0]..r[7] so an inserted column SILENTLY shifted every later value.
         facts = (await db.execute(sa_text(
-            "SELECT id, content, label, category, source, confidence, valid_from, superseded_by "
-            "FROM user_facts ORDER BY id"))).mappings().all()
+            "SELECT id, content, label, category, source, confidence, valid_from, superseded_by, "
+            "sensitive FROM user_facts ORDER BY id"))).mappings().all()
         mats = (await db.execute(sa_text(
             "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
             "GROUP BY collection_id, spawn_id, source"))).mappings().all()
@@ -123,7 +150,8 @@ async def brain_tree() -> dict:
         _leaf("profile", f"fact:{r['id']}", r["label"] or r["content"],
               r["source"] or "auto", r["confidence"], umap,
               category=r["category"], valid_from=r["valid_from"],
-              superseded_by=r["superseded_by"]) for r in facts]
+              superseded_by=r["superseded_by"],
+              sensitive=_sensitive(r["sensitive"])) for r in facts]
     material_leaves = [
         _leaf("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
               m["source"], ("投喂" if m["collection_id"] is not None else "分身"),
@@ -168,7 +196,7 @@ async def brain_graph() -> dict:
         # result sets below (the profile/learning node builders, and the tag-linking
         # loops further down) had to be updated in lockstep or this crashes at runtime.
         facts = (await db.execute(sa_text(
-            "SELECT id, content, label, category, source, confidence, superseded_by "
+            "SELECT id, content, label, category, source, confidence, superseded_by, sensitive "
             "FROM user_facts ORDER BY id"))).mappings().all()
         mats = (await db.execute(sa_text(
             "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
@@ -197,7 +225,8 @@ async def brain_graph() -> dict:
     nodes = []
     nodes += [_gnode("profile", f"fact:{r['id']}", r["label"] or r["content"],
                      source=r["source"], confidence=r["confidence"],
-                     superseded_by=r["superseded_by"]) for r in facts]
+                     superseded_by=r["superseded_by"],
+                     sensitive=_sensitive(r["sensitive"])) for r in facts]
     nodes += [_gnode("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
                      m["source"], weight=m["n"]) for m in mats]
     nodes += [_gnode("learning", f"learning:{r['id']}",
@@ -297,12 +326,13 @@ async def brain_entry(kind: str, ref: str) -> dict:
     # test_brain_api.py's brain-P1 Task 5 section and task-5-report.md for the
     # rationale. material has no temporal concept, so these three stay None for it.
     valid_from = superseded_by = provenance_record = None
+    sensitive = None
     async with db_session.AsyncSessionLocal() as db:
         if kind == "profile" and ref.startswith("fact:"):
             fid = int(ref.split(":", 1)[1])
             row = (await db.execute(sa_text(
                 "SELECT content, label, category, source, confidence, valid_from, "
-                "superseded_by, provenance FROM user_facts WHERE id = :i"),
+                "superseded_by, provenance, sensitive FROM user_facts WHERE id = :i"),
                 {"i": fid})).mappings().first()
             if not row:
                 raise HTTPException(404)
@@ -311,6 +341,7 @@ async def brain_entry(kind: str, ref: str) -> dict:
             conf = row["confidence"]
             valid_from, superseded_by = row["valid_from"], row["superseded_by"]
             provenance_record = _json_field(row["provenance"])
+            sensitive = _sensitive(row["sensitive"])
         elif kind == "learning" and ref.startswith("learning:"):
             lid = int(ref.split(":", 1)[1])
             row = (await db.execute(sa_text(
@@ -352,6 +383,8 @@ async def brain_entry(kind: str, ref: str) -> dict:
         "valid_from": _iso(valid_from),
         "superseded_by": superseded_by,
         "provenance_record": provenance_record,
+        # rendering hint only — see the module docstring
+        **({"sensitive": sensitive} if sensitive is not None else {}),
         "usage_count": u.get("usage_count", 0),
         "last_used_at": _iso(u.get("last_used_at")),
         "last_used_ref": u.get("last_used_ref"),

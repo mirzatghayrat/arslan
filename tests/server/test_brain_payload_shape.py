@@ -69,6 +69,7 @@ async def test_tree_payload_shape(seeded):
         "kind", "ref", "label", "provenance", "confidence", "usage_count",
         "last_used_at", "last_used_ref", "value", "category",
         "valid_from", "superseded_by",
+        "sensitive",          # D2 — rendering hint only, profile leaves only
     }
     assert leaf["ref"] == "fact:1"
     assert leaf["label"] == "简短"          # label wins over content
@@ -92,7 +93,7 @@ async def test_graph_payload_shape(seeded):
     assert {n["ref"] for n in fact_nodes} == {"fact:1", "fact:2"}
     n1 = next(n for n in fact_nodes if n["ref"] == "fact:1")
     assert set(n1) == {"id", "ref", "kind", "label", "val",
-                       "source", "confidence", "superseded_by"}
+                       "source", "confidence", "superseded_by", "sensitive"}
     assert n1["source"] == "auto" and n1["confidence"] == 0.8
 
     learn = next(n for n in body["nodes"] if n["kind"] == "learning")
@@ -131,6 +132,7 @@ async def test_entry_payload_shape(seeded):
         "kind", "ref", "label", "provenance", "confidence", "excerpt",
         "usage_count", "last_used_at", "last_used_ref",
         "valid_from", "superseded_by", "provenance_record",
+        "sensitive",          # D2 — profile entries only
     }
     assert body["excerpt"] == "用户偏好简短"
     assert body["confidence"] == 0.8
@@ -142,3 +144,76 @@ async def test_entry_payload_shape(seeded):
     b2 = r2.json()
     assert b2["provenance_record"] == {"source_kind": "distill",
                                        "source_ref": {"conversation_id": "c1"}}
+
+
+# ---------------------------------------------------------------------------
+# D2 — `sensitive` on the three brain payloads
+#
+# 🔴 HONESTY: this flag is a RENDERING HINT (lock badge), NOT privacy protection.
+# These endpoints already return a sensitive fact's full text as `label`/`excerpt`
+# today, and D2 does not change that. Real protection would require masking the
+# content too — a separate, larger decision. Nothing here may be read as
+# "the second brain isolates sensitive facts".
+# ---------------------------------------------------------------------------
+
+
+async def test_sensitive_is_exposed_fail_closed_on_all_three(seeded, client):
+    """NULL must read as SENSITIVE. The DB column is nullable and raw inserts leave it
+    NULL, so `bool(row)` would render an unmarked fact as safe — the opposite of the
+    house rule (`f.sensitive is False` in memory.py / memory_executors.py)."""
+    from sqlalchemy import text as sa_text
+
+    async with client.db_maker() as s:
+        # a row whose sensitive is explicitly NULL, the shape the fail-closed rule exists for
+        await s.execute(sa_text(
+            "INSERT INTO user_facts (content, source, confidence, sensitive) "
+            "VALUES ('NULL 敏感位的事实', 'auto', 0.5, NULL)"))
+        await s.commit()
+
+    tree = (await seeded.get("/api/v1/brain/tree", headers=AUTH)).json()
+    leaves = {leaf["ref"]: leaf
+              for b in tree["branches"] if b["kind"] == "profile"
+              for leaf in b["children"]}
+    assert leaves["fact:1"]["sensitive"] is False   # explicitly False ⇒ not sensitive
+    assert leaves["fact:2"]["sensitive"] is True    # explicitly True
+    assert leaves["fact:3"]["sensitive"] is True, "NULL must be treated as SENSITIVE"
+
+    graph = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    gnodes = {n["ref"]: n for n in graph["nodes"] if n["kind"] == "profile"}
+    assert gnodes["fact:1"]["sensitive"] is False
+    assert gnodes["fact:3"]["sensitive"] is True
+
+    entry = (await seeded.get("/api/v1/brain/entry/profile/fact:3", headers=AUTH)).json()
+    assert entry["sensitive"] is True
+
+
+async def test_sensitive_is_only_a_rendering_hint_and_says_so(seeded):
+    """The content of a sensitive fact is STILL returned verbatim — pin that, so nobody
+    later claims this round added privacy protection."""
+    entry = (await seeded.get("/api/v1/brain/entry/profile/fact:2", headers=AUTH)).json()
+    assert entry["sensitive"] is True
+    assert entry["excerpt"] == "旧偏好", (
+        "D2 deliberately does NOT mask content — if this ever changes, the honesty "
+        "notes in brain.py and the TS types must change with it")
+
+    import server.api.brain as brain_mod
+
+    src = brain_mod.__doc__ or ""
+    fn_docs = " ".join(filter(None, [
+        brain_mod.brain_tree.__doc__, brain_mod.brain_graph.__doc__,
+        brain_mod.brain_entry.__doc__,
+    ]))
+    assert "rendering hint" in (src + fn_docs).lower(), (
+        "the rendering-hint-not-protection disclosure must live in the module/endpoint "
+        "docs, not only in a commit message")
+
+
+async def test_non_profile_kinds_do_not_claim_a_sensitive_flag(seeded):
+    """Only user_facts has the column. A learning/material/note leaf must NOT carry a
+    `sensitive: false`, which would be a false claim that it was checked."""
+    tree = (await seeded.get("/api/v1/brain/tree", headers=AUTH)).json()
+    for b in tree["branches"]:
+        if b["kind"] == "profile":
+            continue
+        for leaf in b["children"]:
+            assert "sensitive" not in leaf, f"{b['kind']} leaf must not claim a flag"

@@ -97,10 +97,19 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   return (await resp.json()) as T;
 }
 
+/** One leaf of GET /brain/tree.
+ *
+ * 🔴 `sensitive` is a RENDERING HINT (lock badge), NOT protection: the payload still
+ * carries the fact's text in `label`, and `/brain/entry` still returns it in `excerpt`.
+ * It is `boolean | null`-shaped on the wire because the DB column is nullable and the
+ * backend coerces NULL to true (fail-closed) — never widen this to a bare `boolean` by
+ * copying UserFact's over-narrow declaration. Profile leaves only; other kinds omit it
+ * rather than claim a flag that was never checked. */
 export interface BrainLeaf {
   kind: "material" | "learning" | "profile" | "note";
   ref: string;
   label: string;
+  /** legacy DISPLAY string (e.g. "auto" / "投喂"), NOT the audit record */
   provenance: string | null;
   confidence: number | null;
   usage_count: number;
@@ -110,21 +119,54 @@ export interface BrainLeaf {
   children?: BrainLeaf[];
   category?: string | null;
   tags?: string[];
+  /** P1 temporal fields — emitted for profile/learning leaves since the P1 round. */
+  valid_from?: string | null;
+  superseded_by?: number | null;
+  /** D2 — profile leaves only. See the type-level note above. */
+  sensitive?: boolean;
 }
 export interface BrainBranch { kind: BrainLeaf["kind"]; label: string; children: BrainLeaf[]; }
-export interface GraphNodeDto { id: string; ref: string; kind: string; label: string; val: number }
+/** One node of GET /brain/graph.
+ *
+ * `kind` stays a loose string on purpose: besides the four entry kinds the graph also
+ * emits synthetic "ghost" | "tag" | "self" nodes, which are built as bare literals and
+ * therefore carry ONLY the five base fields — every per-kind extra below is optional
+ * for that reason. `sensitive` is a rendering hint, not protection (see BrainLeaf). */
+export interface GraphNodeDto {
+  id: string;
+  ref: string;
+  kind: string;
+  label: string;
+  val: number;
+  /** profile nodes */
+  source?: string | null;
+  confidence?: number | null;
+  sensitive?: boolean;
+  /** profile + learning nodes (P1 temporal) */
+  superseded_by?: number | null;
+}
 export interface GraphLinkDto { source: string; target: string; type: string }
 export interface BrainGraphDto { nodes: GraphNodeDto[]; links: GraphLinkDto[] }
 export interface BrainEntry {
   kind: string;
   ref: string;
   label: string;
+  /** legacy DISPLAY string; the audit payload is `provenance_record` */
   provenance: string | null;
   confidence: number | null;
+  /** 🔴 the entry's full text — returned for sensitive facts too (see BrainLeaf) */
   excerpt: string;
   usage_count: number;
   last_used_at: string | null;
   last_used_ref: string | null;
+  /** P1 fields the backend has emitted since that round */
+  valid_from?: string | null;
+  superseded_by?: number | null;
+  /** shape differs per kind: the raw fact JSON for profile, a synthesized
+   *  {source_kind, source_ref} for learning, null for material */
+  provenance_record?: Record<string, unknown> | null;
+  /** D2 — profile entries only */
+  sensitive?: boolean;
 }
 
 export const api = {
