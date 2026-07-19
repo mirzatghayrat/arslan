@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
-               "evolution_auto", "mcp_server_enabled")
+               "evolution_auto", "mcp_server_enabled", "curation_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_est_tokens")
 # Secret keys stored encrypted, returned masked.
@@ -129,6 +129,15 @@ async def get_decrypted_api_key(session: AsyncSession) -> str:
 async def distill_enabled(session: AsyncSession) -> bool:
     """Whether session-end distillation is on (default True; only an explicit 'false' disables)."""
     raw = await _get_raw(session, "distill_on_session_end")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def curation_enabled(session: AsyncSession) -> bool:
+    """Whether the sleep-time curation loop may run (default True; only an explicit
+    'false' disables). The loop ALSO requires distill_enabled — background distillation
+    that ignored the user's session-end distill switch would violate that consent and
+    spend money doing it."""
+    raw = await _get_raw(session, "curation_enabled")
     return raw is None or str(raw).strip().lower() != "false"
 
 

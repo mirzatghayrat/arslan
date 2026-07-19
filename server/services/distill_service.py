@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 _MAX_FACTS = 8
 
+#: distilled_sessions.reason written by the curation sweep when it permanently
+#: abandons a pair (see server/services/curation_loop.py).
+_GAVE_UP_REASON = "curation_gave_up"
+
 
 async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
     """LLM-consolidate existing prefs + this session's signals → ≤8 prefs. Returns None
@@ -232,7 +236,12 @@ async def _distill_one_inner(
         already = (await db.execute(select(DistilledSession).where(
             DistilledSession.conversation_id == conversation_id,
             DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
-        if already is not None:
+        # A `curation_gave_up` marker means the BACKGROUND sweep abandoned this pair.
+        # It is terminal for the sweep (that is what keeps a dead conversation from
+        # costing money forever) but it must NOT silence the user: an interactive
+        # caller ignores it and, on success, upserts the row back to a normal marker.
+        gave_up = already is not None and already.reason == _GAVE_UP_REASON
+        if already is not None and not (gave_up and not propose_only):
             return DistillOutcome(ok=False, reason="already_distilled", spawn_id=spawn_id)
         spawn = await db.get(Spawn, spawn_id)
         if spawn is None:
@@ -273,7 +282,15 @@ async def _distill_one_inner(
             # NOTE: save_facts (which this now routes through) owns its own session/
             # commit, independent of this block's — see distill_meta_upflow's docstring.
             await distill_meta_upflow(spawn, new_facts, conversation_id)
-        db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
+        # UPSERT within uq_distilled_conv_spawn: a successful interactive distill
+        # replaces a background give-up marker with a normal one.
+        existing = (await db.execute(select(DistilledSession).where(
+            DistilledSession.conversation_id == conversation_id,
+            DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
+        if existing is not None:
+            existing.reason = None
+        else:
+            db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
     return DistillOutcome(ok=True, spawn_id=spawn_id)
 

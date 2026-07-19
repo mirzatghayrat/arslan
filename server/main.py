@@ -243,6 +243,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — scheduler start must never block boot
         logger.warning("scheduler start failed (non-fatal): %s", exc)
 
+    # 整理层: a third supervised loop (15min tick) that distills conversations whose
+    # session_ended never fired. It waits INITIAL_DELAY before its first tick so a boot
+    # never immediately spends on LLM calls, and every tick re-reads BOTH kill switches
+    # (curation_enabled AND distill_on_session_end). Best-effort start.
+    try:
+        from server.services import curation_loop
+
+        curation_loop.start()
+    except Exception as exc:  # noqa: BLE001 — curation start must never block boot
+        logger.warning("curation loop start failed (non-fatal): %s", exc)
+
     # Drive the inbound MCP server's streamable-http session manager for the app's
     # lifetime (Nail 1: a mounted sub-app's lifespan is NOT auto-run by Starlette).
     mcp_server = getattr(app.state, "mcp_server", None)
@@ -265,6 +276,13 @@ async def lifespan(app: FastAPI):
         await _scheduler.stop()
     except Exception as exc:  # noqa: BLE001 — scheduler stop must never block shutdown
         logger.warning("scheduler stop failed (non-fatal): %s", exc)
+
+    try:
+        from server.services import curation_loop as _curation
+
+        await _curation.stop()
+    except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
+        logger.warning("curation loop stop failed (non-fatal): %s", exc)
 
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()

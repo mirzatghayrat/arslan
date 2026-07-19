@@ -40,7 +40,22 @@ _MEMORY_PROPOSALS_COLUMNS = (
 )
 
 
-def _add_missing(connection, table: str, columns) -> None:
+def _tables(connection) -> set[str]:
+    return {r[0] for r in connection.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+
+
+def _add_missing(connection, table: str, columns, present: set[str]) -> None:
+    """Add any missing column, skipping a table that does not exist yet.
+
+    The table guard matters: this migration can legitimately run against a DB where
+    only ONE of its two tables exists (a partial chain, or a historical fixture), and
+    a bare ALTER on a missing table raises instead of no-op'ing — which would break
+    the repo's every-migration-re-applies-on-every-boot idempotence contract. Mirrors
+    the sqlite_master guard used by _0025.
+    """
+    if table not in present:
+        return
     existing = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table})")}
     for name, ddl in columns:
         if name not in existing:
@@ -48,19 +63,24 @@ def _add_missing(connection, table: str, columns) -> None:
 
 
 def _upgrade(connection) -> None:
-    _add_missing(connection, "distilled_sessions", _DISTILLED_SESSIONS_COLUMNS)
-    _add_missing(connection, "memory_proposals", _MEMORY_PROPOSALS_COLUMNS)
-    connection.exec_driver_sql(
-        "CREATE INDEX IF NOT EXISTS ix_memory_proposals_conversation_id "
-        "ON memory_proposals (conversation_id)")
+    present = _tables(connection)
+    _add_missing(connection, "distilled_sessions", _DISTILLED_SESSIONS_COLUMNS, present)
+    _add_missing(connection, "memory_proposals", _MEMORY_PROPOSALS_COLUMNS, present)
+    if "memory_proposals" in present:
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_memory_proposals_conversation_id "
+            "ON memory_proposals (conversation_id)")
     # No backfill: NULL is the correct legacy value for BOTH columns — an existing
     # marker IS a normal distillation, and an existing proposal predates curation.
 
 
 def _downgrade(connection) -> None:
     connection.exec_driver_sql("DROP INDEX IF EXISTS ix_memory_proposals_conversation_id")
+    present = _tables(connection)
     for table, cols in (("distilled_sessions", _DISTILLED_SESSIONS_COLUMNS),
                         ("memory_proposals", _MEMORY_PROPOSALS_COLUMNS)):
+        if table not in present:
+            continue
         for name, _ddl in cols:
             try:  # SQLite pre-3.35 cannot DROP COLUMN; best-effort for newer versions
                 connection.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {name}")

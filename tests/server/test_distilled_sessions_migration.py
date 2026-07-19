@@ -23,6 +23,13 @@ async def test_migration_creates_table_and_unique_constraint(tmp_path):
         await conn.run_sync(upgrade_sync)
         # Idempotent: a second run on an existing table must no-op, not raise.
         await conn.run_sync(upgrade_sync)
+        # ...then the later migration that WIDENED this table: the assertions below
+        # write through the CURRENT ORM model, which carries `reason` (0034). A
+        # partial chain would pin a schema the ORM no longer describes.
+        from server.db.migrations.versions._0034_curation_layer import (
+            upgrade_sync as _m0034,
+        )
+        await conn.run_sync(_m0034)
 
     async with maker() as s:
         s.add(DistilledSession(conversation_id="c1", spawn_id=3))

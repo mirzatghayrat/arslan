@@ -41,6 +41,26 @@ async def count_events(conversation_id: str | None, kind: str) -> int:
         return 0
 
 
+async def count_events_strict(conversation_id: str | None, kind: str) -> int:
+    """Like :func:`count_events` but PROPAGATES errors instead of returning 0.
+
+    The swallowing variant cannot back a fail-closed decision: a caller that must not
+    proceed when the count is unknown has no way to tell "zero events" from "the query
+    failed". The curation retry cap uses this so a degraded DB cannot silently uncap
+    LLM spend.
+    """
+    if not conversation_id:
+        return 0
+    from sqlalchemy import func, select
+
+    async with db_session.AsyncSessionLocal() as db:
+        n = (await db.execute(
+            select(func.count()).select_from(ConversationEvent).where(
+                ConversationEvent.conversation_id == conversation_id,
+                ConversationEvent.kind == kind))).scalar()
+    return int(n or 0)
+
+
 async def get_recap(conversation_id: str) -> dict:
     """Merge this conversation's runs (from the runs table) and growth events into
     one timeline, newest first, with a small summary. Runs are NOT duplicated into

@@ -165,6 +165,14 @@ def test_fresh_and_migrated_schemas_match_exactly(tmp_path):
     mig_engine = create_engine(f"sqlite:///{mig_db}")
     with mig_engine.begin() as conn:
         upgrade_sync(conn)
+        # Fresh-parity compares against the CURRENT ORM, so path B must include every
+        # LATER migration touching these tables — 0034 adds
+        # memory_proposals.conversation_id. (0033 rebuilds the table in place and is
+        # already shape-compatible.)
+        from server.db.migrations.versions._0034_curation_layer import (
+            upgrade_sync as _m0034,
+        )
+        _m0034(conn)
     with mig_engine.connect() as conn:
         migrated_cols = {
             table: {r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
