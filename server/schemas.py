@@ -454,6 +454,17 @@ class ConfirmProposalOut(BaseModel):
     generation_level: int | None = None
 
 
+class EvolveRequest(BaseModel):
+    """Optional body for POST /spawns/{id}/evolve (批1 P5).
+
+    Both fields are optional and the whole body may be omitted — which is exactly why the
+    spend gate reads `force` as absent-means-False: an old client that sends nothing must
+    be gated, not exempted.
+    """
+
+    force: bool | None = None
+
+
 class EvolveEnqueuedOut(BaseModel):
     """202 response for POST /spawns/{id}/evolve — the manual trigger is now a background
     job (the old sync button was guaranteed to time out). attempt_id is None only when an

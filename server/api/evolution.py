@@ -18,6 +18,7 @@ from server.schemas import (
     EstimateOut,
     EvolutionOut,
     EvolveEnqueuedOut,
+    EvolveRequest,
     FeedbackIn,
     ProposalDetailOut,
     ProposalListItemOut,
@@ -96,17 +97,85 @@ async def evolve_estimate(
     return EstimateOut(**est)
 
 
+#: Outcomes after which re-running the SAME corpus is near-certain to repeat itself, so a
+#: click that would do it needs an explicit acknowledgement.
+#:
+#: 🔴 `skipped_structural` is deliberately ABSENT. The eligibility panel's own copy tells
+#: the user to click evolve in exactly that state so the gate can mint the synthetic
+#: holdout top-up; refusing there would make the app contradict its own instructions.
+#: `error` is absent too — it says nothing about the corpus, and retrying once a dead
+#: adapter is repaired is the correct move, not something to make the user force.
+_REPEAT_WARN_OUTCOMES = ("failed",)
+
+
 @router.post(
     "/spawns/{spawn_id}/evolve", status_code=status.HTTP_202_ACCEPTED,
     response_model=EvolveEnqueuedOut,
 )
-async def evolve_spawn(spawn_id: int) -> EvolveEnqueuedOut:
-    """Manual trigger — now a BACKGROUND job (202). The old sync run replayed every pair +
-    judge inline and was guaranteed to time out. Creates an EvolutionAttempt and enqueues a
-    supervised runner; returns immediately. Bypasses the run-count threshold but still
-    respects the budget cap + concurrency=1."""
+async def evolve_spawn(
+    spawn_id: int,
+    body: EvolveRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> EvolveEnqueuedOut:
+    """Manual trigger — a BACKGROUND job (202). The old sync run replayed every pair +
+    judge inline and was guaranteed to time out. Creates an EvolutionAttempt and enqueues
+    a supervised runner; returns immediately. Bypasses the run-count threshold but still
+    respects the budget cap + concurrency=1.
+
+    SPEND GATE (批1 P5). If nothing new has been recorded since an attempt that already
+    failed on quality, this click would re-run the identical corpus and near-certainly
+    repeat the identical verdict. Spending is the executing side, so it is FAIL-CLOSED:
+    the refusal is a 409 whose detail carries everything the confirmation dialog needs —
+    the frontend renders the backend's facts rather than inventing an explanation — and
+    only an explicit `force: true` proceeds. A body-less legacy call therefore has no
+    `force` and IS gated; being an old caller is not an exemption from spending money.
+    """
+    force = bool(body.force) if body else False
+    if not force:
+        refusal = await _repeat_spend_refusal(session, spawn_id)
+        if refusal is not None:
+            raise HTTPException(status_code=409, detail=refusal)
+
     attempt_id = await evolution_watcher.enqueue_attempt(spawn_id, manual=True)
     return EvolveEnqueuedOut(attempt_id=attempt_id)
+
+
+async def _repeat_spend_refusal(session, spawn_id: int) -> dict | None:
+    """The 409 payload, or None when the click is fine to run.
+
+    Both facts come from the SAME attempt row on purpose: reporting `last_reason` from one
+    attempt and `new_runs_since` measured from another would produce a dialog that
+    describes a state the spawn was never in.
+    """
+    last = (await session.execute(
+        select(EvolutionAttempt)
+        .where(EvolutionAttempt.spawn_id == spawn_id,
+               EvolutionAttempt.outcome.is_not(None))
+        .order_by(EvolutionAttempt.id.desc())
+        .limit(1)
+    )).scalars().first()
+    if last is None or last.outcome not in _REPEAT_WARN_OUTCOMES:
+        return None
+
+    new_runs = await evolution_watcher._new_replayable_run_count(
+        session, spawn_id, last.started_at)
+    if new_runs > 0:
+        return None
+
+    est = await evolution_estimate.estimate(session, spawn_id)
+    return {
+        "code": "same_corpus_as_failed_attempt",
+        "last_attempt_id": last.id,
+        "last_outcome": last.outcome,
+        "last_reason": last.reason or "",
+        "new_runs_since": new_runs,
+        "est_tokens": est.get("est_tokens"),
+        # 🔴 NOT a ceiling and NOT a reliable floor either — the estimator applies the
+        # optimizer's per-pair multiplier to the WHOLE corpus while the optimizer only
+        # ever sees <=8 val pairs, so it overshoots more the bigger the corpus gets.
+        # Registered as its own project; do not present this number as a forecast.
+        "est_is_lower_bound": bool(est.get("lower_bound")),
+    }
 
 
 @router.post("/evolution/baseline/declare", response_model=BaselineDeclareOut)
