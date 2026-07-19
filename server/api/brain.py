@@ -197,13 +197,13 @@ async def brain_graph() -> dict:
         # result sets below (the profile/learning node builders, and the tag-linking
         # loops further down) had to be updated in lockstep or this crashes at runtime.
         facts = (await db.execute(sa_text(
-            "SELECT id, content, label, category, source, confidence, superseded_by, sensitive "
-            "FROM user_facts ORDER BY id"))).mappings().all()
+            "SELECT id, content, label, category, source, confidence, superseded_by, "
+            "sensitive, provenance FROM user_facts ORDER BY id"))).mappings().all()
         mats = (await db.execute(sa_text(
             "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
             "GROUP BY collection_id, spawn_id, source"))).mappings().all()
         learns = (await db.execute(sa_text(
-            "SELECT id, content, label, source_ref, superseded_by "
+            "SELECT id, content, label, source_kind, source_ref, superseded_by "
             "FROM learnings ORDER BY id"))).mappings().all()
         notes = (await db.execute(sa_text(
             "SELECT id, title, content, tags FROM notes ORDER BY id"))).mappings().all()
@@ -217,9 +217,22 @@ async def brain_graph() -> dict:
     umap = await brain_usage.usage_map(keys)
 
     def _gnode(kind, ref, label, weight=1, **extra):
+        """D4: usage is now emitted explicitly, not only folded into `val`.
+
+        `val` is a RENDER SIZE (weight + usage) — the frontend cannot recover the raw
+        count from it, which is what the活跃时间条 needs. Both are emitted; they are
+        not redundant. Missing keys default to 0/None rather than being omitted, so
+        "never used" is distinguishable from "not reported".
+
+        Synthetic nodes (tag / self / ghost) are built as literals elsewhere and
+        deliberately do NOT come through here: they have no usage or provenance
+        concept, and emitting usage_count: 0 for them would be a false claim that
+        usage was looked up."""
         u = umap.get((kind, ref), {})
         node = {"id": ref, "ref": ref, "kind": kind,
-                "label": label or "", "val": weight + u.get("usage_count", 0)}
+                "label": label or "", "val": weight + u.get("usage_count", 0),
+                "usage_count": u.get("usage_count", 0),
+                "last_used_at": _iso(u.get("last_used_at"))}
         node.update(extra)
         return node
 
@@ -227,12 +240,21 @@ async def brain_graph() -> dict:
     nodes += [_gnode("profile", f"fact:{r['id']}", r["label"] or r["content"],
                      source=r["source"], confidence=r["confidence"],
                      superseded_by=r["superseded_by"],
-                     sensitive=_sensitive(r["sensitive"])) for r in facts]
+                     sensitive=_sensitive(r["sensitive"]),
+                     # same shape /brain/entry returns — a node's claim and the panel
+                     # that opens from it must not disagree
+                     provenance_record=_json_field(r["provenance"])) for r in facts]
     nodes += [_gnode("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
                      m["source"], weight=m["n"]) for m in mats]
     nodes += [_gnode("learning", f"learning:{r['id']}",
                      r["label"] or (r["content"] or "")[:40],
-                     superseded_by=r["superseded_by"]) for r in learns]
+                     superseded_by=r["superseded_by"],
+                     # learnings have no provenance column by design: source_kind +
+                     # source_ref ARE the provenance. Synthesized identically to
+                     # /brain/entry so the two cannot drift.
+                     provenance_record={"source_kind": r["source_kind"],
+                                        "source_ref": _json_field(r["source_ref"])})
+              for r in learns]
     nodes += [_gnode("note", f"note:{r['id']}", r["title"]) for r in notes]
 
     by_label = {n["label"].lower(): n["id"] for n in nodes if n["label"]}

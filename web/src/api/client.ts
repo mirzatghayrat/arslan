@@ -144,6 +144,14 @@ export interface GraphNodeDto {
   sensitive?: boolean;
   /** profile + learning nodes (P1 temporal) */
   superseded_by?: number | null;
+  /** D4 — every REAL node (profile/material/learning/note); absent on the synthetic
+   * ghost/tag/self nodes, hence optional. `val` already folds usage into a render
+   * size; these are the raw values the activity timeline needs. */
+  usage_count?: number;
+  last_used_at?: string | null;
+  /** D4 — profile + learning only. Facts read their JSON column; learnings synthesize
+   * `{source_kind, source_ref}` because that pair IS their provenance. */
+  provenance_record?: Record<string, unknown> | null;
 }
 export interface GraphLinkDto { source: string; target: string; type: string }
 export interface BrainGraphDto { nodes: GraphNodeDto[]; links: GraphLinkDto[] }

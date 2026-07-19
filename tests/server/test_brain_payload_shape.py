@@ -93,11 +93,15 @@ async def test_graph_payload_shape(seeded):
     assert {n["ref"] for n in fact_nodes} == {"fact:1", "fact:2"}
     n1 = next(n for n in fact_nodes if n["ref"] == "fact:1")
     assert set(n1) == {"id", "ref", "kind", "label", "val",
-                       "source", "confidence", "superseded_by", "sensitive"}
+                       "source", "confidence", "superseded_by", "sensitive",
+                       # D4
+                       "usage_count", "last_used_at", "provenance_record"}
     assert n1["source"] == "auto" and n1["confidence"] == 0.8
 
     learn = next(n for n in body["nodes"] if n["kind"] == "learning")
-    assert set(learn) == {"id", "ref", "kind", "label", "val", "superseded_by"}
+    assert set(learn) == {"id", "ref", "kind", "label", "val", "superseded_by",
+                          # D4
+                          "usage_count", "last_used_at", "provenance_record"}
 
     # the fact->tag edge: this is the loop whose positional unpack the refactor removes
     tag_edges = [e for e in body["links"]
@@ -217,3 +221,70 @@ async def test_non_profile_kinds_do_not_claim_a_sensitive_flag(seeded):
             continue
         for leaf in b["children"]:
             assert "sensitive" not in leaf, f"{b['kind']} leaf must not claim a flag"
+
+
+# ---------------------------------------------------------------------------
+# D4 — usage + provenance on graph nodes
+#
+# The graph is the frontend's MAIN view (方案A), so the活跃时间条 and the "where did
+# this come from" panel both need these fields at node level. usage_count/last_used_at
+# are already computed for every node (umap drives `val`) and were simply not emitted.
+# provenance_record mirrors /brain/entry exactly: facts read the JSON column, learnings
+# SYNTHESIZE it from source_kind + source_ref (they have no provenance column by
+# design), materials and notes have none.
+# ---------------------------------------------------------------------------
+
+
+async def test_graph_nodes_carry_usage_and_provenance(seeded, client):
+    from server.services import brain_usage
+
+    await brain_usage.record("profile", "fact:1", used_ref="conv:c1")
+    await brain_usage.record("profile", "fact:1", used_ref="conv:c1")
+
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    nodes = {n["ref"]: n for n in body["nodes"]}
+
+    f1 = nodes["fact:1"]
+    assert f1["usage_count"] == 2
+    assert f1["last_used_at"] is not None
+    # `val` already folded usage in; the explicit count must not replace it
+    assert f1["val"] == 1 + 2
+
+    f2 = nodes["fact:2"]
+    assert f2["usage_count"] == 0 and f2["last_used_at"] is None, (
+        "an unused node must report zero/None, not omit the keys — the timeline "
+        "needs to tell 'never used' apart from 'not reported'")
+
+    learn = nodes["learning:1"]
+    assert learn["provenance_record"] == {"source_kind": "distill",
+                                          "source_ref": {"conversation_id": "c1"}}, (
+        "learnings synthesize the record from source_kind+source_ref, same as "
+        "/brain/entry — the two must not drift")
+
+
+async def test_graph_provenance_record_matches_the_entry_endpoint(seeded):
+    """Whatever a node claims, opening it must show the same thing."""
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    nodes = {n["ref"]: n for n in body["nodes"]}
+    for ref, kind in (("fact:1", "profile"), ("learning:1", "learning")):
+        entry = (await seeded.get(f"/api/v1/brain/entry/{kind}/{ref}",
+                                  headers=AUTH)).json()
+        assert nodes[ref]["provenance_record"] == entry["provenance_record"], ref
+
+
+async def test_synthetic_nodes_stay_minimal(seeded):
+    """tag / self / ghost nodes bypass _gnode entirely. They must NOT sprout
+    usage_count: 0 — that would be a claim that usage was checked for a node that
+    has no usage concept, and it would force the TS field to be non-optional."""
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    for n in body["nodes"]:
+        if n["kind"] in ("tag", "self", "ghost"):
+            assert set(n) == {"id", "ref", "kind", "label", "val"}, n
+
+
+async def test_material_and_note_nodes_report_usage_but_no_provenance(seeded):
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    note = next(n for n in body["nodes"] if n["kind"] == "note")
+    assert note["usage_count"] == 0 and "last_used_at" in note
+    assert "provenance_record" not in note, (
+        "notes have no provenance record; emitting null would claim one was looked for")
