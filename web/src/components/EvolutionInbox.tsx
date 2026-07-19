@@ -35,6 +35,11 @@ const STATUS_TONE: Record<string, string> = {
  * delta summary + tier + status; clicking one opens its full PromotionCard. A per-spawn
  * "运行进化" affordance shows the honest cost estimate first, then enqueues the background job.
  */
+/** How long the panel follows an attempt before admitting it lost track. Attempts take
+ * minutes; last_attempts keeps only the newest few, so on a busy spawn ours can be pushed
+ * out and never observed. Saying so beats "running…" forever. */
+const WATCH_GIVE_UP_MS = 10 * 60 * 1000;
+
 export default function EvolutionInbox({ onOpenRun }: Props) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<ProposalListItem[] | null>(null);
@@ -50,9 +55,16 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
   const [busy, setBusy] = useState(false);
 
   // P5/P9 — the spend gate's structured 409, rendered as a confirmation.
-  const [refusal, setRefusal] = useState<EvolveRepeatRefusal | null>(null);
+  //
+  // 🔴 Both of these are BOUND TO THEIR SPAWN. A refusal describes one spawn's attempt,
+  // and "Run anyway" spends money; if it survived a spawn switch, consent given for A
+  // would force-bypass B's own fail-closed gate while the dialog still described A.
+  // Likewise `watching` is an attempt id that can only ever appear in ITS spawn's
+  // diagnosis, so following it against another spawn polls forever for something that
+  // cannot arrive. Storing the spawn alongside makes both impossible to get wrong.
+  const [refusal, setRefusal] = useState<{ spawnId: number; data: EvolveRepeatRefusal } | null>(null);
   // P7 — the attempt this panel is currently following, tracked BY ID.
-  const [watching, setWatching] = useState<number | null>(null);
+  const [watching, setWatching] = useState<{ spawnId: number; attemptId: number } | null>(null);
 
   // per-spawn eligibility diagnosis (read-only; keyed off runSpawn).
   const [diag, setDiag] = useState<SpawnDiagnosis | null>(null);
@@ -81,23 +93,27 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
   // by a DIFFERENT attempt (the auto watcher runs on the same spawn), which would make us
   // attribute someone else's outcome to this click, and can also never settle.
   useEffect(() => {
-    if (watching == null || runSpawn === "") return;
+    if (watching == null) return;
+    const { spawnId, attemptId } = watching;
     let alive = true;
     let delay = 2000;
+    let elapsed = 0;
     let timer: ReturnType<typeof setTimeout>;
 
     const poll = async () => {
       if (!alive) return;
       try {
-        const d = await api.getEvolutionDiagnosis(Number(runSpawn));
+        // poll the attempt's OWN spawn, not whatever is selected now
+        const d = await api.getEvolutionDiagnosis(spawnId);
         if (!alive) return;
-        setDiag(d);
-        const mine = d.last_attempts?.find((a) => a.id === watching);
+        if (spawnId === runSpawn) setDiag(d);
+        const mine = d.last_attempts?.find((a) => a.id === attemptId);
         if (mine && mine.outcome) {
           setEnqueued(
             t(`evolution.inbox.outcome_${mine.outcome}`, {
               id: mine.id,
               reason: mine.reason || "",
+              // an outcome we have no copy for must not render a raw key
               defaultValue: t("evolution.inbox.watch_lost", { id: mine.id }),
             }),
           );
@@ -106,6 +122,16 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
         }
       } catch {
         // a failed poll is not worth surfacing — the next tick retries
+      }
+      // GIVE UP eventually. Without this the panel says "running…" forever whenever the
+      // attempt never lands in last_attempts (it keeps only the newest few, so a busy
+      // spawn can push ours out), and `watch_lost` — copy translated into six locales
+      // for exactly this case — would be unreachable.
+      elapsed += delay;
+      if (elapsed >= WATCH_GIVE_UP_MS) {
+        setEnqueued(t("evolution.inbox.watch_lost", { id: attemptId }));
+        setWatching(null);
+        return;
       }
       delay = Math.min(delay * 1.5, 15000);   // back off; attempts take minutes
       timer = setTimeout(poll, delay);
@@ -117,7 +143,7 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watching, runSpawn]);
+  }, [watching]);
 
   async function load() {
     setError(null);
@@ -185,13 +211,13 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
       );
       // P7 — follow THIS attempt. attempt_id is null when one is already running
       // (concurrency = 1); there is nothing of ours to follow in that case.
-      setWatching(res.attempt_id ?? null);
+      setWatching(res.attempt_id != null ? { spawnId: runSpawn, attemptId: res.attempt_id } : null);
       setEstimate(null);
     } catch (e) {
       // P9 — the spend gate. Render the BACKEND's facts; do not compose an explanation
       // here, or the dialog will drift from what the server actually decided.
       if (e instanceof ApiError && e.status === 409 && e.detail) {
-        setRefusal(e.detail as EvolveRepeatRefusal);
+        setRefusal({ spawnId: runSpawn, data: e.detail as EvolveRepeatRefusal });
       } else {
         setError(String(e));
       }
@@ -240,6 +266,10 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
               setRunSpawn(e.target.value ? Number(e.target.value) : "");
               setEstimate(null);
               setEnqueued(null);
+              // 🔴 the refusal authorizes spending on ONE spawn. Carrying it across a
+              // switch would let "Run anyway" force-bypass a different spawn's gate.
+              setRefusal(null);
+              setWatching(null);
             }}
             aria-label={t("evolution.inbox.run_evolution")}
           >
@@ -285,7 +315,7 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
             </button>
           </div>
         )}
-        {refusal && (
+        {refusal && refusal.spawnId === runSpawn && (
           <div
             className="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-2 text-[12px] font-mono"
             role="alertdialog"
@@ -297,13 +327,13 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
             </div>
             <div className="text-muted-foreground">
               {t("evolution.inbox.confirm_body", {
-                id: refusal.last_attempt_id,
-                reason: refusal.last_reason,
+                id: refusal.data.last_attempt_id,
+                reason: refusal.data.last_reason,
               })}
             </div>
-            {refusal.est_tokens != null && (
+            {refusal.data.est_tokens != null && (
               <div className="text-muted-foreground tabular-nums">
-                {t("evolution.inbox.confirm_cost", { tokens: refusal.est_tokens })}
+                {t("evolution.inbox.confirm_cost", { tokens: refusal.data.est_tokens })}
               </div>
             )}
             <div className="flex gap-2">
@@ -327,9 +357,9 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
             </div>
           </div>
         )}
-        {watching != null && (
+        {watching != null && watching.spawnId === runSpawn && (
           <div className="text-[12px] font-mono text-muted-foreground" data-testid="watching-msg">
-            {t("evolution.inbox.watching", { id: watching })}
+            {t("evolution.inbox.watching", { id: watching.attemptId })}
           </div>
         )}
         {enqueued && watching == null && (

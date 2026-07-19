@@ -1,4 +1,6 @@
-node_modules/
+# no trailing slash: a trailing slash matches DIRECTORIES ONLY, so a symlink named
+# node_modules (e.g. one pointing at another worktree) slips past it and gets committed.
+node_modules
 dist/
 # Source directory, not a build artifact (overrides root build/ rule)
 !src/components/build/

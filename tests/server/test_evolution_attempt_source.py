@@ -85,6 +85,29 @@ async def test_manual_failures_do_not_inflate_the_auto_backoff(wdb):
         assert await evolution_watcher._consecutive_fails(db, sid) == 0
 
 
+async def test_a_manual_failure_does_not_COLLAPSE_the_auto_backoff_either(wdb):
+    """🔴 The case my own test failed to discriminate, and final review caught.
+
+    With only manual rows present, both a "wall" design and a "transparent" design return
+    0 — so the test above passes either way and proves nothing about the mixed case. Here
+    the auto streak already exists: walling on a manual row would discard it and drop the
+    threshold from 80 to 10, which MULTIPLIES the auto loop's spend rate by eight on the
+    strength of one impatient losing click. With no budget cap set, this backoff is the
+    only spend brake in the system, so that direction is worse than the inflation the
+    exemption was written to prevent.
+    """
+    Session = wdb
+    sid = await _spawn(Session)
+    for _ in range(3):
+        await _add(Session, sid, outcome="failed", source="auto", minutes_ago=50)
+    await _add(Session, sid, outcome="failed", source="manual", minutes_ago=10)
+
+    async with Session() as db:
+        assert await evolution_watcher._consecutive_fails(db, sid) == 3, (
+            "a manual failure must be TRANSPARENT — neither counted nor a reset")
+        assert evolution_watcher._threshold(3) == 80
+
+
 async def test_a_manual_pass_still_rescues_a_backed_off_spawn(wdb):
     """🔴 The escape hatch. A spawn at the 80 ceiling can only be rescued by a PASS, and
     an auto pass is unreachable because reaching it requires the inflated threshold. So a

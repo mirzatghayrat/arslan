@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
+import type { EvolveRepeatRefusal } from "../api/client";
 import type { EvolveEstimate, KnowledgeSource } from "../api/client.types";
 
 interface Props {
@@ -21,6 +22,8 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<EvolveEstimate | null>(null);
   const [enqueued, setEnqueued] = useState<string | null>(null);
+  // the spend gate reaches this surface too — see enqueueEvolve
+  const [refusal, setRefusal] = useState<EvolveRepeatRefusal | null>(null);
 
   async function loadSources() {
     try {
@@ -130,11 +133,12 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     }
   }
 
-  async function enqueueEvolve() {
+  async function enqueueEvolve(force = false) {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.runEvolve(spawnId);
+      const res = await api.runEvolve(spawnId, { force });
+      setRefusal(null);
       setEnqueued(
         res.attempt_id != null
           ? t("evolution.inbox.enqueued", { id: res.attempt_id })
@@ -142,7 +146,15 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
       );
       setEstimate(null);
     } catch (e) {
-      setError(String(e));
+      // This is the SECOND enqueue surface. It gets the server's fail-closed gate whether
+      // or not it handles it, so without this branch its Evolve button became an
+      // unrecoverable dead end: a raw "same_corpus_as_failed_attempt" in the error slot
+      // and no way to proceed. Same rule as the inbox — render the SERVER's facts.
+      if (e instanceof ApiError && e.status === 409 && e.detail) {
+        setRefusal(e.detail as EvolveRepeatRefusal);
+      } else {
+        setError(String(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -233,12 +245,41 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
                 dispatches: estimate.dispatches,
               })}
             </div>
-            <button className="evo-confirm" disabled={busy} onClick={enqueueEvolve}>
+            <button className="evo-confirm" disabled={busy} onClick={() => enqueueEvolve(false)}>
               {t("evolution.inbox.enqueue")}
             </button>
           </div>
         )}
-        {enqueued && <div className="evo-promoted">{enqueued}</div>}
+        {refusal && (
+        <div className="evo-refusal" role="alertdialog" data-testid="sd-repeat-confirm">
+          <div className="evo-refusal__title">{t("evolution.inbox.confirm_title")}</div>
+          <div className="evo-refusal__body">
+            {t("evolution.inbox.confirm_body", {
+              id: refusal.last_attempt_id,
+              reason: refusal.last_reason,
+            })}
+          </div>
+          {refusal.est_tokens != null && (
+            <div className="evo-refusal__body">
+              {t("evolution.inbox.confirm_cost", { tokens: refusal.est_tokens })}
+            </div>
+          )}
+          <div className="evo-refusal__actions">
+            <button onClick={() => setRefusal(null)} data-testid="sd-repeat-cancel">
+              {t("evolution.inbox.confirm_cancel")}
+            </button>
+            <button
+              className="evo-confirm"
+              disabled={busy}
+              onClick={() => enqueueEvolve(true)}
+              data-testid="sd-repeat-force"
+            >
+              {t("evolution.inbox.confirm_run")}
+            </button>
+          </div>
+        </div>
+      )}
+      {enqueued && <div className="evo-promoted">{enqueued}</div>}
       </section>
     </div>
   );

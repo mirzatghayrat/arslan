@@ -19,6 +19,7 @@ worse than no gate.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 
 import pytest
@@ -45,15 +46,44 @@ async def evo(client, monkeypatch):
 
     monkeypatch.setattr(evolution_estimate, "estimate", fake_estimate)
 
-    async def never_run(spawn_id, **k):
-        raise AssertionError("the gate must refuse BEFORE anything is enqueued")
+    # 🔴 The original fixture DEFINED a `never_run` guard and never installed it — an
+    # assertion that could not fire, while every 202 test launched a REAL supervised
+    # background evolution task (the suite took two minutes).
+    #
+    # A raising guard is the wrong stub, though: the 202 tests are SUPPOSED to enqueue —
+    # that is what they assert. So stub propose_improvement with a fast structural no-op.
+    # Nothing real runs, the supervised task finishes immediately, and the gate tests
+    # still prove their point by asserting on the response and the attempt rows.
+    async def _noop_propose(spawn_id, **k):
+        return {"proposal_id": None, "candidate_prompt": None,
+                "gate": {"passed": False, "reason": "length_cap", "aggregate": None},
+                "evidence": {}}
+
+    from server.services import evolution_loop
+
+    monkeypatch.setattr(evolution_loop, "propose_improvement", _noop_propose)
 
     async with client.db_maker() as s:
         s.add(Spawn(id=1, name="S", domain_category="x", system_prompt="P",
                     generation_level=1, config={}))
         await s.commit()
     evolution_watcher._running_spawns.clear()
-    yield client, never_run
+    yield client, _noop_propose
+
+    # 🔴 DRAIN, do not cancel. The 202 tests legitimately enqueue a supervised background
+    # task; if it outlives the test, the `client` fixture disposes its engine underneath
+    # it and the task's next DB touch raises "no active connection" — which then HANGS
+    # the connection pool's teardown until pytest-timeout kills the run at 120s. That is
+    # what installing the (previously inert) propose stub exposed: these tests were
+    # always launching real background work, it just used to die fast enough not to
+    # collide. This fixture depends on `client`, so its teardown runs FIRST — draining
+    # here is correctly ordered against the engine disposal.
+    for _ in range(50):
+        pending = [x for x in evolution_watcher._tasks if not x.done()]
+        if not pending:
+            break
+        await asyncio.gather(*pending, return_exceptions=True)
+    evolution_watcher._tasks.clear()
     evolution_watcher._running_spawns.clear()
 
 
@@ -184,3 +214,17 @@ async def test_an_in_flight_attempt_still_returns_null_not_a_gate_error(evo):
     r = await client.post("/api/v1/spawns/1/evolve", json={}, headers=AUTH)
     assert r.status_code == 202, r.text
     assert r.json()["attempt_id"] is None
+
+
+async def test_a_stranded_in_flight_attempt_does_not_disable_the_gate(evo):
+    """`outcome.is_not(None)` is the only thing stopping an abandoned in-flight row (a
+    crash mid-attempt leaves outcome NULL forever) from becoming "the last attempt" and
+    silently switching the gate off. Every test in this file passed with that clause
+    deleted, so it is pinned here explicitly."""
+    client, _ = evo
+    await _attempt(client, outcome="failed", reason="holdout_winrate", minutes_ago=60)
+    await _attempt(client, outcome=None, reason="", minutes_ago=30)   # stranded
+
+    r = await client.post("/api/v1/spawns/1/evolve", json={}, headers=AUTH)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["last_outcome"] == "failed"

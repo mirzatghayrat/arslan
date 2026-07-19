@@ -245,4 +245,55 @@ describe("EvolutionInbox", () => {
     const msg = await screen.findByTestId("enqueued-msg", {}, { timeout: 8000 });
     expect(msg.textContent).toContain("outcome_skipped_budget");
   }, 15000);
+
+  it("🔴 the confirmation does not survive a spawn switch (consent is per-spawn)", async () => {
+    // Consent for spawn A must never force-bypass spawn B's own fail-closed gate. Before
+    // this, the <select> cleared `estimate` and `enqueued` but not `refusal`, so the
+    // dialog stayed on screen describing A's failed attempt while "Run anyway" spent on B.
+    m.listSpawns.mockResolvedValue([{ id: 7, name: "小美" }, { id: 9, name: "小强" }]);
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+    });
+    const { ApiError } = await import("../api/client");
+    m.runEvolve.mockRejectedValue(
+      new (ApiError as unknown as new (m: string, s: number, d: unknown) => Error)(
+        "same_corpus_as_failed_attempt", 409, {
+          code: "same_corpus_as_failed_attempt", last_attempt_id: 41,
+          last_outcome: "failed", last_reason: "holdout_winrate", new_runs_since: 0,
+          est_tokens: 48000, est_is_lower_bound: true,
+        }),
+    );
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+    await screen.findByTestId("inbox-row");
+    fireEvent.click(screen.getByTestId("estimate-btn"));
+    fireEvent.click(await screen.findByTestId("enqueue-btn"));
+    expect(await screen.findByTestId("repeat-confirm")).toBeTruthy();
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "9" } });
+
+    await waitFor(() => expect(screen.queryByTestId("repeat-confirm")).toBeNull());
+    // and nothing was forced on the newly selected spawn
+    expect(m.runEvolve).not.toHaveBeenCalledWith(9, { force: true });
+  });
+
+  it("stops following an attempt when the spawn is switched away", async () => {
+    m.listSpawns.mockResolvedValue([{ id: 7, name: "小美" }, { id: 9, name: "小强" }]);
+    m.getEvolveEstimate.mockResolvedValue({
+      pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
+      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+    });
+    m.runEvolve.mockResolvedValue({ attempt_id: 99 });
+    m.getEvolutionDiagnosis.mockResolvedValue({ ...DIAG, last_attempts: [] });
+
+    render(<EvolutionInbox onOpenRun={() => {}} />);
+    await screen.findByTestId("inbox-row");
+    fireEvent.click(screen.getByTestId("estimate-btn"));
+    fireEvent.click(await screen.findByTestId("enqueue-btn"));
+    expect(await screen.findByTestId("watching-msg")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "9" } });
+    await waitFor(() => expect(screen.queryByTestId("watching-msg")).toBeNull());
+  });
 });

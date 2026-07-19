@@ -140,7 +140,11 @@ async def _consecutive_fails(db, spawn_id: int) -> int:
     'skipped_structural' (E9-b construction/precondition fail) AND an 'error' (an infra/adapter
     failure surfaced by the loop, or a crash) are TRANSPARENT — the scan continues past them, so
     they neither count toward the streak nor reset it. A dead judge adapter must not inflate the
-    quality backoff threshold as if the spawn's prompt were un-improvable."""
+    quality backoff threshold as if the spawn's prompt were un-improvable.
+
+    MANUAL attempts (0036): a manual 'passed' resets the streak like any pass; every
+    other manual outcome is transparent. A human's click is not evidence about the
+    prompt, so it must neither inflate the threshold nor collapse it."""
     rows = (await db.execute(
         select(EvolutionAttempt.outcome, EvolutionAttempt.source)
         .where(EvolutionAttempt.spawn_id == spawn_id)
@@ -148,17 +152,27 @@ async def _consecutive_fails(db, spawn_id: int) -> int:
     )).all()
     fails = 0
     for outcome, source in rows:
-        # 0036 — MANUAL attempts are NEUTRAL WALLS, not filtered rows. A human's
-        # impatient click must not quadruple the threshold the AUTO loop waits for, so a
-        # manual FAILURE does not count. But it must still STOP the scan, because
-        # skipping past it would let older auto failures aggregate across history — and
-        # worse, a manual 'passed' would lose its power to reset the streak. A manual
-        # pass is the user's ONLY escape from the 80 ceiling: reaching it via an auto
-        # pass requires first satisfying the very threshold that is stuck high. Filtering
-        # manual rows out would therefore RAISE the threshold this exemption exists to
-        # lower. (Caught by plan review; my first design had exactly that bug.)
+        # 0036 — manual attempts are handled BY OUTCOME, because "wall" and "filtered"
+        # are both wrong and each is wrong in the opposite direction:
+        #
+        #   * filtering every manual row out (my first design) would strip a manual
+        #     'passed' of its power to reset the streak. A manual pass is the user's ONLY
+        #     escape from the 80 ceiling — reaching an auto pass first requires
+        #     satisfying the very threshold that is stuck high. Plan review caught it.
+        #   * walling on every manual row (my second design) is worse: it makes a manual
+        #     FAILURE *reset* an accumulated auto streak, so one impatient losing click
+        #     drops the threshold 80 -> 10 and multiplies the auto loop's spend rate by
+        #     eight. With no budget cap set, this backoff is the only spend brake there
+        #     is. Final review caught that one.
+        #
+        # So: a manual 'passed' BREAKS (reset preserved); any other manual outcome is
+        # TRANSPARENT — it neither counts nor resets, exactly like 'error' and
+        # 'skipped_structural', and for the same reason: it is not evidence about the
+        # prompt in either direction.
         if source == "manual":
-            break
+            if outcome == "passed":
+                break
+            continue
         if outcome == "failed":
             fails += 1
         elif outcome in ("skipped_structural", "error"):

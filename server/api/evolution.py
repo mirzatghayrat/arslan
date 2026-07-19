@@ -92,7 +92,13 @@ async def submit_feedback(
 async def evolve_estimate(
     spawn_id: int, session: AsyncSession = Depends(get_session)
 ) -> EstimateOut:
-    """Honest lower-bound cost estimate for ONE evolution attempt on this spawn."""
+    """Cost estimate for ONE evolution attempt on this spawn.
+
+    NOT a reliable lower bound despite the `lower_bound` field — see
+    evolution_estimate.py's docstring. I corrected that module and the schema in the
+    previous commit and left this one saying "honest lower-bound", which is the same
+    half-fix pattern as shipping an ISO separator without the UTC designator.
+    """
     est = await evolution_estimate.estimate(session, spawn_id)
     return EstimateOut(**est)
 
@@ -130,6 +136,13 @@ async def evolve_spawn(
     only an explicit `force: true` proceeds. A body-less legacy call therefore has no
     `force` and IS gated; being an old caller is not an exemption from spending money.
     """
+    # Concurrency FIRST. If an attempt is already running for this spawn, the click
+    # enqueues nothing and spends nothing, so warning about spend would describe a
+    # decision that is not being made. (Cheap membership test, and it also spares the
+    # gate's corpus scan.)
+    if spawn_id in evolution_watcher._running_spawns:
+        return EvolveEnqueuedOut(attempt_id=None)
+
     force = bool(body.force) if body else False
     if not force:
         refusal = await _repeat_spend_refusal(session, spawn_id)
