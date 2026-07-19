@@ -176,3 +176,113 @@ async def test_distill_from_signals_noop_on_llm_failure(maker, monkeypatch):
     async with maker() as s:
         facts = (await s.get(Spawn, 3)).memory_facts
     assert facts == []
+
+
+# ---------------------------------------------------------------------------
+# 整理层#10 段 A2 — discriminated outcomes + visible failure
+#
+# Before: every failure ended in logger.warning with nothing persisted, and the
+# return values conflated outcomes at three levels (distill_session 0 = clean
+# no-op = total failure; _distill_one False = 4 different things;
+# distill_from_signals -> None could not report anything even in principle).
+# The fixture seeds Spawn id=3 and conversation "c1".
+# ---------------------------------------------------------------------------
+
+
+async def _none(existing, signals):
+    return None
+
+
+async def test_outcome_reasons_are_discriminated(maker, monkeypatch):
+    from server.services import distill_service
+    from server.services.distill_service import DistillOutcome
+
+    # spawn gone
+    out = await distill_service._distill_one("c1", 99999)
+    assert isinstance(out, DistillOutcome)
+    assert out.ok is False and out.reason == "no_spawn"
+
+    # nothing to distill: real spawn, conversation with no messages
+    out = await distill_service._distill_one("empty-conv", 3)
+    assert out.ok is False and out.reason == "nothing_to_distill"
+
+    # llm failure
+    monkeypatch.setattr(distill_service, "distill_facts", _none)
+    out = await distill_service._distill_one("c1", 3)
+    assert out.ok is False and out.reason == "llm_failed"
+
+    # already distilled (the marker written by the llm-failure path? no — write one)
+    async with maker() as s:
+        s.add(DistilledSession(conversation_id="c1", spawn_id=3))
+        await s.commit()
+    out = await distill_service._distill_one("c1", 3)
+    assert out.ok is False and out.reason == "already_distilled"
+
+
+async def test_llm_failure_logs_a_visible_distill_failed_event(maker, monkeypatch):
+    """The user must be able to SEE that distillation failed — not only a server log."""
+    from server.db.models import ConversationEvent
+    from server.services import distill_service
+
+    monkeypatch.setattr(distill_service, "distill_facts", _none)
+    await distill_service.distill_session("c1")
+
+    async with maker() as s:
+        kinds = (await s.execute(
+            select(ConversationEvent.kind).where(
+                ConversationEvent.conversation_id == "c1"))).scalars().all()
+    assert "distill_failed" in kinds, (
+        "a failed distillation must leave persisted evidence, not only a log line")
+
+
+async def test_distill_session_keeps_its_int_contract(maker, monkeypatch):
+    """distill_session stays `-> int`: the REST endpoint, the frontend toast
+    (App.tsx: res.distilled_spawns > 0) and three existing tests depend on it.
+    The richer report is a SEPARATE function."""
+    from server.services import distill_service
+
+    async def _one(existing, signals):
+        return ["f"]
+    monkeypatch.setattr(distill_service, "distill_facts", _one)
+    n = await distill_service.distill_session("c1")
+    assert isinstance(n, int) and n == 1
+
+
+async def test_detailed_report_exposes_per_spawn_failures(maker, monkeypatch):
+    from server.services import distill_service
+
+    monkeypatch.setattr(distill_service, "distill_facts", _none)
+    report = await distill_service.distill_session_detailed("c1")
+    assert report.distilled == 0
+    assert [o.reason for o in report.outcomes] == ["llm_failed"]
+
+
+async def test_one_spawn_exception_does_not_abort_the_others(maker, monkeypatch):
+    """Today a raise inside _distill_one aborts the whole loop (no per-spawn try),
+    leaving every remaining spawn markerless forever."""
+    from server.services import distill_service
+
+    async with maker() as s:
+        s.add(Spawn(id=4, name="小强", domain_category="content", system_prompt="sp",
+                    memory_facts=[]))
+        s.add(ArslanMessage(conversation_id="c1", role="spawn_summary",
+                            content="另一个产出", display_content="另一个产出", spawn_id=4))
+        await s.commit()
+
+    seen = []
+    real = distill_service._distill_one
+
+    async def _boom(cid, sid, **kw):
+        seen.append(sid)
+        if len(seen) == 1:
+            raise RuntimeError("spawn blew up")
+        return await real(cid, sid, **kw)
+
+    monkeypatch.setattr(distill_service, "_distill_one", _boom)
+    async def _one(existing, signals):
+        return ["f"]
+    monkeypatch.setattr(distill_service, "distill_facts", _one)
+
+    report = await distill_service.distill_session_detailed("c1")
+    assert len(seen) == 2, "the second spawn must still be attempted"
+    assert any(o.reason == "exception" for o in report.outcomes)

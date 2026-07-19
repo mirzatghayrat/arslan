@@ -11,14 +11,17 @@ rows are intentionally excluded here since they aren't tied to a specific conver
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, DistilledSession, Feedback, Spawn
+from server.services.replay_safety import should_not_curate
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.distill import DISTILL_SYSTEM
+from server.services import recap_service
 
 _META_UPFLOW_SYSTEM = (
     "你是 Arslan 的记忆整理器。只提炼 AT MOST 一条对【所有分身 / Arslan 本身】都有用的元知识——"
@@ -46,6 +49,10 @@ async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
         return None
     facts = parsed.get("facts")
     if not isinstance(facts, list):
+        # Was a bare `return None` with NO logging at all — a malformed LLM response
+        # left literally zero evidence anywhere ("silent warning" understated it).
+        logger.warning("distill_facts: LLM returned no usable 'facts' list (got %s)",
+                       type(facts).__name__)
         return None
     return [str(f).strip() for f in facts if str(f).strip()][:_MAX_FACTS]
 
@@ -100,11 +107,63 @@ async def distill_meta_upflow(spawn, new_facts: list[str]) -> str | None:
         return None
 
 
+@dataclass(frozen=True)
+class DistillOutcome:
+    """What actually happened to ONE spawn's distillation.
+
+    Replaces a bare ``False`` that meant four different things (already-distilled /
+    spawn gone / nothing to distill / LLM failure), which made it impossible for any
+    surface to honestly say "distillation FAILED" rather than "nothing happened".
+    """
+
+    ok: bool
+    reason: str | None = None   # already_distilled|no_spawn|nothing_to_distill|llm_failed|exception
+    spawn_id: int | None = None
+
+    #: reasons that mean "we tried and it broke" (vs. a benign skip)
+    FAILURE_REASONS = ("llm_failed", "exception")
+
+    @property
+    def failed(self) -> bool:
+        return not self.ok and self.reason in self.FAILURE_REASONS
+
+
+@dataclass(frozen=True)
+class DistillReport:
+    """Per-conversation roll-up: the honest count plus every spawn's outcome."""
+
+    distilled: int
+    outcomes: list[DistillOutcome]
+
+
 async def distill_session(conversation_id: str) -> int:
     """Distill every spawn that produced a deliverable in this conversation. Idempotent
     per (conversation, spawn). Never raises. Returns the number of spawns ACTUALLY
     distilled this call (idle/already-distilled/failed spawns are skipped and NOT counted)
-    — so callers (e.g. the manual REST trigger) can report an honest count."""
+    — so callers (e.g. the manual REST trigger) can report an honest count.
+
+    Signature deliberately unchanged (`-> int`): the REST endpoint, the frontend toast
+    (``App.tsx`` reads ``res.distilled_spawns > 0``) and several tests depend on it.
+    Callers that need per-spawn detail use :func:`distill_session_detailed`.
+    """
+    return (await distill_session_detailed(conversation_id)).distilled
+
+
+async def distill_session_detailed(
+    conversation_id: str, *, propose_only: bool = False
+) -> DistillReport:
+    """distill_session + per-spawn outcomes. Never raises.
+
+    A failed spawn logs a ``distill_failed`` growth event so the failure is VISIBLE on
+    the recap timeline instead of dying in a server log. Each spawn is attempted inside
+    its own try: before this, one spawn raising aborted the whole loop and left every
+    remaining spawn markerless (hence permanently re-attempted) forever.
+    """
+    if should_not_curate(conversation_id):
+        # Synthetic eval/replay traffic is never material to learn from. Until now this
+        # was only an accident (replay never persists ArslanMessage rows, so the query
+        # below came back empty) — an accident any new caller could break.
+        return DistillReport(distilled=0, outcomes=[])
     try:
         async with db_session.AsyncSessionLocal() as db:
             spawn_ids = (await db.execute(
@@ -114,29 +173,48 @@ async def distill_session(conversation_id: str) -> int:
                     ArslanMessage.spawn_id.isnot(None),
                 ).distinct()
             )).scalars().all()
-        n = 0
-        for spawn_id in spawn_ids:
-            if await _distill_one(conversation_id, int(spawn_id)):
-                n += 1
-        return n
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("distill_session(%s) failed: %s", conversation_id, exc)
-        return 0
+    except Exception as exc:  # noqa: BLE001 — candidate query failure is not a spawn failure
+        logger.warning("distill_session(%s) candidate query failed: %s", conversation_id, exc)
+        return DistillReport(distilled=0, outcomes=[])
+
+    n = 0
+    outcomes: list[DistillOutcome] = []
+    for spawn_id in spawn_ids:
+        sid = int(spawn_id)
+        try:
+            outcome = await _distill_one(conversation_id, sid, propose_only=propose_only)
+        except Exception as exc:  # noqa: BLE001 — one bad spawn must not abort the rest
+            logger.warning("distill_one(%s, %s) raised: %s", conversation_id, sid, exc)
+            outcome = DistillOutcome(ok=False, reason="exception", spawn_id=sid)
+        outcomes.append(outcome)
+        if outcome.ok:
+            n += 1
+        elif outcome.failed:
+            await recap_service.log_event(
+                conversation_id, "distill_failed",
+                {"spawn_id": sid, "reason": outcome.reason},
+                f"蒸馏失败({outcome.reason})· 分身 {sid}")
+    return DistillReport(distilled=n, outcomes=outcomes)
 
 
-async def _distill_one(conversation_id: str, spawn_id: int) -> bool:
-    """Distill one spawn's material for this conversation. Returns True iff facts were
-    actually written (and the idempotency marker persisted); False when skipped —
-    already-distilled, spawn gone, nothing to distill, or LLM failure."""
+async def _distill_one(
+    conversation_id: str, spawn_id: int, *, propose_only: bool = False
+) -> DistillOutcome:
+    """Distill one spawn's material for this conversation.
+
+    Returns a discriminated :class:`DistillOutcome` — ``ok=True`` iff facts were actually
+    written (and the idempotency marker persisted); otherwise ``reason`` says which of
+    already-distilled / spawn-gone / nothing-to-distill / LLM-failure happened.
+    """
     async with db_session.AsyncSessionLocal() as db:
         already = (await db.execute(select(DistilledSession).where(
             DistilledSession.conversation_id == conversation_id,
             DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
         if already is not None:
-            return False
+            return DistillOutcome(ok=False, reason="already_distilled", spawn_id=spawn_id)
         spawn = await db.get(Spawn, spawn_id)
         if spawn is None:
-            return False
+            return DistillOutcome(ok=False, reason="no_spawn", spawn_id=spawn_id)
         deliverables = (await db.execute(select(ArslanMessage.display_content).where(
             ArslanMessage.conversation_id == conversation_id,
             ArslanMessage.role == "spawn_summary",
@@ -157,11 +235,12 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> bool:
               "\n\n分身产出:\n" + "\n".join(d for d in deliverables if d) + \
               feedback_line
     if not deliverables and not user_msgs:
-        return False  # nothing to distill
+        return DistillOutcome(ok=False, reason="nothing_to_distill", spawn_id=spawn_id)
 
     new_facts = await distill_facts(existing, signals)
     if new_facts is None:
-        return False  # distillation failed — write nothing + no marker, so it retries next session
+        # write nothing + no marker, so it retries next session
+        return DistillOutcome(ok=False, reason="llm_failed", spawn_id=spawn_id)
 
     async with db_session.AsyncSessionLocal() as db:
         spawn = await db.get(Spawn, spawn_id)
@@ -174,7 +253,7 @@ async def _distill_one(conversation_id: str, spawn_id: int) -> bool:
             await distill_meta_upflow(spawn, new_facts)
         db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
-    return True
+    return DistillOutcome(ok=True, spawn_id=spawn_id)
 
 
 async def distill_from_signals(spawn_id: int, signals: str) -> None:

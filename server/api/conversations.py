@@ -73,11 +73,16 @@ async def conversation_distill(conversation_id: str) -> dict:
     growth event is logged for the recap. Auth-gated."""
     from server.services import distill_service, recap_service
 
-    n = await distill_service.distill_session(conversation_id)
+    report = await distill_service.distill_session_detailed(conversation_id)
+    n = report.distilled
+    failed = [{"spawn_id": o.spawn_id, "reason": o.reason} for o in report.outcomes if o.failed]
 
-    await recap_service.log_event(
-        conversation_id, "distill", {"manual": True}, f"手动蒸馏 {n} 个分身")
-    return {"ok": True, "distilled_spawns": n}
+    summary = f"手动蒸馏 {n} 个分身" + (f"(失败 {len(failed)} 个)" if failed else "")
+    await recap_service.log_event(conversation_id, "distill", {"manual": True}, summary)
+    # `distilled_spawns` stays an INT: the frontend toast reads it numerically
+    # (web/src/App.tsx) and client.types.ts types it that way. `failed_spawns` is
+    # additive — before it, a total failure and a clean no-op both reported 0.
+    return {"ok": True, "distilled_spawns": n, "failed_spawns": failed}
 
 
 @router.delete("/conversations/{conversation_id}")

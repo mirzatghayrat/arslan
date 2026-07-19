@@ -753,7 +753,11 @@ class TimelineOut(BaseModel):
 class RecapItemOut(BaseModel):
     """One item on the conversation recap timeline — a run OR a growth event."""
 
-    kind: str                       # run|distill|memory|skill|evolution|invite
+    # run|distill|distill_failed|memory|skill|evolution|invite|scheduled_fire|
+    # scheduled_pause|promise_intercept|mcp_degrade_hint|delegation_advance|
+    # repeated_confirmation — ConversationEvent.kind is a free String(20), so this
+    # list is documentation, not a constraint (it had drifted six kinds behind).
+    kind: str
     created_at: str | None = None
     # run fields
     run_id: int | None = None

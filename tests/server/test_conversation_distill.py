@@ -75,9 +75,12 @@ async def test_distill_returns_counts(client, monkeypatch):
     monkeypatch.setattr(distill_service, "distill_facts", _facts)
     _orig = distill_service._distill_one
 
-    async def _spy(conversation_id, spawn_id):
+    async def _spy(conversation_id, spawn_id, **kw):
+        # **kw so the spy survives new keyword-only options on _distill_one
+        # (e.g. propose_only): without it the TypeError is swallowed by
+        # distill_session's outer except into a misleading distilled_spawns == 0.
         calls.append(spawn_id)
-        return await _orig(conversation_id, spawn_id)
+        return await _orig(conversation_id, spawn_id, **kw)
 
     monkeypatch.setattr(distill_service, "_distill_one", _spy)
 
