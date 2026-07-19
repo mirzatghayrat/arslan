@@ -26,4 +26,9 @@ async def test_distill_toggle_roundtrip(tmp_path):
         enabled = await settings_service.distill_enabled(s)
         out = await settings_service.get_settings(s)
     assert enabled is False
-    assert out["distill_on_session_end"] == "False"  # stored as str(bool)
+    # get_settings now emits bool keys from `_BOOL_ACCESSORS` as REAL BOOLS rather than
+    # the raw stored string. The API response is unchanged either way (pydantic coerced
+    # "False" for SettingsOut's bool field), but the raw form gave every bool default two
+    # independent definitions — the accessor and the schema — with nothing keeping them
+    # in step. See tests/server/test_settings_bool_keys.py.
+    assert out["distill_on_session_end"] is False

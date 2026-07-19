@@ -124,6 +124,17 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     # registry is asserted complete against _INT_KEYS by test_settings_int_keys.
     for int_key, accessor in _INT_ACCESSORS.items():
         out[int_key] = await accessor(session)
+    # 🔴 Same treatment for the BOOL keys, and for the same reason one type up.
+    #
+    # They ride _PLAIN_KEYS, which emits the RAW STRING and only `if val is not None` —
+    # so on a fresh install the key is ABSENT from the response and SettingsOut's
+    # pydantic default answers for it. That gave every bool TWO independent definitions
+    # of its default (the accessor and the schema) with nothing asserting they agree.
+    # A change that moved only one of them — exactly what flipping curation_enabled
+    # would be — produces a UI reporting OFF while the loop runs, or the reverse.
+    # Asserted complete against _BOOL_KEYS by test_settings_bool_keys.
+    for bool_key, accessor in _BOOL_ACCESSORS.items():
+        out[bool_key] = await accessor(session)
     out["evolution_auto"] = "on" if await evolution_auto(session) else "off"
     return out
 
@@ -304,3 +315,17 @@ _INT_ACCESSORS = {
     "brain_usage_event_retention_days": brain_usage_event_retention_days,
     "brain_usage_event_max_rows": brain_usage_event_max_rows,
 }
+
+
+#: Read-path registry for the BOOL settings. Every entry in `_BOOL_KEYS` MUST appear
+#: here — a key that is writable but not readable reports the schema default forever
+#: (see the comment in get_settings). `evolution_auto` is deliberately absent: it is a
+#: bool in the service but a STRING ("on"/"off") on the wire, so it keeps its own line.
+_BOOL_ACCESSORS = {
+    "distill_on_session_end": distill_enabled,
+    "curation_enabled": curation_enabled,
+    "mcp_server_enabled": mcp_server_enabled,
+}
+
+#: The bool keys this registry is responsible for.
+_BOOL_KEYS = tuple(_BOOL_ACCESSORS)
