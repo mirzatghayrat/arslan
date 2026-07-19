@@ -474,7 +474,14 @@ class EvolveEnqueuedOut(BaseModel):
 
 
 class EstimateOut(BaseModel):
-    """Honest lower-bound cost estimate (GET /spawns/{id}/evolve/estimate)."""
+    """Cost estimate for one evolution attempt (GET /spawns/{id}/evolve/estimate).
+
+    🔴 `lower_bound` is a hardcoded True and is NOT trustworthy as stated — the estimator
+    applies the optimizer's per-pair multiplier to the whole corpus while the optimizer
+    only ever sees <=8 val pairs, so the number drifts from a floor to a growing
+    over-estimate as the corpus grows. See server/services/evolution_estimate.py's
+    docstring; correcting it is a separate project. UI copy must not call it a floor.
+    """
 
     pairs: int
     dispatches: int

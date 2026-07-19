@@ -1,12 +1,31 @@
-"""Honest LOWER-BOUND cost estimate for one background evolution attempt (S2 E5,
-acceptance d / audit #13).
+"""Cost estimate for one background evolution attempt (S2 E5, acceptance d / audit #13).
 
-Every number here is a floor, not a forecast: it counts the dispatches/judge calls the
-propose→gate flow provably makes with the loop defaults, and prices them with the
-per-run token average of REAL live turns. It deliberately excludes retries, the
-optimizer's own LLM turns (`optimizer_calls` is surfaced but not tokened), and any
-synthetic-generation cost (E6). Callers surface `lower_bound: True` so the UI never
-presents it as a ceiling.
+🔴 THIS IS NOT A RELIABLE LOWER BOUND, despite the `lower_bound: True` field and what
+this docstring used to claim. `dispatches` below multiplies the WHOLE corpus by
+`epochs*lr_budget + 1`, but the optimizer never replays the whole corpus: evolution_loop
+splits the propose side and caps it at `val_cap=8`, and the holdout never enters the
+optimizer at all. Only the final gate touches every pair. So the number is close to a
+floor on a SMALL corpus and an increasingly large OVER-estimate as the corpus grows —
+and `build_corpus` has no cap, so it only grows.
+
+Two consequences that must not be forgotten while this stands:
+  * do not present it as a forecast, and do not let UI copy call it a floor
+    (the six locale strings were corrected to say exactly this);
+  * do not build a spend gate on it. A fixed cap over a monotonically growing number is
+    a permanent kill switch that fires FIRST on the most-used spawns and never unfires.
+    `evolution_max_est_tokens` therefore stays unset (no cap) — better no gate than a
+    gate built on a number we know is wrong.
+
+Fixing it is its own project, and the fix must be structural: read the loop's real caps
+the way `_loop_defaults` already reads epochs/lr_budget from the signature, and assert
+the projected dispatch count against a dry run over a synthetic corpus. The root cause
+here is that the estimate RESTATES the loop's behavior in prose instead of deriving it.
+
+What is still true: it prices dispatches with the per-run token average of REAL live
+turns, and it deliberately excludes retries, the optimizer's own LLM turns
+(`optimizer_calls` is surfaced but not tokened), and any synthetic-generation cost (E6) —
+so those omissions push in the floor direction, while the dispatch overcount pushes the
+other way and dominates once the corpus is large.
 
 The one subtlety worth repeating (spec §E4 note): a proposal pays for BOTH the optimizer
 epoch loop AND the final gate replay, so a single pair is dispatched
