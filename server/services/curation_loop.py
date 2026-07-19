@@ -178,6 +178,14 @@ async def ensure_backfill_boundary() -> None:
     """
     async with db_session.AsyncSessionLocal() as db:
         if not await settings_service.curation_enabled(db):
+            # Belt and braces for the settings write path, which is the authoritative
+            # place this is cleared: a boundary can also arrive from a direct DB edit or
+            # a build that predates that clearing, and a stale one would silently
+            # backfill the whole off-period on the next enable.
+            if await settings_service.curation_backfill_from(db) is not None:
+                await settings_service.clear_curation_backfill_from(db)
+                logger.info("curation: disabled — backfill boundary cleared; enabling "
+                            "again will start a fresh scope rather than sweeping the gap")
             return
         if await settings_service.curation_backfill_from(db) is not None:
             return

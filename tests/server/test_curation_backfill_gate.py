@@ -101,6 +101,84 @@ async def test_the_boundary_is_written_once_and_never_moved_forward(wdb):
     assert await curation_loop._candidates() == ["after"]
 
 
+async def test_turning_curation_OFF_AND_ON_AGAIN_does_not_backfill_the_gap(wdb):
+    """🔴 The case the gate exists for, and the one my first version never touched.
+
+    The boundary was written once PER DATABASE rather than once per ENABLE. So the most
+    likely real sequence — enable, find it expensive, disable, use the app for months,
+    enable again — left the stale first-enable floor in place and swept the entire OFF
+    window. The gate protected only the first enable in the lifetime of the install.
+
+    My `test_the_boundary_is_written_once_and_never_moved_forward` asserted stability
+    across two ticks with curation continuously ON, which is correct — and by only ever
+    exercising that direction it certified the write-once rule as sound at the exact
+    transition where it is wrong. Ninth round of that pattern.
+    """
+    Session = wdb
+    await _enable(Session)
+    await curation_loop.ensure_backfill_boundary()
+    async with Session() as db:
+        first = await settings_service.curation_backfill_from(db)
+    assert first is not None
+
+    # ...turned off, then months of ordinary use...
+    async with Session() as db:
+        await settings_service.update_settings(db, {"curation_enabled": False})
+    await curation_loop.ensure_backfill_boundary()          # a tick while OFF
+    for i in range(3):
+        await _conversation(Session, f"gap-{i}",
+                            last_activity=datetime.utcnow() - timedelta(days=30 * (i + 1)))
+
+    # ...and enabled again.
+    async with Session() as db:
+        await settings_service.update_settings(db, {"curation_enabled": True})
+    await curation_loop.ensure_backfill_boundary()
+
+    assert await curation_loop._candidates() == [], (
+        "the off-period was backfilled — the boundary must belong to the CURRENT "
+        "enablement, not to the first one this database ever saw")
+    async with Session() as db:
+        second = await settings_service.curation_backfill_from(db)
+    assert second is not None and second > first, "a re-enable must record a fresh floor"
+
+
+async def test_disabling_curation_clears_the_boundary_even_without_the_loop(wdb):
+    """The toggle can happen while the app is down, so the settings WRITE path clears it
+    too — the loop observing an off-tick is belt and braces, not the only mechanism."""
+    Session = wdb
+    await _enable(Session)
+    await curation_loop.ensure_backfill_boundary()
+    async with Session() as db:
+        assert await settings_service.curation_backfill_from(db) is not None
+        await settings_service.update_settings(db, {"curation_enabled": False})
+    async with Session() as db:
+        assert await settings_service.curation_backfill_from(db) is None
+
+
+async def test_the_LOOP_clears_a_boundary_the_write_path_never_saw(wdb):
+    """🔴 Isolates the second mechanism. The settings write path clears the boundary on
+    disable, and in every ordinary scenario it gets there first — so a test that only
+    goes through update_settings passes with the loop's clearing deleted, and the two
+    halves mask each other. (That is exactly what my first mutation check found.)
+
+    Here the boundary is written STRAIGHT INTO THE DB with curation already off: the
+    shape left by a direct edit, or by a build that predates the write-path clearing.
+    Only the loop can clean that up.
+    """
+    Session = wdb
+    stale = datetime.utcnow() - timedelta(days=200)
+    async with Session() as db:
+        db.add(Setting(key="curation_backfill_from", value=stale.isoformat()))
+        await db.commit()
+
+    await curation_loop.ensure_backfill_boundary()          # a tick while OFF
+
+    async with Session() as db:
+        assert await settings_service.curation_backfill_from(db) is None, (
+            "a stale boundary left by a direct DB edit survived — enabling curation "
+            "would then backfill everything since it was written")
+
+
 async def test_no_boundary_is_written_while_curation_is_OFF(wdb):
     """Recording a boundary for a disabled loop would silently decide, months early,
     which history is forever out of scope."""

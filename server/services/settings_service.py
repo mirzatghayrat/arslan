@@ -84,6 +84,23 @@ async def _set_raw(session: AsyncSession, key: str, value: str) -> None:
         session.add(Setting(key=key, value=value))
 
 
+async def _clear_raw(session: AsyncSession, key: str) -> None:
+    """Delete a setting outright. Distinct from storing "" — the boundary readers treat
+    an unparsable value as "not recorded", but leaving a blank row behind would make a
+    cleared boundary indistinguishable from a corrupt one in the DB."""
+    existing = await session.get(Setting, key)
+    if existing:
+        await session.delete(existing)
+
+
+def _truthy(value) -> bool:
+    """The one place that decides what an incoming settings value means. Accepts real
+    bools (the API) and the strings the DB round-trips."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "on", "yes")
+
+
 async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
     """Persist provided settings. Secret keys are encrypted before storage."""
     for key in _PLAIN_KEYS:
@@ -98,6 +115,17 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
         # (e.g. "sk-...9999" or "***") which must never replace the real key.
         if val and not _looks_masked(str(val)):
             await _set_raw(session, secret_key, crypto.encrypt(str(val)))
+
+    # 🔴 Turning curation OFF discards the backfill boundary, so a later re-enable
+    # records a FRESH one. The boundary belongs to the CURRENT enablement, not to the
+    # database: written once per DB, the most likely real sequence — enable, find it
+    # expensive, disable, use the app for months, enable again — would sweep the entire
+    # off-period, which is the mass historical backfill the gate exists to prevent.
+    # Cleared HERE rather than only in the loop because the toggle can happen while the
+    # app is down; the loop's own off-tick clearing is belt and braces for a direct DB edit.
+    if "curation_enabled" in data and not _truthy(data["curation_enabled"]):
+        await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
+
     await session.commit()
 
 
@@ -346,6 +374,12 @@ async def curation_backfill_from(session: AsyncSession) -> datetime | None:
     so a corrupt value costs a small amount of scope, never a surprise bill.
     """
     return _parse_iso_utc(await _get_raw(session, CURATION_BACKFILL_FROM_KEY))
+
+
+async def clear_curation_backfill_from(session: AsyncSession) -> None:
+    """Forget the boundary, so the next enable records a fresh one."""
+    await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
+    await session.commit()
 
 
 async def set_curation_backfill_from(session: AsyncSession, dt: datetime) -> None:
