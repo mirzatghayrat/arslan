@@ -94,35 +94,46 @@ def _mat_ref(collection_id, spawn_id, source) -> str:
 @router.get("/brain/tree")
 async def brain_tree() -> dict:
     async with db_session.AsyncSessionLocal() as db:
+        # .mappings(): rows are read BY NAME everywhere below. Positional access made
+        # widening a SELECT unsafe in two different ways — brain_graph unpacked a fixed
+        # arity (hard ValueError, and only on rows with a non-blank category, so an
+        # empty-DB smoke passed while production 500'd), while tree/entry indexed
+        # r[0]..r[7] so an inserted column SILENTLY shifted every later value.
         facts = (await db.execute(sa_text(
             "SELECT id, content, label, category, source, confidence, valid_from, superseded_by "
-            "FROM user_facts ORDER BY id"))).all()
+            "FROM user_facts ORDER BY id"))).mappings().all()
         mats = (await db.execute(sa_text(
             "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
-            "GROUP BY collection_id, spawn_id, source"))).all()
+            "GROUP BY collection_id, spawn_id, source"))).mappings().all()
         learns = (await db.execute(sa_text(
             "SELECT id, content, label, source_kind, confidence, valid_from, superseded_by "
-            "FROM learnings ORDER BY id"))).all()
+            "FROM learnings ORDER BY id"))).mappings().all()
         notes = (await db.execute(sa_text(
-            "SELECT id, title, tags FROM notes ORDER BY updated_at DESC"))).all()
+            "SELECT id, title, tags FROM notes ORDER BY updated_at DESC"))).mappings().all()
 
     keys: list[tuple[str, str]] = []
-    keys += [("profile", f"fact:{r[0]}") for r in facts]
-    keys += [("material", _mat_ref(m[0], m[1], m[2])) for m in mats]
-    keys += [("learning", f"learning:{r[0]}") for r in learns]
-    keys += [("note", f"note:{r[0]}") for r in notes]
+    keys += [("profile", f"fact:{r['id']}") for r in facts]
+    keys += [("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]))
+             for m in mats]
+    keys += [("learning", f"learning:{r['id']}") for r in learns]
+    keys += [("note", f"note:{r['id']}") for r in notes]
     umap = await brain_usage.usage_map(keys)
 
     profile_leaves = [
-        _leaf("profile", f"fact:{r[0]}", r[2] or r[1], r[4] or "auto", r[5], umap,
-              category=r[3], valid_from=r[6], superseded_by=r[7]) for r in facts]
+        _leaf("profile", f"fact:{r['id']}", r["label"] or r["content"],
+              r["source"] or "auto", r["confidence"], umap,
+              category=r["category"], valid_from=r["valid_from"],
+              superseded_by=r["superseded_by"]) for r in facts]
     material_leaves = [
-        _leaf("material", _mat_ref(m[0], m[1], m[2]), m[2],
-              ("投喂" if m[0] is not None else "分身"), None, umap, weight=m[3])
+        _leaf("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
+              m["source"], ("投喂" if m["collection_id"] is not None else "分身"),
+              None, umap, weight=m["n"])
         for m in mats]
     learning_leaves = [
-        _leaf("learning", f"learning:{r[0]}", r[2] or (r[1] or "")[:40], r[3], r[4], umap,
-              valid_from=r[5], superseded_by=r[6]) for r in learns]
+        _leaf("learning", f"learning:{r['id']}",
+              r["label"] or (r["content"] or "")[:40], r["source_kind"], r["confidence"],
+              umap, valid_from=r["valid_from"], superseded_by=r["superseded_by"])
+        for r in learns]
 
     import json as _json_tree
     def _note_tags(raw):
@@ -130,8 +141,8 @@ async def brain_tree() -> dict:
             return raw if isinstance(raw, list) else _json_tree.loads(raw or "[]")
         except Exception:  # noqa: BLE001
             return []
-    note_leaves = [_leaf("note", f"note:{r[0]}", r[1], "手写", None, umap,
-                         tags=_note_tags(r[2])) for r in notes]
+    note_leaves = [_leaf("note", f"note:{r['id']}", r["title"], "手写", None, umap,
+                         tags=_note_tags(r["tags"])) for r in notes]
 
     return {"branches": [
         {"kind": "material", "label": "材料", "children": material_leaves},
@@ -158,20 +169,22 @@ async def brain_graph() -> dict:
         # loops further down) had to be updated in lockstep or this crashes at runtime.
         facts = (await db.execute(sa_text(
             "SELECT id, content, label, category, source, confidence, superseded_by "
-            "FROM user_facts ORDER BY id"))).all()
+            "FROM user_facts ORDER BY id"))).mappings().all()
         mats = (await db.execute(sa_text(
             "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
-            "GROUP BY collection_id, spawn_id, source"))).all()
+            "GROUP BY collection_id, spawn_id, source"))).mappings().all()
         learns = (await db.execute(sa_text(
-            "SELECT id, content, label, source_ref, superseded_by FROM learnings ORDER BY id"))).all()
+            "SELECT id, content, label, source_ref, superseded_by "
+            "FROM learnings ORDER BY id"))).mappings().all()
         notes = (await db.execute(sa_text(
-            "SELECT id, title, content, tags FROM notes ORDER BY id"))).all()
+            "SELECT id, title, content, tags FROM notes ORDER BY id"))).mappings().all()
 
     keys: list[tuple[str, str]] = []
-    keys += [("profile", f"fact:{r[0]}") for r in facts]
-    keys += [("material", _mat_ref(m[0], m[1], m[2])) for m in mats]
-    keys += [("learning", f"learning:{r[0]}") for r in learns]
-    keys += [("note", f"note:{r[0]}") for r in notes]
+    keys += [("profile", f"fact:{r['id']}") for r in facts]
+    keys += [("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]))
+             for m in mats]
+    keys += [("learning", f"learning:{r['id']}") for r in learns]
+    keys += [("note", f"note:{r['id']}") for r in notes]
     umap = await brain_usage.usage_map(keys)
 
     def _gnode(kind, ref, label, weight=1, **extra):
@@ -182,21 +195,24 @@ async def brain_graph() -> dict:
         return node
 
     nodes = []
-    nodes += [_gnode("profile", f"fact:{r[0]}", r[2] or r[1],
-                     source=r[4], confidence=r[5], superseded_by=r[6]) for r in facts]
-    nodes += [_gnode("material", _mat_ref(m[0], m[1], m[2]), m[2], weight=m[3]) for m in mats]
-    nodes += [_gnode("learning", f"learning:{r[0]}", r[2] or (r[1] or "")[:40],
-                     superseded_by=r[4]) for r in learns]
-    nodes += [_gnode("note", f"note:{r[0]}", r[1]) for r in notes]
+    nodes += [_gnode("profile", f"fact:{r['id']}", r["label"] or r["content"],
+                     source=r["source"], confidence=r["confidence"],
+                     superseded_by=r["superseded_by"]) for r in facts]
+    nodes += [_gnode("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
+                     m["source"], weight=m["n"]) for m in mats]
+    nodes += [_gnode("learning", f"learning:{r['id']}",
+                     r["label"] or (r["content"] or "")[:40],
+                     superseded_by=r["superseded_by"]) for r in learns]
+    nodes += [_gnode("note", f"note:{r['id']}", r["title"]) for r in notes]
 
     by_label = {n["label"].lower(): n["id"] for n in nodes if n["label"]}
     links: list[dict] = []
     ghosts: dict[str, dict] = {}
 
     # 1) note [[links]] → resolved link / ghost node
-    for nid, _title, content, _tags in notes:
-        src = f"note:{nid}"
-        for target in note_service.parse_links(content):
+    for r in notes:
+        src = f"note:{r['id']}"
+        for target in note_service.parse_links(r["content"]):
             tid = by_label.get(target.lower())
             if tid and tid != src:
                 links.append({"source": src, "target": tid, "type": "link"})
@@ -208,15 +224,18 @@ async def brain_graph() -> dict:
     # 2) 心得 → spawn-well material provenance
     mat_by_spawn: dict[int, list[str]] = {}
     for m in mats:
-        if m[1] is not None:
-            mat_by_spawn.setdefault(m[1], []).append(_mat_ref(m[0], m[1], m[2]))
-    for lid, _c, _lbl, sref, _superseded_by in learns:
+        if m["spawn_id"] is not None:
+            mat_by_spawn.setdefault(m["spawn_id"], []).append(
+                _mat_ref(m["collection_id"], m["spawn_id"], m["source"]))
+    for r in learns:
+        sref = r["source_ref"]
         try:
             ref = sref if isinstance(sref, dict) else _json.loads(sref or "{}")
         except Exception:  # noqa: BLE001
             ref = {}
         for mref in mat_by_spawn.get(ref.get("spawn_id"), []):
-            links.append({"source": f"learning:{lid}", "target": mref, "type": "provenance"})
+            links.append({"source": f"learning:{r['id']}", "target": mref,
+                          "type": "provenance"})
 
     # 3) tag nodes: note tags ∪ fact category. Shared tag → items connect through it.
     tag_ids: dict[str, str] = {}   # lower-name → node id
@@ -228,17 +247,21 @@ async def brain_graph() -> dict:
             tag_ids[key] = tid
         return tid
 
-    for nid, _title, _content, tags in notes:
+    for r in notes:
+        tags = r["tags"]
         try:
             tag_list = tags if isinstance(tags, list) else _json.loads(tags or "[]")
         except Exception:  # noqa: BLE001
             tag_list = []
         for t in tag_list:
             if isinstance(t, str) and t.strip():
-                links.append({"source": f"note:{nid}", "target": _tag_node(t), "type": "tag"})
-    for fid, _content, _label, category, _source, _confidence, _superseded_by in facts:
+                links.append({"source": f"note:{r['id']}", "target": _tag_node(t),
+                              "type": "tag"})
+    for r in facts:
+        category = r["category"]
         if category and str(category).strip():
-            links.append({"source": f"fact:{fid}", "target": _tag_node(category), "type": "tag"})
+            links.append({"source": f"fact:{r['id']}", "target": _tag_node(category),
+                          "type": "tag"})
 
     tag_nodes = [{"id": tid, "ref": tid, "kind": "tag", "label": tid[4:], "val": 1}
                  for tid in tag_ids.values()]
@@ -280,26 +303,31 @@ async def brain_entry(kind: str, ref: str) -> dict:
             row = (await db.execute(sa_text(
                 "SELECT content, label, category, source, confidence, valid_from, "
                 "superseded_by, provenance FROM user_facts WHERE id = :i"),
-                {"i": fid})).first()
+                {"i": fid})).mappings().first()
             if not row:
                 raise HTTPException(404)
-            excerpt, label, prov, conf = row[0], row[1], f"{row[2] or ''} · {row[3] or 'auto'}", row[4]
-            valid_from, superseded_by = row[5], row[6]
-            provenance_record = _json_field(row[7])
+            excerpt, label = row["content"], row["label"]
+            prov = f"{row['category'] or ''} · {row['source'] or 'auto'}"
+            conf = row["confidence"]
+            valid_from, superseded_by = row["valid_from"], row["superseded_by"]
+            provenance_record = _json_field(row["provenance"])
         elif kind == "learning" and ref.startswith("learning:"):
             lid = int(ref.split(":", 1)[1])
             row = (await db.execute(sa_text(
                 "SELECT content, label, source_kind, source_ref, confidence, valid_from, "
                 "superseded_by FROM learnings WHERE id = :i"),
-                {"i": lid})).first()
+                {"i": lid})).mappings().first()
             if not row:
                 raise HTTPException(404)
-            excerpt, label, prov, conf = row[0], row[1], f"{row[2]} · {row[3]}", row[4]
-            valid_from, superseded_by = row[5], row[6]
+            excerpt, label = row["content"], row["label"]
+            prov = f"{row['source_kind']} · {row['source_ref']}"
+            conf = row["confidence"]
+            valid_from, superseded_by = row["valid_from"], row["superseded_by"]
             # Learning has no provenance column by design (models.py: source_kind +
             # source_ref ARE its provenance — a separate column would be a second,
             # competing source of truth); synthesize the same shape from those two.
-            provenance_record = {"source_kind": row[2], "source_ref": _json_field(row[3])}
+            provenance_record = {"source_kind": row["source_kind"],
+                                 "source_ref": _json_field(row["source_ref"])}
         elif kind == "material":
             # ref = material:coll:<id>:<source>  OR  material:spawn:<id>:<source>
             parts = ref.split(":", 3)
