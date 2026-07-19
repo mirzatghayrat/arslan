@@ -12,13 +12,12 @@
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
-from contextvars import ContextVar
 
 from sqlalchemy import select
 
 from server.db.models import RunStep
 from server.orchestrator import dispatcher
+from server.services import evolution_meter
 from server.services import trace_evidence
 from server.services.replay_safety import REPLAY_SAFE_BUILTINS
 
@@ -52,36 +51,11 @@ async def snapshot_ambient(db, *, spawn_id: int, conversation_id: str,
 
 
 # ── run-id collection (evolution cost attribution) ─────────────────────────────────
-#
-# Replay dispatches are already fully accounted on their Run rows, but nothing said WHICH
-# attempt caused which row. The obvious join — (spawn_id, time window) — is wrong here:
-# skill_forge.evaluate_candidate calls run_gate for the same spawn, producing replays with
-# the same spawn_id AND the same sentinel conversation_id, and it is not covered by the
-# watcher's per-spawn concurrency guard. Its spend would be silently absorbed.
-#
-# So attribution is by IDENTITY: a caller opens a collection and every run_arm on that
-# TASK notes its run_id into it. Task-local, mirroring usage_sink.collecting(), so a
-# concurrent skill_forge run in another task cannot leak in no matter how they interleave.
-_collected_run_ids: ContextVar[list[int] | None] = ContextVar(
-    "replay_collected_run_ids", default=None)
-
-
-@contextmanager
-def collect_run_ids():
-    """Gather the run_id of every replay dispatched on this task inside the block."""
-    bucket: list[int] = []
-    token = _collected_run_ids.set(bucket)
-    try:
-        yield bucket
-    finally:
-        _collected_run_ids.reset(token)
-
-
-def _note_run_id(run_id: int) -> None:
-    """Record a replay run_id if a collection is active; a free no-op otherwise."""
-    bucket = _collected_run_ids.get()
-    if bucket is not None:
-        bucket.append(run_id)
+# The collector itself lives in evolution_meter: the DISPATCHER also has to note an id
+# (a replay that raises has already written its tokens to the Run row), and this module
+# imports the dispatcher, so the state cannot live here without a cycle.
+collect_run_ids = evolution_meter.collect_run_ids
+_note_run_id = evolution_meter.note_run_id
 
 
 async def run_arm(db, *, spawn_id: int, task: str, system_prompt: str,

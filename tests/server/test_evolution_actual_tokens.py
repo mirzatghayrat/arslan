@@ -221,14 +221,22 @@ async def test_actual_carries_the_real_counters_not_the_projected_ones(wdb, spen
 
 async def test_spend_on_a_FAILED_attempt_is_still_recorded(wdb, monkeypatch):
     """Tokens burned on a failing run are still tokens burned — and a failed attempt is
-    exactly the one whose cost most needs to be visible."""
+    exactly the one whose cost most needs to be visible.
+
+    🔴 The first version of this test called _note_run_id BEFORE raising, which INVERTS
+    the real order: run_arm notes only after dispatch RETURNS. So it asserted that failed
+    spend is captured while the real path captured none of it — the test did not merely
+    miss the bug, it locked in the false belief. Now the stub raises the way the real
+    path does (id noted by the dispatcher's own failure branch, which is exercised for
+    real in test_a_dispatch_that_RAISES_is_still_counted below).
+    """
     Session = wdb
     sid = await _spawn(Session)
     rid = await _seed_replay_run(Session, sid, 400)
 
     async def boom(spawn_id, **k):
         usage_sink.report(800)
-        replay_run._note_run_id(rid)
+        evolution_meter.note_run_id(rid)     # the dispatcher's failure branch does this
         raise RuntimeError("adapter down")
 
     monkeypatch.setattr(evolution_loop, "propose_improvement", boom)
@@ -239,3 +247,67 @@ async def test_spend_on_a_FAILED_attempt_is_still_recorded(wdb, monkeypatch):
         att = (await db.execute(select(EvolutionAttempt))).scalars().one()
     assert att.outcome == "error"
     assert att.actual is not None and att.actual["est_tokens"] == 1200
+
+
+# ── the REAL dispatch path ─────────────────────────────────────────────────────────
+#
+# 🔴 Every test above stubs propose_improvement, so none of them touches run_arm, the
+# dispatcher, or the nested collecting() the design rests on. That gap is exactly where
+# the BLOCKER lived: a dispatch that RAISES had already persisted its tokens on the Run
+# row, and the id was noted only after dispatch RETURNED — so the spend was burned,
+# durable, and counted by nothing, while `actual` still said estimated: False.
+
+
+async def test_a_dispatch_that_RAISES_is_still_counted(wdb, monkeypatch):
+    """Drive the real replay_run -> dispatcher path with a model that dies mid-run."""
+    from server.orchestrator import dispatcher
+
+    Session = wdb
+    sid = await _spawn(Session)
+
+    async def dying_model(*a, **k):
+        usage_sink.report(4242)          # tokens really burned before the failure
+        raise RuntimeError("provider 500")
+
+    monkeypatch.setattr(dispatcher, "_run_model", dying_model)
+
+    with evolution_meter.counting(), evolution_meter.collect_run_ids() as ids:
+        with pytest.raises(RuntimeError):
+            async with Session() as db:
+                await replay_run.run_arm(
+                    db, spawn_id=sid, task="t", system_prompt="p",
+                    # the real shape snapshot_ambient returns — a bare {} trips a
+                    # KeyError deep in the dispatcher long before the path under test
+                    ambient={"facts": "", "kb_block": "", "kb_sources": []})
+        assert ids, "the failed dispatch's run_id was not collected — its tokens are lost"
+        assert evolution_meter.snapshot().get("failed_dispatches") == 1
+
+    async with Session() as db:
+        row = (await db.execute(select(Run).where(Run.id == ids[0]))).scalars().one()
+    assert row.task_tokens == 4242, "the Run row holds the burned tokens"
+
+
+async def test_a_failed_arm_makes_the_attempt_admit_its_numbers_are_short(wdb, monkeypatch):
+    """A dispatch that died before reporting usage contributes 0, so the COUNTS can be
+    short even though every id was collected. The payload must say so rather than
+    presenting a knowingly-incomplete number as a measurement."""
+    Session = wdb
+    sid = await _spawn(Session)
+    rid = await _seed_replay_run(Session, sid, 100)
+
+    async def half_failed(spawn_id, **k):
+        evolution_meter.note_run_id(rid)
+        evolution_meter.note_failed_dispatch()
+        return {"proposal_id": None, "candidate_prompt": "C",
+                "gate": {"passed": False, "reason": "holdout_winrate", "aggregate": None},
+                "evidence": {}}
+
+    monkeypatch.setattr(evolution_loop, "propose_improvement", half_failed)
+    await evolution_watcher.enqueue_attempt(sid, manual=False)
+    await _drain()
+
+    async with Session() as db:
+        att = (await db.execute(select(EvolutionAttempt))).scalars().one()
+    assert att.actual["failed_dispatches"] == 1
+    assert att.actual["estimated"] is True, (
+        "an attempt with a failed arm cannot claim a complete measurement")

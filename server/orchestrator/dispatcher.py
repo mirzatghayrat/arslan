@@ -11,6 +11,7 @@ from server.db import session as db_session
 from server.db.models import ChatMessage, MCPServer, Spawn
 from server.orchestrator import memory, spawn_loop
 from server.registry import service as registry_service
+from server.services import evolution_meter
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
@@ -491,6 +492,13 @@ async def _dispatch_replay(
                 error_kind=type(exc).__name__, error_text=str(exc),
                 system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
                 injected_kb_sources=_prompt.get("injected_kb_sources"))
+            # 🔴 finalize() just persisted this run's task_tokens. If the id is not noted
+            # here, those tokens are burned, durable on the Run row, and counted by
+            # NOTHING — replay_run only notes after dispatch returns, and this path
+            # re-raises. evolution_loop swallows evaluator/gate failures and continues,
+            # so an attempt can finish (even pass) with part of its cost invisible.
+            evolution_meter.note_run_id(recorder.run_id)
+            evolution_meter.note_failed_dispatch()
             raise
         # Deliberately DO NOT call html_artifact.package_spawn_output with a real run_id: a
         # replay writes no HTML file / no downloadable Run-linked artifact (deck returns base64

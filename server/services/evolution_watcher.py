@@ -339,9 +339,12 @@ async def _build_actual(direct_tokens: int, direct_estimated: bool,
             estimated = estimated or bool(was_est)
 
     counters = counters or {}
+    failed = counters.get("failed_dispatches", 0)
     return {
         "pairs": counters.get("pairs"),
-        # counted, not projected: one per run_arm this attempt actually dispatched
+        # one per replay DISPATCHED, successful or not — the dispatcher notes the id on
+        # its failure branch too, because finalize() has already written that run's
+        # tokens by then.
         "dispatches": len(run_ids),
         "judge_calls": counters.get("judge_calls"),
         "optimizer_calls": counters.get("optimizer_calls"),
@@ -349,7 +352,11 @@ async def _build_actual(direct_tokens: int, direct_estimated: bool,
         "dispatch_tokens": dispatch_tokens,
         "direct_tokens": direct_tokens,
         "est_tokens": dispatch_tokens + direct_tokens,
-        "estimated": estimated,
+        "failed_dispatches": failed,
+        # A dispatch that died before reporting usage contributes 0, so the counts can be
+        # short even though every id was collected. Say so rather than presenting a
+        # knowingly-incomplete number as a measurement.
+        "estimated": estimated or failed > 0,
     }
 
 
