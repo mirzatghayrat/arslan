@@ -175,6 +175,13 @@ export const api = {
   getBrainEntry: (kind: string, ref: string) =>
     request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),
   getBrainGraph: () => request<BrainGraphDto>("/brain/graph"),
+  /** D3 — restore a superseded entry to active. Only `profile` and `learning` entries
+   * can be superseded at all; any other kind is refused with 422 by the server. */
+  undoSupersede: (kind: "profile" | "learning", ref: string) =>
+    request<{ kind: string; ref: string; superseded_by: null }>("/brain/undo-supersede", {
+      method: "POST",
+      body: JSON.stringify({ kind, ref }),
+    }),
   listNotes: () => request<NoteDto[]>("/brain/notes"),
   getNote: (id: number) => request<NoteDto>(`/brain/notes/${id}`),
   createNote: (b: { title: string; content?: string; tags?: string[] }) =>

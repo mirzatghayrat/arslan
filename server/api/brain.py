@@ -22,6 +22,7 @@ import json as _json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -662,6 +663,69 @@ async def _accept_preference_overwrite(session: AsyncSession, p: MemoryProposal,
             detail=f"proposal {pid}: this spawn's memory changed after the proposal was "
                    "filed; accepting it would revert that change. Dismiss and re-derive.")
     spawn.memory_facts = new_arr
+
+
+class UndoSupersedeIn(BaseModel):
+    kind: str
+    ref: str
+
+
+# The FRONTEND vocabulary (kind) -> the table the temporal service speaks. Only these
+# two tables have a `superseded_by` column at all.
+#
+# 🔴 This map must REFUSE, not fall through. Two reasons, both real:
+#   * `note` is not a typo case — it is a genuine brain kind the UI renders beside
+#     profile/learning, and `notes` HAS NO superseded_by COLUMN. A note can never be
+#     un-superseded because it can never be superseded.
+#   * letting an unmapped kind reach the service yields SupersedeError("bad_table"),
+#     whose detail string names the internal table — a client-facing leak. The 422
+#     below is keyed on the caller's own word instead.
+_UNDO_TABLES = {"profile": "user_facts", "learning": "learnings"}
+
+# Which ref prefix each kind's rows carry, so `{"kind": "profile", "ref": "learning:2"}`
+# cannot silently un-supersede a fact with the learning's id.
+_UNDO_REF_PREFIX = {"profile": "fact", "learning": "learning"}
+
+
+@router.post("/brain/undo-supersede")
+async def undo_supersede(
+    body: UndoSupersedeIn, session: AsyncSession = Depends(db_session.get_session)
+) -> dict:
+    """Restore a superseded entry to active — the write behind the frontend's undo
+    button (D3). The service has existed since P1 with no caller.
+
+    Error mapping is the same shape as the proposal routes: unsupportable kind or
+    malformed ref -> 422, referenced row gone -> 410, row is already active -> 409.
+    """
+    table = _UNDO_TABLES.get(body.kind)
+    if table is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"kind {body.kind!r} cannot be un-superseded; only "
+                   f"{sorted(_UNDO_TABLES)} carry supersession")
+
+    prefix, _, raw_id = body.ref.partition(":")
+    if prefix != _UNDO_REF_PREFIX[body.kind] or not raw_id.isdigit():
+        raise HTTPException(
+            status_code=422,
+            detail=f"ref {body.ref!r} is not a valid {body.kind} ref "
+                   f"(expected {_UNDO_REF_PREFIX[body.kind]}:<id>)")
+
+    try:
+        await memory_temporal.undo_supersede(
+            table, int(raw_id),
+            # The route always supplies provenance, so the service's
+            # `missing_provenance` guard (mapped to 409 by _supersede_error_response)
+            # is DEAD CODE on this path. It stays a programmer guard for direct
+            # callers; it is not a client-reachable status.
+            provenance={"source_kind": "human", "via": "undo_supersede"},
+            db=session)
+    except SupersedeError as exc:
+        # not_superseded -> 409 via the shared mapper's default branch.
+        raise _supersede_error_response(exc) from exc
+
+    await session.commit()
+    return {"kind": body.kind, "ref": body.ref, "superseded_by": None}
 
 
 @router.post("/brain/proposals/{pid}/accept")

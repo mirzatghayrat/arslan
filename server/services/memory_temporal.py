@@ -102,18 +102,35 @@ async def execute_supersede(
         )
 
 
-async def undo_supersede(table: str, old_id: int, *, provenance: dict) -> None:
+async def _apply_undo(db, model, table: str, old_id: int, *, commit: bool) -> None:
+    """The guards, shared by both modes (never duplicate them per-mode)."""
+    row = await db.get(model, old_id)
+    if row is None:
+        raise SupersedeError("dangling_old", f"{table} id {old_id} does not exist")
+    if row.superseded_by is None:
+        raise SupersedeError("not_superseded", f"{table} id {old_id} is not superseded")
+    row.superseded_by = None
+    if commit:
+        await db.commit()
+
+
+async def undo_supersede(table: str, old_id: int, *, provenance: dict, db=None) -> None:
+    """Restore a superseded row to active.
+
+    `db=None` → own session + commit (the REST route); `db` passed → use the caller's
+    open session and do NOT commit. Mirrors execute_supersede's two modes deliberately:
+    without it, a route declaring Depends(get_session) would be MISLEADING, because
+    app.dependency_overrides would not reach a write this function made on its own
+    session — the exact test seam the proposal routes exist to preserve.
+    """
     if not provenance:
         raise SupersedeError("missing_provenance", "provenance is mandatory (programmer guard)")
     model = _model(table)
-    async with db_session.AsyncSessionLocal() as db:
-        row = await db.get(model, old_id)
-        if row is None:
-            raise SupersedeError("dangling_old", f"{table} id {old_id} does not exist")
-        if row.superseded_by is None:
-            raise SupersedeError("not_superseded", f"{table} id {old_id} is not superseded")
-        row.superseded_by = None
-        await db.commit()
+    if db is not None:
+        await _apply_undo(db, model, table, old_id, commit=False)
+    else:
+        async with db_session.AsyncSessionLocal() as own:
+            await _apply_undo(own, model, table, old_id, commit=True)
     logger.info(
         "undo_supersede: %s %d restored to active (committed, provenance=%s)",
         table, old_id, provenance.get("source_kind", "?"),
