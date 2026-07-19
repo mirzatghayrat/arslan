@@ -37,7 +37,12 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ConversationEvent, DistilledSession
-from server.services import distill_service, recap_service, settings_service
+from server.services import (
+    brain_usage,
+    distill_service,
+    recap_service,
+    settings_service,
+)
 from server.services.replay_safety import should_not_curate
 
 logger = logging.getLogger(__name__)
@@ -265,6 +270,31 @@ async def tick(stop_event: asyncio.Event | None = None) -> None:
         swept += 1
 
 
+async def prune_usage_events() -> None:
+    """D5 retention heartbeat for brain_usage_events.
+
+    🔴 It lives HERE, in the while body, and deliberately NOT inside `tick()`.
+    `tick()` opens with the opt-in `_enabled()` gate (curation_enabled AND
+    distill_on_session_end), both of which default OFF — but `brain_usage.record`
+    appends events UNCONDITIONALLY on every retrieval. Retention gated behind an
+    opt-in switch would therefore never run on a default install, and the table would
+    grow forever: the exact "只增不减 换张表复活" failure the ceiling exists to
+    prevent. Retention is maintenance, not a feature; it is not opt-in.
+
+    This loop is the only always-running periodic heartbeat in the repo (the scheduler
+    runs user tasks; run_redact is boot-once), which is why the hook is here rather
+    than in a new loop of its own. Own try/except at the call site so a prune failure
+    cannot cost a curation tick, and prune_events is itself fail-open.
+    """
+    async with db_session.AsyncSessionLocal() as db:
+        days = await settings_service.brain_usage_event_retention_days(db)
+        max_rows = await settings_service.brain_usage_event_max_rows(db)
+    deleted = await brain_usage.prune_events(retention_days=days, max_rows=max_rows)
+    if deleted:
+        logger.info("pruned %d brain_usage_events (age>%dd or over %d rows)",
+                    deleted, days, max_rows)
+
+
 async def watch_loop(*, interval: float = DEFAULT_INTERVAL,
                      initial_delay: float = INITIAL_DELAY,
                      stop_event: asyncio.Event | None = None) -> None:
@@ -284,6 +314,10 @@ async def watch_loop(*, interval: float = DEFAULT_INTERVAL,
             await tick(stop_event)
         except Exception as exc:  # noqa: BLE001 — a tick failure must not kill the loop
             logger.warning("curation tick failed (non-fatal): %s", exc)
+        try:
+            await prune_usage_events()
+        except Exception as exc:  # noqa: BLE001 — maintenance must not kill the loop
+            logger.warning("usage-event prune failed (non-fatal): %s", exc)
         if stop_event is None:
             await asyncio.sleep(interval)
         else:

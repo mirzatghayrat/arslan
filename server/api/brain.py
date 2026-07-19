@@ -19,9 +19,9 @@ RecallExecutor, because the column is nullable and raw inserts leave it NULL.
 from __future__ import annotations
 
 import json as _json
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
@@ -51,9 +51,18 @@ _UNSET = object()
 def _iso(ts):
     # usage_map reads via raw SQL, so SQLite hands back last_used_at as a str
     # already; only call isoformat() when it's a real datetime.
+    #
+    # D5: that passthrough string is SQLite's storage form,
+    # "YYYY-MM-DD HH:MM:SS.ffffff" — a SPACE where ISO-8601 wants a T. `new Date(...)`
+    # on it is implementation-defined: Chrome accepts it, Safari returns Invalid Date.
+    # Survivable while these timestamps were only rendered as text; the activity
+    # timeline PLOTS them, so normalize here instead of making every caller remember.
     if ts is None:
         return None
-    return ts.isoformat() if hasattr(ts, "isoformat") else ts
+    if hasattr(ts, "isoformat"):
+        return ts.isoformat()
+    text = str(ts)
+    return text.replace(" ", "T", 1) if " " in text else text
 
 
 def _json_field(raw):
@@ -411,6 +420,83 @@ async def brain_entry(kind: str, ref: str) -> dict:
         "usage_count": u.get("usage_count", 0),
         "last_used_at": _iso(u.get("last_used_at")),
         "last_used_ref": u.get("last_used_ref"),
+    }
+
+
+@router.get("/brain/usage-events")
+async def brain_usage_events(
+    since: str | None = None,
+    limit: int = Query(default=brain_usage.DEFAULT_EVENT_PAGE),
+) -> dict:
+    """D5: the per-use event log behind the frontend's activity timeline.
+
+    Three honesty properties are the BACKEND's job here, not the frontend's:
+
+      * `covered_kinds` / `coverage_note` — record() has three call sites (material,
+        learning, note). There is no record("profile", ...) anywhere in the repo, so
+        profile facts produce no events. A timeline that silently omits a whole kind
+        while the graph draws four would read as "these were never used". The backend
+        states the coverage so a frontend cannot forget to.
+      * `truncated` — the page is newest-first, so a cut list is missing its OLDEST
+        end. Rendered without a flag, that reads as a quiet period: the opposite of
+        the truth.
+      * `window_start` — retention prunes old events, so an empty stretch before this
+        point means "not retained", not "not used".
+
+    `limit` is clamped to a hard ceiling rather than honored; `applied_limit` reports
+    what was actually used.
+    """
+    applied_limit = max(1, min(limit, brain_usage.MAX_EVENT_PAGE))
+
+    if since is None:
+        window_start = datetime.utcnow() - timedelta(
+            days=brain_usage.DEFAULT_EVENT_WINDOW_DAYS)
+    else:
+        # Refused, not silently defaulted: falling back to the default window would
+        # return a DIFFERENT range than the caller asked for, which the UI would then
+        # label with the requested date.
+        try:
+            parsed = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"since={since!r} is not an ISO-8601 timestamp") from exc
+        window_start = parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            rows = (await db.execute(sa_text(
+                "SELECT kind, ref_key, used_at, used_ref FROM brain_usage_events "
+                "WHERE used_at >= :since ORDER BY used_at DESC LIMIT :lim"),
+                {"since": window_start, "lim": applied_limit + 1})).mappings().all()
+    except Exception as exc:  # noqa: BLE001 — the timeline never breaks the brain page
+        raise HTTPException(
+            status_code=503,
+            detail="usage events unavailable (the event table may not be migrated "
+                   f"yet): {exc.__class__.__name__}") from exc
+
+    truncated = len(rows) > applied_limit
+    rows = rows[:applied_limit]
+
+    note = (
+        "Covers material / learning / note only — profile facts are not recorded as "
+        "usage events, so their absence here does not mean they went unused. "
+        "Events older than the retention window are pruned; an empty stretch before "
+        "window_start means 'not retained', not 'not used'."
+    )
+    if truncated:
+        note += (" This page was TRUNCATED at the limit: events are newest-first, so "
+                 "the oldest part of the requested window is missing.")
+
+    return {
+        "covered_kinds": list(brain_usage.COVERED_KINDS),
+        "coverage_note": note,
+        "window_start": _iso(window_start),
+        "applied_limit": applied_limit,
+        "truncated": truncated,
+        "events": [{"kind": r["kind"], "ref_key": r["ref_key"],
+                    "used_at": _iso(r["used_at"]), "used_ref": r["used_ref"]}
+                   for r in rows],
     }
 
 

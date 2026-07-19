@@ -59,7 +59,7 @@ def test_registry_matches_boot_chain_verbatim():
     assert [v for v, _ in runner.MIGRATIONS] == [
         "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016",
         "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027",
-        "0028", "0029", "0030", "0031", "0032", "0033", "0034"]
+        "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035"]
     # id→function binding: each registered fn must come from its own _00NN_ module.
     # Guards a copy-paste mis-binding like ("0032", _m0031) that the order check alone misses.
     for vid, fn in runner.MIGRATIONS:

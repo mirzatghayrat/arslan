@@ -177,12 +177,45 @@ export interface BrainEntry {
   sensitive?: boolean;
 }
 
+export interface BrainUsageEventDto {
+  kind: string;
+  ref_key: string;
+  used_at: string | null;
+  used_ref: string | null;
+}
+/** D5 — GET /brain/usage-events. The honesty fields are backend-supplied by design;
+ * see getBrainUsageEvents. */
+export interface BrainUsageEventsDto {
+  /** the kinds that actually produce events — NOT the kinds the graph draws */
+  covered_kinds: string[];
+  /** human-readable coverage + truncation caveat; render it, do not re-derive it */
+  coverage_note: string;
+  /** events before this point were pruned by retention, not absent because unused */
+  window_start: string | null;
+  applied_limit: number;
+  /** true ⇒ the OLDEST part of the requested window is missing from `events` */
+  truncated: boolean;
+  events: BrainUsageEventDto[];
+}
+
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
   getBrainEntry: (kind: string, ref: string) =>
     request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),
   getBrainGraph: () => request<BrainGraphDto>("/brain/graph"),
+  /** D5 — the per-use event log behind the activity timeline. `covered_kinds` and
+   * `coverage_note` come from the BACKEND on purpose: the log covers material /
+   * learning / note only (profile facts are never recorded as usage events), and a
+   * truncated page is missing its OLDEST end, which would otherwise render as a quiet
+   * period. Show the note; do not re-derive coverage on the client. */
+  getBrainUsageEvents: (opts?: { since?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (opts?.since) q.set("since", opts.since);
+    if (opts?.limit != null) q.set("limit", String(opts.limit));
+    const qs = q.toString();
+    return request<BrainUsageEventsDto>(`/brain/usage-events${qs ? `?${qs}` : ""}`);
+  },
   /** D3 — restore a superseded entry to active. Only `profile` and `learning` entries
    * can be superseded at all; any other kind is refused with 422 by the server. */
   undoSupersede: (kind: "profile" | "learning", ref: string) =>

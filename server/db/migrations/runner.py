@@ -7,7 +7,7 @@ chain (do not reorder). See
 docs/superpowers/plans/2026-07-14-migration-runner-impl-plan.md.
 
 Canonical chain (from the old ``main.py`` boot block, verbatim, in order):
-``0006 … 0033`` — 28 entries. It starts at ``0006``, not ``0001``:
+``0006 … 0035`` — 30 entries. It starts at ``0006``, not ``0001``:
 ``0001``–``0005`` predate ``Base.metadata.create_all`` (the alembic era) and are
 now create_all-subsumed, so they are NOT in the boot chain and NOT registered
 here (they still define ``upgrade_sync`` — the completeness test allow-lists them
@@ -56,6 +56,7 @@ from .versions._0031_model_catalog import upgrade_sync as _m0031
 from .versions._0032_brain_temporal import upgrade_sync as _m0032
 from .versions._0033_memory_proposal_nullable import upgrade_sync as _m0033
 from .versions._0034_curation_layer import upgrade_sync as _m0034
+from .versions._0035_brain_usage_events import upgrade_sync as _m0035
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -88,6 +89,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0032", _m0032),
     ("0033", _m0033),
     ("0034", _m0034),
+    ("0035", _m0035),
 ]
 
 

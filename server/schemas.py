@@ -20,6 +20,8 @@ class SettingsIn(BaseModel):
     # Sleep-time curation sweep. Opt-in: it spends, and its output is only visible
     # once the proposal inbox has a UI.
     curation_enabled: bool | None = None
+    brain_usage_event_retention_days: int | None = None
+    brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     run_debug_retention_days: int | None = None
@@ -39,6 +41,8 @@ class SettingsOut(BaseModel):
     llm_strategy: str = "single"
     distill_on_session_end: bool = True
     curation_enabled: bool = False
+    brain_usage_event_retention_days: int = 30
+    brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     run_debug_retention_days: int = 30

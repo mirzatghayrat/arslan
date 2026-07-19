@@ -633,6 +633,29 @@ class BrainUsage(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class BrainUsageEvent(Base):
+    """D5: one row PER USE, unlike BrainUsage which is a per-entity counter.
+
+    The counter can say "used 12 times, last on Tuesday"; it cannot say when the other
+    eleven were. The frontend's activity timeline needs the individual timestamps, so
+    this table appends.
+
+    🔴 BOUNDED BY CONSTRUCTION. An append-only log with no ceiling is exactly the
+    unbounded growth the counter design avoided. `brain_usage.prune_events` enforces a
+    двойной gate (age + row count) from the curation loop's heartbeat, batched so a
+    backlog cannot lock the DB in one transaction. Do not add a writer to this table
+    without checking that the pruner still bounds it.
+    """
+
+    __tablename__ = "brain_usage_events"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(20), nullable=False)          # material|learning|note
+    ref_key = Column(String(300), nullable=False)
+    used_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    used_ref = Column(String(100), nullable=True)
+
+
 class UsageLedger(Base):
     """S3-M3 cost visibility: one row per (scope, model, provider) bucket of LLM
     usage for call sites that never produce a Run row — router decision, judge

@@ -20,7 +20,8 @@ _PLAIN_KEYS = ("llm_provider", "llm_model", "llm_base_url", "language", "search_
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
-_INT_KEYS = ("run_debug_retention_days", "evolution_max_est_tokens")
+_INT_KEYS = ("run_debug_retention_days", "evolution_max_est_tokens",
+             "brain_usage_event_retention_days", "brain_usage_event_max_rows")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
 
@@ -247,3 +248,35 @@ async def run_debug_retention_days(session: AsyncSession) -> int:
         return int(str(raw).strip())
     except ValueError:
         return DEFAULT_RUN_DEBUG_RETENTION_DAYS
+
+
+# D5 — the two gates that bound brain_usage_events. Both are settable so an install
+# that wants a longer timeline can pay for it explicitly; neither may be silently
+# unbounded, which is why an unparsable value falls back to the DEFAULT rather than to
+# "no limit". 0 disables that one gate (the other still applies), matching
+# run_debug_retention_days' meaning of 0.
+DEFAULT_BRAIN_USAGE_EVENT_RETENTION_DAYS = 30
+DEFAULT_BRAIN_USAGE_EVENT_MAX_ROWS = 200_000
+
+
+async def brain_usage_event_retention_days(session: AsyncSession) -> int:
+    """Age gate for the per-use event log. Default 30 days; 0 disables the age gate."""
+    raw = await _get_raw(session, "brain_usage_event_retention_days")
+    if raw is None:
+        return DEFAULT_BRAIN_USAGE_EVENT_RETENTION_DAYS
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_BRAIN_USAGE_EVENT_RETENTION_DAYS
+
+
+async def brain_usage_event_max_rows(session: AsyncSession) -> int:
+    """Row-count gate for the per-use event log — the gate that actually bounds a
+    burst, since age alone cannot. Default 200k; 0 disables the count gate."""
+    raw = await _get_raw(session, "brain_usage_event_max_rows")
+    if raw is None:
+        return DEFAULT_BRAIN_USAGE_EVENT_MAX_ROWS
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_BRAIN_USAGE_EVENT_MAX_ROWS
