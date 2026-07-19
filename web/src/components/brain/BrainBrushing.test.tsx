@@ -110,11 +110,30 @@ describe("brain coordinated brushing", () => {
 
     fireEvent.click(screen.getByTitle("标签节点在图中显隐"));
 
-    await waitFor(() => {
-      const dimmed = [...document.querySelectorAll("[data-node]")].filter(
-        (n) => (n.parentElement as HTMLElement).style.opacity === "0.2");
-      expect(dimmed.length).toBe(0);
-    });
+    // 🔴 Assert the STATE, not the shared observable. My first version only checked that
+    // nothing was dimmed — which BrainGraph's own `litExists` guard satisfies whether or
+    // not the state was cleared, so the two halves of the defence masked each other and
+    // the test passed with the state-side clear deleted entirely. Sixth round running.
+    // These two assertions fail under that mutation:
+    await waitFor(() => expect(screen.queryByTestId("clear-tag-filter")).toBeNull());
+    expect(screen.getByText(/#finance/).className).not.toContain("is-active");
+
+    // ...and the graph half still holds too
+    const dimmed = [...document.querySelectorAll("[data-node]")].filter(
+      (n) => (n.parentElement as HTMLElement).style.opacity === "0.2");
+    expect(dimmed.length).toBe(0);
+  });
+
+  it("the chip follows the FILTER, not the lit id — hovering must not un-light a chip", async () => {
+    // BrainNav takes activeTag separately from litId for exactly this reason, and the
+    // decision had no test: swapping it back to litId left the suite green.
+    render(<BrainSection />);
+    await screen.findByTestId("brain-graph");
+    fireEvent.click(await screen.findByText(/#finance/));
+
+    const node = document.querySelector('[data-node][data-kind="profile"]')!;
+    fireEvent.mouseEnter(node);   // hover something OUTSIDE the tag cluster
+    expect(screen.getByText(/#finance/).className).toContain("is-active");
   });
 
   it("hovering a tree row lights the matching graph node", async () => {

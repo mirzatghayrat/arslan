@@ -94,4 +94,15 @@ describe("BrainEntryDetail", () => {
     const rec = await screen.findByTestId("provenance-record");
     expect(rec.textContent).toContain("distill");
   });
+
+  it("🔴 a deleted entry says so instead of loading forever", async () => {
+    // Reachable now: the activity strip is built from an event log that nothing purges
+    // on delete, so a row can outlive its entity. Before this, both "still loading" and
+    // "gone" were the same null state and the panel showed loading… indefinitely.
+    const { ApiError } = await import("../../api/client");
+    m.getBrainEntry.mockRejectedValue(
+      new (ApiError as unknown as new (m: string, s: number) => Error)("not found", 404));
+    render(<BrainEntryDetail leaf={LEAF("profile", "fact:404")} onClose={() => {}} />);
+    expect((await screen.findByTestId("entry-load-error")).textContent).toContain("已经不存在");
+  });
 });

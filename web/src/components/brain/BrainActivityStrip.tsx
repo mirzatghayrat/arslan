@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type BrainLeaf, type BrainUsageEventsDto } from "../../api/client";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
@@ -27,6 +27,10 @@ interface Props {
   reloadKey?: number;
 }
 
+/** Kept in step with `brain_usage_event_retention_days`'s default. Asking for a wider
+ * window than retention keeps would draw PRUNED days as blank — the exact false "quiet
+ * period" this component exists to avoid — so the note below states the window in words
+ * rather than letting the empty left edge speak for itself. */
 const WINDOW_DAYS = 30;
 /** Ask for the whole window. The endpoint clamps to its own ceiling and tells us via
  * `truncated` + `applied_limit`; asking small and guessing would hide that. */
@@ -34,6 +38,15 @@ const LIMIT = 5000;
 const MAX_ROWS = 40;
 
 type Row = { ref: string; kind: string; at: number[] };
+
+/** The event log stores REF KEYS, not labels — `material:coll:3:handbook.pdf`. Passing
+ * one straight through as a leaf label titled the detail panel with an internal key,
+ * while opening the SAME entry from the graph showed its human name. The panel refetches
+ * the real entry anyway; this is just a readable placeholder until it lands. */
+function prettyLabel(ref: string): string {
+  const parts = ref.split(":");
+  return parts.length > 1 ? parts[parts.length - 1] : ref;
+}
 
 function groupRows(dto: BrainUsageEventsDto): { rows: Row[]; hidden: number } {
   const by = new Map<string, Row>();
@@ -101,7 +114,7 @@ function BrainActivityStrip({ litId, onHover, onPick, reloadKey = 0 }: Props) {
               onMouseLeave={() => onHover(null)}
               onClick={() =>
                 onPick({
-                  kind: r.kind as BrainLeaf["kind"], ref: r.ref, label: r.ref,
+                  kind: r.kind as BrainLeaf["kind"], ref: r.ref, label: prettyLabel(r.ref),
                   provenance: null, confidence: null, usage_count: r.at.length,
                   last_used_at: null, last_used_ref: null, value: 1,
                 })
@@ -126,20 +139,22 @@ function BrainActivityStrip({ litId, onHover, onPick, reloadKey = 0 }: Props) {
       {/* Everything below is the honesty apparatus. It is not decoration: without it an
           empty stretch of the raster reads as "nothing was used then". */}
       <div className="brain-strip__note" data-testid="brain-strip-note">
-        {rows.length === 0 && <span>这段时间没有记录到检索。</span>}
+        <span data-testid="strip-window">
+          只显示最近 {WINDOW_DAYS} 天。更早的记录可能已被保留策略清掉,不代表那时没用过。
+        </span>
+        {rows.length === 0 && <span data-testid="strip-empty">这段时间没有记录到检索。</span>}
         {dto.truncated && (
           <span className="brain-strip__warn">
             已截断:只显示最近 {dto.applied_limit} 次,更早的部分不在图中。
           </span>
         )}
-        {hidden > 0 && <span>另有 {hidden} 条记忆未显示(只画最活跃的 {MAX_ROWS} 条)。</span>}
+        {hidden > 0 && (
+          <span data-testid="strip-hidden">另有 {hidden} 条记忆未显示(只画最活跃的 {MAX_ROWS} 条)。</span>
+        )}
         <span>{dto.coverage_note}</span>
       </div>
     </div>
   );
 }
 
-/** The strip can hold thousands of ticks and its parent re-renders on every graph hover.
- * Memoised so sweeping the cursor across the graph does not re-render the whole raster —
- * only `litId` actually changes for it. */
-export default memo(BrainActivityStrip);
+export default BrainActivityStrip;

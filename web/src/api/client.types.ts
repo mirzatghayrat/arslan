@@ -636,7 +636,12 @@ export interface EmbeddingStatus {
   provider: string | null;
   model: string | null;
   embedded: number;
+  /** NULL-or-STALE rows when a provider is active — a stale row is ALSO counted in
+   * `embedded`, so `embedded + pending` is not the corpus size. Use `total`. */
   pending: number;
+  /** real corpus size (COUNT of knowledge_chunks). Optional because an older backend
+   * does not send it; the UI falls back rather than inventing a denominator. */
+  total?: number;
   reindex: { running: boolean; done: number; total: number; error: string | null };
   local_model: { status: string; error: string | null };
 }

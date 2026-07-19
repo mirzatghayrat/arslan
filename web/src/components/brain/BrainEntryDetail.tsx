@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { ApiError, api, type BrainEntry, type BrainLeaf } from "../../api/client";
 
@@ -12,16 +12,38 @@ export default function BrainEntryDetail(
   { leaf, onClose, onChanged }: { leaf: BrainLeaf; onClose: () => void; onChanged?: () => void },
 ) {
   const [entry, setEntry] = useState<BrainEntry | null>(null);
+  // 🔴 "not loaded yet" and "failed to load" used to be the SAME state (null), so a 404
+  // rendered "loading…" forever with no error — the exact defect this round fixed in the
+  // index-health strip, left in place here until the final review pointed at it. It
+  // matters more now: the activity strip can hold a row for an entity that has since
+  // been DELETED (nothing purges brain_usage_events on delete), so clicking one is a
+  // reachable 404, not a hypothetical.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoErr, setUndoErr] = useState<string | null>(null);
+  /** invalidates the in-flight fetch. `load()` is called from two places — the effect and
+   * undo() — and only the effect wired up its cancellation, so a late response for the
+   * previous leaf could overwrite the current one. */
+  const alive = useRef({ ok: true });
 
   const load = () => {
-    let ok = true;
+    alive.current.ok = false;
+    const token = { ok: true };
+    alive.current = token;
     setEntry(null);
+    setLoadErr(null);
     api.getBrainEntry(leaf.kind, leaf.ref)
-      .then((e) => { if (ok) setEntry(e); })
-      .catch(() => { if (ok) setEntry(null); });
-    return () => { ok = false; };
+      .then((e) => { if (token.ok) setEntry(e); })
+      .catch((e) => {
+        if (!token.ok) return;
+        setEntry(null);
+        setLoadErr(
+          e instanceof ApiError && e.status === 404
+            ? "这条记忆已经不存在了(可能已被删除)。"
+            : "读取失败。",
+        );
+      });
+    return () => { token.ok = false; };
   };
   useEffect(load, [leaf]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -66,7 +88,11 @@ export default function BrainEntryDetail(
           <X className="w-4 h-4" />
         </button>
       </div>
-      {entry == null ? (
+      {loadErr ? (
+        <div className="text-[11px] text-warning" role="alert" data-testid="entry-load-error">
+          {loadErr}
+        </div>
+      ) : entry == null ? (
         <div className="text-[11px] text-subtle-foreground">loading…</div>
       ) : (
         <>

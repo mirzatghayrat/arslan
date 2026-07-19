@@ -31,7 +31,12 @@ export default function BrainIndexHealth() {
   if (!s) return null;
 
   const done = s.embedded ?? 0;
-  const total = done + (s.pending ?? 0);
+  // `embedded + pending` is only a real total when they are disjoint, and they are NOT:
+  // with a provider active, `pending` counts NULL-or-stale rows and a stale row also
+  // counts as embedded, so after a model switch the sum overshoots the corpus and the
+  // bar reads about half of true progress. `total` is the real corpus size; fall back to
+  // the old sum only when an older backend does not send it.
+  const total = s.total ?? done + (s.pending ?? 0);
   // 🔴 `total ? … : 100` reported 100% on an install with ZERO chunks — a full green bar
   // for a brain that has nothing indexed, which is the most reassuring possible rendering
   // of the least reassuring possible state. An empty corpus has no percentage.

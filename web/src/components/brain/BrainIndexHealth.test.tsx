@@ -45,4 +45,23 @@ describe("BrainIndexHealth", () => {
     expect((await screen.findByTestId("brain-health-meta")).textContent).toContain("已嵌入 3/4");
     expect((document.querySelector(".brain-health__fill") as HTMLElement).style.width).toBe("75%");
   });
+
+  it("🔴 uses the real corpus size, not embedded+pending, as the denominator", async () => {
+    // After a model switch `pending` counts stale rows that ALSO count as embedded, so
+    // the old sum overshoots: 3 embedded + 3 pending on a 3-chunk corpus rendered 50%.
+    // A test asserting only "a bar is drawn" would pass under that bug.
+    m.embeddingStatus.mockResolvedValue({ model: "bge-large", embedded: 3, pending: 3, total: 3 });
+    render(<BrainIndexHealth />);
+    await screen.findByTestId("brain-health-meta");
+    expect((document.querySelector(".brain-health__fill") as HTMLElement).style.width)
+      .toBe("100%");
+  });
+
+  it("falls back to the old sum when an older backend omits total", async () => {
+    m.embeddingStatus.mockResolvedValue({ model: "bge-small", embedded: 1, pending: 1 });
+    render(<BrainIndexHealth />);
+    await screen.findByTestId("brain-health-meta");
+    expect((document.querySelector(".brain-health__fill") as HTMLElement).style.width)
+      .toBe("50%");
+  });
 });

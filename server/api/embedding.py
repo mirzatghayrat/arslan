@@ -45,6 +45,13 @@ async def embedding_status() -> dict:
         "model": provider.model_id if provider else None,
         "embedded": embedded,
         "pending": pending,
+        # 🔴 `embedded + pending` is NOT the corpus size and never was: with a provider
+        # active, `pending` counts NULL-or-STALE rows, and a stale row is also counted in
+        # `embedded` (it does have a vector, just the wrong model's). So after a model
+        # switch the sum exceeds the real total and any progress bar built on it reads
+        # about half of true progress. The corpus size was already computed here and
+        # simply never returned; a client cannot derive it.
+        "total": total,
         "reindex": embedding_service.reindex_status(),
         "local_model": local_embedding.download_status(),
     }

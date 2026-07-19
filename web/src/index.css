@@ -3509,6 +3509,9 @@ button:disabled {
 
 /* ── D 活跃时间条 (BrainActivityStrip) ─────────────────────────────────────── */
 .brain-strip {
+  /* left: 0 with the detail rail at right:0/w-360px meant opening an entry hid the
+     newest end of the timeline — and clicking a strip row is what opens the rail, so the
+     row you just clicked vanished under it. Stop short of the rail instead. */
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 10;
   max-height: 34%; overflow-y: auto;
   padding: 6px 8px 8px;

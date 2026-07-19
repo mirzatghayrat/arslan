@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { api } from "../../api/client";
+import { ApiError, api } from "../../api/client";
 import type { NoteDto, NoteSuggestDto } from "../../api/client.types";
 import { activeWikilink, insertWikilink, type WikilinkToken } from "../../lib/wikilinks";
 
@@ -29,6 +29,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
   const [token, setToken] = useState<WikilinkToken | null>(null);
   const [suggest, setSuggest] = useState<NoteSuggestDto | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** unsaved-edit detector for the backlink guard above. Compared against the LOADED
    * note rather than a boolean flag, so saving (which updates `note`) clears it without
@@ -43,13 +44,21 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
     let ok = true;
     setNote(null);
     setSuggest(null);
+    setLoadErr(null);
     api.getNote(noteId).then((n) => {
       if (!ok) return;
       setNote(n);
       setTitle(n.title);
       setContent(n.content);
       setTags(n.tags ?? []);
-    }).catch(() => { if (ok) setNote(null); });
+    }).catch((e) => {
+      if (!ok) return;
+      setNote(null);
+      // same reason as BrainEntryDetail: a strip row can outlive its note, and
+      // "loading…" forever is a worse answer than saying it is gone.
+      setLoadErr(e instanceof ApiError && e.status === 404
+        ? "这条笔记已经不存在了(可能已被删除)。" : "读取失败。");
+    });
     return () => { ok = false; };
   }, [noteId]);
 
@@ -143,7 +152,9 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
         </button>
       </div>
 
-      {note == null ? (
+      {loadErr ? (
+        <div className="text-[11px] text-warning" role="alert" data-testid="note-load-error">{loadErr}</div>
+      ) : note == null ? (
         <div className="text-[11px] text-subtle-foreground">loading…</div>
       ) : (
         <>

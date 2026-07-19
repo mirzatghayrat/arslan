@@ -87,4 +87,36 @@ describe("BrainActivityStrip", () => {
     expect(document.querySelector('[data-ref="note:1"]')!.className).toContain("is-lit");
     expect(document.querySelector('[data-ref="learning:2"]')!.className).not.toContain("is-lit");
   });
+
+  it("states the window in words — an empty left edge must not speak for itself", async () => {
+    // Retention can be set BELOW the window, in which case pruned days render blank.
+    // The component cannot know the setting, so it says what it asked for.
+    render(<BrainActivityStrip {...props} />);
+    expect((await screen.findByTestId("strip-window")).textContent).toContain("保留策略");
+  });
+
+  it("says so when rows were dropped by the row cap", async () => {
+    // Zero coverage before: deleting the hidden-rows line left the suite green.
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      kind: "note", ref_key: `note:${i}`,
+      used_at: new Date(Date.now() - 3600_000).toISOString(), used_ref: null,
+    }));
+    m.getBrainUsageEvents.mockResolvedValue(DTO({ events: many }));
+    render(<BrainActivityStrip {...props} />);
+    expect((await screen.findByTestId("strip-hidden")).textContent).toContain("未显示");
+  });
+
+  it("says nothing was recorded rather than drawing a blank raster silently", async () => {
+    m.getBrainUsageEvents.mockResolvedValue(DTO({ events: [] }));
+    render(<BrainActivityStrip {...props} />);
+    expect((await screen.findByTestId("strip-empty")).textContent).toContain("没有记录到检索");
+  });
+
+  it("opens a row under a readable name, not a raw ref key", async () => {
+    const onPick = vi.fn();
+    render(<BrainActivityStrip {...props} onPick={onPick} />);
+    await waitFor(() => expect(document.querySelector('[data-ref="note:1"]')).toBeTruthy());
+    (document.querySelector('[data-ref="note:1"]') as HTMLElement).click();
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ ref: "note:1", label: "1" }));
+  });
 });
