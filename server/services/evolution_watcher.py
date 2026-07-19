@@ -42,6 +42,19 @@ BASE_THRESHOLD = 10
 MAX_BACKOFF_MULT = 8            # 10 → 20 → 40 → 80 then flat
 DEFAULT_INTERVAL = 300.0       # 5 minutes; injectable (short in tests)
 
+# 0036 companion to the cursor change. Because `skipped_budget` no longer advances the
+# cursor (it consumed nothing, so it must not strand the banked runs), an over-budget
+# spawn would otherwise stay eligible forever and write one refusal row every tick —
+# zero LLM cost, but unbounded row growth.
+#
+# The wall is a COOLDOWN and deliberately NOT a term in the eligibility gate. Refusing
+# inside the gate would create no attempt row at all, and `_verdict_code`'s
+# skipped_budget branch keys on a row existing — the eligibility panel would fall through
+# to "eligible_looking" ("Nothing blocks") while auto evolution was permanently dead.
+# Writing the row and rate-limiting it keeps the refusal VISIBLE, which is the whole
+# point of recording an attempt for a skip.
+BUDGET_REFUSAL_COOLDOWN_S = 6 * 3600
+
 # E9-b: gate/pre-gate reasons that are CONSTRUCTION/precondition failures, not quality
 # verdicts — they say nothing about the spawn's prompt, so they must NOT drive the
 # exponential backoff. Recorded as outcome='skipped_structural' (transparent to the streak).
@@ -87,9 +100,26 @@ def _threshold(consecutive_fails: int) -> int:
 
 
 async def _last_attempt_started_at(db, spawn_id: int):
+    """The cursor: runs created before this are already "behind" an attempt.
+
+    `skipped_budget` is EXCLUDED because it provably consumed nothing — _perform_attempt
+    returns at the budget check BEFORE propose_improvement runs. Letting it advance the
+    cursor strands every run banked so far: they fall behind it permanently, so raising
+    the cap later does not bring them back and the spawn must re-earn a whole threshold.
+
+    Every other outcome — including `error`, and including an IN-FLIGHT attempt
+    (outcome IS NULL) — still holds the cursor. That is deliberate: it is the anti-spin
+    property C4 depends on (a spawn whose adapter is dead would otherwise retry every
+    tick with no backoff, since `error` is also transparent to the fail streak).
+
+    🔴 NULL-safety: written as `IS NOT 'skipped_budget'`, never `!= 'skipped_budget'`,
+    which evaluates to NULL — not TRUE — for an in-flight row and would silently drop the
+    running attempt from the cursor, letting a second one queue against the same corpus.
+    """
     return (await db.execute(
         select(EvolutionAttempt.started_at)
-        .where(EvolutionAttempt.spawn_id == spawn_id)
+        .where(EvolutionAttempt.spawn_id == spawn_id,
+               EvolutionAttempt.outcome.is_distinct_from("skipped_budget"))
         .order_by(EvolutionAttempt.id.desc())
         .limit(1)
     )).scalar()
@@ -102,13 +132,24 @@ async def _consecutive_fails(db, spawn_id: int) -> int:
     failure surfaced by the loop, or a crash) are TRANSPARENT — the scan continues past them, so
     they neither count toward the streak nor reset it. A dead judge adapter must not inflate the
     quality backoff threshold as if the spawn's prompt were un-improvable."""
-    outcomes = (await db.execute(
-        select(EvolutionAttempt.outcome)
+    rows = (await db.execute(
+        select(EvolutionAttempt.outcome, EvolutionAttempt.source)
         .where(EvolutionAttempt.spawn_id == spawn_id)
         .order_by(EvolutionAttempt.id.desc())
-    )).scalars().all()
+    )).all()
     fails = 0
-    for outcome in outcomes:
+    for outcome, source in rows:
+        # 0036 — MANUAL attempts are NEUTRAL WALLS, not filtered rows. A human's
+        # impatient click must not quadruple the threshold the AUTO loop waits for, so a
+        # manual FAILURE does not count. But it must still STOP the scan, because
+        # skipping past it would let older auto failures aggregate across history — and
+        # worse, a manual 'passed' would lose its power to reset the streak. A manual
+        # pass is the user's ONLY escape from the 80 ceiling: reaching it via an auto
+        # pass requires first satisfying the very threshold that is stuck high. Filtering
+        # manual rows out would therefore RAISE the threshold this exemption exists to
+        # lower. (Caught by plan review; my first design had exactly that bug.)
+        if source == "manual":
+            break
         if outcome == "failed":
             fails += 1
         elif outcome in ("skipped_structural", "error"):
@@ -144,11 +185,15 @@ async def _is_eligible(db, spawn_id: int) -> bool:
 
 # ── one attempt ──────────────────────────────────────────────────────────────────────
 
-async def _create_attempt(db, spawn_id: int) -> tuple[int, dict]:
-    """Persist a fresh in-flight attempt row carrying its pre-run estimate; return its id."""
+async def _create_attempt(db, spawn_id: int, *, source: str) -> tuple[int, dict]:
+    """Persist a fresh in-flight attempt row carrying its pre-run estimate; return its id.
+
+    `source` is 'auto' or 'manual' and is REQUIRED — it is the thing that makes the
+    long-dead `manual` parameter real. NULL is reserved for rows that predate 0036.
+    """
     est = await evolution_estimate.estimate(db, spawn_id)
     attempt = EvolutionAttempt(spawn_id=spawn_id, started_at=datetime.utcnow(),
-                               estimate=est, reason="")
+                               estimate=est, reason="", source=source)
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
@@ -222,12 +267,30 @@ async def enqueue_attempt(spawn_id: int, *, manual: bool = False) -> int | None:
     _running_spawns.add(spawn_id)
     try:
         async with db_session.AsyncSessionLocal() as db:
-            attempt_id, _est = await _create_attempt(db, spawn_id)
+            attempt_id, _est = await _create_attempt(
+                db, spawn_id, source="manual" if manual else "auto")
     except Exception:
         _running_spawns.discard(spawn_id)
         raise
     _supervise(_run_and_release(attempt_id, spawn_id))
     return attempt_id
+
+
+async def _in_budget_refusal_cooldown(db, spawn_id: int) -> bool:
+    """True when the newest attempt is a budget refusal younger than the cooldown.
+
+    Only the AUTO path consults this: a human who clicks Evolve is entitled to a fresh,
+    visible refusal on demand.
+    """
+    row = (await db.execute(
+        select(EvolutionAttempt.outcome, EvolutionAttempt.started_at)
+        .where(EvolutionAttempt.spawn_id == spawn_id)
+        .order_by(EvolutionAttempt.id.desc())
+        .limit(1)
+    )).first()
+    if row is None or row[0] != "skipped_budget" or row[1] is None:
+        return False
+    return (datetime.utcnow() - row[1]).total_seconds() < BUDGET_REFUSAL_COOLDOWN_S
 
 
 async def trigger_spawn(spawn_id: int) -> int | None:
@@ -237,6 +300,8 @@ async def trigger_spawn(spawn_id: int) -> int | None:
         return None
     async with db_session.AsyncSessionLocal() as db:
         if not await settings_service.evolution_auto(db):
+            return None
+        if await _in_budget_refusal_cooldown(db, spawn_id):
             return None
         if not await _is_eligible(db, spawn_id):
             return None

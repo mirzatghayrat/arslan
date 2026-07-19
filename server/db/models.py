@@ -474,6 +474,12 @@ class EvolutionAttempt(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     outcome = Column(String(20), nullable=True)  # "passed" | "failed" | "error" | "skipped_budget" | "skipped_structural"
+    # 0036. NULLABLE on purpose: NULL = "provenance unknown (predates the column)".
+    # Backfilling legacy rows to 'auto' would fabricate attribution for exactly the manual
+    # clicks this column exists to account for. Every reader must be NULL-SAFE — SQL
+    # `source != 'manual'` is NULL (not TRUE) for a NULL row and would silently drop
+    # every legacy attempt from the counters that decide when the auto loop spends.
+    source = Column(String(10), nullable=True)      # "auto" | "manual" | NULL = unknown
     estimate = Column(JSON, default=dict)
     actual = Column(JSON, nullable=True)
     proposal_id = Column(Integer, nullable=True)

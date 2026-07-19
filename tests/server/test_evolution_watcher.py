@@ -7,45 +7,20 @@ the attempt, so there is no unbounded 5-minute retry loop.
 
 Everything is stubbed at the propose/estimate seam so the tests exercise the WATCHER's
 trigger + attempt bookkeeping deterministically, never a real LLM or a real gate.
+
+The `wdb` fixture lives in conftest.py, not here: two test modules need it, and importing
+a fixture into a second module makes every test that takes it as a parameter look like a
+redefinition (ruff F811). conftest is the mechanism pytest provides for exactly this.
 """
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
 
-import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db import session as db_session
-from server.db.models import Base, EvolutionAttempt, Run, Setting, Spawn
-from server.services import evolution_estimate, evolution_loop, evolution_watcher
-
-
-@pytest.fixture
-async def wdb(tmp_path, monkeypatch):
-    """A file-backed SQLite DB wired into db_session.AsyncSessionLocal (so the watcher's own
-    sessions hit it), with a cheap stubbed estimate. Resets watcher module state around each
-    test so nothing bleeds."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'w.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
-
-    async def fake_estimate(db, spawn_id):
-        return {"pairs": 4, "dispatches": 56, "judge_calls": 56, "optimizer_calls": 3,
-                "synth_calls": 0, "est_tokens": 1000, "lower_bound": True}
-
-    monkeypatch.setattr(evolution_estimate, "estimate", fake_estimate)
-
-    evolution_watcher._running_spawns.clear()
-    yield Session
-    for t in list(evolution_watcher._tasks):
-        t.cancel()
-    evolution_watcher._tasks.clear()
-    evolution_watcher._running_spawns.clear()
-    await engine.dispose()
+from server.db.models import EvolutionAttempt, Run, Setting, Spawn
+from server.services import evolution_loop, evolution_watcher
 
 
 async def _fail_propose(spawn_id, **k):
@@ -167,12 +142,17 @@ async def test_structural_fail_is_skipped_structural_and_does_not_back_off(wdb, 
     monkeypatch.setattr(evolution_loop, "propose_improvement", _structural_propose)
     sid = await _spawn(Session)
 
-    aid = await evolution_watcher.enqueue_attempt(sid, manual=True)
+    # 0036: enqueue as AUTO. These two tests assert that the outcome is TRANSPARENT to the
+    # backoff streak; a manual row is a neutral WALL that stops the scan, so enqueueing
+    # manually would make `_consecutive_fails == 0` pass for the wrong reason and stop
+    # testing transparency at all. (Caught by plan review before it shipped.)
+    aid = await evolution_watcher.enqueue_attempt(sid, manual=False)
     assert aid is not None
     await _drain()
 
     async with Session() as db:
         att = await db.get(EvolutionAttempt, aid)
+        assert att.source == "auto"
         assert att.outcome == "skipped_structural"
         assert att.reason == "length_cap"
         # backoff is unaffected — a lone structural skip leaves the streak at 0 (threshold 10).
@@ -194,12 +174,17 @@ async def test_infra_error_recorded_as_error_not_failed_and_transparent(wdb, mon
     monkeypatch.setattr(evolution_loop, "propose_improvement", _raising_propose)
     sid = await _spawn(Session)
 
-    aid = await evolution_watcher.enqueue_attempt(sid, manual=True)
+    # 0036: enqueue as AUTO. These two tests assert that the outcome is TRANSPARENT to the
+    # backoff streak; a manual row is a neutral WALL that stops the scan, so enqueueing
+    # manually would make `_consecutive_fails == 0` pass for the wrong reason and stop
+    # testing transparency at all. (Caught by plan review before it shipped.)
+    aid = await evolution_watcher.enqueue_attempt(sid, manual=False)
     assert aid is not None
     await _drain()
 
     async with Session() as db:
         att = await db.get(EvolutionAttempt, aid)
+        assert att.source == "auto"
         assert att.outcome == "error"                          # infra failure, not quality 'failed'
         assert "judgment adapter down" in (att.reason or "")   # the real exception surfaced
         assert att.finished_at is not None                     # finalized, not left in-flight
