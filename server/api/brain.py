@@ -375,11 +375,16 @@ def _excerpt_for(row) -> str | None:
 
 @router.get("/brain/proposals")
 async def list_proposals(
-    status: str = "pending", session: AsyncSession = Depends(db_session.get_session)
+    status: str = "pending", limit: int = 100, offset: int = 0,
+    session: AsyncSession = Depends(db_session.get_session)
 ) -> list[dict]:
+    # Paginated: each row costs up to two extra session.get() calls for its excerpts,
+    # so an unbounded inbox (which a background producer can now grow) turns one
+    # request into thousands of queries. The response stays a JSON ARRAY — making it
+    # an object would break every existing consumer.
     rows = (await session.execute(
         select(MemoryProposal).where(MemoryProposal.status == status)
-        .order_by(MemoryProposal.id)
+        .order_by(MemoryProposal.id).limit(max(1, min(limit, 500))).offset(max(0, offset))
     )).scalars().all()
 
     out = []
@@ -575,6 +580,14 @@ async def _accept_preference_overwrite(session: AsyncSession, p: MemoryProposal,
         raise HTTPException(status_code=422,
                             detail=f"proposal {pid}: preference_overwrite_suspect missing "
                                    "target_spawn_id/new_array")
+    # Validate before overwriting: memory_facts is a whole-array REPLACE, so an empty
+    # or malformed array silently WIPES the spawn's memory. A background producer makes
+    # that a live risk rather than a theoretical one.
+    if (not isinstance(new_arr, list) or not new_arr
+            or not all(isinstance(f, str) and f.strip() for f in new_arr)):
+        raise HTTPException(status_code=422,
+                            detail=f"proposal {pid}: new_array must be a non-empty list "
+                                   "of non-blank strings")
     spawn = await session.get(Spawn, sid)
     if spawn is None:
         raise HTTPException(status_code=410, detail=f"spawns id {sid} does not exist")
@@ -621,6 +634,22 @@ async def accept_proposal(
 
     p.status = "accepted"
     p.resolved_at = datetime.utcnow()
+    # Invalidate SAME-KIND siblings on the same target in the SAME transaction: they
+    # describe a world that no longer exists (e.g. two pending overwrites of one spawn
+    # — accepting the second would clobber the first, and two pending deletes leave the
+    # loser stuck pending forever, since its accept 410s before writing a status).
+    # Scoped to the same kind on purpose: a different kind on the same row may still be
+    # something the user wants to adjudicate.
+    siblings = (await session.execute(select(MemoryProposal).where(
+        MemoryProposal.kind == p.kind,
+        MemoryProposal.table_name == p.table_name,
+        MemoryProposal.old_id == p.old_id,
+        MemoryProposal.status == "pending",
+        MemoryProposal.id != p.id,
+    ))).scalars().all()
+    for sib in siblings:
+        sib.status = "dismissed"
+        sib.resolved_at = datetime.utcnow()
     await session.commit()
     await session.refresh(p)
     return _proposal_dict(p)

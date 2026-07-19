@@ -38,6 +38,9 @@ _MAX_FACTS = 8
 #: abandons a pair (see server/services/curation_loop.py).
 _GAVE_UP_REASON = "curation_gave_up"
 
+#: the Tier-2 kind whose existing acceptor writes spawn.memory_facts
+_PREFERENCE_KIND = "preference_overwrite_suspect"
+
 
 async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
     """LLM-consolidate existing prefs + this session's signals → ≤8 prefs. Returns None
@@ -273,6 +276,24 @@ async def _distill_one_inner(
         # write nothing + no marker, so it retries next session
         return DistillOutcome(ok=False, reason="llm_failed", spawn_id=spawn_id)
 
+    if propose_only:
+        # 整理层: the background sweep never writes memory directly. It files a Tier-2
+        # proposal a human adjudicates (the existing preference_overwrite_suspect
+        # acceptor writes spawn.memory_facts on accept).
+        #
+        # The meta-upflow is SKIPPED here, not proposed: it routes through
+        # memory.save_facts, which can auto-supersede a live profile fact with zero
+        # human approval — exactly the silent write this mode exists to prevent.
+        # Filing it as an append_suspect proposal instead is a registered follow-up,
+        # NOT part of this round; until then the sweep simply does not upflow.
+        filed = await _file_preference_proposal(conversation_id, spawn_id, new_facts)
+        if not filed:
+            return DistillOutcome(ok=False, reason="write_failed", spawn_id=spawn_id)
+        async with db_session.AsyncSessionLocal() as db:
+            await _upsert_marker(db, conversation_id, spawn_id)
+            await db.commit()
+        return DistillOutcome(ok=True, spawn_id=spawn_id)
+
     async with db_session.AsyncSessionLocal() as db:
         spawn = await db.get(Spawn, spawn_id)
         if spawn is not None:
@@ -282,17 +303,72 @@ async def _distill_one_inner(
             # NOTE: save_facts (which this now routes through) owns its own session/
             # commit, independent of this block's — see distill_meta_upflow's docstring.
             await distill_meta_upflow(spawn, new_facts, conversation_id)
-        # UPSERT within uq_distilled_conv_spawn: a successful interactive distill
-        # replaces a background give-up marker with a normal one.
-        existing = (await db.execute(select(DistilledSession).where(
-            DistilledSession.conversation_id == conversation_id,
-            DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
-        if existing is not None:
-            existing.reason = None
-        else:
-            db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
+        await _upsert_marker(db, conversation_id, spawn_id)
         await db.commit()
     return DistillOutcome(ok=True, spawn_id=spawn_id)
+
+
+async def _upsert_marker(db, conversation_id: str, spawn_id: int) -> None:
+    """Write the idempotency marker, UPSERTing within uq_distilled_conv_spawn.
+
+    A successful distill replaces a background `curation_gave_up` marker with a normal
+    one — a give-up must never permanently silence the interactive path.
+    """
+    existing = (await db.execute(select(DistilledSession).where(
+        DistilledSession.conversation_id == conversation_id,
+        DistilledSession.spawn_id == spawn_id))).scalar_one_or_none()
+    if existing is not None:
+        existing.reason = None
+    else:
+        db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
+
+
+async def _file_preference_proposal(
+    conversation_id: str, spawn_id: int, new_facts: list[str]
+) -> bool:
+    """File (or refresh) the Tier-2 proposal that carries this distillation.
+
+    Dedup key is (kind, table_name, old_id, conversation_id, status='pending'): a
+    re-sweep of the SAME conversation updates its row, while a DIFFERENT conversation
+    touching the same spawn gets its own — collapsing those would silently drop the
+    second one's material while still marking it processed.
+
+    Returns False if nothing could be filed, so the caller does NOT write a marker
+    (a marker without a proposal is material silently lost).
+    """
+    from server.db.models import MemoryProposal
+
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            existing = (await db.execute(select(MemoryProposal).where(
+                MemoryProposal.kind == _PREFERENCE_KIND,
+                MemoryProposal.table_name == "spawns",
+                MemoryProposal.old_id == spawn_id,
+                MemoryProposal.conversation_id == conversation_id,
+                MemoryProposal.status == "pending",
+            ))).scalars().first()
+            provenance = {
+                "source_kind": "curator",     # distinguishable from agentic/human origin
+                # the key `_accept_preference_overwrite` actually reads (no fallback)
+                "target_spawn_id": spawn_id,
+                "new_array": list(new_facts),
+                "conversation_id": conversation_id,
+            }
+            if existing is not None:
+                existing.provenance = provenance
+                existing.reason = f"后台整理:{len(new_facts)} 条偏好待确认"
+            else:
+                db.add(MemoryProposal(
+                    kind=_PREFERENCE_KIND, table_name="spawns", old_id=spawn_id,
+                    new_id=None, conversation_id=conversation_id,
+                    reason=f"后台整理:{len(new_facts)} 条偏好待确认",
+                    status="pending", provenance=provenance))
+            await db.commit()
+        return True
+    except Exception as exc:  # noqa: BLE001 — a failed filing must not be marked done
+        logger.warning("curation: filing the preference proposal for (%s, %s) failed: %s",
+                       conversation_id, spawn_id, exc)
+        return False
 
 
 async def distill_from_signals(
