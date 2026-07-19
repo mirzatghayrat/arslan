@@ -10,6 +10,7 @@ import logging
 
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import wrap_external
+from server.services import evolution_meter
 from server.services.llm_factory import build_adapter
 from server.services.prompts.optimizer import (
     OPTIMIZER_EDIT_SYSTEM,
@@ -50,6 +51,7 @@ async def propose_edits(
     """One LLM call -> a list of <= lr_budget bounded section edits, excluding the
     rejected-edit buffer. On any failure/empty -> [] (a no-op round). Train evidence
     (spawn-derived text) is wrapped with untrusted.wrap_external."""
+    evolution_meter.bump("optimizer_calls")
     try:
         adapter = await build_adapter(role="judgment")
         resp = await adapter.chat(

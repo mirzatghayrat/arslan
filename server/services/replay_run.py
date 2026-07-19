@@ -12,6 +12,9 @@
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from sqlalchemy import select
 
 from server.db.models import RunStep
@@ -48,6 +51,39 @@ async def snapshot_ambient(db, *, spawn_id: int, conversation_id: str,
     return {"facts": facts, "kb_block": kb_block, "kb_sources": kb_sources}
 
 
+# ── run-id collection (evolution cost attribution) ─────────────────────────────────
+#
+# Replay dispatches are already fully accounted on their Run rows, but nothing said WHICH
+# attempt caused which row. The obvious join — (spawn_id, time window) — is wrong here:
+# skill_forge.evaluate_candidate calls run_gate for the same spawn, producing replays with
+# the same spawn_id AND the same sentinel conversation_id, and it is not covered by the
+# watcher's per-spawn concurrency guard. Its spend would be silently absorbed.
+#
+# So attribution is by IDENTITY: a caller opens a collection and every run_arm on that
+# TASK notes its run_id into it. Task-local, mirroring usage_sink.collecting(), so a
+# concurrent skill_forge run in another task cannot leak in no matter how they interleave.
+_collected_run_ids: ContextVar[list[int] | None] = ContextVar(
+    "replay_collected_run_ids", default=None)
+
+
+@contextmanager
+def collect_run_ids():
+    """Gather the run_id of every replay dispatched on this task inside the block."""
+    bucket: list[int] = []
+    token = _collected_run_ids.set(bucket)
+    try:
+        yield bucket
+    finally:
+        _collected_run_ids.reset(token)
+
+
+def _note_run_id(run_id: int) -> None:
+    """Record a replay run_id if a collection is active; a free no-op otherwise."""
+    bucket = _collected_run_ids.get()
+    if bucket is not None:
+        bucket.append(run_id)
+
+
 async def run_arm(db, *, spawn_id: int, task: str, system_prompt: str,
                   ambient: dict, conversation_id: str = REPLAY_CONVERSATION_ID) -> dict:
     """Run ONE replay arm on `task` under the full prompt override `system_prompt`, sharing
@@ -57,6 +93,7 @@ async def run_arm(db, *, spawn_id: int, task: str, system_prompt: str,
         conversation_id, spawn_id=spawn_id, task_brief=task,
         system_prompt_override=system_prompt, replay=True, ambient=ambient)
     run_id = out["run_id"]
+    _note_run_id(run_id)
     evidence = await trace_evidence.build_evidence(run_id)
     return {"run_id": run_id, "output": out.get("full_output", ""), "evidence": evidence}
 

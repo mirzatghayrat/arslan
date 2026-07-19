@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from server.orchestrator.json_protocol import parse_json_object
+from server.services import evolution_meter
 from server.services.llm_factory import build_adapter
 from server.services.prompts.compare_judge import COMPARE_SYSTEM, build_prompt
 
@@ -84,6 +85,8 @@ async def compare(*, task: str, persona: str, output_a: str, output_b: str, item
     judged as claimed-deliverables vs actual tool_calls per arm. Defaults ("") keep
     the legacy trace-free behavior.
     """
+    # two adapter calls per compare (position-swapped); counted for `actual`
+    evolution_meter.bump("judge_calls", 2)
     adapter = await build_adapter(role="judge")
     p1 = await _judge_once(adapter, task=task, persona=persona,
                            first=output_a, second=output_b,

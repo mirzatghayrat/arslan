@@ -40,6 +40,7 @@ from server.db.models import Spawn, SyntheticTask
 from server.orchestrator.json_protocol import parse_json_object
 from server.orchestrator.untrusted import wrap_external
 from server.services import replay_gate, replay_run, replay_set
+from server.services import evolution_meter
 from server.services.llm_factory import build_adapter
 from server.services.prompts import synthetic_corpus as prompts
 from server.services.replay_safety import REPLAY_SAFE_BUILTINS
@@ -77,6 +78,7 @@ def _parse_tasks(content: str | None) -> list[str]:
 
 async def _gen_domain(adapter, spawn: Spawn, budget: int) -> list[str]:
     """Generate up to `budget` domain-representative task strings (raw, unvalidated)."""
+    evolution_meter.bump("synth_calls")
     if budget <= 0:
         return []
     domain = spawn.domain_category or ""

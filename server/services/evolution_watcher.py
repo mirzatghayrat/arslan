@@ -33,8 +33,15 @@ from datetime import datetime
 from sqlalchemy import select
 
 from server.db import session as db_session
+from arslan.llm import usage_sink
 from server.db.models import EvolutionAttempt, EvolutionProposal, Run, Spawn
-from server.services import evolution_estimate, evolution_loop, replay_run, settings_service
+from server.services import (
+    evolution_estimate,
+    evolution_loop,
+    evolution_meter,
+    replay_run,
+    settings_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -256,21 +263,94 @@ async def _perform_attempt(attempt_id: int, spawn_id: int) -> None:
             reason=f"estimate {est_tokens} tokens exceeds budget {max_est}")
         return
 
-    try:
-        result = await evolution_loop.propose_improvement(spawn_id)
-    except Exception as exc:  # noqa: BLE001 — an attempt failure must not crash the watcher
-        logger.warning("evolution attempt error (spawn=%s): %s", spawn_id, exc)
-        await _finalize_attempt(attempt_id, outcome="error", reason=str(exc))
+    # ── real-spend accounting (see _build_actual) ────────────────────────────────
+    # Two collectors, deliberately non-overlapping:
+    #   usage_sink.collecting()      catches the DIRECT adapter calls — judge, optimizer,
+    #                                synthetic generation. Replay dispatches open their
+    #                                OWN nested collecting() inside the dispatcher, and a
+    #                                nested one shadows this bucket completely, so their
+    #                                tokens do NOT land here and cannot be double counted.
+    #   replay_run.collect_run_ids() catches the run_ids of exactly the replays THIS task
+    #                                dispatched, so their tokens can be summed from the
+    #                                Run rows they already live on — by identity, never by
+    #                                a spawn_id/time-window join that would absorb
+    #                                skill_forge's concurrent replays for the same spawn.
+    # Both wrap the try, so an attempt that dies mid-flight still reports what it burned.
+    result: dict | None = None
+    failure: Exception | None = None
+    with usage_sink.collecting(), replay_run.collect_run_ids() as run_ids, \
+            evolution_meter.counting():
+        try:
+            result = await evolution_loop.propose_improvement(spawn_id)
+        except Exception as exc:  # noqa: BLE001 — a failure must not crash the watcher
+            failure = exc
+        direct_tokens = usage_sink.total()
+        # `detail()` carries a STICKY per-bucket `estimated` flag: it goes True the
+        # moment any adapter reported without a real usage frame. There is no
+        # was_estimated() helper — read the buckets. (I nearly called an invented one.)
+        direct_estimated = any(b["estimated"] for b in usage_sink.detail()["buckets"])
+        counters = evolution_meter.snapshot()
+
+    actual = await _build_actual(direct_tokens, direct_estimated, run_ids, counters)
+
+    if failure is not None:
+        logger.warning("evolution attempt error (spawn=%s): %s", spawn_id, failure)
+        await _finalize_attempt(attempt_id, outcome="error", reason=str(failure),
+                                actual=actual)
         return
 
+    assert result is not None
     proposal_id = result.get("proposal_id")
     if proposal_id is not None:
         await _finalize_attempt(attempt_id, outcome="passed", reason="gate passed",
-                                proposal_id=proposal_id)
+                                proposal_id=proposal_id, actual=actual)
     else:
         reason = (result.get("gate") or {}).get("reason") or "gate did not pass"
         outcome = "skipped_structural" if _is_structural(reason) else "failed"
-        await _finalize_attempt(attempt_id, outcome=outcome, reason=reason)
+        await _finalize_attempt(attempt_id, outcome=outcome, reason=reason, actual=actual)
+
+
+async def _build_actual(direct_tokens: int, direct_estimated: bool,
+                        run_ids: list[int], counters: dict | None) -> dict:
+    """Measured cost of one attempt, in the SAME BASIS as `estimate`.
+
+    🔴 est_tokens is the TOTAL — dispatch + direct — because the estimate's own
+    est_tokens is `avg_run * dispatches + AVG_JUDGE_TOKENS * judge_calls` and is
+    DOMINATED by the dispatch term. An actual holding only the direct half would render
+    beside it (PromotionCard reads the same key name on both) as roughly an order of
+    magnitude cheaper, for reasons that have nothing to do with reality. The split is
+    reported alongside so nobody has to infer it.
+
+    🔴 `estimated` is not decoration. A replay Run's task_tokens is itself the adapter's
+    own character-heuristic estimate whenever the provider returned no usage block, and
+    the direct half falls back the same way. Calling a number "actual" while it may be a
+    guess is precisely the overclaim this work exists to end, so the payload says which
+    it is.
+    """
+    dispatch_tokens = 0
+    estimated = direct_estimated
+    if run_ids:
+        async with db_session.AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                select(Run.task_tokens, Run.tokens_estimated).where(Run.id.in_(run_ids))
+            )).all()
+        for tokens, was_est in rows:
+            dispatch_tokens += int(tokens or 0)
+            estimated = estimated or bool(was_est)
+
+    counters = counters or {}
+    return {
+        "pairs": counters.get("pairs"),
+        # counted, not projected: one per run_arm this attempt actually dispatched
+        "dispatches": len(run_ids),
+        "judge_calls": counters.get("judge_calls"),
+        "optimizer_calls": counters.get("optimizer_calls"),
+        "synth_calls": counters.get("synth_calls"),
+        "dispatch_tokens": dispatch_tokens,
+        "direct_tokens": direct_tokens,
+        "est_tokens": dispatch_tokens + direct_tokens,
+        "estimated": estimated,
+    }
 
 
 async def _run_and_release(attempt_id: int, spawn_id: int) -> None:

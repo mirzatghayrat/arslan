@@ -10,6 +10,7 @@ from datetime import datetime
 from arslan.core.param_registry import DEFAULT_REGISTRY
 from server.db import session as db_session
 from server.db.models import ConversationEvent, EvolutionProposal, Spawn
+from server.services import evolution_meter
 from server.services import evaluator, optimizer, replay_gate, replay_set, skill_doc
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,8 @@ async def propose_improvement(spawn_id: int, *, epochs: int = 3, lr_budget: int 
         # mint=True (E9-b): the REAL gate path tops a thin holdout up to the floor so the gate is
         # reachable — the read-only cost preview (evolution_estimate) never does this.
         corpus = await replay_gate.build_corpus(db, spawn_id, baseline_started_at=None, mint=True)
+    # the REAL pair count this attempt worked with (the estimate projects it separately)
+    evolution_meter.bump("pairs", len(corpus))
 
     # Rich baseline judge evidence for the optimizer's edit digest (keyed by run id).
     rich = await replay_set.build(spawn_id, cap=train_cap + val_cap)
