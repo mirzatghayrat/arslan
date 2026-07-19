@@ -3,7 +3,10 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-.venv/
+# no trailing slash: it would match DIRECTORIES ONLY, so a .venv SYMLINK (common when
+# a git worktree borrows the main checkout's environment) slips past and gets committed.
+# web/node_modules was committed exactly that way once.
+.venv
 venv/
 env/
 dist/

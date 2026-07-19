@@ -12,7 +12,7 @@ import ipaddress
 import logging
 import socket
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 import trafilatura
@@ -51,18 +51,86 @@ _FETCH_TIMEOUT = 12.0
 
 
 def _is_private_host(url: str) -> bool:
-    """SSRF guard: spawn-supplied URLs must not reach loopback/private/link-local
-    hosts (incl. cloud metadata 169.254.169.254 and Arslan's own API)."""
-    host = urlparse(url).hostname or ""
+    """Does this URL resolve to a loopback/private/link-local/reserved address?
+
+    🔴 THIS IS A PREDICATE, NOT THE GATE. It answers a question about DNS at the moment
+    it is asked; it does not bind that answer to the connection that follows. Use
+    `_resolve_pinned` for anything that is about to open a socket. Kept because
+    ingest.py's docstring and existing tests speak in its terms.
+    """
     try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
-        return True  # unresolvable -> refuse
+        _resolve_pinned(url)
+    except _BlockedHost:
+        return True
+    return False
+
+
+class _BlockedHost(Exception):
+    """The host may not be fetched — unresolvable, or resolves to a non-public address."""
+
+
+def _resolve_pinned(url: str) -> tuple[str, str, int]:
+    """Resolve ONCE, validate EVERY answer, and return the address we will connect to.
+
+    FU-1 (DNS rebinding). The old code checked `getaddrinfo(host)` and then handed the
+    HOSTNAME to httpx, which resolved it again before connecting. Nothing tied the
+    checked answer to the used one, so an attacker serving TTL=0 DNS answers the check
+    with a public IP and the connect with 127.0.0.1 — walking straight past a guard that
+    looks correct. Per-hop revalidation (added earlier for redirects) did not help: every
+    hop had the same split.
+
+    So the resolution result is PINNED and the caller connects to the returned IP.
+
+    Every answer must pass. Picking "the first public one" out of a mixed answer set
+    would let an attacker pad the response with a public address to get through, and the
+    only reason to return several is to have the client try several.
+
+    We pin the FIRST validated address rather than failing over between them: failover
+    would put "which address did we actually reach" back in the attacker's hands, which
+    is the property this function exists to take away. The cost is that an unreachable
+    first address fails the fetch instead of retrying — acceptable for a fetch tool.
+
+    Returns (pinned_ip, host, port). Raises _BlockedHost on refusal — unresolvable
+    included, so failure is closed.
+    """
+    parts = urlparse(url)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise _BlockedHost(f"cannot resolve {host}") from exc
+    if not infos:
+        raise _BlockedHost(f"cannot resolve {host}")
+
+    pinned = None
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-            return True
-    return False
+            raise _BlockedHost(f"{host} resolves to a private or internal address")
+        if pinned is None:
+            pinned = str(ip)
+    assert pinned is not None
+    return pinned, host, port
+
+
+def _pinned_request_args(url: str) -> tuple[str, dict, dict]:
+    """Rewrite `url` to point at its pinned address, with the headers/extensions that
+    keep the request semantically identical to the original.
+
+    `Host` preserves virtual hosting, and `sni_hostname` drives the TLS handshake so the
+    certificate is still verified against the REAL hostname. Without the latter, pinning
+    would silently downgrade TLS to "any certificate this IP presents", trading an SSRF
+    hole for a MITM one. httpcore reads that extension as `server_hostname`; the floor in
+    pyproject.toml exists to keep it doing so.
+    """
+    ip, host, port = _resolve_pinned(url)
+    parts = urlparse(url)
+    literal = f"[{ip}]" if ":" in ip else ip
+    netloc = f"{literal}:{port}" if parts.port else literal
+    pinned_url = urlunparse(parts._replace(netloc=netloc))
+    host_header = f"{host}:{parts.port}" if parts.port else host
+    return pinned_url, {"Host": host_header}, {"sni_hostname": host}
 
 
 def _categorize_exc(exc: Exception) -> str:
@@ -90,8 +158,16 @@ _MAX_REDIRECTS = 5
 
 
 def _build_client() -> httpx.AsyncClient:
-    # follow_redirects=False on purpose: we follow manually so every hop's host
-    # is re-checked by the SSRF guard (addresses the release-gate SSRF item).
+    # follow_redirects=False on purpose: we follow manually so every hop is resolved,
+    # validated and PINNED individually (see _resolve_pinned).
+    #
+    # 🔴 PROXY SCOPE, stated honestly. `trust_env` is left at its default (True), so a
+    # configured HTTP_PROXY/HTTPS_PROXY/ALL_PROXY still applies — deliberately, because
+    # turning it off would break every install that can only reach the internet through
+    # one. But when a proxy IS configured the connection is made BY THE PROXY, so what
+    # the proxy does with the address is outside this guard: the SSRF protection is
+    # DELEGATED to it, not enforced here. Do not describe the proxy case as carrying the
+    # same guarantee. Without a proxy — the default — the pinning below is the guarantee.
     return httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=False)
 
 
@@ -100,16 +176,19 @@ async def _fetch_text(url: str) -> str:
         current = url
         html = ""
         for _ in range(_MAX_REDIRECTS):
-            resp = await client.get(current)
+            # Resolve-and-pin EVERY hop, including the first. Sending the hostname and
+            # letting httpx resolve it is precisely the rebinding hole (see
+            # _resolve_pinned); a redirect target is no more trustworthy than the
+            # original URL, so it goes through the identical path.
+            pinned_url, headers, extensions = _pinned_request_args(current)
+            resp = await client.get(pinned_url, headers=headers, extensions=extensions)
             if resp.is_redirect:
                 location = resp.headers.get("location", "")
                 if not location:
                     raise httpx.HTTPError("redirect without a Location header")
+                # resolve against the ORIGINAL url, not the pinned one — a relative
+                # Location must not inherit the IP literal as its base.
                 current = urljoin(current, location)
-                if _is_private_host(current):
-                    raise httpx.HTTPError(
-                        "redirect to a private or internal address blocked"
-                    )
                 continue
             resp.raise_for_status()
             html = resp.text
@@ -151,13 +230,18 @@ class WebExtractExecutor:
         url = (args.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return {"ok": False, "error": "missing or invalid 'url'"}
-        if _is_private_host(url):
-            return {"ok": False, "error": "url resolves to a private or internal address"}
+        # 🔴 No separate pre-check. An extra `_resolve_pinned(url)` here would be a
+        # SECOND lookup, and "resolve once" is the entire property this fix buys: under a
+        # rebinding attacker the pre-check would consume the honest answer and the fetch
+        # would then get the poisoned one. The fetch path resolves-and-pins each hop and
+        # raises _BlockedHost, which is caught below and reported distinctly.
         # A page that won't fetch/parse must not send the model into a retry spiral on the same
         # URL — steer it back to the web_search result snippets it already has (or to answering).
         _STEER = " — do not retry this URL; use your web_search result snippets or answer with what you have"
         try:
             text = await _fetch_text(url)
+        except _BlockedHost:
+            return {"ok": False, "error": "url resolves to a private or internal address"}
         except Exception as exc:  # noqa: BLE001
             category = _categorize_exc(exc)
             logger.warning("web_extract failed for %s: %s", url, exc, exc_info=True)

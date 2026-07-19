@@ -19,7 +19,7 @@ All capability reads/writes flow through `server/registry/service.py`:
 
 | Toolset | Tools | Notes |
 |---|---|---|
-| Web Search & Scraping | `web_search`, `web_extract` | Live web via the configured search provider; SSRF-guarded fetch. Universal baseline for every spawn. |
+| Web Search & Scraping | `web_search`, `web_extract` | Live web via the configured search provider; the fetch resolves each hop once and connects to that pinned address, so a private/internal target is refused and cannot be swapped in afterwards by DNS. **If you configure an HTTP proxy, the connection is made by the proxy and this guarantee is delegated to it.** Universal baseline for every spawn. |
 | Charting | `render_chart` | 9 chart types → interactive ECharts, backend-built from validated data (the model never authors render config). |
 | Deck / PPTX | `render_deck` | Native, editable PowerPoint from a validated slide spec — real shapes + speaker notes, not images. |
 | Code Sandbox | `run_python` | Local sandboxed Python: ephemeral tmpdir, fully scrubbed env (no keys), CPU/memory/output caps, **network denied** (macOS seatbelt; the result reports `network_isolated` honestly). numpy/pandas/matplotlib preinstalled (lazy first-use venv, ~200 MB disk). Can also run scripts bundled with imported skills (`{"skill_script": "<key>/<file>.py"}`). |
