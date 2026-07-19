@@ -95,21 +95,23 @@ async def _enabled() -> bool:
         return await settings_service.distill_enabled(db)
 
 
-async def _strikes(conversation_id: str) -> int:
+async def _strikes(conversation_id: str) -> int | None:
     """How many times the sweep has already failed on this conversation.
 
-    Fail-CLOSED for spend: a counting error means we do NOT know it is under the cap,
-    so treat it as at-cap rather than sweeping at full LLM cost.
+    Returns None when the count is UNKNOWN (a read error). Callers must then skip this
+    tick — fail-closed for SPEND — but must NOT treat it as a permanent give-up: a
+    transient DB hiccup should cost one tick, not brand the conversation dead forever
+    after zero real attempts.
     """
     in_process = _attempts.get(conversation_id, 0)
     try:
         persisted = await recap_service.count_events_strict(
             conversation_id, FAILED_EVENT_KIND)
-    except Exception as exc:  # noqa: BLE001 — unknown strike count ⇒ assume at cap
-        logger.warning("curation: strike count unavailable for %s (%s) — treating as "
-                       "at-cap so a degraded DB cannot uncap LLM spend",
+    except Exception as exc:  # noqa: BLE001 — unknown strike count ⇒ skip, don't spend
+        logger.warning("curation: strike count unavailable for %s (%s) — skipping this "
+                       "tick so a degraded DB cannot uncap LLM spend",
                        conversation_id, exc.__class__.__name__)
-        return MAX_ATTEMPTS
+        return None
     return max(in_process, persisted)
 
 
@@ -165,6 +167,21 @@ async def _candidates() -> list[str]:
         DistilledSession.spawn_id == ArslanMessage.spawn_id,
         DistilledSession.conversation_id == ArslanMessage.conversation_id,
     ).exists()
+    # 🔴 Idleness is a property of the CONVERSATION, so it must be computed over ALL of
+    # its messages — a correlated subquery, not the outer aggregate. The candidate
+    # filters (spawn_summary / unmarked) are a WHERE clause and therefore apply BEFORE
+    # the GROUP BY: aggregating over the filtered rows measured only "when did the last
+    # UNDISTILLED spawn deliverable arrive", so a conversation the user was still using
+    # all day looked idle the moment its morning deliverable aged out. Sweeping it early
+    # writes a NORMAL marker, which permanently suppresses the real end-of-session
+    # distillation and also blocks the manual retry (that path only ignores a give-up
+    # marker) — silent, unrecoverable loss of the whole session's material.
+    inner = ArslanMessage.__table__.alias("m_all")
+    last_activity = (
+        select(func.max(inner.c.timestamp))
+        .where(inner.c.conversation_id == ArslanMessage.conversation_id)
+        .scalar_subquery()
+    )
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(
             select(ArslanMessage.conversation_id)
@@ -172,9 +189,9 @@ async def _candidates() -> list[str]:
                 ArslanMessage.role == "spawn_summary",
                 ArslanMessage.spawn_id.isnot(None),
                 ~marked,
+                last_activity < cutoff,
             )
             .group_by(ArslanMessage.conversation_id)
-            .having(func.max(ArslanMessage.timestamp) < cutoff)
         )).scalars().all()
     return [cid for cid in rows if not should_not_curate(cid)]
 
@@ -190,11 +207,14 @@ async def _sweep_once(conversation_id: str) -> None:
     reason = "unknown"
     try:
         report = await distill_service.distill_session_detailed(
-            conversation_id, propose_only=True)
+            conversation_id, propose_only=True, usage_scope="curation_distill")
         ok = report.distilled > 0
         if not ok:
-            reasons = [o.reason for o in report.outcomes if o.reason]
-            reason = reasons[0] if reasons else "nothing_distilled"
+            # the first FAILING reason — reasons[0] would report a benign
+            # 'already_distilled' skip as if it were the cause of the failure
+            failing = [o.reason for o in report.outcomes if o.failed]
+            other = [o.reason for o in report.outcomes if o.reason]
+            reason = (failing or other or ["nothing_distilled"])[0]
     except Exception as exc:  # noqa: BLE001 — an exception is a failed attempt, not a free one
         logger.warning("curation sweep of %s raised: %s", conversation_id, exc)
         reason = "exception"
@@ -207,7 +227,8 @@ async def _sweep_once(conversation_id: str) -> None:
     await recap_service.log_event(
         conversation_id, FAILED_EVENT_KIND, {"reason": reason},
         f"后台整理失败({reason})")
-    if await _strikes(conversation_id) >= MAX_ATTEMPTS:
+    strikes = await _strikes(conversation_id)
+    if strikes is not None and strikes >= MAX_ATTEMPTS:
         await _give_up(conversation_id)
 
 
@@ -234,7 +255,10 @@ async def tick(stop_event: asyncio.Event | None = None) -> None:
         # handful of dead ones can never starve the fresh ones.
         if await _recently_failed(conversation_id):
             continue
-        if await _strikes(conversation_id) >= MAX_ATTEMPTS:
+        strikes = await _strikes(conversation_id)
+        if strikes is None:
+            continue            # unknown ⇒ skip this tick, but never a terminal give-up
+        if strikes >= MAX_ATTEMPTS:
             await _give_up(conversation_id)
             continue
         await _sweep_once(conversation_id)

@@ -134,7 +134,10 @@ class DistillOutcome:
     spawn_id: int | None = None
 
     #: reasons that mean "we tried and it broke" (vs. a benign skip)
-    FAILURE_REASONS = ("llm_failed", "exception")
+    #: "we tried and it broke" — each of these must produce a visible event.
+    #: write_failed included: a proposal that could not be filed is material LOST, not
+    #: a benign skip, and the sweep must count it as a strike.
+    FAILURE_REASONS = ("llm_failed", "exception", "write_failed")
 
     @property
     def failed(self) -> bool:
@@ -163,9 +166,14 @@ async def distill_session(conversation_id: str) -> int:
 
 
 async def distill_session_detailed(
-    conversation_id: str, *, propose_only: bool = False
+    conversation_id: str, *, propose_only: bool = False,
+    usage_scope: str = "distill",
 ) -> DistillReport:
     """distill_session + per-spawn outcomes. Never raises.
+
+    ``usage_scope`` names the ledger bucket: the background sweep passes
+    ``curation_distill`` so its spend is distinguishable from interactive distillation
+    in the usage summary (they are very different things to a user looking at a bill).
 
     A failed spawn logs a ``distill_failed`` growth event so the failure is VISIBLE on
     the recap timeline instead of dying in a server log. Each spawn is attempted inside
@@ -195,7 +203,8 @@ async def distill_session_detailed(
     for spawn_id in spawn_ids:
         sid = int(spawn_id)
         try:
-            outcome = await _distill_one(conversation_id, sid, propose_only=propose_only)
+            outcome = await _distill_one(conversation_id, sid, propose_only=propose_only,
+                                         usage_scope=usage_scope)
         except Exception as exc:  # noqa: BLE001 — one bad spawn must not abort the rest
             logger.warning("distill_one(%s, %s) raised: %s", conversation_id, sid, exc)
             outcome = DistillOutcome(ok=False, reason="exception", spawn_id=sid)
@@ -388,6 +397,18 @@ async def distill_from_signals(
     """
     if should_not_curate(conversation_id):
         return DistillOutcome(ok=False, reason="nothing_to_distill", spawn_id=spawn_id)
+    from server.services import usage_ledger
+
+    # Ledgered like the session path: three of the five distill trigger paths
+    # (dual-track, sandbox merge, direct chat) come through here, so wrapping only
+    # _distill_one would have made "distill_service is accounted" a false claim.
+    async with usage_ledger.scope("distill", conversation_id or f"spawn-{spawn_id}"):
+        return await _distill_from_signals_inner(spawn_id, signals, conversation_id)
+
+
+async def _distill_from_signals_inner(
+    spawn_id: int, signals: str, conversation_id: str | None
+) -> DistillOutcome:
     outcome: DistillOutcome
     try:
         async with db_session.AsyncSessionLocal() as db:

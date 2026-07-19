@@ -167,7 +167,11 @@ async def test_two_conversations_touching_one_spawn_get_two_proposals(db, monkey
 # --------------------------------------------------------------------------- accept
 
 
-async def test_accept_materializes_and_dismisses_same_kind_siblings(client):
+async def test_accept_never_dismisses_another_conversations_material(client):
+    """Accepting c1's proposal must NOT dismiss c2's: both conversations are already
+    marked processed, so a dismissed proposal is material lost with no way back (no
+    marker to clear, no re-sweep, no manual retry). The earlier version of this test
+    asserted the opposite and locked the data loss in."""
     async with client.db_maker() as s:
         s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp",
                     memory_facts=["旧偏好"]))
@@ -175,7 +179,7 @@ async def test_accept_materializes_and_dismisses_same_kind_siblings(client):
             s.add(MemoryProposal(
                 kind="preference_overwrite_suspect", table_name="spawns", old_id=1,
                 conversation_id=cid, reason="r", status="pending",
-                provenance={"target_spawn_id": 1, "new_array": ["新偏好"],
+                provenance={"target_spawn_id": 1, "new_array": [f"{cid}偏好"],
                             "source_kind": "curator", "conversation_id": cid}))
         await s.commit()
         props = sorted((await s.execute(select(MemoryProposal))).scalars().all(),
@@ -186,14 +190,69 @@ async def test_accept_materializes_and_dismisses_same_kind_siblings(client):
     assert r.status_code == 200, r.text
 
     async with client.db_maker() as s:
-        spawn = await s.get(Spawn, 1)
         rows = sorted((await s.execute(select(MemoryProposal))).scalars().all(),
                       key=lambda p: p.id)
-    assert spawn.memory_facts == ["新偏好"], "accept must materialize the memory"
     assert rows[0].status == "accepted"
-    assert rows[1].status == "dismissed", (
-        "a same-kind sibling on the same target is now stale — otherwise it sits "
-        "pending forever and a later accept would clobber this one")
+    assert rows[1].status == "pending", (
+        "the other conversation's material must still be adjudicable")
+
+
+async def test_accept_dismisses_only_same_conversation_siblings(client):
+    """Within ONE conversation two pending overwrites are genuinely stale after an
+    accept (whole-array replace), so those are dismissed."""
+    async with client.db_maker() as s:
+        s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp",
+                    memory_facts=["旧偏好"]))
+        for _ in range(2):
+            s.add(MemoryProposal(
+                kind="preference_overwrite_suspect", table_name="spawns", old_id=1,
+                conversation_id="c1", reason="r", status="pending",
+                provenance={"target_spawn_id": 1, "new_array": ["新偏好"],
+                            "source_kind": "curator", "conversation_id": "c1"}))
+        await s.commit()
+        props = sorted((await s.execute(select(MemoryProposal))).scalars().all(),
+                       key=lambda p: p.id)
+
+    r = await client.post(f"/api/v1/brain/proposals/{props[0].id}/accept", headers=AUTH)
+    assert r.status_code == 200, r.text
+    async with client.db_maker() as s:
+        rows = sorted((await s.execute(select(MemoryProposal))).scalars().all(),
+                      key=lambda p: p.id)
+        spawn = await s.get(Spawn, 1)
+    assert spawn.memory_facts == ["新偏好"]
+    assert [r.status for r in rows] == ["accepted", "dismissed"]
+
+
+async def test_accept_does_not_collide_on_the_old_id_zero_sentinel(client, monkeypatch):
+    """RememberExecutor coerces a target-less proposal's old_id to 0, so ALL such
+    proposals share old_id=0. A sibling query keyed on (kind, table, old_id) would
+    dismiss every unrelated one the moment any single one is accepted."""
+    # append_suspect's acceptor routes through memory.save_facts, which opens the
+    # PRODUCTION sessionmaker — the client's dependency override does not cover it, so
+    # without this the test would write to the developer's real DB.
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
+
+    async with client.db_maker() as s:
+        from server.db.models import UserFact
+
+        s.add(UserFact(content="事实", source="auto", confidence=0.6))
+        for cid in ("c1", "c2"):
+            s.add(MemoryProposal(
+                kind="append_suspect", table_name="user_facts", old_id=0,
+                conversation_id=cid, reason="r", status="pending",
+                provenance={"content": f"{cid} 的新事实", "source_kind": "curator"}))
+        await s.commit()
+        props = sorted((await s.execute(select(MemoryProposal))).scalars().all(),
+                       key=lambda p: p.id)
+        first_id = props[0].id
+
+    r = await client.post(f"/api/v1/brain/proposals/{first_id}/accept", headers=AUTH)
+    assert r.status_code == 200, r.text
+    async with client.db_maker() as s:
+        rows = sorted((await s.execute(select(MemoryProposal))).scalars().all(),
+                      key=lambda p: p.id)
+    assert rows[1].status == "pending", (
+        "old_id=0 is a sentinel, not a target — unrelated proposals must survive")
 
 
 async def test_accept_refuses_a_garbage_new_array(client):

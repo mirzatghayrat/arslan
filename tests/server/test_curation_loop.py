@@ -340,3 +340,53 @@ def test_curation_loop_is_wired_into_the_app_lifespan():
         "the curation loop is never started — it would be dead code in production")
     assert "_curation.stop()" in src, (
         "the curation loop is never stopped — it would outlive shutdown")
+
+
+# ---------------------------------------------------------------------------
+# Review regressions (two-stage review, empirically reproduced)
+# ---------------------------------------------------------------------------
+
+
+async def test_idle_window_uses_the_whole_conversation_not_just_undistilled_rows(wdb):
+    """The candidate filter (role=spawn_summary, unmarked) is a WHERE clause, so it
+    applies BEFORE the GROUP BY: aggregating MAX(timestamp) over only those rows made a
+    LIVE conversation look idle. Sweeping it early writes a NORMAL marker, which then
+    permanently suppresses the real end-of-session distillation AND blocks the manual
+    retry (that path only ignores a give-up marker)."""
+    old = datetime.utcnow() - timedelta(hours=7)
+    fresh = datetime.utcnow() - timedelta(minutes=1)
+    async with wdb() as db:
+        db.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp",
+                     memory_facts=[]))
+        db.add(ArslanMessage(conversation_id="live", role="user", content="早上的活",
+                             timestamp=old))
+        db.add(ArslanMessage(conversation_id="live", role="spawn_summary", content="产出",
+                             display_content="产出", spawn_id=1, timestamp=old))
+        # the user kept chatting with Arslan all day — the conversation is NOT idle
+        db.add(ArslanMessage(conversation_id="live", role="user", content="还在聊",
+                             timestamp=fresh))
+        await db.commit()
+
+    assert await curation_loop._candidates() == [], (
+        "a conversation with recent activity must not be swept, even if its only "
+        "undistilled spawn deliverable is old")
+
+
+async def test_transient_strike_read_error_skips_but_does_not_give_up(wdb, monkeypatch):
+    """Fail-closed for SPEND means skip this tick — not brand the conversation dead
+    forever after zero real attempts."""
+    await _seed(wdb)
+
+    async def _boom(*a, **k):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(curation_loop.recap_service, "count_events_strict", _boom)
+
+    swept = []
+    monkeypatch.setattr(curation_loop, "_sweep_once",
+                        lambda cid, **k: swept.append(cid) or _aw(None))
+    await curation_loop.tick()
+
+    assert swept == [], "unknown strike count must not spend"
+    async with wdb() as db:
+        marks = (await db.execute(select(DistilledSession))).scalars().all()
+    assert marks == [], "a transient read error must not write a TERMINAL give-up"

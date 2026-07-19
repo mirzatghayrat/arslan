@@ -30,7 +30,7 @@ async def test_complete_chat_distills_then_archives(maker, monkeypatch):
         return distill_service.DistillOutcome(ok=True, spawn_id=spawn_id)
     monkeypatch.setattr(distill_service, "distill_from_signals", fake_distill)
 
-    n = await chat_lifecycle.complete_chat(1)
+    n, _ok = await chat_lifecycle.complete_chat(1)
     async with maker() as s:
         active = (await s.execute(select(ChatMessage).where(
             ChatMessage.spawn_id == 1, ChatMessage.archived == False))).scalars().all()  # noqa: E712
@@ -51,7 +51,7 @@ async def test_complete_chat_empty_is_noop(maker, monkeypatch):
     monkeypatch.setattr(distill_service, "distill_from_signals", fake_distill)
     # archive everything first, then completing again should distill nothing
     await chat_lifecycle.complete_chat(1)
-    second = await chat_lifecycle.complete_chat(1)
+    second, _ok2 = await chat_lifecycle.complete_chat(1)
     assert second == 0
     assert called["n"] == 1  # only the first (non-empty) completion distilled
 
@@ -75,7 +75,7 @@ async def test_failed_distill_does_not_archive_and_is_visible(maker, monkeypatch
         return None
     monkeypatch.setattr(distill_service, "distill_facts", failing_llm)
 
-    n = await chat_lifecycle.complete_chat(1)
+    n, _ok = await chat_lifecycle.complete_chat(1)
 
     async with maker() as s:
         active = (await s.execute(select(ChatMessage).where(
@@ -98,7 +98,7 @@ async def test_successful_distill_still_archives(maker, monkeypatch):
         return distill_service.DistillOutcome(ok=True, spawn_id=spawn_id)
     monkeypatch.setattr(distill_service, "distill_from_signals", ok_distill)
 
-    n = await chat_lifecycle.complete_chat(1)
+    n, _ok = await chat_lifecycle.complete_chat(1)
     async with maker() as s:
         archived = (await s.execute(select(ChatMessage).where(
             ChatMessage.spawn_id == 1, ChatMessage.archived == True))).scalars().all()  # noqa: E712

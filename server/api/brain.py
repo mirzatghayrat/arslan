@@ -634,22 +634,33 @@ async def accept_proposal(
 
     p.status = "accepted"
     p.resolved_at = datetime.utcnow()
-    # Invalidate SAME-KIND siblings on the same target in the SAME transaction: they
-    # describe a world that no longer exists (e.g. two pending overwrites of one spawn
-    # — accepting the second would clobber the first, and two pending deletes leave the
-    # loser stuck pending forever, since its accept 410s before writing a status).
-    # Scoped to the same kind on purpose: a different kind on the same row may still be
-    # something the user wants to adjudicate.
-    siblings = (await session.execute(select(MemoryProposal).where(
-        MemoryProposal.kind == p.kind,
-        MemoryProposal.table_name == p.table_name,
-        MemoryProposal.old_id == p.old_id,
-        MemoryProposal.status == "pending",
-        MemoryProposal.id != p.id,
-    ))).scalars().all()
-    for sib in siblings:
-        sib.status = "dismissed"
-        sib.resolved_at = datetime.utcnow()
+    # Invalidate genuinely-stale siblings in the SAME transaction: within ONE
+    # conversation, two pending proposals of the same kind on the same row describe a
+    # world that no longer exists (accepting the second would clobber the first; two
+    # pending deletes leave the loser stuck pending forever, since its accept 410s
+    # before writing a status).
+    #
+    # 🔴 Deliberately NARROW on two axes, each of which was a real data-loss bug:
+    #   • same conversation_id — a DIFFERENT conversation's proposal for the same spawn
+    #     is separate material that is already marked processed, so dismissing it
+    #     destroys it with no way back (no marker to clear, no re-sweep, no manual
+    #     retry). The propose-time dedup deliberately keeps those apart; accept must
+    #     not undo that.
+    #   • old_id != 0 — RememberExecutor coerces a target-less proposal's old_id to the
+    #     sentinel 0, so EVERY append_suspect shares old_id=0. Matching on it would
+    #     dismiss every unrelated target-less proposal the moment any one is accepted.
+    if p.old_id:
+        siblings = (await session.execute(select(MemoryProposal).where(
+            MemoryProposal.kind == p.kind,
+            MemoryProposal.table_name == p.table_name,
+            MemoryProposal.old_id == p.old_id,
+            MemoryProposal.conversation_id.is_not_distinct_from(p.conversation_id),
+            MemoryProposal.status == "pending",
+            MemoryProposal.id != p.id,
+        ))).scalars().all()
+        for sib in siblings:
+            sib.status = "dismissed"
+            sib.resolved_at = datetime.utcnow()
     await session.commit()
     await session.refresh(p)
     return _proposal_dict(p)

@@ -117,8 +117,10 @@ async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
 
 @router.post("/spawns/{spawn_id}/complete-chat")
 async def complete_chat(spawn_id: int) -> dict:
-    n = await chat_lifecycle.complete_chat(spawn_id)
-    return {"ok": True, "archived": n}
+    n, distill_ok = await chat_lifecycle.complete_chat(spawn_id)
+    # `distilled` is additive: archived=0 alone cannot distinguish "no active chat"
+    # from "the distillation failed, so we deliberately kept your transcript".
+    return {"ok": True, "archived": n, "distilled": distill_ok}
 
 
 @router.delete("/spawns/{spawn_id}", status_code=status.HTTP_204_NO_CONTENT)

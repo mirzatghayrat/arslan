@@ -9,9 +9,15 @@ from server.db.models import ChatMessage
 from server.services import distill_service
 
 
-async def complete_chat(spawn_id: int) -> int:
+async def complete_chat(spawn_id: int) -> tuple[int, bool]:
     """Distill the spawn's active chat history into memory_facts, then mark those rows
-    archived. Returns the number of messages archived (0 if there was no active chat)."""
+    archived.
+
+    Returns ``(archived_count, distill_ok)``. The flag matters: a failed distillation
+    archives NOTHING (see below), so a bare 0 would be indistinguishable from "there was
+    no active chat" — the caller could not tell "nothing to do" from "we lost your
+    session's learning", which is the exact conflation this round set out to remove.
+    """
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(
             select(ChatMessage).where(
@@ -19,7 +25,7 @@ async def complete_chat(spawn_id: int) -> int:
             ).order_by(ChatMessage.id)
         )).scalars().all()
         if not rows:
-            return 0
+            return 0, True
         # Snapshot the exact ids we distill, and archive ONLY those. If the user keeps
         # chatting during the (slow, async) distill, those newer rows stay active — they
         # are neither archived-without-being-distilled (data loss) nor double-counted.
@@ -35,7 +41,7 @@ async def complete_chat(spawn_id: int) -> int:
         # real, unrecoverable data loss. Leave it active so the user can retry (this
         # path is user-triggered, so retries are human-paced; the automatic-spend risk
         # lives in the curation sweep, which has its own cap).
-        return 0
+        return 0, False
 
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(
@@ -44,4 +50,4 @@ async def complete_chat(spawn_id: int) -> int:
         for m in rows:
             m.archived = True
         await db.commit()
-        return len(rows)
+        return len(rows), True
