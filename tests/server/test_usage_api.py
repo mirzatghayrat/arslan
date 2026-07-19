@@ -291,10 +291,13 @@ async def test_usage_summary_not_covered_footnote(client):
     body = r.json()
     nc = body["not_covered"]
     assert "_route_announcement" in nc
-    assert "distill_service" in nc
     assert "compare_judge" in nc
     assert "sandbox_service" in nc
-    assert len(nc) == 19
+    # distill_service LEFT this list in 整理层#10 段 A4: its two LLM calls (the distill
+    # itself and the meta-upflow) now run inside usage_ledger.scope("distill"), so
+    # claiming it is unaccounted would itself be the dishonest statement.
+    assert "distill_service" not in nc
+    assert len(nc) == 18
 
 
 # ---------------------------------------------------------------------------

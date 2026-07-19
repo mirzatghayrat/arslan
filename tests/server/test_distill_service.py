@@ -85,7 +85,10 @@ async def test_distill_nested_upflow_persists_without_session_lock(maker, monkey
             select(UserFact).where(UserFact.source == "upflow"))).scalars().all()
         assert len(facts) == 1
         assert facts[0].content == "用户偏口语、忌硬广"
-        assert facts[0].provenance == {"source_kind": "upflow", "spawn_id": 3}
+        # conversation_id added by 整理层#10 段 A4 — upflowed profile facts were
+        # previously untraceable to the conversation that produced them.
+        assert facts[0].provenance == {"source_kind": "upflow", "spawn_id": 3,
+                                       "conversation_id": "c1"}
         assert facts[0].valid_from is not None
 
         # (c) the outer per-spawn transaction also committed
@@ -286,3 +289,108 @@ async def test_one_spawn_exception_does_not_abort_the_others(maker, monkeypatch)
     report = await distill_service.distill_session_detailed("c1")
     assert len(seen) == 2, "the second spawn must still be attempted"
     assert any(o.reason == "exception" for o in report.outcomes)
+
+
+# ---------------------------------------------------------------------------
+# 整理层#10 段 A4 — sealing guard, upflow provenance, usage accounting
+# ---------------------------------------------------------------------------
+
+
+async def test_hermetic_conversation_writes_nothing_at_all(maker, monkeypatch):
+    """Synthetic eval traffic must never be learned from. This was previously safe only
+    by ACCIDENT (replay never persists ArslanMessage rows, so the candidate query came
+    back empty) — an accident any new caller could break. Assert on the whole WRITE SET,
+    not one member of it."""
+    from server.orchestrator import memory
+    from server.services import distill_service, memory_temporal
+
+    writes = []
+    monkeypatch.setattr(memory, "save_facts",
+                        lambda *a, **k: writes.append("save_facts") or _aw([]))
+    monkeypatch.setattr(memory_temporal, "execute_supersede",
+                        lambda *a, **k: writes.append("supersede") or _aw(None))
+
+    async def _facts(existing, signals):
+        writes.append("llm")
+        return ["never"]
+    monkeypatch.setattr(distill_service, "distill_facts", _facts)
+
+    # seed material under a hermetic id so the guard is what stops it, not empty input
+    async with maker() as s:
+        s.add(ArslanMessage(conversation_id="evolution-replay", role="spawn_summary",
+                            content="synthetic", display_content="synthetic", spawn_id=3))
+        await s.commit()
+
+    report = await distill_service.distill_session_detailed("evolution-replay")
+
+    assert report.distilled == 0
+    assert writes == [], f"hermetic traffic must write NOTHING, got {writes}"
+    async with maker() as s:
+        spawn = await s.get(Spawn, 3)
+    assert spawn.memory_facts == []
+
+
+async def test_upflow_provenance_carries_the_conversation(maker, monkeypatch):
+    """Upflowed profile facts were permanently untraceable to their originating
+    conversation — _distill_one had it in scope and never passed it."""
+    from server.orchestrator import memory
+    from server.services import distill_service
+
+    seen = {}
+
+    async def _save(facts, *, provenance=None, **kw):
+        seen["provenance"] = provenance
+        return []
+    monkeypatch.setattr(memory, "save_facts", _save)
+
+    async def _facts(existing, signals):
+        return ["用户偏好简短"]
+    monkeypatch.setattr(distill_service, "distill_facts", _facts)
+
+    class _Resp:
+        content = "用户偏口语"
+
+    class _A:
+        async def chat(self, *, system, user):
+            return _Resp()
+    monkeypatch.setattr(distill_service, "build_adapter", lambda **kw: _aw(_A()))
+
+    await distill_service.distill_session("c1")
+    assert seen["provenance"]["conversation_id"] == "c1"
+    assert seen["provenance"]["source_kind"] == "upflow"
+
+
+async def test_distillation_is_ledgered_and_accounting_never_breaks_it(maker, monkeypatch):
+    """Cost visibility: distill_service was on the NOT_COVERED list, so every
+    distillation burned tokens invisibly. Accounting must be fail-open — a ledger
+    failure can never break the distillation itself."""
+    from server.db.models import UsageLedger
+    from server.services import distill_service, usage_ledger
+
+    async def _facts(existing, signals):
+        from arslan.llm import usage_sink
+        usage_sink.report(123)
+        return ["f"]
+    monkeypatch.setattr(distill_service, "distill_facts", _facts)
+
+    await distill_service.distill_session("c1")
+    async with maker() as s:
+        scopes = (await s.execute(select(UsageLedger.scope))).scalars().all()
+    assert "distill" in scopes, "distillation spend must be ledgered"
+
+    # ... and a ledger failure must not break the distill. Clear the marker so the
+    # second run has work to do (the first run consumed it).
+    async with maker() as s:
+        for row in (await s.execute(select(DistilledSession))).scalars().all():
+            await s.delete(row)
+        await s.commit()
+
+    async def _boom(*a, **k):
+        raise RuntimeError("ledger down")
+    monkeypatch.setattr(usage_ledger, "_write", _boom)
+    n = await distill_service.distill_session("c1")
+    assert n == 1, "a broken ledger must never break distillation"
+
+
+async def _aw(v):
+    return v

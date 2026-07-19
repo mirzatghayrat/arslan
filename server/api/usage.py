@@ -39,7 +39,6 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 # (2026-07-11-s3-table-stakes-design.md). Update BOTH places when wiring a new scope.
 NOT_COVERED = [
     "_route_announcement",
-    "distill_service",
     "compare_judge",
     "optimizer",
     "synthetic_corpus",

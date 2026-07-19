@@ -57,7 +57,8 @@ async def distill_facts(existing: list[str], signals: str) -> list[str] | None:
     return [str(f).strip() for f in facts if str(f).strip()][:_MAX_FACTS]
 
 
-async def distill_meta_upflow(spawn, new_facts: list[str]) -> str | None:
+async def distill_meta_upflow(spawn, new_facts: list[str],
+                             conversation_id: str | None = None) -> str | None:
     """After per-spawn distillation, bubble ONE cross-spawn META fact up to Arslan's
     user profile. Meta = a user preference OR a domain-ownership hint
     ('X 内容找 <spawn>'). Domain depth stays in the spawn; only meta rises.
@@ -97,9 +98,14 @@ async def distill_meta_upflow(spawn, new_facts: list[str]) -> str | None:
         fact = (resp.content or "").strip().strip('"').strip("「」").strip()
         if not fact:
             return None
+        prov = {"source_kind": "upflow", "spawn_id": getattr(spawn, "id", None)}
+        if conversation_id:
+            # Only when there IS one: an upflowed profile fact used to be permanently
+            # untraceable to the conversation that produced it. A None-valued key would
+            # just be noise on the direct-call path, so omit it there.
+            prov["conversation_id"] = conversation_id
         created = await memory.save_facts(
-            [{"content": fact, "source": "upflow"}],
-            provenance={"source_kind": "upflow", "spawn_id": getattr(spawn, "id", None)},
+            [{"content": fact, "source": "upflow"}], provenance=prov,
         )
         return created[0].content if created else None
     except Exception as exc:  # noqa: BLE001
@@ -198,14 +204,30 @@ async def distill_session_detailed(
 
 
 async def _distill_one(
-    conversation_id: str, spawn_id: int, *, propose_only: bool = False
+    conversation_id: str, spawn_id: int, *, propose_only: bool = False,
+    usage_scope: str = "distill",
 ) -> DistillOutcome:
     """Distill one spawn's material for this conversation.
 
     Returns a discriminated :class:`DistillOutcome` — ``ok=True`` iff facts were actually
     written (and the idempotency marker persisted); otherwise ``reason`` says which of
     already-distilled / spawn-gone / nothing-to-distill / LLM-failure happened.
+
+    The whole body runs inside ``usage_ledger.scope`` so BOTH LLM calls (the distill
+    itself and the meta-upflow) are accounted — distill_service used to be on the
+    NOT_COVERED list and burned tokens invisibly. That context manager is fail-open by
+    construction: an accounting failure is logged and swallowed, never surfaced here.
     """
+    from server.services import usage_ledger
+
+    async with usage_ledger.scope(usage_scope, conversation_id):
+        return await _distill_one_inner(
+            conversation_id, spawn_id, propose_only=propose_only)
+
+
+async def _distill_one_inner(
+    conversation_id: str, spawn_id: int, *, propose_only: bool = False
+) -> DistillOutcome:
     async with db_session.AsyncSessionLocal() as db:
         already = (await db.execute(select(DistilledSession).where(
             DistilledSession.conversation_id == conversation_id,
@@ -250,7 +272,7 @@ async def _distill_one(
             # Arslan's user profile. A failure here must not break the per-spawn distill.
             # NOTE: save_facts (which this now routes through) owns its own session/
             # commit, independent of this block's — see distill_meta_upflow's docstring.
-            await distill_meta_upflow(spawn, new_facts)
+            await distill_meta_upflow(spawn, new_facts, conversation_id)
         db.add(DistilledSession(conversation_id=conversation_id, spawn_id=spawn_id))
         await db.commit()
     return DistillOutcome(ok=True, spawn_id=spawn_id)
