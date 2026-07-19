@@ -1105,7 +1105,10 @@ def _fire_dual_track(conversation_id: str, spawn_id: int, spawn_name: str | None
     distill growth event for the conversation recap. Fire-and-forget, never fatal."""
     from server.services import learning_service, recap_service
 
-    asyncio.create_task(distill_service.distill_from_signals(spawn_id, signals))
+    # Pass conversation_id so a failure lands on THIS conversation's recap timeline
+    # rather than the synthetic spawn-{id} fallback (this path has a real conversation).
+    asyncio.create_task(distill_service.distill_from_signals(
+        spawn_id, signals, conversation_id=conversation_id))
     asyncio.create_task(recap_service.log_event(
         conversation_id, "distill", {"spawn_id": spawn_id, "spawn_name": spawn_name},
         f"Arslan 亲自做 → 喂给 {spawn_name or '分身'} 学习"))

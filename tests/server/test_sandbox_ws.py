@@ -27,8 +27,8 @@ def sandbox_client(tmp_path, monkeypatch, portal):
         return "精简版周报"
     monkeypatch.setattr(sandbox_service, "summarize_deliverable", fake_summary)
     from server.services import distill_service
-    async def fake_distill(spawn_id, signals):
-        return None
+    async def fake_distill(spawn_id, signals, **kw):
+        return distill_service.DistillOutcome(ok=True, spawn_id=spawn_id)
     monkeypatch.setattr(distill_service, "distill_from_signals", fake_distill)
 
     return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="sandbox.db",

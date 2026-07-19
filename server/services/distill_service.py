@@ -256,24 +256,49 @@ async def _distill_one(
     return DistillOutcome(ok=True, spawn_id=spawn_id)
 
 
-async def distill_from_signals(spawn_id: int, signals: str) -> None:
-    """Distill an EPHEMERAL session (sandbox) whose transcript lives only in memory.
-    Unlike distill_session, takes signals directly (no DB query) and writes no
-    DistilledSession marker (each sandbox confirm is its own one-shot session).
-    Best-effort, never raises."""
+async def distill_from_signals(
+    spawn_id: int, signals: str, *, conversation_id: str | None = None
+) -> DistillOutcome:
+    """Distill an EPHEMERAL session (sandbox / direct chat) whose transcript lives only
+    in memory. Unlike distill_session, takes signals directly (no DB query) and writes no
+    DistilledSession marker (each confirm is its own one-shot session). Never raises.
+
+    Returns a :class:`DistillOutcome` — previously `-> None`, which made it impossible
+    even in principle for a caller to know whether anything was learned. `complete_chat`
+    needs exactly that answer before it archives the source messages.
+
+    ``conversation_id`` is used only to attribute the failure event. The two callers
+    that have no real conversation (sandbox merge, direct chat) fall back to the repo's
+    existing ``spawn-{id}`` convention — a synthetic key, not a real conversation.
+    """
+    if should_not_curate(conversation_id):
+        return DistillOutcome(ok=False, reason="nothing_to_distill", spawn_id=spawn_id)
+    outcome: DistillOutcome
     try:
         async with db_session.AsyncSessionLocal() as db:
             spawn = await db.get(Spawn, spawn_id)
             if spawn is None:
-                return
+                return DistillOutcome(ok=False, reason="no_spawn", spawn_id=spawn_id)
             existing = list(spawn.memory_facts or [])
         new_facts = await distill_facts(existing, signals)
         if new_facts is None:
-            return
-        async with db_session.AsyncSessionLocal() as db:
-            spawn = await db.get(Spawn, spawn_id)
-            if spawn is not None:
-                spawn.memory_facts = new_facts
-                await db.commit()
+            outcome = DistillOutcome(ok=False, reason="llm_failed", spawn_id=spawn_id)
+        else:
+            async with db_session.AsyncSessionLocal() as db:
+                spawn = await db.get(Spawn, spawn_id)
+                if spawn is None:
+                    outcome = DistillOutcome(ok=False, reason="no_spawn", spawn_id=spawn_id)
+                else:
+                    spawn.memory_facts = new_facts
+                    await db.commit()
+                    outcome = DistillOutcome(ok=True, spawn_id=spawn_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("distill_from_signals(spawn=%s) failed: %s", spawn_id, exc)
+        outcome = DistillOutcome(ok=False, reason="exception", spawn_id=spawn_id)
+
+    if outcome.failed:
+        await recap_service.log_event(
+            conversation_id or f"spawn-{spawn_id}", "distill_failed",
+            {"spawn_id": spawn_id, "reason": outcome.reason},
+            f"蒸馏失败({outcome.reason})· 分身 {spawn_id}")
+    return outcome
