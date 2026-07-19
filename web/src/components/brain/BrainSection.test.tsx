@@ -14,6 +14,16 @@ vi.mock("../../api/client", () => ({ api: {
     provenance: "auto", excerpt: "在北京工作", usage_count: 0, last_used_at: null, last_used_ref: null }),
   getBrainGraph: vi.fn().mockResolvedValue({ nodes: [{ id: "self", ref: "self", kind: "self", label: "你", val: 3 }], links: [] }),
   embeddingStatus: vi.fn().mockResolvedValue(null),
+  // F0: the activity strip and the undo affordance are new callers. This mock is NOT a
+  // partial of the real api object, so any method the subtree touches must be listed or
+  // it is `undefined` at runtime and the whole render throws.
+  getBrainUsageEvents: vi.fn().mockResolvedValue({
+    covered_kinds: ["material", "learning", "note"],
+    coverage_note: "covers material / learning / note only",
+    window_start: null, applied_limit: 5000, truncated: false, events: [],
+  }),
+  undoSupersede: vi.fn(),
+  getNote: vi.fn().mockResolvedValue({ id: 1, title: "n", content: "", tags: [], backlinks: [] }),
   createNote: vi.fn(),
   generateNotes: vi.fn(),
 } }));

@@ -9,13 +9,17 @@ interface Props {
   onClose: () => void;
   onChanged: () => void;
   allLabels: string[];
+  /** open another note (a backlink click). Routed through BrainSection so the graph and
+   * the activity strip re-light with it, instead of swapping ids behind their backs. */
+  onOpenNote?: (id: number, title: string) => void;
+  onHover?: (id: string | null) => void;
 }
 
 /** Hand-written markdown note editor — title + content + tags, [[wikilink]]
  * autocomplete fed by `allLabels` (note titles + every other Second-Brain leaf
  * label), AI 建议关联 (suggest links from the LLM) + backlinks. Mirrors the
  * dark-orange BrainEntryDetail chrome but is fully editable. */
-export default function NoteEditor({ noteId, onClose, onChanged, allLabels }: Props) {
+export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOpenNote, onHover }: Props) {
   const [note, setNote] = useState<NoteDto | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -26,6 +30,14 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels }: Pr
   const [suggest, setSuggest] = useState<NoteSuggestDto | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** unsaved-edit detector for the backlink guard above. Compared against the LOADED
+   * note rather than a boolean flag, so saving (which updates `note`) clears it without
+   * anyone having to remember to reset a flag. */
+  const dirty =
+    note != null &&
+    (title !== note.title ||
+      content !== note.content ||
+      JSON.stringify(tags) !== JSON.stringify(note.tags ?? []));
 
   useEffect(() => {
     let ok = true;
@@ -218,7 +230,18 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels }: Pr
               <div className="note-editor__empty">暂无</div>
             ) : (
               (note.backlinks ?? []).map((b) => (
-                <div key={b.id} className="note-editor__backlink">{b.title}</div>
+                <button key={b.id} type="button" className="note-editor__backlink"
+                  data-testid="backlink"
+                  onMouseEnter={() => onHover?.(`note:${b.id}`)}
+                  onMouseLeave={() => onHover?.(null)}
+                  onClick={() => {
+                    // 🔴 Navigating away would DISCARD unsaved edits with no prompt —
+                    // silent data loss, and the edits are the user's own typing. Ask.
+                    if (dirty && !window.confirm("这条笔记有未保存的修改,离开会丢失。仍要打开被链接的笔记吗?")) return;
+                    onOpenNote?.(b.id, b.title);
+                  }}>
+                  {b.title}
+                </button>
               ))
             )}
           </div>

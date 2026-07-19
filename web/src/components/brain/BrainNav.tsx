@@ -12,13 +12,19 @@ const KIND_ICON: Record<string, typeof Boxes> = {
 
 interface Props {
   branches: BrainBranch[];
-  focusedId: string | null;
-  onFocus: (id: string | null) => void;
+  /** the currently lit id (hover, or the persistent tag filter underneath it) */
+  litId: string | null;
+  onHover: (id: string | null) => void;
   onPick: (leaf: BrainLeaf) => void;
   onChanged: () => void;
   onTagFilter: (tag: string) => void;
+  /** the persistent filter itself — chip styling must follow THIS, not the lit id, or a
+   * chip would appear to deactivate whenever the cursor happens to be over a node. */
+  activeTag: string | null;
+  onClearTag: () => void;
   showTags: boolean;
   onToggleTags: () => void;
+  onCreateNote?: (title: string) => void;
   onGenerate?: (topic: string) => void;
 }
 
@@ -27,7 +33,7 @@ interface Props {
  * graph), then a tidy multi-level collapsible tree (画像 grouped by category, 材料
  * by provenance); then create/generate/feed + a collapsed index-health strip.
  * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
-export default function BrainNav({ branches, focusedId, onFocus, onPick, onChanged, onTagFilter, showTags, onToggleTags, onGenerate }: Props) {
+export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate }: Props) {
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,6 +41,7 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
   // every level starts collapsed (expanded = the keys the user opened) → compact column
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [topic, setTopic] = useState("");
+  const [newNote, setNewNote] = useState("");
   const [generating, setGenerating] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -68,9 +75,20 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
 
   const Row = (l: BrainLeaf) => (
     <div key={l.ref} data-testid="brain-nav-row"
-      className={`brain-nav__row${focusedId === l.ref ? " is-focused" : ""}`}
-      onMouseEnter={() => onFocus(l.ref)} onMouseLeave={() => onFocus(null)} onClick={() => onPick(l)}>
+      className={`brain-nav__row${litId === l.ref ? " is-focused" : ""}`}
+      onMouseEnter={() => onHover(l.ref)} onMouseLeave={() => onHover(null)} onClick={() => onPick(l)}>
+      {/* 🔴 F0.5-8 — a RENDERING HINT, not protection. D2 established that these payloads
+          still carry the fact's full text; the badge only lets the eye skip it. The
+          tooltip must therefore never promise isolation. Fail-closed on the wire (NULL ⇒
+          sensitive), so `=== true` here would be wrong: the backend already resolved it. */}
+      {l.sensitive && (
+        <span className="brain-nav__row-lock" title="已标记为敏感" aria-label="已标记为敏感"
+          data-testid="sensitive-badge">🔒</span>
+      )}
       <span className="brain-nav__row-label">{l.label}</span>
+      {l.superseded_by != null && (
+        <span className="brain-nav__row-superseded" title="已被更新的版本取代">已取代</span>
+      )}
       {l.usage_count ? <span className="brain-nav__row-usage">用过 {l.usage_count}</span> : null}
     </div>
   );
@@ -148,12 +166,34 @@ export default function BrainNav({ branches, focusedId, onFocus, onPick, onChang
           </div>
           <div className="brain-nav__tags-chips">
             {tagChips.map(([t, c]) => (
-              <button key={t} className={`brain-nav__chip${focusedId === `tag:${t.toLowerCase()}` ? " is-active" : ""}`}
+              <button key={t} className={`brain-nav__chip${activeTag === `tag:${t.toLowerCase()}` ? " is-active" : ""}`}
                 onClick={() => onTagFilter(t)}>
                 #{t}<span className="brain-nav__chip-count">{c}</span>
               </button>
             ))}
+            {/* The tag filter used to be cleared as a SIDE EFFECT of moving the mouse off
+                a node (it shared one variable with hover). Now that it persists, it needs
+                a real way out — re-clicking the same chip works, but a chip scrolled out
+                of view would otherwise trap the user. */}
+            {activeTag && (
+              <button className="brain-nav__chip brain-nav__chip--clear" onClick={onClearTag}
+                data-testid="clear-tag-filter">清除筛选 ✕</button>
+            )}
           </div>
+        </div>
+      )}
+
+      {onCreateNote && (
+        <div className="brain-nav__generate">
+          {/* Before this, the ONLY way to create a note was double-clicking a ghost node —
+              i.e. you could only write one down if the graph already guessed you wanted it. */}
+          <input value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="＋ 新笔记标题…"
+            data-testid="new-note-input"
+            onKeyDown={(e) => { if (e.key === "Enter" && newNote.trim()) { onCreateNote(newNote.trim()); setNewNote(""); } }}
+            className="brain-nav__generate-input" />
+          <button type="button" disabled={!newNote.trim()} data-testid="new-note-btn"
+            onClick={() => { onCreateNote(newNote.trim()); setNewNote(""); }}
+            className="brain-nav__generate-btn">新建</button>
         </div>
       )}
 

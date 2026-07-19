@@ -19,7 +19,7 @@ const branches = [
 ] as any;
 
 describe("BrainNav", () => {
-  const base = { branches, focusedId: null, onFocus: vi.fn(), onPick: vi.fn(), onChanged: vi.fn(),
+  const base = { branches, litId: null, onHover: vi.fn(), activeTag: null, onClearTag: vi.fn(), onPick: vi.fn(), onChanged: vi.fn(),
     onTagFilter: vi.fn(), showTags: true, onToggleTags: vi.fn() };
 
   it("groups profile facts by category as a second level (once expanded)", () => {

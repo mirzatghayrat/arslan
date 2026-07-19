@@ -24,7 +24,7 @@ describe("BrainGraph", () => {
   const noop = () => {};
   it("renders self / tag / ghost node kinds", async () => {
     const { container } = render(
-      <BrainGraph focusedId={null} onFocus={noop} onPick={noop} onCreateNoteWithTitle={noop} showTags />);
+      <BrainGraph litId={null} onHover={noop} onPick={noop} onCreateNoteWithTitle={noop} showTags />);
     await waitFor(() => expect(container.querySelector('[data-kind="self"]')).toBeTruthy());
     expect(container.querySelector('[data-kind="tag"]')).toBeTruthy();
     expect(container.querySelector('[data-kind="ghost"]')).toBeTruthy();
@@ -33,7 +33,7 @@ describe("BrainGraph", () => {
   it("double-clicking a ghost node asks to create that note", async () => {
     const onCreate = vi.fn();
     const { container } = render(
-      <BrainGraph focusedId={null} onFocus={noop} onPick={noop} onCreateNoteWithTitle={onCreate} showTags />);
+      <BrainGraph litId={null} onHover={noop} onPick={noop} onCreateNoteWithTitle={onCreate} showTags />);
     await waitFor(() => expect(container.querySelector('[data-kind="ghost"]')).toBeTruthy());
     fireEvent.doubleClick(container.querySelector('[data-kind="ghost"]')!);
     expect(onCreate).toHaveBeenCalledWith("未来想法");
