@@ -7,6 +7,11 @@ vi.mock("../../api/client", () => ({
     getBrainGraph: vi.fn(),
     getBrainEntry: vi.fn(),
     getBrainUsageEvents: vi.fn(),
+    // 🔴 A bare vi.fn() returns undefined, and every one of these is awaited or
+    // .then()'d. Creating a note opens NoteEditor, which calls getNote — undefined.then
+    // throws. The suite still reports "938 passed" because the throw is an unhandled
+    // ASYNC error, but vitest exits NON-ZERO for it, which is how CI caught what my
+    // grep-the-output check did not. Every promise-returning mock gets a value.
     getNote: vi.fn(),
     createNote: vi.fn(),
     generateNotes: vi.fn(),
@@ -51,6 +56,7 @@ beforeEach(() => {
     window_start: null, applied_limit: 5000, truncated: false, events: [],
   });
   m.createNote.mockResolvedValue({ id: 7, title: "新的" });
+  m.getNote.mockResolvedValue({ id: 7, title: "新的", content: "", tags: [], backlinks: [] });
 });
 
 describe("brain coordinated brushing", () => {
