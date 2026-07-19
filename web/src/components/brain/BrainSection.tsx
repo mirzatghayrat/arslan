@@ -4,6 +4,7 @@ import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
 import BrainActivityStrip from "./BrainActivityStrip";
+import BrainProposalInbox from "./BrainProposalInbox";
 import BrainGraph from "./BrainGraph";
 import BrainNav from "./BrainNav";
 import NoteEditor from "./NoteEditor";
@@ -24,6 +25,11 @@ export default function BrainSection() {
   // `lit` is hover-wins-over-filter, so hovering still previews a cluster and the filter
   // survives underneath. The old mouseleave→null was also the de-facto way to escape a
   // filter, so an explicit clear affordance replaces it (see BrainNav's chip row).
+  // F2: the memory-proposal inbox is a PEER surface, not a graph overlay — and it is a
+  // different inbox from the evolution one under Diagnostics (different table, different
+  // lifecycle, different actions). Kept behind a toggle so the graph stays the default
+  // view rather than being pushed aside by a queue that is usually empty.
+  const [showInbox, setShowInbox] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const lit = hoveredId ?? tagFilter;
@@ -82,6 +88,7 @@ export default function BrainSection() {
         onTagFilter={onTagFilter} activeTag={tagFilter} onClearTag={() => setTagFilter(null)}
         showTags={showTags} onToggleTags={toggleTags}
         onCreateNote={(title) => void createNoteWithTitle(title)}
+        inboxOpen={showInbox} onToggleInbox={() => setShowInbox((v) => !v)}
         onGenerate={(t) => void generateFromTopic(t)} />
 
       <div className="flex-1 relative h-full overflow-hidden">
@@ -103,6 +110,11 @@ export default function BrainSection() {
         ) : picked ? (
           <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} onChanged={reloadAll} />
         ) : null}
+        {showInbox && (
+          <div className="absolute top-0 right-0 h-full w-[400px] bg-surface-raised border-l border-border overflow-auto z-20">
+            <BrainProposalInbox onChanged={reloadAll} />
+          </div>
+        )}
         <BrainActivityStrip litId={lit} onHover={setHoveredId} onPick={pick} reloadKey={graphKey} />
       </div>
 

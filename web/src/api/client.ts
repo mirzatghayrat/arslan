@@ -225,6 +225,37 @@ export interface EvolveRepeatRefusal {
   est_is_lower_bound: boolean;
 }
 
+/** One row of GET /brain/proposals — the Tier-2 human gate (F2).
+ *
+ * 🔴 `new_excerpt` / `old_excerpt` are present ONLY on the LIST response. accept/dismiss
+ * return the same row WITHOUT them, so patching a cached list row with an action's
+ * response silently deletes the excerpts. Refetch instead — which is required anyway,
+ * because accepting one proposal auto-dismisses its siblings server-side with no signal
+ * in the response.
+ *
+ * 🔴 Excerpts are TRUNCATED to 200 chars while `provenance.content` / `new_array` are
+ * not, so diffing one against the other invents deletions at the tail of any long value. */
+export interface MemoryProposalDto {
+  id: number;
+  kind:
+    | "supersede_suspect"
+    | "append_suspect"
+    | "delete_suspect"
+    | "edit_high_conf_suspect"
+    | "preference_overwrite_suspect";
+  table_name: string;
+  new_id: number | null;
+  /** 0 is a SENTINEL meaning "nothing existed before" (append_suspect), not row 0 */
+  old_id: number | null;
+  reason: string | null;
+  status: string;
+  provenance: Record<string, unknown> | null;
+  created_at: string | null;
+  resolved_at: string | null;
+  new_excerpt?: string | null;
+  old_excerpt?: string | null;
+}
+
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
@@ -236,6 +267,21 @@ export const api = {
    * learning / note only (profile facts are never recorded as usage events), and a
    * truncated page is missing its OLDEST end, which would otherwise render as a quiet
    * period. Show the note; do not re-derive coverage on the client. */
+  listMemoryProposals: (opts?: { status?: string; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (opts?.status) q.set("status", opts.status);
+    if (opts?.limit != null) q.set("limit", String(opts.limit));
+    if (opts?.offset != null) q.set("offset", String(opts.offset));
+    const qs = q.toString();
+    return request<MemoryProposalDto[]>(`/brain/proposals${qs ? `?${qs}` : ""}`);
+  },
+  /** Materialize a proposal. NOTE the server also auto-dismisses sibling proposals for
+   * the same (kind, table, old_id, conversation) — so callers must REFETCH the list,
+   * never patch the single row. */
+  acceptMemoryProposal: (id: number) =>
+    request<MemoryProposalDto>(`/brain/proposals/${id}/accept`, { method: "POST" }),
+  dismissMemoryProposal: (id: number) =>
+    request<MemoryProposalDto>(`/brain/proposals/${id}/dismiss`, { method: "POST" }),
   getBrainUsageEvents: (opts?: { since?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (opts?.since) q.set("since", opts.since);

@@ -14,7 +14,23 @@
     "empty": "Your second brain is empty — feed it a source.",
     "error": "Couldn't load your knowledge graph.",
     "connections": "Connections",
-    "noConnections": "No connections yet."
+    "noConnections": "No connections yet.",
+    "inbox": {
+      "empty": "No hay propuestas de memoria pendientes.",
+      "accept": "Aceptar",
+      "dismiss": "Descartar",
+      "irreversible": "no se puede deshacer",
+      "confirm_irreversible": "Esto borra el valor anterior de forma permanente — no hay deshacer.",
+      "confirm_yes": "Borrar de todos modos",
+      "confirm_no": "Cancelar",
+      "kind": {
+        "supersede_suspect": "Reemplazar",
+        "append_suspect": "Añadir",
+        "delete_suspect": "Borrar",
+        "edit_high_conf_suspect": "Editar",
+        "preference_overwrite_suspect": "Reescribir preferencias"
+      }
+    }
   },
   "dashboard": {
     "title": "Tus spawns",

@@ -26,6 +26,9 @@ interface Props {
   onToggleTags: () => void;
   onCreateNote?: (title: string) => void;
   onGenerate?: (topic: string) => void;
+  /** F2 — the memory-proposal inbox toggle (a different inbox from the evolution one). */
+  inboxOpen?: boolean;
+  onToggleInbox?: () => void;
 }
 
 /** Second-Brain left column: a persistent navigator for the always-on graph.
@@ -33,7 +36,7 @@ interface Props {
  * graph), then a tidy multi-level collapsible tree (画像 grouped by category, 材料
  * by provenance); then create/generate/feed + a collapsed index-health strip.
  * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
-export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate }: Props) {
+export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate, inboxOpen, onToggleInbox }: Props) {
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
@@ -225,6 +228,15 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
           accept=".pdf,.docx,.doc,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp"
           onChange={(e) => { void pickFiles(e.target.files); e.target.value = ""; }} />
       </div>
+
+      {onToggleInbox && (
+        <div className="brain-nav__inbox-toggle">
+          <button type="button" onClick={onToggleInbox} data-testid="inbox-toggle"
+            className={inboxOpen ? "is-open" : undefined}>
+            记忆提案箱
+          </button>
+        </div>
+      )}
 
       <div className="brain-nav__health">
         <button className="brain-nav__health-toggle" onClick={() => setHealthOpen((v) => !v)}>

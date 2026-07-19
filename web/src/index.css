@@ -3553,3 +3553,30 @@ button:disabled {
 }
 .note-editor__backlink:hover { color: var(--primary); }
 .brain-health__warn { color: var(--warning); }
+
+/* ── F2 记忆提案箱 ─────────────────────────────────────────────────────────── */
+.brain-inbox { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.brain-inbox--msg, .brain-inbox__empty {
+  font-family: var(--font-mono); font-size: 11px; color: var(--subtle-foreground);
+}
+.brain-inbox__error { font-size: 11px; color: var(--danger); }
+.brain-inbox__row {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex;
+  flex-direction: column; gap: 6px;
+}
+.brain-inbox__row[data-destructive] { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.brain-inbox__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.brain-inbox__kind { font-weight: 600; color: var(--foreground); }
+.brain-inbox__danger { color: var(--danger); font-size: 10px; }
+.brain-inbox__reason { color: var(--subtle-foreground); font-family: var(--font-mono); font-size: 10px; }
+.brain-inbox__diff {
+  margin: 0; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* blue = added, orange + strike = removed. Never red/green — the round's own rule. */
+.brain-inbox__diff [data-diff="add"] { color: var(--primary); }
+.brain-inbox__diff [data-diff="del"] { color: var(--warning); text-decoration: line-through; }
+.brain-inbox__actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 11px; }
+.brain-inbox__danger-btn { color: var(--danger); font-weight: 600; }
+.brain-nav__inbox-toggle { padding: 4px 8px; font-size: 11px; }
+.brain-nav__inbox-toggle .is-open { color: var(--primary); font-weight: 600; }

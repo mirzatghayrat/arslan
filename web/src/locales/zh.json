@@ -14,7 +14,23 @@
     "empty": "第二大脑还是空的——喂它一份资料。",
     "error": "知识图谱加载失败。",
     "connections": "关联",
-    "noConnections": "还没有关联。"
+    "noConnections": "还没有关联。",
+    "inbox": {
+      "empty": "没有待处理的记忆提案。",
+      "accept": "接受",
+      "dismiss": "忽略",
+      "irreversible": "不可撤销",
+      "confirm_irreversible": "这会永久删除旧值 —— 没有撤销。",
+      "confirm_yes": "仍然删除",
+      "confirm_no": "取消",
+      "kind": {
+        "supersede_suspect": "取代",
+        "append_suspect": "新增",
+        "delete_suspect": "删除",
+        "edit_high_conf_suspect": "修改",
+        "preference_overwrite_suspect": "重写偏好"
+      }
+    }
   },
   "dashboard": {
     "title": "你的分身",

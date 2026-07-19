@@ -14,7 +14,23 @@
     "empty": "Your second brain is empty — feed it a source.",
     "error": "Couldn't load your knowledge graph.",
     "connections": "Connections",
-    "noConnections": "No connections yet."
+    "noConnections": "No connections yet.",
+    "inbox": {
+      "empty": "保留中の記憶提案はありません。",
+      "accept": "承認",
+      "dismiss": "却下",
+      "irreversible": "取り消せません",
+      "confirm_irreversible": "古い値を完全に削除します — 取り消しはできません。",
+      "confirm_yes": "それでも削除",
+      "confirm_no": "キャンセル",
+      "kind": {
+        "supersede_suspect": "置き換え",
+        "append_suspect": "追加",
+        "delete_suspect": "削除",
+        "edit_high_conf_suspect": "編集",
+        "preference_overwrite_suspect": "設定の書き換え"
+      }
+    }
   },
   "dashboard": {
     "title": "あなたのスポーン",

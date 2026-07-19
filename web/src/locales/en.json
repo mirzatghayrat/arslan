@@ -14,7 +14,23 @@
     "empty": "Your second brain is empty — feed it a source.",
     "error": "Couldn't load your knowledge graph.",
     "connections": "Connections",
-    "noConnections": "No connections yet."
+    "noConnections": "No connections yet.",
+    "inbox": {
+      "empty": "No memory proposals waiting.",
+      "accept": "Accept",
+      "dismiss": "Dismiss",
+      "irreversible": "cannot be undone",
+      "confirm_irreversible": "This permanently deletes the old value — there is no undo.",
+      "confirm_yes": "Delete anyway",
+      "confirm_no": "Cancel",
+      "kind": {
+        "supersede_suspect": "Replace",
+        "append_suspect": "Add",
+        "delete_suspect": "Delete",
+        "edit_high_conf_suspect": "Edit",
+        "preference_overwrite_suspect": "Rewrite preferences"
+      }
+    }
   },
   "dashboard": {
     "title": "Your Spawns",
