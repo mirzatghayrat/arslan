@@ -39,7 +39,8 @@
       "validFromAlways": "desde siempre",
       "endUnknown": "desconocido",
       "lineage": "Linaje de sustitución",
-      "lineageTruncated": "Linaje mayor que {{n}}; truncado"
+      "lineageTruncated": "Linaje mayor que {{n}}; truncado",
+      "lineageMerged": "Este linaje se bifurca (varios ancestros fusionados); solo se muestra una rama"
     }
   },
   "dashboard": {

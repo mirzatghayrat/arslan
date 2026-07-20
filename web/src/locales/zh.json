@@ -39,7 +39,8 @@
       "validFromAlways": "自古有效",
       "endUnknown": "未知",
       "lineage": "取代谱系",
-      "lineageTruncated": "谱系超过 {{n}} 条,已截断"
+      "lineageTruncated": "谱系超过 {{n}} 条,已截断",
+      "lineageMerged": "这条谱系有分叉(多条前驱合并),只显示了其中一支"
     }
   },
   "dashboard": {

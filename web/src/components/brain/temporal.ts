@@ -119,19 +119,39 @@ export function supersedeLinks(nodes: TemporalNode[]): TemporalLink[] {
   return out;
 }
 
-/** The genealogy containing `id`, oldest first, truncated at MAX_CHAIN. */
-export function chainOf(id: string, nodes: TemporalNode[]): string[] {
+/**
+ * The genealogy containing `id`, oldest first.
+ *
+ * Returns `truncated` as a REAL flag rather than letting the caller infer it from the
+ * length. A chain of exactly MAX_CHAIN may be complete or may be cut — those are
+ * different facts, and `length >= MAX_CHAIN` calls a complete one truncated while
+ * `length > MAX_CHAIN` (impossible, since the walk caps) never reports anything at all.
+ *
+ * `mergedAncestors` flags the other incompleteness: two rows can point at the same
+ * successor (dedup merging duplicates into one survivor), which makes the genealogy a
+ * DAG rather than a chain. Only one branch is walked, so the panel must say the rest
+ * exists instead of presenting one line as the whole story.
+ */
+export function chainOf(
+  id: string,
+  nodes: TemporalNode[],
+): { ids: string[]; truncated: boolean; mergedAncestors: boolean } {
   const byId = indexById(nodes);
   const predecessor = new Map<string, string>();
+  const predecessorCount = new Map<string, number>();
   for (const n of nodes) {
     const sid = successorId(n);
-    if (sid) predecessor.set(sid, n.id);
+    if (!sid) continue;
+    predecessor.set(sid, n.id);
+    predecessorCount.set(sid, (predecessorCount.get(sid) ?? 0) + 1);
   }
 
+  let truncated = false;
   const back: string[] = [];
   const seen = new Set<string>([id]);
   let cur = predecessor.get(id);
-  while (cur && !seen.has(cur) && back.length + 1 < MAX_CHAIN) {
+  while (cur && !seen.has(cur)) {
+    if (back.length + 1 >= MAX_CHAIN) { truncated = true; break; }
     seen.add(cur);
     back.unshift(cur);
     cur = predecessor.get(cur);
@@ -139,15 +159,18 @@ export function chainOf(id: string, nodes: TemporalNode[]): string[] {
 
   const forward: string[] = [];
   let node = byId.get(id);
-  while (node && back.length + forward.length + 1 < MAX_CHAIN) {
+  while (node) {
     const sid = successorId(node);
-    if (!sid || seen.has(sid)) break;
+    if (!sid || seen.has(sid)) break;      // end of chain, or a cycle
+    if (back.length + forward.length + 1 >= MAX_CHAIN) { truncated = true; break; }
     seen.add(sid);
     forward.push(sid);
     node = byId.get(sid);
   }
 
-  return [...back, id, ...forward];
+  const ids = [...back, id, ...forward];
+  const mergedAncestors = ids.some((x) => (predecessorCount.get(x) ?? 0) > 1);
+  return { ids, truncated, mergedAncestors };
 }
 
 /**
@@ -189,6 +212,13 @@ export function hiddenAt(
   // today's [[links]], so both would decorate a picture of a time before they existed.
   const sources = new Map<string, string[]>();
   for (const l of links) {
+    // 🔴 The 「你」 hub edge is NOT a source. brain.py:349-354 gives every tag a
+    // `self -> tag` hub link unconditionally, and `self` is never hidden — so counting
+    // it as a source makes `every(hidden)` false for EVERY tag in EVERY real payload,
+    // and no tag is ever hidden. (The first version of this code did exactly that; the
+    // unit test missed it because its fixture omitted the hub edge the server always
+    // sends. The fixture now includes it.)
+    if (l.type === "hub") continue;
     const target = byId.get(l.target);
     if (target && (target.kind === "tag" || target.kind === "ghost")) {
       (sources.get(l.target) ?? sources.set(l.target, []).get(l.target)!).push(l.source);

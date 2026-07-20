@@ -10,7 +10,13 @@ import { ApiError, api, type BrainEntry, type BrainLeaf } from "../../api/client
  * `superseded_by` (the last one gating the undo affordance).
  */
 export default function BrainEntryDetail(
-  { leaf, onClose, onChanged }: { leaf: BrainLeaf; onClose: () => void; onChanged?: () => void },
+  { leaf, onClose, onChanged, children }: {
+    leaf: BrainLeaf; onClose: () => void; onChanged?: () => void;
+    /** F1 — rendered after the excerpt, INSIDE this panel. It has to be a child rather
+     * than a sibling: this component's root is absolutely positioned, full height and
+     * opaque, so any sibling in a shared absolute wrapper is painted underneath it. */
+    children?: React.ReactNode;
+  },
 ) {
   const { t } = useTranslation();
   const [entry, setEntry] = useState<BrainEntry | null>(null);
@@ -77,8 +83,8 @@ export default function BrainEntryDetail(
   };
 
   return (
-    <div className="absolute top-0 right-0 h-full w-[360px] bg-surface-raised border-l border-border p-4 overflow-auto z-20"
-      data-testid="brain-entry-detail">
+    <div data-testid="brain-entry-detail"
+      className="absolute top-0 right-0 h-full w-[360px] bg-surface-raised border-l border-border p-4 overflow-auto z-20">
       <div className="flex items-center justify-between mb-3">
         <span className="text-[13px] font-medium text-foreground truncate">
           {entry?.sensitive && (
@@ -150,6 +156,8 @@ export default function BrainEntryDetail(
               </pre>
             </details>
           )}
+
+          {children}
         </>
       )}
     </div>

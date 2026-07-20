@@ -39,7 +39,8 @@
       "validFromAlways": "always",
       "endUnknown": "unknown",
       "lineage": "Supersede lineage",
-      "lineageTruncated": "Lineage longer than {{n}}; truncated"
+      "lineageTruncated": "Lineage longer than {{n}}; truncated",
+      "lineageMerged": "This genealogy branches (several ancestors merged); only one branch is shown"
     }
   },
   "dashboard": {

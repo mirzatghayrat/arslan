@@ -29,12 +29,14 @@ export default function BrainLineage({ selectedId, nodes, onPickId, className }:
   const { t } = useTranslation();
 
   const chain = useMemo(
-    () => (selectedId ? chainOf(selectedId, nodes) : []),
+    () => (selectedId
+      ? chainOf(selectedId, nodes)
+      : { ids: [], truncated: false, mergedAncestors: false }),
     [selectedId, nodes],
   );
   const byId = useMemo(() => indexById(nodes), [nodes]);
 
-  if (chain.length < 2) return null;
+  if (chain.ids.length < 2) return null;
 
   return (
     <div className={className} data-testid="brain-lineage">
@@ -42,7 +44,7 @@ export default function BrainLineage({ selectedId, nodes, onPickId, className }:
         {t("brain.temporal.lineage")}
       </div>
       <ol className="space-y-1">
-        {chain.map((id, i) => {
+        {chain.ids.map((id, i) => {
           const n = byId.get(id);
           const end = n ? supersededAt(n, byId) : null;
           const current = n?.superseded_by == null;
@@ -65,9 +67,20 @@ export default function BrainLineage({ selectedId, nodes, onPickId, className }:
           );
         })}
       </ol>
-      {chain.length >= MAX_CHAIN && (
+      {/* A real flag from the walk, not `length >= MAX_CHAIN`: a genealogy of exactly
+          MAX_CHAIN may be complete, and calling that truncated is as wrong as staying
+          silent about one that was cut. */}
+      {chain.truncated && (
         <div className="mt-1 text-[10px] text-warning" data-testid="lineage-truncated">
           {t("brain.temporal.lineageTruncated", { n: MAX_CHAIN })}
+        </div>
+      )}
+      {/* Two rows can point at the same successor (dedup merging duplicates), making
+          this a DAG. Only one branch is walked — say so rather than present one line
+          as the whole story. */}
+      {chain.mergedAncestors && (
+        <div className="mt-1 text-[10px] text-warning" data-testid="lineage-merged">
+          {t("brain.temporal.lineageMerged")}
         </div>
       )}
     </div>

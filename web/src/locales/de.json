@@ -39,7 +39,8 @@
       "validFromAlways": "seit jeher",
       "endUnknown": "unbekannt",
       "lineage": "Ablöse-Stammbaum",
-      "lineageTruncated": "Stammbaum länger als {{n}}; gekürzt"
+      "lineageTruncated": "Stammbaum länger als {{n}}; gekürzt",
+      "lineageMerged": "Dieser Stammbaum verzweigt sich (mehrere Vorgänger zusammengeführt); nur ein Zweig wird gezeigt"
     }
   },
   "dashboard": {

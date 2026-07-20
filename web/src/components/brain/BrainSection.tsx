@@ -131,13 +131,17 @@ export default function BrainSection() {
               last_used_ref: null, value: 1 })}
             onHover={setHoveredId} />
         ) : picked ? (
-          <div className="absolute top-0 right-0 z-20 flex h-full w-[340px] flex-col">
-            <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} onChanged={reloadAll} />
-            {/* only renders when the selection actually has a supersede relation */}
-            <BrainLineage selectedId={picked.ref} nodes={graphNodes}
-              onPickId={pickById}
-              className="border-t border-border bg-surface-raised px-3 py-2" />
-          </div>
+          // 🔴 The lineage goes INSIDE the detail panel, as a child. BrainEntryDetail's
+          // own root is `absolute top-0 right-0 h-full … z-20` and opaque, so an
+          // absolutely-positioned wrapper around both made the detail its containing
+          // block: the panel covered the lineage completely and the whole genealogy was
+          // unreachable in the app while its component tests passed. Component-level
+          // tests render it standalone and cannot see this — hence the BrainSection
+          // test added alongside this fix.
+          <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} onChanged={reloadAll}>
+            <BrainLineage selectedId={picked.ref} nodes={graphNodes} onPickId={pickById}
+              className="mt-3 border-t border-border pt-2" />
+          </BrainEntryDetail>
         ) : null}
         {showInbox && (
           <div className="absolute top-0 right-0 h-full w-[400px] bg-surface-raised border-l border-border overflow-auto z-20">

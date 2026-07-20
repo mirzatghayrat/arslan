@@ -398,7 +398,11 @@ async def test_material_created_at_is_the_earliest_chunk_in_the_group(seeded, cl
 
     🔴 MIN answers 'earliest chunk that still exists', NOT 'when this material first
     appeared'. Re-ingest deletes and re-inserts (collections.py:143-147), which moves
-    MIN forward. Pinned in test_material_time_moves_forward_after_reingest below.
+    MIN forward. That caveat is DISCLOSED (brain.py's SQL comment, BrainAsOfSlider's
+    docstring, the delivery notes) and is NOT pinned by any test — deliberately, since
+    asserting it would mean asserting the re-ingest path's delete/insert behaviour,
+    which belongs to that path's own tests. Saying so here rather than naming a test
+    that does not exist.
     """
     from datetime import datetime
 

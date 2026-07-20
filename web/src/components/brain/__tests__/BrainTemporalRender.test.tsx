@@ -151,7 +151,8 @@ describe("as-of filtering, through the rendered component", () => {
     render(<BrainGraph {...props} asOf={T("2025-06-01")} />);
     await waitFor(() => expect(wrap("fact:2")).not.toBeNull());
     const supEdge = document.querySelector('[data-link-type="supersede"]') as HTMLElement;
-    // fact:1 is still visible at this T (superseded 2025-01-01 <= T? yes → hidden)
+    // fact:1 was superseded at 2025-01-01, which is <= this T, so it IS hidden —
+    // and the supersede edge that ends on it must go with it.
     expect(wrap("fact:1")?.getAttribute("data-hidden")).toBe("true");
     expect(supEdge.getAttribute("data-hidden")).toBe("true");
   });
@@ -159,8 +160,10 @@ describe("as-of filtering, through the rendered component", () => {
   it("issues NO request when the as-of value changes", async () => {
     // as-of is a paint-time filter. If it ever became a query parameter, the honest
     // claim "this never refetches and never touches injection" would be false.
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+    // NOTE: no global-fetch spy here. The whole api/client module is mocked above, so
+    // nothing in this component can reach `fetch` under ANY implementation — such an
+    // assertion could not fail and would be coverage theatre. The call-count checks on
+    // the mocked client below are what actually carry this test.
     const { rerender } = render(<BrainGraph {...props} asOf={null} />);
     await waitFor(() => expect(wrap("fact:1")).not.toBeNull());
     expect(getBrainGraph).toHaveBeenCalledTimes(1);
@@ -171,8 +174,6 @@ describe("as-of filtering, through the rendered component", () => {
 
     expect(getBrainGraph).toHaveBeenCalledTimes(1);   // still one, from mount
     expect(getBrainGraph).toHaveBeenLastCalledWith();  // and with no as-of argument
-    expect(fetchSpy).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 });
 
@@ -199,6 +200,43 @@ describe("BrainLineage — never invents an end time", () => {
     expect(row.textContent).toContain("brain.temporal.endUnknown");
     // the only digit allowed on this row is the ordinal "1"
     expect(row.textContent!.replace(/1/g, "")).not.toMatch(/\d/);
+  });
+
+  it("RENDERS the truncation warning when the walk was actually cut", () => {
+    // the flag being correct in temporal.ts proves nothing about the panel showing it —
+    // a banner that is computed and never rendered is the "guard defined but never
+    // wired" failure, and it is silent by construction
+    const long = Array.from({ length: 200 }, (_, i) =>
+      node({ id: `fact:${i + 1}`, label: `v${i + 1}`,
+        ...(i + 1 < 200 ? { superseded_by: i + 2 } : {}) }));
+    render1(long);
+    expect(screen.getByTestId("lineage-truncated").textContent)
+      .toContain("brain.temporal.lineageTruncated");
+  });
+
+  it("does NOT warn about truncation on a chain that fits exactly", () => {
+    const exact = Array.from({ length: 64 }, (_, i) =>
+      node({ id: `fact:${i + 1}`, label: `v${i + 1}`,
+        ...(i + 1 < 64 ? { superseded_by: i + 2 } : {}) }));
+    render1(exact);
+    expect(screen.queryByTestId("lineage-truncated")).toBeNull();
+  });
+
+  it("RENDERS the merged-ancestors warning when the genealogy branches", () => {
+    // two rows superseded by the same survivor (dedup merge): only one branch is
+    // walked, so presenting it as the whole story would be a completeness claim
+    render1([
+      node({ id: "fact:1", label: "甲", superseded_by: 3 }),
+      node({ id: "fact:2", label: "乙", superseded_by: 3 }),
+      node({ id: "fact:3", label: "合并后", valid_from: T("2025-01-01") }),
+    ], "fact:3");
+    expect(screen.getByTestId("lineage-merged").textContent)
+      .toContain("brain.temporal.lineageMerged");
+  });
+
+  it("does NOT warn about merges on a plain linear chain", () => {
+    render1(NODES);
+    expect(screen.queryByTestId("lineage-merged")).toBeNull();
   });
 
   it("renders nothing when the entry has no supersede relation", () => {

@@ -39,7 +39,8 @@
       "validFromAlways": "depuis toujours",
       "endUnknown": "inconnu",
       "lineage": "Lignée de remplacement",
-      "lineageTruncated": "Lignée supérieure à {{n}} ; tronquée"
+      "lineageTruncated": "Lignée supérieure à {{n}} ; tronquée",
+      "lineageMerged": "Cette lignée bifurque (plusieurs ancêtres fusionnés) ; une seule branche est affichée"
     }
   },
   "dashboard": {

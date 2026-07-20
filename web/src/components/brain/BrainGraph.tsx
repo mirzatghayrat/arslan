@@ -112,6 +112,14 @@ export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTit
     const deg = new Map<string, number>();
     const nb = new Map<string, Set<string>>();
     view.links.forEach((l) => {
+      // radius() is degree-driven, so counting supersede edges would make a REPLACED
+      // belief render LARGER than an equivalent live one — working directly against
+      // the desaturation that is supposed to mark it as no longer current. They still
+      // take part in the simulation and the hover-neighbour set; only size is exempt.
+      if (l.type === "supersede") { const s0 = endpointId(l.source), t0 = endpointId(l.target);
+        (nb.get(s0) ?? nb.set(s0, new Set()).get(s0)!).add(t0);
+        (nb.get(t0) ?? nb.set(t0, new Set()).get(t0)!).add(s0);
+        return; }
       const s = endpointId(l.source), t = endpointId(l.target);
       deg.set(s, (deg.get(s) ?? 0) + 1); deg.set(t, (deg.get(t) ?? 0) + 1);
       (nb.get(s) ?? nb.set(s, new Set()).get(s)!).add(t);

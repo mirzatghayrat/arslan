@@ -39,7 +39,8 @@
       "validFromAlways": "当初から有効",
       "endUnknown": "不明",
       "lineage": "置き換えの系譜",
-      "lineageTruncated": "系譜が {{n}} 件を超えたため切り捨て"
+      "lineageTruncated": "系譜が {{n}} 件を超えたため切り捨て",
+      "lineageMerged": "この系譜は分岐しています(複数の前身が統合)。表示は一支のみ"
     }
   },
   "dashboard": {

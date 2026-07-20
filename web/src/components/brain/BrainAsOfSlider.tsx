@@ -41,10 +41,18 @@ export default function BrainAsOfSlider({ nodes, value, onChange, className }: P
 
   // the span the data actually covers — a slider wider than the data is a lie about
   // how much there is to see
+  // 🔴 Snapped to whole days. An <input type=range> only permits values of
+  // min + k*step, so with raw utcnow() endpoints and step=DAY the rightmost REACHABLE
+  // value is strictly less than max — `ms >= max` would never fire and the home
+  // position would be unreachable by dragging, stranding the user in a filtered view
+  // with no way back.
   const { min, max } = useMemo(() => {
     const ts = nodes.map(startedAt).filter((x): x is number => x != null);
     if (ts.length === 0) return { min: 0, max: 0 };
-    return { min: Math.min(...ts), max: Math.max(...ts) };
+    return {
+      min: Math.floor(Math.min(...ts) / DAY) * DAY,
+      max: Math.ceil(Math.max(...ts) / DAY) * DAY,
+    };
   }, [nodes]);
 
   const usable = max > min;

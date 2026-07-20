@@ -120,24 +120,31 @@ describe("supersedeLinks", () => {
 describe("chainOf", () => {
   it("walks both directions, oldest first", () => {
     const ns = [fact(1, { superseded_by: 2 }), fact(2, { superseded_by: 3 }), fact(3)];
-    expect(chainOf("fact:2", ns)).toEqual(["fact:1", "fact:2", "fact:3"]);
+    expect(chainOf("fact:2", ns).ids).toEqual(["fact:1", "fact:2", "fact:3"]);
   });
 
   it("returns a single-element chain for an entry with no supersede relation", () => {
-    expect(chainOf("fact:1", [fact(1)])).toEqual(["fact:1"]);
+    expect(chainOf("fact:1", [fact(1)]).ids).toEqual(["fact:1"]);
   });
 
   it("terminates on a cycle", () => {
     const ns = [fact(1, { superseded_by: 2 }), fact(2, { superseded_by: 1 })];
     const out = chainOf("fact:1", ns);
-    expect(new Set(out).size).toBe(out.length); // no id repeats
-    expect(out.length).toBeLessThanOrEqual(MAX_CHAIN);
+    expect(new Set(out.ids).size).toBe(out.ids.length); // no id repeats
+    expect(out.ids.length).toBeLessThanOrEqual(MAX_CHAIN);
+    // a cycle is not a truncation: the walk ended because it came back round, and
+    // reporting "truncated" there would claim entries exist that do not
+    expect(out.truncated).toBe(false);
   });
 
   it("caps a very long chain", () => {
     const ns = Array.from({ length: 200 }, (_, i) =>
       fact(i + 1, i + 1 < 200 ? { superseded_by: i + 2 } : {}));
-    expect(chainOf("fact:1", ns).length).toBe(MAX_CHAIN);
+    const out = chainOf("fact:1", ns);
+    expect(out.ids.length).toBe(MAX_CHAIN);
+    // and it SAYS it was cut — a real flag from the walk, not inferred from the
+    // length, which cannot tell a complete 64-chain from a cut one
+    expect(out.truncated).toBe(true);
   });
 });
 
@@ -200,6 +207,11 @@ describe("hiddenAt — the as-of predicate", () => {
     const links = [
       { source: "fact:1", target: "tag:x", type: "tag" },
       { source: "fact:2", target: "tag:x", type: "tag" },
+      // 🔴 The hub edge the server sends for EVERY tag (brain.py:349-354). Omitting it
+      // is what let the first implementation ship broken: `self` is never hidden, so
+      // counting the hub as a source made `every(hidden)` false for every tag in every
+      // real payload — no tag could ever be hidden, while this test said otherwise.
+      { source: "self", target: "tag:x", type: "hub" },
     ];
     expect(ids(hiddenAt(ns, links, T("2021-01-01")))).toEqual(["fact:2"]);
     expect(ids(hiddenAt(ns, links, T("2010-01-01")))).toEqual(
@@ -221,5 +233,32 @@ describe("hiddenAt — the as-of predicate", () => {
     // makes the guard the only thing keeping 「你」 on screen.
     const ns = [{ id: "self", kind: "self", valid_from: T("2025-01-01") } as N];
     expect(hiddenAt(ns, [], T("1990-01-01")).size).toBe(0);
+  });
+});
+
+describe("chainOf — incompleteness it must not hide", () => {
+  it("reports merged ancestors when two rows point at the same successor", () => {
+    // fact dedup can merge duplicates into one survivor, making the genealogy a DAG.
+    // Only one branch is walked, so the panel has to say the other exists rather than
+    // present one line as the whole story.
+    const ns = [
+      fact(1, { superseded_by: 3 }),
+      fact(2, { superseded_by: 3 }),
+      fact(3),
+    ];
+    expect(chainOf("fact:3", ns).mergedAncestors).toBe(true);
+  });
+
+  it("does NOT report merged ancestors on a plain linear chain", () => {
+    const ns = [fact(1, { superseded_by: 2 }), fact(2)];
+    expect(chainOf("fact:2", ns).mergedAncestors).toBe(false);
+  });
+
+  it("does NOT report truncation on a chain that exactly fits", () => {
+    const ns = Array.from({ length: MAX_CHAIN }, (_, i) =>
+      fact(i + 1, i + 1 < MAX_CHAIN ? { superseded_by: i + 2 } : {}));
+    const out = chainOf("fact:1", ns);
+    expect(out.ids.length).toBe(MAX_CHAIN);
+    expect(out.truncated).toBe(false);   // complete — nothing was dropped
   });
 });
