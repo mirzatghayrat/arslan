@@ -30,6 +30,16 @@
         "edit_high_conf_suspect": "Bearbeiten",
         "preference_overwrite_suspect": "Präferenzen neu schreiben"
       }
+    },
+    "temporal": {
+      "asOfLabel": "Nach Startzeit filtern",
+      "asOfAll": "Alle",
+      "asOfCaveat": "Filtert nur vorhandene Einträge — Löschungen und Änderungen hinterlassen keine Spur; das Ende wird aus dem Nachfolger abgeleitet",
+      "validFrom": "Gültig ab",
+      "validFromAlways": "seit jeher",
+      "endUnknown": "unbekannt",
+      "lineage": "Ablöse-Stammbaum",
+      "lineageTruncated": "Stammbaum länger als {{n}}; gekürzt"
     }
   },
   "dashboard": {

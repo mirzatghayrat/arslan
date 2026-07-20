@@ -30,6 +30,16 @@
         "edit_high_conf_suspect": "修改",
         "preference_overwrite_suspect": "重写偏好"
       }
+    },
+    "temporal": {
+      "asOfLabel": "按生效时刻筛选",
+      "asOfAll": "全部",
+      "asOfCaveat": "只筛现存条目 —— 删除与改写不留痕,失效时刻由继任者推算",
+      "validFrom": "生效",
+      "validFromAlways": "自古有效",
+      "endUnknown": "未知",
+      "lineage": "取代谱系",
+      "lineageTruncated": "谱系超过 {{n}} 条,已截断"
     }
   },
   "dashboard": {

@@ -30,6 +30,16 @@
         "edit_high_conf_suspect": "編集",
         "preference_overwrite_suspect": "設定の書き換え"
       }
+    },
+    "temporal": {
+      "asOfLabel": "発効時刻で絞り込み",
+      "asOfAll": "すべて",
+      "asOfCaveat": "現存する項目のみ — 削除と書き換えは痕跡を残さず、失効時刻は後継から推定",
+      "validFrom": "発効",
+      "validFromAlways": "当初から有効",
+      "endUnknown": "不明",
+      "lineage": "置き換えの系譜",
+      "lineageTruncated": "系譜が {{n}} 件を超えたため切り捨て"
     }
   },
   "dashboard": {

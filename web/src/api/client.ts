@@ -166,6 +166,17 @@ export interface GraphNodeDto {
   /** D4 — profile + learning only. Facts read their JSON column; learnings synthesize
    * `{source_kind, source_ref}` because that pair IS their provenance. */
   provenance_record?: Record<string, unknown> | null;
+  /** F1 — profile + learning ONLY: when the belief took effect. */
+  valid_from?: string | null;
+  /** F1 — note + material ONLY: when the row came into existence.
+   *
+   * 🔴 Two names, never interchangeable. Notes and materials have no superseded_by and
+   * no valid_from column at all, so they have no belief lifetime — only an existence.
+   * Because both fields are optional, reading the wrong one for a kind typechecks
+   * cleanly and silently yields undefined (= "never filter this"), which is why the
+   * exact key sets in tests/server/test_brain_payload_shape.py assert `==` per kind:
+   * that test, not the compiler, is what holds these two apart. */
+  created_at?: string | null;
 }
 export interface GraphLinkDto { source: string; target: string; type: string }
 export interface BrainGraphDto { nodes: GraphNodeDto[]; links: GraphLinkDto[] }

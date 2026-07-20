@@ -99,7 +99,9 @@ export function supersededAt(
   return succ.valid_from;
 }
 
-export function indexById(nodes: TemporalNode[]): Map<string, TemporalNode> {
+/** Generic so callers keep their own richer node type (label, val, …) — narrowing to
+ * TemporalNode here would erase those fields for every consumer of the index. */
+export function indexById<T extends TemporalNode>(nodes: T[]): Map<string, T> {
   return new Map(nodes.map((n) => [n.id, n]));
 }
 

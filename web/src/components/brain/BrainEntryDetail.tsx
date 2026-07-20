@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { ApiError, api, type BrainEntry, type BrainLeaf } from "../../api/client";
 
@@ -11,6 +12,7 @@ import { ApiError, api, type BrainEntry, type BrainLeaf } from "../../api/client
 export default function BrainEntryDetail(
   { leaf, onClose, onChanged }: { leaf: BrainLeaf; onClose: () => void; onChanged?: () => void },
 ) {
+  const { t } = useTranslation();
   const [entry, setEntry] = useState<BrainEntry | null>(null);
   // 🔴 "not loaded yet" and "failed to load" used to be the SAME state (null), so a 404
   // rendered "loading…" forever with no error — the exact defect this round fixed in the
@@ -102,9 +104,26 @@ export default function BrainEntryDetail(
             {entry.last_used_ref ? ` · 最近用于 ${entry.last_used_ref}` : ""}
           </div>
 
+          {/* F1 — valid_from has been on this payload since P1 and nothing rendered it.
+              A belief with no recorded start is 自古有效 (models.py:148), which is a
+              real state and not a missing value, so it is spelled out rather than
+              blanked. */}
+          <div className="mb-2 text-[10.5px] text-subtle-foreground" data-testid="entry-valid-from">
+            {t("brain.temporal.validFrom")}
+            {": "}
+            {entry.valid_from
+              ? entry.valid_from.slice(0, 10)
+              : t("brain.temporal.validFromAlways")}
+          </div>
+
           {entry.superseded_by != null && (
             <div className="mb-2 text-[11px] text-warning" data-testid="entry-superseded">
               已被 #{entry.superseded_by} 取代 — 不再注入给分身
+              {/* 🔴 The END of a belief is DERIVED from its successor's valid_from and
+                  is not available here (this panel fetches one entry). Rather than
+                  show a number that might be wrong, say nothing about when — the
+                  genealogy panel, which has the whole node set, is where the derived
+                  instant (or 未知) is shown. */}
               {canUndo && (
                 <button className="ml-2 underline disabled:opacity-50" disabled={undoing}
                   onClick={() => void undo()} data-testid="undo-supersede">

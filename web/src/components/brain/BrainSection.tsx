@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import { api, type BrainLeaf } from "../../api/client";
+import { api, type BrainLeaf, type GraphNodeDto } from "../../api/client";
 import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
 import BrainActivityStrip from "./BrainActivityStrip";
 import BrainProposalInbox from "./BrainProposalInbox";
 import BrainGraph from "./BrainGraph";
+import BrainAsOfSlider from "./BrainAsOfSlider";
+import BrainLineage from "./BrainLineage";
 import BrainNav from "./BrainNav";
 import NoteEditor from "./NoteEditor";
 
@@ -41,10 +43,25 @@ export default function BrainSection() {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showTags, setShowTags] = useState(true);   // tag-node visibility, toggled from BrainNav's 标签 header
+  // F1 — null = home = no filtering at all. Paint-time only: it never refetches and
+  // never reaches what gets injected into a spawn.
+  const [asOf, setAsOf] = useState<string | null>(null);
+  const [graphNodes, setGraphNodes] = useState<GraphNodeDto[]>([]);
 
   // The graph is ALWAYS the main canvas; picking anything (tree row or graph node)
   // slides its detail in as the right rail over the graph — the graph stays visible.
   const pick = (l: BrainLeaf) => { if ((l.kind as string) === "ghost") return; setPicked(l); };
+
+  // F1 — jumping along a genealogy. The lineage panel only knows node ids, so the
+  // matching graph node supplies the leaf. A superseded ancestor is a legitimate
+  // target: being replaced is exactly why you would click it.
+  const pickById = (id: string) => {
+    const n = graphNodes.find((g) => g.id === id);
+    if (!n) return;
+    pick({ kind: n.kind as BrainLeaf["kind"], ref: n.ref, label: n.label,
+      provenance: null, confidence: n.confidence ?? null, usage_count: n.usage_count ?? 0,
+      last_used_at: n.last_used_at ?? null, last_used_ref: null, value: n.val });
+  };
 
   const createNoteWithTitle = async (title: string) => {
     const n = await api.createNote({ title });
@@ -96,7 +113,13 @@ export default function BrainSection() {
           ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">加载知识图谱失败</div>
           : <BrainGraph litId={lit} onHover={setHoveredId} onPick={pick}
               onCreateNoteWithTitle={(t) => void createNoteWithTitle(t)} showTags={showTags}
-              glowIds={glowIds} reloadKey={graphKey} className="w-full h-full" />}
+              glowIds={glowIds} reloadKey={graphKey} asOf={asOf} onData={setGraphNodes}
+              className="w-full h-full" />}
+        {/* F1 — sits over the graph, above the activity strip. Renders nothing until the
+            data spans more than one instant, so an empty or same-day brain is not given
+            a control that cannot do anything. */}
+        <BrainAsOfSlider nodes={graphNodes} value={asOf} onChange={setAsOf}
+          className="absolute bottom-14 left-3 right-3 z-10 rounded bg-surface-raised/80 px-2 py-1.5 backdrop-blur" />
         {loading && <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-subtle-foreground uppercase tracking-widest pointer-events-none">loading…</div>}
 
         {/* picked entry slides in as the right rail OVER the graph (both are absolute right-0) */}
@@ -108,7 +131,13 @@ export default function BrainSection() {
               last_used_ref: null, value: 1 })}
             onHover={setHoveredId} />
         ) : picked ? (
-          <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} onChanged={reloadAll} />
+          <div className="absolute top-0 right-0 z-20 flex h-full w-[340px] flex-col">
+            <BrainEntryDetail leaf={picked} onClose={() => setPicked(null)} onChanged={reloadAll} />
+            {/* only renders when the selection actually has a supersede relation */}
+            <BrainLineage selectedId={picked.ref} nodes={graphNodes}
+              onPickId={pickById}
+              className="border-t border-border bg-surface-raised px-3 py-2" />
+          </div>
         ) : null}
         {showInbox && (
           <div className="absolute top-0 right-0 h-full w-[400px] bg-surface-raised border-l border-border overflow-auto z-20">

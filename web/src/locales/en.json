@@ -30,6 +30,16 @@
         "edit_high_conf_suspect": "Edit",
         "preference_overwrite_suspect": "Rewrite preferences"
       }
+    },
+    "temporal": {
+      "asOfLabel": "Filter by start time",
+      "asOfAll": "All",
+      "asOfCaveat": "Filters surviving entries only — deletes and rewrites leave no trace; end times are inferred from the successor",
+      "validFrom": "In effect from",
+      "validFromAlways": "always",
+      "endUnknown": "unknown",
+      "lineage": "Supersede lineage",
+      "lineageTruncated": "Lineage longer than {{n}}; truncated"
     }
   },
   "dashboard": {

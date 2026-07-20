@@ -30,6 +30,16 @@
         "edit_high_conf_suspect": "Editar",
         "preference_overwrite_suspect": "Reescribir preferencias"
       }
+    },
+    "temporal": {
+      "asOfLabel": "Filtrar por fecha de inicio",
+      "asOfAll": "Todo",
+      "asOfCaveat": "Solo filtra entradas existentes: las eliminaciones y reescrituras no dejan rastro; el fin se infiere del sucesor",
+      "validFrom": "Vigente desde",
+      "validFromAlways": "desde siempre",
+      "endUnknown": "desconocido",
+      "lineage": "Linaje de sustitución",
+      "lineageTruncated": "Linaje mayor que {{n}}; truncado"
     }
   },
   "dashboard": {
