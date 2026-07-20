@@ -18,6 +18,8 @@ shape that triggers the graph unpack) and a superseded row.
 """
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from server.db.models import (
@@ -30,6 +32,11 @@ from server.db.models import (
 )
 
 AUTH: dict[str, str] = {}
+
+# F1 — distinct, recognisable instants. Distinct so that a node reading the WRONG
+# row's clock (fact vs learning) is caught, not just a missing column.
+F_VALID_FROM = datetime.datetime(2021, 3, 4, 5, 6, 7)
+L_VALID_FROM = datetime.datetime(2022, 8, 9, 10, 11, 12)
 
 
 @pytest.fixture
@@ -48,17 +55,24 @@ async def seeded(client, monkeypatch):
     async with client.db_maker() as s:
         s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp"))
         # category NON-BLANK: this is what makes brain_graph enter its fact tag loop
+        # F1: valid_from is set EXPLICITLY here. Production always sets it (memory.py:245,
+        # :359, learning_service.py:76 are the only three construction sites), but these
+        # fixtures build the ORM object directly and bypass those paths — so without this
+        # the column would be NULL and any "does valid_from flow through?" assertion
+        # would be indistinguishable from "the SELECT dropped the column".
         s.add(UserFact(content="用户偏好简短", source="auto", confidence=0.8,
-                       category="偏好", label="简短", sensitive=False))
+                       category="偏好", label="简短", sensitive=False,
+                       valid_from=F_VALID_FROM))
         # a superseded fact — exercises the temporal columns on the read path
         s.add(UserFact(content="旧偏好", source="auto", confidence=0.5,
-                       category="偏好", superseded_by=1, sensitive=True))
+                       category="偏好", superseded_by=1, sensitive=True,
+                       valid_from=F_VALID_FROM))
         # source_ref carries spawn_id ON PURPOSE: the learning->material provenance
         # edge is keyed on it, so without it that loop never runs and the test below
         # would pass vacuously.
         s.add(Learning(content="心得内容", label="心得", source_kind="distill",
                        source_ref={"conversation_id": "c1", "spawn_id": 1},
-                       confidence=0.7))
+                       confidence=0.7, valid_from=L_VALID_FROM))
         s.add(Note(title="笔记", content="正文 [[心得]]", tags=["t1"]))
         s.add(ArslanMessage(conversation_id="c1", role="spawn_summary",
                             content="x", display_content="x", spawn_id=1))
@@ -112,13 +126,20 @@ async def test_graph_payload_shape(seeded):
     assert set(n1) == {"id", "ref", "kind", "label", "val",
                        "source", "confidence", "superseded_by", "sensitive",
                        # D4
-                       "usage_count", "last_used_at", "provenance_record"}
+                       "usage_count", "last_used_at", "provenance_record",
+                       # F1 — belief validity start. Deliberately NOT the same key name
+                       # as the note/material `created_at`: a fact has a belief lifetime,
+                       # a note only has an existence. A single shared key would imply
+                       # notes carry a validity they have no column for.
+                       "valid_from"}
     assert n1["source"] == "auto" and n1["confidence"] == 0.8
 
     learn = next(n for n in body["nodes"] if n["kind"] == "learning")
     assert set(learn) == {"id", "ref", "kind", "label", "val", "superseded_by",
                           # D4
-                          "usage_count", "last_used_at", "provenance_record"}
+                          "usage_count", "last_used_at", "provenance_record",
+                          # F1
+                          "valid_from"}
 
     # the fact->tag edge: this is the loop whose positional unpack the refactor removes
     tag_edges = [e for e in body["links"]
@@ -321,3 +342,91 @@ async def test_material_and_note_nodes_report_usage_but_no_provenance(seeded):
     assert note["usage_count"] == 0 and "last_used_at" in note
     assert "provenance_record" not in note, (
         "notes have no provenance record; emitting null would claim one was looked for")
+
+
+# ---------------------------------------------------------------------------
+# F1 — the two time keys the as-of filter reads
+#
+# 🔴 HONESTY: these say WHEN something started, never when it stopped. There is no
+# `superseded_at` column anywhere in the schema (grep it) — a belief's end is only ever
+# DERIVED, on the frontend, from its successor's valid_from. Nothing here may be read as
+# "the second brain records belief history".
+# ---------------------------------------------------------------------------
+
+
+async def test_facts_and_learnings_carry_valid_from_not_created_at(seeded):
+    """The belief kinds get `valid_from`. They must NOT also sprout `created_at`:
+    two time keys on one node invites the frontend to pick whichever is non-null,
+    which is how a filter silently starts reading the wrong clock."""
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    nodes = {n["ref"]: n for n in body["nodes"]}
+
+    # exact values, not just non-null: a node reading the other kind's clock, or the
+    # SELECT dropping the column, or _iso() being skipped, each go red separately
+    # NOTE the microseconds: _iso() emits "...07.000000Z". This is exactly why the
+    # frontend must compare these with Date.parse and never lexicographically —
+    # "T05:06:07Z" sorts AFTER "T05:06:07.000000Z" ('Z' > '.'), and _iso has a second
+    # output branch that preserves a "+08:00" offset (brain.py:56-77), which sorts
+    # before both regardless of the actual instant.
+    assert nodes["fact:1"]["valid_from"] == "2021-03-04T05:06:07.000000Z"
+    assert nodes["learning:1"]["valid_from"] == "2022-08-09T10:11:12.000000Z"
+    for ref in ("fact:1", "learning:1"):
+        assert "created_at" not in nodes[ref], ref
+
+
+async def test_notes_and_materials_carry_created_at_not_valid_from(seeded):
+    """Existence, not validity. `notes` and `knowledge_chunks` have no superseded_by
+    and no valid_from column at all (models.py:612-623) — emitting `valid_from` for
+    them would claim a belief lifetime the schema cannot express."""
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    nodes = {n["ref"]: n for n in body["nodes"]}
+    note = next(n for n in nodes.values() if n["kind"] == "note")
+    mat = next(n for n in nodes.values() if n["kind"] == "material")
+
+    for n in (note, mat):
+        assert n["created_at"] is not None, n["ref"]
+        assert "valid_from" not in n, n["ref"]
+
+
+async def test_material_created_at_is_the_earliest_chunk_in_the_group(seeded, client):
+    """A material node is a GROUP BY aggregate over knowledge_chunks, so its time has
+    to be MIN(created_at) — the group's earliest surviving chunk.
+
+    Two chunks in the SAME (collection_id, spawn_id, source) group with DIFFERENT
+    timestamps: with one row MIN, MAX and 'whatever SQLite picks' are indistinguishable,
+    which is how this assertion would pass against the wrong aggregate.
+
+    🔴 MIN answers 'earliest chunk that still exists', NOT 'when this material first
+    appeared'. Re-ingest deletes and re-inserts (collections.py:143-147), which moves
+    MIN forward. Pinned in test_material_time_moves_forward_after_reingest below.
+    """
+    from datetime import datetime
+
+    from sqlalchemy import text as sa_text
+
+    old, new = datetime(2020, 1, 1, 0, 0, 0), datetime(2030, 1, 1, 0, 0, 0)
+    async with client.db_maker() as s:
+        # same group as the seeded chunk (spawn_id=1, source='handbook.pdf')
+        await s.execute(sa_text(
+            "UPDATE knowledge_chunks SET created_at = :t WHERE chunk_index = 0"),
+            {"t": new})
+        s.add(KnowledgeChunk(spawn_id=1, source="handbook.pdf", chunk_index=1,
+                             text="第二段", created_at=old))
+        await s.commit()
+
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    mat = next(n for n in body["nodes"] if n["kind"] == "material")
+    assert mat["created_at"].startswith("2020-01-01"), (
+        f"expected the EARLIER chunk's time, got {mat['created_at']} — "
+        "MAX or an arbitrary row would give 2030")
+
+
+async def test_synthetic_nodes_get_no_time_key_either(seeded):
+    """tag / self / ghost have no time concept. Giving them one would be a claim that
+    a timestamp was looked up, and would make every past instant non-empty by
+    construction. (This passes before F1 too — it is a regression pin, not coverage
+    of the new columns; those are covered by the two tests above.)"""
+    body = (await seeded.get("/api/v1/brain/graph", headers=AUTH)).json()
+    for n in body["nodes"]:
+        if n["kind"] in ("tag", "self", "ghost"):
+            assert "valid_from" not in n and "created_at" not in n, n

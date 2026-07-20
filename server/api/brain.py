@@ -217,17 +217,35 @@ async def brain_graph() -> dict:
         # (facts 4->7, learnings 4->5) — every positional unpack/index of these two
         # result sets below (the profile/learning node builders, and the tag-linking
         # loops further down) had to be updated in lockstep or this crashes at runtime.
+        # F1 widens all four SELECTs with a START-TIME column. Safe under .mappings()
+        # (D1), but the exact key sets in tests/server/test_brain_payload_shape.py had
+        # to widen in lockstep — that test is the only cross-side contract on this
+        # payload, so relaxing its `==` to `<=` would have retired the guardrail rather
+        # than updated it.
+        #
+        # 🔴 Two DIFFERENT key names on purpose. `valid_from` = when a belief took
+        # effect (facts/learnings, the only two tables with the column). `created_at` =
+        # when a row came into existence (notes/materials, which have no belief
+        # lifetime and no superseded_by at all). Collapsing them into one key would
+        # invite the frontend to read whichever is non-null and silently filter notes
+        # on a clock that means something else.
         facts = (await db.execute(sa_text(
             "SELECT id, content, label, category, source, confidence, superseded_by, "
-            "sensitive, provenance FROM user_facts ORDER BY id"))).mappings().all()
+            "sensitive, provenance, valid_from FROM user_facts ORDER BY id"
+        ))).mappings().all()
         mats = (await db.execute(sa_text(
-            "SELECT collection_id, spawn_id, source, COUNT(*) n FROM knowledge_chunks "
+            "SELECT collection_id, spawn_id, source, COUNT(*) n, "
+            # MIN = the group's EARLIEST SURVIVING chunk, which is NOT "when this
+            # material first appeared": re-ingest deletes and re-inserts
+            # (collections.py:143-147), moving MIN forward. Disclosed in the UI.
+            "MIN(created_at) AS created_at FROM knowledge_chunks "
             "GROUP BY collection_id, spawn_id, source"))).mappings().all()
         learns = (await db.execute(sa_text(
-            "SELECT id, content, label, source_kind, source_ref, superseded_by "
-            "FROM learnings ORDER BY id"))).mappings().all()
+            "SELECT id, content, label, source_kind, source_ref, superseded_by, "
+            "valid_from FROM learnings ORDER BY id"))).mappings().all()
         notes = (await db.execute(sa_text(
-            "SELECT id, title, content, tags FROM notes ORDER BY id"))).mappings().all()
+            "SELECT id, title, content, tags, created_at "
+            "FROM notes ORDER BY id"))).mappings().all()
 
     keys: list[tuple[str, str]] = []
     keys += [("profile", f"fact:{r['id']}") for r in facts]
@@ -264,19 +282,23 @@ async def brain_graph() -> dict:
                      sensitive=_sensitive(r["sensitive"]),
                      # same shape /brain/entry returns — a node's claim and the panel
                      # that opens from it must not disagree
-                     provenance_record=_json_field(r["provenance"])) for r in facts]
+                     provenance_record=_json_field(r["provenance"]),
+                     valid_from=_iso(r["valid_from"])) for r in facts]
     nodes += [_gnode("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
-                     m["source"], weight=m["n"]) for m in mats]
+                     m["source"], weight=m["n"],
+                     created_at=_iso(m["created_at"])) for m in mats]
     nodes += [_gnode("learning", f"learning:{r['id']}",
                      r["label"] or (r["content"] or "")[:40],
                      superseded_by=r["superseded_by"],
+                     valid_from=_iso(r["valid_from"]),
                      # learnings have no provenance column by design: source_kind +
                      # source_ref ARE the provenance. Synthesized identically to
                      # /brain/entry so the two cannot drift.
                      provenance_record={"source_kind": r["source_kind"],
                                         "source_ref": _json_field(r["source_ref"])})
               for r in learns]
-    nodes += [_gnode("note", f"note:{r['id']}", r["title"]) for r in notes]
+    nodes += [_gnode("note", f"note:{r['id']}", r["title"],
+                     created_at=_iso(r["created_at"])) for r in notes]
 
     by_label = {n["label"].lower(): n["id"] for n in nodes if n["label"]}
     links: list[dict] = []
