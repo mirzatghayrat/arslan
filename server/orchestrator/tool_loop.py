@@ -18,6 +18,7 @@ from server.orchestrator import run_trace
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
+from server.services import replay_safety
 from server.services.llm_factory import build_adapter
 
 if TYPE_CHECKING:
@@ -293,12 +294,59 @@ async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
         pass
 
 
+#: Outbound fetches one LIVE run may make. Chosen to be far above ordinary research
+#: behaviour (a few lookups per answer) and far below a loop; it is a circuit breaker,
+#: not a quota. NOT derived from a real distribution — nothing measures fetch counts yet,
+#: so this is an explicit judgement call, the same honesty caveat as any other default we
+#: have not earned with data.
+LIVE_FETCH_BUDGET = 25
+
+#: The tools it covers. Capping web_extract alone would be bypassed by alternating with
+#: web_search, so they share ONE allowance.
+_FETCH_TOOLS = frozenset({"web_search", "web_extract"})
+
+
+async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
+                              budget: dict) -> dict | None:
+    """None to proceed, or an explicit refusal dict once a run has spent its allowance.
+
+    🔴 SCOPE — LIVE RUNS ONLY, AND THE UNCOVERED HALF IS THE BIGGER ONE.
+    A hermetic eval/replay is exempt here. That is NOT because it is safe: `web_search`
+    and `web_extract` are both in REPLAY_SAFE_BUILTINS (sealing keeps read-only web and
+    drops WRITE tools plus anything non-allowlisted), and the gate dispatches roughly
+    `pairs x 2 arms x (epochs*lr_budget + 1)` times — so one runaway candidate multiplies
+    its outbound requests by a few hundred. Bounding that means threading a budget through
+    the evaluator/replay loop, which is registered separately as FU-2b (with skill-forge
+    folded in) and is deliberately not in this batch.
+
+    So: after this ships, the honest statement is "live fetches are capped" — never
+    "network use is capped". test_live_fetch_budget pins that wording to a test, so the
+    day eval is covered, the claim and the code change together.
+
+    The refusal is EXPLICIT rather than a silent drop: a swallowed fetch looks to the
+    model like a page with no content, and it will simply try the next URL.
+    """
+    if tool_key not in _FETCH_TOOLS:
+        return None
+    if replay_safety.is_hermetic_context(conversation_id):
+        return None                      # out of scope for FU-2 — see FU-2b
+    used = budget.get("fetches", 0)
+    if used >= LIVE_FETCH_BUDGET:
+        return {"ok": False,
+                "error": f"fetch budget reached for this run ({LIVE_FETCH_BUDGET} "
+                         "web_search/web_extract calls) — answer with what you have "
+                         "instead of fetching more"}
+    budget["fetches"] = used + 1
+    return None
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                          mcp_fail_counts: dict | None = None,
                          mcp_hint_logged: set | None = None,
                          conversation_id: str | None = None,
                          log_events: bool = True,
+                         fetch_budget: dict | None = None,
                          caller: ToolCaller | None = None) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append the
     assistant turn + framed tool result into convo. Returns the raw result dict.
@@ -307,6 +355,17 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default)."""
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+
+    # FU-2 (live runs only — see _check_fetch_budget for why eval is out of scope).
+    # `fetch_budget` is the per-run dict the caller threads through; absent it, no cap
+    # applies, which keeps every existing caller and test working unchanged.
+    if fetch_budget is not None:
+        refusal = await _check_fetch_budget(
+            tool_key, conversation_id=conversation_id, budget=fetch_budget)
+        if refusal is not None:
+            emit({"type": "tool_result", "tool": tool_key, "ok": False,
+                  "summary": refusal["error"]})
+            return refusal
 
     if tool_key == "run_command":
         command = str(args.get("command") or "")
@@ -993,6 +1052,13 @@ async def run_native(
     # row to once per turn per tool.
     mcp_fail_counts: dict[str, int] = {}
     mcp_hint_logged: set[str] = set()
+    # FU-2: the per-run outbound-fetch allowance. A LOCAL of this invocation for exactly
+    # the reason spelled out above — one run_native call is one turn, so the allowance
+    # resets by construction and cannot leak between turns or between spawns. Created
+    # here, BEFORE the force_tools block below, so the proactive web_search counts too;
+    # creating it any deeper (inside the step loop, or inside _dispatch_tool) would reset
+    # it per tool call and the cap would never bind.
+    fetch_budget: dict[str, int] = {}
 
     # force_tools (spawn proactive web_search): deterministic pre-run, mirrors run().
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
@@ -1009,7 +1075,8 @@ async def run_native(
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events, caller=caller)
+                conversation_id=conversation_id, log_events=log_events,
+                fetch_budget=fetch_budget, caller=caller)
             searches_done += 1
 
     for step in range(max_tool_calls + 1):
@@ -1066,7 +1133,7 @@ async def run_native(
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
                     confirm_command=confirm_command, mcp_fail_counts=mcp_fail_counts,
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                    log_events=log_events, caller=caller)
+                    log_events=log_events, fetch_budget=fetch_budget, caller=caller)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})
