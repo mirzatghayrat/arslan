@@ -191,6 +191,66 @@ async def _repeat_spend_refusal(session, spawn_id: int) -> dict | None:
     }
 
 
+#: One page of attempts. Bounded because an old spawn accumulates them indefinitely.
+_ATTEMPTS_MAX = 200
+
+
+@router.get("/spawns/{spawn_id}/evolution/attempts")
+async def list_evolution_attempts(
+    spawn_id: int, limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Every attempt for a spawn and what it really cost — INCLUDING the ones that
+    produced nothing.
+
+    🔴 Why this exists. `actual` has been recorded for a while, but the only endpoint
+    surfacing it joins on `EvolutionAttempt.proposal_id == proposal_id`, so an attempt
+    that ended failed/error/skipped_structural — proposal_id NULL — had its cost sitting
+    in the database and reachable from nowhere. Those are exactly the attempts whose cost
+    most needs to be visible: the user paid and got nothing back.
+
+    Honesty properties, all of them backend-supplied so no client has to remember them:
+      * an in-flight attempt reports `actual: null`, never 0. Zero would claim it has
+        cost nothing so far, which is the opposite of true.
+      * `totals` are summed ONLY over attempts that reported, and the payload says how
+        many that was (`counted_attempts` vs `total_attempts`) so the figure is never
+        read as "everything this spawn ever spent".
+      * `totals.estimated` goes true if ANY component was an adapter heuristic, and
+        `failed_dispatches` carries through — a sum containing a guess is a guess.
+    """
+    applied_limit = max(1, min(limit, _ATTEMPTS_MAX))
+    rows = (await session.execute(
+        select(EvolutionAttempt)
+        .where(EvolutionAttempt.spawn_id == spawn_id)
+        .order_by(EvolutionAttempt.id.desc())
+        .limit(applied_limit)
+    )).scalars().all()
+
+    attempts = [{
+        "id": a.id,
+        "outcome": a.outcome,
+        "reason": a.reason or "",
+        "source": a.source,
+        "started_at": a.started_at.isoformat() if a.started_at else None,
+        "finished_at": a.finished_at.isoformat() if a.finished_at else None,
+        "estimate": dict(a.estimate) if a.estimate else None,
+        "actual": dict(a.actual) if a.actual else None,
+        "proposal_id": a.proposal_id,
+    } for a in rows]
+
+    counted = [a["actual"] for a in attempts if a["actual"]]
+    totals = {
+        "est_tokens": sum(int(x.get("est_tokens") or 0) for x in counted),
+        "dispatch_tokens": sum(int(x.get("dispatch_tokens") or 0) for x in counted),
+        "direct_tokens": sum(int(x.get("direct_tokens") or 0) for x in counted),
+        "failed_dispatches": sum(int(x.get("failed_dispatches") or 0) for x in counted),
+        "estimated": any(bool(x.get("estimated")) for x in counted),
+        "counted_attempts": len(counted),
+        "total_attempts": len(attempts),
+    }
+    return {"attempts": attempts, "totals": totals, "applied_limit": applied_limit}
+
+
 @router.post("/evolution/baseline/declare", response_model=BaselineDeclareOut)
 async def declare_baseline(
     session: AsyncSession = Depends(get_session),
