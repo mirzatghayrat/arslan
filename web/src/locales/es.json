@@ -954,7 +954,7 @@
       "exclusion": "Se excluyeron {{n}} tareas no repetibles",
       "toolset_disclaimer": "Tasa de victoria medida con el conjunto de herramientas seguro para repetición, sin escenarios MCP.",
       "estimate_line": "Estimación: {{judge}} llamadas de juez · ≈{{tokens}} tokens (cercano a una cota inferior con un corpus pequeño; una SOBREestimación notable con uno grande)",
-      "actual_line": "Real: {{tokens}} tokens",
+      "actual_line": "Gasto real: {{tokens}} tokens",
       "flag_verbose_warn": "salida extensa",
       "flag_low_confidence": "baja confianza",
       "flag_position_sensitive": "sensible a posición",
@@ -970,7 +970,11 @@
       "wait_hint": "Se sugiere esperar más datos",
       "confirmed": "Promovido · gen {{n}}",
       "rejected_done": "Rechazado",
-      "rolled_back": "Revertido · gen {{n}}"
+      "rolled_back": "Revertido · gen {{n}}",
+      "actual_split": "{{dispatch}} en repeticiones · {{direct}} en evaluación y optimización",
+      "actual_estimated": "incluye valores heurísticos: en parte de esta ejecución el proveedor no devolvió el uso",
+      "actual_incomplete": "{{n}} repetición(es) fallaron; su coste puede estar infravalorado",
+      "actual_not_comparable": "No comparable con la estimación de arriba: la estimación sobreestima con un corpus grande y esta cifra puede quedarse corta. Ninguna predice a la otra."
     },
     "inbox": {
       "tab": "Evolución",

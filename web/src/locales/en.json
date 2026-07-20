@@ -954,7 +954,7 @@
       "exclusion": "Excluded {{n}} non-replayable tasks",
       "toolset_disclaimer": "Win-rate measured under the replay-safe toolset, excluding MCP scenarios.",
       "estimate_line": "Estimate: {{judge}} judge calls · ≈{{tokens}} tokens (close to a floor on a small corpus; a significant OVER-estimate on a large one)",
-      "actual_line": "Actual: {{tokens}} tokens",
+      "actual_line": "Actually spent: {{tokens}} tokens",
       "flag_verbose_warn": "verbose output",
       "flag_low_confidence": "low confidence",
       "flag_position_sensitive": "position-sensitive",
@@ -970,7 +970,11 @@
       "wait_hint": "Suggest waiting for more data",
       "confirmed": "Promoted · gen {{n}}",
       "rejected_done": "Rejected",
-      "rolled_back": "Rolled back · gen {{n}}"
+      "rolled_back": "Rolled back · gen {{n}}",
+      "actual_split": "{{dispatch}} on replays · {{direct}} on judging and optimising",
+      "actual_estimated": "includes heuristic values — the provider returned no usage for part of this run",
+      "actual_incomplete": "{{n}} replay arm(s) failed; their cost may be undercounted",
+      "actual_not_comparable": "Not comparable with the estimate above: the estimate over-counts on a large corpus, this figure can under-count. Neither is a forecast of the other."
     },
     "inbox": {
       "tab": "Evolution",

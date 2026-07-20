@@ -341,12 +341,47 @@ export default function PromotionCard({ proposal, onOpenRun, onActionDone }: Pro
             })}
           </div>
         )}
-        {proposal.actual && typeof proposal.actual.est_tokens === "number" && (
+      </div>
+
+      {/* ⑥b what it ACTUALLY cost — deliberately its own block, NOT a sibling line of
+          the estimate above.
+          🔴 The two numbers are both unreliable, in OPPOSITE directions: the estimate
+          applies the optimizer's per-pair multiplier to the whole corpus and so
+          OVER-counts, growing with corpus size, while this figure can UNDER-count (a
+          replay arm that died before reporting usage contributes zero) and may itself be
+          a character heuristic. Rendered as adjacent tabular-nums lines they read as a
+          forecast-vs-outcome pair and invite a ratio, and that ratio means nothing. So:
+          separate block, caveats driven by backend fields, and NO difference, ratio or
+          percentage is computed anywhere — see the test that pins it. */}
+      {proposal.actual && typeof proposal.actual.est_tokens === "number" && (
+        <div className="space-y-0.5 text-[11px] font-mono text-muted-foreground"
+          data-testid="actual-cost">
           <div className="tabular-nums">
             {t("evolution.card.actual_line", { tokens: proposal.actual.est_tokens as number })}
           </div>
-        )}
-      </div>
+          {typeof proposal.actual.dispatch_tokens === "number"
+            && typeof proposal.actual.direct_tokens === "number" && (
+            <div className="tabular-nums" data-testid="actual-split">
+              {t("evolution.card.actual_split", {
+                dispatch: proposal.actual.dispatch_tokens as number,
+                direct: proposal.actual.direct_tokens as number,
+              })}
+            </div>
+          )}
+          {proposal.actual.estimated === true && (
+            <div data-testid="actual-estimated">{t("evolution.card.actual_estimated")}</div>
+          )}
+          {typeof proposal.actual.failed_dispatches === "number"
+            && (proposal.actual.failed_dispatches as number) > 0 && (
+            <div data-testid="actual-incomplete">
+              {t("evolution.card.actual_incomplete", {
+                n: proposal.actual.failed_dispatches as number,
+              })}
+            </div>
+          )}
+          <div data-testid="not-comparable">{t("evolution.card.actual_not_comparable")}</div>
+        </div>
+      )}
 
       {/* ⑦ warn flags as chips */}
       {flags.length > 0 && (

@@ -954,7 +954,7 @@
       "exclusion": "再現不可の {{n}} 件のタスクを除外",
       "toolset_disclaimer": "勝率はリプレイ安全なツールセットで測定され、MCP シナリオは含みません。",
       "estimate_line": "見積り:judge {{judge}} 回 · tokens ≈ {{tokens}}(コーパスが小さいときは下界に近く、大きいときは大幅な過大評価)",
-      "actual_line": "実測:tokens {{tokens}}",
+      "actual_line": "実際の消費:{{tokens}} トークン",
       "flag_verbose_warn": "出力が冗長",
       "flag_low_confidence": "低信頼",
       "flag_position_sensitive": "位置依存",
@@ -970,7 +970,11 @@
       "wait_hint": "データを待つことを推奨",
       "confirmed": "採用済み · 第 {{n}} 世代",
       "rejected_done": "却下しました",
-      "rolled_back": "ロールバック済み · 第 {{n}} 世代"
+      "rolled_back": "ロールバック済み · 第 {{n}} 世代",
+      "actual_split": "リプレイ {{dispatch}} · 判定と最適化 {{direct}}",
+      "actual_estimated": "推計値を含みます —— 一部の呼び出しでプロバイダの使用量が返りませんでした",
+      "actual_incomplete": "{{n}} 本のリプレイが失敗しており、その分は計上しきれていない可能性があります",
+      "actual_not_comparable": "上の見積りとは比較できません:見積りは大きなコーパスで過大、この値は過小になり得ます。互いを予測しません。"
     },
     "inbox": {
       "tab": "進化",

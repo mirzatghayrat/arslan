@@ -954,7 +954,7 @@
       "exclusion": "{{n}} nicht wiederholbare Aufgaben ausgeschlossen",
       "toolset_disclaimer": "Gewinnrate gemessen mit dem replay-sicheren Toolset, ohne MCP-Szenarien.",
       "estimate_line": "Schätzung: {{judge}} Judge-Aufrufe · ≈{{tokens}} Tokens (bei kleinem Korpus nahe einer Untergrenze, bei großem deutlich ÜBERschätzt)",
-      "actual_line": "Tatsächlich: {{tokens}} Tokens",
+      "actual_line": "Tatsächlich verbraucht: {{tokens}} Tokens",
       "flag_verbose_warn": "ausführliche Ausgabe",
       "flag_low_confidence": "geringe Konfidenz",
       "flag_position_sensitive": "positionsabhängig",
@@ -970,7 +970,11 @@
       "wait_hint": "Mehr Daten abwarten empfohlen",
       "confirmed": "Befördert · Gen {{n}}",
       "rejected_done": "Abgelehnt",
-      "rolled_back": "Zurückgesetzt · Gen {{n}}"
+      "rolled_back": "Zurückgesetzt · Gen {{n}}",
+      "actual_split": "{{dispatch}} für Replays · {{direct}} für Bewertung und Optimierung",
+      "actual_estimated": "enthält heuristische Werte — für einen Teil dieses Laufs lieferte der Anbieter keine Verbrauchsdaten",
+      "actual_incomplete": "{{n}} Replay-Arm(e) fehlgeschlagen; deren Kosten sind möglicherweise nicht vollständig erfasst",
+      "actual_not_comparable": "Nicht mit der Schätzung oben vergleichbar: die Schätzung überschätzt bei großem Korpus, dieser Wert kann unterschätzen. Keiner sagt den anderen vorher."
     },
     "inbox": {
       "tab": "Evolution",

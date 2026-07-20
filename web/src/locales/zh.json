@@ -954,7 +954,7 @@
       "exclusion": "排除 {{n}} 个不可重放任务",
       "toolset_disclaimer": "胜率在重放安全工具集下测得,不含 MCP 场景。",
       "estimate_line": "预估:judge {{judge}} 次 · tokens ≈ {{tokens}}(语料小时接近下界,语料大时显著高估)",
-      "actual_line": "实际:tokens {{tokens}}",
+      "actual_line": "实际花费:{{tokens}} tokens",
       "flag_verbose_warn": "输出偏长",
       "flag_low_confidence": "低置信",
       "flag_position_sensitive": "位置敏感",
@@ -970,7 +970,11 @@
       "wait_hint": "建议再等数据",
       "confirmed": "已采纳 · 第 {{n}} 代",
       "rejected_done": "已拒绝",
-      "rolled_back": "已回滚 · 第 {{n}} 代"
+      "rolled_back": "已回滚 · 第 {{n}} 代",
+      "actual_split": "重放 {{dispatch}} · 评审与优化 {{direct}}",
+      "actual_estimated": "含启发式估值 —— 本次有部分调用未拿到 provider 的用量数据",
+      "actual_incomplete": "有 {{n}} 条重放臂失败,其花费可能未计全",
+      "actual_not_comparable": "不与上方预估构成对照:预估在大语料上偏高,此数可能偏低,两者互不预测。"
     },
     "inbox": {
       "tab": "进化",

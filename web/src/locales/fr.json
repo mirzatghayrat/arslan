@@ -954,7 +954,7 @@
       "exclusion": "{{n}} tâches non rejouables exclues",
       "toolset_disclaimer": "Taux de victoire mesuré avec la boîte à outils sûre pour la relecture, hors scénarios MCP.",
       "estimate_line": "Estimation : {{judge}} appels de juge · ≈{{tokens}} tokens (proche d'une borne inférieure sur un petit corpus ; nettement SURestimé sur un grand)",
-      "actual_line": "Réel : {{tokens}} tokens",
+      "actual_line": "Dépense réelle : {{tokens}} tokens",
       "flag_verbose_warn": "sortie verbeuse",
       "flag_low_confidence": "faible confiance",
       "flag_position_sensitive": "sensible à la position",
@@ -970,7 +970,11 @@
       "wait_hint": "Il est conseillé d'attendre plus de données",
       "confirmed": "Promu · gén {{n}}",
       "rejected_done": "Rejeté",
-      "rolled_back": "Rétabli · gén {{n}}"
+      "rolled_back": "Rétabli · gén {{n}}",
+      "actual_split": "{{dispatch}} pour les rejeux · {{direct}} pour l'évaluation et l'optimisation",
+      "actual_estimated": "contient des valeurs heuristiques — le fournisseur n'a pas renvoyé l'usage pour une partie de cette exécution",
+      "actual_incomplete": "{{n}} bras de rejeu en échec ; leur coût est peut-être sous-compté",
+      "actual_not_comparable": "Non comparable à l'estimation ci-dessus : l'estimation surévalue sur un grand corpus, ce chiffre peut sous-évaluer. Aucun ne prédit l'autre."
     },
     "inbox": {
       "tab": "Évolution",

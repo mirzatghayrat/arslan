@@ -168,4 +168,77 @@ describe("PromotionCard", () => {
     const fab = screen.getByTestId("dim-row-fabrication");
     expect(fab.textContent).toContain("2");
   });
+
+  // ── B: est vs actual honesty ────────────────────────────────────────────────────
+  //
+  // 🔴 The two numbers are unreliable in OPPOSITE directions — the estimate over-counts
+  // and grows with corpus size, this figure can under-count and may itself be a
+  // heuristic. Rendered as adjacent lines they read as forecast-vs-outcome and invite a
+  // ratio that means nothing. These tests pin the separation and the caveats.
+
+  const withActual = (actual: Record<string, unknown>) => proposal({
+    estimate: { pairs: 4, dispatches: 56, judge_calls: 56, optimizer_calls: 3,
+                synth_calls: 0, est_tokens: 40000, lower_bound: true },
+    actual,
+  } as Partial<ProposalDetail>);
+
+  it("renders the actual cost in its OWN block, not as a sibling of the estimate", async () => {
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
+    const block = await screen.findByTestId("actual-cost");
+    expect(block).toBeTruthy();
+    // the estimate line must NOT live inside it
+    expect(block.textContent).not.toContain("evolution.card.estimate_line");
+  });
+
+  it("🔴 says the two numbers are not comparable, always", async () => {
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
+    expect(await screen.findByTestId("not-comparable")).toBeTruthy();
+  });
+
+  it("🔴 never renders a difference, ratio or percentage between them", async () => {
+    // A reader given two adjacent token counts will compute a ratio; the component must
+    // not do it FOR them, because the ratio is meaningless. Guard the rendered output.
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
+    const block = await screen.findByTestId("actual-cost");
+    const text = block.textContent ?? "";
+    expect(text).not.toMatch(/\d\s*%/);           // no percentage
+    expect(text).not.toMatch(/[−–—]\s*\d/);        // no signed delta
+    expect(text).not.toMatch(/\bx\s*\d|\d\s*×/);  // no multiplier
+  });
+
+  it("shows the dispatch/direct split rather than one opaque total", async () => {
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
+    expect(await screen.findByTestId("actual-split")).toBeTruthy();
+  });
+
+  it("🔴 admits when the figure contains a heuristic", async () => {
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 0, estimated: true })} onOpenRun={() => {}} />);
+    expect(await screen.findByTestId("actual-estimated")).toBeTruthy();
+  });
+
+  it("🔴 admits when a failed arm may have gone uncounted", async () => {
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 2, estimated: false })} onOpenRun={() => {}} />);
+    expect(await screen.findByTestId("actual-incomplete")).toBeTruthy();
+  });
+
+  it("stays quiet about caveats that do not apply", async () => {
+    render(<PromotionCard proposal={withActual({
+      est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
+      failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
+    await screen.findByTestId("actual-cost");
+    expect(screen.queryByTestId("actual-estimated")).toBeNull();
+    expect(screen.queryByTestId("actual-incomplete")).toBeNull();
+  });
 });
