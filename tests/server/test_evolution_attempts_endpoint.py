@@ -95,3 +95,31 @@ async def test_limit_is_clamped(seeded):
     r = await seeded.get("/api/v1/spawns/1/evolution/attempts?limit=99999", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["applied_limit"] <= 200
+
+
+async def test_a_truncated_page_says_so_instead_of_looking_complete(seeded):
+    """🔴 totals are summed over the PAGE. Reporting the page size as total_attempts made
+    a truncated, understated total indistinguishable from a complete one — on a spawn
+    with hundreds of older attempts, `counted == total` would read as "this is everything
+    it ever spent"."""
+    body = (await seeded.get("/api/v1/spawns/1/evolution/attempts?limit=1",
+                             headers=AUTH)).json()
+    assert len(body["attempts"]) == 1
+    assert body["totals"]["total_attempts"] == 3, "must count the spawn, not the page"
+    assert body["totals"]["truncated"] is True
+    assert body["totals"]["covers_all_attempts"] is False
+
+
+async def test_a_complete_view_says_that_too(seeded):
+    body = (await seeded.get("/api/v1/spawns/1/evolution/attempts", headers=AUTH)).json()
+    assert body["totals"]["truncated"] is False
+    # one attempt is still in flight, so the SUM does not cover every attempt
+    assert body["totals"]["covers_all_attempts"] is False
+    assert body["totals"]["counted_attempts"] == 2
+    assert body["totals"]["total_attempts"] == 3
+
+
+async def test_an_unknown_spawn_404s_rather_than_reporting_zero_spend(seeded):
+    """"this spawn cost nothing" and "there is no such spawn" are different facts."""
+    r = await seeded.get("/api/v1/spawns/9999/evolution/attempts", headers=AUTH)
+    assert r.status_code == 404, r.text

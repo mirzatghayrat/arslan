@@ -1,7 +1,17 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+// 🔴 The mock MUST interpolate. Returning the bare key discards every {{value}}, so a
+// component whose numbers all go through t(key, {vars}) — which is this one — renders
+// digit-free text under test. Any assertion about the NUMBERS shown then has nothing to
+// look at and passes no matter what. That is exactly how this file's "never renders a
+// ratio" test came to certify a property it could not observe.
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (k: string, vars?: Record<string, unknown>) =>
+      vars ? `${k} ${Object.values(vars).join(" ")}` : k,
+  }),
+}));
 
 vi.mock("../api/client", () => {
   class ApiError extends Error {
@@ -183,13 +193,19 @@ describe("PromotionCard", () => {
   } as Partial<ProposalDetail>);
 
   it("renders the actual cost in its OWN block, not as a sibling of the estimate", async () => {
+    // 🔴 "the estimate is not INSIDE the actual block" is true of the adjacent-sibling
+    // layout this change exists to end, so asserting only that proves nothing. Assert
+    // the structural fact instead: they are in different containers, and the estimate's
+    // container is not the actual block's immediate previous sibling.
     render(<PromotionCard proposal={withActual({
       est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
       failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
     const block = await screen.findByTestId("actual-cost");
-    expect(block).toBeTruthy();
-    // the estimate line must NOT live inside it
-    expect(block.textContent).not.toContain("evolution.card.estimate_line");
+    const estimateEl = [...document.querySelectorAll("div")].find(
+      (d) => d.textContent?.startsWith("evolution.card.estimate_line"));
+    expect(estimateEl).toBeTruthy();
+    expect(block.contains(estimateEl!)).toBe(false);
+    expect(estimateEl!.parentElement).not.toBe(block.parentElement);
   });
 
   it("🔴 says the two numbers are not comparable, always", async () => {
@@ -199,17 +215,23 @@ describe("PromotionCard", () => {
     expect(await screen.findByTestId("not-comparable")).toBeTruthy();
   });
 
-  it("🔴 never renders a difference, ratio or percentage between them", async () => {
+  it("🔴 renders ONLY the numbers it is allowed to — no derived comparison", async () => {
     // A reader given two adjacent token counts will compute a ratio; the component must
-    // not do it FOR them, because the ratio is meaningless. Guard the rendered output.
+    // not do it FOR them, because the ratio is meaningless.
+    //
+    // 🔴 An ALLOWLIST, not a list of forbidden shapes. My first version banned three
+    // regexes I happened to think of (%, signed delta, multiplier) — and since the t()
+    // mock swallowed interpolation, it was checking digit-free text and could not fail at
+    // all: a real Math.round(actual/estimate*100) rendered through t() passed 16/16.
+    // Enumerating what MAY appear catches derived numbers nobody thought to forbid.
+    const allowed = new Set(["12000", "10000", "2000"]);   // the raw fields, nothing else
     render(<PromotionCard proposal={withActual({
       est_tokens: 12000, dispatch_tokens: 10000, direct_tokens: 2000,
       failed_dispatches: 0, estimated: false })} onOpenRun={() => {}} />);
     const block = await screen.findByTestId("actual-cost");
-    const text = block.textContent ?? "";
-    expect(text).not.toMatch(/\d\s*%/);           // no percentage
-    expect(text).not.toMatch(/[−–—]\s*\d/);        // no signed delta
-    expect(text).not.toMatch(/\bx\s*\d|\d\s*×/);  // no multiplier
+    const numbers = (block.textContent ?? "").match(/\d+/g) ?? [];
+    const unexpected = numbers.filter((n) => !allowed.has(n));
+    expect(unexpected).toEqual([]);
   });
 
   it("shows the dispatch/direct split rather than one opaque total", async () => {

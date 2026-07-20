@@ -21,17 +21,12 @@ from server.orchestrator import tool_loop
 from server.services import replay_safety
 
 
-@pytest.fixture
-def counted(monkeypatch):
-    """Count real executor invocations without touching the network."""
-    calls: list[str] = []
-
-    async def fake_run(tool_key, args, **kw):
-        calls.append(tool_key)
-        return {"ok": True, "text": "x"}
-
-    monkeypatch.setattr(tool_loop, "_run_tool_executor", fake_run, raising=False)
-    return calls
+# NOTE: an earlier `counted` fixture here patched a name that does not exist, counted
+# nothing, and was asserted on by no test — inert scaffolding whose docstring claimed
+# network isolation it did not provide. Removed. These tests reach no network because
+# _check_fetch_budget makes its decision before any executor is resolved, and the one
+# test that drives the real throat spends the budget first so the executor is never
+# reached at all.
 
 
 async def _fetch(n: int, *, conversation_id: str, budget) -> list[dict]:
@@ -42,7 +37,7 @@ async def _fetch(n: int, *, conversation_id: str, budget) -> list[dict]:
     return out
 
 
-async def test_a_live_run_is_capped(counted):
+async def test_a_live_run_is_capped():
     """The ceiling exists and refuses past it."""
     budget: dict = {}
     verdicts = await _fetch(tool_loop.LIVE_FETCH_BUDGET + 2, conversation_id="c1", budget=budget)
@@ -52,7 +47,7 @@ async def test_a_live_run_is_capped(counted):
     assert len(refused) == 2
 
 
-async def test_the_refusal_is_explicit_not_a_silent_truncation(counted):
+async def test_the_refusal_is_explicit_not_a_silent_truncation():
     """A silently-dropped fetch would look to the model like a page with no content, and
     it would try again. Say what happened."""
     budget: dict = {}
@@ -65,7 +60,7 @@ async def test_the_refusal_is_explicit_not_a_silent_truncation(counted):
     assert str(tool_loop.LIVE_FETCH_BUDGET) in refusal["error"]
 
 
-async def test_the_budget_is_PER_RUN_not_global(counted):
+async def test_the_budget_is_PER_RUN_not_global():
     """Two runs each get the full allowance; a shared counter would starve later runs on
     a busy install for no reason."""
     a: dict = {}
@@ -75,7 +70,7 @@ async def test_the_budget_is_PER_RUN_not_global(counted):
     assert verdict is None
 
 
-async def test_both_web_tools_share_one_allowance(counted):
+async def test_both_web_tools_share_one_allowance():
     """A cap on web_extract alone is trivially bypassed by alternating with web_search."""
     budget: dict = {}
     for _ in range(tool_loop.LIVE_FETCH_BUDGET):
@@ -85,7 +80,7 @@ async def test_both_web_tools_share_one_allowance(counted):
         "web_extract", conversation_id="c1", budget=budget) is not None
 
 
-async def test_non_fetch_tools_are_not_counted(counted):
+async def test_non_fetch_tools_are_not_counted():
     budget: dict = {}
     for _ in range(tool_loop.LIVE_FETCH_BUDGET + 5):
         assert await tool_loop._check_fetch_budget(
@@ -95,7 +90,7 @@ async def test_non_fetch_tools_are_not_counted(counted):
 @pytest.mark.parametrize("sentinel", sorted(replay_safety._HERMETIC_CONVERSATION_IDS)
                          if hasattr(replay_safety, "_HERMETIC_CONVERSATION_IDS")
                          else ["evolution-replay"])
-async def test_the_EVAL_path_is_deliberately_NOT_capped_by_this_batch(counted, sentinel):
+async def test_the_EVAL_path_is_deliberately_NOT_capped_by_this_batch(sentinel):
     """🔴 Pins the SCOPE, so the gap cannot be mistaken for coverage later.
 
     A hermetic replay is exempt from this ceiling — not because it is safe (it is the

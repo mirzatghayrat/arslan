@@ -218,7 +218,21 @@ async def list_evolution_attempts(
       * `totals.estimated` goes true if ANY component was an adapter heuristic, and
         `failed_dispatches` carries through — a sum containing a guess is a guess.
     """
+    # A nonexistent spawn must 404 like every neighbouring route, not answer with a
+    # well-formed zero-spend report — "this spawn cost nothing" and "there is no such
+    # spawn" are different facts.
+    if await session.get(Spawn, spawn_id) is None:
+        raise HTTPException(status_code=404, detail=f"spawn {spawn_id} not found")
+
     applied_limit = max(1, min(limit, _ATTEMPTS_MAX))
+    # 🔴 The spawn's REAL attempt count, not the page's. Reporting the page size as
+    # `total_attempts` made a truncated, understated total indistinguishable from a
+    # complete one: counted_attempts == total_attempts would read as "this is everything
+    # this spawn ever spent" on a spawn with hundreds of older attempts.
+    total_attempts = (await session.execute(
+        select(func.count()).select_from(EvolutionAttempt)
+        .where(EvolutionAttempt.spawn_id == spawn_id)
+    )).scalar_one()
     rows = (await session.execute(
         select(EvolutionAttempt)
         .where(EvolutionAttempt.spawn_id == spawn_id)
@@ -245,8 +259,13 @@ async def list_evolution_attempts(
         "direct_tokens": sum(int(x.get("direct_tokens") or 0) for x in counted),
         "failed_dispatches": sum(int(x.get("failed_dispatches") or 0) for x in counted),
         "estimated": any(bool(x.get("estimated")) for x in counted),
+        # covered by the SUM
         "counted_attempts": len(counted),
-        "total_attempts": len(attempts),
+        # every attempt this spawn has, page or not — so a truncated view says so
+        "total_attempts": total_attempts,
+        # explicit rather than left to compare the two numbers above
+        "covers_all_attempts": len(attempts) == total_attempts and len(counted) == total_attempts,
+        "truncated": total_attempts > len(attempts),
     }
     return {"attempts": attempts, "totals": totals, "applied_limit": applied_limit}
 
