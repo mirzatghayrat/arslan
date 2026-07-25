@@ -459,7 +459,10 @@
       "placeholder": "粘贴令牌…",
       "save": "保存",
       "requiredHint": "此服务器的 API 与实时连接需要令牌。请粘贴为该实例签发的令牌。"
-    }
+    },
+    "labelEvolutionAuto": "自动进化(后台)",
+    "evolutionAutoDesc": "让 Arslan 在后台用重放的历史运行自行改进分身的提示词。",
+    "evolutionAutoSpendWarning": "这会消耗你的 API 额度。目前没有生效的花费上限——运行前的预估已知偏高,且随语料增长越来越高,因此没有对它设限。尝试有频率限制且一次只跑一个,但总量不受约束。在可用的上限出现之前,请在你的 LLM 服务商的账单页设置硬性消费上限。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

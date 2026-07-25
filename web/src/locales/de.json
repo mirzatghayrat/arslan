@@ -459,7 +459,10 @@
       "placeholder": "Token einfügen…",
       "save": "Speichern",
       "requiredHint": "Dieser Server benötigt ein Token für API- und Live-Verbindungen. Füge das für diese Instanz ausgestellte Token ein."
-    }
+    },
+    "labelEvolutionAuto": "Auto-Evolution (im Hintergrund)",
+    "evolutionAutoDesc": "Lass Arslan den Prompt eines Spawns im Hintergrund selbst verbessern, anhand wiederholter früherer Läufe.",
+    "evolutionAutoSpendWarning": "Das verbraucht dein API-Guthaben. Derzeit gibt es keine wirksame Ausgabenobergrenze — die Vorabschätzung überschätzt nachweislich, und zwar zunehmend, je größer dein Korpus wird, daher wird sie nicht als Limit durchgesetzt. Versuche sind ratenbegrenzt und laufen einzeln, die Gesamtsumme ist jedoch unbegrenzt. Setze bis dahin ein hartes Ausgabenlimit im Abrechnungsbereich deines LLM-Anbieters."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

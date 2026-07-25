@@ -459,7 +459,10 @@
       "placeholder": "Collez le jeton…",
       "save": "Enregistrer",
       "requiredHint": "Ce serveur exige un jeton pour les connexions API et en direct. Collez le jeton émis pour cette instance."
-    }
+    },
+    "labelEvolutionAuto": "Auto-évolution (en arrière-plan)",
+    "evolutionAutoDesc": "Laisse Arslan améliorer seul le prompt d'un spawn, en arrière-plan, en rejouant d'anciennes exécutions.",
+    "evolutionAutoSpendWarning": "Cela consomme vos crédits API. Il n'existe aujourd'hui aucun plafond de dépense effectif : l'estimation préalable surestime, de plus en plus à mesure que votre corpus grandit, elle n'est donc pas appliquée comme limite. Les tentatives sont limitées en fréquence et s'exécutent une à une, mais le total n'est pas borné. En attendant un vrai plafond, fixez une limite de dépense stricte dans le tableau de bord de facturation de votre fournisseur LLM."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

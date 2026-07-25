@@ -153,6 +153,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
         mcpServerEnabled={localSettings.mcpServerEnabled ?? false}
         onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
+        evolutionAuto={localSettings.evolutionAuto ?? false}
+        onEvolutionAutoChange={(v) => saveField({ evolutionAuto: v })}
       />
     ),
   };

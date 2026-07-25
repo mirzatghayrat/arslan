@@ -206,4 +206,6 @@ export interface AppSettings {
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
    *  to external MCP clients like Claude Code/Codex) is enabled. Default off. */
   mcpServerEnabled: boolean;
+  /** optional on purpose: keeps existing AppSettings literals valid */
+  evolutionAuto?: boolean;
 }

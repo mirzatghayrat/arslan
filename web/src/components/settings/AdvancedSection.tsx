@@ -18,7 +18,7 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sliders } from 'lucide-react';
+import { AlertTriangle, Sliders } from 'lucide-react';
 import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
 
@@ -41,6 +41,10 @@ export interface AdvancedSectionProps {
   /** Inbound MCP server — expose read-only tools to external MCP clients. */
   mcpServerEnabled: boolean;
   onMcpServerChange: (value: boolean) => void;
+  /** Background auto-evolution. Optional so existing prop literals stay valid; absent
+   * reads as OFF, which is also the backend default. */
+  evolutionAuto?: boolean;
+  onEvolutionAutoChange?: (value: boolean) => void;
 }
 
 export default function AdvancedSection({
@@ -54,6 +58,8 @@ export default function AdvancedSection({
   onSpawnModeChange,
   mcpServerEnabled,
   onMcpServerChange,
+  evolutionAuto = false,
+  onEvolutionAutoChange,
 }: AdvancedSectionProps) {
   const { t } = useTranslation();
 
@@ -167,6 +173,36 @@ export default function AdvancedSection({
           />
         </div>
         <McpTokenControl />
+
+        <div className="h-[1px] bg-border/40"></div>
+
+        {/* Background auto-evolution — default OFF. It spends the user's API credits and
+            no working spend cap exists, so the warning below is not decoration: it is the
+            information someone needs to decide, and the mitigation is the only real one
+            available today. Styling carries the warning, not an emoji in the string —
+            emoji render inconsistently across platforms and across six locales. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelEvolutionAuto')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.evolutionAutoDesc')}
+            </p>
+            <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
+               data-testid="evolution-auto-warning">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
+              <span>{t('settings.evolutionAutoSpendWarning')}</span>
+            </p>
+          </div>
+          <input
+            id="settings-evolution-auto-toggle"
+            type="checkbox"
+            checked={evolutionAuto}
+            onChange={(e) => onEvolutionAutoChange?.(e.target.checked)}
+            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
+        </div>
       </div>
     </div>
   );

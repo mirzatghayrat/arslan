@@ -43,6 +43,15 @@ async def _add(Session, spawn_id, *, outcome, source, minutes_ago=0):
 # ── P1/P2: the column exists and is actually written ──────────────────────────────
 
 
+async def _enable_auto(Session) -> None:
+    """🔴 Auto-evolution is OFF by default (it spends the user's API credits and there is
+    no working cap — see settings_service.evolution_auto). Tests that exercise the AUTO
+    path opt in explicitly; never relax an assertion instead."""
+    async with Session() as db:
+        db.add(Setting(key="evolution_auto", value="on"))
+        await db.commit()
+
+
 async def test_manual_and_auto_attempts_are_distinguishable(wdb, monkeypatch):
     """The whole point: after this, a row knows where it came from."""
     Session = wdb
@@ -52,6 +61,7 @@ async def test_manual_and_auto_attempts_are_distinguishable(wdb, monkeypatch):
     await evolution_watcher.enqueue_attempt(sid, manual=True)
     await _drain()
     await _seed_runs(Session, sid, 20)
+    await _enable_auto(Session)          # manual needs no opt-in; the auto leg does
     await evolution_watcher.trigger_spawn(sid)
     await _drain()
 
@@ -223,6 +233,7 @@ async def test_repeated_budget_refusals_are_rate_limited(wdb, monkeypatch):
     Session = wdb
     sid = await _spawn(Session)
     async with Session() as db:
+        db.add(Setting(key="evolution_auto", value="on"))
         db.add(Setting(key="evolution_max_est_tokens", value="500"))
         await db.commit()
     await _seed_runs(Session, sid, 20)
@@ -252,6 +263,7 @@ async def test_over_budget_spawn_cannot_exceed_the_daily_refusal_ceiling(wdb, mo
     Session = wdb
     sid = await _spawn(Session)
     async with Session() as db:
+        db.add(Setting(key="evolution_auto", value="on"))
         db.add(Setting(key="evolution_max_est_tokens", value="500"))
         await db.commit()
     await _seed_runs(Session, sid, 20)

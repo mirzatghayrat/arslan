@@ -51,6 +51,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
     embeddingConfigId: backend.embedding_config_id ?? "",
+    evolutionAuto: backend.evolution_auto === "on",
     runDebugRetentionDays: backend.run_debug_retention_days ?? 30,
     mcpServerEnabled: backend.mcp_server_enabled ?? false,
   };
@@ -72,6 +73,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     orchestrator_shell_enabled: ui.orchestratorShellEnabled ? "true" : "false",
     shell_confirm_policy: ui.shellConfirmPolicy,
     embedding_config_id: ui.embeddingConfigId ?? "",
+    evolution_auto: ui.evolutionAuto ? "on" : "off",
     run_debug_retention_days: ui.runDebugRetentionDays ?? 30,
     mcp_server_enabled: ui.mcpServerEnabled,
   };

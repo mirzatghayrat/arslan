@@ -18,5 +18,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   orchestratorShellEnabled: false,
   shellConfirmPolicy: 'ask_all',
   runDebugRetentionDays: 30,
+  evolutionAuto: false,
   mcpServerEnabled: false
 };

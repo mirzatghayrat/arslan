@@ -459,7 +459,10 @@
       "placeholder": "Pega el token…",
       "save": "Guardar",
       "requiredHint": "Este servidor requiere un token para las conexiones de API y en vivo. Pega el token emitido para esta instancia."
-    }
+    },
+    "labelEvolutionAuto": "Autoevolución (en segundo plano)",
+    "evolutionAutoDesc": "Deja que Arslan mejore por su cuenta el prompt de un spawn, en segundo plano, reproduciendo ejecuciones anteriores.",
+    "evolutionAutoSpendWarning": "Esto consume tus créditos de API. Actualmente no hay ningún límite de gasto efectivo: se sabe que la estimación previa sobrestima, y cada vez más a medida que crece tu corpus, así que no se aplica ningún límite basado en ella. Los intentos están limitados en frecuencia y se ejecutan de uno en uno, pero el total no está acotado. Hasta que exista un límite real, fija un tope de gasto en el panel de facturación de tu proveedor de LLM."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

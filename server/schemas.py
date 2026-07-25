@@ -26,6 +26,14 @@ class SettingsIn(BaseModel):
     shell_confirm_policy: str | None = None
     run_debug_retention_days: int | None = None
     evolution_auto: str | None = None
+    # 🔴 These two were in _PLAIN_KEYS (so update_settings would store them) but on
+    # NEITHER schema, and the PUT route feeds update_settings `body.model_dump()` —
+    # so pydantic dropped them and the write path was dead. The frontend has been
+    # sending embedding_config_id since the embedding settings shipped; the value
+    # never reached the database. Same defect class as the D-round write-only int
+    # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
+    synthesis_config_id: str | None = None
+    embedding_config_id: str | None = None
     evolution_max_est_tokens: int | None = None
     mcp_server_enabled: bool | None = None
 
@@ -46,7 +54,9 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     run_debug_retention_days: int = 30
-    evolution_auto: str = "on"
+    evolution_auto: str = "off"
+    synthesis_config_id: str = ""
+    embedding_config_id: str = ""
     evolution_max_est_tokens: int | None = None
     mcp_server_enabled: bool = False
 

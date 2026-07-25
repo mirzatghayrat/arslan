@@ -459,7 +459,10 @@
       "placeholder": "Paste token…",
       "save": "Save",
       "requiredHint": "This server requires a token for API and live connections. Paste the token issued for this instance."
-    }
+    },
+    "labelEvolutionAuto": "Auto-evolution (background)",
+    "evolutionAutoDesc": "Let Arslan improve a spawn's prompt on its own, in the background, using replayed past runs.",
+    "evolutionAutoSpendWarning": "This spends your API credits. There is currently no working spend cap — the pre-run estimate is known to over-estimate, increasingly so as your corpus grows, so no limit is enforced on it. Attempts are rate-limited and run one at a time, but the total is not bounded. Until a working cap exists, set a hard spend limit in your LLM provider's billing dashboard."
   },
   "errors": {
     "load_failed": "Failed to load data.",

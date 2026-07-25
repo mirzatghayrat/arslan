@@ -227,13 +227,32 @@ async def shell_confirm_policy(session: AsyncSession) -> str:
 async def evolution_auto(session: AsyncSession) -> bool:
     """Whether the background evolution watcher may run attempts for spawns.
 
-    Default ON (spec §4: evolution_auto=on is standing consent — estimate is visible in the
-    inbox/attempt, not a per-round popup; the budget cap + backoff prevent runaway spend).
-    Only an explicit 'off'/'false'/'0' disables it."""
+    🔴 Default OFF. It used to default ON, justified as "standing consent — the estimate
+    is visible in the inbox, and the budget cap + backoff prevent runaway spend". Both
+    halves of that justification turned out to be false:
+
+      * the budget cap does not exist. `evolution_max_est_tokens` must stay unset,
+        because the estimate it would gate on is a known over-estimate that grows with
+        the corpus (see evolution_estimate.py) — a fixed cap over a growing number is a
+        permanent kill switch, so no cap is set and nothing bounds the total;
+      * "visible in the inbox" is visible only to someone who already knows to look.
+        There was no Settings control for this at all, so a user could neither see that
+        it was running nor turn it off without calling the API by hand.
+
+    Which left: clone the repo, run it, and a background loop starts spending YOUR API
+    credits without being asked. That is not consent, standing or otherwise.
+
+    This is the same rule `curation_enabled` above already states — the proposing side is
+    fail-open, the EXECUTING side (writes, tools, spend) is fail-closed — applied to the
+    loop that spends two orders of magnitude more. It was written down there and not
+    applied here, because this default predates the discovery that its cap was fiction.
+
+    Only an explicit 'on'/'true'/'1'/'yes' enables it.
+    """
     raw = await _get_raw(session, "evolution_auto")
     if raw is None:
-        return True
-    return str(raw).strip().lower() not in ("off", "false", "0", "no")
+        return False
+    return str(raw).strip().lower() in ("on", "true", "1", "yes")
 
 
 async def evolution_max_est_tokens(session: AsyncSession) -> int | None:
