@@ -84,7 +84,7 @@ def test_fuzzy_kind_other_for_non_containment_similar_pair():
 
 def test_fuzzy_kind_none_when_not_similar():
     assert fact_dedup.fuzzy_kind(_BELOW_A, _BELOW_B) is None
-    assert fact_dedup.fuzzy_kind("用户在北京工作", "用户来自甲城,是甲语母语者") is None
+    assert fact_dedup.fuzzy_kind("用户在乙城工作", "用户来自甲城,母语是甲语") is None
 
 
 def test_fuzzy_kind_none_when_exact_norm_equal():

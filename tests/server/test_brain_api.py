@@ -40,7 +40,7 @@ async def test_brain_tree_three_branches_with_fields(maker):
     async with db_session.AsyncSessionLocal() as db:
         await db.execute(sa_text(
             "INSERT INTO user_facts (content, label, category, source, confidence) "
-            "VALUES ('用户在Acme当AE', 'Acme AE', '身份背景', 'auto', 0.9)"))
+            "VALUES ('用户在 Acme 当客户经理', 'Acme 客户经理', '身份背景', 'auto', 0.9)"))
         await db.execute(sa_text("INSERT INTO collections (id, name, created_at) VALUES (1,'c',:ts)"),
                          {"ts": now})
         await db.execute(sa_text(

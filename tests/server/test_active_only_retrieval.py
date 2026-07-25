@@ -195,8 +195,8 @@ async def test_dedup_facts_preserves_supersede_target_but_still_dedups_others(ma
 async def test_dedup_merge_facts_preserves_supersede_target(maker):
     from server.services import fact_dedup
     async with maker() as s:
-        a = UserFact(content="用户是甲语母语者,来自甲城", source="auto")        # id1 kept
-        c = UserFact(content="用户是甲语母语者,来自甲城地区", source="auto")    # id2 fuzzy-dup, is a target
+        a = UserFact(content="用户母语是甲语,来自甲城", source="auto")        # id1 kept
+        c = UserFact(content="用户母语是甲语,来自甲城地区", source="auto")  # id2 fuzzy-dup, is a target
         s.add_all([a, c])
         await s.commit()
         a_id, c_id = a.id, c.id

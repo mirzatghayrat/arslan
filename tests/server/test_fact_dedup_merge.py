@@ -32,7 +32,7 @@ def test_similar_catches_near_duplicates():
     # false-positive collision (this is the documented, intentional reversal —
     # see P0-b commit message).
     assert fact_dedup.similar("用户需要广告科技助手", "用户需要广告科技（AdTech）行业相关的助手") is False
-    assert fact_dedup.similar("用户在北京工作", "用户来自甲城,是甲语母语者") is False
+    assert fact_dedup.similar("用户在乙城工作", "用户来自甲城,母语是甲语") is False
 
 
 @pytest.mark.asyncio
@@ -64,12 +64,12 @@ async def test_save_facts_near_dup_coexists_not_merged(maker):
 @pytest.mark.asyncio
 async def test_dedup_merge_backfill_collapses(maker):
     await memory.save_facts(
-        [{"content": "用户是甲语母语者,来自甲城"}], provenance={"source_kind": "test"})
+        [{"content": "用户母语是甲语,来自甲城"}], provenance={"source_kind": "test"})
     # inject an exact near-dup directly (bypass save's own merge) to backfill
     async with db_session.AsyncSessionLocal() as db:
         await db.execute(sa_text(
             "INSERT INTO user_facts (content, source, confidence) VALUES "
-            "('用户是甲语母语者,来自甲城地区', 'auto', 0.6)"))
+            "('用户母语是甲语,来自甲城地区', 'auto', 0.6)"))
         await db.commit()
     deleted = await fact_dedup.dedup_merge_facts()
     assert deleted == 1

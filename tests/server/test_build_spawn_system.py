@@ -36,8 +36,11 @@ async def test_build_spawn_system_includes_equipment_and_guidance(maker):
 async def test_build_spawn_system_has_language_directive(maker):
     """The spawn must be told to reply in the user's CURRENT language, and that
     'Known facts about the user' are background — NOT a language instruction.
-    Regression guard for the Uyghur-drift bug: identity facts like '用户是甲语母语者…
-    不需要中文翻译' were read as an order to answer in Uyghur in the sandbox."""
+    Regression guard for the language-drift bug: an identity fact that MENTIONS a
+    language or ethnic background (e.g. "the user's mother tongue is X, no translation
+    needed") was read in the sandbox as an order to answer in that language. The guard
+    is on the prompt contract asserted below, not on any particular fact — which is why
+    the example here is a placeholder and can stay one."""
     from server.orchestrator.dispatcher import build_spawn_system
     async with maker() as s:
         spawn = await s.get(Spawn, 7)
