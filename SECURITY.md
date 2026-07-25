@@ -36,7 +36,10 @@ The `<data_dir>/crypto_salt` and `<data_dir>/api_token` files are part of the ba
 Please report security issues **privately** — do not open a public issue for a vulnerability.
 
 - **Primary channel:** use GitHub's private vulnerability reporting — the **"Report a vulnerability"** button on the repository's **Security** tab (`https://github.com/mirzatghayrat/arslan/security/advisories/new`). This opens a private security advisory visible only to the maintainers.
-- **Security contact:** security@users.noreply.github.com
+- **That button is the only channel.** Private vulnerability reporting is enabled on this
+  repository, so a report filed there reaches the maintainers privately and keeps the whole
+  exchange in one place. There is deliberately no email address here: an address in a public
+  file is scraped, and a second channel is a second place for a report to be missed.
 
 Please include a description, reproduction steps, affected version/commit, and impact. We will acknowledge your report and coordinate a fix and disclosure timeline with you.
 
