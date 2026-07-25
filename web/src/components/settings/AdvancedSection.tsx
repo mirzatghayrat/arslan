@@ -45,6 +45,9 @@ export interface AdvancedSectionProps {
    * reads as OFF, which is also the backend default. */
   evolutionAuto?: boolean;
   onEvolutionAutoChange?: (value: boolean) => void;
+  /** null = no cap in effect, which changes what the warning is allowed to claim. */
+  evolutionMaxDispatches?: number | null;
+  onEvolutionMaxDispatchesChange?: (value: number | null) => void;
 }
 
 export default function AdvancedSection({
@@ -60,6 +63,8 @@ export default function AdvancedSection({
   onMcpServerChange,
   evolutionAuto = false,
   onEvolutionAutoChange,
+  evolutionMaxDispatches = null,
+  onEvolutionMaxDispatchesChange,
 }: AdvancedSectionProps) {
   const { t } = useTranslation();
 
@@ -192,7 +197,17 @@ export default function AdvancedSection({
             <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
                data-testid="evolution-auto-warning">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
-              <span>{t('settings.evolutionAutoSpendWarning')}</span>
+              {/* 🔴 Conditional on purpose. Saying "the cap counts dispatches" while no
+                  cap is in effect would describe a guard that is not there — the same
+                  "looks armed" failure this feature's default was changed to avoid,
+                  moved into copy. Only once a value is actually set does the other
+                  sentence become true. */}
+              <span>
+                {evolutionMaxDispatches == null
+                  ? t('settings.evolutionAutoSpendWarning')
+                  : t('settings.evolutionAutoSpendWarningCapped',
+                      { cap: evolutionMaxDispatches })}
+              </span>
             </p>
           </div>
           <input
@@ -201,6 +216,29 @@ export default function AdvancedSection({
             checked={evolutionAuto}
             onChange={(e) => onEvolutionAutoChange?.(e.target.checked)}
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelEvolutionMaxDispatches')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.evolutionMaxDispatchesDesc')}
+            </p>
+          </div>
+          <input
+            id="settings-evolution-max-dispatches"
+            type="number"
+            min={1}
+            value={evolutionMaxDispatches ?? ''}
+            placeholder={t('settings.evolutionMaxDispatchesUnset')}
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              onEvolutionMaxDispatchesChange?.(raw === '' ? null : Number(raw));
+            }}
+            className="w-28 px-2 py-1 text-[11px] font-mono rounded bg-background border border-border focus:ring-0"
           />
         </div>
       </div>

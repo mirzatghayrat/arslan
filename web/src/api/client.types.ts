@@ -257,6 +257,8 @@ export interface AppSettings {
    * "on"/"off", not a bool. Default "off" — it spends the user's API credits and there
    * is no working cap (the pre-run estimate is a known over-estimate). */
   evolution_auto?: string;
+  /** Cap on PROJECTED replay dispatches, not tokens. null = no cap (default). */
+  evolution_max_dispatches?: number | null;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
   run_debug_retention_days?: number;
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
@@ -748,7 +750,17 @@ export interface ProposalDetail {
   promoted_at: string | null;
 }
 
-/** GET /spawns/{id}/evolve/estimate — honest lower-bound cost estimate. */
+/** GET /spawns/{id}/evolve/estimate.
+ *
+ * Two blocks that disagree on purpose. The first is FROZEN and wrong — `dispatches`
+ * over-states 3.7-5.2x — and stays only because it is what the historical attempt rows
+ * carry. The second is derived from the loop; `basis: "max"` covers the COUNT ceilings
+ * and nothing else. `tokens_projected` is mean-priced and is NOT a bound; it is null
+ * until the `actual` ledger has entries, which today is every install.
+ *
+ * The `*_max` block is optional so a STORED estimate from before this schema still
+ * typechecks — those rows exist and PromotionCard renders them.
+ */
 export interface EvolveEstimate {
   pairs: number;
   dispatches: number;
@@ -757,6 +769,17 @@ export interface EvolveEstimate {
   synth_calls: number;
   est_tokens: number;
   lower_bound: boolean;
+  propose_pairs?: number;
+  val_pairs?: number;
+  dispatches_max?: number;
+  judge_calls_max?: number;
+  optimizer_calls_max?: number;
+  basis?: string;
+  avg_replay_tokens?: number | null;
+  /** Pooled across ALL spawns, not this one — the ledger is too thin to slice. */
+  avg_replay_n?: number;
+  tokens_projected?: number | null;
+  tokens_projected_unavailable_reason?: string | null;
 }
 
 /** 202 response for POST /spawns/{id}/evolve (background job). */
@@ -805,7 +828,11 @@ export interface SpawnDiagnosis {
   auto_eligible: boolean;
   open_proposals: number;
   auto_on: boolean;
-  max_est_tokens: number | null;
+  /** Cap on PROJECTED DISPATCHES (not tokens). null = no cap, which is the default. */
+  max_dispatches: number | null;
+  /** Set only where an install had the removed token cap; its value is NOT carried
+   * over (the unit changed). Surfaced so a dropped spending limit is never silent. */
+  legacy_token_cap_dropped?: string | null;
   last_attempts: {
     id: number;
     outcome: string | null;

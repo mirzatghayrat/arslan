@@ -220,7 +220,10 @@ async def diagnose_spawn(db, spawn: Spawn) -> dict:
 
     # Globals surfaced for the endpoint payload (one place, one call).
     auto_on = await settings_service.evolution_auto(db)
-    max_est_tokens = await settings_service.evolution_max_est_tokens(db)
+    max_dispatches = await settings_service.evolution_max_dispatches(db)
+    # Non-null only on an install that had set the removed token cap: its limit is NOT
+    # being carried over (the unit changed), and it deserves to hear that from the UI.
+    legacy_token_cap = await settings_service.legacy_token_cap_if_set(db)
 
     # Endpoint-safe plain dicts (ISO strings) — never leak ORM objects out of the request.
     last_attempts = [{
@@ -244,6 +247,7 @@ async def diagnose_spawn(db, spawn: Spawn) -> dict:
         "auto_eligible": auto_eligible, "open_props": open_props,
         # Endpoint-facing extras.
         "generation_level": spawn.generation_level, "min_holdout_n": MIN_HOLDOUT_N,
-        "auto_on": auto_on, "max_est_tokens": max_est_tokens, "last_attempts": last_attempts,
+        "auto_on": auto_on, "max_dispatches": max_dispatches,
+        "legacy_token_cap_dropped": legacy_token_cap, "last_attempts": last_attempts,
         "verdict_code": verdict_code, "verdict_params": verdict_params,
     }

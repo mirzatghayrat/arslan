@@ -462,7 +462,11 @@
     },
     "labelEvolutionAuto": "Auto-évolution (en arrière-plan)",
     "evolutionAutoDesc": "Laisse Arslan améliorer seul le prompt d'un spawn, en arrière-plan, en rejouant d'anciennes exécutions.",
-    "evolutionAutoSpendWarning": "Cela consomme vos crédits API. Il n'existe aujourd'hui aucun plafond de dépense effectif : l'estimation préalable surestime, de plus en plus à mesure que votre corpus grandit, elle n'est donc pas appliquée comme limite. Les tentatives sont limitées en fréquence et s'exécutent une à une, mais le total n'est pas borné. En attendant un vrai plafond, fixez une limite de dépense stricte dans le tableau de bord de facturation de votre fournisseur LLM."
+    "evolutionAutoSpendWarning": "Cela consomme vos crédits API. Aucun plafond n'est actif aujourd'hui : la limite que vous pouvez fixer compte les relectures, pas les tokens. En attendant, fixez une limite stricte dans le tableau de bord de facturation de votre fournisseur.",
+    "evolutionAutoSpendWarningCapped": "Cela consomme vos crédits API. Les tentatives projetant plus de {{cap}} relectures sont refusées. Cela borne les relectures, pas les tokens — le coût par relecture varie beaucoup, gardez donc aussi une limite chez votre fournisseur.",
+    "labelEvolutionMaxDispatches": "Relectures maximales par tentative",
+    "evolutionMaxDispatchesDesc": "Refuse une tentative dont les relectures projetées dépassent cette valeur. Compte les relectures, pas les tokens : le coût par relecture varie trop pour servir de plafond. Laissez vide pour aucune limite.",
+    "evolutionMaxDispatchesUnset": "aucune limite"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -967,7 +971,7 @@
       "baseline_arm": "base",
       "exclusion": "{{n}} tâches non rejouables exclues",
       "toolset_disclaimer": "Taux de victoire mesuré avec la boîte à outils sûre pour la relecture, hors scénarios MCP.",
-      "estimate_line": "Estimation : {{judge}} appels de juge · ≈{{tokens}} tokens (proche d'une borne inférieure sur un petit corpus ; nettement SURestimé sur un grand)",
+      "estimate_line": "Au plus {{dispatches}} relectures · {{judge}} appels de jugement",
       "actual_line": "Dépense réelle : {{tokens}} tokens",
       "flag_verbose_warn": "sortie verbeuse",
       "flag_low_confidence": "faible confiance",
@@ -988,7 +992,8 @@
       "actual_split": "{{dispatch}} pour les rejeux · {{direct}} pour l'évaluation et l'optimisation",
       "actual_estimated": "contient des valeurs heuristiques — le fournisseur n'a pas renvoyé l'usage pour une partie de cette exécution",
       "actual_incomplete": "{{n}} bras de rejeu en échec ; leur coût est peut-être sous-compté",
-      "actual_not_comparable": "Non comparable à l'estimation ci-dessus : l'estimation surévalue sur un grand corpus, ce chiffre peut sous-évaluer. Aucun ne prédit l'autre."
+      "actual_not_comparable": "Non comparable à l'estimation ci-dessus : l'estimation surévalue sur un grand corpus, ce chiffre peut sous-évaluer. Aucun ne prédit l'autre.",
+      "estimate_tokens": "≈{{tokens}} tokens projetés (au coût moyen historique — pas un plafond)"
     },
     "inbox": {
       "tab": "Évolution",
@@ -998,7 +1003,7 @@
       "loading": "Chargement…",
       "run_evolution": "Lancer l'évolution",
       "estimate_title": "Estimer le coût",
-      "estimate_detail": "{{pairs}} paires · {{dispatches}} envois",
+      "estimate_detail": "{{pairs}} paires · au plus {{dispatches}} relectures",
       "enqueue": "Mettre en file",
       "enqueued": "En file · tentative {{id}}",
       "already_running": "Une tentative est déjà en cours",
@@ -1013,7 +1018,7 @@
       "status_proposed": "proposée",
       "confirm_title": "Cela relancera les mêmes données",
       "confirm_body": "Rien de nouveau n'a été enregistré depuis la tentative #{{id}}, qui a échoué sur « {{reason}} ». Lancer maintenant rejoue le même corpus : le résultat sera très probablement identique.",
-      "confirm_cost": "Cela dépenserait tout de même environ {{tokens}} tokens.",
+      "confirm_cost": "Cela lancerait tout de même jusqu'à {{dispatches}} relectures.",
       "confirm_run": "Lancer quand même",
       "confirm_cancel": "Annuler",
       "watching": "La tentative #{{id}} est en cours…",

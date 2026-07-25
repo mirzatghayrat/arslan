@@ -462,7 +462,11 @@
     },
     "labelEvolutionAuto": "Auto-Evolution (im Hintergrund)",
     "evolutionAutoDesc": "Lass Arslan den Prompt eines Spawns im Hintergrund selbst verbessern, anhand wiederholter früherer Läufe.",
-    "evolutionAutoSpendWarning": "Das verbraucht dein API-Guthaben. Derzeit gibt es keine wirksame Ausgabenobergrenze — die Vorabschätzung überschätzt nachweislich, und zwar zunehmend, je größer dein Korpus wird, daher wird sie nicht als Limit durchgesetzt. Versuche sind ratenbegrenzt und laufen einzeln, die Gesamtsumme ist jedoch unbegrenzt. Setze bis dahin ein hartes Ausgabenlimit im Abrechnungsbereich deines LLM-Anbieters."
+    "evolutionAutoSpendWarning": "Das verbraucht dein API-Guthaben. Derzeit gilt keine Obergrenze — die Grenze, die du setzen kannst, zählt Replay-Läufe, nicht Tokens. Setze bis dahin ein hartes Ausgabenlimit im Abrechnungsbereich deines Anbieters.",
+    "evolutionAutoSpendWarningCapped": "Das verbraucht dein API-Guthaben. Versuche mit mehr als {{cap}} veranschlagten Replay-Läufen werden abgelehnt. Das begrenzt Läufe, nicht Tokens — die Kosten pro Lauf schwanken stark, halte also auch beim Anbieter ein Limit.",
+    "labelEvolutionMaxDispatches": "Maximale Replay-Läufe pro Versuch",
+    "evolutionMaxDispatchesDesc": "Lehnt einen Versuch ab, dessen veranschlagte Replay-Läufe diesen Wert überschreiten. Zählt Läufe, nicht Tokens — die Kosten pro Lauf schwanken zu stark für eine Obergrenze. Leer lassen = keine Grenze.",
+    "evolutionMaxDispatchesUnset": "keine Grenze"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -967,7 +971,7 @@
       "baseline_arm": "Basis",
       "exclusion": "{{n}} nicht wiederholbare Aufgaben ausgeschlossen",
       "toolset_disclaimer": "Gewinnrate gemessen mit dem replay-sicheren Toolset, ohne MCP-Szenarien.",
-      "estimate_line": "Schätzung: {{judge}} Judge-Aufrufe · ≈{{tokens}} Tokens (bei kleinem Korpus nahe einer Untergrenze, bei großem deutlich ÜBERschätzt)",
+      "estimate_line": "Höchstens {{dispatches}} Replay-Läufe · {{judge}} Judge-Aufrufe",
       "actual_line": "Tatsächlich verbraucht: {{tokens}} Tokens",
       "flag_verbose_warn": "ausführliche Ausgabe",
       "flag_low_confidence": "geringe Konfidenz",
@@ -988,7 +992,8 @@
       "actual_split": "{{dispatch}} für Replays · {{direct}} für Bewertung und Optimierung",
       "actual_estimated": "enthält heuristische Werte — für einen Teil dieses Laufs lieferte der Anbieter keine Verbrauchsdaten",
       "actual_incomplete": "{{n}} Replay-Arm(e) fehlgeschlagen; deren Kosten sind möglicherweise nicht vollständig erfasst",
-      "actual_not_comparable": "Nicht mit der Schätzung oben vergleichbar: die Schätzung überschätzt bei großem Korpus, dieser Wert kann unterschätzen. Keiner sagt den anderen vorher."
+      "actual_not_comparable": "Nicht mit der Schätzung oben vergleichbar: die Schätzung überschätzt bei großem Korpus, dieser Wert kann unterschätzen. Keiner sagt den anderen vorher.",
+      "estimate_tokens": "≈{{tokens}} Tokens veranschlagt (zum historischen Mittel — keine Obergrenze)"
     },
     "inbox": {
       "tab": "Evolution",
@@ -998,7 +1003,7 @@
       "loading": "Wird geladen…",
       "run_evolution": "Evolution ausführen",
       "estimate_title": "Kosten schätzen",
-      "estimate_detail": "{{pairs}} Paare · {{dispatches}} Dispatches",
+      "estimate_detail": "{{pairs}} Paare · höchstens {{dispatches}} Läufe",
       "enqueue": "Einreihen",
       "enqueued": "Eingereiht · Versuch {{id}}",
       "already_running": "Ein Versuch läuft bereits",
@@ -1013,7 +1018,7 @@
       "status_proposed": "vorgeschlagen",
       "confirm_title": "Damit werden dieselben Daten erneut verarbeitet",
       "confirm_body": "Seit Versuch #{{id}}, der an „{{reason}}“ scheiterte, wurde nichts Neues aufgezeichnet. Ein Lauf jetzt wiederholt denselben Korpus — das Ergebnis wird sehr wahrscheinlich identisch sein.",
-      "confirm_cost": "Er würde trotzdem rund {{tokens}} Tokens verbrauchen.",
+      "confirm_cost": "Es würden trotzdem bis zu {{dispatches}} Replay-Läufe starten.",
       "confirm_run": "Trotzdem ausführen",
       "confirm_cancel": "Abbrechen",
       "watching": "Versuch #{{id}} läuft…",

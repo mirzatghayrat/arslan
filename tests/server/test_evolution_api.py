@@ -80,7 +80,8 @@ async def test_get_evolution_diagnosis(client):
     assert body["verdict_params"] == {"real_holdout": body["real_holdout"], "min": 10}
     assert body["effective_holdout"] == 10 and body["real_holdout"] < 10
     assert isinstance(body["last_attempts"], list)
-    assert "auto_on" in body and "max_est_tokens" in body
+    assert "auto_on" in body and "max_dispatches" in body
+    assert "legacy_token_cap_dropped" in body
 
     # READ-ONLY: the diagnosis must not have minted any synthetic tasks.
     from sqlalchemy import func, select

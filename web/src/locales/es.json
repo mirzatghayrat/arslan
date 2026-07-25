@@ -462,7 +462,11 @@
     },
     "labelEvolutionAuto": "Autoevolución (en segundo plano)",
     "evolutionAutoDesc": "Deja que Arslan mejore por su cuenta el prompt de un spawn, en segundo plano, reproduciendo ejecuciones anteriores.",
-    "evolutionAutoSpendWarning": "Esto consume tus créditos de API. Actualmente no hay ningún límite de gasto efectivo: se sabe que la estimación previa sobrestima, y cada vez más a medida que crece tu corpus, así que no se aplica ningún límite basado en ella. Los intentos están limitados en frecuencia y se ejecutan de uno en uno, pero el total no está acotado. Hasta que exista un límite real, fija un tope de gasto en el panel de facturación de tu proveedor de LLM."
+    "evolutionAutoSpendWarning": "Esto consume tus créditos de API. Actualmente no hay ningún límite en vigor: el límite que puedes fijar cuenta reejecuciones, no tokens. Hasta que lo fijes, pon un tope de gasto en el panel de facturación de tu proveedor.",
+    "evolutionAutoSpendWarningCapped": "Esto consume tus créditos de API. Se rechazan los intentos que proyecten más de {{cap}} reejecuciones. Eso limita reejecuciones, no tokens — el coste por reejecución varía mucho, así que mantén también un tope en tu proveedor.",
+    "labelEvolutionMaxDispatches": "Máximo de reejecuciones por intento",
+    "evolutionMaxDispatchesDesc": "Rechaza un intento cuyas reejecuciones proyectadas superen este valor. Cuenta reejecuciones, no tokens: el coste por reejecución varía demasiado para servir de tope. Déjalo vacío para no poner límite.",
+    "evolutionMaxDispatchesUnset": "sin límite"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -967,7 +971,7 @@
       "baseline_arm": "base",
       "exclusion": "Se excluyeron {{n}} tareas no repetibles",
       "toolset_disclaimer": "Tasa de victoria medida con el conjunto de herramientas seguro para repetición, sin escenarios MCP.",
-      "estimate_line": "Estimación: {{judge}} llamadas de juez · ≈{{tokens}} tokens (cercano a una cota inferior con un corpus pequeño; una SOBREestimación notable con uno grande)",
+      "estimate_line": "Como máximo {{dispatches}} reejecuciones · {{judge}} llamadas de evaluación",
       "actual_line": "Gasto real: {{tokens}} tokens",
       "flag_verbose_warn": "salida extensa",
       "flag_low_confidence": "baja confianza",
@@ -988,7 +992,8 @@
       "actual_split": "{{dispatch}} en repeticiones · {{direct}} en evaluación y optimización",
       "actual_estimated": "incluye valores heurísticos: en parte de esta ejecución el proveedor no devolvió el uso",
       "actual_incomplete": "{{n}} repetición(es) fallaron; su coste puede estar infravalorado",
-      "actual_not_comparable": "No comparable con la estimación de arriba: la estimación sobreestima con un corpus grande y esta cifra puede quedarse corta. Ninguna predice a la otra."
+      "actual_not_comparable": "No comparable con la estimación de arriba: la estimación sobreestima con un corpus grande y esta cifra puede quedarse corta. Ninguna predice a la otra.",
+      "estimate_tokens": "≈{{tokens}} tokens proyectados (al promedio histórico, no es un techo)"
     },
     "inbox": {
       "tab": "Evolución",
@@ -998,7 +1003,7 @@
       "loading": "Cargando…",
       "run_evolution": "Ejecutar evolución",
       "estimate_title": "Estimar costo",
-      "estimate_detail": "{{pairs}} pares · {{dispatches}} despachos",
+      "estimate_detail": "{{pairs}} pares · como máximo {{dispatches}} reejecuciones",
       "enqueue": "Encolar",
       "enqueued": "Encolado · intento {{id}}",
       "already_running": "Ya hay un intento en curso",
@@ -1013,7 +1018,7 @@
       "status_proposed": "propuesta",
       "confirm_title": "Esto volverá a ejecutar los mismos datos",
       "confirm_body": "No se ha registrado nada nuevo desde el intento #{{id}}, que falló por «{{reason}}». Ejecutarlo ahora reproduce el mismo corpus, así que el resultado será casi con seguridad idéntico.",
-      "confirm_cost": "Aun así gastaría alrededor de {{tokens}} tokens.",
+      "confirm_cost": "Aun así ejecutaría hasta {{dispatches}} reejecuciones.",
       "confirm_run": "Ejecutar de todos modos",
       "confirm_cancel": "Cancelar",
       "watching": "El intento #{{id}} está en curso…",

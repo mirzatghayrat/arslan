@@ -232,8 +232,12 @@ export interface EvolveRepeatRefusal {
   last_outcome: string;
   last_reason: string;
   new_runs_since: number;
+  /** Still emitted, still the over-stating number; the dialog no longer shows it. */
   est_tokens: number | null;
   est_is_lower_bound: boolean;
+  /** What the dialog shows now: the derived dispatch ceiling. Null on an estimate that
+   * predates it, in which case no figure is shown at all rather than a misleading one. */
+  est_dispatches_max: number | null;
 }
 
 /** One row of GET /brain/proposals — the Tier-2 human gate (F2).

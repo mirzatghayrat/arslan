@@ -335,9 +335,12 @@ export default function PromotionCard({ proposal, onOpenRun, onActionDone }: Pro
         <div>{t("evolution.card.toolset_disclaimer")}</div>
         {proposal.estimate && (
           <div className="tabular-nums">
+            {/* This reads a STORED estimate, so both schemas turn up here: rows written
+                before the derived ceiling existed carry only the old keys. Fall back
+                rather than render "undefined" at a user. */}
             {t("evolution.card.estimate_line", {
-              judge: proposal.estimate.judge_calls,
-              tokens: proposal.estimate.est_tokens,
+              judge: proposal.estimate.judge_calls_max ?? proposal.estimate.judge_calls,
+              dispatches: proposal.estimate.dispatches_max ?? proposal.estimate.dispatches,
             })}
           </div>
         )}

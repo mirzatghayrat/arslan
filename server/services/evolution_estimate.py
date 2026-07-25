@@ -10,7 +10,8 @@ every pair. So the number is close to a floor on a small corpus and an increasin
 OVER-estimate as the corpus grows.
 
 They are frozen anyway, because `evolution_watcher` compares `est_tokens` against
-`evolution_max_est_tokens` (:259). Repricing it with the correct population would drop it
+`evolution_max_dispatches` against `dispatches_max` (:259) — but `est_tokens` remains on
+the payload and on screen. Repricing it with the correct population would drop it
 to roughly 1/2.5 — no code change beside the gate, but the number the gate compares moves,
 which is silently loosening a spend gate by 2.5x. The executing side fails closed; a
 frozen wrong number that keeps today's behaviour beats a better number that quietly

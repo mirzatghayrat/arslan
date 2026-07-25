@@ -462,7 +462,11 @@
     },
     "labelEvolutionAuto": "Auto-evolution (background)",
     "evolutionAutoDesc": "Let Arslan improve a spawn's prompt on its own, in the background, using replayed past runs.",
-    "evolutionAutoSpendWarning": "This spends your API credits. There is currently no working spend cap — the pre-run estimate is known to over-estimate, increasingly so as your corpus grows, so no limit is enforced on it. Attempts are rate-limited and run one at a time, but the total is not bounded. Until a working cap exists, set a hard spend limit in your LLM provider's billing dashboard."
+    "evolutionAutoSpendWarning": "This spends your API credits. There is currently no cap in effect — the limit you can set counts replay dispatches, not tokens. Until you set one, put a hard spend limit in your LLM provider's billing dashboard.",
+    "evolutionAutoSpendWarningCapped": "This spends your API credits. Attempts projected above {{cap}} replay dispatches are refused. That bounds dispatches, not tokens — the cost per dispatch varies widely, so keep a hard spend limit in your provider's billing dashboard too.",
+    "labelEvolutionMaxDispatches": "Max replay dispatches per attempt",
+    "evolutionMaxDispatchesDesc": "Refuse an attempt whose projected replay dispatches exceed this. Counts dispatches, not tokens — the cost per dispatch varies too much to cap on. Leave blank for no cap.",
+    "evolutionMaxDispatchesUnset": "no cap"
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -967,7 +971,7 @@
       "baseline_arm": "baseline",
       "exclusion": "Excluded {{n}} non-replayable tasks",
       "toolset_disclaimer": "Win-rate measured under the replay-safe toolset, excluding MCP scenarios.",
-      "estimate_line": "Estimate: {{judge}} judge calls · ≈{{tokens}} tokens (close to a floor on a small corpus; a significant OVER-estimate on a large one)",
+      "estimate_line": "At most {{dispatches}} replay dispatches · {{judge}} judge calls",
       "actual_line": "Actually spent: {{tokens}} tokens",
       "flag_verbose_warn": "verbose output",
       "flag_low_confidence": "low confidence",
@@ -988,7 +992,8 @@
       "actual_split": "{{dispatch}} on replays · {{direct}} on judging and optimising",
       "actual_estimated": "includes heuristic values — the provider returned no usage for part of this run",
       "actual_incomplete": "{{n}} replay arm(s) failed; their cost may be undercounted",
-      "actual_not_comparable": "Not comparable with the estimate above: the estimate over-counts on a large corpus, this figure can under-count. Neither is a forecast of the other."
+      "actual_not_comparable": "Not comparable with the estimate above: the estimate over-counts on a large corpus, this figure can under-count. Neither is a forecast of the other.",
+      "estimate_tokens": "≈{{tokens}} tokens projected (priced at the historical mean — not a ceiling)"
     },
     "inbox": {
       "tab": "Evolution",
@@ -998,7 +1003,7 @@
       "loading": "Loading…",
       "run_evolution": "Run evolution",
       "estimate_title": "Estimate cost",
-      "estimate_detail": "{{pairs}} pairs · {{dispatches}} dispatches",
+      "estimate_detail": "{{pairs}} pairs · at most {{dispatches}} dispatches",
       "enqueue": "Enqueue",
       "enqueued": "Enqueued · attempt {{id}}",
       "already_running": "An attempt is already running",
@@ -1013,7 +1018,7 @@
       "status_proposed": "proposed",
       "confirm_title": "This will re-run the same data",
       "confirm_body": "Nothing new has been recorded since attempt #{{id}}, which failed on “{{reason}}”. Running now replays the identical corpus, so the result is very likely to be identical too.",
-      "confirm_cost": "It would still spend roughly {{tokens}} tokens.",
+      "confirm_cost": "It would still run up to {{dispatches}} replay dispatches.",
       "confirm_run": "Run anyway",
       "confirm_cancel": "Cancel",
       "watching": "Attempt #{{id}} is running…",

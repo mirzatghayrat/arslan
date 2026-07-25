@@ -462,7 +462,11 @@
     },
     "labelEvolutionAuto": "自動進化(バックグラウンド)",
     "evolutionAutoDesc": "過去の実行を再生して、Arslan がバックグラウンドで分身のプロンプトを自ら改善します。",
-    "evolutionAutoSpendWarning": "これは API クレジットを消費します。現時点で有効な上限はありません——実行前の見積もりは過大であることが分かっており、コーパスが増えるほど乖離が広がるため、上限として使っていません。試行には頻度制限があり同時実行は 1 件ですが、総量は制限されていません。有効な上限ができるまでは、LLM プロバイダーの請求画面で上限額を設定してください。"
+    "evolutionAutoSpendWarning": "API クレジットを消費します。現在、有効な上限はありません——設定できる上限はリプレイ実行の回数であり、トークンではありません。設定するまでは、LLM プロバイダーの請求画面で上限額を設定してください。",
+    "evolutionAutoSpendWarningCapped": "API クレジットを消費します。{{cap}} 回を超えると見込まれる試行は拒否されます。制限されるのは実行回数でトークンではなく、1 回あたりの費用は大きく変動します。プロバイダー側の上限額も維持してください。",
+    "labelEvolutionMaxDispatches": "1 回の試行あたりの最大リプレイ実行数",
+    "evolutionMaxDispatchesDesc": "見込みリプレイ実行数がこれを超える試行を拒否します。トークンではなく実行回数で数えます——1 回あたりの費用は変動が大きすぎて上限に向きません。空欄 = 上限なし。",
+    "evolutionMaxDispatchesUnset": "上限なし"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -967,7 +971,7 @@
       "baseline_arm": "ベースライン",
       "exclusion": "再現不可の {{n}} 件のタスクを除外",
       "toolset_disclaimer": "勝率はリプレイ安全なツールセットで測定され、MCP シナリオは含みません。",
-      "estimate_line": "見積り:judge {{judge}} 回 · tokens ≈ {{tokens}}(コーパスが小さいときは下界に近く、大きいときは大幅な過大評価)",
+      "estimate_line": "最大 {{dispatches}} 回のリプレイ実行 · {{judge}} 回の判定呼び出し",
       "actual_line": "実際の消費:{{tokens}} トークン",
       "flag_verbose_warn": "出力が冗長",
       "flag_low_confidence": "低信頼",
@@ -988,7 +992,8 @@
       "actual_split": "リプレイ {{dispatch}} · 判定と最適化 {{direct}}",
       "actual_estimated": "推計値を含みます —— 一部の呼び出しでプロバイダの使用量が返りませんでした",
       "actual_incomplete": "{{n}} 本のリプレイが失敗しており、その分は計上しきれていない可能性があります",
-      "actual_not_comparable": "上の見積りとは比較できません:見積りは大きなコーパスで過大、この値は過小になり得ます。互いを予測しません。"
+      "actual_not_comparable": "上の見積りとは比較できません:見積りは大きなコーパスで過大、この値は過小になり得ます。互いを予測しません。",
+      "estimate_tokens": "約 {{tokens}} トークンの見込み(過去平均で試算、上限ではありません)"
     },
     "inbox": {
       "tab": "進化",
@@ -998,7 +1003,7 @@
       "loading": "読み込み中…",
       "run_evolution": "進化を実行",
       "estimate_title": "コスト見積り",
-      "estimate_detail": "{{pairs}} ペア · {{dispatches}} 回ディスパッチ",
+      "estimate_detail": "{{pairs}} ペア · 最大 {{dispatches}} 回の実行",
       "enqueue": "キューに追加",
       "enqueued": "キュー追加済み · attempt {{id}}",
       "already_running": "すでに実行中のものがあります",
@@ -1013,7 +1018,7 @@
       "status_proposed": "審査待ち",
       "confirm_title": "同じデータを再実行します",
       "confirm_body": "「{{reason}}」で失敗した試行 #{{id}} 以降、新しい記録はありません。今実行しても同一のコーパスを再生するため、結果もほぼ同じになります。",
-      "confirm_cost": "それでも約 {{tokens}} トークンを消費します。",
+      "confirm_cost": "それでも最大 {{dispatches}} 回のリプレイ実行が走ります。",
       "confirm_run": "それでも実行",
       "confirm_cancel": "キャンセル",
       "watching": "試行 #{{id}} を実行中…",

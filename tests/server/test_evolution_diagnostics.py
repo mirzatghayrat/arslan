@@ -145,7 +145,7 @@ async def test_diagnose_spawn_topup_verdict_and_read_only(memdb):
     assert d["min_holdout_n"] == ed.MIN_HOLDOUT_N
     assert d["generation_level"] == 1
     assert isinstance(d["last_attempts"], list) and d["last_attempts"] == []
-    assert isinstance(d["auto_on"], bool) and "max_est_tokens" in d
+    assert isinstance(d["auto_on"], bool) and "max_dispatches" in d
 
     # READ-ONLY: the diagnosis never minted a synthetic task.
     async with memdb() as db:

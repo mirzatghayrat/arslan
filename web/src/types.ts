@@ -208,4 +208,6 @@ export interface AppSettings {
   mcpServerEnabled: boolean;
   /** optional on purpose: keeps existing AppSettings literals valid */
   evolutionAuto?: boolean;
+  /** Cap on PROJECTED replay dispatches. null/undefined = no cap (the default). */
+  evolutionMaxDispatches?: number | null;
 }

@@ -314,7 +314,8 @@ async def test_over_budget_records_skipped_budget(wdb, monkeypatch):
     await _seed_runs(Session, sid, 10)
     async with Session() as db:   # estimate est_tokens=1000 (fixture) > 500 budget
         db.add(Setting(key="evolution_auto", value="on"))
-        db.add(Setting(key="evolution_max_est_tokens", value="500"))
+        # dispatch units now, not tokens
+        db.add(Setting(key="evolution_max_dispatches", value="1"))
         await db.commit()
 
     aid = await evolution_watcher.trigger_spawn(sid)

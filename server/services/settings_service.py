@@ -21,7 +21,7 @@ _PLAIN_KEYS = (
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
-_INT_KEYS = ("run_debug_retention_days", "evolution_max_est_tokens",
+_INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
@@ -231,7 +231,8 @@ async def evolution_auto(session: AsyncSession) -> bool:
     is visible in the inbox, and the budget cap + backoff prevent runaway spend". Both
     halves of that justification turned out to be false:
 
-      * the budget cap does not exist. `evolution_max_est_tokens` must stay unset,
+      * the budget cap did not exist at the time. `evolution_max_dispatches` now caps
+        projected DISPATCHES, but is still unset by default,
         because the estimate it would gate on is a known over-estimate that grows with
         the corpus (see evolution_estimate.py) — a fixed cap over a growing number is a
         permanent kill switch, so no cap is set and nothing bounds the total;
@@ -255,10 +256,38 @@ async def evolution_auto(session: AsyncSession) -> bool:
     return str(raw).strip().lower() in ("on", "true", "1", "yes")
 
 
-async def evolution_max_est_tokens(session: AsyncSession) -> int | None:
-    """Per-attempt lower-bound token budget cap. When set, an attempt whose estimate exceeds
-    it is recorded as outcome='skipped_budget' and never run. Unset (None) = no cap."""
-    raw = await _get_raw(session, "evolution_max_est_tokens")
+_LEGACY_TOKEN_CAP_KEY = "evolution_max_est_tokens"
+
+
+async def legacy_token_cap_if_set(session: AsyncSession) -> str | None:
+    """The pre-dispatch-cap key, if an install had actually set one.
+
+    🔴 fail-LOUD, not fail-silent. The replacement changed the UNIT, so the old value
+    cannot be carried over — any conversion would be invented, since tokens-per-dispatch
+    is exactly the figure this project does not reliably know. But a limit that vanishes
+    without a word is worse than one that is refused with an explanation: the user set a
+    spending limit and would go on believing it applied. Surfaced by the diagnostics
+    payload so it reaches a screen instead of a log line nobody reads."""
+    return await _get_raw(session, _LEGACY_TOKEN_CAP_KEY)
+
+
+async def evolution_max_dispatches(session: AsyncSession) -> int | None:
+    """Per-attempt cap on PROJECTED REPLAY DISPATCHES. Unset (None) = no cap, and that is
+    still the default: the `actual` ledger is empty on every install, so there is no
+    distribution to pick a number from.
+
+    🔴 Counts dispatches, not tokens, and it REPLACED `evolution_max_est_tokens` rather
+    than being renamed from it. Renaming while changing the unit is a silent-corruption
+    trap: a stored 30,000,000 would survive as a "30 million dispatch" cap — no cap at all
+    — and no conversion is honest, because tokens-per-dispatch is precisely the figure we
+    do not reliably know. The old key was verified unset before removal, and any install
+    that DID set it gets a warning rather than a silently dropped limit.
+
+    The unit changed because the old one gated on a number that over-states by 3.7-5.2x:
+    a user setting a cap from what evolution really costs would have had every attempt
+    refused. The gate failed in the direction where setting a limit switches the feature
+    off, with nothing on screen explaining why."""
+    raw = await _get_raw(session, "evolution_max_dispatches")
     if raw is None:
         return None
     try:
@@ -359,7 +388,7 @@ async def brain_usage_event_max_rows(session: AsyncSession) -> int:
 #: (see the comment in get_settings). test_settings_int_keys pins the equality.
 _INT_ACCESSORS = {
     "run_debug_retention_days": run_debug_retention_days,
-    "evolution_max_est_tokens": evolution_max_est_tokens,
+    "evolution_max_dispatches": evolution_max_dispatches,
     "brain_usage_event_retention_days": brain_usage_event_retention_days,
     "brain_usage_event_max_rows": brain_usage_event_max_rows,
 }

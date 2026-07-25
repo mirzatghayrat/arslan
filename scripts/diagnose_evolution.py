@@ -191,7 +191,7 @@ def print_spawn(d: dict, *, highlighted: bool) -> None:
     print(f"    {d['verdict_detail']}")
 
 
-def summary_paragraph(d: dict, *, auto_on: bool, max_est) -> str:
+def summary_paragraph(d: dict, *, auto_on: bool, max_dispatches) -> str:
     s = d["spawn"]
     parts = [f"Spawn '{s.name}' (#{s.id}) has {d['total_scored']} epoch>=1 live scored runs, "
              f"of which {d['replayable']} are hermetically replayable and {d['non_replayable']} "
@@ -218,8 +218,10 @@ def summary_paragraph(d: dict, *, auto_on: bool, max_est) -> str:
         a = d["attempts"][0]
         parts.append(f"The latest attempt (#{a.id}) outcome is "
                      f"{a.outcome or 'in-flight'}.")
-    if max_est is not None:
-        parts.append(f"The per-attempt token budget cap is {max_est}.")
+    if max_dispatches is not None:
+        parts.append(
+            f"The per-attempt cap is {max_dispatches} projected replay dispatches "
+            "(dispatches, not tokens).")
     parts.append(f"VERDICT: {d['verdict']} — {d['verdict_detail']}")
     return " ".join(parts)
 
@@ -229,12 +231,12 @@ def summary_paragraph(d: dict, *, auto_on: bool, max_est) -> str:
 async def run(spawn_substr: str | None) -> int:
     async with db_session.AsyncSessionLocal() as db:
         auto_on = await settings_service.evolution_auto(db)
-        max_est = await settings_service.evolution_max_est_tokens(db)
+        max_disp = await settings_service.evolution_max_dispatches(db)
         spawns = (await db.execute(select(Spawn).order_by(Spawn.id))).scalars().all()
 
         print(f"Brain: {settings.db_path}")
         print(f"evolution_auto={'ON' if auto_on else 'OFF'}   "
-              f"evolution_max_est_tokens={max_est if max_est is not None else 'unset (no cap)'}   "
+              f"evolution_max_dispatches={max_disp if max_disp is not None else 'unset (no cap)'}   "
               f"MIN_HOLDOUT_N={MIN_HOLDOUT_N}   WIN_RATE_MIN={WIN_RATE_MIN}")
         print(f"{len(spawns)} spawn(s) in this brain.\n")
 
@@ -268,7 +270,7 @@ async def run(spawn_substr: str | None) -> int:
 
     print("=" * 78)
     print("PLAIN-ENGLISH SUMMARY (paste this back):")
-    print(summary_paragraph(focus, auto_on=auto_on, max_est=max_est))
+    print(summary_paragraph(focus, auto_on=auto_on, max_dispatches=max_disp))
     return 0
 
 

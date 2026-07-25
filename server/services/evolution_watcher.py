@@ -22,7 +22,7 @@ Trigger + deterministic backoff (the thing the sync button could never do):
 
 Safety rails (spec §4): evolution_auto=on is standing consent, but an attempt still (a)
 records a `skipped_budget` attempt instead of running if its lower-bound estimate exceeds
-`evolution_max_est_tokens`, and (b) runs at most one attempt per spawn concurrently.
+`evolution_max_dispatches`, and (b) runs at most one attempt per spawn concurrently.
 """
 from __future__ import annotations
 
@@ -247,21 +247,37 @@ async def _finalize_attempt(attempt_id: int, *, outcome: str, reason: str,
 async def _perform_attempt(attempt_id: int, spawn_id: int) -> None:
     """Run the estimate/budget/propose flow for a pre-created attempt row and finalize it.
 
-    Budget gate: if a `evolution_max_est_tokens` cap is set and the attempt's lower-bound
-    est_tokens exceeds it, record outcome='skipped_budget' and DO NOT run propose_improvement.
+    Budget gate: if an `evolution_max_dispatches` cap is set and the attempt's DERIVED
+    dispatch ceiling exceeds it, record outcome='skipped_budget' and DO NOT run
+    propose_improvement. The cap counts dispatches, not tokens: the token estimate
+    over-states 3.7-5.2x, so a cap set from real spend would refuse every attempt — the
+    gate would fail in the direction where setting a limit turns the feature off.
     Otherwise run it; outcome = 'passed' if a proposal was written, 'failed' if the gate
     failed, 'error' on exception."""
     async with db_session.AsyncSessionLocal() as db:
         attempt = await db.get(EvolutionAttempt, attempt_id)
         est = dict(attempt.estimate or {}) if attempt else {}
-        max_est = await settings_service.evolution_max_est_tokens(db)
+        max_dispatches = await settings_service.evolution_max_dispatches(db)
 
-    est_tokens = int(est.get("est_tokens") or 0)
-    if max_est is not None and est_tokens > max_est:
-        await _finalize_attempt(
-            attempt_id, outcome="skipped_budget",
-            reason=f"estimate {est_tokens} tokens exceeds budget {max_est}")
-        return
+    # 🔴 Two states that must not merge. `basis: "max"` is emitted only by the current
+    # estimator, so its absence means the row predates this schema — letting it through is
+    # what would have happened yesterday, and the queue really does span deployments (the
+    # estimate is written at ENQUEUE time). Its PRESENCE without dispatches_max is
+    # structural damage, and a spend gate that shrugs at that fails OPEN. Reading it as
+    # `int(... or 0)` would collapse both into "0, never exceeds" — the previous gate's
+    # exact defect, wearing a different field.
+    if max_dispatches is not None and est.get("basis") == "max":
+        projected = est.get("dispatches_max")
+        if projected is None:
+            await _finalize_attempt(
+                attempt_id, outcome="skipped_structural",
+                reason="estimate claims basis=max but carries no dispatches_max")
+            return
+        if int(projected) > max_dispatches:
+            await _finalize_attempt(
+                attempt_id, outcome="skipped_budget",
+                reason=f"projected {int(projected)} dispatches exceeds cap {max_dispatches}")
+            return
 
     # ── real-spend accounting (see _build_actual) ────────────────────────────────
     # Two collectors, deliberately non-overlapping:

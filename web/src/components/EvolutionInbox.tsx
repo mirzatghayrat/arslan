@@ -294,16 +294,24 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
           <div className="text-[11px] font-mono tabular-nums text-muted-foreground space-y-1" data-testid="estimate-box">
             <div>
               {t("evolution.card.estimate_line", {
-                judge: estimate.judge_calls,
-                tokens: estimate.est_tokens,
+                judge: estimate.judge_calls_max ?? estimate.judge_calls,
+                dispatches: estimate.dispatches_max ?? estimate.dispatches,
               })}
             </div>
             <div>
               {t("evolution.inbox.estimate_detail", {
                 pairs: estimate.pairs,
-                dispatches: estimate.dispatches,
+                dispatches: estimate.dispatches_max ?? estimate.dispatches,
               })}
             </div>
+            {/* Only when a projection exists. Null means the `actual` ledger is empty —
+                rendering 0 there would read as "free", the failure this round exists to
+                end. Absent is the honest presentation of unknown. */}
+            {estimate.tokens_projected != null && (
+              <div data-testid="estimate-tokens">
+                {t("evolution.card.estimate_tokens", { tokens: estimate.tokens_projected })}
+              </div>
+            )}
             <button
               type="button"
               className="mt-1 px-3 py-1.5 text-[11px] font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50"
@@ -331,9 +339,9 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
                 reason: refusal.data.last_reason,
               })}
             </div>
-            {refusal.data.est_tokens != null && (
+            {refusal.data.est_dispatches_max != null && (
               <div className="text-muted-foreground tabular-nums">
-                {t("evolution.inbox.confirm_cost", { tokens: refusal.data.est_tokens })}
+                {t("evolution.inbox.confirm_cost", { dispatches: refusal.data.est_dispatches_max })}
               </div>
             )}
             <div className="flex gap-2">

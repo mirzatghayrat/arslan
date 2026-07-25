@@ -34,7 +34,7 @@ class SettingsIn(BaseModel):
     # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
     synthesis_config_id: str | None = None
     embedding_config_id: str | None = None
-    evolution_max_est_tokens: int | None = None
+    evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool | None = None
 
 
@@ -57,7 +57,7 @@ class SettingsOut(BaseModel):
     evolution_auto: str = "off"
     synthesis_config_id: str = ""
     embedding_config_id: str = ""
-    evolution_max_est_tokens: int | None = None
+    evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool = False
 
 
@@ -490,7 +490,7 @@ class EstimateOut(BaseModel):
     docstring for why. The first block is FROZEN and wrong: `dispatches` applies the
     optimizer's per-pair multiplier to the whole corpus, and `lower_bound: True` is a
     hardcoded claim the estimator itself contradicts. They stay because
-    evolution_watcher compares `est_tokens` against evolution_max_est_tokens; repricing it
+    evolution_watcher compares `est_tokens` against evolution_max_dispatches; repricing it
     correctly would silently widen that spend gate ~2.5x. UI copy must not call it a floor.
 
     The second block is derived from the loop. `basis` describes the three COUNT fields and
@@ -569,7 +569,13 @@ class SpawnDiagnosisOut(BaseModel):
     auto_eligible: bool
     open_proposals: int
     auto_on: bool
-    max_est_tokens: int | None = None
+    # Cap on PROJECTED DISPATCHES, not tokens. Replaced max_est_tokens: the token
+    # estimate over-states 3.7-5.2x, so a cap set from real spend refused everything.
+    max_dispatches: int | None = None
+    # Non-null only where an install had set the removed token cap. Its value is NOT
+    # carried over — the unit changed and any conversion would be invented — so this
+    # exists to say so out loud instead of dropping a user's spending limit in silence.
+    legacy_token_cap_dropped: str | None = None
     last_attempts: list[dict] = []
     verdict_code: str
     verdict_params: dict = {}

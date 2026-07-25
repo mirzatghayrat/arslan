@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 954 keys (baseline guard)", () => {
+  it("en locale has 959 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -72,11 +72,13 @@ describe("locale parity", () => {
     // generate-token control keys (settings.labelMcpServer/mcpServerDesc +
     // settings.mcpToken.generate/generating/generateError — 5 keys).
     // 913 → 914: BUG2 (invite-accept honest notice) added
+    // 954 → 959: (b) dispatch cap — settings label/desc/unset, evolution.card.estimate_tokens,
+    //             settings.evolutionAutoSpendWarningCapped
     // 951 → 954: S4.2-a settings.labelEvolutionAuto / evolutionAutoDesc / evolutionAutoSpendWarning
     // 942 → 951: F1 brain.temporal.* (as-of slider + lineage), 9 keys x 6 languages
     // chat.roster_joined_no_pending — the never-silent explanation when a card
     // accept finds no parked task (joined only; @ to hand off).
-    expect(enKeys).toHaveLength(954);
+    expect(enKeys).toHaveLength(959);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

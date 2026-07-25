@@ -155,6 +155,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
         evolutionAuto={localSettings.evolutionAuto ?? false}
         onEvolutionAutoChange={(v) => saveField({ evolutionAuto: v })}
+        evolutionMaxDispatches={localSettings.evolutionMaxDispatches ?? null}
+        onEvolutionMaxDispatchesChange={(v) => saveField({ evolutionMaxDispatches: v })}
       />
     ),
   };

@@ -235,16 +235,24 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
           <div className="evo-result">
             <div className="evo-counts">
               {t("evolution.card.estimate_line", {
-                judge: estimate.judge_calls,
-                tokens: estimate.est_tokens,
+                judge: estimate.judge_calls_max ?? estimate.judge_calls,
+                dispatches: estimate.dispatches_max ?? estimate.dispatches,
               })}
             </div>
             <div className="evo-counts">
               {t("evolution.inbox.estimate_detail", {
                 pairs: estimate.pairs,
-                dispatches: estimate.dispatches,
+                dispatches: estimate.dispatches_max ?? estimate.dispatches,
               })}
             </div>
+            {/* Only when a projection exists. Null means the `actual` ledger is empty —
+                rendering 0 there would read as "free", the failure this round exists to
+                end. Absent is the honest presentation of unknown. */}
+            {estimate.tokens_projected != null && (
+              <div data-testid="estimate-tokens">
+                {t("evolution.card.estimate_tokens", { tokens: estimate.tokens_projected })}
+              </div>
+            )}
             <button className="evo-confirm" disabled={busy} onClick={() => enqueueEvolve(false)}>
               {t("evolution.inbox.enqueue")}
             </button>
@@ -259,9 +267,9 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
               reason: refusal.last_reason,
             })}
           </div>
-          {refusal.est_tokens != null && (
+          {refusal.est_dispatches_max != null && (
             <div className="evo-refusal__body">
-              {t("evolution.inbox.confirm_cost", { tokens: refusal.est_tokens })}
+              {t("evolution.inbox.confirm_cost", { dispatches: refusal.est_dispatches_max })}
             </div>
           )}
           <div className="evo-refusal__actions">

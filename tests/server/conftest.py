@@ -260,8 +260,18 @@ async def wdb(tmp_path, monkeypatch):
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
 
     async def fake_estimate(db, spawn_id):
+        # 🔴 Mirrors the CURRENT payload, including `basis` and the derived ceiling. A stub
+        # frozen at an older shape silently exercises the wrong branch: the spend gate
+        # discriminates old-schema estimates (let through, matching yesterday) from
+        # new-schema ones (judged against the dispatch cap), so a stale stub would make
+        # every wdb-based budget test take the pass-through path and prove nothing.
         return {"pairs": 4, "dispatches": 56, "judge_calls": 56, "optimizer_calls": 3,
-                "synth_calls": 0, "est_tokens": 1000, "lower_bound": True}
+                "synth_calls": 0, "est_tokens": 1000, "lower_bound": True,
+                "propose_pairs": 3, "val_pairs": 1,
+                "dispatches_max": 56, "judge_calls_max": 56, "optimizer_calls_max": 3,
+                "basis": "max", "avg_replay_tokens": None, "avg_replay_n": 0,
+                "tokens_projected": None,
+                "tokens_projected_unavailable_reason": "no_completed_attempts_with_actual"}
 
     monkeypatch.setattr(evolution_estimate, "estimate", fake_estimate)
 

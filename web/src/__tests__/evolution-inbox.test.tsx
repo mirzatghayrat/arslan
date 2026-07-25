@@ -61,7 +61,7 @@ const DIAG = {
   holdout_ceiling: 5, real_holdout: 5, effective_holdout: 5, propose_count: 7,
   corpus_excluded: 0, min_holdout_n: 10, consecutive_fails: 1, threshold: 20,
   count_since_last_attempt: 0, auto_eligible: false, open_proposals: 1, auto_on: true,
-  max_est_tokens: null, last_attempts: [], verdict_code: "gate_failure", verdict_params: {},
+  max_dispatches: null, legacy_token_cap_dropped: null, last_attempts: [], verdict_code: "gate_failure", verdict_params: {},
 } as unknown as SpawnDiagnosis;
 
 beforeEach(() => {
@@ -129,7 +129,7 @@ describe("EvolutionInbox", () => {
       corpus_total: 12, holdout_ceiling: 6, real_holdout: 6, effective_holdout: 10,
       propose_count: 6, corpus_excluded: 0, min_holdout_n: 10, consecutive_fails: 0,
       threshold: 10, count_since_last_attempt: 0, auto_eligible: false, open_proposals: 0,
-      auto_on: true, max_est_tokens: null, last_attempts: [],
+      auto_on: true, max_dispatches: null, legacy_token_cap_dropped: null, last_attempts: [],
       verdict_code: "holdout_via_synthetic_topup", verdict_params: { real_holdout: 6, min: 10 },
     };
     m.getEvolutionDiagnosis.mockResolvedValue(diag);

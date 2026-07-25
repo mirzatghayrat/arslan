@@ -183,6 +183,9 @@ async def _repeat_spend_refusal(session, spawn_id: int) -> dict | None:
         "last_reason": last.reason or "",
         "new_runs_since": new_runs,
         "est_tokens": est.get("est_tokens"),
+        # The dialog shows dispatches now: the token figure over-states 3.7-5.2x, so
+        # quoting it before a spend decision misinforms in the expensive direction.
+        "est_dispatches_max": est.get("dispatches_max"),
         # 🔴 NOT a ceiling and NOT a reliable floor either — the estimator applies the
         # optimizer's per-pair multiplier to the WHOLE corpus while the optimizer only
         # ever sees <=8 val pairs, so it overshoots more the bigger the corpus gets.
@@ -327,7 +330,9 @@ async def get_evolution_diagnosis(
         consecutive_fails=d["consec_fails"], threshold=d["threshold"],
         count_since_last_attempt=d["count_since"], auto_eligible=d["auto_eligible"],
         open_proposals=d["open_props"], auto_on=d["auto_on"],
-        max_est_tokens=d["max_est_tokens"], last_attempts=d["last_attempts"],
+        max_dispatches=d["max_dispatches"],
+        legacy_token_cap_dropped=d["legacy_token_cap_dropped"],
+        last_attempts=d["last_attempts"],
         verdict_code=d["verdict_code"], verdict_params=d["verdict_params"])
 
 

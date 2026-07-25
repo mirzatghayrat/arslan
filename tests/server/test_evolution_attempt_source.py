@@ -234,7 +234,8 @@ async def test_repeated_budget_refusals_are_rate_limited(wdb, monkeypatch):
     sid = await _spawn(Session)
     async with Session() as db:
         db.add(Setting(key="evolution_auto", value="on"))
-        db.add(Setting(key="evolution_max_est_tokens", value="500"))
+        # dispatch units now, not tokens — 1 is below any real corpus's ceiling
+        db.add(Setting(key="evolution_max_dispatches", value="1"))
         await db.commit()
     await _seed_runs(Session, sid, 20)
 
@@ -264,7 +265,8 @@ async def test_over_budget_spawn_cannot_exceed_the_daily_refusal_ceiling(wdb, mo
     sid = await _spawn(Session)
     async with Session() as db:
         db.add(Setting(key="evolution_auto", value="on"))
-        db.add(Setting(key="evolution_max_est_tokens", value="500"))
+        # dispatch units now, not tokens — 1 is below any real corpus's ceiling
+        db.add(Setting(key="evolution_max_dispatches", value="1"))
         await db.commit()
     await _seed_runs(Session, sid, 20)
 
