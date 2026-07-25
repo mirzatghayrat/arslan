@@ -13,7 +13,7 @@ Backend: FastAPI + async SQLAlchemy/SQLite (`server/`). Frontend: React 19 + Typ
 
 - **Capability layer** — built-in tools + an MCP client + `SKILL.md` skill packs, tiered (safe vs. orchestrator) with human-confirm gating for privileged actions.
 - **Kernel sandbox + credential proxy** — code runs network-denied under macOS seatbelt; a local MITM proxy injects git credentials so raw tokens never reach sandboxed processes. Fails closed where the kernel sandbox is unavailable.
-- **Second brain** — materials / learnings / profile + `[[wiki-link]]` notes, hybrid FTS5 + embedding retrieval, Obsidian-style force-directed graph. Arslan (and equipped spawns) can also read/write it directly via agentic `recall`/`remember` tools — see the caveats in [Status](#status).
+- **Second brain** — materials / learnings / profile + `[[wiki-link]]` notes, hybrid FTS5 + embedding retrieval (FTS-only until an embedding provider is configured), Obsidian-style force-directed graph. Beliefs carry time: when each became true, what superseded it, and a start-time filter that shows the graph as it stood at a past instant. Deletes and overwrites the model proposes never apply directly — they land in an in-app inbox you accept or dismiss. Arslan (and equipped spawns) can also read/write it via agentic `recall`/`remember` tools — see the caveats in [Status](#status).
 - **Tracing, eval & diagnosis** — per-run traces, an LLM-judge evaluator, and a Grafana-style diagnosis dashboard, feeding a two-tier evolution loop.
 - **Multi-LLM BYOK** — bring your own keys across multiple providers with quality-first routing.
 - **6-language i18n** and **6 theme palettes** (light + dark).
@@ -111,7 +111,7 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 - **macOS-first.** The kernel sandbox is macOS seatbelt only; on other platforms it fails closed (Linux / Windows are targeted later via a Tauri desktop app).
 - **The self-evolving agent team is being hardened.** The two-tier evolution loop works but is not yet claimed as fully proven — treat it as maturing, not finished.
 - **Agentic memory read/write needs a native-tool-calling provider.** The `recall`/`remember` tools only fire on providers that actually do tool-calling (e.g. DeepSeek). Over a direct Anthropic backend they never trigger — that path is intentionally text-in/text-out, so the tool schema is never sent to the model. Memory still forms automatically either way (router-extracted facts + end-of-session distillation), independent of this feature.
-- **Tier2 memory proposals are REST-only for now.** High-confidence deletes/overwrites/edits the model proposes (never applied directly) are visible and adjudicated only via `GET`/`POST /brain/proposals` — there's no in-app review inbox yet; that's planned for a later polish pass.
+- **The two background loops that spend money ship disabled.** Auto-evolution and sleep-time curation each call the LLM on their own schedule, so both default to off — you turn them on in Settings. There is no working spend cap yet: the pre-run estimate is a known over-estimate that grows with your corpus, so nothing is enforced against it. Until that is fixed, bound spend with a hard limit in your provider's billing dashboard.
 - APIs, schemas, and defaults may change before v1.
 
 ## License
