@@ -486,13 +486,23 @@ class EvolveEnqueuedOut(BaseModel):
 class EstimateOut(BaseModel):
     """Cost estimate for one evolution attempt (GET /spawns/{id}/evolve/estimate).
 
-    🔴 `lower_bound` is a hardcoded True and is NOT trustworthy as stated — the estimator
-    applies the optimizer's per-pair multiplier to the whole corpus while the optimizer
-    only ever sees <=8 val pairs, so the number drifts from a floor to a growing
-    over-estimate as the corpus grows. See server/services/evolution_estimate.py's
-    docstring; correcting it is a separate project. UI copy must not call it a floor.
+    🔴 Two sets of numbers, disagreeing on purpose — see evolution_estimate.py's module
+    docstring for why. The first block is FROZEN and wrong: `dispatches` applies the
+    optimizer's per-pair multiplier to the whole corpus, and `lower_bound: True` is a
+    hardcoded claim the estimator itself contradicts. They stay because
+    evolution_watcher compares `est_tokens` against evolution_max_est_tokens; repricing it
+    correctly would silently widen that spend gate ~2.5x. UI copy must not call it a floor.
+
+    The second block is derived from the loop. `basis` describes the three COUNT fields and
+    NOTHING else — `tokens_projected` is mean-priced, not a bound.
+
+    🔴 Every field the service emits must be declared here. This model has no
+    `extra` config, so pydantic SILENTLY DROPS anything undeclared at the HTTP boundary —
+    a new field can pass every service-level test and never reach a client. That is why
+    the field-existence tests for this payload go through the endpoint, not the service.
     """
 
+    # ── frozen ──
     pairs: int
     dispatches: int
     judge_calls: int
@@ -500,6 +510,17 @@ class EstimateOut(BaseModel):
     synth_calls: int
     est_tokens: int
     lower_bound: bool = True
+    # ── derived ceiling ──
+    propose_pairs: int
+    val_pairs: int
+    dispatches_max: int
+    judge_calls_max: int
+    optimizer_calls_max: int
+    basis: str
+    avg_replay_tokens: float | None = None
+    avg_replay_n: int = 0
+    tokens_projected: int | None = None
+    tokens_projected_unavailable_reason: str | None = None
 
 
 class BaselineDeclareOut(BaseModel):

@@ -76,7 +76,7 @@ async def test_estimate_formula_matches(db):
     expected_pairs = len(corpus) + proj
 
     est = await evolution_estimate.estimate(db, sid)
-    epochs, lr_budget = _loop_defaults()
+    epochs, lr_budget, _val_cap = _loop_defaults()
     per_pair = epochs * lr_budget + 1
 
     assert est["pairs"] == expected_pairs
@@ -98,7 +98,7 @@ async def test_estimate_projects_cold_start_topup_when_no_real(db):
     from server.services import replay_gate
     sid = await _spawn(db)
     est = await evolution_estimate.estimate(db, sid)
-    epochs, lr_budget = _loop_defaults()
+    epochs, lr_budget, _val_cap = _loop_defaults()
     per_pair = epochs * lr_budget + 1
     assert est["pairs"] == replay_gate.MIN_HOLDOUT_N
     assert est["dispatches"] == replay_gate.MIN_HOLDOUT_N * 2 * per_pair
