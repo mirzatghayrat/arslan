@@ -4,6 +4,7 @@ description: 软件调试方法论 —— 四阶段定位根因；先复现、�
 version: 0.1.0
 authors:
   - Arslan
+source: adapted from github:obra/superpowers · skills/systematic-debugging/SKILL.md (MIT, © 2025 Jesse Vincent; upstream listing verified 2026-07-21)
 ---
 
 ## Trigger

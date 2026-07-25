@@ -89,7 +89,6 @@ web/src/               React 19 + TS + Vite SPA (components/, stores/, api/, hoo
 tests/                 Pytest suite (tests/server/ is the bulk; also core/, services/, spawn/, …)
 scripts/               smoke_main_link.py (main-link smoke gate) + helper scripts
 docs/                  ARCHITECTURE.md, superpowers/ (specs, plans, evidence), tech-debt/
-.omm/                  Architecture knowledge base (source of the ARCHITECTURE.md diagrams)
 ```
 
 ## Checks you must pass before opening a PR
@@ -152,15 +151,15 @@ Schema changes are **not** run via `alembic upgrade` (alembic is gone). They are
 
 ### Where specs and plans live
 
-Larger changes are designed before they're coded. Design **specs** live in `docs/superpowers/specs/`, implementation **plans** in `docs/superpowers/plans/`, and supporting **evidence** in `docs/superpowers/evidence/`. Read the relevant spec before touching a subsystem it covers.
+Larger changes are designed before they're coded: a written **spec** (what/why, constraints, invariants touched, acceptance criteria), then an ordered implementation **plan**, then the code. The specs and plans behind the existing subsystems are internal research records and are **not published with the open-source release**; `docs/ARCHITECTURE.md` is the public account of how the system fits together, and the invariants it lists are the ones to preserve.
 
 ## The workflow this repo uses
 
 Non-trivial work follows a **brainstorm → spec → plan → implement** arc:
 
 1. **Brainstorm / propose** — open an issue or discussion describing the problem and the intended direction. For anything design-heavy, align on approach first.
-2. **Spec** — capture the design as a spec in `docs/superpowers/specs/` (what/why, constraints, invariants touched, acceptance criteria).
-3. **Plan** — break the spec into an ordered implementation plan (`docs/superpowers/plans/`); tasks are often executed by focused sub-agents.
+2. **Spec** — capture the design as a written spec (what/why, constraints, invariants touched, acceptance criteria).
+3. **Plan** — break the spec into an ordered implementation plan; tasks are often executed by focused sub-agents.
 4. **Implement** — TDD each task, keeping the checks above green.
 
 For a small, self-contained fix you can skip straight to a PR — but still open an issue first if it changes behavior, touches a security/honesty guard, or alters schema.

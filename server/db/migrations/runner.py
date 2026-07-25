@@ -3,8 +3,7 @@
 Formalizes the previously hand-wired boot chain. Each migration exposes an
 idempotent ``upgrade_sync(conn)``; we record applied ids in ``schema_version`` so
 an install re-applies only the pending tail. VERBATIM order from the old main.py
-chain (do not reorder). See
-docs/superpowers/plans/2026-07-14-migration-runner-impl-plan.md.
+chain (do not reorder).
 
 Canonical chain (from the old ``main.py`` boot block, verbatim, in order):
 ``0006 … 0036`` — 31 entries. It starts at ``0006``, not ``0001``:

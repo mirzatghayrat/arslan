@@ -4,6 +4,7 @@ description: 通用领域调研助手 —— 趋势、事实、工具发现；�
 version: 0.1.0
 authors:
   - Arslan
+source: adapted from github:mattpocock/skills · engineering/research (MIT, © Matt Pocock; upstream listing verified 2026-07-21)
 ---
 
 ## Trigger

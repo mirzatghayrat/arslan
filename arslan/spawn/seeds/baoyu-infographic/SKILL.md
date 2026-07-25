@@ -4,6 +4,7 @@ description: 信息图 —— 按数据选布局、单一视觉层级、一致�
 version: 0.1.0
 authors:
   - Arslan
+source: adapted from github:JimLiu/baoyu-skills · baoyu-infographic (MIT, © JimLiu; method by 宝玉/@dotey; upstream verified 2026-07-21)
 ---
 
 ## Trigger

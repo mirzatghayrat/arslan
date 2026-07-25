@@ -14,8 +14,7 @@ current_caller() reads None and every write here refuses (fail-closed nail,
 decision point 1). "Agentic remember/recall needs a native-tool-calling
 provider" is a real product constraint, not a bug.
 
-RememberExecutor's three tiers (plan: docs/superpowers/plans/
-2026-07-18-brain-p2-agentic-memory.md, Task 4):
+RememberExecutor's three tiers:
   - Tier1 direct write (reversible, immediate): host append/supersede/mark_stale
     on fact/learning/note; a spawn appending/superseding its OWN well
     (learning) or its OWN preferences (memory_facts).

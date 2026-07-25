@@ -9,6 +9,21 @@ is satisfied here + there.
 Verified licenses are recorded below with the date verified. **Nothing from a source is
 bundled until its license is verified and permits redistribution.**
 
+### On the skills marked `authors: Arslan`
+
+A `SKILL.md` without a `source:` line was written for this repository. That claim is about
+**the text of the file**, nothing more. Most of these skills implement methodology that is
+public knowledge, or drive third-party tools by name — `excalidraw`, `p5js`, `arxiv`,
+Suno, and others. **The methods and the tools belong to their respective owners; this
+repository claims copyright only in the wording of its own `SKILL.md` files, and asserts
+no ownership of the underlying techniques or of any tool it names.**
+
+Provenance was audited against the upstream listings recorded in this file on 2026-07-21.
+Three skills turned out to have an upstream of the same name and were moved to attributed
+status in that pass (`systematic-debugging`, `research`, `baoyu-infographic`). If you
+recognise your work in a skill that carries no `source:` line, open an issue — the
+attribution will be added.
+
 ---
 
 ## Skills — `arslan/spawn/seeds/<skill>/SKILL.md`
@@ -89,6 +104,43 @@ bundled until its license is verified and permits redistribution.**
   - `verification-before-completion` — **adapted** (evidence-before-claims verification gate).
   - `writing-skills` — **adapted** (TDD-for-skills authoring/verification method).
   - `finishing-a-development-branch` — **adapted** (verify tests → 4 options → execute + cleanup).
+  - `systematic-debugging` — **adapted** (four-phase root-cause method: reproduce → isolate →
+    one hypothesis at a time → fix only once the root cause is known). Attribution added 2026-07-21
+    after an open-source audit found it shipping unattributed while seven sibling obra skills
+    carried `source:` — the omission was ours, not a claim of independent authorship.
+
+### JimLiu/baoyu-skills — MIT License (verified 2026-07-21)
+- Copyright (c) JimLiu. <https://github.com/JimLiu/baoyu-skills>
+- The infographic method itself is 宝玉 / @dotey's; the skill collection is published by JimLiu
+  under MIT. MIT requires retaining the copyright + permission notice (reproduced below).
+- Used/adapted from this source:
+  - `baoyu-infographic` — **adapted** (layout-by-data-shape + single visual hierarchy +
+    annotate-the-datapoint discipline, rewritten into Arslan's `## Trigger` + `## 决策规则`
+    structure; the upstream's 21-layout × 21-style catalogue and its image-generation tooling
+    are NOT bundled).
+
+```
+MIT License
+
+Copyright (c) JimLiu (JimLiu/baoyu-skills)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR OTHER DEALINGS IN THE SOFTWARE.
+```
 
 ### mattpocock/skills — MIT License (verified 2026-07-02)
 - Copyright (c) Matt Pocock. <https://github.com/mattpocock/skills>
@@ -100,6 +152,9 @@ bundled until its license is verified and permits redistribution.**
   - `domain-modeling` — **adapted** (ubiquitous-language glossary + sparing-ADR discipline; the
     source's external `ADR-FORMAT.md` / `CONTEXT-FORMAT.md` references were inlined as concise
     formats so the skill is self-contained).
+  - `research` — **adapted** (structured multi-angle research with cross-source verification).
+    Attribution added 2026-07-21: the upstream repository carries a same-named
+    `engineering/research` skill, so this is recorded as adapted rather than independent.
 
 ```
 MIT License

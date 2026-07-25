@@ -2,7 +2,7 @@
 
 This document explains how Arslan is put together, enough to change it safely. It is the companion to [CONTRIBUTING.md](../CONTRIBUTING.md) (how to get set up and land a PR), the user-facing [README.md](../README.md) (what it is + quickstart), and [SECURITY.md](../SECURITY.md) (threat model). It reflects the code as of today (post S0/S1/S2 — safe-by-default auth, honesty guardrails, and a real two-tier evolution loop).
 
-> The diagrams below are synthesized from the repo's own architecture knowledge base under `.omm/` and re-drawn in English. They render natively on GitHub.
+> The diagrams below are synthesized from an internal architecture knowledge base (not published with the open-source release) and re-drawn in English. They render natively on GitHub.
 
 ## What Arslan is
 
@@ -98,7 +98,7 @@ Stage by stage:
 6. **Reply** — `stream_start` → `stream_chunk`(s) → `stream_end`, plus decision cards (`propose_invite` / staffing / `suggest_create` / `suggest_update` / `run_command` confirm). Ignoring a card and sending a new message **implicitly dismisses it**.
 7. **Background distill** — when Arslan itself handled work that belongs to a spawn's domain, `distill_from_signals` distills it into that spawn's `memory_facts` (non-blocking, dual-track growth); meta-conclusions surface as `UserFact`s that feed routing.
 
-**Invariants (from `.omm/request-lifecycle/constraint.md`):** tool results are always passed through `wrap_external` and treated as **untrusted data** (prompt-injection defense); `router` only chooses `route` when trusted + in-domain, otherwise it degrades to `answer`; unacknowledged `propose_*` cards are implicitly dismissed by the next message.
+**Invariants (request lifecycle):** tool results are always passed through `wrap_external` and treated as **untrusted data** (prompt-injection defense); `router` only chooses `route` when trusted + in-domain, otherwise it degrades to `answer`; unacknowledged `propose_*` cards are implicitly dismissed by the next message.
 
 ## Orchestrator core
 
@@ -155,7 +155,7 @@ graph LR
 - **Three libraries** — Tools, Toolsets, and SkillPacks, plus per-spawn `spawn_capabilities`, all in `server/registry/service.py`.
 - **Single-throat write gate** — `assert_assignable` is the **only** path that grants a capability, and it only lets through **safe + functional** ones. `safe_menu` lists what is assignable, `wired_tools_for_spawn` resolves a spawn's current capabilities, and `grant_temporary` handles escalation-time temporary grants.
 - **Built-in executors** (`server/registry/executors.py`) — `web_search`, `web_extract`, `render_chart`, `deck`, `run_python`, `run_command`, `create_skill`, `list_my_capabilities`, plus an MCP proxy executor (dispatched by the `mcp_` name prefix).
-- **Tier isolation invariant** (`.omm/overall-architecture/constraint.md`) — **orchestrator-tier** capabilities (e.g. `run_command`) are held **implicitly by Arslan only**; a spawn can never be granted one. Shell and MCP are **off by default**.
+- **Tier isolation invariant** — **orchestrator-tier** capabilities (e.g. `run_command`) are held **implicitly by Arslan only**; a spawn can never be granted one. Shell and MCP are **off by default**.
 
 ## Sandbox, security & the command surface
 
@@ -185,7 +185,7 @@ graph LR
 
 *Figure 5 — Command surface.*
 
-**Invariants (from `.omm/command-surface/constraint.md` and `SECURITY.md`):**
+**Invariants (command surface; see also `SECURITY.md`):**
 
 - **Whitelist of 4 binaries** — `git`, `gh`, `ffmpeg`, `pandoc` — plus a hard-deny list (`sudo`, `rm`, shell metacharacters). `run_command` is orchestrator-only and off by default.
 - **A confirmation card per command**, risk-graded (`ask_all` / `ask_risky`).
@@ -214,7 +214,7 @@ graph LR
 
 ### Multi-LLM BYOK routing
 
-`llm_factory.py` + `provider_config_service`. `build_adapter(role)` picks a provider by **role** (`router` / `worker` / `judge` / `synthesis`) with a **quality-first primary** and multiple keys. Keys are encrypted at rest in `provider_configs`. Supports OpenAI-compatible providers (e.g. DeepSeek) and native Gemini. **The shipped product bakes no keys** — BYOK, zero secrets in the repo (`.omm/overall-architecture/constraint.md`).
+`llm_factory.py` + `provider_config_service`. `build_adapter(role)` picks a provider by **role** (`router` / `worker` / `judge` / `synthesis`) with a **quality-first primary** and multiple keys. Keys are encrypted at rest in `provider_configs`. Supports OpenAI-compatible providers (e.g. DeepSeek) and native Gemini. **The shipped product bakes no keys** — BYOK, zero secrets in the repo.
 
 ### Spawn services
 
@@ -265,7 +265,7 @@ Reliability and safety here rest on a handful of load-bearing rules. Preserve th
 - **Untrusted tool output.** Every tool result goes through `wrap_external` and is treated as untrusted data.
 - **Sandbox fails closed.** No kernel sandbox → refuse to run (the macOS seatbelt is the only kernel sandbox today; other platforms are unavailable and fail closed).
 - **Credentials never enter the sandbox.** The MITM proxy injects tokens outside it.
-- **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran; a `persona_lint` keeps equipment/persona consistent. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks** (`.omm/overall-architecture/concern.md`).
+- **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran; a `persona_lint` keeps equipment/persona consistent. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.
 - **Evolution is human-gated.** Tier-2 edits are bounded, position-bias-corrected, and only ship on an explicit human promote.
 - **Safe-by-default auth.** Dev + localhost is unauthenticated on purpose; `prod` / packaged / non-loopback binds require a bearer token (auto-minted if unset), and cross-site requests are blocked by TrustedHost + CORS + WebSocket-Origin checks. See [SECURITY.md](../SECURITY.md).
 
@@ -274,5 +274,4 @@ Reliability and safety here rest on a handful of load-bearing rules. Preserve th
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — dev setup, the exact checks CI runs, conventions, PR flow.
 - [README.md](../README.md) — product overview, quickstart, environment variables, status.
 - [SECURITY.md](../SECURITY.md) — full threat model, known boundaries, and vulnerability reporting.
-- `docs/superpowers/specs/` and `docs/superpowers/plans/` — design specs and implementation plans for major rounds of work.
-- `.omm/` — the architecture knowledge base these diagrams are drawn from (regenerate/browse with the oh-my-mermaid tooling).
+- Design specs, implementation plans and the architecture knowledge base these diagrams are drawn from are **internal research records and are not published with the open-source release**.

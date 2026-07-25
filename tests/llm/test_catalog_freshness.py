@@ -3,8 +3,7 @@
 The seed catalog ships in releases and is NOT fetched remotely, so a model id
 with a known shutdown date (or an already-retired generation) must never be in
 it. The deny list below was verified against official deprecation pages on
-2026-07-11 (see docs/superpowers/specs/2026-07-11-provider-catalog-local-models-design.md
-Part A2). Growing this list is fine; shrinking it needs a source.
+2026-07-11. Growing this list is fine; shrinking it needs a source.
 """
 from arslan.llm.catalog import CATALOG, models_for
 from arslan.llm.presets import NATIVE, PRESETS

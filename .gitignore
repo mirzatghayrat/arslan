@@ -41,5 +41,10 @@ credentials*.json
 *.sqlite
 *.sqlite3
 
-# brainstorming visual-companion mockups
-.superpowers/
+# internal research records — design specs, plans, evidence, architecture notes.
+# Not published with the open-source release; ignored so a local copy never lands
+# in a commit. No trailing slash, per the .venv lesson above: a trailing slash
+# matches DIRECTORIES ONLY, so a symlink of the same name slips past.
+.superpowers
+.omm
+docs/superpowers

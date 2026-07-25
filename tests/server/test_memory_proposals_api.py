@@ -3,8 +3,7 @@ soft-marks with both-side excerpts, accept (calls the deterministic
 memory_temporal.execute_supersede executor with human provenance; SupersedeError
 mapped to structured 4xx), dismiss (dangling-safe cleanup — a stale proposal whose
 referent row was since deleted is still valid to dismiss, unlike accept which must
-refuse it). See docs/superpowers/plans/2026-07-17-brain-p1-temporal.md Task 5 and
-.superpowers/sdd/task-5-brief.md for the exact contract.
+refuse it). The exact contract is the error mapping enumerated below.
 
 Error mapping under test (accept only — dismiss never calls the executor):
   dangling_new / dangling_old -> 410 Gone (detail names the id)
