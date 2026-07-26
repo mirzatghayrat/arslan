@@ -22,7 +22,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          # Must match .python-version (single source of truth). Three
+          # different interpreters were once in play at the same time — dev on
+          # 3.11, this file on 3.12, the release runner drifting to the
+          # system's framework-build 3.14, whose Python.framework cannot pass
+          # notarization. Tests must run on the interpreter we ship.
+          python-version: "3.11"
 
       - name: Install dependencies
         # Install from the committed uv.lock for reproducible builds — no version

@@ -79,6 +79,23 @@ plutil -lint "$TAURI/entitlements.plist" >/dev/null || {
   echo "ERROR: entitlements.plist is not valid XML — codesign would reject it at step 4" >&2
   exit 1
 }
+# A framework-build interpreter poisons the bundle at the source: PyInstaller
+# copies its Python.framework into _internal/, and any file under a
+# *.framework/ path can never pass notarization in the flattened sidecar
+# layout. The staging guard at [4/7] catches the RESULT after minutes of
+# building; this names the CAUSE in seconds. uv's managed CPython (see
+# .python-version) is a standalone build and passes.
+"$ROOT/.venv/bin/python" - <<'PYCHECK' || exit 1
+import sys
+if "Python.framework" in sys.base_prefix:
+    sys.exit(
+        "ERROR: the venv interpreter is a framework build "
+        f"({sys.base_prefix}) — PyInstaller would bundle Python.framework, "
+        "which cannot be notarized. Recreate the venv with uv's managed "
+        "Python: uv sync --frozen ... (honours .python-version)."
+    )
+PYCHECK
+
 # The updater public key must be present, or installed copies silently never
 # update: Tauri accepts an absent pubkey and just produces no updater
 # artefacts, which looks like a successful build.

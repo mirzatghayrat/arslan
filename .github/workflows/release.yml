@@ -55,6 +55,14 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          # Pin the interpreter uv provisions: unpinned, the runner resolved
+          # the system's framework-build Python 3.14, PyInstaller bundled its
+          # Python.framework, and the staging guard refused the bundle (a
+          # .framework can never pass notarization in a flattened layout —
+          # run 30205706382). uv's managed 3.11 is a standalone build with no
+          # framework, the same interpreter local builds use.
+          python-version: "3.11"
 
       - name: Set up the Python venv
         # --frozen so the lockfile decides, exactly as ci.yml does. `build`
