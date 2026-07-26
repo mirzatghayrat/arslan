@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#0e0f13;}
+  svg{display:block;}
+  .mono{font-family:"DejaVu Sans Mono",Menlo,Consolas,monospace;}
+  .sans{font-family:"DejaVu Sans",Arial,sans-serif;}
+</style></head><body>
+<svg width="1560" height="1040" viewBox="0 0 1560 1040" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e6863c"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <pattern id="hatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="none"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#e6863c" stroke-opacity="0.35" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <!-- background -->
+  <rect width="1560" height="1040" fill="#0e0f13"/>
+  <!-- blueprint grid -->
+  <g>
+    <path id="gridMinor" d="" stroke="#ffffff" stroke-opacity="0.028" stroke-width="1" fill="none"/>
+    <path id="gridMajor" d="" stroke="#ffffff" stroke-opacity="0.055" stroke-width="1" fill="none"/>
+  </g>
+  <script>
+    (function(){
+      let minor='', major='';
+      for(let x=0;x<=1560;x+=30){ (x%150? (minor+=`M${x},0V1040`) : (major+=`M${x},0V1040`)); }
+      for(let y=0;y<=1040;y+=30){ (y%150? (minor+=`M0,${y}H1560`) : (major+=`M0,${y}H1560`)); }
+      document.getElementById('gridMinor').setAttribute('d',minor);
+      document.getElementById('gridMajor').setAttribute('d',major);
+    })();
+  </script>
+
+  <!-- corner crosshairs -->
+  <g stroke="#e6863c" stroke-width="1.5" opacity="0.9">
+    <path d="M40,28 V52 M28,40 H52"/><path d="M1520,28 V52 M1508,40 H1532"/>
+    <path d="M40,988 V1012 M28,1000 H52"/><path d="M1520,988 V1012 M1508,1000 H1532"/>
+  </g>
+
+  <!-- header -->
+  <circle cx="66" cy="74" r="4" fill="#e6863c"/>
+  <text class="mono" x="82" y="79" font-size="15" letter-spacing="3" fill="#e6863c">FIG. 01 — REQUEST PATH</text>
+  <text class="mono" x="1500" y="79" font-size="13" letter-spacing="3" fill="#6b7280" text-anchor="end">ARSLAN · SYSTEM SCHEMATIC · N.T.S.</text>
+  <line x1="60" y1="100" x2="1500" y2="100" stroke="#2a2d35" stroke-width="1"/>
+
+  <!-- ══ YOU box (dashed) ══ -->
+  <text class="mono" x="90" y="292" font-size="12" letter-spacing="2.5" fill="#6b7280">INPUT</text>
+  <rect x="90" y="304" width="220" height="130" rx="8" fill="#12131a" stroke="#565b66" stroke-width="1.5" stroke-dasharray="7 6"/>
+  <text class="mono" x="114" y="342" font-size="13" letter-spacing="2.5" fill="#e6863c">YOU</text>
+  <text class="sans" x="114" y="376" font-size="21" font-weight="bold" fill="#ededf0">One thread</text>
+  <text class="sans" x="114" y="404" font-size="14" fill="#8b919c">No model picking.</text>
+
+  <!-- vertical dimension line left of YOU -->
+  <g stroke="#4a4e58" stroke-width="1">
+    <line x1="66" y1="304" x2="66" y2="434"/><line x1="60" y1="304" x2="90" y2="304" stroke-opacity="0.6"/><line x1="60" y1="434" x2="90" y2="434" stroke-opacity="0.6"/>
+  </g>
+  <text class="mono" x="58" y="380" font-size="11" letter-spacing="2" fill="#6b7280" transform="rotate(-90 58 380)" text-anchor="middle">×1</text>
+
+  <!-- arrow YOU -> HOST -->
+  <line x1="310" y1="369" x2="448" y2="369" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+  <text class="mono" x="379" y="356" font-size="12" letter-spacing="2" fill="#8b919c" text-anchor="middle">ASKS</text>
+
+  <!-- ══ HOST AGENT box ══ -->
+  <rect x="456" y="284" width="330" height="176" rx="10" fill="#17181f" stroke="#e6863c" stroke-width="1.6"/>
+  <rect x="456" y="284" width="330" height="176" rx="10" fill="none" stroke="#e6863c" stroke-opacity="0.25" stroke-width="6"/>
+  <text class="mono" x="484" y="322" font-size="13" letter-spacing="2.5" fill="#e6863c">HOST AGENT</text>
+  <text class="sans" x="484" y="356" font-size="23" font-weight="bold" fill="#ededf0">Routes and reports</text>
+  <text class="sans" x="484" y="388" font-size="14.5" fill="#8b919c">Picks the spawn, splits the job,</text>
+  <text class="sans" x="484" y="410" font-size="14.5" fill="#8b919c">answers you in the same thread.</text>
+  <!-- port dots -->
+  <circle cx="456" cy="369" r="4" fill="#0e0f13" stroke="#e6863c" stroke-width="1.5"/>
+  <circle cx="786" cy="369" r="4" fill="#0e0f13" stroke="#e6863c" stroke-width="1.5"/>
+  <circle cx="621" cy="460" r="4" fill="#0e0f13" stroke="#e6863c" stroke-width="1.5"/>
+
+  <!-- trunk HOST -> spawns bus -->
+  <line x1="790" y1="369" x2="900" y2="369" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text class="mono" x="846" y="356" font-size="12" letter-spacing="2" fill="#8b919c" text-anchor="middle">DELEGATES</text>
+  <line x1="900" y1="272" x2="900" y2="466" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <line x1="900" y1="272" x2="968" y2="272" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+  <line x1="900" y1="466" x2="968" y2="466" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+  <!-- results return -->
+  <path d="M968,520 H840 Q812,520 812,492 V464" fill="none" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="3 5" marker-end="url(#arrG)" opacity="0"/>
+
+  <!-- dimension line above spawn grid -->
+  <g stroke="#4a4e58" stroke-width="1">
+    <line x1="968" y1="188" x2="1500" y2="188"/><line x1="968" y1="182" x2="968" y2="206" stroke-opacity="0.6"/><line x1="1500" y1="182" x2="1500" y2="206" stroke-opacity="0.6"/>
+  </g>
+  <rect x="1160" y="176" width="150" height="24" fill="#0e0f13"/>
+  <text class="mono" x="1234" y="193" font-size="11.5" letter-spacing="2" fill="#6b7280" text-anchor="middle">0‥n SPECIALISTS</text>
+
+  <!-- ══ spawn grid 2×2 ══ -->
+  <text class="mono" x="968" y="228" font-size="12" letter-spacing="2.5" fill="#6b7280">SPAWNS — RAISED BY YOU</text>
+  <g>
+    <rect x="968"  y="240" width="252" height="102" rx="8" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+    <text class="sans" x="990" y="280" font-size="17" font-weight="bold" fill="#ededf0">Research Analyst</text>
+    <text class="mono" x="990" y="312" font-size="12.5" fill="#8b919c">web · triangulation</text>
+
+    <rect x="1248" y="240" width="252" height="102" rx="8" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+    <text class="sans" x="1270" y="280" font-size="17" font-weight="bold" fill="#ededf0">Coding Assistant</text>
+    <text class="mono" x="1270" y="312" font-size="12.5" fill="#8b919c">coding · debugging</text>
+
+    <rect x="968"  y="364" width="252" height="102" rx="8" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+    <text class="sans" x="990" y="404" font-size="17" font-weight="bold" fill="#ededf0">Financial Research</text>
+    <text class="mono" x="990" y="436" font-size="12.5" fill="#8b919c">sector · landscape</text>
+
+    <rect x="1248" y="364" width="252" height="102" rx="8" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+    <text class="sans" x="1270" y="404" font-size="17" font-weight="bold" fill="#ededf0">Deck Master</text>
+    <text class="mono" x="1270" y="436" font-size="12.5" fill="#8b919c">storytelling · design</text>
+  </g>
+
+  <!-- HOST down to SANDBOX -->
+  <line x1="621" y1="464" x2="621" y2="612" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+  <rect x="640" y="516" width="112" height="22" fill="#0e0f13"/>
+  <text class="mono" x="636" y="532" font-size="12" letter-spacing="2" fill="#8b919c">RUNS CODE</text>
+
+  <!-- spawns down to SECOND BRAIN -->
+  <line x1="1234" y1="466" x2="1234" y2="612" stroke="#6b7280" stroke-width="1.3" stroke-dasharray="3 5" marker-end="url(#arrG)"/>
+  <rect x="1250" y="516" width="190" height="22" fill="#0e0f13"/>
+  <text class="mono" x="1250" y="532" font-size="12" letter-spacing="2" fill="#8b919c">RECALL / REMEMBER</text>
+
+  <!-- ══ SANDBOX box ══ -->
+  <rect x="380" y="616" width="482" height="178" rx="10" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+  <rect x="380" y="616" width="14" height="178" rx="7" fill="url(#hatch)"/>
+  <text class="mono" x="420" y="654" font-size="13" letter-spacing="2.5" fill="#e6863c">SANDBOX — KERNEL ENFORCED</text>
+  <text class="sans" x="420" y="688" font-size="19" font-weight="bold" fill="#ededf0">Generated code runs network-denied</text>
+  <text class="sans" x="420" y="718" font-size="14" fill="#8b919c">macOS seatbelt · fails closed elsewhere · git talks through a</text>
+  <text class="sans" x="420" y="740" font-size="14" fill="#8b919c">credential-injecting proxy — raw tokens never enter.</text>
+  <text class="mono" x="420" y="772" font-size="12" letter-spacing="1.5" fill="#565b66">NET: DENY-ALL &#160;&#160;FS: SCOPED &#160;&#160;CREDS: OUTSIDE</text>
+
+  <!-- ══ SECOND BRAIN box ══ -->
+  <rect x="950" y="616" width="550" height="178" rx="10" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+  <text class="mono" x="982" y="654" font-size="13" letter-spacing="2.5" fill="#e6863c">SECOND BRAIN — SHARED MEMORY</text>
+  <text class="sans" x="982" y="688" font-size="19" font-weight="bold" fill="#ededf0">Memory the spawns read — and you can edit</text>
+  <text class="sans" x="982" y="718" font-size="14" fill="#8b919c">FTS5 + embeddings · [[wiki-links]] · beliefs carry time ·</text>
+  <text class="sans" x="982" y="740" font-size="14" fill="#8b919c">Obsidian-style graph. Model edits queue in your inbox first.</text>
+  <text class="mono" x="982" y="772" font-size="12" letter-spacing="1.5" fill="#565b66">WRITES: PROPOSED &#160;&#160;DELETES: NEVER SILENT</text>
+
+  <!-- footer: scale bar bottom-left -->
+  <g>
+    <circle cx="66" cy="922" r="4" fill="#e6863c"/>
+    <text class="mono" x="82" y="927" font-size="13" letter-spacing="2.5" fill="#6b7280">ONE HOST, MANY SPAWNS — ALL ON YOUR MACHINE</text>
+    <g stroke="#4a4e58" stroke-width="1">
+      <line x1="66" y1="952" x2="266" y2="952"/>
+      <line x1="66" y1="946" x2="66" y2="958"/><line x1="116" y1="948" x2="116" y2="956"/>
+      <line x1="166" y1="946" x2="166" y2="958"/><line x1="216" y1="948" x2="216" y2="956"/>
+      <line x1="266" y1="946" x2="266" y2="958"/>
+    </g>
+    <text class="mono" x="66" y="976" font-size="10" letter-spacing="1.5" fill="#565b66">LOCALHOST&#160;&#160;·&#160;&#160;127.0.0.1:8741</text>
+  </g>
+
+  <!-- footer: engineering title block bottom-right -->
+  <g class="mono" font-size="11">
+    <rect x="1080" y="880" width="420" height="108" fill="#12131a" stroke="#33363f" stroke-width="1.2"/>
+    <line x1="1080" y1="916" x2="1500" y2="916" stroke="#33363f"/>
+    <line x1="1080" y1="952" x2="1500" y2="952" stroke="#33363f"/>
+    <line x1="1220" y1="880" x2="1220" y2="988" stroke="#33363f"/>
+    <line x1="1360" y1="880" x2="1360" y2="988" stroke="#33363f"/>
+    <text x="1094" y="895" fill="#565b66" letter-spacing="1.5" font-size="9">PROJECT</text>
+    <text x="1094" y="909" fill="#ededf0">ARSLAN</text>
+    <text x="1234" y="895" fill="#565b66" letter-spacing="1.5" font-size="9">SHEET</text>
+    <text x="1234" y="909" fill="#ededf0">01 / 03</text>
+    <text x="1374" y="895" fill="#565b66" letter-spacing="1.5" font-size="9">REV</text>
+    <text x="1374" y="909" fill="#ededf0">PRE-V1</text>
+    <text x="1094" y="931" fill="#565b66" letter-spacing="1.5" font-size="9">SCALE</text>
+    <text x="1094" y="945" fill="#ededf0">N.T.S.</text>
+    <text x="1234" y="931" fill="#565b66" letter-spacing="1.5" font-size="9">LICENSE</text>
+    <text x="1234" y="945" fill="#ededf0">APACHE-2.0</text>
+    <text x="1374" y="931" fill="#565b66" letter-spacing="1.5" font-size="9">RUNS ON</text>
+    <text x="1374" y="945" fill="#ededf0">YOUR MACHINE</text>
+    <text x="1094" y="967" fill="#565b66" letter-spacing="1.5" font-size="9">KEYS</text>
+    <text x="1094" y="981" fill="#ededf0">BYOK</text>
+    <text x="1234" y="967" fill="#565b66" letter-spacing="1.5" font-size="9">SANDBOX</text>
+    <text x="1234" y="981" fill="#ededf0">FAILS CLOSED</text>
+    <text x="1374" y="967" fill="#565b66" letter-spacing="1.5" font-size="9">PROMOTION</text>
+    <text x="1374" y="981" fill="#e6863c">MANUAL ONLY</text>
+  </g>
+</svg>
+</body></html>
