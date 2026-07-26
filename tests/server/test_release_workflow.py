@@ -49,35 +49,36 @@ def _drift_snippet() -> str:
     return "\n".join(lines)
 
 
-@pytest.mark.parametrize(
-    ("tag", "should_fail"),
-    [
-        ("v0.1.0", False),
-        # The realistic mistake: tag the release, forget to bump the config.
-        ("v0.1.1", True),
-        ("v9.9.9", True),
-        # NOT tested: a tag without the "v" prefix. `${TAG#v}` leaves it
-        # unchanged, so it compares equal and passes — but the workflow only
-        # triggers on tags: ["v*"] and the release job additionally requires
-        # startsWith(github.ref, 'refs/tags/v'), so that input cannot reach
-        # this code. An earlier version of this file asserted it should fail,
-        # which was a wrong expectation about an unreachable case, not a bug.
-    ],
-)
-def test_the_drift_check_accepts_only_a_matching_tag(tmp_path, tag, should_fail):
-    """Both directions. Asserting only the mismatch case would be satisfied by
-    a check that rejects everything — which fails every release instead."""
+@pytest.mark.parametrize("case", ["match", "patch_ahead", "way_off"])
+def test_the_drift_check_accepts_only_a_matching_tag(tmp_path, case):
+    """Both directions, derived from the REAL config version.
+
+    An earlier revision hardcoded "v0.1.0" as the matching tag, with a
+    self-check that demanded editing the test on every version bump — which
+    promptly fired on the 0.1.1 bump and failed CI on a branch with zero
+    backend changes. Deriving the tags from tauri.conf.json keeps the same
+    discrimination (a matching tag passes, a mismatching one is rejected)
+    with no per-release maintenance.
+
+    NOT tested: a tag without the "v" prefix — `${TAG#v}` leaves it unchanged
+    so it compares equal, but the workflow only triggers on tags: ["v*"] and
+    the release job requires startsWith(github.ref, 'refs/tags/v'), so that
+    input cannot reach this code.
+    """
     version = json.loads(_CONF.read_text())["version"]
+    parts = version.split(".")
+    bumped = ".".join(parts[:-1] + [str(int(parts[-1]) + 1)])
+    tag, should_fail = {
+        "match": (f"v{version}", False),
+        # The realistic mistake: tag the release, forget to bump the config.
+        "patch_ahead": (f"v{bumped}", True),
+        "way_off": ("v9.9.9", True),
+    }[case]
+    assert (tag == f"v{version}") == (not should_fail)  # the cases really differ
+
     conf_dir = tmp_path / "desktop" / "src-tauri"
     conf_dir.mkdir(parents=True)
     (conf_dir / "tauri.conf.json").write_text(json.dumps({"version": version}))
-
-    # v0.1.0 only "matches" while the config really says 0.1.0; if someone
-    # bumps it, this parametrization would silently start testing nothing.
-    if tag == "v0.1.0":
-        assert version == "0.1.0", (
-            f"tauri.conf.json is now {version}; update this test's matching tag"
-        )
 
     result = subprocess.run(
         ["bash", "-c", _drift_snippet()],
