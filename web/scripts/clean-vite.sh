@@ -22,9 +22,32 @@ mkdir -p "$STAGE"
 # Refresh config files (cheap; keeps staging in sync with the repo).
 cp "$WEB_DIR/package.json" "$WEB_DIR/vite.config.ts" "$WEB_DIR/tsconfig.json" "$WEB_DIR/index.html" "$STAGE/"
 # (Re)create symlinks to the real source + installed deps + public assets.
-ln -sfn "$WEB_DIR/src" "$STAGE/src"
-ln -sfn "$WEB_DIR/node_modules" "$STAGE/node_modules"
-ln -sfn "$WEB_DIR/public" "$STAGE/public"
+link_stage() {
+  ln -sfn "$WEB_DIR/src" "$STAGE/src"
+  ln -sfn "$WEB_DIR/node_modules" "$STAGE/node_modules"
+  ln -sfn "$WEB_DIR/public" "$STAGE/public"
+}
+# Verify each link RESOLVES to the current repo — not merely exists. The stage
+# dir outlives the repo path ($TMPDIR persists across renames/moves), and a
+# stale entry is worse than a missing one: `ln -sfn` onto a path that has
+# become a REAL directory creates the new link INSIDE it, so $STAGE/src keeps
+# serving old sources and vite builds a page with the right title and a white
+# screen — this repo's move to Arslan/arslan produced exactly that. Resolution
+# via `pwd -P` catches both the shadowed-directory case and a dangling link.
+stage_ok() {
+  for name in src node_modules public; do
+    [ "$(cd "$STAGE/$name" 2>/dev/null && pwd -P)" =       "$(cd "$WEB_DIR/$name" && pwd -P)" ] || return 1
+  done
+}
+link_stage
+if ! stage_ok; then
+  echo "clean-vite: stage at $STAGE is stale — rebuilding it from scratch" >&2
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE"
+  cp "$WEB_DIR/package.json" "$WEB_DIR/vite.config.ts" "$WEB_DIR/tsconfig.json" "$WEB_DIR/index.html" "$STAGE/"
+  link_stage
+  stage_ok || { echo "clean-vite: stage still broken after a rebuild — refusing to build from stale sources" >&2; exit 1; }
+fi
 
 cd "$STAGE"
 npx vite "$@"

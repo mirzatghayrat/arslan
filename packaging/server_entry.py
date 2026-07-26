@@ -55,6 +55,23 @@ def _sanitize_env() -> None:
     for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH"):
         os.environ.pop(var, None)
 
+    if getattr(sys, "frozen", False):
+        # The documented integration hook (server/token_bootstrap.py:12): with
+        # this set, _needs_token() is True, so boot mints a token, persists it
+        # to <data_dir>/api_token (0o600), and auth is ENFORCED. Without it a
+        # packaged app ran as "dev + localhost = unauthenticated", which the
+        # spec forbids: 127.0.0.1 is reachable by every process on the machine,
+        # and this server holds the user's whole brain plus their BYOK keys.
+        os.environ.setdefault("ARSLAN_PACKAGED", "1")
+
+        # An inherited env token would win over the persisted file
+        # (token_bootstrap step 1) and NOTHING would be written to disk — but
+        # the Tauri shell can only learn the token by reading that file, so
+        # the webview would sit unauthenticated against an authenticated API:
+        # a broken UI with no error pointing here. Auth stays ON either way;
+        # this only forces the one token source the shell can actually see.
+        os.environ.pop("ARSLAN_API_TOKEN", None)
+
     _point_static_dir_into_the_bundle()
 
 

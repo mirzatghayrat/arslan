@@ -279,3 +279,39 @@ def test_the_lifeline_is_inert_outside_a_frozen_build(entry, monkeypatch):
 class _NoopThread:
     def start(self):  # pragma: no cover — only reached if the guard regresses
         raise AssertionError("watchdog thread started outside a frozen build")
+
+
+def test_a_frozen_build_enforces_auth_and_owns_the_token_source(entry, monkeypatch):
+    """The §3(c) contract, both halves.
+
+    ARSLAN_PACKAGED=1 is what makes token_bootstrap mint and persist a token
+    (auth ON); popping ARSLAN_API_TOKEN is what guarantees the token the shell
+    reads from <data_dir>/api_token is the one actually in force — an
+    inherited env token wins over the file and is never persisted, leaving the
+    webview holding nothing while the API demands auth.
+    """
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", "/nonexistent", raising=False)
+    monkeypatch.delenv("ARSLAN_PACKAGED", raising=False)
+    monkeypatch.setenv("ARSLAN_API_TOKEN", "inherited-from-shell")
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: None)  # _MEIPASS warning
+
+    entry._sanitize_env()
+
+    assert os.environ.get("ARSLAN_PACKAGED") == "1", (
+        "without this, a packaged build runs dev+localhost = UNAUTHENTICATED"
+    )
+    assert "ARSLAN_API_TOKEN" not in os.environ
+
+
+def test_a_source_checkout_gets_neither_packaged_flag_nor_token_stripping(entry, monkeypatch):
+    """Control: the same call outside a frozen build must not force auth on a
+    developer or eat their explicitly-set token."""
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delenv("ARSLAN_PACKAGED", raising=False)
+    monkeypatch.setenv("ARSLAN_API_TOKEN", "dev-chosen-token")
+
+    entry._sanitize_env()
+
+    assert "ARSLAN_PACKAGED" not in os.environ
+    assert os.environ.get("ARSLAN_API_TOKEN") == "dev-chosen-token"

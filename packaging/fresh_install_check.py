@@ -245,6 +245,37 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
     finally:
         conn.close()
 
+    # ---- auth is ENFORCED, and the shell can hold the key --------------
+    # A desktop build must not run open: 127.0.0.1 is reachable by every
+    # process on the machine, and this server holds the brain and BYOK keys.
+    # Three sides, because any one alone can lie:
+    #   the token file exists (the shell's ONLY way to learn the token),
+    #   a privileged endpoint refuses without it (auth is really on),
+    #   and accepts with it (the persisted token is the real credential —
+    #   a gate that rejects everything would pass the middle check too).
+    token_path = appsup / "api_token"
+    if c.ok(token_path.is_file(), "an api_token was minted on first run"):
+        mode = token_path.stat().st_mode & 0o777
+        c.ok(mode == 0o600, "api_token is owner-only", f"mode is {oct(mode)}")
+        token = token_path.read_text().strip()
+
+        def _status(headers: dict) -> int:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/v1/spawns", headers=headers
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        anon = _status({})
+        c.ok(anon in (401, 403), "a privileged endpoint refuses without the token",
+             f"anonymous GET /api/v1/spawns returned {anon}")
+        authed = _status({"Authorization": f"Bearer {token}"})
+        c.ok(authed == 200, "the persisted token is accepted",
+             f"authed GET /api/v1/spawns returned {authed}")
+
     # ---- a clean boot says nothing alarming ---------------------------
     text = log.read_text(errors="replace")
     errors = [

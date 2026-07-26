@@ -12,7 +12,7 @@
 //! An orphan left running after the window closes keeps a lock on it, and the
 //! next launch fails in a way that looks like data corruption.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
@@ -131,6 +131,62 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
     }
 }
 
+/// Block until the sidecar answers `/api/v1/health` with a 200.
+///
+/// Two things depend on this, not one: the webview navigates exactly once, so
+/// pointing it at a port that is announced but not yet serving shows a
+/// connection error the user has to fix by relaunching; and the api_token
+/// file is written during server startup, so reading it before health-OK
+/// races a file that may not exist yet. Raw std TCP on purpose — pulling in
+/// an HTTP client crate to send one GET would be the heavier wrong.
+fn wait_for_health(port: u16) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + STARTUP_TIMEOUT;
+    let addr = format!("127.0.0.1:{port}");
+    while std::time::Instant::now() < deadline {
+        if let Ok(mut s) = std::net::TcpStream::connect(&addr) {
+            let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+            let req = format!(
+                "GET /api/v1/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+            );
+            if s.write_all(req.as_bytes()).is_ok() {
+                let mut buf = String::new();
+                let _ = s.read_to_string(&mut buf);
+                if buf.starts_with("HTTP/1.1 200") || buf.starts_with("HTTP/1.0 200") {
+                    return Ok(());
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    Err(format!("sidecar port {port} never answered /api/v1/health"))
+}
+
+/// Read the bearer token the sidecar persisted, for injection into the webview.
+///
+/// The sidecar runs with ARSLAN_PACKAGED=1, so auth is enforced and the token
+/// lives at <data dir>/api_token (0o600). The path is fixed because
+/// server_entry strips ARSLAN_DATA_DIR in frozen builds — if that ever
+/// changes, this must change with it.
+///
+/// The token is embedded in a JS string, so it is validated against the exact
+/// alphabet `secrets.token_urlsafe` produces rather than escaped: a value that
+/// is not [A-Za-z0-9_-] is not our token, and refusing it beats quoting it.
+fn read_api_token() -> Option<String> {
+    let home = std::env::var_os("HOME")?;
+    let path = std::path::Path::new(&home)
+        .join("Library/Application Support/Arslan/api_token");
+    let token = std::fs::read_to_string(path).ok()?.trim().to_string();
+    if !token.is_empty()
+        && token
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        Some(token)
+    } else {
+        None
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -147,11 +203,34 @@ pub fn run() {
                 .parse()
                 .map_err(|e| format!("built an invalid sidecar URL: {e}"))?;
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+            // Health first: the webview navigates once, and the token file is
+            // written during server startup — both need the server actually up.
+            wait_for_health(port)?;
+
+            let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
                 .title("Arslan")
                 .inner_size(1280.0, 840.0)
-                .min_inner_size(900.0, 600.0)
-                .build()?;
+                .min_inner_size(900.0, 600.0);
+
+            // The other half of the auth contract. The sidecar enforces auth
+            // (ARSLAN_PACKAGED=1); the SPA reads window.__ARSLAN_TOKEN__ at
+            // startup (web/src/lib/injectedToken.ts). Skipping injection when
+            // the file is unreadable is deliberate fail-visible: the UI's API
+            // calls 401 immediately, instead of the server silently running
+            // open to every local process.
+            match read_api_token() {
+                Some(token) => {
+                    win = win.initialization_script(&format!(
+                        "window.__ARSLAN_TOKEN__ = \"{token}\";"
+                    ));
+                }
+                None => eprintln!(
+                    "WARNING: no readable api_token — the UI will be unauthenticated \
+                     against an auth-enforcing server"
+                ),
+            }
+
+            win.build()?;
             Ok(())
         })
         .build(tauri::generate_context!())
