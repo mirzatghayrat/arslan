@@ -43,6 +43,12 @@ dependencies = [
     "python-docx>=1.1",
     "python-pptx>=0.6.23",
     "python-multipart>=0.0.18",
+    # Core, not OCR-only: python-pptx imports PIL internally
+    # (pptx/parts/image.py, pptx/text/layout.py), so `import deck_pptx` raises
+    # ModuleNotFoundError without it. It was briefly listed under the `ocr`
+    # extra on the mistaken basis that ingest.py:39,61 were its only importers
+    # — true of OUR code, false of the dependency graph.
+    "pillow>=10.0",
     "mcp>=1.0",
 ]
 
@@ -62,10 +68,11 @@ dependencies = [
 #      from Homebrew). Bundling it would mean signing/notarizing that binary
 #      plus its language packs — the highest-cost failure mode in this round.
 #
-# All three move together on purpose: _ocr_pdf needs rasterize (pypdfium2) AND
-# recognize (pytesseract), and _ocr_image needs PIL — shipping any one without
-# the others yields a component with no consumer. PIL is OCR-only in this repo
-# (server/services/ingest.py:39,61 are its only import sites).
+# Both move together on purpose: _ocr_pdf needs rasterize (pypdfium2) AND
+# recognize (pytesseract) — shipping either alone yields a component with no
+# consumer. PIL is NOT here: it looks OCR-only (ingest.py:39,61 are our only
+# direct imports) but python-pptx pulls it in for real work, so it belongs in
+# the core dependencies.
 #
 # ingest.py is deliberately UNCHANGED in shape: its function-level imports and
 # `except -> ""` already handle absence. That predates this round.
@@ -77,7 +84,18 @@ dependencies = [
 ocr = [
     "pypdfium2>=4.30",
     "pytesseract>=0.3",
-    "pillow>=10.0",
+]
+# Build-only: PyInstaller freezes the desktop sidecar (packaging/arslan-server.spec).
+# Deliberately NOT in `dev`: every CI run would download it for nothing — only
+# the release job needs it.
+build = [
+    "pyinstaller>=6.10",
+    # BUILD-TIME ONLY, never imported at runtime. collect_submodules("mcp")
+    # imports every mcp submodule, and mcp/cli/cli.py calls sys.exit(1) at
+    # import time when typer is missing — which aborts the whole freeze with a
+    # bare SystemExit and no useful message. (openworker hit the same wall:
+    # packaging/build_dmg.sh:16-17.)
+    "typer>=0.12",
 ]
 server = [
     "sqlalchemy>=2.0",

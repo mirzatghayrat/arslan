@@ -48,3 +48,7 @@ credentials*.json
 .superpowers
 .omm
 docs/superpowers
+
+# PyInstaller output for the desktop sidecar (packaging/arslan-server.spec)
+packaging/dist/
+packaging/build/
