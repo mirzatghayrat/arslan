@@ -122,8 +122,11 @@ jobs:
         #
         # Before the artefacts are staged: a bundle that fails this must not
         # reach a release, draft or otherwise.
-        run: .venv/bin/python packaging/fresh_install_check.py \
-          desktop/src-tauri/target/release/bundle/macos/Arslan.app
+        # One line on purpose: a backslash continuation inside a plain YAML
+        # scalar folds with a SPACE, producing "\ " — an escaped space — so the
+        # path argument arrived with a leading blank and the script refused it
+        # (run 30207372170, after a fully successful sign + notarize).
+        run: .venv/bin/python packaging/fresh_install_check.py desktop/src-tauri/target/release/bundle/macos/Arslan.app
 
       - name: Stage artefacts under stable names
         # Two names for the same file: the versioned one is the archive, the
