@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -81,7 +82,10 @@ async def test_extract_image_upload_ocr(client, monkeypatch):
     """End-to-end image path: real extract_text/_extract_file, OCR stubbed."""
     import io
 
-    import pytesseract
+    # The `ocr` extra is opt-in and is NOT in the packaged desktop build
+    # (S4.3-a). Skip rather than error so a plain `pip install .` checkout
+    # is green; CI installs --extra ocr so these DO run there.
+    pytesseract = pytest.importorskip("pytesseract")
     from PIL import Image, ImageDraw
 
     monkeypatch.setattr(pytesseract, "image_to_string", lambda img, **kw: "receipt total 42")
@@ -97,7 +101,10 @@ async def test_extract_image_upload_ocr(client, monkeypatch):
 
 async def test_extract_image_upload_no_text_200(client, monkeypatch):
     """OCR failure is best-effort: 200 with empty text, never a 500."""
-    import pytesseract
+    # The `ocr` extra is opt-in and is NOT in the packaged desktop build
+    # (S4.3-a). Skip rather than error so a plain `pip install .` checkout
+    # is green; CI installs --extra ocr so these DO run there.
+    pytesseract = pytest.importorskip("pytesseract")
 
     def _boom(img, **kw):
         raise RuntimeError("no tesseract")

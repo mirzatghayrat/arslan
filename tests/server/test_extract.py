@@ -52,7 +52,10 @@ def _tiny_png() -> bytes:
 
 
 async def test_extract_image_ocr(monkeypatch):
-    import pytesseract
+    # The `ocr` extra is opt-in and is NOT in the packaged desktop build
+    # (S4.3-a). Skip rather than error so a plain `pip install .` checkout
+    # is green; CI installs --extra ocr so these DO run there.
+    pytesseract = pytest.importorskip("pytesseract")
     monkeypatch.setattr(pytesseract, "image_to_string", lambda img, **kw: "OCR text 已识别")
     text, truncated = await extract.extract_text(filename="shot.png", data=_tiny_png())
     assert "OCR text 已识别" in text
@@ -60,7 +63,10 @@ async def test_extract_image_ocr(monkeypatch):
 
 
 async def test_extract_image_ocr_failure_returns_empty(monkeypatch):
-    import pytesseract
+    # The `ocr` extra is opt-in and is NOT in the packaged desktop build
+    # (S4.3-a). Skip rather than error so a plain `pip install .` checkout
+    # is green; CI installs --extra ocr so these DO run there.
+    pytesseract = pytest.importorskip("pytesseract")
     def _boom(img, **kw):
         raise RuntimeError("tesseract not installed")
     monkeypatch.setattr(pytesseract, "image_to_string", _boom)
@@ -70,7 +76,10 @@ async def test_extract_image_ocr_failure_returns_empty(monkeypatch):
 
 
 async def test_extract_image_ocr_whitespace_is_empty(monkeypatch):
-    import pytesseract
+    # The `ocr` extra is opt-in and is NOT in the packaged desktop build
+    # (S4.3-a). Skip rather than error so a plain `pip install .` checkout
+    # is green; CI installs --extra ocr so these DO run there.
+    pytesseract = pytest.importorskip("pytesseract")
     monkeypatch.setattr(pytesseract, "image_to_string", lambda img, **kw: " \n\f ")
     text, _ = await extract.extract_text(filename="shot.png", data=_tiny_png())
     assert text == ""

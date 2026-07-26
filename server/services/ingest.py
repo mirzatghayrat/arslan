@@ -32,20 +32,43 @@ def _pdf_text_layer(data: bytes) -> str:
 
 
 def _ocr_pdf(data: bytes) -> str:
-    """OCR a scanned PDF (no text layer). Best-effort; returns '' on any failure."""
+    """OCR a scanned PDF (no text layer). Best-effort; returns '' on any failure.
+
+    Rasterizes with pypdfium2 (BSD-3-Clause / Apache-2.0). It replaced pymupdf
+    in S4.3-a: pymupdf is AGPL-3.0, and shipping it inside the distributed .dmg
+    would pull AGPL onto the whole app. See pyproject.toml's `ocr` extra.
+
+    NOT INSTALLED IN THE PACKAGED APP. Both this import and pytesseract live in
+    the opt-in `ocr` extra, so in a released build the ImportError below is the
+    NORMAL path and scanned PDFs yield no text. The fix is the vision round
+    (BYOK image input), not re-adding tesseract —
+    see docs/specs/2026-07-26-s4.3a-packaging.md §9.
+    """
     try:
-        import fitz  # pymupdf
+        import pypdfium2 as pdfium
         import pytesseract
-        from PIL import Image
         out = []
-        with fitz.open(stream=data, filetype="pdf") as doc:
+        doc = pdfium.PdfDocument(data)
+        try:
             for page in doc:
-                pix = page.get_pixmap(dpi=200)
-                img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                # scale is a multiple of PDF user space (72 units/inch); the
+                # 200 dpi target is what tesseract wants for body text.
+                bitmap = page.render(scale=200 / 72)
+                # Normalize the mode. MEASURED on pypdfium2 5.12.1: to_pil()
+                # already hands back "RGB" for this render call, so today this
+                # convert is a no-op — it is kept as a cheap guarantee that
+                # pytesseract never sees RGBA/L from a future version or a
+                # transparency-carrying render. Pinned by
+                # test_whatever_the_rasterizer_returns_is_normalized_to_rgb,
+                # which stubs to_pil() to RGBA because asserting the mode of a
+                # REAL render cannot tell the two apart.
+                img = bitmap.to_pil().convert("RGB")
                 try:
                     out.append(pytesseract.image_to_string(img, lang="chi_sim+eng"))
                 except Exception:  # noqa: BLE001 — language pack missing → English only
                     out.append(pytesseract.image_to_string(img))
+        finally:
+            doc.close()
         return "\n".join(out)
     except Exception as exc:  # noqa: BLE001 — OCR is best-effort
         logger.warning("OCR failed: %s", exc)

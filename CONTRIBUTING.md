@@ -30,6 +30,11 @@ cd arslan
 #    the `dev` extra (pytest/ruff). This matches what CI installs.
 uv sync --extra dev --extra server
 #    (Optional) add local embeddings for the second brain's vector retrieval:
+#    OCR (scanned PDFs / image attachments) is opt-in and ALSO needs a
+#    tesseract binary on PATH (`brew install tesseract tesseract-lang`):
+#    uv sync --extra dev --extra server --extra ocr
+#    CI installs --extra ocr so the rasterizer tests actually run; without it
+#    they importorskip into silent skips.
 #    uv sync --extra dev --extra server --extra embeddings
 
 # 3. Run the backend. Pinning ARSLAN_SECRET_KEY keeps every contributor boot on

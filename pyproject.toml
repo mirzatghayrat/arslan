@@ -43,13 +43,42 @@ dependencies = [
     "python-docx>=1.1",
     "python-pptx>=0.6.23",
     "python-multipart>=0.0.18",
-    "pymupdf>=1.24",
-    "pytesseract>=0.3",
-    "pillow>=10.0",
     "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
+# OCR is OPT-IN and is NOT in the distributed desktop build (S4.3-a).
+#
+# Two separate reasons, both load-bearing:
+#   1. LICENSE — the previous rasterizer, pymupdf, is AGPL-3.0 (wheel's own
+#      dist-info/COPYING: "Dual Licensed - GNU AFFERO GPL 3.0 or Artifex
+#      Commercial License"; its PyPI `license` field and classifiers are BOTH
+#      EMPTY, so metadata alone reads as "unlicensed"). Shipping it inside a
+#      .dmg distributes a combined work and pulls AGPL onto the whole app,
+#      which conflicts with our Apache-2.0. Replaced by pypdfium2
+#      (BSD-3-Clause / Apache-2.0, Google's PDFium).
+#   2. PACKAGING — pytesseract is only a wrapper; the real work is done by a
+#      `tesseract` BINARY that is NOT part of Arslan (on a dev Mac it comes
+#      from Homebrew). Bundling it would mean signing/notarizing that binary
+#      plus its language packs — the highest-cost failure mode in this round.
+#
+# All three move together on purpose: _ocr_pdf needs rasterize (pypdfium2) AND
+# recognize (pytesseract), and _ocr_image needs PIL — shipping any one without
+# the others yields a component with no consumer. PIL is OCR-only in this repo
+# (server/services/ingest.py:39,61 are its only import sites).
+#
+# ingest.py is deliberately UNCHANGED in shape: its function-level imports and
+# `except -> ""` already handle absence. That predates this round.
+#
+# WHAT v1 CANNOT DO: scanned PDFs (no text layer) and standalone image
+# attachments yield no text. Text-layer PDFs (pypdf, BSD), docx, pptx, html,
+# txt and md are unaffected. The fix is the vision round (BYOK image input),
+# NOT re-adding tesseract — see docs/specs/2026-07-26-s4.3a-packaging.md §9.
+ocr = [
+    "pypdfium2>=4.30",
+    "pytesseract>=0.3",
+    "pillow>=10.0",
+]
 server = [
     "sqlalchemy>=2.0",
     "greenlet>=3.0",
