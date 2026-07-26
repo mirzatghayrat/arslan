@@ -20,7 +20,7 @@ not showing a terminal.
 
 import os
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 # SPECPATH is injected by PyInstaller: <repo>/packaging. Everything else is
 # derived from it so the same spec works from any checkout location.
@@ -37,6 +37,29 @@ binaries = []
 # without it the sidecar dies at `import server.main`.
 for pkg in ("server", "arslan", "mcp"):
     hiddenimports += collect_submodules(pkg)
+
+# collect_submodules finds MODULES. It does not find package DATA, and the
+# arslan package is mostly data at runtime: pyproject.toml:112-118 lists five
+# kinds loaded via Path(__file__).parent — seed skill-packs, scaffold
+# templates, LLM capability profiles, the requirement tree, official
+# templates. Without these the app boots, serves /api/v1/health 200, and then
+# seeds ZERO of its six factory spawns, because every skill reports
+# "catalog-only (no method body yet) — not equippable": the SKILL.md files it
+# would read simply are not there. Measured on a real bundle; 67 files were
+# missing. Same class as the SPA above — data, not code.
+for pkg in ("arslan", "server"):
+    datas += collect_data_files(pkg, include_py_files=False)
+
+# The seed skill-packs again, this time WITH their .py files. A skill-pack's
+# scripts/ directory is DATA that a skill executes as a subprocess, not code
+# this program imports — collect_data_files(include_py_files=False) drops it,
+# and collect_submodules does not pick it up either because it is not an
+# importable module. pyproject.toml:114 spells out that a seed is "SKILL.md +
+# scripts/". Staging the tree wholesale is the only way to get both.
+SEEDS = os.path.join(ROOT, "arslan", "spawn", "seeds")
+if not os.path.isdir(SEEDS):
+    raise SystemExit(f"seed skill-packs missing at {SEEDS} — the app would seed no spawns")
+datas += [(SEEDS, "arslan/spawn/seeds")]
 
 # Dynamically-resolved packages that static analysis cannot see:
 #   uvicorn      — loads its protocol/lifespan implementations by name

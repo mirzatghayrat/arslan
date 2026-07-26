@@ -116,29 +116,9 @@ step "[3/7] verifying the frozen bundle"
 # --------------------------------------------------------------------------
 step "[4/7] staging the sidecar into Tauri resources"
 # --------------------------------------------------------------------------
-mkdir -p "$TAURI/binaries"
-# rm -rf FIRST: cp writes THROUGH a symlink at the destination, so a leftover
-# dev-convenience link here could clobber whatever it points at.
-rm -rf "$TAURI/binaries/sidecar"
-# -L dereferences. Tauri's resource bundler flattens symlinks into duplicate
-# REAL files, so without this what we sign and what Tauri copies are different
-# bytes, and the copies arrive unsigned. Dereferencing here makes them identical.
-cp -RL "$HERE/dist/arslan-server" "$TAURI/binaries/sidecar"
-
-if [ -n "$(find "$TAURI/binaries/sidecar" -type l | head -1)" ]; then
-  echo "ERROR: symlinks survived staging — Tauri would flatten them into unsigned copies" >&2
-  exit 1
-fi
-# Any file under a *.framework/ path triggers codesign's bundle inference,
-# which cannot validate a flattened layout. Our PyInstaller output has no
-# framework today; this guard is what keeps a future dependency from silently
-# introducing one (openworker took three Invalid notarization verdicts on
-# exactly this before removing theirs).
-if [ -n "$(find "$TAURI/binaries/sidecar" -type d -name '*.framework' | head -1)" ]; then
-  echo "ERROR: a .framework appeared in the sidecar — it cannot pass notarization" >&2
-  exit 1
-fi
-chmod +x "$TAURI/binaries/sidecar/arslan-server"
+# The dereference and the two guards live in their own script so they can be
+# tested without a five-minute build in front of them.
+"$HERE/stage_sidecar.sh" "$HERE/dist/arslan-server" "$TAURI/binaries/sidecar"
 
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   step "    signing the sidecar's Mach-O files"

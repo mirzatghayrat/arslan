@@ -83,22 +83,36 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
 
     // Read the handshake on a worker thread so a sidecar that never prints
     // anything cannot hang the main thread past the timeout.
+    //
+    // The thread KEEPS DRAINING after the port arrives, and that is not
+    // tidiness. Returning early drops the BufReader, closing our read end;
+    // the sidecar's next write to stdout then fails with EPIPE. uvicorn logs
+    // there, so every request produced a "--- Logging error --- BrokenPipeError"
+    // traceback in the packaged app. Draining to EOF also gives us the
+    // sidecar's own output in Console.app, where it can be read after a crash.
     let (tx, rx) = std::sync::mpsc::channel::<Result<u16, String>>();
     std::thread::spawn(move || {
+        let mut announced = false;
         for line in BufReader::new(stdout).lines() {
             let Ok(line) = line else { break };
-            if let Some(rest) = line.strip_prefix(PORT_LINE_PREFIX) {
-                let parsed = rest
-                    .trim()
-                    .parse::<u16>()
-                    .map_err(|_| format!("unparseable port line: {line:?}"));
-                let _ = tx.send(parsed);
-                return;
+            if !announced {
+                if let Some(rest) = line.strip_prefix(PORT_LINE_PREFIX) {
+                    let parsed = rest
+                        .trim()
+                        .parse::<u16>()
+                        .map_err(|_| format!("unparseable port line: {line:?}"));
+                    let _ = tx.send(parsed);
+                    announced = true;
+                    continue;
+                }
             }
+            eprintln!("[sidecar] {line}");
         }
-        let _ = tx.send(Err(format!(
-            "sidecar exited without printing {PORT_LINE_PREFIX}<port>"
-        )));
+        if !announced {
+            let _ = tx.send(Err(format!(
+                "sidecar exited without printing {PORT_LINE_PREFIX}<port>"
+            )));
+        }
     });
 
     match rx.recv_timeout(STARTUP_TIMEOUT) {

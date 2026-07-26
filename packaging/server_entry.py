@@ -206,13 +206,29 @@ def selftest() -> int:
     # the assets the UI is actually served from.
     asset_errors: list[str] = []
     if getattr(sys, "frozen", False):
-        web = pathlib.Path(getattr(sys, "_MEIPASS", "")) / "arslan_web"
+        root = pathlib.Path(getattr(sys, "_MEIPASS", ""))
+        web = root / "arslan_web"
         if not (web / "index.html").is_file():
             asset_errors.append(f"{web}/index.html is missing — the UI cannot load")
         elif not (web / "assets").is_dir():
             asset_errors.append(
                 f"{web}/assets is missing — index.html would load with no JS or CSS"
             )
+
+        # Package DATA loaded at runtime via Path(__file__).parent. Missing
+        # seeds is why a bundle once created zero of its six factory spawns
+        # while answering /api/v1/health 200: every skill read as
+        # "catalog-only (no method body yet)" because the SKILL.md files were
+        # not in the bundle. collect_submodules does not collect these.
+        for rel, why in (
+            ("arslan/spawn/seeds", "factory spawns cannot be seeded"),
+            ("arslan/spawn/scaffold", "new skill-packs cannot be scaffolded"),
+            ("arslan/config", "the requirement tree is unavailable"),
+            ("arslan/templates/official", "official templates are unavailable"),
+        ):
+            d = root / rel
+            if not d.is_dir() or not any(d.rglob("*")):
+                asset_errors.append(f"{rel} is missing or empty — {why}")
 
     if failed or asset_errors:
         print("SELFTEST FAILED:", file=sys.stderr)

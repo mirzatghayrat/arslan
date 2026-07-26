@@ -1,0 +1,137 @@
+"""Guards on the release workflow itself (S4.3-a §4, §7).
+
+Two properties here are not testable by running the workflow — by the time it
+runs, the damage is done — so they are asserted against the file:
+
+  * a tag that disagrees with tauri.conf.json's version would publish an
+    update every installed copy fetches and can never apply, because the
+    version it announces never matches what it installs;
+  * a workflow triggered by `pull_request` that references `secrets.*` hands
+    the signing certificate to anyone who opens a PR from a fork.
+
+The drift check is not asserted by grepping for its text. The shell snippet is
+EXTRACTED from the workflow and EXECUTED, once with a matching tag and once
+with a mismatching one, so a snippet that has been broken into a no-op fails
+here rather than passing a string match.
+"""
+from __future__ import annotations
+
+import json
+import pathlib
+import re
+import subprocess
+
+import pytest
+
+_WORKFLOWS = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+_RELEASE = _WORKFLOWS / "release.yml"
+_CONF = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "desktop" / "src-tauri" / "tauri.conf.json"
+)
+
+
+def test_the_release_workflow_and_config_exist():
+    """Pre-assertion (class 0): every check below is vacuous if these moved."""
+    assert _RELEASE.is_file()
+    assert _CONF.is_file()
+
+
+def _drift_snippet() -> str:
+    """Pull the tag/version comparison out of the workflow, verbatim."""
+    text = _RELEASE.read_text()
+    m = re.search(
+        r'(TAG="\$\{GITHUB_REF_NAME\}".*?\n\s*fi\n)', text, re.S
+    )
+    assert m, "the tag/version drift check is gone from release.yml"
+    # De-indent so bash sees a normal script.
+    lines = [ln[10:] if ln.startswith(" " * 10) else ln for ln in m.group(1).splitlines()]
+    return "\n".join(lines)
+
+
+@pytest.mark.parametrize(
+    ("tag", "should_fail"),
+    [
+        ("v0.1.0", False),
+        # The realistic mistake: tag the release, forget to bump the config.
+        ("v0.1.1", True),
+        ("v9.9.9", True),
+        # NOT tested: a tag without the "v" prefix. `${TAG#v}` leaves it
+        # unchanged, so it compares equal and passes — but the workflow only
+        # triggers on tags: ["v*"] and the release job additionally requires
+        # startsWith(github.ref, 'refs/tags/v'), so that input cannot reach
+        # this code. An earlier version of this file asserted it should fail,
+        # which was a wrong expectation about an unreachable case, not a bug.
+    ],
+)
+def test_the_drift_check_accepts_only_a_matching_tag(tmp_path, tag, should_fail):
+    """Both directions. Asserting only the mismatch case would be satisfied by
+    a check that rejects everything — which fails every release instead."""
+    version = json.loads(_CONF.read_text())["version"]
+    conf_dir = tmp_path / "desktop" / "src-tauri"
+    conf_dir.mkdir(parents=True)
+    (conf_dir / "tauri.conf.json").write_text(json.dumps({"version": version}))
+
+    # v0.1.0 only "matches" while the config really says 0.1.0; if someone
+    # bumps it, this parametrization would silently start testing nothing.
+    if tag == "v0.1.0":
+        assert version == "0.1.0", (
+            f"tauri.conf.json is now {version}; update this test's matching tag"
+        )
+
+    result = subprocess.run(
+        ["bash", "-c", _drift_snippet()],
+        cwd=tmp_path, env={"GITHUB_REF_NAME": tag, "PATH": "/usr/bin:/bin"},
+        capture_output=True, text=True,
+    )
+    if should_fail:
+        assert result.returncode != 0, f"tag {tag} should have been rejected"
+        assert "::error::" in result.stdout + result.stderr
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_no_pull_request_triggered_workflow_can_read_secrets():
+    """THE fork-PR guard.
+
+    A workflow that both runs on `pull_request` and references `secrets.*` lets
+    anyone who opens a PR from a fork exfiltrate the signing certificate — the
+    PR can edit the very workflow that uses it. GitHub withholds secrets from
+    fork PRs by default, but `pull_request_target` does not, and the default is
+    a setting rather than a property of this repository.
+
+    Checks every workflow, not just release.yml: the next one added is the one
+    that gets this wrong.
+    """
+    offenders = []
+    for wf in sorted(_WORKFLOWS.glob("*.yml")):
+        text = wf.read_text()
+        # The trigger block ends at the first top-level key after `on:`.
+        m = re.search(r"^on:\s*\n(.*?)^\w", text, re.S | re.M)
+        triggers = m.group(1) if m else ""
+        pr_triggered = "pull_request" in triggers
+        # GITHUB_TOKEN is scoped to the PR and is not ours to leak.
+        uses = [
+            s for s in re.findall(r"secrets\.([A-Z_0-9]+)", text) if s != "GITHUB_TOKEN"
+        ]
+        if pr_triggered and uses:
+            offenders.append(f"{wf.name} runs on pull_request AND reads {sorted(set(uses))}")
+
+    assert not offenders, "; ".join(offenders)
+
+
+def test_the_release_workflow_really_does_use_secrets():
+    """Control for the test above.
+
+    Without it, deleting every secret reference — which would produce unsigned
+    releases — would make the fork-PR test pass for the wrong reason.
+    """
+    used = set(re.findall(r"secrets\.([A-Z_0-9]+)", _RELEASE.read_text()))
+    assert {"APPLE_CERTIFICATE", "APPLE_SIGNING_IDENTITY", "TAURI_SIGNING_PRIVATE_KEY"} <= used
+
+
+def test_releases_are_drafts_not_published_automatically():
+    """Publishing IS pushing an update to every install. A human reviews first
+    — the same fail-closed-on-the-executing-side rule as the rest of the repo.
+    """
+    assert re.search(r"^\s*draft:\s*true\s*$", _RELEASE.read_text(), re.M)
