@@ -1,0 +1,30 @@
+[package]
+name = "arslan-desktop"
+version = "0.1.0"
+description = "Arslan desktop shell"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# Tauri's own layout: the binary is a thin wrapper so the same code can be
+# reused by the mobile targets later.
+name = "arslan_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# generate_context! expands to code that names serde_json in the crate root, so
+# it must be a direct dependency even though none of our own code uses it.
+serde_json = "1"
+tauri-plugin-updater = "2"
+
+[profile.release]
+# The .dmg carries a 144MB Python sidecar; shaving the Rust side is worth the
+# slower build.
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

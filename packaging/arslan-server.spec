@@ -60,6 +60,18 @@ for pkg in (
     binaries += b
     hiddenimports += h
 
+# The built SPA. server/main.py only mounts the SPA fallback when its static
+# dir EXISTS, so a bundle without this serves 200s on /api/* and a blank window
+# on everything else. build_dmg.sh must run the web build before PyInstaller;
+# fail loudly here rather than shipping that.
+WEB_DIST = os.path.join(ROOT, "web", "dist")
+if not os.path.isdir(os.path.join(WEB_DIST, "assets")):
+    raise SystemExit(
+        f"web assets missing at {WEB_DIST} — run `npm run build` in web/ first. "
+        "Bundling without them produces an app whose window is blank."
+    )
+datas += [(WEB_DIST, "arslan_web")]
+
 a = Analysis(  # noqa: F821 — injected by PyInstaller
     [os.path.join(PACKAGING, "server_entry.py")],
     pathex=[ROOT],

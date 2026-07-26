@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The bundled Python sidecar loads dylibs from python.org builds, which
+       carry a DIFFERENT Team ID than ours. Under the hardened runtime the
+       loader refuses those by default and the sidecar dies at startup, so
+       notarization fails on a binary that never ran. This entitlement is
+       applied ONLY to the sidecar entrypoint (see packaging/build_dmg.sh) —
+       never to the app itself, which needs no such exemption. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

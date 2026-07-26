@@ -52,3 +52,8 @@ docs/superpowers
 # PyInstaller output for the desktop sidecar (packaging/arslan-server.spec)
 packaging/dist/
 packaging/build/
+
+# Tauri build artefacts (the sidecar is staged here by build_dmg.sh)
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/
+desktop/node_modules/

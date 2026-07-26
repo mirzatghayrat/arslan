@@ -1,0 +1,12 @@
+{
+  "name": "arslan-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri shell for the Arslan desktop app. Holds only the CLI and the Rust crate; the UI lives in ../web.",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

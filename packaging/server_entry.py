@@ -21,6 +21,7 @@ be communicated, hence the handshake line below.
 from __future__ import annotations
 
 import os
+import pathlib
 import socket
 import sys
 
@@ -53,6 +54,99 @@ def _sanitize_env() -> None:
     """
     for var in ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH"):
         os.environ.pop(var, None)
+
+    _point_static_dir_into_the_bundle()
+
+
+def _point_static_dir_into_the_bundle() -> None:
+    """Tell the server where the SPA lives inside the frozen app.
+
+    server/config.py defaults static_dir to ``Path(config.py).parent/"static"``,
+    which is a real directory only in a source checkout that has run a build.
+    Inside a PyInstaller bundle that path does not exist, and server/main.py:482
+    guards the whole SPA mount behind ``if static_dir.is_dir()`` — so the
+    fallback route is never registered and every non-API URL 404s.
+
+    The failure mode is the nasty kind: the sidecar starts, /api/v1/health
+    returns 200, and the window is simply blank. Nothing in the logs says why.
+
+    arslan-server.spec stages web/dist at ``_internal/arslan_web``; point at it
+    explicitly rather than relying on __file__ arithmetic, which does not
+    survive freezing. A user-supplied ARSLAN_STATIC_DIR still wins.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    if os.environ.get("ARSLAN_STATIC_DIR"):
+        return
+    bundled = pathlib.Path(getattr(sys, "_MEIPASS", "")) / "arslan_web"
+    if bundled.is_dir():
+        os.environ["ARSLAN_STATIC_DIR"] = str(bundled)
+    else:
+        # Loud, because the alternative is a blank window with no explanation.
+        print(
+            f"WARNING: bundled web assets not found at {bundled} — the UI will "
+            "not load. The build staged no web/dist; see packaging/build_dmg.sh.",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def _die_when_the_shell_does() -> None:
+    """Exit as soon as our parent's end of stdin closes.
+
+    The Tauri shell also kills us on its exit events, but that only covers
+    orderly shutdowns. A crash, a force-quit, or `kill -9` on the shell skips
+    those handlers entirely and leaves this process running — holding the
+    SQLite lock on the user's brain. The next launch then fails in a way that
+    reads like database corruption rather than a stray process.
+
+    Watching stdin needs no cooperation from the parent at all: when the
+    process at the other end of the pipe dies, for any reason, the write end
+    closes and read() returns EOF. That is the only signal available in every
+    case.
+
+    os._exit, not sys.exit: this runs on a daemon thread while uvicorn owns the
+    main one, and a SystemExit here would be swallowed by the thread rather
+    than stopping the server.
+
+    FROZEN ONLY, and that guard is load-bearing rather than tidiness: pytest
+    replaces sys.stdin with an object whose readline() returns "" immediately.
+    Under test that reads as "the parent died" and os._exit(0) takes the whole
+    pytest process down mid-run — which is exactly what happened before this
+    guard existed. The watch loop itself is tested directly via _watch_stdin.
+
+    Also a no-op when stdin is a terminal (someone running the binary by hand)
+    or already closed.
+    """
+    import threading
+
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        if sys.stdin is None or sys.stdin.closed or sys.stdin.isatty():
+            return
+    except (ValueError, OSError):
+        return
+
+    threading.Thread(
+        target=_watch_stdin, args=(sys.stdin,), daemon=True, name="parent-watchdog"
+    ).start()
+
+
+def _watch_stdin(stream, on_eof=None) -> None:
+    """Block until `stream` hits EOF, then exit the process.
+
+    Split out of the thread body so it can be tested with a fake stream and an
+    injected on_eof — otherwise the only way to exercise it would be to let it
+    call os._exit and take the test runner with it.
+    """
+    try:
+        while stream.readline():
+            pass  # The shell sends nothing; any input is simply ignored.
+    except Exception:  # noqa: BLE001 — a broken pipe means the same thing
+        pass
+    print("shell closed our stdin — exiting", file=sys.stderr, flush=True)
+    (on_eof or (lambda: os._exit(0)))()
 
 
 def _free_port() -> int:
@@ -107,12 +201,32 @@ def selftest() -> int:
         except Exception as exc:  # noqa: BLE001 — report them all, not the first
             failed.append((name, f"{type(exc).__name__}: {exc}"))
 
-    if failed:
-        print("SELFTEST FAILED — modules missing from the bundle:", file=sys.stderr)
+    # Importable modules are not enough: every module here can load while the
+    # window still comes up blank, because the SPA is DATA, not code. Assert
+    # the assets the UI is actually served from.
+    asset_errors: list[str] = []
+    if getattr(sys, "frozen", False):
+        web = pathlib.Path(getattr(sys, "_MEIPASS", "")) / "arslan_web"
+        if not (web / "index.html").is_file():
+            asset_errors.append(f"{web}/index.html is missing — the UI cannot load")
+        elif not (web / "assets").is_dir():
+            asset_errors.append(
+                f"{web}/assets is missing — index.html would load with no JS or CSS"
+            )
+
+    if failed or asset_errors:
+        print("SELFTEST FAILED:", file=sys.stderr)
         for name, err in failed:
-            print(f"  {name}: {err}", file=sys.stderr)
+            print(f"  module {name}: {err}", file=sys.stderr)
+        for err in asset_errors:
+            print(f"  assets: {err}", file=sys.stderr)
         return 1
-    print(f"SELFTEST OK ({len(required)} modules importable)", flush=True)
+    print(
+        f"SELFTEST OK ({len(required)} modules importable"
+        + (", web assets present" if getattr(sys, "frozen", False) else "")
+        + ")",
+        flush=True,
+    )
     return 0
 
 
@@ -128,6 +242,8 @@ def main() -> int:
     # pipe here (block-buffered), so without it the shell would wait for the
     # buffer to fill and the app would appear to hang on a blank window.
     print(f"{PORT_LINE_PREFIX}{port}", flush=True)
+
+    _die_when_the_shell_does()
 
     import uvicorn
 

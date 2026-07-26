@@ -226,3 +226,56 @@ def test_selftest_covers_the_module_that_a_bad_excludes_entry_broke(entry):
 
     src = inspect.getsource(entry.selftest)
     assert "server.services.deck_pptx" in src
+
+
+def test_the_lifeline_fires_on_eof_and_only_on_eof(entry):
+    """The sidecar must outlive normal input and die on EOF — both halves.
+
+    Asserting only the EOF case would be satisfied by an implementation that
+    exits immediately on ANY read, which would kill the sidecar the moment it
+    started. Asserting only the keep-reading case would be satisfied by one
+    that never exits at all, leaving the orphan this exists to prevent.
+    """
+    import io
+
+    fired: list[str] = []
+
+    # Lines available, then EOF: the loop must consume all of them first.
+    stream = io.StringIO("noise\nmore noise\n")
+    entry._watch_stdin(stream, on_eof=lambda: fired.append("exit"))
+    assert fired == ["exit"]
+    assert stream.read() == "", "the watcher must consume input, not exit on it"
+
+    # A stream that raises (broken pipe) means the parent is gone too.
+    class Broken:
+        def readline(self):
+            raise OSError("broken pipe")
+
+    fired.clear()
+    entry._watch_stdin(Broken(), on_eof=lambda: fired.append("exit"))
+    assert fired == ["exit"]
+
+
+def test_the_lifeline_is_inert_outside_a_frozen_build(entry, monkeypatch):
+    """Guard against re-introducing the bug that killed the test runner.
+
+    pytest replaces sys.stdin with an object whose readline() returns ""
+    immediately; without the frozen check that reads as "parent died" and
+    os._exit(0) takes pytest down mid-run. It did, once.
+    """
+    started: list[object] = []
+    import threading
+
+    monkeypatch.setattr(
+        threading, "Thread", lambda **kw: started.append(kw) or _NoopThread()
+    )
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    entry._die_when_the_shell_does()
+
+    assert started == [], "the watchdog thread must not start in a source checkout"
+
+
+class _NoopThread:
+    def start(self):  # pragma: no cover — only reached if the guard regresses
+        raise AssertionError("watchdog thread started outside a frozen build")
