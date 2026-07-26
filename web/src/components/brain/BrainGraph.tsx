@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from "d3-force";
 import { select } from "d3-selection";
 import { drag as d3drag } from "d3-drag";
@@ -53,6 +54,7 @@ const W = 760, H = 620;
 const CHARGE = -160, DISTANCE = 70;   // fixed physics (tuning sliders removed)
 
 export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTitle, showTags, glowIds, reloadKey = 0, asOf = null, onData, className }: Props) {
+  const { t } = useTranslation();
   const [data, setData] = useState<BrainGraphDto | null>(null);
   const [nodes, setNodes] = useState<SimNode[]>([]);
   const [links, setLinks] = useState<SimLink[]>([]);
@@ -180,7 +182,7 @@ export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTit
   return (
     <div className={className} style={{ height: "100%", position: "relative" }}>
       <svg ref={svgRef} data-testid="brain-graph" viewBox={`0 0 ${W} ${H}`}
-        style={{ width: "100%", height: "100%", cursor: "grab" }} role="img" aria-label="第二大脑关系图">
+        style={{ width: "100%", height: "100%", cursor: "grab" }} role="img" aria-label={t("brain.graph_aria")}>
         <g ref={gRef}>
           {/* arrowhead for supersede edges — the only DIRECTED relation in the graph */}
           <defs>
@@ -257,7 +259,7 @@ export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTit
       </svg>
 
       <div className="absolute bottom-2 left-2 z-10 rounded bg-surface-raised/70 px-2 py-1 font-mono text-[9px] text-subtle-foreground backdrop-blur">
-        拖拽整理 · 双击幽灵点生成笔记 · 滚轮缩放
+        {t("brain.graph_hint")}
       </div>
     </div>
   );

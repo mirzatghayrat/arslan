@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Upload, UserRound } from "lucide-react";
 import type { BrainBranch, BrainLeaf } from "../../api/client";
 import { feedFile, feedTextOrUrl } from "../../lib/feed";
@@ -37,6 +38,7 @@ interface Props {
  * by provenance); then create/generate/feed + a collapsed index-health strip.
  * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
 export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate, inboxOpen, onToggleInbox }: Props) {
+  const { t } = useTranslation();
   const [q, setQ] = useState("");
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,7 +62,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
   // second-level sub-grouping: profile→category, material→provenance, else flat
   const subGroups = (b: BrainBranch): { key: string; label: string; leaves: BrainLeaf[] }[] | null => {
     if (b.kind !== "profile" && b.kind !== "material") return null;
-    const field = (l: BrainLeaf) => b.kind === "profile" ? (l.category || "未分类") : (l.provenance || "其它");
+    const field = (l: BrainLeaf) => b.kind === "profile" ? (l.category || t("brain.uncategorized")) : (l.provenance || t("brain.other_source"));
     const map = new Map<string, BrainLeaf[]>();
     for (const l of b.children) (map.get(field(l)) ?? map.set(field(l), []).get(field(l))!).push(l);
     return [...map.entries()].map(([key, leaves]) => ({ key, label: key, leaves }));
@@ -85,14 +87,14 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
           tooltip must therefore never promise isolation. Fail-closed on the wire (NULL ⇒
           sensitive), so `=== true` here would be wrong: the backend already resolved it. */}
       {l.sensitive && (
-        <span className="brain-nav__row-lock" title="已标记为敏感" aria-label="已标记为敏感"
+        <span className="brain-nav__row-lock" title={t("brain.sensitive")} aria-label={t("brain.sensitive")}
           data-testid="sensitive-badge">🔒</span>
       )}
       <span className="brain-nav__row-label">{l.label}</span>
       {l.superseded_by != null && (
-        <span className="brain-nav__row-superseded" title="已被更新的版本取代">已取代</span>
+        <span className="brain-nav__row-superseded" title={t("brain.superseded_title")}>{t("brain.superseded")}</span>
       )}
-      {l.usage_count ? <span className="brain-nav__row-usage">用过 {l.usage_count}</span> : null}
+      {l.usage_count ? <span className="brain-nav__row-usage">{t("brain.used_n", { n: l.usage_count })}</span> : null}
     </div>
   );
 
@@ -106,7 +108,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
     const list = Array.from(files ?? []); if (!list.length) return;
     setBusy(true); setErr(null); const failed: string[] = [];
     for (const f of list) { try { await feedFile(f); } catch { failed.push(f.name); } }
-    setBusy(false); if (failed.length) setErr(`未识别/失败:${failed.join("、")}`); onChanged();
+    setBusy(false); if (failed.length) setErr(t("brain.feed_failed", { names: failed.join(", ") })); onChanged();
   };
   const runGenerate = async () => {
     const t = topic.trim(); if (!t || !onGenerate) return;
@@ -116,7 +118,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
   return (
     <aside className="brain-nav">
       <div className="brain-nav__search">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索笔记 / 标签 / 内容…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("brain.search_ph")}
           className="brain-nav__search-input" />
       </div>
 
@@ -152,7 +154,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
                     );
                   })
                 : open && flatKids.map(Row)}
-              {open && !groups && flatKids.length === 0 && <div className="brain-nav__empty">暂无</div>}
+              {open && !groups && flatKids.length === 0 && <div className="brain-nav__empty">{t("brain.empty")}</div>}
             </div>
           );
         })}
@@ -161,8 +163,8 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
       {tagChips.length > 0 && (
         <div className="brain-nav__tags">
           <div className="brain-nav__tags-head">
-            <span>标签</span>
-            <button type="button" className="brain-nav__tags-toggle" title="标签节点在图中显隐"
+            <span>{t("brain.tags")}</span>
+            <button type="button" className="brain-nav__tags-toggle" title={t("brain.tags_toggle_title")}
               onClick={onToggleTags}>
               {showTags ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
             </button>
@@ -180,7 +182,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
                 of view would otherwise trap the user. */}
             {activeTag && (
               <button className="brain-nav__chip brain-nav__chip--clear" onClick={onClearTag}
-                data-testid="clear-tag-filter">清除筛选 ✕</button>
+                data-testid="clear-tag-filter">{t("brain.clear_filter")}</button>
             )}
           </div>
         </div>
@@ -190,22 +192,22 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
         <div className="brain-nav__generate">
           {/* Before this, the ONLY way to create a note was double-clicking a ghost node —
               i.e. you could only write one down if the graph already guessed you wanted it. */}
-          <input value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="＋ 新笔记标题…"
+          <input value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder={t("brain.new_note_ph")}
             data-testid="new-note-input"
             onKeyDown={(e) => { if (e.key === "Enter" && newNote.trim()) { onCreateNote(newNote.trim()); setNewNote(""); } }}
             className="brain-nav__generate-input" />
           <button type="button" disabled={!newNote.trim()} data-testid="new-note-btn"
             onClick={() => { onCreateNote(newNote.trim()); setNewNote(""); }}
-            className="brain-nav__generate-btn">新建</button>
+            className="brain-nav__generate-btn">{t("brain.create")}</button>
         </div>
       )}
 
       {onGenerate && (
         <div className="brain-nav__generate">
-          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="AI 主题生成笔记…"
+          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={t("brain.ai_note_ph")}
             onKeyDown={(e) => { if (e.key === "Enter") void runGenerate(); }} className="brain-nav__generate-input" />
           <button type="button" disabled={generating || !topic.trim()} onClick={() => void runGenerate()}
-            className="brain-nav__generate-btn">{generating ? "生成中…" : "生成"}</button>
+            className="brain-nav__generate-btn">{generating ? t("brain.generating") : t("brain.generate")}</button>
         </div>
       )}
 
@@ -214,12 +216,12 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
 
       <div className="brain-nav__feed">
         {err && <div className="brain-nav__err">{err}</div>}
-        <input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="贴文本 / URL 快速投喂…"
+        <input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder={t("brain.feed_ph")}
           onKeyDown={(e) => { if (e.key === "Enter") void quickFeed(); }} className="brain-nav__feed-input" />
         <div className="brain-nav__feed-btns">
           <button disabled={busy || !feed.trim()} onClick={() => void quickFeed()}
-            className="brain-nav__feed-primary">{busy ? "投喂中…" : "＋ 投喂到共享库"}</button>
-          <button type="button" disabled={busy} title="上传文件(自动按类型归库)"
+            className="brain-nav__feed-primary">{busy ? t("brain.feeding") : t("brain.feed_btn")}</button>
+          <button type="button" disabled={busy} title={t("brain.upload_title")}
             onClick={() => fileRef.current?.click()} className="brain-nav__feed-upload">
             <Upload className="w-4 h-4" />
           </button>
@@ -233,14 +235,14 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
         <div className="brain-nav__inbox-toggle">
           <button type="button" onClick={onToggleInbox} data-testid="inbox-toggle"
             className={inboxOpen ? "is-open" : undefined}>
-            记忆提案箱
+            {t("brain.proposal_inbox")}
           </button>
         </div>
       )}
 
       <div className="brain-nav__health">
         <button className="brain-nav__health-toggle" onClick={() => setHealthOpen((v) => !v)}>
-          <span className="brain-nav__caret">{healthOpen ? "▾" : "▸"}</span> 索引健康
+          <span className="brain-nav__caret">{healthOpen ? "▾" : "▸"}</span> {t("brain.index_health")}
         </button>
         {healthOpen && <BrainIndexHealth />}
       </div>

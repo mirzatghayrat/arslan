@@ -30,6 +30,7 @@ export class ReconnectingSocket {
   private intentionalClose = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   lastMessageId = 0;
+  private outbox: string[] = [];
 
   constructor(path: string, handlers: SocketHandlers) {
     this.path = path;
@@ -65,6 +66,8 @@ export class ReconnectingSocket {
       if (this.lastMessageId > 0) {
         this.send({ type: "resume", last_message_id: this.lastMessageId });
       }
+      // AFTER resume, so replayed history lands before the queued sends.
+      this.flushOutbox();
     };
 
     ws.onmessage = (event: MessageEvent) => {
@@ -105,8 +108,22 @@ export class ReconnectingSocket {
   }
 
   send(obj: unknown): void {
+    // Not-open sockets QUEUE instead of dropping. The old body silently
+    // discarded anything sent while CONNECTING — the packaged app's normal
+    // state for its first seconds — so a user's first message was
+    // optimistically rendered by the caller and never left the machine
+    // (v0.1.0 field bug: bubbles with no reply, gone after navigation).
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(obj));
+      return;
+    }
+    this.outbox.push(JSON.stringify(obj));
+  }
+
+  /** Flush queued frames, in order, once the socket is genuinely open. */
+  private flushOutbox(): void {
+    while (this.outbox.length && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(this.outbox.shift()!);
     }
   }
 

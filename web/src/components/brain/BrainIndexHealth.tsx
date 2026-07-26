@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
 import type { EmbeddingStatus } from "../../api/client.types";
 
@@ -6,6 +7,7 @@ import type { EmbeddingStatus } from "../../api/client.types";
  * embedded/pending chunk counts, and a reindex trigger. Brings the "索引健康"
  * that used to hide in Settings into the brain itself. Best-effort. */
 export default function BrainIndexHealth() {
+  const { t } = useTranslation();
   const [s, setS] = useState<EmbeddingStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +25,7 @@ export default function BrainIndexHealth() {
     return (
       <div className="brain-health" data-testid="brain-health">
         <span className="brain-health__meta brain-health__warn">
-          读不到索引状态 — 这不代表索引没问题,只是这次没查到。
+          {t("brain.health_unreadable")}
         </span>
       </div>
     );
@@ -53,12 +55,12 @@ export default function BrainIndexHealth() {
   return (
     <div className="brain-health" data-testid="brain-health">
       <div className="brain-health__head">
-        <span className="brain-health__title">索引健康</span>
-        <span className="brain-health__model">{s.model ?? "未配置 · 纯 FTS"}</span>
+        <span className="brain-health__title">{t("brain.index_health")}</span>
+        <span className="brain-health__model">{s.model ?? t("brain.health_no_model")}</span>
       </div>
       {!s.model && (
         <div className="brain-health__meta" data-testid="fts-note">
-          纯 FTS 检索:中文长词召回可能偏弱。原始资料不会被改动。
+          {t("brain.health_fts_note")}
         </div>
       )}
       <div className="brain-health__bar">
@@ -66,13 +68,13 @@ export default function BrainIndexHealth() {
       </div>
       <div className="brain-health__row">
         <span className="brain-health__meta" data-testid="brain-health-meta">
-          {empty ? "还没有可索引的内容" : `已嵌入 ${done}/${total}${s.pending ? ` · ${s.pending} 待嵌` : ""}`}
+          {empty ? t("brain.health_empty") : t("brain.health_embedded", { done, total }) + (s.pending ? t("brain.health_pending_suffix", { n: s.pending }) : "")}
         </span>
         {running ? (
-          <span className="brain-health__meta">重建中 {s.reindex.done}/{s.reindex.total}</span>
+          <span className="brain-health__meta">{t("brain.health_rebuilding", { done: s.reindex.done, total: s.reindex.total })}</span>
         ) : s.pending ? (
           <button type="button" className="brain-health__reindex" disabled={busy} onClick={() => void reindex()}>
-            {busy ? "启动中…" : "重建索引"}
+            {busy ? t("brain.health_starting") : t("brain.health_rebuild")}
           </button>
         ) : null}
       </div>

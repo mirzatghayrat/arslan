@@ -38,7 +38,7 @@ describe("BrainNav", () => {
   it("toggles tag-node visibility from the 标签 header", () => {
     const onToggleTags = vi.fn();
     render(<BrainNav {...base} onToggleTags={onToggleTags} />);
-    fireEvent.click(screen.getByTitle("标签节点在图中显隐"));
+    fireEvent.click(screen.getByTitle("brain.tags_toggle_title"));
     expect(onToggleTags).toHaveBeenCalled();
   });
 });

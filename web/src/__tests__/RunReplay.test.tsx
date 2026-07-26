@@ -146,7 +146,7 @@ describe("RunReplay", () => {
       .mockResolvedValue(scored);
     render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
 
-    await screen.findByText(/评分中/);
+    await screen.findByText("replay.scoring");
     await waitFor(() => expect(screen.getByText(/路由匹配/)).toBeTruthy());
   });
 
@@ -165,7 +165,7 @@ describe("RunReplay", () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     (api.getRunsSummary as ReturnType<typeof vi.fn>).mockResolvedValue({ ...SUMMARY, scored_count: 1 });
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText("编排回放");
+    await screen.findByText("replay.title");
     expect(screen.queryByTestId("run-compare")).toBeNull();
   });
 
@@ -173,14 +173,14 @@ describe("RunReplay", () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     (api.getRunsSummary as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText("编排回放");
+    await screen.findByText("replay.title");
     expect(screen.queryByTestId("run-compare")).toBeNull();
   });
 
   it("hides the compare chart while the run is unscored", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(recording);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText(/评分中/);
+    await screen.findByText("replay.scoring");
     expect(screen.queryByTestId("run-compare")).toBeNull();
   });
 
@@ -235,7 +235,7 @@ describe("RunReplay", () => {
     };
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(redacted);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    expect(await screen.findByText(/调试详情已清除/)).toBeTruthy();
+    expect(await screen.findByText("replay.cleared")).toBeTruthy();
   });
 
   it("shows a time-breakdown bar, tool cards with ✓, and the output preview", async () => {
@@ -261,7 +261,7 @@ describe("RunReplay", () => {
   it("hides the full deliverable section when final_output is absent", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText("编排回放");
+    await screen.findByText("replay.title");
     expect(screen.queryByTestId("final-output")).toBeNull();
   });
 
@@ -271,7 +271,7 @@ describe("RunReplay", () => {
     const spy = api.redactRun as ReturnType<typeof vi.fn>;
     spy.mockResolvedValue({ redacted: true });
     render(<RunReplay runId={7} onClose={() => {}} />);
-    fireEvent.click(await screen.findByText(/清除.*调试详情|清除此/));
+    fireEvent.click(await screen.findByText("replay.clear_btn"));
     await waitFor(() => expect(spy).toHaveBeenCalledWith(7));
   });
 
@@ -299,8 +299,8 @@ describe("RunReplay", () => {
     expect(await screen.findByTestId("dims-radar")).toBeTruthy();
     expect(screen.getByTestId("history-spark")).toBeTruthy();
     expect(screen.getByText(/半导体行业笔记/)).toBeTruthy();
-    expect(screen.getByText(/导出 md/)).toBeTruthy();
-    expect(screen.getByText(/导出 json/)).toBeTruthy();
+    expect(screen.getByText("replay.export_md")).toBeTruthy();
+    expect(screen.getByText("replay.export_json")).toBeTruthy();
   });
 
   it("renders a step waterfall with one bar per step, failed tool_call bar uses --danger", async () => {
@@ -342,7 +342,7 @@ describe("RunReplay", () => {
       };
       (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(terminal);
       render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
-      await screen.findByText("编排回放");
+      await screen.findByText("replay.title");
       // Real timers, mirroring the polling test above: at pollMs=10 a leaked
       // timer would refetch several times within this window.
       await new Promise((r) => setTimeout(r, 60));
@@ -362,8 +362,8 @@ describe("RunReplay", () => {
       };
       (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(terminal);
       render(<RunReplay runId={7} onClose={() => {}} />);
-      await screen.findByText("编排回放");
-      expect(screen.queryByText(/评分中/)).toBeNull();
+      await screen.findByText("replay.title");
+      expect(screen.queryByText("replay.scoring")).toBeNull();
       expect(screen.getByText(/working\.stalled/)).toBeTruthy();
     });
   }
@@ -375,7 +375,7 @@ describe("RunReplay", () => {
     });
     (api.getRunsSummary as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText("编排回放");
+    await screen.findByText("replay.title");
     expect(screen.queryByTestId("dims-radar")).toBeNull();
     expect(screen.queryByTestId("history-spark")).toBeNull();
     expect(api.getRuns).not.toHaveBeenCalled();

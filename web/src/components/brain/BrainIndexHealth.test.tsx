@@ -19,7 +19,7 @@ describe("BrainIndexHealth", () => {
     m.embeddingStatus.mockResolvedValue({ model: "bge-small", embedded: 0, pending: 0 });
     render(<BrainIndexHealth />);
     expect((await screen.findByTestId("brain-health-meta")).textContent)
-      .toContain("还没有可索引的内容");
+      .toContain("brain.health_empty");
     expect((document.querySelector(".brain-health__fill") as HTMLElement).style.width)
       .toBe("0%");
   });
@@ -29,20 +29,20 @@ describe("BrainIndexHealth", () => {
     m.embeddingStatus.mockRejectedValue(new Error("boom"));
     render(<BrainIndexHealth />);
     const el = await screen.findByTestId("brain-health");
-    expect(el.textContent).toContain("读不到索引状态");
-    expect(el.textContent).toContain("不代表索引没问题");
+    expect(el.textContent).toContain("brain.health_unreadable");
+    expect(el.textContent).toContain("brain.health_unreadable");
   });
 
   it("says what pure-FTS costs when no embedding model is configured", async () => {
     m.embeddingStatus.mockResolvedValue({ model: null, embedded: 0, pending: 12 });
     render(<BrainIndexHealth />);
-    expect((await screen.findByTestId("fts-note")).textContent).toContain("中文长词召回可能偏弱");
+    expect((await screen.findByTestId("fts-note")).textContent).toContain("brain.health_fts_note");
   });
 
   it("reports real progress when there is a corpus", async () => {
     m.embeddingStatus.mockResolvedValue({ model: "bge-small", embedded: 3, pending: 1 });
     render(<BrainIndexHealth />);
-    expect((await screen.findByTestId("brain-health-meta")).textContent).toContain("已嵌入 3/4");
+    expect((await screen.findByTestId("brain-health-meta")).textContent).toContain("brain.health_embedded");
     expect((document.querySelector(".brain-health__fill") as HTMLElement).style.width).toBe("75%");
   });
 

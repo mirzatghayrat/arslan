@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunSummary } from "../api/client.types";
 import { DIMENSION_LABELS } from "../api/adapters";
@@ -14,6 +15,7 @@ const DIMENSIONS = ["routing", "fabrication", "identity", "completion"] as const
  * the KPI row and the run list (global view only — never under a spawn filter).
  */
 export default function EvalCharts() {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<RunSummary | null>(null);
 
   useEffect(() => {
@@ -71,15 +73,15 @@ export default function EvalCharts() {
       <h4>整体表现</h4>
       <div className="eval-summary__charts" data-testid="eval-charts">
         <div className="eval-chart eval-chart--wide">
-          <div className="eval-chart__title">评分趋势</div>
+          <div className="eval-chart__title">{t("diag.chart_trend")}</div>
           <EChart option={trendOption} height={170} />
         </div>
         <div className="eval-chart">
-          <div className="eval-chart__title">四维平均</div>
+          <div className="eval-chart__title">{t("diag.chart_dims")}</div>
           <EChart option={dimOption} height={180} />
         </div>
         <div className="eval-chart">
-          <div className="eval-chart__title">分身达标率</div>
+          <div className="eval-chart__title">{t("diag.chart_pass")}</div>
           <EChart option={spawnOption} height={180} />
         </div>
       </div>

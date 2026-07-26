@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type BrainLeaf, type GraphNodeDto } from "../../api/client";
 import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
 import { feedFile } from "../../lib/feed";
@@ -12,6 +13,7 @@ import BrainNav from "./BrainNav";
 import NoteEditor from "./NoteEditor";
 
 export default function BrainSection() {
+  const { t } = useTranslation();
   const { branches, loading, error, refresh } = useBrainTree();
   const glowIds = useMemo(() => recentIds(branches), [branches]);
   const allLabels = useMemo(() => branches.flatMap((b) => b.children.map((l) => l.label)), [branches]);
@@ -66,7 +68,7 @@ export default function BrainSection() {
   const createNoteWithTitle = async (title: string) => {
     const n = await api.createNote({ title });
     reloadAll();
-    pick({ kind: "note", ref: `note:${n.id}`, label: n.title, provenance: "手写",
+    pick({ kind: "note", ref: `note:${n.id}`, label: n.title, provenance: t("brain.handwritten"),
       confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 });
   };
   const generateFromTopic = async (topic: string) => { await api.generateNotes(topic); reloadAll(); };
@@ -88,11 +90,11 @@ export default function BrainSection() {
     const files = Array.from(e.dataTransfer?.files ?? []); if (!files.length) return;
     let ok = 0; const failed: string[] = [];
     for (const file of files) {
-      setStatus(`投喂中 ${ok + failed.length + 1}/${files.length}…`);
+      setStatus(t("brain.feeding_progress", { i: ok + failed.length + 1, total: files.length }));
       try { await feedFile(file); ok += 1; } catch { failed.push(file.name); }
     }
     reloadAll();
-    setStatus(failed.length ? `已投喂 ${ok},失败:${failed.join("、")}` : `已投喂 ${ok} 项`);
+    setStatus(failed.length ? t("brain.fed_partial", { n: ok, names: failed.join(", ") }) : t("brain.fed_ok", { n: ok }));
     setTimeout(() => setStatus(null), 4000);
   };
 
@@ -110,7 +112,7 @@ export default function BrainSection() {
 
       <div className="flex-1 relative h-full overflow-hidden">
         {error
-          ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">加载知识图谱失败</div>
+          ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">{t("brain.graph_load_failed")}</div>
           : <BrainGraph litId={lit} onHover={setHoveredId} onPick={pick}
               onCreateNoteWithTitle={(t) => void createNoteWithTitle(t)} showTags={showTags}
               glowIds={glowIds} reloadKey={graphKey} asOf={asOf} onData={setGraphNodes}
@@ -127,7 +129,7 @@ export default function BrainSection() {
           <NoteEditor noteId={Number(picked.ref.split(":")[1])} onClose={() => setPicked(null)}
             onChanged={reloadAll} allLabels={allLabels}
             onOpenNote={(id, title) => pick({ kind: "note", ref: `note:${id}`, label: title,
-              provenance: "手写", confidence: null, usage_count: 0, last_used_at: null,
+              provenance: t("brain.handwritten"), confidence: null, usage_count: 0, last_used_at: null,
               last_used_ref: null, value: 1 })}
             onHover={setHoveredId} />
         ) : picked ? (
@@ -154,7 +156,7 @@ export default function BrainSection() {
       {status && <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 text-[12px] px-3 py-1.5 rounded-lg bg-surface border border-border text-foreground">{status}</div>}
       {dragging && (
         <div data-drop-overlay="1" className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none bg-primary/[0.10] border-2 border-dashed border-primary rounded-2xl">
-          <div className="text-[15px] font-medium text-primary">松开投喂到第二大脑</div>
+          <div className="text-[15px] font-medium text-primary">{t("brain.drop_to_feed")}</div>
         </div>
       )}
     </div>

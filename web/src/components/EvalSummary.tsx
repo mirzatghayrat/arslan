@@ -57,7 +57,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
   };
 
   async function handleClearAll() {
-    if (!window.confirm("确定清除所有 run 的调试详情吗？实际系统提示/注入知识/工具完整入参与原始返回将被清除，分数与耗时不受影响。此操作不可撤销。")) {
+    if (!window.confirm(t("diag.clear_all_confirm"))) {
       return;
     }
     setClearingAll(true);
@@ -85,7 +85,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
     <div className={`eval-summary${inline ? " eval-summary--inline" : ""}`} data-testid="eval-summary">
       {!inline && (
         <header className="eval-summary__head">
-          <span className="eval-summary__title">评估摘要</span>
+          <span className="eval-summary__title">{t("diag.eval_summary")}</span>
           <button className="eval-summary__close" onClick={onClose} aria-label="close">✕</button>
         </header>
       )}
@@ -119,9 +119,9 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
       )}
 
       <div className="eval-summary__kpis">
-        <div className="kpi"><div className="kpi__label">已评分</div><div className="kpi__value">{scored.length}</div></div>
-        <div className="kpi"><div className="kpi__label">平均分</div><div className="kpi__value">{avg ?? "暂无评分"}</div></div>
-        <div className="kpi"><div className="kpi__label">达标率</div><div className="kpi__value">{passRate != null ? `${passRate}%` : "—"}</div></div>
+        <div className="kpi"><div className="kpi__label">{t("diag.scored")}</div><div className="kpi__value">{scored.length}</div></div>
+        <div className="kpi"><div className="kpi__label">{t("diag.avg_score")}</div><div className="kpi__value">{avg ?? t("diag.no_scores")}</div></div>
+        <div className="kpi"><div className="kpi__label">{t("diag.pass_rate")}</div><div className="kpi__value">{passRate != null ? `${passRate}%` : "—"}</div></div>
       </div>
 
       {/* Fleet-wide charts only in the global view — under a per-spawn OR
@@ -130,7 +130,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
       {spawnId == null && !conversationScoped && <EvalCharts />}
 
       {runs.length === 0 ? (
-        <p className="eval-summary__empty">还没有运行记录</p>
+        <p className="eval-summary__empty">{t("diag.no_runs")}</p>
       ) : (
         <ul className="eval-list">
           {runs.map((r) => (
@@ -140,7 +140,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
                 {r.overall_badge ?? ""}
               </span>
               <span className="eval-list__score">
-                {r.status === "scored" && r.overall_score != null ? `${r.overall_score}/10` : "评分中"}
+                {r.status === "scored" && r.overall_score != null ? `${r.overall_score}/10` : t("replay.scoring")}
               </span>
               <span className="eval-list__ms">{r.total_ms != null ? `${(r.total_ms / 1000).toFixed(1)}s` : ""}</span>
               <span className="eval-list__msg">{r.user_message.slice(0, 40)}{r.user_message.length > 40 ? "…" : ""}</span>
@@ -156,7 +156,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
           onClick={handleClearAll}
           disabled={clearingAll}
         >
-          {clearingAll ? "清除中…" : "清除所有调试详情"}
+          {clearingAll ? t("replay.clearing") : t("diag.clear_all_btn")}
         </button>
       </div>
     </div>

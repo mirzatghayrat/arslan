@@ -9,54 +9,56 @@ import EChart from "./EChart";
 import { triggerDownload } from "./MessageBody";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
-const BADGE_LABEL: Record<string, string> = { good: "好", ok: "一般", bad: "差" };
+const BADGE_KEY: Record<string, string> = { good: "replay.badge_good", ok: "replay.badge_ok", bad: "replay.badge_bad" };
+type TFn = (key: string, opts?: Record<string, unknown>) => string;
+const badgeLabel = (t: TFn, b?: string | null) => t(BADGE_KEY[b ?? "ok"]);
 
 // Fixed axis order for the this-run-vs-fleet radar, matching the backend judge dimensions.
 const RADAR_DIMENSIONS = ["routing", "fabrication", "identity", "completion"] as const;
 
 /** Human-readable md export of a run — KPIs, steps, dims/comments, prompt/kb. */
-function buildRunMarkdown(run: UiRun): string {
+function buildRunMarkdown(run: UiRun, t: TFn): string {
   const lines: string[] = [];
   lines.push(`# Run #${run.id}${run.spawnName ? ` · ${run.spawnName}` : ""}`);
   lines.push("");
-  lines.push(`**用户消息**：${run.userMessage}`);
+  lines.push(t("replay.md_user_message", { text: run.userMessage }));
   lines.push("");
   lines.push("## KPI");
-  lines.push(`- 总耗时：${run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—"}`);
-  lines.push(`- 模型：${run.model ?? "—"}`);
+  lines.push(t("replay.md_total", { v: run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—" }));
+  lines.push(t("replay.md_model", { v: run.model ?? "—" }));
   lines.push(`- tokens：${run.taskTokens}${run.tokensEstimated ? "（≈）" : ""}`);
-  lines.push(`- 评分：${run.scored && run.overallScore != null ? `${run.overallScore}/10` : "—"}`);
+  lines.push(t("replay.md_score", { v: run.scored && run.overallScore != null ? `${run.overallScore}/10` : "—" }));
   lines.push("");
-  lines.push("## 它做了什么");
+  lines.push("## " + t("replay.what_it_did"));
   for (const s of run.steps) {
     const ms = s.durationMs != null ? `${s.durationMs}ms` : "—";
     lines.push(`- [${s.kind}] ${s.label}（${ms}）`);
   }
   lines.push("");
-  lines.push("## 做得怎么样");
+  lines.push("## " + t("replay.how_it_went"));
   if (run.scored) {
-    lines.push(`总评：${BADGE_LABEL[run.overallBadge ?? "ok"]} · ${run.overallScore}/10`);
+    lines.push(t("replay.md_overall", { badge: badgeLabel(t, run.overallBadge), score: run.overallScore }));
     for (const d of run.dimensions) {
       lines.push(`- ${d.label}（${Math.round(d.score * 10) / 10}/10）：${d.comment}`);
     }
   } else {
-    lines.push("评分中…");
+    lines.push(t("replay.scoring"));
   }
   if (run.injectedKbSources?.length) {
     lines.push("");
-    lines.push("## 注入知识来源");
+    lines.push("## " + t("replay.injected_sources"));
     for (const src of run.injectedKbSources) lines.push(`- ${src}`);
   }
   if (run.systemPrompt != null) {
     lines.push("");
-    lines.push("## 系统提示");
+    lines.push("## " + t("replay.sys_prompt"));
     lines.push("```");
     lines.push(run.systemPrompt);
     lines.push("```");
   }
   if (run.injectedKb != null) {
     lines.push("");
-    lines.push("## 注入知识");
+    lines.push("## " + t("replay.injected"));
     lines.push("```");
     lines.push(run.injectedKb);
     lines.push("```");
@@ -146,7 +148,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   }, [run?.spawnId]);
 
   async function handleClearThisRun() {
-    if (!window.confirm("确定清除此 run 的调试详情吗？实际系统提示/注入知识/工具完整入参与原始返回将被清除，分数与耗时不受影响。此操作不可撤销。")) {
+    if (!window.confirm(t("replay.confirm_clear"))) {
       return;
     }
     setClearing(true);
@@ -177,9 +179,9 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   const composeMs = Math.max(0, dispatchMs - toolsMs);
   const breakdownTotal = routeMs + toolsMs + composeMs || 1;
   const breakdownSegments = [
-    { key: "route", label: "路由", ms: routeMs, color: "var(--muted-foreground)" },
-    { key: "tools", label: "工具", ms: toolsMs, color: "var(--warning)" },
-    { key: "compose", label: "生成", ms: composeMs, color: "var(--primary)" },
+    { key: "route", label: t("replay.stage_route"), ms: routeMs, color: "var(--muted-foreground)" },
+    { key: "tools", label: t("replay.stage_tools"), ms: toolsMs, color: "var(--warning)" },
+    { key: "compose", label: t("replay.stage_compose"), ms: composeMs, color: "var(--primary)" },
   ];
 
   const outputPreview = run.steps.find((s) => s.kind === "dispatch" && s.detail?.output_preview != null)?.detail
@@ -223,12 +225,12 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
             type: "radar",
             data: [
               {
-                name: "本次",
+                name: t("replay.this_run"),
                 value: RADAR_DIMENSIONS.map((d) => scoreByDim[d] ?? 0),
                 areaStyle: { opacity: 0.18 },
               },
               {
-                name: "舰队平均",
+                name: t("replay.fleet_avg"),
                 value: RADAR_DIMENSIONS.map((d) => dimSummary?.[d] ?? 0),
                 lineStyle: { type: "dashed" as const },
                 areaStyle: { opacity: 0 },
@@ -248,7 +250,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
     <div className="run-replay" data-testid="run-replay">
       <header className="run-replay__head">
         <span className="run-replay__icon" aria-hidden>⟲</span>
-        <span className="run-replay__title">编排回放</span>
+        <span className="run-replay__title">{t("replay.title")}</span>
         <span className="run-replay__sub">run #{run.id} · {run.spawnName ?? ""}</span>
         <button className="run-replay__close" onClick={onClose} aria-label="close">✕</button>
       </header>
@@ -263,11 +265,11 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
       <div className="run-replay__kpis">
         <div className="kpi">
-          <div className="kpi__label">总耗时</div>
+          <div className="kpi__label">{t("replay.total_ms")}</div>
           <div className="kpi__value">{run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—"}</div>
         </div>
         <div className="kpi">
-          <div className="kpi__label">模型</div>
+          <div className="kpi__label">{t("replay.model")}</div>
           <div className="kpi__value kpi__value--text">{run.model ?? "—"}</div>
         </div>
         <div className="kpi">
@@ -275,7 +277,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           <div className="kpi__value">{tokensNode}</div>
         </div>
         <div className="kpi">
-          <div className="kpi__label">评分</div>
+          <div className="kpi__label">{t("replay.score")}</div>
           <div className="kpi__value">
             {run.scored && run.overallScore != null ? `${run.overallScore}/10` : "—"}
           </div>
@@ -283,7 +285,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       </div>
 
       <section className="run-replay__trace">
-        <h4>它做了什么</h4>
+        <h4>{t("replay.what_it_did")}</h4>
 
         <div className="time-breakdown" data-testid="time-breakdown">
           <div className="time-breakdown__bar">
@@ -310,7 +312,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
         {run.steps.length > 0 && (
           <section className="run-replay__waterfall" data-testid="run-waterfall">
-            <h4>步骤瀑布</h4>
+            <h4>{t("replay.waterfall")}</h4>
             {waterfallRows.map((row) => (
               <div className="wf-row" data-testid="wf-row" key={row.seq}>
                 <span className="wf-label" title={row.tooltipLabel}>{row.label}</span>
@@ -359,31 +361,31 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
                     <div className="trace__detail tool-card__body">
                       {detail?.args_summary != null && (
                         <div className="trace__detail-row">
-                          <span className="trace__detail-key">查询</span>
+                          <span className="trace__detail-key">{t("replay.k_query")}</span>
                           <span className="trace__detail-val trace__detail-val--mono">{String(detail.args_summary)}</span>
                         </div>
                       )}
                       {detail?.summary != null && (
                         <div className="trace__detail-row">
-                          <span className="trace__detail-key">结果</span>
+                          <span className="trace__detail-key">{t("replay.k_result")}</span>
                           <span className="trace__detail-val">{String(detail.summary)}</span>
                         </div>
                       )}
                       {s.argsFull != null && (
                         <div className="trace__detail-row trace__detail-row--block">
-                          <span className="trace__detail-key">完整入参</span>
+                          <span className="trace__detail-key">{t("replay.k_full_args")}</span>
                           <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.argsFull}</pre>
                         </div>
                       )}
                       {s.resultRaw != null && (
                         <div className="trace__detail-row trace__detail-row--block">
-                          <span className="trace__detail-key">原始返回</span>
+                          <span className="trace__detail-key">{t("replay.k_raw")}</span>
                           <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{s.resultRaw}</pre>
                         </div>
                       )}
                       {s.error != null && (
                         <div className="trace__detail-row trace__detail-row--block">
-                          <span className="trace__detail-key">工具错误</span>
+                          <span className="trace__detail-key">{t("replay.k_tool_error")}</span>
                           <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre trace__detail-val--error">{s.error}</pre>
                         </div>
                       )}
@@ -411,7 +413,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
                   <div className="trace__detail">
                     {s.kind === "dispatch" && detail?.output_preview != null && (
                       <div className="trace__detail-row">
-                        <span className="trace__detail-key">输出</span>
+                        <span className="trace__detail-key">{t("replay.k_output")}</span>
                         <span className="trace__detail-val trace__detail-val--mono">{String(detail.output_preview)}</span>
                       </div>
                     )}
@@ -419,13 +421,13 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
                       <>
                         {detail?.how != null && (
                           <div className="trace__detail-row">
-                            <span className="trace__detail-key">如何</span>
+                            <span className="trace__detail-key">{t("replay.k_how")}</span>
                             <span className="trace__detail-val">{String(detail.how)}</span>
                           </div>
                         )}
                         {detail?.why != null && (
                           <div className="trace__detail-row">
-                            <span className="trace__detail-key">为何</span>
+                            <span className="trace__detail-key">{t("replay.k_why")}</span>
                             <span className="trace__detail-val">{String(detail.why)}</span>
                           </div>
                         )}
@@ -440,7 +442,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
         {outputPreview != null && (
           <div className="output-preview">
-            <div className="output-preview__label">产出预览</div>
+            <div className="output-preview__label">{t("replay.output_preview")}</div>
             <p className="output-preview__text">{outputPreview}</p>
           </div>
         )}
@@ -451,18 +453,18 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
             is the complete reading path. Absent for plain live runs. */}
         {run.finalOutput != null && (
           <details className="run-replay__final-output" data-testid="final-output">
-            <summary>完整产出</summary>
+            <summary>{t("replay.full_output")}</summary>
             <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{run.finalOutput}</pre>
           </details>
         )}
       </section>
 
       <section className="run-replay__eval">
-        <h4>做得怎么样</h4>
+        <h4>{t("replay.how_it_went")}</h4>
         {run.scored ? (
           <>
             <div className={`verdict verdict--${run.overallBadge ?? "ok"}`}>
-              {BADGE_LABEL[run.overallBadge ?? "ok"]} · {run.overallScore}/10
+              {badgeLabel(t, run.overallBadge)} · {run.overallScore}/10
             </div>
             <ul className="dims">
               {run.dimensions.map((d) => (
@@ -482,7 +484,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
              chat stall/cancel markers (working.stalled = 已中断/Interrupted). */
           <p className="run-replay__pending">⏸ {t("working.stalled")}</p>
         ) : (
-          <p className="run-replay__pending">评分中…</p>
+          <p className="run-replay__pending">{t("replay.scoring")}</p>
         )}
       </section>
 
@@ -490,7 +492,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           Best-effort — hides silently if the summary fetch fails or there are no dims yet. */}
       {showRadar && radarOption && (
         <section className="run-replay__radar" data-testid="dims-radar">
-          <h4>本次 vs 舰队(雷达)</h4>
+          <h4>{t("replay.radar_title")}</h4>
           <EChart option={radarOption} height={230} />
         </section>
       )}
@@ -499,7 +501,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           Hides silently when the run has no spawn or there's no history yet. */}
       {showSparkline && (
         <section className="run-replay__history" data-testid="history-spark">
-          <h4>该分身近期评分</h4>
+          <h4>{t("replay.recent_scores")}</h4>
           <div className="history-spark__bars">
             {historyScored.map((r) => (
               <span
@@ -529,24 +531,24 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
         )}
 
         <details className="run-replay__prompt-details">
-          <summary>实际系统提示 / 注入的知识</summary>
+          <summary>{t("replay.sys_prompt_details")}</summary>
           {hasDebugDetail ? (
             <>
               {run.systemPrompt != null && (
                 <div className="trace__detail-row trace__detail-row--block">
-                  <span className="trace__detail-key">系统提示</span>
+                  <span className="trace__detail-key">{t("replay.sys_prompt")}</span>
                   <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{run.systemPrompt}</pre>
                 </div>
               )}
               {run.injectedKb != null && (
                 <div className="trace__detail-row trace__detail-row--block">
-                  <span className="trace__detail-key">注入知识</span>
+                  <span className="trace__detail-key">{t("replay.injected")}</span>
                   <pre className="trace__detail-val trace__detail-val--mono trace__detail-val--pre">{run.injectedKb}</pre>
                 </div>
               )}
             </>
           ) : (
-            <p className="run-replay__cleared">调试详情已清除</p>
+            <p className="run-replay__cleared">{t("replay.cleared")}</p>
           )}
         </details>
 
@@ -557,21 +559,21 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
             onClick={handleClearThisRun}
             disabled={clearing}
           >
-            {clearing ? "清除中…" : "清除此 run 调试详情"}
+            {clearing ? t("replay.clearing") : t("replay.clear_btn")}
           </button>
           <button
             type="button"
             className="run-replay__export-btn"
-            onClick={() => triggerDownload(`run-${run.id}.md`, buildRunMarkdown(run), "text/markdown;charset=utf-8")}
+            onClick={() => triggerDownload(`run-${run.id}.md`, buildRunMarkdown(run, t), "text/markdown;charset=utf-8")}
           >
-            导出 md
+            {t("replay.export_md")}
           </button>
           <button
             type="button"
             className="run-replay__export-btn"
             onClick={() => triggerDownload(`run-${run.id}.json`, JSON.stringify(run, null, 2), "application/json;charset=utf-8")}
           >
-            导出 json
+            {t("replay.export_json")}
           </button>
         </div>
       </section>

@@ -108,7 +108,7 @@ describe("brain coordinated brushing", () => {
     fireEvent.click(await screen.findByText(/#finance/));
     expect(screen.getByText(/#finance/).className).toContain("is-active");
 
-    fireEvent.click(screen.getByTitle("标签节点在图中显隐"));
+    fireEvent.click(screen.getByTitle("brain.tags_toggle_title"));
 
     // 🔴 Assert the STATE, not the shared observable. My first version only checked that
     // nothing was dimmed — which BrainGraph's own `litExists` guard satisfies whether or
@@ -171,6 +171,6 @@ describe("brain coordinated brushing", () => {
     const rows = await screen.findAllByTestId("brain-nav-row");
     const fact = rows.find((r) => r.textContent?.includes("北京"))!;
     expect(fact.querySelector('[data-testid="sensitive-badge"]')).toBeTruthy();
-    expect(fact.textContent).toContain("已取代");
+    expect(fact.textContent).toContain("brain.superseded");
   });
 });

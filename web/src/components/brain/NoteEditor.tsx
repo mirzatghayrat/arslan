@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { ApiError, api } from "../../api/client";
 import type { NoteDto, NoteSuggestDto } from "../../api/client.types";
@@ -20,6 +21,7 @@ interface Props {
  * label), AI 建议关联 (suggest links from the LLM) + backlinks. Mirrors the
  * dark-orange BrainEntryDetail chrome but is fully editable. */
 export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOpenNote, onHover }: Props) {
+  const { t: tr } = useTranslation();
   const [note, setNote] = useState<NoteDto | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -57,7 +59,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
       // same reason as BrainEntryDetail: a strip row can outlive its note, and
       // "loading…" forever is a worse answer than saying it is gone.
       setLoadErr(e instanceof ApiError && e.status === 404
-        ? "这条笔记已经不存在了(可能已被删除)。" : "读取失败。");
+        ? tr("brain.note_gone") : tr("brain.read_failed"));
     });
     return () => { ok = false; };
   }, [noteId]);
@@ -145,9 +147,9 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
           className="note-editor__title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="笔记标题"
+          placeholder={tr("brain.note_title_ph")}
         />
-        <button onClick={onClose} aria-label="关闭笔记" className="note-editor__close">
+        <button onClick={onClose} aria-label={tr("brain.close_note")} className="note-editor__close">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -167,7 +169,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
               onSelect={syncWikilink}
               onKeyUp={syncWikilink}
               onClick={syncWikilink}
-              placeholder="正文(markdown,用 [[笔记名]] 链接)"
+              placeholder={tr("brain.note_body_ph")}
               rows={12}
             />
             {token && dropdownItems.length > 0 && (
@@ -185,7 +187,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
             {tags.map((t) => (
               <span key={t} className="note-editor__tag">
                 {t}
-                <button type="button" aria-label={`移除标签 ${t}`} onClick={() => removeTag(t)}>×</button>
+                <button type="button" aria-label={tr("brain.remove_tag", { tag: t })} onClick={() => removeTag(t)}>×</button>
               </span>
             ))}
             <input
@@ -193,24 +195,24 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
-              placeholder="＋ 标签"
+              placeholder={tr("brain.add_tag_ph")}
             />
           </div>
 
           <div className="note-editor__actions">
             <button className="note-editor__save" disabled={saving} onClick={() => void save()}>
-              {saving ? "保存中…" : "保存"}
+              {saving ? tr("brain.saving") : tr("brain.save")}
             </button>
-            <button className="note-editor__delete" onClick={() => void remove()}>删除</button>
+            <button className="note-editor__delete" onClick={() => void remove()}>{tr("brain.delete")}</button>
             <button className="note-editor__ai" disabled={suggestBusy} onClick={() => void runSuggest()}>
-              {suggestBusy ? "分析中…" : "AI 建议关联"}
+              {suggestBusy ? tr("brain.analyzing") : tr("brain.ai_suggest")}
             </button>
           </div>
 
           {suggest && (
             <div className="note-editor__suggestions">
               {suggest.suggestions.length === 0 && suggest.tags.length === 0 ? (
-                <div className="note-editor__empty">没有建议</div>
+                <div className="note-editor__empty">{tr("brain.no_suggestions")}</div>
               ) : (
                 <>
                   {suggest.suggestions.map((s, i) => (
@@ -221,13 +223,13 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
                       </div>
                       <div className="note-editor__sugg-reason">{s.reason}</div>
                       <button type="button" className="note-editor__sugg-insert" onClick={() => insertSuggestedLink(s.target)}>
-                        插入 [[链接]]
+                        {tr("brain.insert_link")}
                       </button>
                     </div>
                   ))}
                   {suggest.tags.map((t) => (
                     <button key={t} type="button" className="note-editor__sugg-tag" onClick={() => addSuggestedTag(t)}>
-                      加标签 {t}
+                      {tr("brain.add_tag_n", { tag: t })}
                     </button>
                   ))}
                 </>
@@ -236,9 +238,9 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
           )}
 
           <div className="note-editor__backlinks">
-            <div className="note-editor__backlinks-label">被链接</div>
+            <div className="note-editor__backlinks-label">{tr("brain.backlinks")}</div>
             {(note.backlinks ?? []).length === 0 ? (
-              <div className="note-editor__empty">暂无</div>
+              <div className="note-editor__empty">{tr("brain.empty")}</div>
             ) : (
               (note.backlinks ?? []).map((b) => (
                 <button key={b.id} type="button" className="note-editor__backlink"
@@ -248,7 +250,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
                   onClick={() => {
                     // 🔴 Navigating away would DISCARD unsaved edits with no prompt —
                     // silent data loss, and the edits are the user's own typing. Ask.
-                    if (dirty && !window.confirm("这条笔记有未保存的修改,离开会丢失。仍要打开被链接的笔记吗?")) return;
+                    if (dirty && !window.confirm(tr("brain.unsaved_confirm"))) return;
                     onOpenNote?.(b.id, b.title);
                   }}>
                   {b.title}

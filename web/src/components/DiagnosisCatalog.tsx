@@ -16,10 +16,10 @@ interface Props {
 
 type RangeKey = "1h" | "24h" | "all";
 
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "1h", label: "近1h" },
-  { key: "24h", label: "24h" },
-  { key: "all", label: "全部" },
+const RANGES: { key: RangeKey; labelKey: string }[] = [
+  { key: "1h", labelKey: "diag.range_1h" },
+  { key: "24h", labelKey: "diag.range_24h" },
+  { key: "all", labelKey: "diag.range_all" },
 ];
 
 /** Color a metric cell by fleet/spawn health so RED problems pop out of the table. */
@@ -130,7 +130,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
             className={`diag-catalog__range-btn${range === r.key ? " diag-catalog__range-btn--active" : ""}`}
             onClick={() => setRange(r.key)}
           >
-            {r.label}
+            {t(r.labelKey)}
           </button>
         ))}
       </div>
@@ -139,11 +139,11 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
 
       <div className={`diag-catalog__cards${narrow ? " diag-catalog__cards--narrow" : ""}`}>
         <div className="diag-card">
-          <div className="diag-card__label">运行数</div>
+          <div className="diag-card__label">{t("diag.runs")}</div>
           <div className="diag-card__value">{fleet?.run_count ?? "—"}</div>
         </div>
         <div className="diag-card">
-          <div className="diag-card__label">错误率</div>
+          <div className="diag-card__label">{t("diag.error_rate")}</div>
           <div className="diag-card__value">
             {fleet ? `${Math.round(fleet.error_ratio * 100)}%` : "—"}
           </div>
@@ -153,7 +153,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
           <div className="diag-card__value">{fleet ? fmtP95(fleet.p95_ms) : "—"}</div>
         </div>
         <div className="diag-card">
-          <div className="diag-card__label">达标率</div>
+          <div className="diag-card__label">{t("diag.pass_rate")}</div>
           <div className="diag-card__value">
             {fleet ? `${fleet.pass_rate ?? "—"}%` : "—"}
           </div>
@@ -173,12 +173,12 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
           onClick={() => setAnomOpen((o) => !o)}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setAnomOpen((o) => !o); }}
         >
-          异常 · 断言 {anomalies.length}
+          {t("diag.anomalies_n", { n: anomalies.length })}
           <span className={`diag-catalog__anomalies-chevron${anomOpen ? " diag-catalog__anomalies-chevron--open" : ""}`}>▾</span>
         </div>
       ) : (
         <div className="diag-catalog__anomalies diag-catalog__anomalies--empty" data-testid="anomaly-badge">
-          无异常
+          {t("diag.no_anomalies")}
         </div>
       )}
 
@@ -197,7 +197,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
                 className="anomaly-row__jump"
                 onClick={() => onSelectSpawn(a.spawn_id, a.spawn_name)}
               >
-                查 →
+                {t("diag.inspect")}
               </button>
             </div>
           ))}
@@ -207,7 +207,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
       <AnomalyTimeline range={range} onSelectSpawn={onSelectSpawn} />
 
       {loading && spawns.length === 0 ? (
-        <p className="diag-catalog__empty">加载中…</p>
+        <p className="diag-catalog__empty">{t("diag.loading")}</p>
       ) : spawns.length === 0 ? (
         <p className="diag-catalog__empty">{t("eval.empty", "还没有运行记录")}</p>
       ) : narrow ? (
@@ -230,7 +230,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
                 </div>
               </div>
               <div className="diag-card-row__stat" style={{ color: healthColor(s.health) }}>
-                {s.run_count} run · 达标 {s.pass_rate ?? "—"}% · P95 {fmtP95(s.p95_ms)}
+                {t("diag.run_stat_line", { count: s.run_count, pass: s.pass_rate ?? "—", p95: fmtP95(s.p95_ms) })}
               </div>
               <div className="diag-card-row__sparks">
                 <LineSpark points={s.rate_trend} color="var(--primary)" />
@@ -248,14 +248,14 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
         <table className="diag-table">
           <thead>
             <tr>
-              <th>健康度</th>
-              <th>分身</th>
-              <th>运行数</th>
-              <th>错误率</th>
+              <th>{t("diag.health")}</th>
+              <th>{t("diag.spawn")}</th>
+              <th>{t("diag.runs")}</th>
+              <th>{t("diag.error_rate")}</th>
               <th>P95</th>
-              <th>达标率</th>
+              <th>{t("diag.pass_rate")}</th>
               <th>tokens</th>
-              <th>趋势</th>
+              <th>{t("diag.trend")}</th>
             </tr>
           </thead>
           <tbody>

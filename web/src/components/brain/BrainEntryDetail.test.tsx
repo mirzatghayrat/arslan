@@ -83,7 +83,7 @@ describe("BrainEntryDetail", () => {
     render(<BrainEntryDetail leaf={LEAF("profile", "fact:1")} onClose={() => {}} />);
     expect(await screen.findByTestId("entry-sensitive")).toBeTruthy();
     const note = screen.getByTestId("sensitive-note").textContent ?? "";
-    expect(note).toContain("不是隔离");
+    expect(note).toContain("brain.sensitive_note");
     expect(screen.getByText("住在北京")).toBeTruthy();   // content IS still shown
   });
 
@@ -103,6 +103,6 @@ describe("BrainEntryDetail", () => {
     m.getBrainEntry.mockRejectedValue(
       new (ApiError as unknown as new (m: string, s: number) => Error)("not found", 404));
     render(<BrainEntryDetail leaf={LEAF("profile", "fact:404")} onClose={() => {}} />);
-    expect((await screen.findByTestId("entry-load-error")).textContent).toContain("已经不存在");
+    expect((await screen.findByTestId("entry-load-error")).textContent).toContain("brain.entry_gone");
   });
 });

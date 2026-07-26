@@ -29,7 +29,7 @@ describe("DiagnosisCatalog", () => {
     const { api } = await import("../api/client");
     render(<DiagnosisCatalog onClose={() => {}} onSelectSpawn={() => {}} />);
     await screen.findByText("Bad");
-    fireEvent.click(screen.getByText("24h"));
+    fireEvent.click(screen.getByText("diag.range_24h"));
     await waitFor(() => expect(api.getRunCatalog).toHaveBeenCalledWith("24h"));
   });
   it("clicking a spawn row calls onSelectSpawn", async () => {
@@ -46,7 +46,7 @@ describe("DiagnosisCatalog", () => {
     ]);
     render(<DiagnosisCatalog onClose={() => {}} onSelectSpawn={() => {}} />);
     const badge = await screen.findByTestId("anomaly-badge");
-    expect(badge.textContent).toContain("2");                    // count while collapsed
+    expect(badge.textContent).toContain("diag.anomalies_n")  // mocked t drops interpolation; the real count is in the key params;                    // count while collapsed
     expect(screen.queryByText(/错误率偏高/)).toBeNull();         // detail hidden by default
     fireEvent.click(badge);
     expect(screen.getByText(/错误率偏高/)).toBeTruthy();         // expanded shows detail

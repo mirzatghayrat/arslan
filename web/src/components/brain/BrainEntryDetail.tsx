@@ -47,8 +47,8 @@ export default function BrainEntryDetail(
         setEntry(null);
         setLoadErr(
           e instanceof ApiError && e.status === 404
-            ? "这条记忆已经不存在了(可能已被删除)。"
-            : "读取失败。",
+            ? t("brain.entry_gone")
+            : t("brain.read_failed"),
         );
       });
     return () => { token.ok = false; };
@@ -88,11 +88,11 @@ export default function BrainEntryDetail(
       <div className="flex items-center justify-between mb-3">
         <span className="text-[13px] font-medium text-foreground truncate">
           {entry?.sensitive && (
-            <span title="已标记为敏感" data-testid="entry-sensitive" className="mr-1">🔒</span>
+            <span title={t("brain.sensitive")} data-testid="entry-sensitive" className="mr-1">🔒</span>
           )}
           {leaf.label}
         </span>
-        <button onClick={onClose} aria-label="关闭详情" className="text-subtle-foreground hover:text-foreground">
+        <button onClick={onClose} aria-label={t("brain.close_detail")} className="text-subtle-foreground hover:text-foreground">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -106,8 +106,8 @@ export default function BrainEntryDetail(
         <>
           <div className="text-[10.5px] text-subtle-foreground font-mono mb-2">
             {entry.provenance ?? ""}
-            {` · 用过 ${entry.usage_count}`}
-            {entry.last_used_ref ? ` · 最近用于 ${entry.last_used_ref}` : ""}
+            {t("brain.used_n_dot", { n: entry.usage_count })}
+            {entry.last_used_ref ? t("brain.last_used_for", { ref: entry.last_used_ref }) : ""}
           </div>
 
           {/* F1 — valid_from has been on this payload since P1 and nothing rendered it.
@@ -124,7 +124,7 @@ export default function BrainEntryDetail(
 
           {entry.superseded_by != null && (
             <div className="mb-2 text-[11px] text-warning" data-testid="entry-superseded">
-              已被 #{entry.superseded_by} 取代 — 不再注入给分身
+              {t("brain.superseded_by_line", { id: entry.superseded_by })}
               {/* 🔴 The END of a belief is DERIVED from its successor's valid_from and
                   is not available here (this panel fetches one entry). Rather than
                   show a number that might be wrong, say nothing about when — the
@@ -133,7 +133,7 @@ export default function BrainEntryDetail(
               {canUndo && (
                 <button className="ml-2 underline disabled:opacity-50" disabled={undoing}
                   onClick={() => void undo()} data-testid="undo-supersede">
-                  {undoing ? "撤销中…" : "撤销取代"}
+                  {undoing ? t("brain.undoing") : t("brain.undo_supersede")}
                 </button>
               )}
             </div>
@@ -142,7 +142,7 @@ export default function BrainEntryDetail(
 
           {entry.sensitive && (
             <div className="mb-2 text-[10.5px] text-subtle-foreground" data-testid="sensitive-note">
-              已标记为敏感。这是一个显示提示,不是隔离 —— 内容照常返回给读取它的界面。
+              {t("brain.sensitive_note")}
             </div>
           )}
 
@@ -150,7 +150,7 @@ export default function BrainEntryDetail(
 
           {entry.provenance_record && Object.keys(entry.provenance_record).length > 0 && (
             <details className="mt-3 text-[10.5px] text-subtle-foreground" data-testid="provenance-record">
-              <summary className="cursor-pointer">出处记录</summary>
+              <summary className="cursor-pointer">{t("brain.provenance")}</summary>
               <pre className="mt-1 whitespace-pre-wrap break-all font-mono">
                 {JSON.stringify(entry.provenance_record, null, 2)}
               </pre>

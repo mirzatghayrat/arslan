@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type BrainLeaf, type BrainUsageEventsDto } from "../../api/client";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
@@ -62,6 +63,7 @@ function groupRows(dto: BrainUsageEventsDto): { rows: Row[]; hidden: number } {
 }
 
 function BrainActivityStrip({ litId, onHover, onPick, reloadKey = 0 }: Props) {
+  const { t } = useTranslation();
   const [dto, setDto] = useState<BrainUsageEventsDto | null>(null);
   const [failed, setFailed] = useState(false);
   const reduced = usePrefersReducedMotion();
@@ -92,7 +94,7 @@ function BrainActivityStrip({ litId, onHover, onPick, reloadKey = 0 }: Props) {
     return (
       <div className="brain-strip brain-strip--msg" data-testid="brain-strip">
         <span className="brain-strip__warn">
-          活跃时间条暂时不可用(使用事件表可能尚未迁移)。这不代表这些记忆没被用过。
+          {t("brain.strip_unavailable")}
         </span>
       </div>
     );
@@ -140,16 +142,16 @@ function BrainActivityStrip({ litId, onHover, onPick, reloadKey = 0 }: Props) {
           empty stretch of the raster reads as "nothing was used then". */}
       <div className="brain-strip__note" data-testid="brain-strip-note">
         <span data-testid="strip-window">
-          只显示最近 {WINDOW_DAYS} 天。更早的记录可能已被保留策略清掉,不代表那时没用过。
+          {t("brain.strip_window", { days: WINDOW_DAYS })}
         </span>
-        {rows.length === 0 && <span data-testid="strip-empty">这段时间没有记录到检索。</span>}
+        {rows.length === 0 && <span data-testid="strip-empty">{t("brain.strip_empty")}</span>}
         {dto.truncated && (
           <span className="brain-strip__warn">
-            已截断:只显示最近 {dto.applied_limit} 次,更早的部分不在图中。
+            {t("brain.strip_truncated", { n: dto.applied_limit })}
           </span>
         )}
         {hidden > 0 && (
-          <span data-testid="strip-hidden">另有 {hidden} 条记忆未显示(只画最活跃的 {MAX_ROWS} 条)。</span>
+          <span data-testid="strip-hidden">{t("brain.strip_hidden", { hidden, max: MAX_ROWS })}</span>
         )}
         <span>{dto.coverage_note}</span>
       </div>

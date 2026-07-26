@@ -52,8 +52,8 @@ describe("BrainActivityStrip", () => {
     m.getBrainUsageEvents.mockRejectedValue(new Error("503"));
     render(<BrainActivityStrip {...props} />);
     const el = await screen.findByTestId("brain-strip");
-    expect(el.textContent).toContain("暂时不可用");
-    expect(el.textContent).toContain("不代表这些记忆没被用过");
+    expect(el.textContent).toContain("brain.strip_unavailable");
+    // (same key carries the "does not mean unused" honesty text in every locale)
     expect(document.querySelectorAll("[data-strip-row]").length).toBe(0);
   });
 
@@ -70,7 +70,7 @@ describe("BrainActivityStrip", () => {
     m.getBrainUsageEvents.mockResolvedValue(DTO({ truncated: true, applied_limit: 5000 }));
     render(<BrainActivityStrip {...props} />);
     const note = await screen.findByTestId("brain-strip-note");
-    expect(note.textContent).toContain("已截断");
+    expect(note.textContent).toContain("brain.strip_truncated");
   });
 
   it("does not draw a row for a kind that produces no events", async () => {
@@ -92,7 +92,7 @@ describe("BrainActivityStrip", () => {
     // Retention can be set BELOW the window, in which case pruned days render blank.
     // The component cannot know the setting, so it says what it asked for.
     render(<BrainActivityStrip {...props} />);
-    expect((await screen.findByTestId("strip-window")).textContent).toContain("保留策略");
+    expect((await screen.findByTestId("strip-window")).textContent).toContain("brain.strip_window");
   });
 
   it("says so when rows were dropped by the row cap", async () => {
@@ -103,13 +103,13 @@ describe("BrainActivityStrip", () => {
     }));
     m.getBrainUsageEvents.mockResolvedValue(DTO({ events: many }));
     render(<BrainActivityStrip {...props} />);
-    expect((await screen.findByTestId("strip-hidden")).textContent).toContain("未显示");
+    expect((await screen.findByTestId("strip-hidden")).textContent).toContain("brain.strip_hidden");
   });
 
   it("says nothing was recorded rather than drawing a blank raster silently", async () => {
     m.getBrainUsageEvents.mockResolvedValue(DTO({ events: [] }));
     render(<BrainActivityStrip {...props} />);
-    expect((await screen.findByTestId("strip-empty")).textContent).toContain("没有记录到检索");
+    expect((await screen.findByTestId("strip-empty")).textContent).toContain("brain.strip_empty");
   });
 
   it("opens a row under a readable name, not a raw ref key", async () => {

@@ -52,7 +52,7 @@ describe("NoteEditor", () => {
   it("clicking AI 建议关联 lists a suggestion", async () => {
     render(<NoteEditor noteId={1} onClose={() => {}} onChanged={() => {}} allLabels={[]} />);
     await waitFor(() => expect(screen.getByDisplayValue("OKX 模板")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("AI 建议关联"));
+    fireEvent.click(screen.getByText("brain.ai_suggest"));
     await waitFor(() => expect(screen.getByText(/同讲 OKX/)).toBeInTheDocument());
     expect(screen.getByText("材料库", { selector: ".note-editor__sugg-target" })).toBeInTheDocument();
   });
@@ -63,7 +63,7 @@ describe("NoteEditor", () => {
     render(<NoteEditor noteId={1} onClose={() => {}} onChanged={onChanged} allLabels={[]} />);
     const title = await screen.findByDisplayValue("OKX 模板");
     fireEvent.change(title, { target: { value: "OKX 模板 v2" } });
-    fireEvent.click(screen.getByText("保存"));
+    fireEvent.click(screen.getByText("brain.save"));
     await waitFor(() => expect(api.updateNote).toHaveBeenCalledWith(1, expect.objectContaining({ title: "OKX 模板 v2" })));
     expect(onChanged).toHaveBeenCalled();
   });
@@ -74,7 +74,7 @@ describe("NoteEditor", () => {
     const { api } = await import("../../api/client");
     render(<NoteEditor noteId={1} onClose={onClose} onChanged={onChanged} allLabels={[]} />);
     await waitFor(() => expect(screen.getByDisplayValue("OKX 模板")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("brain.delete"));
     await waitFor(() => expect(api.deleteNote).toHaveBeenCalledWith(1));
     expect(onChanged).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();

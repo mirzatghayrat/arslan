@@ -49,20 +49,20 @@ describe("EvalSummary", () => {
     render(<EvalSummary onClose={() => {}} />);
     await screen.findByText("小美");
     expect(screen.getByText("Mermer")).toBeTruthy();
-    expect(screen.getByText(/评分中/)).toBeTruthy();
+    expect(screen.getByText("replay.scoring")).toBeTruthy();
   });
 
   it("drills into RunReplay on row click", async () => {
     render(<EvalSummary onClose={() => {}} />);
     const row = await screen.findByText("小美");
     fireEvent.click(row);
-    await screen.findByText("编排回放");
+    await screen.findByText("replay.title");
   });
 
   it("shows empty state", async () => {
     m.getRuns.mockResolvedValue([]);
     render(<EvalSummary onClose={() => {}} />);
-    await screen.findByText(/还没有运行记录/);
+    await screen.findByText("diag.no_runs");
   });
 
   // Aggregate charts live between the KPI row and the run list, but only in
@@ -71,9 +71,9 @@ describe("EvalSummary", () => {
     render(<EvalSummary onClose={() => {}} />);
     await screen.findByTestId("eval-charts");
     expect(screen.getAllByTestId("echart-stub")).toHaveLength(3);
-    expect(screen.getByText("评分趋势")).toBeTruthy();
-    expect(screen.getByText("四维平均")).toBeTruthy();
-    expect(screen.getByText("分身达标率")).toBeTruthy();
+    expect(screen.getByText("diag.chart_trend")).toBeTruthy();
+    expect(screen.getByText("diag.chart_dims")).toBeTruthy();
+    expect(screen.getByText("diag.chart_pass")).toBeTruthy();
   });
 
   it("renders no charts when filtered to a spawn", async () => {

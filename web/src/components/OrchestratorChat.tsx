@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ArrowRight, Terminal,
   AlertTriangle, CheckCircle2, XOctagon,
@@ -43,6 +43,9 @@ function RunCancelledMarker() {
     </div>
   );
 }
+
+// Composer drafts by conversation — module scope so they outlive the component.
+const composerDrafts = new Map<string, string>();
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -157,7 +160,19 @@ export default function OrchestratorChat({
   }, [turnActive]);
   const llmError = useArslanStore((s) => s.error);
   const clearLlmError = useArslanStore((s) => s.clearError);
-  const [inputValue, setInputValue] = useState('');
+  // Draft survives unmount. The composer used to hold its text in plain
+  // component state, so switching to Settings (say, to fix an API key) and
+  // back destroyed whatever was typed — reported from the first packaged
+  // install, where that round-trip is the very first thing a new user does.
+  // Module-level map keyed by conversation: deliberately NOT localStorage
+  // (drafts are session-scoped, and persisting every keystroke to disk buys
+  // nothing) and NOT a re-render source (read once on mount).
+  const draftKey = conversationId ?? 'main';
+  const [inputValue, _setInputValue] = useState(() => composerDrafts.get(draftKey) ?? '');
+  const setInputValue = useCallback((v: string) => {
+    composerDrafts.set(draftKey, v);
+    _setInputValue(v);
+  }, [draftKey]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attach = useComposerAttach(setAttachments);
 

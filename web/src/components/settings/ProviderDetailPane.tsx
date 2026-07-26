@@ -109,10 +109,10 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
     return (
       <div
         data-testid="provider-detail-pane"
-        className="flex-1 min-w-0 flex flex-wrap items-start gap-2 bg-surface border border-primary/30 rounded-xl px-4 py-3"
+        className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3 items-start bg-surface border border-primary/30 rounded-xl px-4 py-4"
       >
         {/* Provider select */}
-        <div className="flex-1 min-w-[120px]">
+        <div className="min-w-0">
           <Select
             value={draft.provider}
             onChange={props.onDraftProviderChange}
@@ -122,7 +122,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         </div>
 
         {/* Model combobox (static seed options until the config is saved) */}
-        <div className="flex-1 min-w-[160px]">
+        <div className="min-w-0">
           <ModelCombobox
             data-testid="provider-draft-model"
             value={draft.model}
@@ -134,7 +134,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
 
         {/* Base URL (non-native providers only) — part of the draft payload */}
         {!isNative(draft.provider) && (
-          <div className="flex-1 min-w-[120px]">
+          <div className="sm:col-span-2 min-w-0">
             <input
               type="text"
               data-testid="provider-draft-baseurl"
@@ -148,7 +148,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         )}
 
         {/* API key */}
-        <div className="flex-1 min-w-[100px]">
+        <div className="sm:col-span-2 min-w-0">
           <input
             type="password"
             value={draft.api_key}
@@ -159,7 +159,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         </div>
 
         {/* Confirm / Cancel */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="sm:col-span-2 flex items-center gap-2 flex-wrap pt-1 border-t border-border/40">
           <button
             type="button"
             data-testid="provider-draft-confirm"
@@ -219,10 +219,10 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
   return (
     <div
       data-testid="provider-detail-pane"
-      className="flex-1 min-w-0 flex flex-wrap items-start gap-2 bg-surface border border-border rounded-xl px-4 py-3"
+      className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3 items-start bg-surface border border-border rounded-xl px-4 py-4"
     >
       {/* Provider select */}
-      <div className="flex-1 min-w-[120px]">
+      <div className="min-w-0">
         <Select
           data-testid={`provider-config-provider-${index}`}
           id={`provider-config-provider-${index}`}
@@ -234,7 +234,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
       </div>
 
       {/* Model combobox (dynamic catalog, lazy-fetched on first focus) */}
-      <div className="flex-1 min-w-[160px]" onFocus={props.onModelFocus}>
+      <div className="min-w-0" onFocus={props.onModelFocus}>
         <ModelCombobox
           data-testid={`provider-config-model-${index}`}
           value={config.model}
@@ -271,7 +271,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
 
       {/* Base URL (non-native providers only) — saved on blur */}
       {!native && (
-        <div className="flex-1 min-w-[120px]">
+        <div className="sm:col-span-2 min-w-0">
           <input
             type="text"
             ref={(el) => {
@@ -294,7 +294,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           the inline status line are driven by the honest key_status so an
           undecryptable key (ARSLAN_SECRET_KEY changed) never reads as a plain
           "requires API key". */}
-      <div className="flex-1 min-w-[100px]">
+      <div className="sm:col-span-2 min-w-0">
         <input
           type="password"
           data-testid={`provider-config-key-${index}`}
