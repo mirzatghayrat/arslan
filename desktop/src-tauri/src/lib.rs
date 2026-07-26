@@ -17,6 +17,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_updater::UpdaterExt;
 
 /// Must match `PORT_LINE_PREFIX` in packaging/server_entry.py. Changing either
 /// side alone leaves the window stuck on the splash screen forever.
@@ -187,9 +189,96 @@ fn read_api_token() -> Option<String> {
     }
 }
 
+/// Check the release feed once, in the background, and walk the user through
+/// installing if there is something newer.
+///
+/// This call is the entire difference between "auto-update works" and "every
+/// installed copy is stranded forever": Tauri v2's updater is fully
+/// programmatic — registering the plugin wires the keys and the endpoint but
+/// checks NOTHING on its own. v0.1.0/v0.1.1 shipped exactly that way, which
+/// is why they never showed a prompt and had to be replaced by hand.
+///
+/// Every failure path is silent BY DESIGN except a failed install: an offline
+/// machine or an unreachable feed is a normal morning, not an error the user
+/// can act on. README's Status section discloses that silence.
+fn check_for_updates(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let updater = match app.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("updater unavailable: {e}");
+                return;
+            }
+        };
+        let update = match updater.check().await {
+            Ok(Some(u)) => u,
+            Ok(None) => return, // already newest
+            Err(e) => {
+                eprintln!("update check failed (offline is normal): {e}");
+                return;
+            }
+        };
+
+        let version = update.version.clone();
+        let notes = update.body.clone().unwrap_or_default();
+        let yes = app
+            .dialog()
+            .message(format!(
+                "Arslan {version} is available.
+
+{}
+
+Download and install now?",
+                notes.trim()
+            ))
+            .title("Update available")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Install".into(),
+                "Later".into(),
+            ))
+            .blocking_show();
+        if !yes {
+            return;
+        }
+
+        // Signature verification against the compiled-in pubkey happens inside
+        // download_and_install; a tampered artefact fails here, not after.
+        match update.download_and_install(|_, _| {}, || {}).await {
+            Ok(()) => {
+                let restart = app
+                    .dialog()
+                    .message(format!(
+                        "Arslan {version} is installed. Restart now to use it?"
+                    ))
+                    .title("Update ready")
+                    .kind(MessageDialogKind::Info)
+                    .buttons(MessageDialogButtons::OkCancelCustom(
+                        "Restart".into(),
+                        "Later".into(),
+                    ))
+                    .blocking_show();
+                if restart {
+                    app.restart();
+                }
+            }
+            Err(e) => {
+                // The ONE failure worth surfacing: the user said "install" and
+                // it did not happen.
+                app.dialog()
+                    .message(format!("The update could not be installed: {e}"))
+                    .title("Update failed")
+                    .kind(MessageDialogKind::Error)
+                    .blocking_show();
+            }
+        }
+    });
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -231,6 +320,11 @@ pub fn run() {
             }
 
             win.build()?;
+
+            // AFTER the window exists: a blocking dialog with no window behind
+            // it can appear beneath other apps, and an update prompt before
+            // the app has even shown itself reads as malware.
+            check_for_updates(handle);
             Ok(())
         })
         .build(tauri::generate_context!())
