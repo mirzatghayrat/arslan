@@ -13,13 +13,17 @@
 <br/>
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-4c72e0?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS--first-8a63f4?style=flat-square)](#-status--honest-about-whats-proven)
+[![Platform](https://img.shields.io/badge/platform-macOS--first-8a63f4?style=flat-square)](#status--honest-about-whats-proven)
 [![Python](https://img.shields.io/badge/python-3.11%2B-e6863c?style=flat-square)](pyproject.toml)
 [![Frontend](https://img.shields.io/badge/react-19_%2B_TS_%2B_Vite-ff9ffc?style=flat-square)](web/)
-[![Status](https://img.shields.io/badge/status-pre--v1-orange?style=flat-square)](#-status--honest-about-whats-proven)
+[![Status](https://img.shields.io/badge/status-pre--v1-orange?style=flat-square)](#status--honest-about-whats-proven)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-2ea44f?style=flat-square)](CONTRIBUTING.md)
 
-**[🌐 Website](https://mirzatghayrat.github.io/arslan/)** · **[⚡ 15-minute Quickstart](docs/QUICKSTART.md)** · **[🏛️ Architecture](docs/ARCHITECTURE.md)** · **[🔒 Security](SECURITY.md)** · **[🤝 Contributing](CONTRIBUTING.md)**
+<br/>
+
+<a href="https://mirzatghayrat.github.io/arslan/"><img src="docs/assets/icons/globe.svg" width="14" height="14"> <b>Website</b></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/icons/zap.svg" width="14" height="14"> <b>Quickstart</b></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/icons/layers.svg" width="14" height="14"> <b>Architecture</b></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/icons/shield.svg" width="14" height="14"> <b>Security</b></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/icons/heart-handshake.svg" width="14" height="14"> <b>Contributing</b></a>
+
+<sub><img src="docs/assets/icons/languages.svg" width="12" height="12">&nbsp;&nbsp;<b>English</b> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.de.md">Deutsch</a> · <a href="README.ja.md">日本語</a> · <a href="README.es.md">Español</a> · <a href="README.tr.md">Türkçe</a></sub>
 
 </div>
 
@@ -39,12 +43,12 @@
 
 | | |
 |---|---|
-| 🧬 **A persona team you grow** | Arslan is the front door; behind it you build a roster of specialist spawns — equip them with tools, `SKILL.md` skill packs, and MCP servers, then let a two-tier evolution loop refine them over time. |
-| 🎓 **Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then must beat the incumbent on held-out past tasks, on *every* dimension. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
-| 🛡️ **Safe by default, not disclaimed** | Generated code runs network-denied under a kernel-enforced sandbox (macOS seatbelt). A credential-injecting proxy lets sandboxed git talk to the network while raw tokens never enter the sandbox. Where the kernel sandbox is unavailable, it **fails closed**. |
-| 🧠 **A second brain with a time axis** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Beliefs carry time: when each became true, what superseded it, and a filter that shows the graph as it stood at any past instant. |
-| 😇 **Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. Memory deletes/overwrites the model proposes never apply directly — they land in an inbox you accept or dismiss. |
-| 🔑 **Local-first, bring your own key** | Your machine, your API keys, quality-first routing across multiple providers — and **zero third-party servers** in the middle. Ships with 6-language i18n and 6 theme palettes (light + dark). |
+| <img src="docs/assets/icons/users.svg" width="20"><br/>**A persona team you grow** | Arslan is the front door; behind it you build a roster of specialist spawns — equip them with tools, `SKILL.md` skill packs, and MCP servers, then let a two-tier evolution loop refine them over time. |
+| <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then must beat the incumbent on held-out past tasks, on *every* dimension. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
+| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**Safe by default, not disclaimed** | Generated code runs network-denied under a kernel-enforced sandbox (macOS seatbelt). A credential-injecting proxy lets sandboxed git talk to the network while raw tokens never enter the sandbox. Where the kernel sandbox is unavailable, it **fails closed**. |
+| <img src="docs/assets/icons/brain.svg" width="20"><br/>**A second brain with a time axis** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Beliefs carry time: when each became true, what superseded it, and a filter that shows the graph as it stood at any past instant. |
+| <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. Memory deletes/overwrites the model proposes never apply directly — they land in an inbox you accept or dismiss. |
+| <img src="docs/assets/icons/key-round.svg" width="20"><br/>**Local-first, bring your own key** | Your machine, your API keys, quality-first routing across multiple providers — and **zero third-party servers** in the middle. Ships with 6-language i18n and 6 theme palettes (light + dark). |
 
 <sub>Backend: FastAPI + async SQLAlchemy/SQLite (`server/`) · Frontend: React 19 + TypeScript + Vite (`web/`) · Tracing, LLM-judge evals, and a Grafana-style diagnosis dashboard feed the evolution loop.</sub>
 
@@ -121,7 +125,7 @@ Open **http://localhost:5173**. The Vite dev server proxies `/api` and `/ws` to 
 > Dev + localhost is **unauthenticated by design** for zero-friction local use. See [Security posture](#security-posture) before exposing it anywhere else.
 
 <details>
-<summary><b>🐳 Run with Docker</b></summary>
+<summary><b>Run with Docker</b></summary>
 <br/>
 
 ```bash
@@ -149,7 +153,7 @@ Arslan is **safe by default**:
 **Do not expose the server to an untrusted network without a token and host/origin allowlists.** Full threat model and reporting policy: [SECURITY.md](SECURITY.md).
 
 <details>
-<summary><b>⚙️ Environment variables (full reference)</b></summary>
+<summary><b>Environment variables (full reference)</b></summary>
 <br/>
 
 | Env var | Default | Purpose |
@@ -169,7 +173,7 @@ For prod / packaged (`ARSLAN_PACKAGED=1`) / non-loopback binds, if `ARSLAN_API_T
 </details>
 
 <details>
-<summary><b>💾 Data & backup</b></summary>
+<summary><b>Data &amp; backup</b></summary>
 <br/>
 
 Everything that matters lives in one directory — the DB, your notes, and your encrypted secrets — resolved from `ARSLAN_DATA_DIR` (or the platform app-data dir if unset). **That directory IS the backup unit:** copy it to back Arslan up, and restore by copying it back. Keep its `api_token` and `crypto_salt` files with it — new-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`, so losing (or mismatching) `crypto_salt` makes those stored secrets undecryptable even with the right `ARSLAN_SECRET_KEY`.
@@ -178,30 +182,28 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 
 </details>
 
-## 📍 Status — honest about what's proven
+## Status — honest about what's proven
 
 **Pre-v1.** We'd rather under-claim than over-sell:
 
 - **macOS-first.** The kernel sandbox is macOS seatbelt only; on other platforms it fails closed (Linux / Windows are targeted later via a Tauri desktop app).
 - **The self-evolving agent team is being hardened.** The two-tier evolution loop works but is not yet claimed as fully proven — treat it as maturing, not finished.
-- **No OCR, and no image understanding.** Arslan reads the *text layer* of PDFs (pypdf) plus docx, pptx, html, txt and md. **Scanned PDFs and standalone image attachments yield no text.** OCR is an opt-in extra — `uv sync --extra ocr` — and it additionally needs a `tesseract` binary on your PATH (`brew install tesseract tesseract-lang`), which is why it is **not** in the packaged desktop build: bundling and notarizing that binary plus its language packs is a cost we deliberately deferred. The real fix is sending images to your own vision-capable model, which is a separate, planned round — see `docs/specs/2026-07-26-s4.3a-packaging.md` §9.
-- **The desktop build is macOS Apple Silicon only, and not yet a public release.** There is no Windows, Linux, or Intel-Mac build — do not read "desktop app" as cross-platform. The first `.dmg` (S4.3-a) is an internal build for dogfooding and for proving the signing/notarization pipeline; the public release is a separate round (S4.3-b). Auto-update polls GitHub Releases: an install that cannot reach `github.com` will never see an update **and shows no indication of that** — this is stock Tauri updater behaviour, disclosed rather than fixed here.
 - **Agentic memory read/write needs a native-tool-calling provider.** The `recall`/`remember` tools only fire on providers that actually do tool-calling (e.g. DeepSeek). Over a direct Anthropic backend they never trigger — that path is intentionally text-in/text-out, so the tool schema is never sent to the model. Memory still forms automatically either way (router-extracted facts + end-of-session distillation), independent of this feature.
-- **The two background loops that spend money ship disabled.** Auto-evolution and sleep-time curation each call the LLM on their own schedule, so both default to off — you turn them on in Settings. Evolution has a hard pre-run gate: set `evolution_max_dispatches` and any attempt whose derived dispatch ceiling exceeds it is refused before the first call (the ceiling is exact for the corpus at estimate time; a *token* projection is shown alongside but is a pooled average, not a bound). Sleep-time curation has **no** cap of its own. A hard limit in your provider's billing dashboard is still the only bound that covers everything.
+- **The two background loops that spend money ship disabled.** Auto-evolution and sleep-time curation each call the LLM on their own schedule, so both default to off — you turn them on in Settings. There is no working spend cap yet: the pre-run estimate is a known over-estimate that grows with your corpus, so nothing is enforced against it. Until that is fixed, bound spend with a hard limit in your provider's billing dashboard.
 - APIs, schemas, and defaults may change before v1.
 
 ## Community
 
-- 🐛 Found a bug or have an idea? [Open an issue](https://github.com/mirzatghayrat/arslan/issues).
-- 🤝 Want to help? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
-- 🌐 The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages). The blueprint figures in this README are hand-drawn SVGs — sources in [`docs/diagrams/`](docs/diagrams/).
+- <img src="docs/assets/icons/bug.svg" width="14" height="14"> Found a bug or have an idea? [Open an issue](https://github.com/mirzatghayrat/arslan/issues).
+- <img src="docs/assets/icons/heart-handshake.svg" width="14" height="14"> Want to help? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+- <img src="docs/assets/icons/globe.svg" width="14" height="14"> The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages). The blueprint figures in this README are hand-drawn SVGs — sources in [`docs/diagrams/`](docs/diagrams/).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Icons: [Lucide](https://lucide.dev) (ISC).
 
 ---
 
 <div align="center">
-<sub>If Arslan resonates with you, <a href="https://github.com/mirzatghayrat/arslan/stargazers">a ⭐ helps other people find it</a>.</sub>
+<sub>If Arslan resonates with you, <a href="https://github.com/mirzatghayrat/arslan/stargazers">a <img src="docs/assets/icons/star.svg" width="12" height="12"> helps other people find it</a>.</sub>
 </div>
