@@ -33,7 +33,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWRqwjUKnwyRclfRC+GGHlCCMfyiEDpTbhlioVfDibkikqF8KRuaMTcP",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyOTEwQzlGMEEzNUMyNkEKUldScXdqVUtud3lSY2xmUkMrR0dIbENDTWZ5aUVEcFRiaGxpb1ZmRGlia2lrcUY4S1J1YU1UY1AK",
       "endpoints": [
         "https://github.com/mirzatghayrat/arslan/releases/latest/download/latest.json"
       ]

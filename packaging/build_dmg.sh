@@ -99,10 +99,20 @@ PYCHECK
 # The updater public key must be present, or installed copies silently never
 # update: Tauri accepts an absent pubkey and just produces no updater
 # artefacts, which looks like a successful build.
+# Decoded the way Tauri itself decodes it, not length-checked: the pubkey is
+# the base64 CONTENT OF THE .pub FILE (comment line + key line), and the raw
+# inner minisign key passes any length check while failing Tauri's decode with
+# "invalid utf-8" — after the build, the signing, and an ACCEPTED
+# notarization (run 30206539950 died exactly there).
 node -e '
   const c = require("'"$TAURI"'/tauri.conf.json");
-  const k = c.plugins?.updater?.pubkey;
-  if (!k || k.length < 40) { console.error("ERROR: no updater pubkey in tauri.conf.json"); process.exit(1) }
+  const k = c.plugins?.updater?.pubkey || "";
+  let d = "";
+  try { d = Buffer.from(k, "base64").toString("utf8") } catch {}
+  if (!d.includes("minisign public key")) {
+    console.error("ERROR: updater pubkey is not the base64 content of the .pub file (must decode to the untrusted-comment + key lines)");
+    process.exit(1);
+  }
 ' || exit 1
 
 # --------------------------------------------------------------------------
