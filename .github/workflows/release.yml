@@ -96,6 +96,19 @@ jobs:
           unset APPLE_API_KEY_CONTENT
           bash packaging/build_dmg.sh
 
+      - name: Fresh-install acceptance
+        # Runs the .app that was JUST built against a HOME that has never seen
+        # Arslan. This is the only check that sees what a stranger gets: on a
+        # developer's machine the database is always full, so a build that
+        # seeds zero spawns, serves a blank window, or ships someone's data
+        # looks completely normal. Each of those three has actually happened
+        # in this round and was caught here, not by reading the code.
+        #
+        # Before the artefacts are staged: a bundle that fails this must not
+        # reach a release, draft or otherwise.
+        run: .venv/bin/python packaging/fresh_install_check.py \
+          desktop/src-tauri/target/release/bundle/macos/Arslan.app
+
       - name: Stage artefacts under stable names
         # Two names for the same file: the versioned one is the archive, the
         # stable one lets a download link point at

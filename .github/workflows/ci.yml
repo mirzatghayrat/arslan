@@ -83,13 +83,28 @@ jobs:
           # make this pass by scanning almost nothing.
           fetch-depth: 0
 
-      - name: gitleaks detect (all history)
-        uses: gitleaks/gitleaks-action@v2
+      - name: Install gitleaks
+        # The binary, not gitleaks/gitleaks-action. An action is a moving tag
+        # by convention, and a scanner that reads the entire repository is a
+        # poor place to accept "whatever v2 points at today". A pinned release
+        # is one line and depends on nothing but GitHub's own download host.
+        #
+        # Pinned to the version this repository's baseline was established
+        # with; a bump is a deliberate edit, and re-running the scan is how it
+        # gets validated.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: false
-        with:
-          args: --no-banner --redact
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -euo pipefail
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: gitleaks detect (all history)
+        # Non-zero exit on any finding; --redact keeps the secret itself out of
+        # the log, which is public on this repository.
+        run: gitleaks detect --no-banner --redact --config .gitleaks.toml
 
   frontend:
     runs-on: ubuntu-latest
