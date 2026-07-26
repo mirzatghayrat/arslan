@@ -60,6 +60,37 @@ jobs:
         # Any failure is red on the first attempt. -rR prints a short-test summary.
         run: .venv/bin/pytest tests/ -q -rR
 
+  secrets:
+    # FULL-HISTORY secret scan, not a diff scan.
+    #
+    # `gitleaks protect` only looks at uncommitted or newly-pushed changes. A
+    # secret that slipped in once is invisible to it from the next commit
+    # onward — and "a signing certificate was once committed" is exactly the
+    # accident this repository has to catch, since S4.3-a puts Apple signing
+    # material into the release path. `detect` re-scans all 1000+ commits every
+    # run: slower, and the only mode that can answer the question.
+    #
+    # This is also the ONLY generic-secret detection this repository has.
+    # GitHub's non-provider-pattern scanning requires an organization-owned
+    # repo on GitHub Team with Secret Protection; this one is personal, so the
+    # setting is silently ignored (the API accepts an invalid value with a 200
+    # and changes nothing). See SECURITY.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # detect needs the whole history; the default shallow clone would
+          # make this pass by scanning almost nothing.
+          fetch-depth: 0
+
+      - name: gitleaks detect (all history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+        with:
+          args: --no-banner --redact
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

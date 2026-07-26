@@ -7,7 +7,13 @@
        loader refuses those by default and the sidecar dies at startup, so
        notarization fails on a binary that never ran. This entitlement is
        applied ONLY to the sidecar entrypoint (see packaging/build_dmg.sh) —
-       never to the app itself, which needs no such exemption. -->
+       never to the app itself, which needs no such exemption.
+
+       NOT referenced from tauri.conf.json's macOS.entitlements: putting it
+       there makes Tauri apply it to the .app as well, which measurably did
+       happen (dumping the built app's entitlements showed the exemption).
+       The Tauri binary loads no dylibs from another Team ID, so that only
+       weakens the app's signature for nothing. -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
 </dict>

@@ -1,0 +1,38 @@
+# gitleaks configuration — see the `secrets` job in .github/workflows/ci.yml.
+#
+# The scan runs in `detect` mode over ALL history, so a finding cannot be
+# cleared by editing the current file: the commit that introduced it is still
+# there. Anything genuinely committed by accident has to be dealt with by
+# rewriting history, not by editing HEAD. This repository has done that twice
+# and it is not cheap.
+#
+# ALLOWLISTING DISCIPLINE — the whole point of this file:
+#
+#   Allowlist EXACT VALUES, never paths.
+#
+# Excluding tests/ or web/src/__tests__/ would clear today's findings and turn
+# the entire test tree into a blind spot — and a test fixture is precisely
+# where a real key gets pasted "just to check something works". Each entry
+# below names one specific, obviously-fake literal. A new secret in the same
+# file still trips the scan.
+#
+# Adding an entry means asserting you READ the line and it is not a real
+# credential. The seven originals were each read at the commit that introduced
+# them, not assumed to be safe because of where they live.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Obviously-fake fixture credentials, each read and verified"
+regexes = [
+  # OpenAI-shaped fixtures in backend tests. Real keys are 48+ chars of
+  # base62; these are short and self-describing.
+  '''sk-abc123456''',
+  '''sk-test1234abcd''',
+  '''sk-rotate-1234''',
+  # Tavily-shaped fixtures, backend and frontend. "secret" is spelled out in
+  # the value, which no real key does.
+  '''tvly-secret-123''',
+  '''tvly-secret-12345678''',
+]

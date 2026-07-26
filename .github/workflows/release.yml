@@ -1,0 +1,167 @@
+# Desktop release builds — macOS Apple Silicon .dmg, signed and notarized.
+#
+# Adapted from andrewyng/openworker's .github/workflows/release.yml (MIT,
+# Copyright (c) 2024 Andrew Ng).
+#
+# CI runs the SAME script a developer runs locally (packaging/build_dmg.sh);
+# this file only provisions the toolchain and publishes the result. Anything
+# that can differ between the two is a bug waiting to surface only in CI.
+#
+# Triggers:
+#   tag push `v*`   → build, attach to a DRAFT release (published by hand)
+#   manual run      → build and upload a workflow artifact only, no release
+#
+# No Intel target: macos-13 is the last Intel runner image, it is deprecated,
+# and its queue runs to hours — one slow leg would block the whole release.
+#
+# Secrets (all verified by .github/workflows/secrets-preflight.yml, which is
+# worth running before tagging — it takes 30 seconds and names exactly which
+# secret is wrong, where a bad one otherwise surfaces as "no identity found"
+# twenty minutes into this workflow):
+#   APPLE_CERTIFICATE / _PASSWORD / APPLE_SIGNING_IDENTITY   codesign
+#   APPLE_API_KEY_CONTENT / APPLE_API_KEY / APPLE_API_ISSUER  notarytool
+#   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD                     auto-update
+#
+# Fork PRs never reach this file: it has no pull_request trigger, so
+# `secrets.*` cannot be exfiltrated by a PR that edits a workflow.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up the Python venv
+        # --frozen so the lockfile decides, exactly as ci.yml does. `build`
+        # carries PyInstaller and typer; typer is needed only at build time,
+        # because collect_submodules("mcp") imports mcp.cli, which calls
+        # sys.exit(1) when typer is absent and aborts the freeze with no
+        # useful message.
+        run: uv sync --frozen --extra server --extra build
+
+      - name: Install the Tauri CLI
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build the signed, notarized .dmg
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # Unset any APPLE_* that arrived EMPTY. Tauri treats a
+          # present-but-empty variable as a configuration error, so a fork
+          # without secrets fails instead of degrading to an unsigned build.
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                   APPLE_API_KEY APPLE_API_ISSUER TAURI_SIGNING_PRIVATE_KEY; do
+            [ -n "$(eval echo "\${$v:-}")" ] || unset "$v"
+          done
+          # notarytool wants a FILE, the secret is base64. Write it under
+          # RUNNER_TEMP, which is destroyed with the runner, and drop the
+          # base64 from the environment so it cannot leak into a child process.
+          if [ -n "${APPLE_API_KEY_CONTENT:-}" ]; then
+            printf '%s' "$APPLE_API_KEY_CONTENT" | tr -d '\n\r' | base64 -d > "$RUNNER_TEMP/AuthKey.p8"
+            export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          fi
+          unset APPLE_API_KEY_CONTENT
+          bash packaging/build_dmg.sh
+
+      - name: Stage artefacts under stable names
+        # Two names for the same file: the versioned one is the archive, the
+        # stable one lets a download link point at
+        # releases/latest/download/Arslan-macos-arm64.dmg forever.
+        run: |
+          mkdir -p out
+          BUNDLE=desktop/src-tauri/target/release/bundle
+          cp "$BUNDLE"/dmg/*.dmg out/
+          cp "$BUNDLE"/dmg/*.dmg out/Arslan-macos-arm64.dmg
+          # The updater artefact: the signed .app tarball an installed copy
+          # swaps in. Present only when TAURI_SIGNING_PRIVATE_KEY was set —
+          # the .sig signs CONTENT, so renaming it is safe.
+          if [ -f "$BUNDLE/macos/Arslan.app.tar.gz" ]; then
+            cp "$BUNDLE/macos/Arslan.app.tar.gz"     out/Arslan-macos-arm64.app.tar.gz
+            cp "$BUNDLE/macos/Arslan.app.tar.gz.sig" out/Arslan-macos-arm64.app.tar.gz.sig
+          else
+            echo "::warning::no updater artefact — this build cannot auto-update installed copies"
+          fi
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Compose the auto-update manifest
+        # Publishing this release IS pushing the update — installed apps poll
+        # releases/latest/download/latest.json. The tag must match
+        # tauri.conf.json's version or every install would see an update it
+        # can never apply; fail loudly on drift rather than shipping that.
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          CONF_VERSION=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])")
+          if [ "${TAG#v}" != "$CONF_VERSION" ]; then
+            echo "::error::tag $TAG != tauri.conf.json version $CONF_VERSION — bump the config before tagging"
+            exit 1
+          fi
+          if ls dist/*.sig >/dev/null 2>&1; then
+            python3 packaging/make_update_manifest.py \
+              --version "${TAG#v}" --tag "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --dist dist --out dist/latest.json \
+              --notes "Arslan ${TAG#v}"
+          else
+            echo "::warning::no updater signatures — this release ships WITHOUT an update manifest"
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          # DRAFT. A release is reviewed by a human before it becomes an
+          # update every installed copy will fetch — same "fail closed on the
+          # executing side" rule the rest of this project follows.
+          draft: true
+          files: dist/*
+          generate_release_notes: true
