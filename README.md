@@ -1,28 +1,78 @@
-# Arslan
+<div align="center">
 
-**A local-first personal AI orchestrator.** You talk to one main agent — *Arslan* — which routes your request or delegates it to persona sub-agents ("spawns") that it can create, equip, and evolve. It runs on your own machine, against your own LLM keys, with a **safe-by-default kernel sandbox**, **honesty guardrails**, and a **visible second brain** you can browse and edit.
+<a href="https://mirzatghayrat.github.io/arslan/">
+  <img src="docs/assets/banner.jpg" alt="Arslan — an orchestrator drawn like a machine, not a chat box" width="100%">
+</a>
 
-- **A persona team you grow.** Arslan is the front door; behind it you build a roster of specialised spawns, give them capabilities, and let a two-tier evolution loop refine them over time.
-- **Safe by default.** Generated code runs inside a kernel-enforced sandbox (macOS seatbelt, network-denied). A credential-injecting proxy lets sandboxed git talk to the network without the raw tokens ever entering the sandbox. Localhost dev is zero-friction; prod / packaged builds auto-enforce a token.
-- **Honest by design.** Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran.
-- **A brain you can see.** Materials, learnings, a profile, and wiki-link notes, retrieved with hybrid FTS5 + embeddings and browsable as an Obsidian-style graph.
+<br/><br/>
 
-Backend: FastAPI + async SQLAlchemy/SQLite (`server/`). Frontend: React 19 + TypeScript + Vite (`web/`).
+**You talk to one host agent. It routes work to persona spawns you raised yourself.**<br/>
+**Their prompts improve on their own — but every change passes a held-out exam,**<br/>
+**and nothing ships until *you* press Promote.**
 
-## Features
+<br/>
 
-- **Capability layer** — built-in tools + an MCP client + `SKILL.md` skill packs, tiered (safe vs. orchestrator) with human-confirm gating for privileged actions.
-- **Kernel sandbox + credential proxy** — code runs network-denied under macOS seatbelt; a local MITM proxy injects git credentials so raw tokens never reach sandboxed processes. Fails closed where the kernel sandbox is unavailable.
-- **Second brain** — materials / learnings / profile + `[[wiki-link]]` notes, hybrid FTS5 + embedding retrieval (FTS-only until an embedding provider is configured), Obsidian-style force-directed graph. Beliefs carry time: when each became true, what superseded it, and a start-time filter that shows the graph as it stood at a past instant. Deletes and overwrites the model proposes never apply directly — they land in an in-app inbox you accept or dismiss. Arslan (and equipped spawns) can also read/write it via agentic `recall`/`remember` tools — see the caveats in [Status](#status).
-- **Tracing, eval & diagnosis** — per-run traces, an LLM-judge evaluator, and a Grafana-style diagnosis dashboard, feeding a two-tier evolution loop.
-- **Multi-LLM BYOK** — bring your own keys across multiple providers with quality-first routing.
-- **6-language i18n** and **6 theme palettes** (light + dark).
+[![License](https://img.shields.io/badge/license-Apache--2.0-4c72e0?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS--first-8a63f4?style=flat-square)](#-status--honest-about-whats-proven)
+[![Python](https://img.shields.io/badge/python-3.11%2B-e6863c?style=flat-square)](pyproject.toml)
+[![Frontend](https://img.shields.io/badge/react-19_%2B_TS_%2B_Vite-ff9ffc?style=flat-square)](web/)
+[![Status](https://img.shields.io/badge/status-pre--v1-orange?style=flat-square)](#-status--honest-about-whats-proven)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-2ea44f?style=flat-square)](CONTRIBUTING.md)
+
+**[🌐 Website](https://mirzatghayrat.github.io/arslan/)** · **[⚡ 15-minute Quickstart](docs/QUICKSTART.md)** · **[🏛️ Architecture](docs/ARCHITECTURE.md)** · **[🔒 Security](SECURITY.md)** · **[🤝 Contributing](CONTRIBUTING.md)**
+
+</div>
+
+---
+
+## One request, end to end
+
+<div align="center">
+  <img src="docs/assets/demo.gif" alt="Arslan demo — one request routed, sandboxed, and answered in a single thread" width="90%">
+</div>
+
+<p align="center"><em>You ask once. The host agent picks the spawn, splits the job, runs generated code in a kernel sandbox, and answers — all in one thread.</em></p>
+
+**Arslan is a local-first personal AI orchestrator.** It runs on your own machine, against your own LLM keys, with a **safe-by-default kernel sandbox**, **honesty guardrails**, and a **visible second brain** you can browse and edit.
+
+## Why Arslan
+
+| | |
+|---|---|
+| 🧬 **A persona team you grow** | Arslan is the front door; behind it you build a roster of specialist spawns — equip them with tools, `SKILL.md` skill packs, and MCP servers, then let a two-tier evolution loop refine them over time. |
+| 🎓 **Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then must beat the incumbent on held-out past tasks, on *every* dimension. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
+| 🛡️ **Safe by default, not disclaimed** | Generated code runs network-denied under a kernel-enforced sandbox (macOS seatbelt). A credential-injecting proxy lets sandboxed git talk to the network while raw tokens never enter the sandbox. Where the kernel sandbox is unavailable, it **fails closed**. |
+| 🧠 **A second brain with a time axis** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Beliefs carry time: when each became true, what superseded it, and a filter that shows the graph as it stood at any past instant. |
+| 😇 **Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. Memory deletes/overwrites the model proposes never apply directly — they land in an inbox you accept or dismiss. |
+| 🔑 **Local-first, bring your own key** | Your machine, your API keys, quality-first routing across multiple providers — and **zero third-party servers** in the middle. Ships with 6-language i18n and 6 theme palettes (light + dark). |
+
+<sub>Backend: FastAPI + async SQLAlchemy/SQLite (`server/`) · Frontend: React 19 + TypeScript + Vite (`web/`) · Tracing, LLM-judge evals, and a Grafana-style diagnosis dashboard feed the evolution loop.</sub>
+
+## Inside the actual client
+
+<div align="center">
+  <img src="docs/assets/screens.jpg" alt="Arslan client screens — spawns ledger, capability library, MCP servers, specialist channel" width="100%">
+</div>
+
+## How a request flows
+
+<div align="center">
+  <img src="docs/assets/schematic.png" alt="System schematic — one thread in, host agent routes to specialist spawns, sandbox and second brain underneath" width="100%">
+</div>
+
+## Governed self-evolution
+
+<div align="center">
+  <img src="docs/assets/evolution.png" alt="Promotion gate — rewrite, held-out exam, proposal card, you promote" width="100%">
+</div>
+
+A spawn's prompt gets revised automatically — then it has to prove itself on held-out past tasks before you ever see it. No dimension is allowed to score worse than the incumbent. Fail → discarded, never surfaces. Pass → a proposal card with a readable diff; the change lands **only when you click Promote**.
 
 ## Quickstart (dev)
 
 **Prerequisites:** Python (managed with [`uv`](https://docs.astral.sh/uv/)) and Node.js.
 
-> **New here?** For the full 5-minute first-run walkthrough — connect a model, get your first spawn to answer, and (optionally) watch it improve itself — see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**. The commands below are the terse version.
+> **New here?** For the full 15-minute first-run walkthrough — connect a model, get your first spawn to answer, and (optionally) watch it improve itself — see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**. The commands below are the terse version.
 
 ```bash
 # 1. Clone
@@ -62,7 +112,9 @@ Open **http://localhost:5173**. The Vite dev server proxies `/api` and `/ws` to 
 
 > Dev + localhost is **unauthenticated by design** for zero-friction local use. See [Security posture](#security-posture) before exposing it anywhere else.
 
-### Run with Docker
+<details>
+<summary><b>🐳 Run with Docker</b></summary>
+<br/>
 
 ```bash
 cp .env.example .env   # set ARSLAN_SECRET_KEY (required in prod) and ARSLAN_API_TOKEN
@@ -71,7 +123,26 @@ docker compose up --build
 
 Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **refuses to boot without `ARSLAN_SECRET_KEY`** — supply a long random value via `.env` or the shell.
 
-## Environment variables
+</details>
+
+## Security posture
+
+<div align="center">
+  <img src="docs/assets/safety.jpg" alt="Safety is built in, not disclaimed — kernel sandbox, credential-injecting proxy, local-first BYOK" width="100%">
+</div>
+
+Arslan is **safe by default**:
+
+- **Localhost-only by default.** Dev + localhost runs unauthenticated on purpose (local convenience). Cross-site drive-by requests are blocked by TrustedHost + CORS + WebSocket-Origin checks; non-localhost / prod deploys must set the allowlists below.
+- **Tokens where they matter.** `prod`, packaged builds, and non-loopback binds require a bearer token — auto-generated, persisted, and rotatable from Settings so you can't lock yourself out.
+- **Secrets refuse the public key.** BYOK secrets are Fernet-encrypted with a PBKDF2-HMAC-SHA256 key derived from `ARSLAN_SECRET_KEY` over a per-install salt; the app refuses to write secrets under the built-in public dev key.
+- **Sandbox fails closed.** Generated code runs network-denied under the macOS seatbelt; where the kernel sandbox is unavailable it fails closed rather than silently running unsandboxed.
+
+**Do not expose the server to an untrusted network without a token and host/origin allowlists.** Full threat model and reporting policy: [SECURITY.md](SECURITY.md).
+
+<details>
+<summary><b>⚙️ Environment variables (full reference)</b></summary>
+<br/>
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
@@ -87,26 +158,21 @@ Open http://localhost:8741. The image pins `ARSLAN_ENV=prod`, so it **refuses to
 
 For prod / packaged (`ARSLAN_PACKAGED=1`) / non-loopback binds, if `ARSLAN_API_TOKEN` is empty the app **auto-generates** a token on first run, persists it to `<data_dir>/api_token` (owner-only), prints it once at boot, and lets you view/reset it in Settings.
 
-## Security posture
+</details>
 
-Arslan is **safe by default**:
-
-- **Localhost-only by default.** Dev + localhost runs unauthenticated on purpose (local convenience). Cross-site drive-by requests are blocked by TrustedHost + CORS + WebSocket-Origin checks; non-localhost / prod deploys must set the allowlists above.
-- **Tokens where they matter.** `prod`, packaged builds, and non-loopback binds require a bearer token — auto-generated, persisted, and rotatable from Settings so you can't lock yourself out.
-- **Secrets refuse the public key.** BYOK secrets are Fernet-encrypted with a PBKDF2-HMAC-SHA256 key derived from `ARSLAN_SECRET_KEY` over a per-install salt; the app refuses to write secrets under the built-in public dev key.
-- **Sandbox fails closed.** Generated code runs network-denied under the macOS seatbelt; where the kernel sandbox is unavailable it fails closed rather than silently running unsandboxed.
-
-**Do not expose the server to an untrusted network without a token and host/origin allowlists.** Full threat model and reporting policy: [SECURITY.md](SECURITY.md).
-
-## Data & backup
+<details>
+<summary><b>💾 Data & backup</b></summary>
+<br/>
 
 Everything that matters lives in one directory — the DB, your notes, and your encrypted secrets — resolved from `ARSLAN_DATA_DIR` (or the platform app-data dir if unset). **That directory IS the backup unit:** copy it to back Arslan up, and restore by copying it back. Keep its `api_token` and `crypto_salt` files with it — new-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`, so losing (or mismatching) `crypto_salt` makes those stored secrets undecryptable even with the right `ARSLAN_SECRET_KEY`.
 
 One deliberate exception: the secret itself lives **outside** that directory. If you never set `ARSLAN_SECRET_KEY` yourself, the dev auto-generated value sits at `~/.arslan/secret_key` — so a copied data dir alone can't decrypt your stored provider keys (lock and box travel separately). A complete backup is therefore **two pieces**: the data dir **and** the secret (your env value or that file).
 
-## Status
+</details>
 
-**Pre-v1.** Honest about what's proven:
+## 📍 Status — honest about what's proven
+
+**Pre-v1.** We'd rather under-claim than over-sell:
 
 - **macOS-first.** The kernel sandbox is macOS seatbelt only; on other platforms it fails closed (Linux / Windows are targeted later via a Tauri desktop app).
 - **The self-evolving agent team is being hardened.** The two-tier evolution loop works but is not yet claimed as fully proven — treat it as maturing, not finished.
@@ -114,6 +180,18 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 - **The two background loops that spend money ship disabled.** Auto-evolution and sleep-time curation each call the LLM on their own schedule, so both default to off — you turn them on in Settings. There is no working spend cap yet: the pre-run estimate is a known over-estimate that grows with your corpus, so nothing is enforced against it. Until that is fixed, bound spend with a hard limit in your provider's billing dashboard.
 - APIs, schemas, and defaults may change before v1.
 
+## Community
+
+- 🐛 Found a bug or have an idea? [Open an issue](https://github.com/mirzatghayrat/arslan/issues).
+- 🤝 Want to help? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+- 🌐 The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages) — visuals in this README are captured straight from it.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+<div align="center">
+<sub>If Arslan resonates with you, <a href="https://github.com/mirzatghayrat/arslan/stargazers">a ⭐ helps other people find it</a>.</sub>
+</div>
