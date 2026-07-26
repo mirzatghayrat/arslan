@@ -65,6 +65,14 @@ jobs:
           python-version: "3.11"
 
       - name: Set up the Python venv
+        env:
+          # Version alone is not enough: the macOS runner ships python.org's
+          # FRAMEWORK build of 3.11 at /Library/Frameworks, and uv prefers a
+          # discovered system interpreter over downloading its own. Run
+          # 30206170484 pinned 3.11 and still got the framework build; only
+          # forcing uv-managed (python-build-standalone, no framework — the
+          # same interpreter dev machines use) removes the ambient variable.
+          UV_PYTHON_PREFERENCE: only-managed
         # --frozen so the lockfile decides, exactly as ci.yml does. `build`
         # carries PyInstaller and typer; typer is needed only at build time,
         # because collect_submodules("mcp") imports mcp.cli, which calls
