@@ -57,16 +57,24 @@
 ## How a request flows
 
 <div align="center">
-  <img src="docs/assets/schematic.png" alt="System schematic — one thread in, host agent routes to specialist spawns, sandbox and second brain underneath" width="100%">
+  <img src="docs/assets/fig01-request-path.png" alt="FIG. 01 — Request path: one thread in, the host agent routes to specialist spawns; kernel sandbox and second brain underneath" width="100%">
 </div>
 
 ## Governed self-evolution
 
 <div align="center">
-  <img src="docs/assets/evolution.png" alt="Promotion gate — rewrite, held-out exam, proposal card, you promote" width="100%">
+  <img src="docs/assets/fig02-promotion-gate.png" alt="FIG. 02 — Promotion gate: rewrite, held-out exam, proposal card, you promote; fail is discarded, reject keeps the incumbent" width="100%">
 </div>
 
 A spawn's prompt gets revised automatically — then it has to prove itself on held-out past tasks before you ever see it. No dimension is allowed to score worse than the incumbent. Fail → discarded, never surfaces. Pass → a proposal card with a readable diff; the change lands **only when you click Promote**.
+
+## A second brain with a time axis
+
+<div align="center">
+  <img src="docs/assets/fig03-second-brain.png" alt="FIG. 03 — Second brain: memory forms automatically, spawns read it via hybrid retrieval, model edits pass through your inbox, and every belief carries time" width="100%">
+</div>
+
+Memory forms on its own — router-extracted facts and end-of-session distillation — and spawns read it back with hybrid FTS5 + embedding retrieval. Every belief records when it took effect and what superseded it, so you can scrub the Obsidian-style graph to any past instant. When the model wants to edit or delete a memory, the proposal lands in your inbox first — **nothing is overwritten silently**.
 
 ## Quickstart (dev)
 
@@ -186,7 +194,7 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 
 - 🐛 Found a bug or have an idea? [Open an issue](https://github.com/mirzatghayrat/arslan/issues).
 - 🤝 Want to help? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
-- 🌐 The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages) — visuals in this README are captured straight from it.
+- 🌐 The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages). The blueprint figures in this README are hand-drawn SVGs — sources in [`docs/diagrams/`](docs/diagrams/).
 
 ## License
 

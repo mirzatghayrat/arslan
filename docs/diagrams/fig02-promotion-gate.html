@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#0e0f13;}
+  svg{display:block;}
+  .mono{font-family:"DejaVu Sans Mono",Menlo,Consolas,monospace;}
+  .sans{font-family:"DejaVu Sans",Arial,sans-serif;}
+</style></head><body>
+<svg width="1560" height="1040" viewBox="0 0 1560 1040" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e6863c"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b3564d"/>
+    </marker>
+    <pattern id="hatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="none"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#b3564d" stroke-opacity="0.4" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <rect width="1560" height="1040" fill="#0e0f13"/>
+  <g>
+    <path id="gridMinor" d="" stroke="#ffffff" stroke-opacity="0.028" stroke-width="1" fill="none"/>
+    <path id="gridMajor" d="" stroke="#ffffff" stroke-opacity="0.055" stroke-width="1" fill="none"/>
+  </g>
+  <script>
+    (function(){
+      let minor='', major='';
+      for(let x=0;x<=1560;x+=30){ (x%150? (minor+=`M${x},0V1040`) : (major+=`M${x},0V1040`)); }
+      for(let y=0;y<=1040;y+=30){ (y%150? (minor+=`M0,${y}H1560`) : (major+=`M0,${y}H1560`)); }
+      document.getElementById('gridMinor').setAttribute('d',minor);
+      document.getElementById('gridMajor').setAttribute('d',major);
+    })();
+  </script>
+
+  <g stroke="#e6863c" stroke-width="1.5" opacity="0.9">
+    <path d="M40,28 V52 M28,40 H52"/><path d="M1520,28 V52 M1508,40 H1532"/>
+    <path d="M40,988 V1012 M28,1000 H52"/><path d="M1520,988 V1012 M1508,1000 H1532"/>
+  </g>
+
+  <circle cx="66" cy="74" r="4" fill="#e6863c"/>
+  <text class="mono" x="82" y="79" font-size="15" letter-spacing="3" fill="#e6863c">FIG. 02 — PROMOTION GATE</text>
+  <text class="mono" x="1500" y="79" font-size="13" letter-spacing="3" fill="#6b7280" text-anchor="end">ARSLAN · GOVERNED SELF-EVOLUTION · N.T.S.</text>
+  <line x1="60" y1="100" x2="1500" y2="100" stroke="#2a2d35" stroke-width="1"/>
+
+  <!-- dimension line above exam box -->
+  <g stroke="#4a4e58" stroke-width="1">
+    <line x1="440" y1="236" x2="755" y2="236"/><line x1="440" y1="230" x2="440" y2="252" stroke-opacity="0.6"/><line x1="755" y1="230" x2="755" y2="252" stroke-opacity="0.6"/>
+  </g>
+  <rect x="448" y="224" width="300" height="24" fill="#0e0f13"/>
+  <text class="mono" x="597" y="241" font-size="11.5" letter-spacing="1.5" fill="#6b7280" text-anchor="middle">EVERY DIMENSION ≥ INCUMBENT</text>
+
+  <!-- ══ step boxes ══ -->
+  <!-- 01 REWRITE -->
+  <rect x="75" y="280" width="315" height="180" rx="10" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+  <text class="mono" x="99" y="330" font-size="26" fill="#e6863c">01</text>
+  <text class="sans" x="99" y="368" font-size="20" font-weight="bold" fill="#ededf0">Rewrite</text>
+  <text class="sans" x="99" y="398" font-size="13.5" fill="#8b919c">A candidate prompt is generated</text>
+  <text class="sans" x="99" y="418" font-size="13.5" fill="#8b919c">from the spawn's own run history.</text>
+
+  <!-- 02 HELD-OUT EXAM -->
+  <rect x="440" y="280" width="315" height="180" rx="10" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+  <text class="mono" x="464" y="330" font-size="26" fill="#e6863c">02</text>
+  <text class="sans" x="464" y="368" font-size="20" font-weight="bold" fill="#ededf0">Held-out exam</text>
+  <text class="sans" x="464" y="398" font-size="13.5" fill="#8b919c">Replayed against reserved past</text>
+  <text class="sans" x="464" y="418" font-size="13.5" fill="#8b919c">tasks. Any regression fails the gate.</text>
+
+  <!-- 03 PROPOSAL CARD -->
+  <rect x="805" y="280" width="315" height="180" rx="10" fill="#14151b" stroke="#33363f" stroke-width="1.4"/>
+  <text class="mono" x="829" y="330" font-size="26" fill="#e6863c">03</text>
+  <text class="sans" x="829" y="368" font-size="20" font-weight="bold" fill="#ededf0">Proposal card</text>
+  <text class="sans" x="829" y="398" font-size="13.5" fill="#8b919c">A readable diff plus the score per</text>
+  <text class="sans" x="829" y="418" font-size="13.5" fill="#8b919c">dimension, filed in your inbox.</text>
+
+  <!-- 04 YOU PROMOTE (highlighted) -->
+  <rect x="1170" y="280" width="315" height="180" rx="10" fill="#17181f" stroke="#e6863c" stroke-width="1.6"/>
+  <rect x="1170" y="280" width="315" height="180" rx="10" fill="none" stroke="#e6863c" stroke-opacity="0.25" stroke-width="6"/>
+  <text class="mono" x="1194" y="330" font-size="26" fill="#e6863c">04</text>
+  <text class="sans" x="1194" y="368" font-size="20" font-weight="bold" fill="#ededf0">You Promote</text>
+  <text class="sans" x="1194" y="398" font-size="13.5" fill="#8b919c">Nothing takes effect until you say</text>
+  <text class="sans" x="1194" y="418" font-size="13.5" fill="#8b919c">so. Not silent drift — a proposal.</text>
+
+  <!-- connectors between steps -->
+  <line x1="390" y1="370" x2="432" y2="370" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+  <line x1="755" y1="370" x2="797" y2="370" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+  <line x1="1120" y1="370" x2="1162" y2="370" stroke="#e6863c" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrO)"/>
+
+  <!-- FAIL branch from 02 -->
+  <line x1="597" y1="460" x2="597" y2="548" stroke="#b3564d" stroke-width="1.4" stroke-dasharray="5 5" marker-end="url(#arrR)"/>
+  <text class="mono" x="612" y="516" font-size="12" letter-spacing="2" fill="#b3564d">FAIL</text>
+  <rect x="440" y="556" width="315" height="64" rx="8" fill="#12131a" stroke="#b3564d" stroke-opacity="0.7" stroke-width="1.3" stroke-dasharray="6 5"/>
+  <rect x="440" y="556" width="12" height="64" rx="6" fill="url(#hatch)"/>
+  <text class="mono" x="470" y="584" font-size="13" letter-spacing="1.5" fill="#c9827b">DISCARDED</text>
+  <text class="sans" x="470" y="606" font-size="13" fill="#8b919c">Never surfaces. You never see it.</text>
+
+  <!-- loop back: discarded -> next cycle -> 01 -->
+  <path d="M440,588 H232 V468" fill="none" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="3 5" marker-end="url(#arrG)"/>
+  <rect x="130" y="514" width="132" height="22" fill="#0e0f13"/>
+  <text class="mono" x="140" y="530" font-size="11.5" letter-spacing="2" fill="#6b7280">NEXT CYCLE</text>
+
+  <!-- REJECT branch from 04 -->
+  <line x1="1327" y1="460" x2="1327" y2="548" stroke="#6b7280" stroke-width="1.3" stroke-dasharray="5 5" marker-end="url(#arrG)"/>
+  <text class="mono" x="1342" y="516" font-size="12" letter-spacing="2" fill="#8b919c">REJECT</text>
+  <rect x="1170" y="556" width="315" height="64" rx="8" fill="#12131a" stroke="#565b66" stroke-width="1.3" stroke-dasharray="6 5"/>
+  <text class="mono" x="1194" y="584" font-size="13" letter-spacing="1.5" fill="#9aa0ab">INCUMBENT STAYS</text>
+  <text class="sans" x="1194" y="606" font-size="13" fill="#8b919c">The running prompt is untouched.</text>
+
+  <!-- proposal card sketch under 03 -->
+  <rect x="805" y="556" width="315" height="150" rx="8" fill="#12131a" stroke="#33363f" stroke-width="1.3"/>
+  <line x1="805" y1="592" x2="1120" y2="592" stroke="#33363f"/>
+  <text class="mono" x="825" y="580" font-size="11.5" letter-spacing="1.5" fill="#6b7280">PROPOSAL — READABLE DIFF</text>
+  <text class="mono" x="825" y="620" font-size="12.5" fill="#b3564d">- cite at least one source</text>
+  <text class="mono" x="825" y="644" font-size="12.5" fill="#5da571">+ triangulate across independent</text>
+  <text class="mono" x="825" y="662" font-size="12.5" fill="#5da571">+ sources before concluding</text>
+  <text class="mono" x="825" y="690" font-size="11.5" letter-spacing="1" fill="#e6863c">EXAM: PASS · NO DIMENSION REGRESSED</text>
+  <line x1="962" y1="460" x2="962" y2="548" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="3 5" marker-end="url(#arrG)"/>
+
+  <!-- awaiting stamp -->
+  <g transform="rotate(-8 1330 700)">
+    <rect x="1190" y="668" width="280" height="56" rx="8" fill="none" stroke="#e6863c" stroke-opacity="0.55" stroke-width="2"/>
+    <text class="mono" x="1330" y="703" font-size="16" letter-spacing="3" fill="#e6863c" fill-opacity="0.75" text-anchor="middle">AWAITING PROMOTE</text>
+  </g>
+
+  <!-- footer left -->
+  <g>
+    <circle cx="66" cy="922" r="4" fill="#e6863c"/>
+    <text class="mono" x="82" y="927" font-size="13" letter-spacing="2.5" fill="#6b7280">SELF-IMPROVING, NEVER SELF-SHIPPING</text>
+    <g stroke="#4a4e58" stroke-width="1">
+      <line x1="66" y1="952" x2="266" y2="952"/>
+      <line x1="66" y1="946" x2="66" y2="958"/><line x1="116" y1="948" x2="116" y2="956"/>
+      <line x1="166" y1="946" x2="166" y2="958"/><line x1="216" y1="948" x2="216" y2="956"/>
+      <line x1="266" y1="946" x2="266" y2="958"/>
+    </g>
+    <text class="mono" x="66" y="976" font-size="10" letter-spacing="1.5" fill="#565b66">TWO-TIER EVOLUTION LOOP&#160;&#160;·&#160;&#160;OFF BY DEFAULT</text>
+  </g>
+
+  <!-- title block -->
+  <g class="mono" font-size="11">
+    <rect x="1080" y="880" width="420" height="108" fill="#12131a" stroke="#33363f" stroke-width="1.2"/>
+    <line x1="1080" y1="916" x2="1500" y2="916" stroke="#33363f"/>
+    <line x1="1080" y1="952" x2="1500" y2="952" stroke="#33363f"/>
+    <line x1="1220" y1="880" x2="1220" y2="988" stroke="#33363f"/>
+    <line x1="1360" y1="880" x2="1360" y2="988" stroke="#33363f"/>
+    <text x="1094" y="895" fill="#565b66" letter-spacing="1.5" font-size="9">PROJECT</text>
+    <text x="1094" y="909" fill="#ededf0">ARSLAN</text>
+    <text x="1234" y="895" fill="#565b66" letter-spacing="1.5" font-size="9">SHEET</text>
+    <text x="1234" y="909" fill="#ededf0">02 / 03</text>
+    <text x="1374" y="895" fill="#565b66" letter-spacing="1.5" font-size="9">REV</text>
+    <text x="1374" y="909" fill="#ededf0">PRE-V1</text>
+    <text x="1094" y="931" fill="#565b66" letter-spacing="1.5" font-size="9">EXAM</text>
+    <text x="1094" y="945" fill="#ededf0">HELD-OUT</text>
+    <text x="1234" y="931" fill="#565b66" letter-spacing="1.5" font-size="9">GATE</text>
+    <text x="1234" y="945" fill="#ededf0">EVERY DIMENSION</text>
+    <text x="1374" y="931" fill="#565b66" letter-spacing="1.5" font-size="9">DIFF</text>
+    <text x="1374" y="945" fill="#ededf0">READABLE</text>
+    <text x="1094" y="967" fill="#565b66" letter-spacing="1.5" font-size="9">FAIL</text>
+    <text x="1094" y="981" fill="#ededf0">NEVER SURFACES</text>
+    <text x="1234" y="967" fill="#565b66" letter-spacing="1.5" font-size="9">DRIFT</text>
+    <text x="1234" y="981" fill="#ededf0">NONE SILENT</text>
+    <text x="1374" y="967" fill="#565b66" letter-spacing="1.5" font-size="9">PROMOTION</text>
+    <text x="1374" y="981" fill="#e6863c">MANUAL ONLY</text>
+  </g>
+</svg>
+</body></html>
