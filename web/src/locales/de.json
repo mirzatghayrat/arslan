@@ -1025,7 +1025,10 @@
     "drop_hint": "Dateien zum Anhängen ablegen",
     "too_many": "Bis zu {{max}} Anhänge",
     "too_large": "{{name}} ist zu groß (max. 30 MB)",
-    "unsupported": "{{name}}: nicht unterstützter Typ"
+    "unsupported": "{{name}}: nicht unterstützter Typ",
+    "image_turn_only": "Bilder wirken nur in der Runde, in der du sie sendest — später bleibt nur der Dateiname",
+    "image_goes_to_model": "Dieses Bild geht an das von dir konfigurierte Modell",
+    "image_unsendable": "konnte nicht vorbereitet werden — nicht gesendet"
   },
   "working": {
     "summon": "Summoning specialist…",

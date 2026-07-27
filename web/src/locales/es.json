@@ -1025,7 +1025,10 @@
     "drop_hint": "Suelta archivos para adjuntar",
     "too_many": "Hasta {{max}} adjuntos",
     "too_large": "{{name}} es demasiado grande (máx. 30 MB)",
-    "unsupported": "{{name}}: tipo no compatible"
+    "unsupported": "{{name}}: tipo no compatible",
+    "image_turn_only": "Las imágenes participan solo en el turno en que las envías; después queda solo el nombre del archivo",
+    "image_goes_to_model": "Esta imagen se envía al modelo que configuraste",
+    "image_unsendable": "no se pudo preparar — no se envió"
   },
   "working": {
     "summon": "Summoning specialist…",

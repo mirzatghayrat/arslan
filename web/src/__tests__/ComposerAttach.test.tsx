@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as imagePayload from "../lib/imagePayload";
 import { useComposerAttach, AttachChips, AttachControl, type Attachment } from "../components/ComposerAttach";
 
 // Deterministic i18n: t(key) returns the key (with crude {{n}} interpolation for chars).
@@ -10,6 +11,10 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+vi.mock("../lib/imagePayload", async (orig) => ({
+  ...(await orig<typeof imagePayload>()),
+  fileToImagePayload: vi.fn(),
+}));
 vi.mock("../api/client", () => ({
   api: { extractAttachmentFile: vi.fn(), extractAttachmentUrl: vi.fn() },
 }));
@@ -50,47 +55,44 @@ function Harness({ onChange }: { onChange: (a: Attachment[]) => void }) {
 }
 
 describe("ComposerAttach", () => {
-  it("image attachments OCR through the extract path and carry text into context", async () => {
-    m.extractAttachmentFile.mockResolvedValue({ text: "OCR'd words", chars: 11, truncated: false });
+  it("an image is prepared for the MODEL, not sent to the extract endpoint", async () => {
+    // Contract change (vision round): the model reads the picture, so there is
+    // nothing to extract server-side. The old /extract round-trip only ever
+    // returned "" in the packaged app — there is no OCR stack there — which is
+    // exactly what made images "preview only" for every shipped build.
+    vi.mocked(imagePayload.fileToImagePayload).mockResolvedValue({
+      name: "shot.png", mime_type: "image/png", data: "QUJD",
+    });
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
     await act(async () => {
       fireEvent.click(screen.getByText("add-image"));
     });
-    expect(m.extractAttachmentFile).toHaveBeenCalledTimes(1);
-    // chip reports OCR success; thumbnail stays
-    expect(screen.getByText(/attach.image_ocr_ok/)).toBeInTheDocument();
-    // reported attachment carries the OCR text so it rides into attached_context
+    expect(m.extractAttachmentFile).not.toHaveBeenCalled();
+    // The chip states where the picture is going — the disclosure the spec
+    // requires at the feed entry point.
+    expect(screen.getByText(/attach.image_goes_to_model/)).toBeInTheDocument();
     const last = onChange.mock.calls.at(-1)![0] as Attachment[];
     expect(last[0]).toMatchObject({
-      name: "shot.png", kind: "image", text: "OCR'd words", chars: 11, ocr: "ok",
-      previewUrl: "blob:preview",
+      name: "shot.png", kind: "image", text: "",
+      image: { mime_type: "image/png", data: "QUJD" },
     });
   });
 
-  it("image with no OCR text degrades honestly to preview-only", async () => {
-    m.extractAttachmentFile.mockResolvedValue({ text: "", chars: 0, truncated: false });
+  it("an image that cannot be prepared says so and is NOT sent", async () => {
+    // Too large after downscaling, or undecodable. Silently sending a frame the
+    // socket cannot carry would look like the "Interrupted" watchdog bug.
+    vi.mocked(imagePayload.fileToImagePayload).mockRejectedValue(new Error("too large"));
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
     await act(async () => {
       fireEvent.click(screen.getByText("add-image"));
     });
-    expect(screen.getByText(/attach.image_no_parse/)).toBeInTheDocument();
+    expect(screen.getByText(/attach.image_unsendable/)).toBeInTheDocument();
     const last = onChange.mock.calls.at(-1)![0] as Attachment[];
-    expect(last[0]).toMatchObject({ name: "shot.png", kind: "image", text: "", chars: 0, ocr: "none" });
-  });
-
-  it("image extract failure degrades to preview-only (no error surfaced)", async () => {
-    m.extractAttachmentFile.mockRejectedValue(new Error("backend down"));
-    const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
-    await act(async () => {
-      fireEvent.click(screen.getByText("add-image"));
-    });
-    expect(screen.getByText(/attach.image_no_parse/)).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
-    const last = onChange.mock.calls.at(-1)![0] as Attachment[];
-    expect(last[0]).toMatchObject({ kind: "image", text: "", ocr: "none" });
+    expect(last[0]).toMatchObject({ kind: "image", ocr: "none" });
+    // Discrimination: no payload means the send path contributes nothing for it.
+    expect(last[0].image).toBeUndefined();
   });
 
   it("an .html file rides the doc extract path (backend supports it), not rejected as unsupported", async () => {

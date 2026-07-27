@@ -1025,7 +1025,10 @@
     "drop_hint": "Drop files to attach",
     "too_many": "Up to {{max}} attachments",
     "too_large": "{{name}} is too large (max 30 MB)",
-    "unsupported": "{{name}}: unsupported type"
+    "unsupported": "{{name}}: unsupported type",
+    "image_turn_only": "Images take part in the turn you send them — later turns keep only the file name",
+    "image_goes_to_model": "This image is sent to the model you configured",
+    "image_unsendable": "couldn't be prepared — not sent"
   },
   "working": {
     "summon": "Summoning specialist…",

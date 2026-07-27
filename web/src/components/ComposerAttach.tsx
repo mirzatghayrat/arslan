@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from "react";
+import { fileToImagePayload, type ImagePayload } from "../lib/imagePayload";
 import { Plus, X, Loader2, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
@@ -33,8 +34,13 @@ export interface Attachment {
    *  backend OCR; it stays empty when no text is found (preview-only degrade). */
   kind?: "doc" | "image";
   previewUrl?: string;
-  /** OCR lifecycle for image chips: extracting → text found / none found. */
+  /** OCR lifecycle for image chips: extracting → text found / none found.
+   *  Since the vision round this is only reached when an image could NOT be
+   *  prepared for the model; a normal image chip carries `image` instead. */
   ocr?: "pending" | "ok" | "none";
+  /** The downscaled base64 the model actually receives. Present ⇒ this image
+   *  rides the turn as a real image block, not as OCR'd text. */
+  image?: ImagePayload;
 }
 
 /** Accept list for the native picker: existing doc types + images. */
@@ -118,9 +124,12 @@ export function useComposerAttach(
           continue;
         }
         if (isImage(file)) {
-          // Same /extract path as docs (backend OCR). Chip shows the thumbnail
-          // immediately; OCR result fills `text`, or the chip degrades honestly
-          // to preview-only when no text is found (incl. extract errors).
+          // Vision round: the MODEL reads the image, so there is nothing to
+          // extract server-side. The chip is prepared locally (downscale +
+          // base64, see lib/imagePayload) and rides the turn as an image block.
+          // The old /extract round-trip only ever produced "" in the packaged
+          // app — there is no OCR stack there — which is what made images
+          // "preview only".
           const chip: Attachment = {
             name: file.name,
             text: "",
@@ -135,11 +144,10 @@ export function useComposerAttach(
           setBusy(true);
           let done: Attachment;
           try {
-            const r = await api.extractAttachmentFile(file, compress);
-            done = r.text.trim()
-              ? { ...chip, text: r.text, chars: r.chars, truncated: r.truncated, ocr: "ok" as const }
-              : { ...chip, ocr: "none" as const };
+            done = { ...chip, image: await fileToImagePayload(file), ocr: undefined };
           } catch {
+            // Unreadable or too large even after downscaling: say so on the chip
+            // rather than sending a frame that would kill the socket.
             done = { ...chip, ocr: "none" as const };
           } finally {
             setBusy(false);
@@ -310,11 +318,14 @@ export function AttachChips({
           <span className="attach-chip__name">{a.name}</span>
           <span className="attach-chip__meta">
             {a.kind === "image"
-              ? a.ocr === "pending"
-                ? `· ${t("attach.image_ocr_wait")}`
-                : a.ocr === "ok"
-                  ? `· ${t("attach.image_ocr_ok")}`
-                  : `· ${t("attach.image_no_parse")}`
+              ? a.image
+                // The disclosure the spec requires at the feed entry point: the
+                // user is about to send a picture to a CLOUD model and may well
+                // assume a local-first app reads it locally.
+                ? `· ${t("attach.image_goes_to_model")}`
+                : a.ocr === "pending"
+                  ? `· ${t("attach.image_ocr_wait")}`
+                  : `· ${t("attach.image_unsendable")}`
               : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}`}
           </span>
           <button

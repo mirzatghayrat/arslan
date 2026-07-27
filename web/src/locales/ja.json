@@ -1025,7 +1025,10 @@
     "drop_hint": "ファイルをドロップして添付",
     "too_many": "添付は最大 {{max}} 件まで",
     "too_large": "{{name}} は大きすぎます(最大 30 MB)",
-    "unsupported": "{{name}}:サポートされていない形式"
+    "unsupported": "{{name}}:サポートされていない形式",
+    "image_turn_only": "画像は送信したターンでのみ推論に使われ、以降はファイル名だけが残ります",
+    "image_goes_to_model": "この画像は設定中のモデルに送信されます",
+    "image_unsendable": "処理できず、送信されませんでした"
   },
   "working": {
     "summon": "Summoning specialist…",

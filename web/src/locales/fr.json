@@ -1025,7 +1025,10 @@
     "drop_hint": "Déposez des fichiers pour les joindre",
     "too_many": "Jusqu'à {{max}} pièces jointes",
     "too_large": "{{name}} est trop volumineux (max. 30 Mo)",
-    "unsupported": "{{name}} : type non pris en charge"
+    "unsupported": "{{name}} : type non pris en charge",
+    "image_turn_only": "Les images ne participent qu'au tour où vous les envoyez — ensuite seul le nom du fichier subsiste",
+    "image_goes_to_model": "Cette image est envoyée au modèle que vous avez configuré",
+    "image_unsendable": "n'a pas pu être préparée — non envoyée"
   },
   "working": {
     "summon": "Summoning specialist…",

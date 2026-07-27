@@ -1025,7 +1025,10 @@
     "drop_hint": "拖入文件以添加",
     "too_many": "最多 {{max}} 个附件",
     "too_large": "{{name}} 太大(上限 30 MB)",
-    "unsupported": "{{name}}:不支持的类型"
+    "unsupported": "{{name}}:不支持的类型",
+    "image_turn_only": "图片仅在发送那一轮参与推理,之后的轮次只保留文件名",
+    "image_goes_to_model": "这张图会发给你配置的模型",
+    "image_unsendable": "无法处理,未发送"
   },
   "working": {
     "summon": "正在召唤分身…",

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type { ImagePayload } from "../lib/imagePayload";
 import {
   ArrowRight, Terminal,
   AlertTriangle, CheckCircle2, XOctagon,
@@ -53,7 +54,7 @@ interface OrchestratorChatProps {
   /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation.
    *  `display` echoes ALL attachments into the sent bubble (session-only); `context`/`names`
    *  carry only the text-bearing ones to the backend. */
-  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[] }) => void;
+  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }) => void;
   spawns: Spawn[];
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
@@ -311,11 +312,23 @@ export default function OrchestratorChat({
     // thumbnail/chip. previewUrl is a session-only object-URL — kept alive by clearing
     // with { revokeUrls: false } below so the rendered message can still show it.
     const display: MessageAttachment[] = attachments.map((a) => ({ name: a.name, kind: a.kind, previewUrl: a.previewUrl }));
+    // Images ride as real image blocks (vision round), separate from `context`
+    // which is extracted TEXT. An image chip that failed preparation has no
+    // payload and contributes nothing — the chip already says so.
+    const images = attachments.map((a) => a.image).filter(Boolean);
     const clearAttachments = () => attach.clear({ revokeUrls: false });
 
     if (onSendMessage) {
       // Live WS path: delegate to parent's onSendMessage (store + WS send)
-      onSendMessage(text, context || display.length ? { context, names, display } : undefined);
+      // `images` is OMITTED when empty, not passed as []: a text-only send must
+      // stay byte-identical to what it was before vision existed — the same
+      // principle build_user_blocks applies on the server.
+      onSendMessage(text, context || display.length || images.length
+        ? {
+            context, names, display,
+            ...(images.length ? { images: images as NonNullable<typeof images[number]>[] } : {}),
+          }
+        : undefined);
       clearAttachments();
       return;
     }

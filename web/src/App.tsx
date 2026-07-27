@@ -44,6 +44,7 @@ import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
+import type { ImagePayload } from './lib/imagePayload';
 
 interface ArslanThread {
   id: string;
@@ -242,7 +243,7 @@ export default function App() {
   }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
-  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[] }) => {
+  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }) => {
     // display = session-only echo for the sent bubble (image thumbnails / doc chips);
     // only text-bearing attachments ride to the backend as attached_context below.
     // Sending a new message without acting on a pending proposal card = implicitly
@@ -255,6 +256,9 @@ export default function App() {
       type: 'user_message',
       content: text,
       ...(attached?.context ? { attached_context: attached.context, attached_names: attached.names } : {}),
+      // Real image blocks, not text. They participate in THIS turn only
+      // (decision ③A) — history keeps a "[图片:name]" placeholder.
+      ...(attached?.images?.length ? { images: attached.images } : {}),
     });
   }, [wsSend]);
 
