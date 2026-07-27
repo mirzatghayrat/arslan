@@ -80,62 +80,15 @@
 
 记忆会自行生长——路由器抽取的事实 + 会话结束时的蒸馏——分身再通过 FTS5 + 向量嵌入的混合检索把它读回来。每条认知都记录着它何时生效、被什么取代，因此你可以把 Obsidian 风格的图谱拨回到过去的任一时刻。当模型想编辑或删除某条记忆时，提案会先落到你的收件箱——**任何内容都不会被悄悄覆盖**。
 
-## 快速上手（开发模式）
+## 安装
 
-**前置条件：** Python（用 [`uv`](https://docs.astral.sh/uv/) 管理）与 Node.js。
+**桌面版就是使用 Arslan 的方式**——已签名、已公证、自动保持最新:
 
-> **第一次来？** 完整的 15 分钟首跑教程——接入模型、让你的第一个分身开口回答、（可选）看着它自我改进——请见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。下面的命令是精简速览版。
+<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ 下载 macOS 版 Arslan</b></a>(Apple Silicon)——打开 DMG,把 Arslan 拖进「应用程序」。</p>
 
-```bash
-# 1. Clone
-git clone https://github.com/mirzatghayrat/arslan.git
-cd arslan
+首次启动时在设置里填入你的模型 API key,即可开用。
 
-# 2. Backend deps — include the server (runtime) + dev extras.
-#    Plain `uv sync` installs only core deps; the backend imports SQLAlchemy/
-#    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
-uv sync --extra dev --extra server
-
-# 3. Secret key — nothing to do by default. On the FIRST dev boot the server
-#    auto-generates ARSLAN_SECRET_KEY, persists it to ~/.arslan/secret_key
-#    (outside the data dir on purpose — backup = data dir + that file), and
-#    reuses it on every later boot.
-#    OPTIONAL — pin it yourself in .env instead. It derives the key that
-#    encrypts stored BYOK secrets at rest; a changed value makes previously-
-#    stored keys undecryptable, so the pin SEEDS from the already-persisted
-#    secret when one exists and only mints a fresh value on a true first run:
-grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
-       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
-  && [ -f .env ] && chmod 600 .env
-
-# 4. Run the backend (sources .env only if you created one in step 3 — the dev
-#    server reads the process environment, not .env directly).
-[ -f .env ] && set -a && source .env && set +a
-PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
-  .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
-
-# 5. In a second terminal, run the frontend dev server
-cd web && npm install && npm run dev
-```
-
-打开 **http://localhost:5173**。Vite 开发服务器会把 `/api` 与 `/ws` 代理到 `:8741` 上的后端。首次运行时，引导向导会带你添加一个 **BYOK** LLM 密钥，让 Arslan 有一个可以思考的模型。其余密钥、主题与语言可稍后在设置中配置。
-
-> Dev + localhost **有意不做鉴权**，为的就是零阻力的本地体验。在把它暴露到任何其他地方之前，请先阅读[安全态势](#安全态势)。
-
-<details>
-<summary><b>使用 Docker 运行</b></summary>
-<br/>
-
-```bash
-cp .env.example .env   # set ARSLAN_SECRET_KEY (required in prod) and ARSLAN_API_TOKEN
-docker compose up --build
-```
-
-打开 http://localhost:8741。镜像固定 `ARSLAN_ENV=prod`，因此**没有 `ARSLAN_SECRET_KEY` 就拒绝启动**——请通过 `.env` 或 shell 提供一个足够长的随机值。
-
-</details>
+从源码运行或使用 Docker(贡献者 / 自部署):见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。
 
 ## 安全态势
 

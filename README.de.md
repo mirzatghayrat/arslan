@@ -80,62 +80,15 @@ Der Prompt eines Spawns wird automatisch überarbeitet — und muss sich dann er
 
 Das Gedächtnis bildet sich von selbst — vom Router extrahierte Fakten und Destillation am Session-Ende — und Spawns lesen es per hybridem FTS5-+-Embedding-Retrieval zurück. Jede Überzeugung hält fest, wann sie wirksam wurde und was sie abgelöst hat, sodass du den Graphen im Obsidian-Stil zu jedem vergangenen Zeitpunkt zurückspulen kannst. Will das Modell eine Erinnerung bearbeiten oder löschen, landet der Vorschlag zuerst in deiner Inbox — **nichts wird stillschweigend überschrieben**.
 
-## Quickstart (dev)
+## Installation
 
-**Voraussetzungen:** Python (verwaltet mit [`uv`](https://docs.astral.sh/uv/)) und Node.js.
+**Die Desktop-App ist der Weg, Arslan zu benutzen** — signiert, notariell beglaubigt und hält sich selbst aktuell:
 
-> **Neu hier?** Für den vollständigen 15-Minuten-Walkthrough für den ersten Start — Modell verbinden, den ersten Spawn antworten lassen und (optional) zusehen, wie er sich selbst verbessert — siehe **[docs/QUICKSTART.md](docs/QUICKSTART.md)**. Die Befehle unten sind die Kurzfassung.
+<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ Arslan für macOS herunterladen</b></a> (Apple Silicon) — DMG öffnen und Arslan in den Ordner <b>Programme</b> ziehen.</p>
 
-```bash
-# 1. Clone
-git clone https://github.com/mirzatghayrat/arslan.git
-cd arslan
+Beim ersten Start in den Einstellungen den API-Key deines Modells hinterlegen — fertig.
 
-# 2. Backend deps — include the server (runtime) + dev extras.
-#    Plain `uv sync` installs only core deps; the backend imports SQLAlchemy/
-#    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
-uv sync --extra dev --extra server
-
-# 3. Secret key — nothing to do by default. On the FIRST dev boot the server
-#    auto-generates ARSLAN_SECRET_KEY, persists it to ~/.arslan/secret_key
-#    (outside the data dir on purpose — backup = data dir + that file), and
-#    reuses it on every later boot.
-#    OPTIONAL — pin it yourself in .env instead. It derives the key that
-#    encrypts stored BYOK secrets at rest; a changed value makes previously-
-#    stored keys undecryptable, so the pin SEEDS from the already-persisted
-#    secret when one exists and only mints a fresh value on a true first run:
-grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
-       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
-  && [ -f .env ] && chmod 600 .env
-
-# 4. Run the backend (sources .env only if you created one in step 3 — the dev
-#    server reads the process environment, not .env directly).
-[ -f .env ] && set -a && source .env && set +a
-PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
-  .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
-
-# 5. In a second terminal, run the frontend dev server
-cd web && npm install && npm run dev
-```
-
-Öffne **http://localhost:5173**. Der Vite-Dev-Server leitet `/api` und `/ws` per Proxy an das Backend auf `:8741` weiter. Beim ersten Start führt dich ein Assistent durch das Hinterlegen eines **BYOK**-LLM-Keys, damit Arslan ein Modell zum Denken hat. Weitere Keys, Themes und die Sprache konfigurierst du später in den Einstellungen.
-
-> Dev + localhost ist **bewusst unauthentifiziert** für reibungslose lokale Nutzung. Siehe [Sicherheitsmodell](#sicherheitsmodell), bevor du den Server irgendwo anders exponierst.
-
-<details>
-<summary><b>Mit Docker starten</b></summary>
-<br/>
-
-```bash
-cp .env.example .env   # set ARSLAN_SECRET_KEY (required in prod) and ARSLAN_API_TOKEN
-docker compose up --build
-```
-
-Öffne http://localhost:8741. Das Image pinnt `ARSLAN_ENV=prod`, deshalb **verweigert es den Start ohne `ARSLAN_SECRET_KEY`** — gib einen langen zufälligen Wert über `.env` oder die Shell mit.
-
-</details>
+Aus dem Quellcode oder mit Docker (Beitragende / Self-Hosting): siehe **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ## Sicherheitsmodell
 

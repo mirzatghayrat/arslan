@@ -1,6 +1,6 @@
 # Quickstart — your first 15 minutes with Arslan
 
-This walks you from a fresh clone to **a specialist spawn answering you in the conversation** — and, optionally, to **watching your agent team improve itself**. It's the end-to-end narrative; the terse boot commands also live in the [README](../README.md#quickstart-dev).
+This walks you from a fresh clone to **a specialist spawn answering you in the conversation** — and, optionally, to **watching your agent team improve itself**. It's the end-to-end narrative; the terse boot commands also live in the [README](../README.md#install).
 
 **What you'll have at the end:** the app running locally, one BYOK model connected, and a named spawn (not just the host agent) streaming an answer to a real task. The optional final step shows the self-improving half of the product.
 

@@ -80,62 +80,15 @@ Bir spawn'ın prompt'u otomatik olarak revize edilir — ama sen onu görmeden �
 
 Bellek kendiliğinden oluşur — yönlendiricinin çıkardığı gerçekler ve oturum sonu damıtma — ve spawn'lar onu hibrit FTS5 + embedding erişimiyle geri okur. Her inanç, ne zaman yürürlüğe girdiğini ve yerini neyin aldığını kaydeder; böylece Obsidian tarzı grafiği geçmişteki herhangi bir ana kaydırabilirsin. Model bir belleği düzenlemek ya da silmek istediğinde, öneri önce senin gelen kutuna düşer — **hiçbir şeyin üzerine sessizce yazılmaz**.
 
-## Hızlı başlangıç (dev)
+## Kurulum
 
-**Ön koşullar:** Python ([`uv`](https://docs.astral.sh/uv/) ile yönetilir) ve Node.js.
+**Arslan'ı kullanmanın yolu masaüstü uygulamasıdır** — imzalı, noter onaylı ve kendini güncel tutar:
 
-> **Buraya yeni misin?** 15 dakikalık eksiksiz ilk çalıştırma rehberi için — bir model bağla, ilk spawn'ından yanıt al ve (istersen) kendini geliştirmesini izle — bkz. **[docs/QUICKSTART.md](docs/QUICKSTART.md)**. Aşağıdaki komutlar işin kısa versiyonu.
+<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ macOS için Arslan'ı indir</b></a> (Apple Silicon) — DMG'yi aç ve Arslan'ı <b>Applications</b> klasörüne sürükle.</p>
 
-```bash
-# 1. Clone
-git clone https://github.com/mirzatghayrat/arslan.git
-cd arslan
+İlk çalıştırmada Ayarlar'dan model API anahtarını ekle, hepsi bu.
 
-# 2. Backend deps — include the server (runtime) + dev extras.
-#    Plain `uv sync` installs only core deps; the backend imports SQLAlchemy/
-#    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
-uv sync --extra dev --extra server
-
-# 3. Secret key — nothing to do by default. On the FIRST dev boot the server
-#    auto-generates ARSLAN_SECRET_KEY, persists it to ~/.arslan/secret_key
-#    (outside the data dir on purpose — backup = data dir + that file), and
-#    reuses it on every later boot.
-#    OPTIONAL — pin it yourself in .env instead. It derives the key that
-#    encrypts stored BYOK secrets at rest; a changed value makes previously-
-#    stored keys undecryptable, so the pin SEEDS from the already-persisted
-#    secret when one exists and only mints a fresh value on a true first run:
-grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
-       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
-  && [ -f .env ] && chmod 600 .env
-
-# 4. Run the backend (sources .env only if you created one in step 3 — the dev
-#    server reads the process environment, not .env directly).
-[ -f .env ] && set -a && source .env && set +a
-PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
-  .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
-
-# 5. In a second terminal, run the frontend dev server
-cd web && npm install && npm run dev
-```
-
-**http://localhost:5173** adresini aç. Vite dev sunucusu `/api` ve `/ws` isteklerini `:8741` üzerindeki backend'e proxy'ler. İlk çalıştırmada bir sihirbaz, Arslan'ın düşünecek bir modeli olsun diye bir **BYOK** LLM anahtarı eklemen için sana eşlik eder. Ek anahtarları, temaları ve dili daha sonra Ayarlar'dan yapılandırabilirsin.
-
-> Dev + localhost, sıfır sürtünmeli yerel kullanım için **bilerek kimlik doğrulamasızdır**. Başka herhangi bir yere açmadan önce [Güvenlik duruşu](#güvenlik-duruşu) bölümüne bak.
-
-<details>
-<summary><b>Docker ile çalıştır</b></summary>
-<br/>
-
-```bash
-cp .env.example .env   # set ARSLAN_SECRET_KEY (required in prod) and ARSLAN_API_TOKEN
-docker compose up --build
-```
-
-http://localhost:8741 adresini aç. İmaj `ARSLAN_ENV=prod` değerini sabitler, dolayısıyla **`ARSLAN_SECRET_KEY` olmadan açılmayı reddeder** — `.env` ya da kabuk üzerinden uzun, rastgele bir değer sağla.
-
-</details>
+Kaynaktan çalıştırma veya Docker (katkıda bulunanlar / self-host): bkz. **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ## Güvenlik duruşu
 

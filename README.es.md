@@ -80,62 +80,15 @@ El prompt de un spawn se revisa automáticamente — y luego tiene que demostrar
 
 La memoria se forma sola — hechos extraídos por el enrutador y destilación al final de cada sesión — y los spawns la releen con recuperación híbrida FTS5 + embeddings. Cada creencia registra cuándo entró en vigor y qué la reemplazó, para que puedas desplazar el grafo estilo Obsidian a cualquier instante del pasado. Cuando el modelo quiere editar o borrar una memoria, la propuesta aterriza primero en tu bandeja de entrada — **nada se sobrescribe en silencio**.
 
-## Inicio rápido (dev)
+## Instalación
 
-**Requisitos previos:** Python (gestionado con [`uv`](https://docs.astral.sh/uv/)) y Node.js.
+**La app de escritorio es la forma de usar Arslan** — firmada, notarizada y se mantiene actualizada sola:
 
-> **¿Primera vez por aquí?** Para el recorrido completo de 15 minutos del primer arranque — conectar un modelo, lograr que tu primer spawn responda y (opcionalmente) verlo mejorarse a sí mismo — consulta **[docs/QUICKSTART.md](docs/QUICKSTART.md)**. Los comandos de abajo son la versión escueta.
+<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ Descargar Arslan para macOS</b></a> (Apple Silicon) — abre el DMG y arrastra Arslan a <b>Aplicaciones</b>.</p>
 
-```bash
-# 1. Clone
-git clone https://github.com/mirzatghayrat/arslan.git
-cd arslan
+En el primer arranque, añade la clave API de tu modelo en Ajustes y listo.
 
-# 2. Backend deps — include the server (runtime) + dev extras.
-#    Plain `uv sync` installs only core deps; the backend imports SQLAlchemy/
-#    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
-uv sync --extra dev --extra server
-
-# 3. Secret key — nothing to do by default. On the FIRST dev boot the server
-#    auto-generates ARSLAN_SECRET_KEY, persists it to ~/.arslan/secret_key
-#    (outside the data dir on purpose — backup = data dir + that file), and
-#    reuses it on every later boot.
-#    OPTIONAL — pin it yourself in .env instead. It derives the key that
-#    encrypts stored BYOK secrets at rest; a changed value makes previously-
-#    stored keys undecryptable, so the pin SEEDS from the already-persisted
-#    secret when one exists and only mints a fresh value on a true first run:
-grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
-       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
-  && [ -f .env ] && chmod 600 .env
-
-# 4. Run the backend (sources .env only if you created one in step 3 — the dev
-#    server reads the process environment, not .env directly).
-[ -f .env ] && set -a && source .env && set +a
-PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
-  .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
-
-# 5. In a second terminal, run the frontend dev server
-cd web && npm install && npm run dev
-```
-
-Abre **http://localhost:5173**. El servidor de desarrollo de Vite hace proxy de `/api` y `/ws` hacia el backend en `:8741`. En el primer arranque, un asistente te guía para añadir una clave LLM **BYOK**, de modo que Arslan tenga un modelo con el que pensar. Configura claves adicionales, temas e idioma más tarde en Ajustes.
-
-> Dev + localhost está **sin autenticación por diseño** para un uso local sin fricción. Consulta la [Postura de seguridad](#postura-de-seguridad) antes de exponerlo en cualquier otro lugar.
-
-<details>
-<summary><b>Ejecutar con Docker</b></summary>
-<br/>
-
-```bash
-cp .env.example .env   # set ARSLAN_SECRET_KEY (required in prod) and ARSLAN_API_TOKEN
-docker compose up --build
-```
-
-Abre http://localhost:8741. La imagen fija `ARSLAN_ENV=prod`, así que **se niega a arrancar sin `ARSLAN_SECRET_KEY`** — proporciona un valor aleatorio largo mediante `.env` o el shell.
-
-</details>
+Ejecutar desde el código fuente o con Docker (contribuidores / self-hosting): consulta **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ## Postura de seguridad
 

@@ -80,62 +80,15 @@
 
 メモリはひとりでに形成されます — ルーターが抽出した事実と、セッション終了時の蒸留によって。そしてスポーンは、FTS5 と埋め込みのハイブリッド検索でそれを読み返します。すべてのビリーフは、いつ有効になり、何に置き換えられたのかを記録しているので、Obsidian スタイルのグラフを過去の任意の瞬間までスクラブできます。モデルがメモリの編集や削除を望んだときは、その提案がまずあなたの受信箱に届きます — **何ひとつ黙って上書きされることはありません**。
 
-## クイックスタート（開発）
+## インストール
 
-**前提条件：** Python（[`uv`](https://docs.astral.sh/uv/) で管理）と Node.js。
+**Arslan はデスクトップアプリで使うのが正解です** — 署名・公証済みで、自動的に最新に保たれます:
 
-> **初めてですか？** モデルを接続し、最初のスポーンに回答させ、（お好みで）自己改善する様子まで見届ける、15 分のフル初回セットアップガイドは **[docs/QUICKSTART.md](docs/QUICKSTART.md)** をご覧ください。以下のコマンドは、その簡潔版です。
+<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ macOS 版 Arslan をダウンロード</b></a>(Apple Silicon)— DMG を開き、Arslan を<b>アプリケーション</b>フォルダへドラッグしてください。</p>
 
-```bash
-# 1. Clone
-git clone https://github.com/mirzatghayrat/arslan.git
-cd arslan
+初回起動時に Settings でモデルの API キーを追加すれば準備完了です。
 
-# 2. Backend deps — include the server (runtime) + dev extras.
-#    Plain `uv sync` installs only core deps; the backend imports SQLAlchemy/
-#    aiosqlite/cryptography, which live in the `server` extra. Matches CI.
-uv sync --extra dev --extra server
-
-# 3. Secret key — nothing to do by default. On the FIRST dev boot the server
-#    auto-generates ARSLAN_SECRET_KEY, persists it to ~/.arslan/secret_key
-#    (outside the data dir on purpose — backup = data dir + that file), and
-#    reuses it on every later boot.
-#    OPTIONAL — pin it yourself in .env instead. It derives the key that
-#    encrypts stored BYOK secrets at rest; a changed value makes previously-
-#    stored keys undecryptable, so the pin SEEDS from the already-persisted
-#    secret when one exists and only mints a fresh value on a true first run:
-grep -q '^ARSLAN_SECRET_KEY=.' .env 2>/dev/null \
-  || { key="$(cat "${ARSLAN_SECRET_KEY_FILE:-$HOME/.arslan/secret_key}" 2>/dev/null \
-       || python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-       && [ -n "$key" ] && echo "ARSLAN_SECRET_KEY=$key" >> .env; } \
-  && [ -f .env ] && chmod 600 .env
-
-# 4. Run the backend (sources .env only if you created one in step 3 — the dev
-#    server reads the process environment, not .env directly).
-[ -f .env ] && set -a && source .env && set +a
-PYTHONPATH=$PWD ARSLAN_DATA_DIR=data \
-  .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8741
-
-# 5. In a second terminal, run the frontend dev server
-cd web && npm install && npm run dev
-```
-
-**http://localhost:5173** を開いてください。Vite 開発サーバーが `/api` と `/ws` を `:8741` のバックエンドへプロキシします。初回起動時にはウィザードが **BYOK** の LLM キー追加を案内し、Arslan が思考に使うモデルを整えます。追加のキー、テーマ、言語は、あとから Settings でいつでも設定できます。
-
-> 開発環境 + localhost は、摩擦ゼロのローカル利用のために**意図的に認証なし**となっています。それ以外の場所へ公開する前に、必ず[セキュリティ体制](#セキュリティ体制)をご確認ください。
-
-<details>
-<summary><b>Docker で実行</b></summary>
-<br/>
-
-```bash
-cp .env.example .env   # set ARSLAN_SECRET_KEY (required in prod) and ARSLAN_API_TOKEN
-docker compose up --build
-```
-
-http://localhost:8741 を開いてください。イメージは `ARSLAN_ENV=prod` に固定されているため、**`ARSLAN_SECRET_KEY` なしでは起動を拒否します** — 長いランダム値を `.env` またはシェルから与えてください。
-
-</details>
+ソースからの実行や Docker(コントリビューター / セルフホスト向け):**[docs/QUICKSTART.md](docs/QUICKSTART.md)** を参照してください。
 
 ## セキュリティ体制
 
