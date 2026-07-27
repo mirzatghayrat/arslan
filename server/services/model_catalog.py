@@ -99,6 +99,9 @@ async def _fetch_anthropic(client: httpx.AsyncClient, base_url: str,
         out.append(_info(entry["id"],
                          display_name=entry.get("display_name"),
                          context_window=entry.get("context_window"),
+                         # OPTIMISTIC default, not a per-model fact (the
+                         # models API exposes no capability data).
+                         # Display only — nothing gates on it (②A).
                          capabilities=["tools", "vision"]))
     return out
 
@@ -126,6 +129,13 @@ async def _fetch_gemini(client: httpx.AsyncClient, base_url: str,
             model_id = entry.get("name", "")
             model_id = model_id.removeprefix("models/")
             caps = ["tools"]
+            # Every current Gemini chat model accepts image input; the flag was
+            # simply never set here, which made the UI claim the opposite. Like
+            # the Anthropic entry above this is an OPTIMISTIC default, not a
+            # per-model fact — the API exposes no capability data. Nothing gates
+            # on it (decision ②A): a model that cannot see fails at send time
+            # with actionable copy (orchestrator/vision_errors.py).
+            caps.append("vision")
             if entry.get("thinking"):
                 caps.append("reasoning")
             out.append(_info(model_id,

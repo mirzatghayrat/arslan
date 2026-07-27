@@ -11,6 +11,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from server.orchestrator import vision_errors
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
 from server.orchestrator import (
@@ -1898,7 +1899,14 @@ async def _dispatch_spawn(  # noqa: ANN001
                         attached_context=attached_context, images=images, run_id=recorder.run_id,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
+                    # Decision ②A: we never gated on the (unreliable) vision
+                    # capability flag, so a model that cannot see fails HERE.
+                    # Translate that one case into something actionable; every
+                    # other error keeps its original text, because mislabelling a
+                    # rate limit as a vision problem sends the user off changing
+                    # models over an unrelated fault.
+                    _msg = vision_errors.explain(str(exc), had_images=bool(images)) or str(exc)
+                    tee({"type": "error", "code": "SPAWN_ERROR", "message": _msg, "recoverable": True})
                     _usage = usage_sink.detail()
                     _prompt = run_trace.prompt()
                     await recorder.finalize(

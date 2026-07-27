@@ -122,3 +122,31 @@ async def test_a_refinement_dispatch_keeps_the_images(spawn_db):
     user = _CapturingAdapter.seen[-1]["user"]
     assert isinstance(user, list), "refinement dropped the image"
     assert any(b.get("type") == "image" for b in user)
+
+
+class _RefusingAdapter:
+    """A provider that rejects image input, the way a vision-less model does."""
+
+    async def chat_stream(self, system, user, history=None, tools=None, temperature=0.7):
+        raise RuntimeError(
+            "Error code: 400 - {'error': {'message': \"image_url is only supported "
+            "by certain models\", 'type': 'invalid_request_error'}}")
+        yield ""  # pragma: no cover — unreachable, keeps this an async generator
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_reaches_the_user_as_actionable_copy(spawn_db, monkeypatch):
+    """The conversion must be WIRED, not merely implemented. A pure function
+    nobody calls passes its own unit tests perfectly — that exact shape has bitten
+    this round twice already."""
+    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: _RefusingAdapter())
+    events: list[dict] = []
+    from server.orchestrator import arslan as arslan_mod
+
+    await arslan_mod._dispatch_spawn(
+        "c1", 1, "read this", events.append, images=[IMAGE], announce=False)
+    errors = [e for e in events if e.get("type") == "error"]
+    assert errors, "no error surfaced at all"
+    msg = errors[-1]["message"]
+    assert "vision support" in msg, f"raw provider error leaked: {msg[:120]}"
+    assert "Error code: 400" not in msg
