@@ -434,7 +434,19 @@ pub fn run() {
             let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
                 .title("Arslan")
                 .inner_size(1280.0, 840.0)
-                .min_inner_size(900.0, 600.0);
+                .min_inner_size(900.0, 600.0)
+                // Give file drags back to the page. wry installs an NSDragging
+                // interceptor on macOS too (wkwebview/drag_drop.rs) and, once it
+                // reports the drop handled, the OS default is never invoked —
+                // and the OS default is what delivers HTML5 dragover/drop to the
+                // webview. So in the packaged app a file dragged onto the second
+                // brain produced NOTHING: no dashed-border feedback, no error,
+                // not even the "this build can't read images" message, because
+                // the SPA never saw the event. Dev browsers were unaffected,
+                // which is why this shipped. Arslan has no native drop handler
+                // of its own — every drop target is HTML — so disabling it costs
+                // nothing.
+                .disable_drag_drop_handler();
 
             // No opaque white title bar: the webview fills the window and the
             // native traffic lights float over the sidebar's top-left corner

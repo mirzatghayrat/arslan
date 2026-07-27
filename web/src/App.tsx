@@ -43,6 +43,7 @@ import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
+import { threadNavAction } from './lib/threadNav';
 
 interface ArslanThread {
   id: string;
@@ -656,13 +657,20 @@ export default function App() {
         threads={threads}
         activeThreadId={activeThreadId}
         onSelectThread={(id) => {
+          // The reset below is only safe when a `history` frame is guaranteed to
+          // follow, and one only follows when the socket URL changes — i.e. when
+          // the id actually changes. Re-selecting the ACTIVE thread (what you do
+          // coming back from another view) changes nothing, so wiping the store
+          // left the chat blank until a real switch reconnected it. Decision and
+          // tests live in lib/threadNav.ts.
+          const nav = threadNavAction(activeThreadId, id);
           // Signal the OLD conversation ended (backend may background-distill prefs).
           // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
-          if (activeThreadId) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
+          if (nav.endPrevious) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
           // Reset store first so stale items from the previous conversation are
           // cleared before the new conversation_id's WS connects and sends its
           // `history` frame.
-          useArslanStore.getState().resetForNewConversation();
+          if (nav.resetStore) useArslanStore.getState().resetForNewConversation();
           setActiveThreadId(id);
           setActiveSection('arslan');
           setPanelView('default');
@@ -704,7 +712,11 @@ export default function App() {
         {/* Main Workspace Frame container */}
         <main className="flex-1 min-w-0 flex flex-col h-full bg-background relative overflow-hidden">
           {/* Top Bar for overall macro layout */}
-          <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+          {/* Shared by EVERY section, which is what makes the window draggable
+              everywhere rather than only in chat. "deep" covers the labels
+              inside; Tauri's drag script skips real controls on its own. */}
+          <div data-tauri-drag-region="deep" data-testid="workspace-bar"
+            className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success"></span>
               <span className="text-[10.5px] font-mono text-muted-foreground capitalize uppercase tracking-wider">
