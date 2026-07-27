@@ -19,6 +19,33 @@ from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
 
 
+
+def _translate(content: Any) -> Any:
+    """Neutral blocks → Anthropic content blocks. Plain strings pass through:
+    text-only calls (the overwhelming majority) must keep their exact payload.
+
+    Note the cost shape this creates, disclosed in the spec (T6): the cache
+    breakpoint sits on the system prefix, so images ride AFTER it and are never
+    cached — a tool loop re-sends and re-bills them on every step."""
+    if not isinstance(content, list):
+        return content
+    out: list[dict[str, Any]] = []
+    for b in content:
+        if isinstance(b, dict) and b.get("type") == "image":
+            out.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": b["mime_type"],
+                    "data": b["data"],
+                },
+            })
+        elif isinstance(b, dict) and b.get("type") == "text":
+            out.append({"type": "text", "text": b.get("text", "")})
+        else:
+            out.append(b)
+    return out
+
 class AnthropicProvider(BaseLLMProvider):
     DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
     ANTHROPIC_VERSION = "2023-06-01"
@@ -77,7 +104,7 @@ class AnthropicProvider(BaseLLMProvider):
         """
         system_contents = [m.get("content", "") for m in messages if m.get("role") == "system"]
         convo = [
-            {"role": m["role"], "content": m["content"]}
+            {"role": m["role"], "content": _translate(m["content"])}
             for m in messages
             if m.get("role") != "system"
         ]

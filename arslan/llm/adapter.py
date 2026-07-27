@@ -72,7 +72,9 @@ class LLMAdapter:
     async def chat(
         self,
         system: str,
-        user: str,
+        # str for the 34 text-only call sites; a neutral block list carries
+        # images (see providers/base.build_messages for the shape).
+        user: str | list[dict[str, Any]],
         history: list[dict[str, Any]] | None = None,
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
@@ -110,7 +112,9 @@ class LLMAdapter:
     async def chat_stream(
         self,
         system: str,
-        user: str,
+        # str for the 34 text-only call sites; a neutral block list carries
+        # images (see providers/base.build_messages for the shape).
+        user: str | list[dict[str, Any]],
         history: list[dict[str, Any]] | None = None,
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,

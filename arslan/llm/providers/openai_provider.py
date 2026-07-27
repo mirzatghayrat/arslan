@@ -28,6 +28,49 @@ class OpenAIProvider(BaseLLMProvider):
     def provider_name(self) -> str:
         return "openai"
 
+
+    @staticmethod
+    def _translate(content: Any) -> Any:
+        """Neutral blocks → OpenAI parts. Plain strings pass through untouched:
+        the overwhelming majority of calls are text-only and must not have
+        their payload reshaped by a feature they do not use."""
+        if not isinstance(content, list):
+            return content
+        out: list[dict[str, Any]] = []
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "image":
+                out.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{b['mime_type']};base64,{b['data']}"
+                    },
+                })
+            elif isinstance(b, dict) and b.get("type") == "text":
+                out.append({"type": "text", "text": b.get("text", "")})
+            else:
+                out.append(b)
+        return out
+
+    def _payload(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        temperature: float,
+    ) -> dict[str, Any]:
+        """The ONE place this provider's body is built. chat() and chat_stream()
+        both go through here so an image can never survive one path and be lost
+        on the other."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {**m, "content": self._translate(m.get("content"))} for m in messages
+            ],
+            "temperature": temperature,
+        }
+        if tools:
+            payload["tools"] = tools
+        return payload
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
@@ -35,13 +78,7 @@ class OpenAIProvider(BaseLLMProvider):
         temperature: float = 0.7,
     ) -> LLMResponse:
         """POST to {base_url}/chat/completions and return a normalised LLMResponse."""
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-        if tools:
-            payload["tools"] = tools
+        payload = self._payload(messages, tools, temperature)
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -75,17 +112,11 @@ class OpenAIProvider(BaseLLMProvider):
         and stashes it on self._last_stream_usage (read by LLMAdapter after the
         loop). Servers that never send the frame simply leave it None.
         """
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": True,
-            # Ask for the trailing usage frame (a data frame with empty choices
-            # and a usage object, sent just before [DONE]).
-            "stream_options": {"include_usage": True},
-        }
-        if tools:
-            payload["tools"] = tools
+        payload = self._payload(messages, tools, temperature)
+        payload["stream"] = True
+        # Ask for the trailing usage frame (a data frame with empty choices
+        # and a usage object, sent just before [DONE]).
+        payload["stream_options"] = {"include_usage": True}
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:

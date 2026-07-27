@@ -18,6 +18,27 @@ from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
 
 
+
+def _parts(content: Any) -> list[dict[str, Any]]:
+    """Neutral blocks → Gemini parts.
+
+    🔴 This replaces `[{"text": str(content)}]`, which was the single most
+    dangerous line in the transport layer: given a block list it emitted the
+    Python repr of that list — base64 and all — as TEXT. It never raised, the
+    API answered, and the answer was computed from the literal characters of
+    the blob. A silent wrong answer, not an error."""
+    if not isinstance(content, list):
+        return [{"text": str(content)}]
+    parts: list[dict[str, Any]] = []
+    for b in content:
+        if isinstance(b, dict) and b.get("type") == "image":
+            parts.append({"inline_data": {"mime_type": b["mime_type"], "data": b["data"]}})
+        elif isinstance(b, dict) and b.get("type") == "text":
+            parts.append({"text": b.get("text", "")})
+        else:
+            parts.append({"text": str(b)})
+    return parts
+
 class GeminiProvider(BaseLLMProvider):
     DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -57,7 +78,7 @@ class GeminiProvider(BaseLLMProvider):
             if m.get("role") == "system":
                 continue
             role = "model" if m["role"] == "assistant" else "user"
-            contents.append({"role": role, "parts": [{"text": str(m["content"])}]})
+            contents.append({"role": role, "parts": _parts(m["content"])})
         return system, contents
 
     def _payload(self, messages: list[dict[str, Any]], temperature: float) -> dict[str, Any]:
