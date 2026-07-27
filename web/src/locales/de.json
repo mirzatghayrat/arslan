@@ -119,7 +119,8 @@
       "task": "Aufgaben",
       "spawn_wish": "Spawn-Wünsche",
       "other": "Sonstiges"
-    }
+    },
+    "fed_unreadable": "{{n}} eingespeist · {{reasons}}"
   },
   "dashboard": {
     "title": "Deine Spawns",
@@ -1367,7 +1368,9 @@
       "word": "Word"
     },
     "unsupported_format": "Nicht unterstütztes Format: {{name}}",
-    "paste_source": "Eingefügt"
+    "paste_source": "Eingefügt",
+    "nothing_read": "{{name}}: Aus dieser Datei ließ sich nichts lesen — nichts gespeichert",
+    "image_not_readable": "{{name}}: Dieser Build kann Bilder noch nicht lesen, es wurde nichts gespeichert (Bildverständnis kommt mit dem Vision-Update)"
   },
   "updater": {
     "available": "Arslan {{version}} ist verfügbar",

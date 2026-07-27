@@ -46,11 +46,35 @@ async function bucketCollectionId(bucketName: string): Promise<number> {
   return found ? found.id : (await api.createCollection(bucketName)).id;
 }
 
-/** Feed a file into its type bucket. Throws on unsupported type. */
+/** Raised when the server accepted the upload but stored NOTHING.
+ *
+ * The 0.1.6 silent lie lived exactly here: `ingest` answers 200 with
+ * `chunks_added: 0` for a file it could not read (an image, with no OCR stack
+ * in the packaged app), and every caller counted "did not throw" as success.
+ * Failing loud by default means a future call site cannot re-introduce the lie
+ * by forgetting to inspect the result. */
+export class NothingIngestedError extends Error {
+  constructor(readonly fileName: string, message: string) {
+    super(message);
+    this.name = "NothingIngestedError";
+  }
+}
+
+/** Feed a file into its type bucket.
+ * Throws on unsupported type, and on an accepted-but-empty ingest. */
 export async function feedFile(file: File, t: TranslateFn) {
   const b = bucketForFile(file.name);
   if (!b) throw new Error(t("feed.unsupported_format", { name: file.name }));
-  return api.ingestCollectionFile(await bucketCollectionId(t(BUCKET[b])), file);
+  const result = await api.ingestCollectionFile(await bucketCollectionId(t(BUCKET[b])), file);
+  if (!result.chunks_added) {
+    // Images get the specific reason, which the S4.3-a spec already required
+    // ("must not silently return empty") and which nothing implemented.
+    throw new NothingIngestedError(
+      file.name,
+      t(b === "image" ? "feed.image_not_readable" : "feed.nothing_read", { name: file.name }),
+    );
+  }
+  return result;
 }
 
 /** Feed pasted text or a URL into its bucket (文本 / 网页). */
@@ -58,5 +82,10 @@ export async function feedTextOrUrl(input: string, t: TranslateFn) {
   const trimmed = input.trim();
   const web = /^https?:\/\//.test(trimmed);
   const id = await bucketCollectionId(t(web ? BUCKET.web : BUCKET.text));
-  return api.ingestCollection(id, web ? { url: trimmed } : { source: t("feed.paste_source"), text: trimmed });
+  const result = await api.ingestCollection(
+    id, web ? { url: trimmed } : { source: t("feed.paste_source"), text: trimmed });
+  if (!result.chunks_added) {
+    throw new NothingIngestedError(trimmed, t("feed.nothing_read", { name: trimmed.slice(0, 40) }));
+  }
+  return result;
 }

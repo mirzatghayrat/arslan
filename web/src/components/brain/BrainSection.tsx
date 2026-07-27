@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, type BrainLeaf, type GraphNodeDto } from "../../api/client";
 import { useBrainTree, recentIds } from "../../hooks/useBrainTree";
-import { feedFile } from "../../lib/feed";
+import { feedFile, NothingIngestedError } from "../../lib/feed";
 import BrainEntryDetail from "./BrainEntryDetail";
 import BrainActivityStrip from "./BrainActivityStrip";
 import BrainProposalInbox from "./BrainProposalInbox";
@@ -88,13 +88,25 @@ export default function BrainSection() {
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     const files = Array.from(e.dataTransfer?.files ?? []); if (!files.length) return;
-    let ok = 0; const failed: string[] = [];
+    let ok = 0; const failed: string[] = []; const unreadable: string[] = [];
     for (const file of files) {
-      setStatus(t("brain.feeding_progress", { i: ok + failed.length + 1, total: files.length }));
-      try { await feedFile(file, t); ok += 1; } catch { failed.push(file.name); }
+      setStatus(t("brain.feeding_progress", { i: ok + failed.length + unreadable.length + 1, total: files.length }));
+      // ok++ ONLY after a confirmed non-empty ingest — feedFile throws on
+      // chunks_added: 0, so an unreadable file can no longer be counted as fed.
+      try { await feedFile(file, t); ok += 1; }
+      catch (e) {
+        // Unreadable is NOT the same as failed: the upload worked, nothing was
+        // stored, and the thrown message already says why (spec :162 requires
+        // saying why rather than returning empty in silence).
+        if (e instanceof NothingIngestedError) unreadable.push(e.message);
+        else failed.push(file.name);
+      }
     }
     reloadAll();
-    setStatus(failed.length ? t("brain.fed_partial", { n: ok, names: failed.join(", ") }) : t("brain.fed_ok", { n: ok }));
+    setStatus(
+      unreadable.length ? t("brain.fed_unreadable", { n: ok, reasons: unreadable.join("; ") })
+      : failed.length ? t("brain.fed_partial", { n: ok, names: failed.join(", ") })
+      : t("brain.fed_ok", { n: ok }));
     setTimeout(() => setStatus(null), 4000);
   };
 

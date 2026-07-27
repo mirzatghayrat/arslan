@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { factCategoryLabel } from "./catLabel";
 import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Upload, UserRound } from "lucide-react";
 import type { BrainBranch, BrainLeaf } from "../../api/client";
-import { feedFile, feedTextOrUrl } from "../../lib/feed";
+import { feedFile, feedTextOrUrl, NothingIngestedError } from "../../lib/feed";
 import BrainIndexHealth from "./BrainIndexHealth";
 import { hueVar } from "./hues";
 
@@ -109,9 +109,20 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
   };
   const pickFiles = async (files: FileList | null) => {
     const list = Array.from(files ?? []); if (!list.length) return;
-    setBusy(true); setErr(null); const failed: string[] = [];
-    for (const f of list) { try { await feedFile(f, t); } catch { failed.push(f.name); } }
-    setBusy(false); if (failed.length) setErr(t("brain.feed_failed", { names: failed.join(", ") })); onChanged();
+    setBusy(true); setErr(null); const failed: string[] = []; const unreadable: string[] = [];
+    for (const f of list) {
+      try { await feedFile(f, t); }
+      catch (e) {
+        // Same split as BrainSection: "we stored nothing, and here is why" is a
+        // different message from "the upload broke".
+        if (e instanceof NothingIngestedError) unreadable.push(e.message);
+        else failed.push(f.name);
+      }
+    }
+    setBusy(false);
+    if (unreadable.length) setErr(unreadable.join("; "));
+    else if (failed.length) setErr(t("brain.feed_failed", { names: failed.join(", ") }));
+    onChanged();
   };
   const runGenerate = async () => {
     const t = topic.trim(); if (!t || !onGenerate) return;

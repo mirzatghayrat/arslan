@@ -119,7 +119,8 @@
       "task": "タスク要望",
       "spawn_wish": "作りたいスポーン",
       "other": "その他"
-    }
+    },
+    "fed_unreadable": "{{n}} 件を取り込み · {{reasons}}"
   },
   "dashboard": {
     "title": "あなたのスポーン",
@@ -1367,7 +1368,9 @@
       "word": "Word"
     },
     "unsupported_format": "未対応の形式: {{name}}",
-    "paste_source": "貼り付け"
+    "paste_source": "貼り付け",
+    "nothing_read": "{{name}}:このファイルから内容を読み取れず、保存されませんでした",
+    "image_not_readable": "{{name}}:このビルドはまだ画像を読めないため、保存されませんでした(画像理解はビジョン更新で追加されます)"
   },
   "updater": {
     "available": "Arslan {{version}} が利用可能です",

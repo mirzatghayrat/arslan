@@ -119,7 +119,8 @@
       "task": "Tâches",
       "spawn_wish": "Spawns souhaités",
       "other": "Autres"
-    }
+    },
+    "fed_unreadable": "{{n}} alimenté(s) · {{reasons}}"
   },
   "dashboard": {
     "title": "Vos spawns",
@@ -1367,7 +1368,9 @@
       "word": "Word"
     },
     "unsupported_format": "Format non pris en charge : {{name}}",
-    "paste_source": "Collé"
+    "paste_source": "Collé",
+    "nothing_read": "{{name}} : rien n'a pu être lu dans ce fichier — rien n'a été enregistré",
+    "image_not_readable": "{{name}} : cette version ne sait pas encore lire les images, rien n'a été enregistré (la compréhension d'images arrive avec la mise à jour vision)"
   },
   "updater": {
     "available": "Arslan {{version}} est disponible",
