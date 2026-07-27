@@ -424,17 +424,64 @@ async def _classify_followup(user_message: str, direction: str) -> str:
     return "new"
 
 
+# ── vision (S4.2-e) ─────────────────────────────────────────────────────────
+# Two pure functions so the two halves of an image turn can be tested without
+# a provider: what the MODEL sees, and what gets PERSISTED. They differ on
+# purpose — decision ③A: an image participates only in the turn it was sent.
+
+def build_user_blocks(
+    user_message: str,
+    attached_context: str | None,
+    images: list[dict] | None,
+) -> str | list[dict]:
+    """The user content handed to the LLM.
+
+    Returns a plain STRING when there are no images — every text-only turn in
+    the app must keep the exact payload it had, and a one-element block list
+    would reshape all of them for nothing."""
+    text = user_message
+    if attached_context:
+        text = f"[附带材料]\n{attached_context}\n\n[用户消息]\n{user_message}"
+    if not images:
+        return text
+    blocks: list[dict] = [{"type": "text", "text": text}]
+    for img in images:
+        blocks.append({
+            "type": "image",
+            "mime_type": img.get("mime_type") or "image/png",
+            "data": img.get("data") or "",
+        })
+    return blocks
+
+
+def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
+    """What goes into arslan_messages.
+
+    NOT the image: `content` is a Text column, and base64 in it would bloat the
+    database and every backup while still not surviving as a real image. The
+    placeholder names the file so the transcript reads honestly, and so turn two
+    does not imply the model can still see something it cannot."""
+    if not images:
+        return user_message
+    names = "\n".join(f"[图片:{i.get('name') or 'image'}]" for i in images)
+    return f"{user_message}\n{names}" if user_message else names
+
+
 async def handle_user_message(
     conversation_id: str,
     user_message: str,
     emit: EventSink,
     *,
     attached_context: str | None = None,
+    images: list[dict] | None = None,
     confirm_command=None,
 ) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer."""
-    # 1. persist the user turn
-    await memory.add_message(conversation_id, "user", user_message)
+    # 1. persist the user turn — the PLACEHOLDER form when images rode along
+    #    (decision ③A); base64 in a Text column would bloat the DB and backups
+    #    while still not surviving as an image.
+    await memory.add_message(
+        conversation_id, "user", persisted_user_text(user_message, images))
 
     # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
     # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
@@ -575,7 +622,7 @@ async def handle_user_message(
         await phase_service.clear(conversation_id)
         await _handle_answer(conversation_id, user_message, emit,
                              extra_system=_CLARIFY_ADDENDUM,
-                             attached_context=attached_context,
+                             attached_context=attached_context, images=images,
                              confirm_command=confirm_command)
         await memory.maybe_compact(conversation_id)
         return
@@ -598,7 +645,7 @@ async def handle_user_message(
     # 4. handle the action
     if result.action == "route" and result.spawn_id is not None:
         await _handle_route(conversation_id, result, emit, user_message=user_message,
-                            route_ms=route_ms, attached_context=attached_context,
+                            route_ms=route_ms, attached_context=attached_context, images=images,
                             confirm_command=confirm_command)
     elif result.action == "suggest_update" and result.spawn_id is not None:
         # P2: conversational spawn editing. Draft a validated change-set and emit the
@@ -614,7 +661,7 @@ async def handle_user_message(
                               "did not map to an editable change (persona/tone/capabilities/"
                               "equipment). Briefly say what CAN be changed and ask exactly "
                               "what they want adjusted. Answer in the user's language."),
-                attached_context=attached_context, confirm_command=confirm_command)
+                attached_context=attached_context, images=images, confirm_command=confirm_command)
         else:
             emit(protocol.suggest_update(**drafted))
         await memory.maybe_compact(conversation_id)
@@ -637,7 +684,7 @@ async def handle_user_message(
             await _handle_answer(
                 conversation_id, user_message, emit,
                 extra_system=_gather_clarify_addendum(staffing_gather.missing_slots(slots)),
-                attached_context=attached_context,
+                attached_context=attached_context, images=images,
                 confirm_command=confirm_command,
             )
             await memory.maybe_compact(conversation_id)
@@ -647,7 +694,7 @@ async def handle_user_message(
         await phase_service.clear(conversation_id)
         await _staffing_match_and_propose(
             conversation_id, user_message, slots, result, emit,
-            attached_context=attached_context,
+            attached_context=attached_context, images=images,
             confirm_command=confirm_command,
         )
     elif result.action == "suggest_connect_mcp":
@@ -686,7 +733,7 @@ async def handle_user_message(
         if gathering:
             await phase_service.clear(conversation_id)
         await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
-                             attached_context=attached_context,
+                             attached_context=attached_context, images=images,
                              confirm_command=confirm_command)
     else:  # answer (incl. fallback)
         # Router no longer sees create-intent — release any gather phase.
@@ -698,7 +745,7 @@ async def handle_user_message(
         # on answer-path turns (which have no run_eval today).
         if confirm_lexicon.is_short_confirm(user_message):
             await _log_repeated_confirmation(conversation_id, {"at": "answer"})
-        await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
+        await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context, images=images,
                              confirm_command=confirm_command)
 
     # 5. compact the working thread if it grew too long
@@ -789,7 +836,7 @@ async def _fused_create_draft(slots: dict, result, seed_spawn_ids: list[int]) ->
 
 async def _staffing_match_and_propose(  # noqa: ANN001
     conversation_id, user_message, slots, result, emit: EventSink, *,
-    attached_context: str | None = None, confirm_command=None,
+    attached_context: str | None = None, images: list[dict] | None = None, confirm_command=None,
 ) -> None:
     """Ready-path (B4): the gather gate has passed and the staffing `slots` are
     complete. Score existing spawns against the need, classify into one of three
@@ -804,7 +851,7 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     # recurrence is False → one-off, do it once, never staff.
     if slots.get("recurrence") is False:
         await _handle_answer(conversation_id, user_message, emit,
-                             attached_context=attached_context,
+                             attached_context=attached_context, images=images,
                              confirm_command=confirm_command)
         return
 
@@ -855,7 +902,7 @@ async def _staffing_match_and_propose(  # noqa: ANN001
     # value + honest about any part it can't), THEN offers a LIGHT, implicitly-dismissable
     # "建个长期 X 分身?" chip instead of a blocking create-and-run card.
     await _handle_answer(conversation_id, user_message, emit,
-                         attached_context=attached_context, confirm_command=confirm_command)
+                         attached_context=attached_context, images=images, confirm_command=confirm_command)
     # then seed equipment from the full ranked list as a weak domain-adjacency prior, run the
     # existing L2-B2 overlap detection, and emit suggest_create as the follow-on suggestion.
     near_ids = [r["spawn_id"] for r in ranked if r.get("spawn_id") is not None]
@@ -915,7 +962,8 @@ def _usage_frame(detail: dict) -> dict:
 
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
-    attached_context: str | None = None, confirm_command=None,
+    attached_context: str | None = None, images: list[dict] | None = None,
+    confirm_command=None,
     intercept_spawn_name: str | None = None,
     # PA-1: True ONLY when the calling turn actually delegated (a dispatch happened or a
     # propose_invite frame was emitted) — the sole honest exemption for spawn-handoff
@@ -933,13 +981,15 @@ async def _handle_answer(
     async with usage_ledger.scope("answer", conversation_id):
         return await _handle_answer_body(
             conversation_id, user_message, emit, extra_system=extra_system,
-            attached_context=attached_context, confirm_command=confirm_command,
+            attached_context=attached_context, images=images,
+            confirm_command=confirm_command,
             intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
 
 
 async def _handle_answer_body(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
-    attached_context: str | None = None, confirm_command=None,
+    attached_context: str | None = None, images: list[dict] | None = None,
+    confirm_command=None,
     intercept_spawn_name: str | None = None,
     turn_delegated: bool = False,
 ) -> str | None:
@@ -961,9 +1011,9 @@ async def _handle_answer_body(
         summary=ctx["summary"], kb_block=kb_block,
     )
 
-    llm_user = user_message
-    if attached_context:
-        llm_user = f"[附带材料]\n{attached_context}\n\n[用户消息]\n{user_message}"
+    # Plain string when there are no images, so text-only turns are byte-identical
+    # to before; a neutral block list otherwise (providers translate it).
+    llm_user = build_user_blocks(user_message, attached_context, images)
 
     emit({"type": "stream_start", "source": "arslan"})
     try:
@@ -1425,7 +1475,7 @@ def _match_choice(user_message, candidates):  # noqa: ANN001
 
 async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: ANN001
                         user_message: str = "", route_ms: int | None = None,
-                        attached_context: str | None = None, confirm_command=None) -> None:
+                        attached_context: str | None = None, images: list[dict] | None = None, confirm_command=None) -> None:
     """Arbitrate a task turn per the §1.5 truth table (single implementation; the table
     changes before the code). Priority order = the table rows:
 
@@ -1450,7 +1500,7 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     # Cell 3: the user told the host to answer — mirror of the @spawn override.
     if cell == _CELL_ESCAPE:
         await _handle_answer(conversation_id, user_message, emit,
-                             attached_context=attached_context, confirm_command=confirm_command)
+                             attached_context=attached_context, images=images, confirm_command=confirm_command)
         return
 
     # PA-2 advance audit (only when the explicit path was reached VIA an advance trigger):
@@ -1522,7 +1572,7 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
     _guard_spawn_name = await dispatcher.get_spawn_name(result.spawn_id)
     answer_text = await _handle_answer(
         conversation_id, user_message, emit,
-        attached_context=attached_context, confirm_command=confirm_command,
+        attached_context=attached_context, images=images, confirm_command=confirm_command,
         intercept_spawn_name=_guard_spawn_name, turn_delegated=False)
 
     # BUG1 gate (cell 6 only): suppress the RECRUITING chip on an affirmative,

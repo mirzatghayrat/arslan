@@ -62,7 +62,7 @@ def _collect_until(ws, want_type: str, max_frames: int = 40) -> list[dict]:
 
 def _stub_fake_handle(monkeypatch, chunk: str = "Hello") -> None:
     async def _fake_handle(conversation_id, content, emit, *,  # noqa: ANN001
-                           attached_context=None, confirm_command=None):
+                           attached_context=None, images=None, confirm_command=None):
         emit({"type": "stream_start", "source": "arslan"})
         emit({"type": "stream_chunk", "content": chunk})
         emit({"type": "stream_end", "message_id": 1})

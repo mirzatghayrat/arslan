@@ -626,6 +626,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 continue
 
             content = data.get("content", "")
+            # Images ride in the frame itself (base64), not through /extract:
+            # decision ③A means they are needed for exactly one turn, so there
+            # is nothing to store and nothing to fetch back.
+            images = data.get("images") or []
             attached = (data.get("attached_context") or "").strip()
             if attached:
                 recent_material = attached
@@ -677,6 +681,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             await run_with_confirm_frames(
                 arslan.handle_user_message(conversation_id, content, emit,
                                            attached_context=attached or None,
+                                           images=images or None,
                                            confirm_command=confirm_command)
             )
     except WebSocketDisconnect:
