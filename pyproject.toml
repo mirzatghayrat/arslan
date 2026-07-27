@@ -38,6 +38,13 @@ dependencies = [
     "fastapi>=0.110,<0.137",
     "starlette<1.3",
     "uvicorn>=0.29",
+    # RUNTIME, not a test tool: uvicorn has no WebSocket implementation of
+    # its own and imports one lazily BY NAME. Without it every /ws/ upgrade
+    # silently degrades to a plain HTTP request — which the SPA catch-all
+    # answers with 200 — and the whole chat transport is dead while the
+    # server looks healthy. This lived in the `dev` extra until v0.1.7, so
+    # no packaged build (0.1.0-0.1.6) could hold a WebSocket at all.
+    "websockets>=12.0",
     "trafilatura>=1.12",
     "pypdf>=4.0",
     "python-docx>=1.1",
@@ -110,7 +117,6 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "ruff>=0.4",
-    "websockets>=12.0",
     "asgi-lifespan>=2.1",
 ]
 embeddings = [

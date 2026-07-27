@@ -38,6 +38,14 @@ binaries = []
 for pkg in ("server", "arslan", "mcp"):
     hiddenimports += collect_submodules(pkg)
 
+# uvicorn resolves its WebSocket implementation LAZILY BY NAME, so nothing
+# above imports `websockets` and PyInstaller cannot see it. Its absence is
+# not an error either: uvicorn logs "No supported WebSocket library detected"
+# and serves the upgrade as plain HTTP, which the SPA catch-all answers 200 —
+# a dead chat transport behind a healthy-looking server. That was the state of
+# every build from 0.1.0 to 0.1.6. verify_bundle + selftest now assert it.
+hiddenimports += collect_submodules("websockets")
+
 # collect_submodules finds MODULES. It does not find package DATA, and the
 # arslan package is mostly data at runtime: pyproject.toml:112-118 lists five
 # kinds loaded via Path(__file__).parent — seed skill-packs, scaffold

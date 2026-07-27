@@ -210,6 +210,11 @@ def selftest() -> int:
         "mcp",
         "aiosqlite",
         "sqlalchemy.dialects.sqlite.aiosqlite",  # resolved by name, not import
+        # uvicorn resolves this BY NAME at serve time and treats its absence as a
+        # log line, not an error: every /ws/ upgrade then degrades to plain HTTP,
+        # the SPA catch-all answers 200, and the entire chat transport is dead
+        # behind a /health that says 200. Builds 0.1.0-0.1.6 all shipped this way.
+        "websockets",
     ]
     failed: list[tuple[str, str]] = []
     for name in required:
@@ -217,6 +222,24 @@ def selftest() -> int:
             __import__(name)
         except Exception as exc:  # noqa: BLE001 — report them all, not the first
             failed.append((name, f"{type(exc).__name__}: {exc}"))
+
+    # Importing `websockets` is still not proof that uvicorn will USE it —
+    # uvicorn picks an implementation through its own config resolution, so ask
+    # uvicorn, not the import system.
+    if not failed:
+        try:
+            from uvicorn.config import Config
+
+            cfg = Config("server.main:app", ws="auto")
+            cfg.load()  # ws_protocol_class only exists after load() resolves it
+            if cfg.ws_protocol_class is None:
+                failed.append((
+                    "uvicorn websocket protocol",
+                    "ws='auto' resolved to NO implementation — every /ws/ upgrade "
+                    "would be served as plain HTTP and the chat transport is dead",
+                ))
+        except Exception as exc:  # noqa: BLE001 — report, never crash the selftest
+            failed.append(("uvicorn websocket protocol", f"{type(exc).__name__}: {exc}"))
 
     # Importable modules are not enough: every module here can load while the
     # window still comes up blank, because the SPA is DATA, not code. Assert
