@@ -25,26 +25,44 @@ if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
 
+def _heal_config_drift() -> bool:
+    """Reload ``server.config`` iff its high-blast-radius fields have drifted
+    from the ambient environment. Returns True when a reload happened.
+
+    Exposed as a function (not inlined in the fixture) so a regression test can
+    exercise the healing logic directly — cross-test ordering cannot be asserted
+    reliably under pytest-randomly.
+    """
+    import server.config as _cfg
+
+    drifted = (
+        (_cfg.settings.secret_key or "") != (os.environ.get("ARSLAN_SECRET_KEY", "") or "")
+        # S4.2-d M8: api_token drift was the root cause of the flaky
+        # test_brain_open_when_token_unset — test_usage_api's fixture reloads
+        # config with ARSLAN_API_TOKEN set and monkeypatch restores only the
+        # env, not the module, so the token leaked into every later test.
+        or (_cfg.settings.api_token or "") != (os.environ.get("ARSLAN_API_TOKEN", "") or "")
+    )
+    if drifted:
+        importlib.reload(_cfg)
+    return drifted
+
+
 @pytest.fixture(autouse=True)
 def _restore_config_after_test():
     """Guard against cross-test ``server.config`` pollution.
 
     Several tests reload ``server.config`` with a mutated environment (e.g. an *unset*
-    ``ARSLAN_SECRET_KEY`` for the middleware-security suite) and never reload it back.
-    That was harmless until ``crypto.encrypt()`` began failing closed under an empty
-    secret (S1 OSS-safety): a later test that calls ``crypto.encrypt()`` directly would
-    then hit the insecure-default refusal purely because of test ordering.
+    ``ARSLAN_SECRET_KEY`` for the middleware-security suite, or a SET
+    ``ARSLAN_API_TOKEN`` for the usage-API suite) and never reload it back.
 
     As an autouse teardown, this runs *after* ``monkeypatch`` has restored the ambient
-    environment; if the live config's secret has drifted from that environment, it
-    reloads config back to the ambient baseline. It is a cheap no-op when there is no
-    drift (the overwhelming majority of tests).
+    environment; if the live config has drifted from that environment on any guarded
+    field, it reloads config back to the ambient baseline. It is a cheap no-op when
+    there is no drift (the overwhelming majority of tests).
     """
     yield
-    import server.config as _cfg
-
-    if (_cfg.settings.secret_key or "") != (os.environ.get("ARSLAN_SECRET_KEY", "") or ""):
-        importlib.reload(_cfg)
+    _heal_config_drift()
 
 
 @pytest_asyncio.fixture

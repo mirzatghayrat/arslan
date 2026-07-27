@@ -443,8 +443,15 @@ async def create_from_draft(draft: dict, differentiation: str | None = None, *, 
 
     equipment = await registry_service.equipment_for_spawn(spawn_id)
     reflect_equipment(config.settings.spawns_dir, spawn_name, equipment)
+    # S4.2-d decision ③: capture the server language AT CREATION TIME — the
+    # greeting is persisted below and never rewritten on later language changes.
+    from server.services import settings_service
+
+    async with db_session.AsyncSessionLocal() as db:
+        cfg = await settings_service.get_settings(db)
     intro = await equipment_service.build_intro(
-        name=spawn_name, persona_role=persona_role, equipment=equipment
+        name=spawn_name, persona_role=persona_role, equipment=equipment,
+        language=cfg.get("language"),
     )
     # Intentionally a second txn: losing the intro on a crash is non-critical; the spawn+equipment txn above must not widen.
     async with db_session.AsyncSessionLocal() as db:

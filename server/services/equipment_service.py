@@ -139,18 +139,59 @@ async def curate(need_description: str) -> dict:
     return {"toolsets": toolsets, "skills": skills, "mcps": mcps, "gaps": gaps}
 
 
-async def build_intro(*, name: str, persona_role: str | None, equipment: dict) -> str:
+# S4.2-d decision ③: the greeting is generated in the SERVER language setting as
+# captured at creation time (spawn_service reads the setting and passes it in).
+# Historic greetings are persisted chat messages and are deliberately never
+# rewritten. Unknown/unset falls back to "en", mirroring the UI (i18n.ts
+# fallbackLng); legacy label-shaped stored values map onto their code, mirroring
+# web/src/lib/languages.ts normalizeLanguage.
+_INTRO_TEMPLATES: dict[str, dict[str, str]] = {
+    "zh": {"i_am": "我是 {name}。", "live": "我可以实时使用：{items}。",
+           "soon": "即将接通：{items}。", "skills": "我的技法包：{items}。",
+           "closing": "需要我做什么，直接说就行。", "join": "、"},
+    "en": {"i_am": "I'm {name}.", "live": "I can use these live: {items}.",
+           "soon": "Coming online soon: {items}.", "skills": "My skill pack: {items}.",
+           "closing": "Just tell me what you need.", "join": ", "},
+    "ja": {"i_am": "{name} です。", "live": "リアルタイムで使えるもの:{items}。",
+           "soon": "まもなく接続:{items}。", "skills": "スキルパック:{items}。",
+           "closing": "ご用件をそのままお伝えください。", "join": "、"},
+    "de": {"i_am": "Ich bin {name}.", "live": "Live nutzbar: {items}.",
+           "soon": "Bald verbunden: {items}.", "skills": "Mein Skill-Paket: {items}.",
+           "closing": "Sag mir einfach, was du brauchst.", "join": ", "},
+    "es": {"i_am": "Soy {name}.", "live": "Puedo usar en vivo: {items}.",
+           "soon": "Pronto disponible: {items}.", "skills": "Mi paquete de habilidades: {items}.",
+           "closing": "Dime qué necesitas.", "join": ", "},
+    "fr": {"i_am": "Je suis {name}.", "live": "Utilisable en direct : {items}.",
+           "soon": "Bientôt connecté : {items}.", "skills": "Mon pack de compétences : {items}.",
+           "closing": "Dites-moi simplement ce qu'il vous faut.", "join": ", "},
+}
+
+_LEGACY_LANGUAGE_LABELS = {"简体中文": "zh", "中文": "zh", "日本語": "ja",
+                           "english (us)": "en", "english": "en"}
+
+
+def _norm_lang(language: str | None) -> str:
+    raw = (language or "").strip()
+    low = raw.lower()
+    if low in _INTRO_TEMPLATES:
+        return low
+    return _LEGACY_LANGUAGE_LABELS.get(raw, _LEGACY_LANGUAGE_LABELS.get(low, "en"))
+
+
+async def build_intro(*, name: str, persona_role: str | None, equipment: dict,
+                      language: str | None = None) -> str:
     """Deterministic self-introduction grounded in equipment rows — tags and
     intro can never disagree because both come from the same data."""
-    parts = [f"我是 {name}。" + (f"{persona_role}。" if persona_role else "")]
+    tpl = _INTRO_TEMPLATES[_norm_lang(language)]
+    parts = [tpl["i_am"].format(name=name) + (f" {persona_role}。" if persona_role else "")]
     live = [t["name"] for t in equipment.get("toolsets", []) if t.get("status") == "wired"]
     soon = [t["name"] for t in equipment.get("toolsets", []) if t.get("status") != "wired"]
     skills = [s["name"] for s in equipment.get("skills", [])]
     if live:
-        parts.append("我可以实时使用：" + "、".join(live) + "。")
+        parts.append(tpl["live"].format(items=tpl["join"].join(live)))
     if soon:
-        parts.append("即将接通：" + "、".join(soon) + "。")
+        parts.append(tpl["soon"].format(items=tpl["join"].join(soon)))
     if skills:
-        parts.append("我的技法包：" + "、".join(skills) + "。")
-    parts.append("需要我做什么，直接说就行。")
+        parts.append(tpl["skills"].format(items=tpl["join"].join(skills)))
+    parts.append(tpl["closing"])
     return " ".join(parts)

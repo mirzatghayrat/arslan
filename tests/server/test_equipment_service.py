@@ -128,3 +128,38 @@ async def test_build_intro_grounded_in_equipment(seeded, maker):
     assert "小美" in intro
     assert "Web Search & Scraping" in intro
     assert "baoyu-infographic" in intro
+
+
+@pytest.mark.asyncio
+async def test_build_intro_language_follows_argument(seeded, maker):
+    # S4.2-d decision ③: the greeting follows the SERVER language setting captured
+    # at creation time (spawn_service passes it in); historic greetings are stored
+    # chat messages and are never rewritten.
+    from server.services import equipment_service
+
+    eq = {"toolsets": [{"key": "w", "name": "Web Search", "status": "wired"}], "skills": []}
+    zh = await equipment_service.build_intro(
+        name="小美", persona_role=None, equipment=eq, language="zh")
+    en = await equipment_service.build_intro(
+        name="小美", persona_role=None, equipment=eq, language="en")
+    ja = await equipment_service.build_intro(
+        name="小美", persona_role=None, equipment=eq, language="ja")
+    assert "我是 小美" in zh and "Web Search" in zh
+    assert "I'm 小美" in en and "我是" not in en
+    assert "Web Search" in en
+    assert "小美" in ja and "我是" not in ja and "です" in ja
+
+
+@pytest.mark.asyncio
+async def test_build_intro_unset_or_junk_language_falls_back_to_english(seeded, maker):
+    # Mirrors the UI: i18n.ts fallbackLng = "en". Legacy label-shaped stored
+    # values ("简体中文") still resolve to their language, junk falls to en.
+    from server.services import equipment_service
+
+    eq = {"toolsets": [], "skills": []}
+    assert "I'm X" in await equipment_service.build_intro(
+        name="X", persona_role=None, equipment=eq, language=None)
+    assert "I'm X" in await equipment_service.build_intro(
+        name="X", persona_role=None, equipment=eq, language="klingon")
+    assert "我是 X" in await equipment_service.build_intro(
+        name="X", persona_role=None, equipment=eq, language="简体中文")
