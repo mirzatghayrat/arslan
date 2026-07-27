@@ -36,4 +36,14 @@ describe("Sidebar window chrome strip", () => {
     expect(strip.querySelectorAll("[class*='rounded-full']").length).toBe(0);
     expect(strip.textContent).toContain("sidebar.node_version");
   });
+
+  // The overlay title bar has no native strip to grab, so the strip must be
+  // a subtree ("deep") drag region — bare/true would only drag on direct
+  // container clicks, and a missing attribute makes the window unmovable.
+  it("is a deep tauri drag region", () => {
+    render(<Sidebar {...baseProps} />);
+    expect(
+      screen.getByTestId("window-chrome-strip").getAttribute("data-tauri-drag-region"),
+    ).toBe("deep");
+  });
 });

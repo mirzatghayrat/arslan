@@ -389,13 +389,16 @@ pub fn run() {
 
             // No opaque white title bar: the webview fills the window and the
             // native traffic lights float over the sidebar's top-left corner
-            // (which the SPA keeps free of content). The transparent title-bar
-            // strip still handles window dragging natively.
+            // (which the SPA keeps free of content). Overlay leaves no native
+            // strip to drag by, so the SPA marks its sidebar header as
+            // data-tauri-drag-region and capabilities/remote-ui-drag.json
+            // grants that local origin exactly the two drag commands.
             #[cfg(target_os = "macos")]
             {
                 win = win
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .hidden_title(true);
+                    .hidden_title(true)
+                    .traffic_light_position(tauri::LogicalPosition::new(13.0, 16.0));
             }
 
             // The other half of the auth contract. The sidecar enforces auth

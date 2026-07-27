@@ -116,15 +116,18 @@ export default function Sidebar({
         {/* Window chrome strip. Deliberately empty on the left: in the
             packaged shell the REAL macOS traffic lights float here
             (titleBarStyle Overlay in desktop/src-tauri) — no decorative
-            fake buttons. */}
-        <div data-testid="window-chrome-strip" className="flex items-center px-5 pt-4 pb-3 flex-shrink-0">
+            fake buttons. data-tauri-drag-region="deep" makes this strip and
+            the brand header below it the window's drag handle (the overlay
+            title bar has no native strip left to grab); it is inert in a
+            plain browser. */}
+        <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="flex items-center px-5 pt-4 pb-3 flex-shrink-0">
           <span className="text-[9.5px] text-subtle-foreground font-mono tracking-wider ml-auto uppercase opacity-60">
             {t('sidebar.node_version')} · build {BUILD_TAG}
           </span>
         </div>
 
         {/* Brand Header */}
-        <div className="px-5 py-3 mb-6 flex items-center gap-3 flex-shrink-0">
+        <div data-tauri-drag-region="deep" className="px-5 py-3 mb-6 flex items-center gap-3 flex-shrink-0">
           <img src="/arslan-mark.png" alt={t('app.name')} className="w-9 h-9 object-contain flex-shrink-0 select-none arslan-mark" draggable={false} />
           <div>
             <div className="flex items-center gap-1.5">
