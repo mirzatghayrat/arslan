@@ -1,10 +1,13 @@
 """Guards on the first-run docs against the known first-run blockers.
 
-These pin the things that break a stranger following README.md / docs/QUICKSTART.md
-verbatim. Static assertions run over BOTH docs (the original suite covered README
-only, while QUICKSTART carried the identical broken snippet unguarded), and the
-secret-key snippet is additionally executed for real (behavioral tests) so the
-documented command line provably does what the docs claim.
+These pin the things that break a stranger following the from-source docs
+verbatim. Since the desktop-first rewrite, README.md deliberately carries NO
+dev-run snippets — its contract (asserted below) is the download link plus a
+pointer to docs/QUICKSTART.md, which is now the single home of the source
+walkthrough. The snippet guards therefore run over QUICKSTART (and
+CONTRIBUTING for the command-level checks), and the secret-key snippet is
+additionally executed for real (behavioral tests) so the documented command
+line provably does what the docs claim.
 
 Logical lines: the secret snippet spans backslash-continuation lines, so static
 checks fold continuations first — a per-physical-line scan would miss `>> .env`
@@ -21,12 +24,34 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS = [ROOT / "README.md", ROOT / "docs" / "QUICKSTART.md"]
-DOC_IDS = ["README", "QUICKSTART"]
+DOCS = [ROOT / "docs" / "QUICKSTART.md"]
+DOC_IDS = ["QUICKSTART"]
 # CONTRIBUTING carries the dev variant of the same commands (uv sync, env pins) but no
 # secret snippet — it joins the command-level checks only.
 CMD_DOCS = DOCS + [ROOT / "CONTRIBUTING.md"]
 CMD_DOC_IDS = DOC_IDS + ["CONTRIBUTING"]
+
+
+# --- README: desktop-first contract ------------------------------------------
+
+
+def test_readme_is_desktop_first():
+    """README's install story is the desktop app (v0.1.4 rewrite, user-ordered):
+    the DMG download link plus a pointer to docs/QUICKSTART.md for source/Docker.
+    The dev walkthrough must NOT regrow here — localhost URLs and uvicorn
+    commands in the README were exactly what sent app users down the dev path."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "releases/latest/download/Arslan-macos-arm64.dmg" in text, (
+        "README.md lost the desktop download link"
+    )
+    assert "docs/QUICKSTART.md" in text, (
+        "README.md must point source/Docker users at docs/QUICKSTART.md"
+    )
+    for banned in ("uv sync", "uvicorn", "localhost:5173", "127.0.0.1:8741"):
+        assert banned not in text, (
+            f"README.md regrew the dev walkthrough ({banned!r}) — that content "
+            f"lives in docs/QUICKSTART.md since the desktop-first rewrite"
+        )
 
 
 def _text(doc: Path) -> str:
