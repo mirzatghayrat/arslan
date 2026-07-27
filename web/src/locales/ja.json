@@ -1371,10 +1371,10 @@
   },
   "updater": {
     "available": "Arslan {{version}} が利用可能です",
-    "restart_note": "インストール後、自動で再起動します",
-    "install": "インストール",
+    "restart_note": "アップデート後、自動で再起動します",
+    "install": "アップデート",
     "later": "後で",
-    "installing": "{{version}} をインストール中…",
+    "installing": "{{version}} に更新中…",
     "failed": "アップデートをインストールできませんでした"
   }
 }

@@ -1371,10 +1371,10 @@
   },
   "updater": {
     "available": "Arslan {{version}} 可更新",
-    "restart_note": "点安装会自动完成并重启",
-    "install": "安装",
+    "restart_note": "点更新会自动完成并重启",
+    "install": "更新",
     "later": "稍后",
-    "installing": "正在安装 {{version}}…",
+    "installing": "正在更新到 {{version}}…",
     "failed": "更新安装失败"
   }
 }

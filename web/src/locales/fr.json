@@ -1371,10 +1371,10 @@
   },
   "updater": {
     "available": "Arslan {{version}} est disponible",
-    "restart_note": "S'installe et redémarre quand vous êtes prêt",
-    "install": "Installer",
+    "restart_note": "Se met à jour et redémarre quand vous êtes prêt",
+    "install": "Mettre à jour",
     "later": "Plus tard",
-    "installing": "Installation de {{version}}…",
+    "installing": "Mise à jour vers {{version}}…",
     "failed": "La mise à jour n'a pas pu être installée"
   }
 }
