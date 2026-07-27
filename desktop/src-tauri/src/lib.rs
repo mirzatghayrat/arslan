@@ -275,12 +275,98 @@ Download and install now?",
     });
 }
 
+/// True when the app is running from a place that can vanish from under it:
+/// a mounted disk image (/Volumes/…) or a Gatekeeper app-translocation
+/// mount. Seen in the field (v0.1.2): the sidecar lazy-loads bundle files
+/// per request (e.g. certifi's CA bundle for TLS), so once the DMG volume
+/// is force-ejected the UI keeps running but every LLM call fails with
+/// "[Errno 2] No such file or directory". The auto-updater is also unable
+/// to replace files on a read-only volume.
+fn is_ephemeral_install_path(exe: &str) -> bool {
+    exe.starts_with("/Volumes/") || exe.contains("/AppTranslocation/")
+}
+
+/// Walk up from the executable to the enclosing .app bundle root.
+fn app_bundle_root(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    exe.ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .map(|p| p.to_path_buf())
+}
+
+/// Offer to copy the bundle into /Applications and relaunch from there.
+/// Runs BEFORE the sidecar starts so the freshly launched copy never races
+/// this process for the database. Declining is fine — the app works from a
+/// DMG until the volume is ejected — so this stays a proposal, not a gate.
+#[cfg(target_os = "macos")]
+fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
+    let Some(bundle) = app_bundle_root(exe) else {
+        return;
+    };
+    let yes = app
+        .dialog()
+        .message(
+            "Arslan is running straight from its disk image. Ejecting the \
+             image would break the running app, and automatic updates cannot \
+             work here.\n\nArslan 正在从安装镜像(DMG)中直接运行:镜像被推出后 \
+             app 会失灵,自动更新也无法工作。\n\nInstall to the Applications \
+             folder and relaunch? / 安装到「应用程序」并重新打开?",
+        )
+        .title("Install Arslan / 安装 Arslan")
+        .kind(MessageDialogKind::Info)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Install / 安装".into(),
+            "Not now / 暂不".into(),
+        ))
+        .blocking_show();
+    if !yes {
+        return;
+    }
+
+    let dest = std::path::Path::new("/Applications/Arslan.app");
+    // Replacing an existing copy is installer semantics; the path is our own
+    // fixed bundle name, never derived from input.
+    if dest.exists() {
+        let _ = std::fs::remove_dir_all(dest);
+    }
+    // ditto preserves code signatures and extended attributes; plain fs::copy
+    // would produce a bundle Gatekeeper rejects.
+    let copied = std::process::Command::new("/usr/bin/ditto")
+        .arg(&bundle)
+        .arg(dest)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !copied {
+        app.dialog()
+            .message(
+                "Could not copy Arslan into /Applications. Please drag it \
+                 there in Finder instead.\n\n自动安装失败,请在访达中手动把 \
+                 Arslan 拖进「应用程序」。",
+            )
+            .title("Install failed / 安装失败")
+            .kind(MessageDialogKind::Error)
+            .blocking_show();
+        return;
+    }
+    let _ = std::process::Command::new("/usr/bin/open").arg(dest).spawn();
+    // The sidecar has not started yet, so exiting here cannot orphan it or
+    // hold the database lock against the relaunched copy.
+    std::process::exit(0);
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Ok(exe) = std::env::current_exe() {
+                if is_ephemeral_install_path(&exe.to_string_lossy()) {
+                    offer_install_to_applications(app, &exe);
+                }
+            }
+
             let handle = app.handle().clone();
             let (port, child) = start_sidecar(&handle)?;
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
@@ -300,6 +386,17 @@ pub fn run() {
                 .title("Arslan")
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(900.0, 600.0);
+
+            // No opaque white title bar: the webview fills the window and the
+            // native traffic lights float over the sidebar's top-left corner
+            // (which the SPA keeps free of content). The transparent title-bar
+            // strip still handles window dragging natively.
+            #[cfg(target_os = "macos")]
+            {
+                win = win
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true);
+            }
 
             // The other half of the auth contract. The sidecar enforces auth
             // (ARSLAN_PACKAGED=1); the SPA reads window.__ARSLAN_TOKEN__ at
@@ -340,4 +437,40 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dmg_and_translocation_paths_are_ephemeral() {
+        assert!(is_ephemeral_install_path(
+            "/Volumes/Arslan/Arslan.app/Contents/MacOS/arslan"
+        ));
+        assert!(is_ephemeral_install_path(
+            "/private/var/folders/ab/T/AppTranslocation/9C1D/d/Arslan.app/Contents/MacOS/arslan"
+        ));
+    }
+
+    #[test]
+    fn real_installs_are_not_ephemeral() {
+        assert!(!is_ephemeral_install_path(
+            "/Applications/Arslan.app/Contents/MacOS/arslan"
+        ));
+        // A path merely mentioning Volumes deeper down must not trip it.
+        assert!(!is_ephemeral_install_path(
+            "/Users/alice/Applications/Volumes-notes/Arslan.app/Contents/MacOS/arslan"
+        ));
+    }
+
+    #[test]
+    fn bundle_root_is_the_dot_app_ancestor() {
+        let exe = std::path::Path::new("/Volumes/Arslan/Arslan.app/Contents/MacOS/arslan");
+        assert_eq!(
+            app_bundle_root(exe).unwrap(),
+            std::path::Path::new("/Volumes/Arslan/Arslan.app")
+        );
+        assert_eq!(app_bundle_root(std::path::Path::new("/usr/bin/true")), None);
+    }
 }

@@ -24,3 +24,16 @@ describe("Sidebar ACTIVE SPAWNS lifecycle", () => {
     expect(screen.queryByText("Mermer")).toBeNull();  // no active chat → hidden
   });
 });
+
+describe("Sidebar window chrome strip", () => {
+  // v0.1.3: the decorative fake traffic-light buttons are gone — the packaged
+  // shell overlays the REAL macOS controls in this corner (titleBarStyle
+  // Overlay). The strip must contain no clickable decoys, only the build tag.
+  it("has no fake traffic-light buttons, only the build tag", () => {
+    render(<Sidebar {...baseProps} />);
+    const strip = screen.getByTestId("window-chrome-strip");
+    expect(strip.querySelectorAll("div").length).toBe(0);
+    expect(strip.querySelectorAll("[class*='rounded-full']").length).toBe(0);
+    expect(strip.textContent).toContain("sidebar.node_version");
+  });
+});

@@ -113,11 +113,11 @@ export default function Sidebar({
       {/* Top Portion of the Sidebar */}
       <div className="flex-1 flex flex-col min-h-0">
         
-        {/* macOS Style Traffic Lights */}
-        <div className="flex items-center gap-1.5 px-5 pt-4 pb-3 flex-shrink-0">
-          <div className="w-3 h-3 rounded-full bg-danger border border-black/20 cursor-pointer"></div>
-          <div className="w-3 h-3 rounded-full bg-warning border border-black/20 cursor-pointer"></div>
-          <div className="w-3 h-3 rounded-full bg-success border border-black/20 cursor-pointer"></div>
+        {/* Window chrome strip. Deliberately empty on the left: in the
+            packaged shell the REAL macOS traffic lights float here
+            (titleBarStyle Overlay in desktop/src-tauri) — no decorative
+            fake buttons. */}
+        <div data-testid="window-chrome-strip" className="flex items-center px-5 pt-4 pb-3 flex-shrink-0">
           <span className="text-[9.5px] text-subtle-foreground font-mono tracking-wider ml-auto uppercase opacity-60">
             {t('sidebar.node_version')} · build {BUILD_TAG}
           </span>
