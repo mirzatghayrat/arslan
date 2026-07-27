@@ -268,6 +268,16 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None, mint: boo
         q = q.where(Run.created_at >= baseline_started_at)
     runs = (await db.execute(q.order_by(Run.id.desc()))).scalars().all()
     for run in runs:
+        # T11: a run whose input carried an image can never be replayed
+        # faithfully — the baseline answered while LOOKING at the picture, and a
+        # replay arm sees only the "[图片:name]" placeholder (decision ③A). The
+        # two arms are then not comparable and the judge would be scoring noise,
+        # with nothing raising to say so. The flag is a recorded fact, never
+        # sniffed from the transcript: that text is our own placeholder and a
+        # user can type it verbatim.
+        if run.has_images:
+            excluded += 1
+            continue
         if not await replay_run.is_replayable(db, run.id):
             excluded += 1
             continue

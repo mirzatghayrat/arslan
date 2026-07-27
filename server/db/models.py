@@ -376,6 +376,11 @@ class Run(Base):
     tokens_in = Column(Integer, nullable=True)        # real provider input tokens (usually NULL: spawn streams)
     tokens_out = Column(Integer, nullable=True)       # real provider output tokens
     tokens_estimated = Column(Boolean, nullable=False, default=False)  # true → task_tokens is an estimate
+    # T11: this run's input carried image blocks ⇒ it can never be replayed
+    # faithfully (an image lives for one turn only, decision ③A), so
+    # replay_gate.build_corpus excludes it. NULL = predates the column, which
+    # for those rows is chronologically equivalent to False.
+    has_images = Column(Boolean, nullable=True)
     error_kind = Column(String(60), nullable=True)    # structured error class/category
     error_text = Column(Text, nullable=True)          # error message (truncated by the recorder)
     system_prompt = Column(Text, nullable=True)       # SENSITIVE: assembled system prompt (retention-governed)

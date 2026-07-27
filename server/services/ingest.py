@@ -91,6 +91,38 @@ _DESCRIBE_SYSTEM = (
 # which language the app happened to be in when it was fed.
 _DESCRIBED_SUFFIX = " (image description)"
 
+# How many pages of a scanned PDF may be sent to the model.
+#
+# NOT a round number picked for comfort — measured, because "there is a cap"
+# without a number is not a cap. Each page is rasterised to the same 1568px long
+# edge as any other image, i.e. ~1109x1568 for A4 portrait, which prices at
+# ~2,319 tokens (Anthropic's pixels/750) or ~2,125 (OpenAI's 512px tiles).
+#
+#     pages   tokens    deepseek-flash   deepseek-pro   sonnet
+#        20   46,371        $0.006          $0.020      $0.14
+#        36   83,468        $0.012          $0.037      $0.25
+#        50  115,927        $0.016          $0.051      $0.35
+#       100  231,855        $0.032          $0.102      $0.70
+#
+# So money is NOT the binding constraint — the CONTEXT WINDOW is. At 36 pages
+# (~83k) a 128k-context model still has ~45k left for the system prompt, the
+# history and its own answer. At 50 pages (~116k) any history at all overflows
+# it. The true ceiling sits near 40; 36 is the safe side of it.
+VISION_PDF_MAX_PAGES = 36
+
+
+def pdf_page_plan(total_pages: int) -> tuple[int, str]:
+    """(pages to send, note to show the user).
+
+    The note is EMPTY when nothing was skipped, and names both numbers when
+    something was — a vague "some pages were skipped" is what lets someone act
+    on 36 pages of a 137-page contract believing they had all of it."""
+    take = min(max(total_pages, 0), VISION_PDF_MAX_PAGES)
+    if total_pages > VISION_PDF_MAX_PAGES:
+        return take, (f"This document has {total_pages} pages; the first "
+                      f"{take} were read. The rest were not.")
+    return take, ""
+
 
 def described_source(filename: str) -> str:
     """Provenance marker for a model-described image.

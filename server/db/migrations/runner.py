@@ -6,7 +6,7 @@ an install re-applies only the pending tail. VERBATIM order from the old main.py
 chain (do not reorder).
 
 Canonical chain (from the old ``main.py`` boot block, verbatim, in order):
-``0006 … 0037`` — 32 entries. It starts at ``0006``, not ``0001``:
+``0006 … 0038`` — 33 entries. It starts at ``0006``, not ``0001``:
 ``0001``–``0005`` predate ``Base.metadata.create_all`` (the alembic era) and are
 now create_all-subsumed, so they are NOT in the boot chain and NOT registered
 here (they still define ``upgrade_sync`` — the completeness test allow-lists them
@@ -58,6 +58,7 @@ from .versions._0034_curation_layer import upgrade_sync as _m0034
 from .versions._0035_brain_usage_events import upgrade_sync as _m0035
 from .versions._0036_evolution_attempt_source import upgrade_sync as _m0036
 from .versions._0037_fact_category_stable_keys import upgrade_sync as _m0037
+from .versions._0038_run_has_images import upgrade_sync as _m0038
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -93,6 +94,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0035", _m0035),
     ("0036", _m0036),
     ("0037", _m0037),
+    ("0038", _m0038),
 ]
 
 
