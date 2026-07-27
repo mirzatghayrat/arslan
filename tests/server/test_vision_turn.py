@@ -111,13 +111,11 @@ def test_every_material_carrying_answer_call_also_carries_images():
         call = src[m.start():i]
         if "attached_context=attached_context" in call and "images=" not in call:
             offenders.append(m.group(1))
-    # KNOWN GAP, deliberately not yet closed (spec §4 item 10): the spawn
-    # dispatch path folds attached material into the SYSTEM prompt
-    # (dispatcher.py:341-342), and an image block cannot live there — Anthropic
-    # and Gemini both reject or ignore images outside the user turn. Giving
-    # spawns vision needs its own user-turn route, which is a later stage of
-    # this round. Entries are DELETED as that lands; nothing may be added.
-    SPAWN_PATH_GAP = {"_dispatch_spawn", "dispatch", "dispatch_routed"}
+    # The spawn gap is CLOSED: dispatcher.with_images puts images on the user
+    # turn while attached TEXT keeps its route into the system prompt. The set
+    # stays here, empty, because it is the mechanism that made the gap visible
+    # while it existed — and a future omission has to land somewhere.
+    SPAWN_PATH_GAP: set[str] = set()
     fresh = sorted(set(offenders) - SPAWN_PATH_GAP)
     assert not fresh, (
         f"these calls forward the turn's attached material but drop its images: {fresh}"

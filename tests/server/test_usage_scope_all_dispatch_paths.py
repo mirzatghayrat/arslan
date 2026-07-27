@@ -52,7 +52,7 @@ def _reporting_dispatch(usage_by_call):
 
     async def fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                             on_event=None, prior_output=None, instruction=None,
-                            allow_escalation=True, mode="execute", attached_context=None,
+                            allow_escalation=True, mode="execute", attached_context=None, images=None,
                             run_id=None):
         tin, tout, total, out = usage_by_call[min(state["i"], len(usage_by_call) - 1)]
         state["i"] += 1

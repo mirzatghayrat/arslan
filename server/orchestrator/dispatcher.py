@@ -524,6 +524,27 @@ async def _dispatch_replay(
     }
 
 
+def with_images(brief: str, images: list[dict] | None) -> str | list[dict]:
+    """Attach the turn's images to a spawn's user content.
+
+    Images CANNOT ride `attached_context`: that material is appended to the
+    SYSTEM prompt, and Anthropic and Gemini both require image blocks in the
+    user turn. Text keeps its existing route; images get this one.
+
+    Returns the brief UNCHANGED (a plain string) when there are no images, so
+    every text-only dispatch keeps a byte-identical payload."""
+    if not images:
+        return brief
+    blocks: list[dict] = [{"type": "text", "text": brief}]
+    for img in images:
+        blocks.append({
+            "type": "image",
+            "mime_type": img.get("mime_type") or "image/png",
+            "data": img.get("data") or "",
+        })
+    return blocks
+
+
 async def dispatch(
     conversation_id: str,
     *,
@@ -537,7 +558,7 @@ async def dispatch(
     mode: str = "execute",
     system_prompt_override: str | None = None,
     persist: bool = True,
-    attached_context: str | None = None,
+    attached_context: str | None = None, images: list[dict] | None = None,
     run_id: int | None = None,
     replay: bool = False,
     ambient: dict | None = None,
@@ -607,6 +628,18 @@ async def dispatch(
     else:
         # In execute_confirmed mode, prior_output carries the spawn's proposed direction.
         user_content = _frame_brief(task_brief, mode=mode, proposed_direction=prior_output)
+
+    # AFTER the branch, not inside it: a refinement dispatch ("apply this change
+    # to your previous result") is still the same turn and must keep its images.
+    # Attaching only in the else-branch was a partial application that would drop
+    # them on exactly the path where the user says "no, look at the picture again".
+    #
+    # NOTE the asymmetry with _dispatch_replay, which deliberately gets NO
+    # images: an image lives for one turn only (decision ③A), so a replay arm
+    # could never see it. That is why T11 keeps image-bearing runs out of the
+    # corpus — handing them to replay would fake a comparison instead of
+    # refusing one.
+    user_content = with_images(user_content, images)
 
     full, escalation = await _run_model(
         spawn, system, wired, user_content, history, current_turn, conversation_id,

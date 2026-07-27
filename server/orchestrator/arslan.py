@@ -1113,7 +1113,8 @@ async def _invite_capability_summary(spawn_id: int) -> str:
 async def dispatch_routed(  # noqa: ANN001
     conversation_id, spawn_id, task_brief, needs_proposal, emit: EventSink, *,
     user_message: str = "", route_ms: int | None = None,
-    attached_context: str | None = None, announce: bool = True,
+    attached_context: str | None = None, images: list[dict] | None = None,
+    announce: bool = True,
 ) -> None:
     """The propose-vs-execute dispatch a roster-member route gets.
 
@@ -1133,11 +1134,11 @@ async def dispatch_routed(  # noqa: ANN001
         emit({"type": "proposal", "spawn_id": spawn_id, "spawn_name": spawn_name})
         await _dispatch_spawn(conversation_id, spawn_id, task_brief or "", emit,
                               mode="propose", user_message=user_message, route_ms=route_ms,
-                              attached_context=attached_context, announce=announce)
+                              attached_context=attached_context, images=images, announce=announce)
         return
     await _dispatch_spawn(conversation_id, spawn_id, task_brief or "", emit,
                           user_message=user_message, route_ms=route_ms,
-                          attached_context=attached_context, announce=announce)
+                          attached_context=attached_context, images=images, announce=announce)
 
 
 _DUAL_TRACK_MIN_CHARS = 200        # only substantive deliverables grow a spawn — skip chit-chat / short answers
@@ -1524,7 +1525,7 @@ async def _handle_route(conversation_id, result, emit: EventSink, *,  # noqa: AN
         await dispatch_routed(
             conversation_id, dispatch_target, result.task_brief or "",
             bool(getattr(result, "needs_proposal", False)), emit,
-            user_message=user_message, route_ms=route_ms, attached_context=attached_context,
+            user_message=user_message, route_ms=route_ms, attached_context=attached_context, images=images,
         )
         return
 
@@ -1802,7 +1803,7 @@ async def _dispatch_spawn(  # noqa: ANN001
     mode: str = "execute",
     user_message: str = "",
     route_ms: int | None = None,
-    attached_context: str | None = None,
+    attached_context: str | None = None, images: list[dict] | None = None,
     announce: bool = True,
     _auto_continues: int = MAX_AUTO_CONTINUES,
     _continuation: bool = False,
@@ -1832,6 +1833,9 @@ async def _dispatch_spawn(  # noqa: ANN001
         conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
         user_message=user_message or task_brief, route_ms=route_ms,
         continuation=_continuation,
+        # T11: recorded so build_corpus can keep this run out of the exam. An
+        # image lives for one turn (③A), so a replay arm could never see it.
+        has_images=bool(images),
     )
     tee = recorder.tee(emit)
     chunks: list[str] = []  # streamed partial — the ONLY output a cancelled run can persist
@@ -1891,7 +1895,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                         on_chunk=lambda c: (chunks.append(c),
                                             tee({"type": "stream_chunk", "content": c}))[1],
                         on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
-                        attached_context=attached_context, run_id=recorder.run_id,
+                        attached_context=attached_context, images=images, run_id=recorder.run_id,
                     )
                 except Exception as exc:  # noqa: BLE001
                     tee({"type": "error", "code": "SPAWN_ERROR", "message": str(exc), "recoverable": True})
@@ -2007,7 +2011,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                   "remaining": _auto_continues - 1})
             await _dispatch_spawn(
                 conversation_id, spawn_id, task_brief, emit,
-                mode=mode, user_message=user_message, attached_context=attached_context,
+                mode=mode, user_message=user_message, attached_context=attached_context, images=images,
                 _auto_continues=_auto_continues - 1,
                 _continuation=True,
             )

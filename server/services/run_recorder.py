@@ -83,6 +83,7 @@ class RunRecorder:
         route_ms: int | None = None,
         continuation: bool = False,
         kind: str = "live",
+        has_images: bool = False,
     ) -> "RunRecorder":
         started = datetime.utcnow()
         async with db_session.AsyncSessionLocal() as db:
@@ -91,6 +92,10 @@ class RunRecorder:
                 spawn_id=spawn_id,
                 spawn_name=spawn_name,
                 user_message=user_message or "",
+                # T11: recorded, never inferred. This run cannot be replayed
+                # faithfully if it is True, and replay_gate.build_corpus keeps
+                # it out of the exam on exactly this fact.
+                has_images=has_images,
                 started_at=started,
                 status="recording",
                 task_tokens=0,

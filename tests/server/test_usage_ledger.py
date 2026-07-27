@@ -306,7 +306,7 @@ async def test_judge_scope_does_not_diminish_dispatch_run_usage(memdb, monkeypat
 
     async def fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
                             on_event=None, prior_output=None, instruction=None,
-                            allow_escalation=True, mode="execute", attached_context=None,
+                            allow_escalation=True, mode="execute", attached_context=None, images=None,
                             run_id=None):
         usage_sink.report_detail(tokens_in=120, tokens_out=80,
                                  model="claude-x", provider="anthropic")
