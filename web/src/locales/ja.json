@@ -1373,7 +1373,8 @@
     "unsupported_format": "未対応の形式: {{name}}",
     "paste_source": "貼り付け",
     "nothing_read": "{{name}}:このファイルから内容を読み取れず、保存されませんでした",
-    "image_not_readable": "{{name}}:このビルドはまだ画像を読めないため、保存されませんでした(画像理解はビジョン更新で追加されます)"
+    "image_not_readable": "{{name}}:画像を読み取れませんでした — モデルが設定済みで画像に対応しているか確認してください",
+    "image_goes_to_model": "取り込んだ画像は設定中のモデルに送信されます"
   },
   "updater": {
     "available": "Arslan {{version}} が利用可能です",

@@ -49,3 +49,21 @@ describe("feed honesty — an accepted-but-empty ingest is a failure", () => {
     await expect(feedTextOrUrl("some text", t)).resolves.toMatchObject({ chunks_added: 2 });
   });
 });
+
+describe("feed entry point discloses where images go", () => {
+  it("the locale string names the configured model, not just 'the cloud'", async () => {
+    // Spec requirement: the user must know the picture reaches THEIR configured
+    // model. A vague "sent for processing" would satisfy a naive check while
+    // leaving the privacy question unanswered.
+    const en = ((await import("../locales/en.json")).default as unknown) as Record<string, Record<string, string>>;
+    expect(en.feed.image_goes_to_model.toLowerCase()).toContain("model");
+    expect(en.feed.image_goes_to_model.toLowerCase()).toContain("configured");
+  });
+
+  it("no longer claims this build cannot read images", async () => {
+    // The hotfix copy was true then and false now — vision reads them.
+    const en = ((await import("../locales/en.json")).default as unknown) as Record<string, Record<string, string>>;
+    expect(en.feed.image_not_readable.toLowerCase()).not.toContain("can't read images yet");
+    expect(en.feed.image_not_readable.toLowerCase()).toContain("supports images");
+  });
+});

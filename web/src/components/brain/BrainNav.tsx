@@ -240,6 +240,14 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
             <Upload className="w-4 h-4" />
           </button>
         </div>
+        {/* Required disclosure at the feed entry point: a picture filed here is
+            READ BY THE CLOUD MODEL, and a local-first app invites the opposite
+            assumption. Text and documents are extracted locally, so this speaks
+            only about images. */}
+        <p data-testid="feed-image-disclosure"
+          className="text-[10px] text-subtle-foreground mt-1 leading-snug">
+          {t("feed.image_goes_to_model")}
+        </p>
         <input ref={fileRef} type="file" multiple className="hidden"
           accept=".pdf,.docx,.doc,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp"
           onChange={(e) => { void pickFiles(e.target.files); e.target.value = ""; }} />

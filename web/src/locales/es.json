@@ -1373,7 +1373,8 @@
     "unsupported_format": "Formato no compatible: {{name}}",
     "paste_source": "Pegado",
     "nothing_read": "{{name}}: no se pudo leer nada de este archivo — no se guardó",
-    "image_not_readable": "{{name}}: esta versión aún no puede leer imágenes, así que no se guardó nada (la comprensión de imágenes llega con la actualización de visión)"
+    "image_not_readable": "{{name}}: no se pudo leer esta imagen — comprueba que tu modelo esté configurado y admita imágenes",
+    "image_goes_to_model": "Las imágenes que alimentas se envían al modelo que configuraste"
   },
   "updater": {
     "available": "Arslan {{version}} está disponible",

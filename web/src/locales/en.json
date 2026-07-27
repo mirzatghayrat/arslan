@@ -1373,7 +1373,8 @@
     "unsupported_format": "Unsupported format: {{name}}",
     "paste_source": "Pasted",
     "nothing_read": "{{name}}: nothing could be read from this file — it was not saved",
-    "image_not_readable": "{{name}}: this build can't read images yet, so nothing was saved (image understanding is coming in the vision update)"
+    "image_not_readable": "{{name}}: couldn't read this image — check that your model is configured and supports images",
+    "image_goes_to_model": "Images you feed are sent to the model you configured"
   },
   "updater": {
     "available": "Arslan {{version}} is available",

@@ -75,6 +75,54 @@ def _ocr_pdf(data: bytes) -> str:
         return ""
 
 
+# ── vision (S4.2-e) ────────────────────────────────────────────────────────
+# What the model is asked to produce for a fed image, and how the result is
+# labelled so a retrieval hit can never pass as text taken FROM the picture.
+
+_DESCRIBE_SYSTEM = (
+    "You are looking at an image the user filed into their knowledge base. "
+    "Describe it so it can be found later and reasoned about: what it shows, "
+    "and — if it contains text, tables or a UI — transcribe that content "
+    "faithfully. Be concrete. Do not speculate about anything not visible."
+)
+
+# Stable and NOT localised, exactly like FACT_CATEGORIES: this is stored data.
+# A translated marker would make the same picture read differently depending on
+# which language the app happened to be in when it was fed.
+_DESCRIBED_SUFFIX = " (image description)"
+
+
+def described_source(filename: str) -> str:
+    """Provenance marker for a model-described image.
+
+    It rides on `source`, not as a text prefix, because a description long
+    enough to be chunked would carry a prefix on the FIRST chunk only, whereas
+    `source` is stored on EVERY chunk — and `source` is what knowledge_block
+    renders into the model's view ("[source] text") and what the recall
+    executor returns."""
+    return f"{filename}{_DESCRIBED_SUFFIX}"
+
+
+async def describe_image(data: bytes, mime_type: str) -> str:
+    """Ask the configured model to describe an image. Raises on failure — the
+    caller turns that into "stored nothing", which the UI reports honestly."""
+    import base64
+
+    from server.services.llm_factory import build_adapter
+
+    adapter = await build_adapter(role="converse")
+    blocks = [
+        {"type": "text", "text": "Describe this image for a knowledge base."},
+        {"type": "image", "mime_type": mime_type or "image/png",
+         "data": base64.b64encode(data).decode()},
+    ]
+    resp = await adapter.chat(system=_DESCRIBE_SYSTEM, user=blocks)
+    text = (resp.content or "").strip()
+    if not text:
+        raise RuntimeError("the model returned no description")
+    return text
+
+
 def _ocr_image(data: bytes) -> str:
     """OCR a standalone image attachment. Best-effort; returns '' on any failure
     (undecodable bytes, missing tesseract) or when no text is found. convert("RGB")
@@ -217,6 +265,17 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
                       collection_id: int | None = None, compress: bool = False) -> int:
     """Extract text from a supported file then ingest. Raises ValueError on
     unsupported extension; extraction errors propagate (API maps to 400)."""
+    if _IMAGE_EXT_RE.search(filename):
+        # The MODEL reads the picture (vision round). A failure here means the
+        # image could not be read at all — surface it as zero chunks so the UI
+        # says so, rather than storing an empty "success".
+        try:
+            described = await describe_image(data, "image/png")
+        except Exception as exc:  # noqa: BLE001 — never fatal; honest zero
+            logger.warning("image description failed (stored nothing): %s", exc)
+            return 0
+        return await ingest_text(spawn_id, described_source(filename), described,
+                                 collection_id=collection_id, compress=compress)
     extracted = _extract_file(filename, data)
     return await ingest_text(spawn_id, filename, extracted,
                              collection_id=collection_id, compress=compress)

@@ -1373,7 +1373,8 @@
     "unsupported_format": "Nicht unterstütztes Format: {{name}}",
     "paste_source": "Eingefügt",
     "nothing_read": "{{name}}: Aus dieser Datei ließ sich nichts lesen — nichts gespeichert",
-    "image_not_readable": "{{name}}: Dieser Build kann Bilder noch nicht lesen, es wurde nichts gespeichert (Bildverständnis kommt mit dem Vision-Update)"
+    "image_not_readable": "{{name}}: Bild konnte nicht gelesen werden — prüfe, ob dein Modell konfiguriert ist und Bilder unterstützt",
+    "image_goes_to_model": "Eingespeiste Bilder gehen an das von dir konfigurierte Modell"
   },
   "updater": {
     "available": "Arslan {{version}} ist verfügbar",

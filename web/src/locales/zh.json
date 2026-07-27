@@ -1373,7 +1373,8 @@
     "unsupported_format": "不支持的格式:{{name}}",
     "paste_source": "粘贴",
     "nothing_read": "{{name}}:没能从这个文件里读出内容,未保存",
-    "image_not_readable": "{{name}}:当前版本还读不了图片,所以没有保存(图片理解将在视觉更新中加入)"
+    "image_not_readable": "{{name}}:没能读取这张图 —— 请确认已配置模型且该模型支持图片",
+    "image_goes_to_model": "投喂的图片会发给你配置的模型"
   },
   "updater": {
     "available": "Arslan {{version}} 可更新",
