@@ -888,7 +888,18 @@
       "missing": "Missing files",
       "orphaned": "Orphaned files"
     },
-    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## 决策规则)"
+    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## 决策规则)",
+    "import": {
+      "subtitle": "Standard SKILL.md files, imported verbatim — license-gated.",
+      "repo_placeholder": "owner/repo",
+      "subpath_placeholder": "subpath (optional)",
+      "scan": "Scan",
+      "import": "Import",
+      "imported": "Imported",
+      "no_license": "NO LICENSE",
+      "none_found": "No SKILL.md files found.",
+      "scripts_n": "{{n}} scripts"
+    }
   },
   "forge": {
     "intro": "Package your own methods into skills. A candidate is observed, gated against a real spawn's scored runs, then promoted — you are the gate that makes it live. These self-authored skills join the library.",
@@ -904,7 +915,8 @@
       "description": "Description",
       "descriptionHint": "one-line description",
       "body": "SKILL.md body",
-      "bodyHint": "Needs frontmatter + ## Trigger + decision rules. Max 15 KB."
+      "bodyHint": "Needs frontmatter + ## Trigger + ## 决策规则 (decision rules — the heading itself is the literal contract). Max 15 KB.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
     },
     "list": {
       "title": "Candidates ({{count}})",

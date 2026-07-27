@@ -888,7 +888,18 @@
       "missing": "缺失文件",
       "orphaned": "游离文件"
     },
-    "skill_body_label": "SKILL.md 正文（必须包含 ## Trigger 和 ## 决策规则）"
+    "skill_body_label": "SKILL.md 正文（必须包含 ## Trigger 和 ## 决策规则）",
+    "import": {
+      "subtitle": "标准 SKILL.md,逐字导入——许可证把关。",
+      "repo_placeholder": "owner/repo",
+      "subpath_placeholder": "子路径(可选)",
+      "scan": "扫描",
+      "import": "导入",
+      "imported": "已导入",
+      "no_license": "无许可证",
+      "none_found": "没有找到 SKILL.md 文件。",
+      "scripts_n": "{{n}} 个脚本"
+    }
   },
   "forge": {
     "intro": "把你自己的方法打包成技能。候选先观察，再对着某个分身的真实评分回放过闸，然后由你晋升上线——你就是让它上线的那道闸。这些自撰技能会加入技能库。",
@@ -904,7 +915,8 @@
       "description": "描述",
       "descriptionHint": "一行描述",
       "body": "SKILL.md 正文",
-      "bodyHint": "需含 frontmatter + ## Trigger + 决策规则。上限 15 KB。"
+      "bodyHint": "需含 frontmatter + ## Trigger + ## 决策规则。上限 15 KB。",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
     },
     "list": {
       "title": "候选（{{count}}）",

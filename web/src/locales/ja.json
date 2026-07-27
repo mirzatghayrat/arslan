@@ -888,7 +888,18 @@
       "missing": "欠落ファイル",
       "orphaned": "孤立ファイル"
     },
-    "skill_body_label": "SKILL.md 本文(## Trigger と ## 决策规则 を含む必要があります)"
+    "skill_body_label": "SKILL.md 本文(## Trigger と ## 决策规则 を含む必要があります)",
+    "import": {
+      "subtitle": "標準 SKILL.md をそのまま取り込み — ライセンス審査あり。",
+      "repo_placeholder": "owner/repo",
+      "subpath_placeholder": "サブパス(任意)",
+      "scan": "スキャン",
+      "import": "インポート",
+      "imported": "インポート済み",
+      "no_license": "ライセンスなし",
+      "none_found": "SKILL.md ファイルが見つかりません。",
+      "scripts_n": "{{n}} 件のスクリプト"
+    }
   },
   "forge": {
     "intro": "自分の手法をスキルとしてパッケージ化します。候補はまず観察され、実在のスパーンの採点済み実行に対してゲートを通過し、その後あなたが昇格させます——ライブにするゲートはあなた自身です。こうして自作したスキルはライブラリに加わります。",
@@ -904,7 +915,8 @@
       "description": "説明",
       "descriptionHint": "1行の説明",
       "body": "SKILL.md 本文",
-      "bodyHint": "frontmatter + ## Trigger + 決定ルールが必要。最大 15 KB。"
+      "bodyHint": "frontmatter + ## Trigger + ## 决策规则(決定ルール — 見出しはこの表記が契約)が必要。最大 15 KB。",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
     },
     "list": {
       "title": "候補（{{count}}）",

@@ -888,7 +888,18 @@
       "missing": "Fehlende Dateien",
       "orphaned": "Verwaiste Dateien"
     },
-    "skill_body_label": "SKILL.md-Inhalt (muss ## Trigger und ## 决策规则 enthalten)"
+    "skill_body_label": "SKILL.md-Inhalt (muss ## Trigger und ## 决策规则 enthalten)",
+    "import": {
+      "subtitle": "Standard-SKILL.md, wortgetreu importiert — lizenzgeprüft.",
+      "repo_placeholder": "owner/repo",
+      "subpath_placeholder": "Unterpfad (optional)",
+      "scan": "Scannen",
+      "import": "Importieren",
+      "imported": "Importiert",
+      "no_license": "KEINE LIZENZ",
+      "none_found": "Keine SKILL.md-Dateien gefunden.",
+      "scripts_n": "{{n}} Skripte"
+    }
   },
   "forge": {
     "intro": "Verpacke deine eigenen Methoden in Skills. Ein Kandidat wird beobachtet, gegen die bewerteten Läufe eines echten Spawns geprüft und dann von dir freigegeben – du bist das Tor, das ihn live schaltet. Diese selbst verfassten Skills gehören zur Bibliothek.",
@@ -904,7 +915,8 @@
       "description": "Beschreibung",
       "descriptionHint": "einzeilige Beschreibung",
       "body": "SKILL.md-Inhalt",
-      "bodyHint": "Braucht Frontmatter + ## Trigger + Entscheidungsregeln. Max. 15 KB."
+      "bodyHint": "Braucht Frontmatter + ## Trigger + ## 决策规则 (Entscheidungsregeln — die Überschrift selbst ist der Vertrag). Max. 15 KB.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
     },
     "list": {
       "title": "Kandidaten ({{count}})",

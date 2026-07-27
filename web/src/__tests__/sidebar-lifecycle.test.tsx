@@ -17,6 +17,14 @@ const baseProps = {
   backendStatus: "online" as const,
 } as any;
 
+describe("Sidebar a11y (M7-#5)", () => {
+  it("the icon-only new-chat button carries an accessible name", () => {
+    render(<Sidebar {...baseProps} />);
+    // t() echoes keys in tests; icon-only buttons must not be blank to a reader.
+    expect(screen.getByLabelText("sidebar.new_chat")).toBeTruthy();
+  });
+});
+
 describe("Sidebar ACTIVE SPAWNS lifecycle", () => {
   it("lists only spawns with an active chat", () => {
     render(<Sidebar {...baseProps} />);

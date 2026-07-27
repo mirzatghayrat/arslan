@@ -224,7 +224,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
         <div className="brain-nav__feed-btns">
           <button disabled={busy || !feed.trim()} onClick={() => void quickFeed()}
             className="brain-nav__feed-primary">{busy ? t("brain.feeding") : t("brain.feed_btn")}</button>
-          <button type="button" disabled={busy} title={t("brain.upload_title")}
+          <button type="button" disabled={busy} title={t("brain.upload_title")} aria-label={t("brain.upload_title")}
             onClick={() => fileRef.current?.click()} className="brain-nav__feed-upload">
             <Upload className="w-4 h-4" />
           </button>

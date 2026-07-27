@@ -694,12 +694,15 @@ export default function App() {
       />
 
       {/* Main Workspace Frame container with glass window feel */}
-      <main className="flex-1 flex flex-col h-full bg-background relative">
+      {/* min-w-0: without it a flex child refuses to shrink below its content's
+          min width, and one wide unwrappable row (M7-#1: the Skills chips) pushes
+          the whole main pane past the right edge of the window. */}
+      <main className="flex-1 min-w-0 flex flex-col h-full bg-background relative">
       {/* Redesigned Grand Multi-column Frame layout */}
-      <div className="flex-1 flex h-full relative">
+      <div className="flex-1 min-w-0 flex h-full relative">
 
         {/* Main Workspace Frame container */}
-        <main className="flex-1 flex flex-col h-full bg-background relative overflow-hidden">
+        <main className="flex-1 min-w-0 flex flex-col h-full bg-background relative overflow-hidden">
           {/* Top Bar for overall macro layout */}
           <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
             <div className="flex items-center gap-2">

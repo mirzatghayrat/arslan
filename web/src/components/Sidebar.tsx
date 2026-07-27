@@ -283,6 +283,7 @@ export default function Sidebar({
                 </span>
                 <button
                   title={t('sidebar.new_chat')}
+                  aria-label={t('sidebar.new_chat')}
                   onClick={() => setPicking((p) => !p)}
                   className="w-5 h-5 flex items-center justify-center rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-all text-xs font-bold"
                 >

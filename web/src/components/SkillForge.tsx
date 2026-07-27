@@ -280,7 +280,7 @@ export default function SkillForge() {
             onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
             rows={10}
             spellCheck={false}
-            placeholder={"---\nname: My Method\n---\n\n## Trigger\n\n## Decision rules\n- …"}
+            placeholder={t("forge.fields.bodyPlaceholder")}
             className={`${inputCls} font-mono resize-y`}
           />
         </div>

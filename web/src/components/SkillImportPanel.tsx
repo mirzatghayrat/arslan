@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileDown, RefreshCcw, Check, X, Shield, FileCode2 } from 'lucide-react';
 import { scanSkills, importSkill, type SkillScanResult } from '../api/discovery';
 
@@ -9,6 +10,7 @@ import { scanSkills, importSkill, type SkillScanResult } from '../api/discovery'
  * only mirrors the verdict (importable / reason).
  */
 export default function SkillImportPanel() {
+  const { t } = useTranslation();
   const [ref, setRef] = useState('');
   const [subpath, setSubpath] = useState('');
   const [scanning, setScanning] = useState(false);
@@ -49,24 +51,21 @@ export default function SkillImportPanel() {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-subtle-foreground select-none">
-        <FileDown className="w-3 h-3" />
-        <span>Import skills (standard SKILL.md, verbatim — license-gated)</span>
-      </div>
+      <p className="text-[10.5px] font-mono text-subtle-foreground select-none">{t('capabilities.import.subtitle')}</p>
       <div className="flex gap-2">
         <input
           type="text"
           value={ref}
           onChange={(e) => setRef(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !scanning) scan(); }}
-          placeholder="owner/repo"
+          placeholder={t('capabilities.import.repo_placeholder')}
           className="flex-1 bg-background border border-border/60 focus:border-primary focus:outline-none rounded-lg px-3 py-1.5 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
         />
         <input
           type="text"
           value={subpath}
           onChange={(e) => setSubpath(e.target.value)}
-          placeholder="subpath (optional)"
+          placeholder={t('capabilities.import.subpath_placeholder')}
           className="w-40 bg-background border border-border/60 focus:border-primary focus:outline-none rounded-lg px-3 py-1.5 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
         />
         <button
@@ -76,7 +75,7 @@ export default function SkillImportPanel() {
           className="px-4 py-1.5 bg-surface/90 hover:bg-border border border-border-strong text-foreground text-[10.5px] font-bold font-mono uppercase rounded-lg flex items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {scanning ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <FileCode2 className="w-3 h-3" />}
-          <span>Scan</span>
+          <span>{t('capabilities.import.scan')}</span>
         </button>
       </div>
 
@@ -93,14 +92,14 @@ export default function SkillImportPanel() {
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${
               result.license_ok ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'}`}>
               <Shield className="w-2.5 h-2.5" />
-              {result.repo.license ?? 'NO LICENSE'}
+              {result.repo.license ?? t('capabilities.import.no_license')}
             </span>
             {!result.license_ok && (
               <span className="text-danger">{result.license_note}</span>
             )}
           </div>
           {result.skills.length === 0 && (
-            <p className="text-[11px] text-subtle-foreground font-sans">No SKILL.md files found.</p>
+            <p className="text-[11px] text-subtle-foreground font-sans">{t('capabilities.import.none_found')}</p>
           )}
           {result.skills.map((s) => (
             <div key={s.path}
@@ -113,7 +112,7 @@ export default function SkillImportPanel() {
                   )}
                   {s.scripts.length > 0 && (
                     <span className="text-[9px] font-mono bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-                      {s.scripts.length} script{s.scripts.length > 1 ? 's' : ''}
+                      {t('capabilities.import.scripts_n', { n: s.scripts.length })}
                     </span>
                   )}
                 </div>
@@ -126,7 +125,7 @@ export default function SkillImportPanel() {
               </div>
               {imported[s.path] ? (
                 <span className="inline-flex items-center gap-1 text-[10.5px] text-success font-mono shrink-0">
-                  <Check className="w-3.5 h-3.5" /> Imported
+                  <Check className="w-3.5 h-3.5" /> {t('capabilities.import.imported')}
                 </span>
               ) : (
                 <button
@@ -136,7 +135,7 @@ export default function SkillImportPanel() {
                   className="px-3 py-1 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-[10px] font-mono uppercase rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1"
                 >
                   {busyPath === s.path ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}
-                  <span>Import</span>
+                  <span>{t('capabilities.import.import')}</span>
                 </button>
               )}
             </div>

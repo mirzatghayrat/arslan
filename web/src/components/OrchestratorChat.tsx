@@ -494,6 +494,7 @@ export default function OrchestratorChat({
 
                 <button
                   type="button"
+                  aria-label={t('chat.send')}
                   disabled={!inputValue.trim()}
                   onClick={(e) => {
                     if (inputValue.trim()) {

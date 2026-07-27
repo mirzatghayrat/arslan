@@ -152,7 +152,7 @@ describe("Capabilities page structure (one tab bar, Discover first)", () => {
     fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.skills" }));
     expect(screen.getByText("capabilities.sections.import_skills")).toBeInTheDocument();
     // SkillImportPanel's owner/repo scan input
-    expect(screen.getByPlaceholderText("owner/repo")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("capabilities.import.repo_placeholder")).toBeInTheDocument();
   });
 
   it("SKILL FORGE tab shows the two-entry-modes header + candidate list", async () => {

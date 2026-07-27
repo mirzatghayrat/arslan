@@ -888,7 +888,18 @@
       "missing": "Fichiers manquants",
       "orphaned": "Fichiers orphelins"
     },
-    "skill_body_label": "Corps de SKILL.md (doit contenir ## Trigger et ## 决策规则)"
+    "skill_body_label": "Corps de SKILL.md (doit contenir ## Trigger et ## 决策规则)",
+    "import": {
+      "subtitle": "SKILL.md standard, importé tel quel — contrôle de licence.",
+      "repo_placeholder": "owner/repo",
+      "subpath_placeholder": "sous-chemin (optionnel)",
+      "scan": "Scanner",
+      "import": "Importer",
+      "imported": "Importé",
+      "no_license": "SANS LICENCE",
+      "none_found": "Aucun fichier SKILL.md trouvé.",
+      "scripts_n": "{{n}} scripts"
+    }
   },
   "forge": {
     "intro": "Empaquetez vos propres méthodes en compétences. Un candidat est observé, testé face aux exécutions notées d'un spawn réel, puis promu par vous — vous êtes le point de contrôle qui le met en service. Ces compétences que vous créez rejoignent la bibliothèque.",
@@ -904,7 +915,8 @@
       "description": "Description",
       "descriptionHint": "description en une ligne",
       "body": "Corps SKILL.md",
-      "bodyHint": "Nécessite un frontmatter + ## Trigger + règles de décision. Max 15 Ko."
+      "bodyHint": "Nécessite un frontmatter + ## Trigger + ## 决策规则 (règles de décision — l'en-tête littéral est le contrat). Max 15 Ko.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
     },
     "list": {
       "title": "Candidats ({{count}})",

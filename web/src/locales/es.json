@@ -888,7 +888,18 @@
       "missing": "Archivos faltantes",
       "orphaned": "Archivos huérfanos"
     },
-    "skill_body_label": "Cuerpo de SKILL.md (debe contener ## Trigger y ## 决策规则)"
+    "skill_body_label": "Cuerpo de SKILL.md (debe contener ## Trigger y ## 决策规则)",
+    "import": {
+      "subtitle": "SKILL.md estándar, importado literalmente — con control de licencia.",
+      "repo_placeholder": "owner/repo",
+      "subpath_placeholder": "subruta (opcional)",
+      "scan": "Escanear",
+      "import": "Importar",
+      "imported": "Importado",
+      "no_license": "SIN LICENCIA",
+      "none_found": "No se encontraron archivos SKILL.md.",
+      "scripts_n": "{{n}} scripts"
+    }
   },
   "forge": {
     "intro": "Empaqueta tus propios métodos como habilidades. Un candidato se observa, se somete a la puerta frente a las ejecuciones puntuadas de un spawn real y luego lo promueves tú — eres la puerta que lo pone en vivo. Estas habilidades de autoría propia se unen a la biblioteca.",
@@ -904,7 +915,8 @@
       "description": "Descripción",
       "descriptionHint": "descripción de una línea",
       "body": "Cuerpo SKILL.md",
-      "bodyHint": "Necesita frontmatter + ## Trigger + reglas de decisión. Máx. 15 KB."
+      "bodyHint": "Necesita frontmatter + ## Trigger + ## 决策规则 (reglas de decisión — el encabezado literal es el contrato). Máx. 15 KB.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
     },
     "list": {
       "title": "Candidatos ({{count}})",
