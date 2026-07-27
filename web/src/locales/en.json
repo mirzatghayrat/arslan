@@ -1356,5 +1356,13 @@
     },
     "unsupported_format": "Unsupported format: {{name}}",
     "paste_source": "Pasted"
+  },
+  "updater": {
+    "available": "Arslan {{version}} is available",
+    "restart_note": "Installs and restarts when you're ready",
+    "install": "Install",
+    "later": "Later",
+    "installing": "Installing {{version}}…",
+    "failed": "The update could not be installed"
   }
 }

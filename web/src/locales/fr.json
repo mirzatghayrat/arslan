@@ -1356,5 +1356,13 @@
     },
     "unsupported_format": "Format non pris en charge : {{name}}",
     "paste_source": "Collé"
+  },
+  "updater": {
+    "available": "Arslan {{version}} est disponible",
+    "restart_note": "S'installe et redémarre quand vous êtes prêt",
+    "install": "Installer",
+    "later": "Plus tard",
+    "installing": "Installation de {{version}}…",
+    "failed": "La mise à jour n'a pas pu être installée"
   }
 }

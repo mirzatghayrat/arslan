@@ -189,8 +189,70 @@ fn read_api_token() -> Option<String> {
     }
 }
 
-/// Check the release feed once, in the background, and walk the user through
-/// installing if there is something newer.
+/// Update lifecycle, shared with the SPA over the two IPC commands below.
+///
+/// UX decided by the user (v0.1.5 round): no blocking dialogs and no silent
+/// auto-download. A found update only surfaces as a small corner pill in the
+/// web UI; nothing downloads until the user clicks Install there, and the app
+/// restarts right after a successful install. The check itself runs once at
+/// startup plus on the "Check for Updates…" menu item — deliberately NO
+/// periodic timer.
+#[derive(Default)]
+struct UpdateShared {
+    status: Mutex<UpdateStatus>,
+    /// The checked Update handle, kept so install_update() can consume it.
+    pending: Mutex<Option<tauri_plugin_updater::Update>>,
+}
+
+#[derive(Clone, Default, serde::Serialize)]
+struct UpdateStatus {
+    /// "none" | "available" | "downloading" | "error"
+    state: String,
+    version: String,
+    error: String,
+}
+
+impl UpdateShared {
+    fn set(&self, state: &str, version: &str, error: &str) {
+        *self.status.lock().unwrap() = UpdateStatus {
+            state: state.into(),
+            version: version.into(),
+            error: error.into(),
+        };
+    }
+}
+
+/// Poll target for the SPA's corner pill (web/src/components/UpdatePill.tsx).
+#[tauri::command]
+fn update_status(shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
+    shared.status.lock().unwrap().clone()
+}
+
+/// The user clicked Install on the pill: download, verify, install, restart.
+/// Signature verification against the compiled-in pubkey happens inside
+/// download_and_install; a tampered artefact fails here, not after.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) {
+    let shared = app.state::<UpdateShared>();
+    let Some(update) = shared.pending.lock().unwrap().take() else {
+        return; // double-click race or stale pill — nothing staged
+    };
+    shared.set("downloading", &update.version, "");
+    match update.download_and_install(|_, _| {}, || {}).await {
+        Ok(()) => {
+            // The user's click WAS the restart consent ("点安装就直接安装重启").
+            app.restart();
+        }
+        Err(e) => {
+            // The ONE failure worth surfacing: the user said "install" and it
+            // did not happen. The pill shows it; no modal needed.
+            eprintln!("update install failed: {e}");
+            shared.set("error", &update.version, &e.to_string());
+        }
+    }
+}
+
+/// Check the release feed once, in the background.
 ///
 /// This call is the entire difference between "auto-update works" and "every
 /// installed copy is stranded forever": Tauri v2's updater is fully
@@ -198,10 +260,12 @@ fn read_api_token() -> Option<String> {
 /// checks NOTHING on its own. v0.1.0/v0.1.1 shipped exactly that way, which
 /// is why they never showed a prompt and had to be replaced by hand.
 ///
-/// Every failure path is silent BY DESIGN except a failed install: an offline
+/// `interactive` is true for the menu item, where silence would read as a
+/// dead button: up-to-date and check-failure each get a small dialog. The
+/// startup check keeps every failure path silent BY DESIGN — an offline
 /// machine or an unreachable feed is a normal morning, not an error the user
 /// can act on. README's Status section discloses that silence.
-fn check_for_updates(app: tauri::AppHandle) {
+fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
     tauri::async_runtime::spawn(async move {
         let updater = match app.updater() {
             Ok(u) => u,
@@ -210,66 +274,35 @@ fn check_for_updates(app: tauri::AppHandle) {
                 return;
             }
         };
-        let update = match updater.check().await {
-            Ok(Some(u)) => u,
-            Ok(None) => return, // already newest
-            Err(e) => {
-                eprintln!("update check failed (offline is normal): {e}");
-                return;
+        match updater.check().await {
+            Ok(Some(update)) => {
+                let shared = app.state::<UpdateShared>();
+                shared.set("available", &update.version, "");
+                shared.pending.lock().unwrap().replace(update);
+                // No dialog even when interactive: the pill in the corner is
+                // the one consistent surface for "there is an update".
             }
-        };
-
-        let version = update.version.clone();
-        let notes = update.body.clone().unwrap_or_default();
-        let yes = app
-            .dialog()
-            .message(format!(
-                "Arslan {version} is available.
-
-{}
-
-Download and install now?",
-                notes.trim()
-            ))
-            .title("Update available")
-            .kind(MessageDialogKind::Info)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Install".into(),
-                "Later".into(),
-            ))
-            .blocking_show();
-        if !yes {
-            return;
-        }
-
-        // Signature verification against the compiled-in pubkey happens inside
-        // download_and_install; a tampered artefact fails here, not after.
-        match update.download_and_install(|_, _| {}, || {}).await {
-            Ok(()) => {
-                let restart = app
-                    .dialog()
-                    .message(format!(
-                        "Arslan {version} is installed. Restart now to use it?"
-                    ))
-                    .title("Update ready")
-                    .kind(MessageDialogKind::Info)
-                    .buttons(MessageDialogButtons::OkCancelCustom(
-                        "Restart".into(),
-                        "Later".into(),
-                    ))
-                    .blocking_show();
-                if restart {
-                    app.restart();
+            Ok(None) => {
+                if interactive {
+                    app.dialog()
+                        .message("You're on the latest version. / 已是最新版。")
+                        .title("Arslan")
+                        .kind(MessageDialogKind::Info)
+                        .blocking_show();
                 }
             }
             Err(e) => {
-                // The ONE failure worth surfacing: the user said "install" and
-                // it did not happen.
-                app.dialog()
-                    .message(format!("The update could not be installed: {e}"))
-                    .title("Update failed")
-                    .kind(MessageDialogKind::Error)
-                    .blocking_show();
+                eprintln!("update check failed (offline is normal): {e}");
+                if interactive {
+                    app.dialog()
+                        .message(format!(
+                            "Could not reach the update feed — are you online?\n\
+                             无法连接更新源,请检查网络。\n\n{e}"
+                        ))
+                        .title("Check for Updates")
+                        .kind(MessageDialogKind::Warning)
+                        .blocking_show();
+                }
             }
         }
     });
@@ -359,6 +392,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
+        .manage(UpdateShared::default())
+        .invoke_handler(tauri::generate_handler![update_status, install_update])
+        .on_menu_event(|app, event| {
+            if event.id() == "check-for-updates" {
+                check_for_updates(app.clone(), true);
+            }
+        })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             if let Ok(exe) = std::env::current_exe() {
@@ -421,10 +461,32 @@ pub fn run() {
 
             win.build()?;
 
-            // AFTER the window exists: a blocking dialog with no window behind
-            // it can appear beneath other apps, and an update prompt before
-            // the app has even shown itself reads as malware.
-            check_for_updates(handle);
+            // "Check for Updates…" lives in the app submenu, right under
+            // About — the place macOS users actually look. Built from the
+            // default menu so Edit/copy-paste etc. all survive.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem};
+                let menu = Menu::default(app.handle())?;
+                if let Some(tauri::menu::MenuItemKind::Submenu(app_menu)) =
+                    menu.items()?.first()
+                {
+                    let check = MenuItem::with_id(
+                        app,
+                        "check-for-updates",
+                        "Check for Updates…",
+                        true,
+                        None::<&str>,
+                    )?;
+                    app_menu.insert(&check, 1)?;
+                }
+                app.set_menu(menu)?;
+            }
+
+            // AFTER the window exists so the pill has somewhere to appear.
+            // Startup-only + the menu item — deliberately no periodic timer
+            // (user decision, v0.1.5 round).
+            check_for_updates(handle, false);
             Ok(())
         })
         .build(tauri::generate_context!())

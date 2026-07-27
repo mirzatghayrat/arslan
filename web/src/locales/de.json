@@ -1356,5 +1356,13 @@
     },
     "unsupported_format": "Nicht unterstütztes Format: {{name}}",
     "paste_source": "Eingefügt"
+  },
+  "updater": {
+    "available": "Arslan {{version}} ist verfügbar",
+    "restart_note": "Installiert und startet neu, wenn du bereit bist",
+    "install": "Installieren",
+    "later": "Später",
+    "installing": "{{version}} wird installiert…",
+    "failed": "Das Update konnte nicht installiert werden"
   }
 }

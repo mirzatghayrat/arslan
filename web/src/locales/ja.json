@@ -1356,5 +1356,13 @@
     },
     "unsupported_format": "未対応の形式: {{name}}",
     "paste_source": "貼り付け"
+  },
+  "updater": {
+    "available": "Arslan {{version}} が利用可能です",
+    "restart_note": "インストール後、自動で再起動します",
+    "install": "インストール",
+    "later": "後で",
+    "installing": "{{version}} をインストール中…",
+    "failed": "アップデートをインストールできませんでした"
   }
 }

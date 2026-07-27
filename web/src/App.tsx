@@ -41,6 +41,7 @@ import EvalDock from './components/EvalDock';
 import BrainSection from './components/brain/BrainSection';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
+import UpdatePill from './components/UpdatePill';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 
 interface ArslanThread {
@@ -648,6 +649,7 @@ export default function App() {
   return (
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">
       <ThemeApplier />
+      <UpdatePill />
 
       {/* Sidebar with macOS window decorations */}
       <Sidebar

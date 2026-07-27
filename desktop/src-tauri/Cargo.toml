@@ -18,6 +18,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # generate_context! expands to code that names serde_json in the crate root, so
 # it must be a direct dependency even though none of our own code uses it.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-updater = "2"
 # Native ask/info dialogs for the update prompt. The UI is a remote page served

@@ -1356,5 +1356,13 @@
     },
     "unsupported_format": "不支持的格式:{{name}}",
     "paste_source": "粘贴"
+  },
+  "updater": {
+    "available": "Arslan {{version}} 可更新",
+    "restart_note": "点安装会自动完成并重启",
+    "install": "安装",
+    "later": "稍后",
+    "installing": "正在安装 {{version}}…",
+    "failed": "更新安装失败"
   }
 }
