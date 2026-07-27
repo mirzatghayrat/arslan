@@ -102,15 +102,15 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
   );
 
   const quickFeed = async () => {
-    const t = feed.trim(); if (!t) return;
+    const txt = feed.trim(); if (!txt) return;
     setBusy(true); setErr(null);
-    try { await feedTextOrUrl(t); setFeed(""); onChanged(); }
+    try { await feedTextOrUrl(txt, t); setFeed(""); onChanged(); }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
   const pickFiles = async (files: FileList | null) => {
     const list = Array.from(files ?? []); if (!list.length) return;
     setBusy(true); setErr(null); const failed: string[] = [];
-    for (const f of list) { try { await feedFile(f); } catch { failed.push(f.name); } }
+    for (const f of list) { try { await feedFile(f, t); } catch { failed.push(f.name); } }
     setBusy(false); if (failed.length) setErr(t("brain.feed_failed", { names: failed.join(", ") })); onChanged();
   };
   const runGenerate = async () => {

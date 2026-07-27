@@ -180,7 +180,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           <WifiOff className="w-4 h-4 text-danger shrink-0 mt-0.5" />
           <div>
             <p className="text-xs font-bold text-danger font-mono uppercase tracking-wide">
-              后端未连接 / Backend not connected
+              {t('ledger.empty_backend_offline')}
             </p>
             <p className="text-[11px] text-danger/80 font-sans mt-1 leading-relaxed">
               Settings could not be loaded from the server. Displaying defaults — do not treat these values as real configuration. Save is disabled until the backend is reachable.

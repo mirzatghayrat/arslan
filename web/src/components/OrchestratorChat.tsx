@@ -806,7 +806,7 @@ export default function OrchestratorChat({
                         source would be un-copyable. (hasMessageActions only suppresses
                         card-copy on the salvage path, where row copy == card copy.) */}
                     {msg.artifactHtml && (
-                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title || undefined}
                                    filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
                                    truncated={!msg.artifactHtml.complete} />
                     )}
@@ -907,7 +907,7 @@ export default function OrchestratorChat({
                               className="msg__replay-btn"
                               onClick={() => setReplayRunId(msg.runId ?? null)}
                             >
-                              查看回放
+                              {t("replay.view_replay")}
                             </button>
                           )}
                         </div>
@@ -1009,7 +1009,7 @@ export default function OrchestratorChat({
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
                     <div className="mt-4">
-                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title || undefined}
                                    filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
                                    truncated={!msg.artifactHtml.complete} hasMessageActions />
                     </div>
@@ -1088,7 +1088,7 @@ export default function OrchestratorChat({
                             className="msg__replay-btn"
                             onClick={() => setReplayRunId(msg.runId ?? null)}
                           >
-                            查看回放
+                            {t("replay.view_replay")}
                           </button>
                         )}
                       </div>
@@ -1200,7 +1200,7 @@ export default function OrchestratorChat({
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
                     <div className="pl-5 pt-2">
-                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title}
+                      <HtmlDocCard html={msg.artifactHtml.content} title={msg.artifactHtml.title || undefined}
                                    filename={msg.artifactHtml.filename} bytes={msg.artifactHtml.bytes}
                                    truncated={!msg.artifactHtml.complete} hasMessageActions />
                     </div>
@@ -1279,7 +1279,7 @@ export default function OrchestratorChat({
                             className="msg__replay-btn"
                             onClick={() => setReplayRunId(msg.runId ?? null)}
                           >
-                            查看回放
+                            {t("replay.view_replay")}
                           </button>
                         )}
                       </div>

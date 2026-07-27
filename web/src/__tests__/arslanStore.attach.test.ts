@@ -15,12 +15,14 @@ describe("attachment_stored frame", () => {
     expect(items.length).toBe(1);
     const note = items[items.length - 1];
     expect(note.kind).toBe("system");
-    expect(note.content).toContain("已记入");
-    expect(note.content).toContain("小美");
-    expect(note.content).toContain("3");
+    // The store keeps an i18n-free sentinel; App translates it at render time.
+    expect(note.content.startsWith("__ATTACHMENT_STORED__:")).toBe(true);
+    const payload = JSON.parse(note.content.slice("__ATTACHMENT_STORED__:".length));
+    expect(payload.name).toBe("小美");
+    expect(payload.chunks).toBe(3);
   });
 
-  it("falls back to 知识库 when spawn_name is null", () => {
+  it("carries a null name when spawn_name is null (generic wording at render)", () => {
     useArslanStore.getState().handleFrame({
       type: "attachment_stored",
       spawn_name: null,
@@ -28,6 +30,10 @@ describe("attachment_stored frame", () => {
     } as any);
 
     const items = useArslanStore.getState().items;
-    expect(items[items.length - 1].content).toContain("知识库");
+    const payload = JSON.parse(
+      items[items.length - 1].content.slice("__ATTACHMENT_STORED__:".length),
+    );
+    expect(payload.name).toBeNull();
+    expect(payload.chunks).toBe(1);
   });
 });

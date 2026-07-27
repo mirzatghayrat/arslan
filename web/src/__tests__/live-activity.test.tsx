@@ -7,7 +7,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, o?: Record<string, unknown>) => {
       const zh: Record<string, string> = {
-        'activity.search': '搜索 {{q}}',
+        'activity.search_q': '搜索 「{{q}}」',
         'activity.read_fail': '有个网页没打开,换个来源',
         'activity.deck': '生成 PPT',
         'activity.calls': '{{count}} 次工具调用',

@@ -41,7 +41,9 @@ export function humanizeStep(
     case 'web_search':
       return s.status === 'error'
         ? t('activity.search_fail')
-        : t('activity.search', { q: q ? `「${q.slice(0, 40)}」` : '' });
+        // Quotes live in the locale template (zh 「…」, en "…"), so the raw
+        // truncated query is passed through; the no-query variant has no quotes.
+        : q ? t('activity.search_q', { q: q.slice(0, 40) }) : t('activity.search', { q: '' });
     case 'web_extract':
       return s.status === 'error'
         ? t('activity.read_fail')

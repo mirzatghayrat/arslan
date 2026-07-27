@@ -52,12 +52,12 @@ export default function SpawnRailKnowledge({ spawnId }: { spawnId: number }) {
   return (
     <div className="p-5 border-b border-border/50 space-y-3">
       <span className="text-[10px] font-mono text-foreground uppercase tracking-wider font-bold">
-        {t('spawn.knowledge_panel', { defaultValue: '知识库' })}
+        {t('spawn.knowledge_panel')}
       </span>
       <div className="space-y-1.5">
         {sources.length === 0 ? (
           <p className="text-[9px] font-mono text-subtle-foreground italic">
-            {t('spawn.knowledge_empty', { defaultValue: '暂无知识源' })}
+            {t('spawn.knowledge_empty')}
           </p>
         ) : sources.map((s) => (
           <div key={s.source} className="flex items-center justify-between text-[10px] font-mono bg-background/60 rounded px-2 py-1">
@@ -75,7 +75,7 @@ export default function SpawnRailKnowledge({ spawnId }: { spawnId: number }) {
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={t('spawn.knowledge_placeholder', { defaultValue: '喂一段文本…' })}
+          placeholder={t('spawn.knowledge_placeholder')}
           className="flex-1 bg-background border border-border-strong rounded px-2 py-1 text-[10px] focus:outline-none"
         />
         <button
@@ -89,12 +89,12 @@ export default function SpawnRailKnowledge({ spawnId }: { spawnId: number }) {
       {/* Bound shared collections — small entry into the Second Brain layer. */}
       <div className="pt-2 border-t border-border/40 space-y-1.5">
         <span className="text-[10px] font-mono text-foreground uppercase tracking-wider font-bold">
-          {t('spawn.shared_collections', { defaultValue: '共享库' })}
+          {t('spawn.shared_collections')}
         </span>
         <div className="flex flex-wrap gap-1">
           {bound.length === 0 ? (
             <p className="text-[9px] font-mono text-subtle-foreground italic">
-              {t('spawn.shared_collections_empty', { defaultValue: '未绑定共享库' })}
+              {t('spawn.shared_collections_empty')}
             </p>
           ) : bound.map((c) => (
             <span
@@ -114,7 +114,7 @@ export default function SpawnRailKnowledge({ spawnId }: { spawnId: number }) {
             onChange={(e) => bind(Number(e.target.value))}
             className="w-full bg-background border border-border-strong rounded px-2 py-1 text-[10px] focus:outline-none"
           >
-            <option value="">{t('spawn.shared_collections_bind', { defaultValue: '绑定共享库…' })}</option>
+            <option value="">{t('spawn.shared_collections_bind')}</option>
             {unbound.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}

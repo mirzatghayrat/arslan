@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
-import { toUiRun, DIMENSION_LABELS } from "../api/adapters";
+import { toUiRun, DIMENSION_LABEL_KEYS } from "../api/adapters";
 import type { RunListItem, RunSummary } from "../api/client.types";
 import type { UiRun } from "../types";
 import RunCompareChart from "./RunCompareChart";
@@ -26,20 +26,20 @@ function buildRunMarkdown(run: UiRun, t: TFn): string {
   lines.push("## KPI");
   lines.push(t("replay.md_total", { v: run.totalMs != null ? `${(run.totalMs / 1000).toFixed(1)}s` : "—" }));
   lines.push(t("replay.md_model", { v: run.model ?? "—" }));
-  lines.push(`- tokens：${run.taskTokens}${run.tokensEstimated ? "（≈）" : ""}`);
+  lines.push(t(run.tokensEstimated ? "replay.md_tokens_est" : "replay.md_tokens", { v: run.taskTokens }));
   lines.push(t("replay.md_score", { v: run.scored && run.overallScore != null ? `${run.overallScore}/10` : "—" }));
   lines.push("");
   lines.push("## " + t("replay.what_it_did"));
   for (const s of run.steps) {
     const ms = s.durationMs != null ? `${s.durationMs}ms` : "—";
-    lines.push(`- [${s.kind}] ${s.label}（${ms}）`);
+    lines.push(t("replay.md_step", { kind: s.kind, label: s.label, ms }));
   }
   lines.push("");
   lines.push("## " + t("replay.how_it_went"));
   if (run.scored) {
     lines.push(t("replay.md_overall", { badge: badgeLabel(t, run.overallBadge), score: run.overallScore }));
     for (const d of run.dimensions) {
-      lines.push(`- ${d.label}（${Math.round(d.score * 10) / 10}/10）：${d.comment}`);
+      lines.push(t("replay.md_dim", { label: d.label, score: Math.round(d.score * 10) / 10, comment: d.comment }));
     }
   } else {
     lines.push(t("replay.scoring"));
@@ -106,7 +106,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
 
   async function load() {
     try {
-      const ui = toUiRun(await api.getRun(runId));
+      const ui = toUiRun(await api.getRun(runId), t);
       if (cancelledRef.current) return;
       setRun(ui);
       if (!isTerminalRunStatus(ui.status)) {
@@ -215,7 +215,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
         // (the "路由匹配" overlap); radar recentred up + smaller radius for label clearance.
         legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 } },
         radar: {
-          indicator: RADAR_DIMENSIONS.map((d) => ({ name: DIMENSION_LABELS[d] ?? d, max: 10, min: 0 })),
+          indicator: RADAR_DIMENSIONS.map((d) => ({ name: DIMENSION_LABEL_KEYS[d] ? t(DIMENSION_LABEL_KEYS[d]) : d, max: 10, min: 0 })),
           radius: "52%",
           center: ["50%", "44%"],
           axisName: { fontSize: 10 },

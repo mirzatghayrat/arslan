@@ -170,37 +170,37 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
       {error && <div className="spawn-detail__error" role="alert">{error}</div>}
 
       <section className="spawn-detail__section">
-        <h4>知识库</h4>
+        <h4>{t("spawn.knowledge_panel")}</h4>
         {sources.length === 0 ? (
-          <p className="spawn-detail__empty">还没喂过资料</p>
+          <p className="spawn-detail__empty">{t("spawn.knowledge_none")}</p>
         ) : (
           <ul className="kb-list">
             {sources.map((s) => (
               <li key={s.source} className="kb-list__row">
                 <span className="kb-list__src">{s.source}</span>
-                <span className="kb-list__count">{s.chunks} 块</span>
+                <span className="kb-list__count">{t("spawn.chunks_n", { n: s.chunks })}</span>
                 <button className="kb-list__del" disabled={busy}
-                        onClick={() => removeSource(s.source)}>删</button>
+                        onClick={() => removeSource(s.source)}>{t("spawn.delete_short")}</button>
               </li>
             ))}
           </ul>
         )}
         <div className="kb-add">
-          <input className="kb-add__url" placeholder="网址 (https://…)" value={url}
+          <input className="kb-add__url" placeholder={t("spawn.url_placeholder")} value={url}
                  onChange={(e) => setUrl(e.target.value)} />
-          <input className="kb-add__label" placeholder="标签 (source)" value={label}
+          <input className="kb-add__label" placeholder={t("spawn.label_placeholder")} value={label}
                  onChange={(e) => setLabel(e.target.value)} />
-          <textarea className="kb-add__text" placeholder="粘贴要喂给它的文本…" value={text}
+          <textarea className="kb-add__text" placeholder={t("spawn.text_placeholder")} value={text}
                     onChange={(e) => setText(e.target.value)} />
           <label className="kb-add__compress">
             <input type="checkbox" checked={compress} onChange={(e) => setCompress(e.target.checked)} />
-            LLM 压缩
+            {t("spawn.llm_compress")}
           </label>
           <div className="kb-add__actions">
-            <button disabled={busy} onClick={addUrl}>抓取</button>
-            <button disabled={busy} onClick={addText}>添加文本</button>
+            <button disabled={busy} onClick={addUrl}>{t("spawn.fetch")}</button>
+            <button disabled={busy} onClick={addText}>{t("spawn.add_text")}</button>
             <label className="kb-add__file">
-              上传文件
+              {t("spawn.upload_file")}
               <input type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
                      onChange={(e) => { const f = e.target.files?.[0]; if (f) addFile(f); }} />
             </label>

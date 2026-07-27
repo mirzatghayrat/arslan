@@ -286,7 +286,7 @@ export default function Sidebar({
                   onClick={() => setPicking((p) => !p)}
                   className="w-5 h-5 flex items-center justify-center rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-all text-xs font-bold"
                 >
-                  ＋
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

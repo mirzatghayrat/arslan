@@ -365,46 +365,53 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
 
 // ── Run trace+eval adapters ───────────────────────────────────────────────────
 
-const TOOL_LABELS: Record<string, string> = {
-  web_search: "查资料",
-  fetch_url: "读网页",
-  read_file: "读文件",
+// Caller-provided translate function (react-i18next `t`). Adapters must stay
+// i18n-free at module scope — importing the i18n singleton breaks every test
+// that mocks react-i18next — so `t` is threaded in from the rendering component
+// (same precedent as RunReplay's buildRunMarkdown(run, t)).
+export type TranslateFn = (key: string, opts?: Record<string, unknown>) => string;
+
+const TOOL_LABEL_KEYS: Record<string, string> = {
+  web_search: "replay.tool_web_search",
+  fetch_url: "replay.tool_fetch_url",
+  read_file: "replay.tool_read_file",
 };
 
 // Professional-but-plain wording (user asked: 专业的人话, not colloquial).
-// Exported so EvalSummary's charts use the exact same labels.
-export const DIMENSION_LABELS: Record<string, string> = {
-  routing: "路由匹配",
-  fabrication: "事实可靠",
-  identity: "角色一致",
-  completion: "任务完成度",
+// Locale KEYS — consumers (EvalSummary charts, RunReplay radar) translate with
+// their own `t` so every chart uses the exact same labels.
+export const DIMENSION_LABEL_KEYS: Record<string, string> = {
+  routing: "replay.dim_routing",
+  fabrication: "replay.dim_fabrication",
+  identity: "replay.dim_identity",
+  completion: "replay.dim_completion",
 };
 
-function stepLabel(step: RunStepDto): string {
+function stepLabel(step: RunStepDto, t: TranslateFn): string {
   const spawn = (step.ref.spawn_name as string) ?? "";
   switch (step.kind) {
     case "route":
-      return `选了 ${spawn}`.trim();
+      return t("replay.step_route", { spawn }).trim();
     case "dispatch":
-      return `交给 ${spawn} 处理`.trim();
+      return t("replay.step_dispatch", { spawn }).trim();
     case "tool_call": {
       const tool = (step.ref.tool as string) ?? "";
-      return TOOL_LABELS[tool] ?? `用工具 ${tool}`.trim();
+      return TOOL_LABEL_KEYS[tool] ? t(TOOL_LABEL_KEYS[tool]) : t("replay.step_tool", { tool }).trim();
     }
     case "escalation":
-      return `求助：${(step.ref.need as string) ?? ""}`.trim();
+      return t("replay.step_escalation", { need: (step.ref.need as string) ?? "" }).trim();
     default:
       return step.kind;
   }
 }
 
-export function toUiRun(dto: RunDetailDto): UiRun {
+export function toUiRun(dto: RunDetailDto, t: TranslateFn): UiRun {
   const { run, steps, evaluations } = dto;
   const maxMs = steps.reduce((m, s) => Math.max(m, s.duration_ms ?? 0), 0);
   const uiSteps: UiRunStep[] = steps.map((s) => ({
     seq: s.seq,
     kind: s.kind,
-    label: stepLabel(s),
+    label: stepLabel(s, t),
     detail: s.detail,
     ok: typeof s.ref.ok === "boolean" ? s.ref.ok : undefined,
     durationMs: s.duration_ms,
@@ -415,7 +422,7 @@ export function toUiRun(dto: RunDetailDto): UiRun {
   }));
   const dimensions: UiRunDimension[] = evaluations.map((e) => ({
     dimension: e.dimension,
-    label: DIMENSION_LABELS[e.dimension] ?? e.dimension,
+    label: DIMENSION_LABEL_KEYS[e.dimension] ? t(DIMENSION_LABEL_KEYS[e.dimension]) : e.dimension,
     status: (["pass", "warn", "fail"].includes(e.status) ? e.status : "warn") as UiRunDimension["status"],
     score: e.score,
     comment: e.comment,

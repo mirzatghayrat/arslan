@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunTimelineDto } from "../api/client.types";
 
@@ -24,6 +25,7 @@ function fmtHM(iso: string): string {
 
 /** Per-spawn severity timeline strips (24 buckets, worst-first) — Grafana-style anomaly bands. */
 export default function AnomalyTimeline({ range, onSelectSpawn }: Props) {
+  const { t } = useTranslation();
   const [timeline, setTimeline] = useState<RunTimelineDto | null>(null);
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function AnomalyTimeline({ range, onSelectSpawn }: Props) {
   if (spawns.length === 0) {
     return (
       <div className="anomaly-timeline" data-testid="anomaly-timeline">
-        <p className="diag-catalog__empty">暂无运行数据</p>
+        <p className="diag-catalog__empty">{t("diag.no_runs")}</p>
       </div>
     );
   }
@@ -78,7 +80,7 @@ export default function AnomalyTimeline({ range, onSelectSpawn }: Props) {
                 data-testid="tl-cell"
                 className="anomaly-timeline__cell"
                 style={sevColor(c.sev)}
-                title={`${c.count} 次 · ${c.errors} 错`}
+                title={t("diag.cell_tooltip", { count: c.count, errors: c.errors })}
               />
             ))}
           </div>

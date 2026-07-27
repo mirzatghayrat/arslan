@@ -438,7 +438,10 @@ function makeActions(set: SetState, get: GetState) {
             ...(frame.artifact?.kind === "html" && frame.artifact.content
               ? {
                   artifactHtml: {
-                    title: frame.artifact.title ?? "HTML 文档",
+                    // Empty title → the rendering HtmlDocCard falls back to its
+                    // own i18n generic label (msg.html_doc). The store must not
+                    // bake in a display string (stores stay i18n-free).
+                    title: frame.artifact.title ?? "",
                     filename: frame.artifact.filename ?? "document.html",
                     content: frame.artifact.content,
                     complete: frame.artifact.complete ?? true,
@@ -828,7 +831,12 @@ function makeActions(set: SetState, get: GetState) {
                 id: nextClientId(),
                 kind: "system",
                 role: "arslan",
-                content: `📎 已记入 ${frame.spawn_name ?? "知识库"} 的知识库 · ${frame.chunks} 块`,
+                // Sentinel kept — App translates it at render time
+                // (chat.attachment_stored / chat.attachment_stored_generic).
+                // Stores stay i18n-free: importing the i18n singleton breaks
+                // every test that mocks react-i18next. Same precedent as
+                // __SPAWN_UPDATED__.
+                content: `__ATTACHMENT_STORED__:${JSON.stringify({ name: frame.spawn_name ?? null, chunks: frame.chunks })}`,
                 spawnName: frame.spawn_name,
               },
             ],

@@ -180,7 +180,7 @@ describe("SettingsScreen", () => {
 
   it("shows the offline banner when backendStatus is offline", () => {
     renderSettings({}, "offline");
-    expect(screen.getByText(/Backend not connected/i)).toBeInTheDocument();
+    expect(screen.getByText("ledger.empty_backend_offline")).toBeInTheDocument();
   });
 
   // ── Task 6: the top Save button is GONE (instant auto-save) ───────────────────

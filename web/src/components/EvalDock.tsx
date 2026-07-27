@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { ConversationUsage, RecapDto } from "../api/client.types";
 import { fmtTok, fmtUsd } from "../lib/usageFormat";
@@ -13,8 +14,12 @@ interface Props {
   onOpenDiagnosis: () => void;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  distill: "蒸馏", memory: "记忆", skill: "技能", evolution: "进化", invite: "邀请",
+const KIND_LABEL_KEY: Record<string, string> = {
+  distill: "eval.kind_distill",
+  memory: "eval.kind_memory",
+  skill: "eval.kind_skill",
+  evolution: "eval.kind_evolution",
+  invite: "eval.kind_invite",
 };
 
 function scoreColor(s: number | null | undefined): string {
@@ -43,6 +48,7 @@ function fmtTime(iso: string | null | undefined): string {
  * drill-down still lives in the standalone DiagnosisView (Diagnostics ↗ link).
  */
 export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
+  const { t } = useTranslation();
   const [recap, setRecap] = useState<RecapDto | null>(null);
   const [usage, setUsage] = useState<ConversationUsage | null>(null);
   const [open, setOpen] = useState(false);
@@ -86,10 +92,14 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((o) => !o); } }}
       >
         <span className="recap-dock__chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
-        <span className="recap-dock__title">本对话 · 回顾</span>
+        <span className="recap-dock__title">{t("eval.dock_title")}</span>
         {s && (
           <span className="recap-dock__summary-inline">
-            {s.run_count} 运行 · 均分 {s.avg_score ?? "—"} · 成长 {s.growth_count}
+            {t("eval.dock_summary", {
+              runs: s.run_count,
+              avg: s.avg_score ?? "—",
+              growth: s.growth_count,
+            })}
           </span>
         )}
         <button
@@ -110,7 +120,7 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
         </div>
       )}
       {open && (items.length === 0 ? (
-        <div className="recap-dock__empty">本对话还没有运行 / 成长记录</div>
+        <div className="recap-dock__empty">{t("eval.dock_empty")}</div>
       ) : (
         <ul className="recap-timeline">
           {items.map((it, i) => (
@@ -124,15 +134,15 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
               {it.kind === "run" ? (
                 <div className="recap-item__body">
                   <span className="recap-item__tag" style={{ color: scoreColor(it.overall_score) }}>
-                    运行 · {it.overall_score != null ? it.overall_score.toFixed(1) : "评分中"}
+                    {t("eval.run_label")} · {it.overall_score != null ? it.overall_score.toFixed(1) : t("replay.scoring")}
                   </span>
-                  <span className="recap-item__title">{it.spawn_name ?? "分身"}</span>
+                  <span className="recap-item__title">{it.spawn_name ?? t("diag.spawn")}</span>
                   {it.user_message && <span className="recap-item__sub">{it.user_message}</span>}
                 </div>
               ) : (
                 <div className="recap-item__body">
                   <span className="recap-item__tag" style={{ color: kindColor(it.kind) }}>
-                    {KIND_LABEL[it.kind] ?? it.kind}
+                    {KIND_LABEL_KEY[it.kind] ? t(KIND_LABEL_KEY[it.kind]) : it.kind}
                   </span>
                   <span className="recap-item__title">{it.summary ?? ""}</span>
                 </div>

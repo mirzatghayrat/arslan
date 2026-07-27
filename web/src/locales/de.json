@@ -168,7 +168,9 @@
     "roster_left": "{{name}} hat das Gespräch verlassen",
     "roster_recruited": "{{name}} ist dieser Sitzung beigetreten · Aufgaben direkt per @ übergeben",
     "roster_joined_no_pending": "{{name}} ist beigetreten · für {{name}} war diesmal nichts eingeplant — Aufgaben direkt per @ übergeben",
-    "stopRun": "Stoppen"
+    "stopRun": "Stoppen",
+    "attachment_stored": "📎 In die Wissensbasis von {{name}} aufgenommen · {{chunks}} Blöcke",
+    "attachment_stored_generic": "📎 In die Wissensbasis aufgenommen · {{chunks}} Blöcke"
   },
   "conversation": {
     "title": "Arslan",
@@ -246,7 +248,8 @@
       "loading": "Registry wird geladen…",
       "empty": "Nichts Zuweisbares hier.",
       "error": "Registry konnte nicht geladen werden."
-    }
+    },
+    "overlap_axes": "({{axes}})"
   },
   "gap_fill": {
     "discover_title": "Einen MCP für diese Lücke finden",
@@ -353,7 +356,8 @@
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
-    "chart_done": "Chart generated"
+    "chart_done": "Chart generated",
+    "search_q": "Suche nach „{{q}}“"
   },
   "escalation": {
     "needs": "{{name}} benötigt etwas:",
@@ -584,7 +588,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "search_placeholder": "Search…",
-    "soon": "soon"
+    "soon": "soon",
+    "list_sep": ", "
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",
@@ -882,7 +887,8 @@
       "references": "Referenzen",
       "missing": "Fehlende Dateien",
       "orphaned": "Verwaiste Dateien"
-    }
+    },
+    "skill_body_label": "SKILL.md-Inhalt (muss ## Trigger und ## 决策规则 enthalten)"
   },
   "forge": {
     "intro": "Verpacke deine eigenen Methoden in Skills. Ein Kandidat wird beobachtet, gegen die bewerteten Läufe eines echten Spawns geprüft und dann von dir freigegeben – du bist das Tor, das ihn live schaltet. Diese selbst verfassten Skills gehören zur Bibliothek.",
@@ -953,7 +959,24 @@
   "spawn": {
     "finalize_to_main": "Finalize to main",
     "learned_prefs": "Learned preferences",
-    "no_prefs": "None yet"
+    "no_prefs": "None yet",
+    "knowledge_none": "Noch nichts eingespeist",
+    "chunks_n": "{{n}} Blöcke",
+    "delete_short": "Löschen",
+    "url_placeholder": "URL (https://…)",
+    "label_placeholder": "Label (source)",
+    "text_placeholder": "Text zum Einspeisen einfügen…",
+    "llm_compress": "LLM-Komprimierung",
+    "fetch": "Abrufen",
+    "add_text": "Text hinzufügen",
+    "upload_file": "Datei hochladen",
+    "kb_ingested": "📎 In die Wissensbasis von {{name}} übernommen · {{chunks}} Blöcke",
+    "knowledge_panel": "Wissensbasis",
+    "knowledge_empty": "Noch keine Wissensquellen",
+    "knowledge_placeholder": "Etwas Text einspeisen…",
+    "shared_collections": "Geteilte Sammlungen",
+    "shared_collections_empty": "Keine geteilten Sammlungen verknüpft",
+    "shared_collections_bind": "Geteilte Sammlung verknüpfen…"
   },
   "staffing_card": {
     "heading": "Wer soll das übernehmen? ({{count}})",
@@ -1000,7 +1023,16 @@
   },
   "eval": {
     "scope_conversation": "This chat",
-    "scope_all": "All sessions"
+    "scope_all": "All sessions",
+    "kind_distill": "Destillieren",
+    "kind_memory": "Gedächtnis",
+    "kind_skill": "Skill",
+    "kind_evolution": "Evolution",
+    "kind_invite": "Einladung",
+    "dock_title": "Diese Unterhaltung · Rückblick",
+    "dock_summary": "{{runs}} Läufe · Ø {{avg}} · Wachstum {{growth}}",
+    "dock_empty": "Noch keine Läufe oder Wachstumsereignisse in dieser Unterhaltung",
+    "run_label": "Lauf"
   },
   "runcmd": {
     "label": "Run this command?",
@@ -1244,7 +1276,11 @@
     "clear_all_btn": "Alle Debug-Details löschen",
     "chart_trend": "Score-Trend",
     "chart_dims": "Vier-Dimensionen-Mittel",
-    "chart_pass": "Bestehensrate je Spawn"
+    "chart_pass": "Bestehensrate je Spawn",
+    "vitals_empty": "Noch keine Laufdaten (nur bei Spawn-Einsätzen aufgezeichnet)",
+    "times_n": "{{n}} Mal",
+    "cell_tooltip": "{{count}} Läufe · {{errors}} Fehler",
+    "overall_performance": "Gesamtleistung"
   },
   "replay": {
     "title": "Lauf-Wiedergabe",
@@ -1289,6 +1325,36 @@
     "md_total": "- Gesamt: {{v}}",
     "md_model": "- Modell: {{v}}",
     "md_score": "- Bewertung: {{v}}",
-    "md_overall": "Gesamt: {{badge}} · {{score}}/10"
+    "md_overall": "Gesamt: {{badge}} · {{score}}/10",
+    "compare_title": "Dieser Lauf vs. Gesamt",
+    "compare_avg": "Durchschnitt",
+    "compare_delta": "Bewertung: Durchschnitt {{avg}} · dieser Lauf {{delta}}",
+    "step_route": "{{spawn}} ausgewählt",
+    "step_dispatch": "An {{spawn}} übergeben",
+    "step_tool": "Werkzeug {{tool}} verwendet",
+    "step_escalation": "Um Hilfe gebeten: {{need}}",
+    "tool_web_search": "Recherche",
+    "tool_fetch_url": "Webseite lesen",
+    "tool_read_file": "Datei lesen",
+    "dim_routing": "Routing-Passung",
+    "dim_fabrication": "Faktentreue",
+    "dim_identity": "Rollenkonsistenz",
+    "dim_completion": "Aufgabenerfüllung",
+    "md_tokens": "- Tokens: {{v}}",
+    "md_tokens_est": "- Tokens: {{v}} (≈)",
+    "md_step": "- [{{kind}}] {{label}} ({{ms}})",
+    "md_dim": "- {{label}} ({{score}}/10): {{comment}}",
+    "view_replay": "Replay ansehen"
+  },
+  "feed": {
+    "bucket": {
+      "text": "Text",
+      "web": "Web",
+      "pdf": "PDF",
+      "image": "Bilder",
+      "word": "Word"
+    },
+    "unsupported_format": "Nicht unterstütztes Format: {{name}}",
+    "paste_source": "Eingefügt"
   }
 }

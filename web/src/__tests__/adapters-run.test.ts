@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { toUiRun } from "../api/adapters";
+
+// Test-env t stub: echoes the key plus interpolated values (i18n is not initialized
+// in tests — assertions expect key strings; see no-hardcoded-cjk.test.ts rationale).
+const t = (k: string, o?: Record<string, unknown>) =>
+  [k, ...Object.values(o ?? {}).map(String)].join(" ").trim();
 import type { RunDetailDto } from "../api/client.types";
 
 const base: RunDetailDto = {
@@ -25,30 +30,30 @@ const base: RunDetailDto = {
 
 describe("toUiRun", () => {
   it("translates step kinds to human labels", () => {
-    const ui = toUiRun(base);
-    expect(ui.steps[0].label).toContain("Mermer");      // route → 选了 Mermer
-    expect(ui.steps[1].label).toContain("Mermer");      // dispatch → 交给 Mermer 处理
-    expect(ui.steps[2].label).toBe("查资料");            // web_search → 查资料
+    const ui = toUiRun(base, t);
+    expect(ui.steps[0].label).toContain("Mermer");      // route → replay.step_route + spawn
+    expect(ui.steps[1].label).toContain("Mermer");      // dispatch → replay.step_dispatch + spawn
+    expect(ui.steps[2].label).toBe("replay.tool_web_search"); // web_search → its label key
   });
 
   it("marks the slowest step", () => {
-    const ui = toUiRun(base);
+    const ui = toUiRun(base, t);
     expect(ui.steps.find((s) => s.isSlowest)?.kind).toBe("dispatch");
   });
 
   it("maps dimensions to human labels and exposes scored flag", () => {
-    const ui = toUiRun(base);
+    const ui = toUiRun(base, t);
     expect(ui.scored).toBe(true);
     const routing = ui.dimensions.find((d) => d.dimension === "routing");
-    expect(routing?.label).toBe("路由匹配");
+    expect(routing?.label).toBe("replay.dim_routing");
   });
 
   it("scored=false while still recording", () => {
-    const ui = toUiRun({ ...base, run: { ...base.run, status: "recorded", overall_score: null } });
+    const ui = toUiRun({ ...base, run: { ...base.run, status: "recorded", overall_score: null } }, t);
     expect(ui.scored).toBe(false);
   });
 
   it("exposes userMessage", () => {
-    expect(toUiRun(base).userMessage).toBe("查天气");
+    expect(toUiRun(base, t).userMessage).toBe("查天气");
   });
 });

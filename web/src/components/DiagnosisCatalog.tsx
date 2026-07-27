@@ -209,7 +209,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
       {loading && spawns.length === 0 ? (
         <p className="diag-catalog__empty">{t("diag.loading")}</p>
       ) : spawns.length === 0 ? (
-        <p className="diag-catalog__empty">{t("eval.empty", "还没有运行记录")}</p>
+        <p className="diag-catalog__empty">{t("diag.no_runs")}</p>
       ) : narrow ? (
         <div className="diag-cards">
           {spawns.map((s) => (

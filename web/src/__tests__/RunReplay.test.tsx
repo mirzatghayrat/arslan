@@ -134,9 +134,9 @@ describe("RunReplay", () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     render(<RunReplay runId={7} onClose={() => {}} />);
 
-    await screen.findByText("交给 Mermer 处理");
+    await screen.findByText("replay.step_dispatch");
     expect(screen.getByText("查天气")).toBeTruthy();
-    expect(screen.getByText(/路由匹配/)).toBeTruthy();
+    expect(screen.getByText(/replay\.dim_routing/)).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
   });
 
@@ -147,18 +147,18 @@ describe("RunReplay", () => {
     render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
 
     await screen.findByText("replay.scoring");
-    await waitFor(() => expect(screen.getByText(/路由匹配/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/replay\.dim_routing/)).toBeTruthy());
   });
 
   it("renders the 本次 vs 整体 compare chart when scored and scored_count >= 2", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scored);
     render(<RunReplay runId={7} onClose={() => {}} />);
     await screen.findByTestId("run-compare");
-    expect(screen.getByText("本次 vs 整体")).toBeTruthy();
+    expect(screen.getByText("replay.compare_title")).toBeTruthy();
     // one echart for the compare-bars, one for the dims radar (both render when scored)
     expect(screen.getAllByTestId("echart-stub")).toHaveLength(2);
     // overall 8 vs fleet avg 7.67 → subtle delta line
-    expect(screen.getByText(/平均 7\.7 · 本次 \+0\.3/)).toBeTruthy();
+    expect(screen.getByText("replay.compare_delta")).toBeTruthy();
   });
 
   it("hides the compare chart when scored_count < 2", async () => {
@@ -187,7 +187,7 @@ describe("RunReplay", () => {
   it("expands a tool step to reveal args_summary + result summary + ✓", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithTool);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    const label = await screen.findByText(/web_search|搜索|查资料|用工具/);
+    const label = await screen.findByText(/replay\.tool_web_search|replay\.step_tool/);
     fireEvent.click(label.closest("li")!);
     expect(screen.getByText(/OKX/)).toBeTruthy();
     expect(screen.getByText(/5 results/)).toBeTruthy();
@@ -197,7 +197,7 @@ describe("RunReplay", () => {
   it("does not show the detail until the row is clicked", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithTool);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText(/web_search|搜索|查资料|用工具/);
+    await screen.findByText(/replay\.tool_web_search|replay\.step_tool/);
     expect(screen.queryByText(/OKX/)).toBeNull();
   });
 
@@ -217,7 +217,7 @@ describe("RunReplay", () => {
   it("expanding a tool step reveals full args + raw result", async () => {
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    const label = await screen.findByText(/web_search|搜索|查资料|用工具/);
+    const label = await screen.findByText(/replay\.tool_web_search|replay\.step_tool/);
     fireEvent.click(label.closest("li")!);
     expect(screen.getByText(/RAW_MARKER_123/)).toBeTruthy();
   });
@@ -314,7 +314,7 @@ describe("RunReplay", () => {
     };
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(withWaterfall);
     render(<RunReplay runId={7} onClose={() => {}} />);
-    await screen.findByText("交给 Mermer 处理");
+    await screen.findByText("replay.step_dispatch");
 
     const bars = screen.getAllByTestId("wf-bar");
     expect(bars).toHaveLength(3);

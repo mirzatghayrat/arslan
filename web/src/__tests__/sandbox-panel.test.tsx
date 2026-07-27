@@ -76,7 +76,7 @@ describe("SandboxPanel", () => {
     act(() => { sandboxFrameCb({ type: "stream_chunk", content: "done" }); });
     act(() => { sandboxFrameCb({ type: "stream_end" }); });
     expect(screen.queryByText(/🔧 web_search/)).toBeNull();     // no raw tool id
-    expect(screen.getByText("activity.search")).toBeDefined();   // humanized (i18n key via the t-mock)
+    expect(screen.getByText("activity.search_q")).toBeDefined();   // humanized (i18n key via the t-mock)
   });
 
   it("shows a live thinking indicator during the pre-first-token gap (parity with main chat)", () => {

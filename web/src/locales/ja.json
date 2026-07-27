@@ -168,7 +168,9 @@
     "roster_left": "{{name}} が会話を退出しました",
     "roster_recruited": "{{name}} が本セッションに参加 · タスクは @ で直接依頼できます",
     "roster_joined_no_pending": "{{name}} が参加 · 今回 {{name}} 宛ての保留タスクはありません。@ で直接依頼してください",
-    "stopRun": "停止"
+    "stopRun": "停止",
+    "attachment_stored": "📎 {{name}} のナレッジベースに記録 · {{chunks}} チャンク",
+    "attachment_stored_generic": "📎 ナレッジベースに記録 · {{chunks}} チャンク"
   },
   "conversation": {
     "title": "Arslan",
@@ -246,7 +248,8 @@
       "loading": "レジストリを読み込み中…",
       "empty": "割り当て可能な項目がありません。",
       "error": "レジストリを読み込めませんでした。"
-    }
+    },
+    "overlap_axes": "({{axes}})"
   },
   "gap_fill": {
     "discover_title": "このギャップに合う MCP を探す",
@@ -353,7 +356,8 @@
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
-    "chart_done": "Chart generated"
+    "chart_done": "Chart generated",
+    "search_q": "「{{q}}」を検索中"
   },
   "escalation": {
     "needs": "{{name}}が何かを必要としています：",
@@ -584,7 +588,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "search_placeholder": "Search…",
-    "soon": "soon"
+    "soon": "soon",
+    "list_sep": "、"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",
@@ -882,7 +887,8 @@
       "references": "参考資料",
       "missing": "欠落ファイル",
       "orphaned": "孤立ファイル"
-    }
+    },
+    "skill_body_label": "SKILL.md 本文(## Trigger と ## 决策规则 を含む必要があります)"
   },
   "forge": {
     "intro": "自分の手法をスキルとしてパッケージ化します。候補はまず観察され、実在のスパーンの採点済み実行に対してゲートを通過し、その後あなたが昇格させます——ライブにするゲートはあなた自身です。こうして自作したスキルはライブラリに加わります。",
@@ -953,7 +959,24 @@
   "spawn": {
     "finalize_to_main": "Finalize to main",
     "learned_prefs": "Learned preferences",
-    "no_prefs": "None yet"
+    "no_prefs": "None yet",
+    "knowledge_none": "まだ何も与えられていません",
+    "chunks_n": "{{n}} チャンク",
+    "delete_short": "削除",
+    "url_placeholder": "URL (https://…)",
+    "label_placeholder": "ラベル (source)",
+    "text_placeholder": "与えるテキストを貼り付け…",
+    "llm_compress": "LLM 圧縮",
+    "fetch": "取得",
+    "add_text": "テキストを追加",
+    "upload_file": "ファイルをアップロード",
+    "kb_ingested": "📎 {{name}} のナレッジベースに保存 · {{chunks}} チャンク",
+    "knowledge_panel": "ナレッジベース",
+    "knowledge_empty": "ナレッジソースはまだありません",
+    "knowledge_placeholder": "テキストを与える…",
+    "shared_collections": "共有ライブラリ",
+    "shared_collections_empty": "共有ライブラリは未接続",
+    "shared_collections_bind": "共有ライブラリを接続…"
   },
   "staffing_card": {
     "heading": "誰が担当しますか？({{count}})",
@@ -1000,7 +1023,16 @@
   },
   "eval": {
     "scope_conversation": "This chat",
-    "scope_all": "All sessions"
+    "scope_all": "All sessions",
+    "kind_distill": "蒸留",
+    "kind_memory": "記憶",
+    "kind_skill": "スキル",
+    "kind_evolution": "進化",
+    "kind_invite": "招待",
+    "dock_title": "この会話 · 振り返り",
+    "dock_summary": "{{runs}} 実行 · 平均 {{avg}} · 成長 {{growth}}",
+    "dock_empty": "この会話にはまだ実行・成長の記録がありません",
+    "run_label": "実行"
   },
   "runcmd": {
     "label": "Run this command?",
@@ -1244,7 +1276,11 @@
     "clear_all_btn": "全デバッグ詳細を消去",
     "chart_trend": "スコア推移",
     "chart_dims": "4次元平均",
-    "chart_pass": "スポーン別合格率"
+    "chart_pass": "スポーン別合格率",
+    "vitals_empty": "実行データはまだありません(スポーンの派遣時のみ記録)",
+    "times_n": "{{n}} 回",
+    "cell_tooltip": "{{count}} 回 · エラー {{errors}}",
+    "overall_performance": "全体パフォーマンス"
   },
   "replay": {
     "title": "リプレイ",
@@ -1289,6 +1325,36 @@
     "md_total": "- 合計：{{v}}",
     "md_model": "- モデル：{{v}}",
     "md_score": "- スコア：{{v}}",
-    "md_overall": "総評：{{badge}} · {{score}}/10"
+    "md_overall": "総評：{{badge}} · {{score}}/10",
+    "compare_title": "今回 vs 全体",
+    "compare_avg": "平均",
+    "compare_delta": "スコア:平均 {{avg}} · 今回 {{delta}}",
+    "step_route": "{{spawn}} を選択",
+    "step_dispatch": "{{spawn}} に依頼",
+    "step_tool": "ツール {{tool}} を使用",
+    "step_escalation": "ヘルプ要請:{{need}}",
+    "tool_web_search": "調べ物",
+    "tool_fetch_url": "ウェブページを読む",
+    "tool_read_file": "ファイルを読む",
+    "dim_routing": "ルーティング適合",
+    "dim_fabrication": "事実の信頼性",
+    "dim_identity": "ペルソナ一貫性",
+    "dim_completion": "タスク完了度",
+    "md_tokens": "- tokens:{{v}}",
+    "md_tokens_est": "- tokens:{{v}}(≈)",
+    "md_step": "- [{{kind}}] {{label}}({{ms}})",
+    "md_dim": "- {{label}}({{score}}/10):{{comment}}",
+    "view_replay": "リプレイを見る"
+  },
+  "feed": {
+    "bucket": {
+      "text": "テキスト",
+      "web": "ウェブ",
+      "pdf": "PDF",
+      "image": "画像",
+      "word": "Word"
+    },
+    "unsupported_format": "未対応の形式: {{name}}",
+    "paste_source": "貼り付け"
   }
 }

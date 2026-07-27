@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunSummary } from "../api/client.types";
-import { DIMENSION_LABELS } from "../api/adapters";
+import { DIMENSION_LABEL_KEYS } from "../api/adapters";
 import EChart from "./EChart";
 
 // Same order as the backend judge dimensions.
@@ -42,12 +42,12 @@ export default function EvalCharts() {
     tooltip: {},
     xAxis: {
       type: "category",
-      data: DIMENSIONS.map((d) => DIMENSION_LABELS[d] ?? d),
+      data: DIMENSIONS.map((d) => (DIMENSION_LABEL_KEYS[d] ? t(DIMENSION_LABEL_KEYS[d]) : d)),
       axisLabel: { fontSize: 10, interval: 0 },
     },
     yAxis: { type: "value", min: 0, max: 10 },
     series: [{ type: "bar", barWidth: "55%", data: DIMENSIONS.map((d) => summary?.dimension_averages[d] ?? null) }],
-  }), [summary]);
+  }), [summary, t]);
 
   const spawnOption = useMemo(() => {
     // Top 6 by scored_count; reversed so the most-scored spawn sits on top.
@@ -70,7 +70,7 @@ export default function EvalCharts() {
 
   return (
     <section className="run-replay__charts">
-      <h4>整体表现</h4>
+      <h4>{t("diag.overall_performance")}</h4>
       <div className="eval-summary__charts" data-testid="eval-charts">
         <div className="eval-chart eval-chart--wide">
           <div className="eval-chart__title">{t("diag.chart_trend")}</div>

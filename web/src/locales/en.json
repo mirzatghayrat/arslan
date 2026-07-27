@@ -168,7 +168,9 @@
     "roster_left": "{{name}} left the conversation",
     "roster_recruited": "{{name}} joined this session · @ them to hand off tasks",
     "roster_joined_no_pending": "{{name}} joined · nothing was queued for them this round — @ them to hand off a task",
-    "stopRun": "Stop"
+    "stopRun": "Stop",
+    "attachment_stored": "📎 Filed into {{name}}'s knowledge base · {{chunks}} chunks",
+    "attachment_stored_generic": "📎 Filed into the knowledge base · {{chunks}} chunks"
   },
   "conversation": {
     "title": "Arslan",
@@ -246,7 +248,8 @@
       "loading": "Loading registry…",
       "empty": "Nothing assignable here.",
       "error": "Couldn't load the registry."
-    }
+    },
+    "overlap_axes": "({{axes}})"
   },
   "gap_fill": {
     "discover_title": "Find an MCP for this gap",
@@ -353,7 +356,8 @@
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
-    "chart_done": "Chart generated"
+    "chart_done": "Chart generated",
+    "search_q": "Searching “{{q}}”"
   },
   "escalation": {
     "needs": "{{name}} needs something:",
@@ -584,7 +588,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "search_placeholder": "Search…",
-    "soon": "soon"
+    "soon": "soon",
+    "list_sep": ", "
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",
@@ -882,7 +887,8 @@
       "references": "References",
       "missing": "Missing files",
       "orphaned": "Orphaned files"
-    }
+    },
+    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## 决策规则)"
   },
   "forge": {
     "intro": "Package your own methods into skills. A candidate is observed, gated against a real spawn's scored runs, then promoted — you are the gate that makes it live. These self-authored skills join the library.",
@@ -953,7 +959,24 @@
   "spawn": {
     "finalize_to_main": "Finalize to main",
     "learned_prefs": "Learned preferences",
-    "no_prefs": "None yet"
+    "no_prefs": "None yet",
+    "knowledge_none": "Nothing fed yet",
+    "chunks_n": "{{n}} chunks",
+    "delete_short": "Del",
+    "url_placeholder": "URL (https://…)",
+    "label_placeholder": "Label (source)",
+    "text_placeholder": "Paste text to feed it…",
+    "llm_compress": "LLM compression",
+    "fetch": "Fetch",
+    "add_text": "Add text",
+    "upload_file": "Upload file",
+    "kb_ingested": "📎 Saved to {{name}}'s knowledge base · {{chunks}} chunks",
+    "knowledge_panel": "Knowledge base",
+    "knowledge_empty": "No knowledge sources yet",
+    "knowledge_placeholder": "Feed it some text…",
+    "shared_collections": "Shared collections",
+    "shared_collections_empty": "No shared collections bound",
+    "shared_collections_bind": "Bind a shared collection…"
   },
   "staffing_card": {
     "heading": "Who should handle this? ({{count}})",
@@ -1000,7 +1023,16 @@
   },
   "eval": {
     "scope_conversation": "This chat",
-    "scope_all": "All sessions"
+    "scope_all": "All sessions",
+    "kind_distill": "Distill",
+    "kind_memory": "Memory",
+    "kind_skill": "Skill",
+    "kind_evolution": "Evolution",
+    "kind_invite": "Invite",
+    "dock_title": "This conversation · Recap",
+    "dock_summary": "{{runs}} runs · avg {{avg}} · growth {{growth}}",
+    "dock_empty": "No runs or growth events in this conversation yet",
+    "run_label": "Run"
   },
   "runcmd": {
     "label": "Run this command?",
@@ -1244,7 +1276,11 @@
     "clear_all_btn": "Clear all debug details",
     "chart_trend": "Score trend",
     "chart_dims": "Four-dimension average",
-    "chart_pass": "Pass rate by spawn"
+    "chart_pass": "Pass rate by spawn",
+    "vitals_empty": "No run data yet (recorded only when spawns are dispatched)",
+    "times_n": "{{n}} runs",
+    "cell_tooltip": "{{count}} runs · {{errors}} errors",
+    "overall_performance": "Overall performance"
   },
   "replay": {
     "title": "Run replay",
@@ -1289,6 +1325,36 @@
     "md_total": "- Total: {{v}}",
     "md_model": "- Model: {{v}}",
     "md_score": "- Score: {{v}}",
-    "md_overall": "Overall: {{badge}} · {{score}}/10"
+    "md_overall": "Overall: {{badge}} · {{score}}/10",
+    "compare_title": "This run vs overall",
+    "compare_avg": "Average",
+    "compare_delta": "Score: average {{avg}} · this run {{delta}}",
+    "step_route": "Picked {{spawn}}",
+    "step_dispatch": "Handed to {{spawn}}",
+    "step_tool": "Used tool {{tool}}",
+    "step_escalation": "Asked for help: {{need}}",
+    "tool_web_search": "Research",
+    "tool_fetch_url": "Read a web page",
+    "tool_read_file": "Read a file",
+    "dim_routing": "Routing fit",
+    "dim_fabrication": "Factual reliability",
+    "dim_identity": "Persona consistency",
+    "dim_completion": "Task completion",
+    "md_tokens": "- tokens: {{v}}",
+    "md_tokens_est": "- tokens: {{v}} (≈)",
+    "md_step": "- [{{kind}}] {{label}} ({{ms}})",
+    "md_dim": "- {{label}} ({{score}}/10): {{comment}}",
+    "view_replay": "View replay"
+  },
+  "feed": {
+    "bucket": {
+      "text": "Text",
+      "web": "Web",
+      "pdf": "PDF",
+      "image": "Images",
+      "word": "Word"
+    },
+    "unsupported_format": "Unsupported format: {{name}}",
+    "paste_source": "Pasted"
   }
 }

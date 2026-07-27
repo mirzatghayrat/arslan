@@ -91,7 +91,7 @@ export default function BrainSection() {
     let ok = 0; const failed: string[] = [];
     for (const file of files) {
       setStatus(t("brain.feeding_progress", { i: ok + failed.length + 1, total: files.length }));
-      try { await feedFile(file); ok += 1; } catch { failed.push(file.name); }
+      try { await feedFile(file, t); ok += 1; } catch { failed.push(file.name); }
     }
     reloadAll();
     setStatus(failed.length ? t("brain.fed_partial", { n: ok, names: failed.join(", ") }) : t("brain.fed_ok", { n: ok }));

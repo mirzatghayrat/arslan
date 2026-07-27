@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowUpRight, Shield, RefreshCcw, Plus, X, Check, BookOpen,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import type { McpPrefill } from './ToolHubDiscover';
 // (generate → editable draft → create). Read-only browse; "Add" steps reuse the
 // existing locked discovery + MCP paths. Plain text only; semantic tokens.
 export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: McpPrefill) => void } = {}) {
+  const { t } = useTranslation();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -221,7 +223,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
 
           <div>
             <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block mb-1">
-              SKILL.md body (must contain ## Trigger and ## 决策规则)
+              {t('capabilities.skill_body_label')}
             </span>
             <textarea
               value={skillDraft.body}

@@ -168,7 +168,9 @@
     "roster_left": "{{name}} a quitté la conversation",
     "roster_recruited": "{{name}} a rejoint cette session · utilisez @ pour lui confier une tâche",
     "roster_joined_no_pending": "{{name}} a rejoint · rien n'était en attente pour {{name}} cette fois — utilisez @ pour confier une tâche",
-    "stopRun": "Arrêter"
+    "stopRun": "Arrêter",
+    "attachment_stored": "📎 Enregistré dans la base de connaissances de {{name}} · {{chunks}} blocs",
+    "attachment_stored_generic": "📎 Enregistré dans la base de connaissances · {{chunks}} blocs"
   },
   "conversation": {
     "title": "Arslan",
@@ -246,7 +248,8 @@
       "loading": "Chargement du registre…",
       "empty": "Rien à attribuer ici.",
       "error": "Impossible de charger le registre."
-    }
+    },
+    "overlap_axes": "({{axes}})"
   },
   "gap_fill": {
     "discover_title": "Trouver un MCP pour ce manque",
@@ -353,7 +356,8 @@
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
-    "chart_done": "Chart generated"
+    "chart_done": "Chart generated",
+    "search_q": "Recherche de « {{q}} »"
   },
   "escalation": {
     "needs": "{{name}} a besoin de quelque chose :",
@@ -584,7 +588,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "search_placeholder": "Search…",
-    "soon": "soon"
+    "soon": "soon",
+    "list_sep": ", "
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",
@@ -882,7 +887,8 @@
       "references": "Références",
       "missing": "Fichiers manquants",
       "orphaned": "Fichiers orphelins"
-    }
+    },
+    "skill_body_label": "Corps de SKILL.md (doit contenir ## Trigger et ## 决策规则)"
   },
   "forge": {
     "intro": "Empaquetez vos propres méthodes en compétences. Un candidat est observé, testé face aux exécutions notées d'un spawn réel, puis promu par vous — vous êtes le point de contrôle qui le met en service. Ces compétences que vous créez rejoignent la bibliothèque.",
@@ -953,7 +959,24 @@
   "spawn": {
     "finalize_to_main": "Finalize to main",
     "learned_prefs": "Learned preferences",
-    "no_prefs": "None yet"
+    "no_prefs": "None yet",
+    "knowledge_none": "Rien n'a encore été fourni",
+    "chunks_n": "{{n}} fragments",
+    "delete_short": "Suppr.",
+    "url_placeholder": "URL (https://…)",
+    "label_placeholder": "Libellé (source)",
+    "text_placeholder": "Collez le texte à lui fournir…",
+    "llm_compress": "Compression LLM",
+    "fetch": "Récupérer",
+    "add_text": "Ajouter du texte",
+    "upload_file": "Téléverser un fichier",
+    "kb_ingested": "📎 Enregistré dans la base de connaissances de {{name}} · {{chunks}} fragments",
+    "knowledge_panel": "Base de connaissances",
+    "knowledge_empty": "Aucune source de connaissances pour l'instant",
+    "knowledge_placeholder": "Donnez-lui du texte…",
+    "shared_collections": "Collections partagées",
+    "shared_collections_empty": "Aucune collection partagée liée",
+    "shared_collections_bind": "Lier une collection partagée…"
   },
   "staffing_card": {
     "heading": "Qui devrait gérer ça ? ({{count}})",
@@ -1000,7 +1023,16 @@
   },
   "eval": {
     "scope_conversation": "This chat",
-    "scope_all": "All sessions"
+    "scope_all": "All sessions",
+    "kind_distill": "Distillation",
+    "kind_memory": "Mémoire",
+    "kind_skill": "Compétence",
+    "kind_evolution": "Évolution",
+    "kind_invite": "Invitation",
+    "dock_title": "Cette conversation · Récapitulatif",
+    "dock_summary": "{{runs}} exécutions · moy. {{avg}} · progression {{growth}}",
+    "dock_empty": "Aucune exécution ni événement de progression dans cette conversation pour l'instant",
+    "run_label": "Exécution"
   },
   "runcmd": {
     "label": "Run this command?",
@@ -1244,7 +1276,11 @@
     "clear_all_btn": "Effacer tous les détails",
     "chart_trend": "Tendance des scores",
     "chart_dims": "Moyenne 4 dimensions",
-    "chart_pass": "Réussite par spawn"
+    "chart_pass": "Réussite par spawn",
+    "vitals_empty": "Pas encore de données d'exécution (enregistrées uniquement lors de l'envoi de Spawns)",
+    "times_n": "{{n}} fois",
+    "cell_tooltip": "{{count}} exécutions · {{errors}} erreurs",
+    "overall_performance": "Performance globale"
   },
   "replay": {
     "title": "Relecture",
@@ -1289,6 +1325,36 @@
     "md_total": "- Total : {{v}}",
     "md_model": "- Modèle : {{v}}",
     "md_score": "- Score : {{v}}",
-    "md_overall": "Global : {{badge}} · {{score}}/10"
+    "md_overall": "Global : {{badge}} · {{score}}/10",
+    "compare_title": "Cette exécution vs global",
+    "compare_avg": "Moyenne",
+    "compare_delta": "Score : moyenne {{avg}} · cette exécution {{delta}}",
+    "step_route": "A choisi {{spawn}}",
+    "step_dispatch": "Confié à {{spawn}}",
+    "step_tool": "Outil {{tool}} utilisé",
+    "step_escalation": "Demande d'aide : {{need}}",
+    "tool_web_search": "Recherche",
+    "tool_fetch_url": "Lire une page web",
+    "tool_read_file": "Lire un fichier",
+    "dim_routing": "Adéquation du routage",
+    "dim_fabrication": "Fiabilité factuelle",
+    "dim_identity": "Cohérence du personnage",
+    "dim_completion": "Achèvement de la tâche",
+    "md_tokens": "- tokens : {{v}}",
+    "md_tokens_est": "- tokens : {{v}} (≈)",
+    "md_step": "- [{{kind}}] {{label}} ({{ms}})",
+    "md_dim": "- {{label}} ({{score}}/10) : {{comment}}",
+    "view_replay": "Voir le replay"
+  },
+  "feed": {
+    "bucket": {
+      "text": "Texte",
+      "web": "Web",
+      "pdf": "PDF",
+      "image": "Images",
+      "word": "Word"
+    },
+    "unsupported_format": "Format non pris en charge : {{name}}",
+    "paste_source": "Collé"
   }
 }

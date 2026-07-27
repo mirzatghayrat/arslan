@@ -232,9 +232,12 @@ export default function SpawnDirectChat({
         setMessages(prev => [...prev, {
           id: `stored-${prev.length}-${m.chunks}`,
           sender: 'spawn',
-          senderName: spawn.name ?? '知识库',
+          senderName: spawn.name ?? t('spawn.knowledge_panel'),
           senderAvatar: spawn.avatarEmoji ?? '📎',
-          text: `📎 已记入 ${m.spawn_name ?? '知识库'} 的知识库 · ${m.chunks} 块`,
+          text: t('spawn.kb_ingested', {
+            name: m.spawn_name ?? t('spawn.knowledge_panel'),
+            chunks: m.chunks,
+          }),
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         }]);
         break;

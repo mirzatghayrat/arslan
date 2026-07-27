@@ -65,7 +65,7 @@ describe("EvalDock conversation cumulative usage (S3-M3)", () => {
   it("fetch failure hides the line silently", async () => {
     (api.getConversationUsage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
     render(<EvalDock conversationId="c1" onOpenDiagnosis={() => {}} />);
-    await screen.findByText(/本对话 · 回顾/);
+    await screen.findByText("eval.dock_title");
     await waitFor(() => expect(api.getConversationUsage).toHaveBeenCalled());
     expect(screen.queryByTestId("conv-usage")).toBeNull();
   });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunVitalsDto } from "../api/client.types";
 import { useThemeStore } from "../stores/themeStore";
@@ -21,6 +22,7 @@ function fmtP95(ms: number | null): string {
 
 /** Bucketed run-rate + duration heatmap — a compact "vitals" strip above the fleet cards. */
 export default function VitalsHeader({ range }: Props) {
+  const { t } = useTranslation();
   const [vitals, setVitals] = useState<RunVitalsDto | null>(null);
   const mode = useThemeStore((s) => s.mode);
 
@@ -37,7 +39,7 @@ export default function VitalsHeader({ range }: Props) {
   if (vitals.total === 0) {
     return (
       <div className="vitals" data-testid="vitals-header">
-        <div className="vitals__empty">暂无运行数据(仅分身派发时记录)</div>
+        <div className="vitals__empty">{t("diag.vitals_empty")}</div>
       </div>
     );
   }
@@ -76,7 +78,8 @@ export default function VitalsHeader({ range }: Props) {
       inRange: { color: mode === "light" ? HEAT_LIGHT : HEAT_DARK },
     },
     tooltip: {
-      formatter: (p: { data: [number, number, number] }) => `${vitals.duration_bins[p.data[1]]}: ${p.data[2]} 次`,
+      formatter: (p: { data: [number, number, number] }) =>
+        `${vitals.duration_bins[p.data[1]]}: ${t("diag.times_n", { n: p.data[2] })}`,
     },
     series: [
       {
@@ -92,11 +95,11 @@ export default function VitalsHeader({ range }: Props) {
       <div className="vitals__hero">
         <div className="vitals__hero-item">
           <div className="vitals__hero-num">{vitals.total}</div>
-          <div className="vitals__hero-label">运行数</div>
+          <div className="vitals__hero-label">{t("diag.runs")}</div>
         </div>
         <div className="vitals__hero-item">
           <div className="vitals__hero-num">{(vitals.error_ratio * 100).toFixed(1)}%</div>
-          <div className="vitals__hero-label">错误率</div>
+          <div className="vitals__hero-label">{t("diag.error_rate")}</div>
         </div>
         <div className="vitals__hero-item">
           <div className="vitals__hero-num">{fmtP95(vitals.p95_ms)}</div>

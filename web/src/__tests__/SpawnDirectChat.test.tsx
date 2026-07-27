@@ -100,7 +100,7 @@ describe('SpawnDirectChat', () => {
   it('renders an attachment_stored system note', () => {
     render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
     act(() => frameCb({ type: 'attachment_stored', spawn_name: '小美', chunks: 3 }));
-    expect(screen.getByText(/已记入.*小美|记入.*小美/)).toBeInTheDocument();
+    expect(screen.getByText("spawn.kb_ingested")).toBeInTheDocument();
   });
 
   it('REGRESSION: no fabricated tool activity after real reply', async () => {

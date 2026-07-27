@@ -168,7 +168,9 @@
     "roster_left": "{{name}} 离开了对话",
     "roster_recruited": "{{name}} 已加入本次会话 · 直接 @ TA 交办",
     "roster_joined_no_pending": "{{name}} 已加入 · 本轮没有交给 TA 的任务,直接 @ TA 交办即可",
-    "stopRun": "停止"
+    "stopRun": "停止",
+    "attachment_stored": "📎 已记入 {{name}} 的知识库 · {{chunks}} 块",
+    "attachment_stored_generic": "📎 已记入知识库 · {{chunks}} 块"
   },
   "conversation": {
     "title": "Arslan",
@@ -246,7 +248,8 @@
       "loading": "加载注册表……",
       "empty": "这里没有可分配项。",
       "error": "无法加载注册表。"
-    }
+    },
+    "overlap_axes": "（{{axes}}）"
   },
   "gap_fill": {
     "discover_title": "为此缺口寻找 MCP",
@@ -353,7 +356,8 @@
     "n_results": "{{count}} 条结果",
     "n_chars": "读取 {{count}} 字符",
     "deck_done": "已生成 PPTX · {{slides}} 页",
-    "chart_done": "已生成图表"
+    "chart_done": "已生成图表",
+    "search_q": "搜索 「{{q}}」"
   },
   "escalation": {
     "needs": "{{name}} 需要一些东西：",
@@ -584,7 +588,8 @@
     "save": "保存",
     "cancel": "取消",
     "search_placeholder": "搜索…",
-    "soon": "即将"
+    "soon": "即将",
+    "list_sep": "、"
   },
   "sidebar": {
     "new_session": "新建编排会话",
@@ -882,7 +887,8 @@
       "references": "参考资料",
       "missing": "缺失文件",
       "orphaned": "游离文件"
-    }
+    },
+    "skill_body_label": "SKILL.md 正文（必须包含 ## Trigger 和 ## 决策规则）"
   },
   "forge": {
     "intro": "把你自己的方法打包成技能。候选先观察，再对着某个分身的真实评分回放过闸，然后由你晋升上线——你就是让它上线的那道闸。这些自撰技能会加入技能库。",
@@ -953,7 +959,24 @@
   "spawn": {
     "finalize_to_main": "定稿回主框",
     "learned_prefs": "学到的偏好",
-    "no_prefs": "暂无"
+    "no_prefs": "暂无",
+    "knowledge_none": "还没喂过资料",
+    "chunks_n": "{{n}} 块",
+    "delete_short": "删",
+    "url_placeholder": "网址 (https://…)",
+    "label_placeholder": "标签 (source)",
+    "text_placeholder": "粘贴要喂给它的文本…",
+    "llm_compress": "LLM 压缩",
+    "fetch": "抓取",
+    "add_text": "添加文本",
+    "upload_file": "上传文件",
+    "kb_ingested": "📎 已记入 {{name}} 的知识库 · {{chunks}} 块",
+    "knowledge_panel": "知识库",
+    "knowledge_empty": "暂无知识源",
+    "knowledge_placeholder": "喂一段文本…",
+    "shared_collections": "共享库",
+    "shared_collections_empty": "未绑定共享库",
+    "shared_collections_bind": "绑定共享库…"
   },
   "staffing_card": {
     "heading": "谁来处理？({{count}})",
@@ -1000,7 +1023,16 @@
   },
   "eval": {
     "scope_conversation": "本会话",
-    "scope_all": "全部会话"
+    "scope_all": "全部会话",
+    "kind_distill": "蒸馏",
+    "kind_memory": "记忆",
+    "kind_skill": "技能",
+    "kind_evolution": "进化",
+    "kind_invite": "邀请",
+    "dock_title": "本对话 · 回顾",
+    "dock_summary": "{{runs}} 运行 · 均分 {{avg}} · 成长 {{growth}}",
+    "dock_empty": "本对话还没有运行 / 成长记录",
+    "run_label": "运行"
   },
   "runcmd": {
     "label": "运行这条命令?",
@@ -1244,7 +1276,11 @@
     "clear_all_btn": "清除所有调试详情",
     "chart_trend": "评分趋势",
     "chart_dims": "四维平均",
-    "chart_pass": "分身达标率"
+    "chart_pass": "分身达标率",
+    "vitals_empty": "暂无运行数据(仅分身派发时记录)",
+    "times_n": "{{n}} 次",
+    "cell_tooltip": "{{count}} 次 · {{errors}} 错",
+    "overall_performance": "整体表现"
   },
   "replay": {
     "title": "编排回放",
@@ -1289,6 +1325,36 @@
     "md_total": "- 总耗时：{{v}}",
     "md_model": "- 模型：{{v}}",
     "md_score": "- 评分：{{v}}",
-    "md_overall": "总评：{{badge}} · {{score}}/10"
+    "md_overall": "总评：{{badge}} · {{score}}/10",
+    "compare_title": "本次 vs 整体",
+    "compare_avg": "平均",
+    "compare_delta": "评分:平均 {{avg}} · 本次 {{delta}}",
+    "step_route": "选了 {{spawn}}",
+    "step_dispatch": "交给 {{spawn}} 处理",
+    "step_tool": "用工具 {{tool}}",
+    "step_escalation": "求助：{{need}}",
+    "tool_web_search": "查资料",
+    "tool_fetch_url": "读网页",
+    "tool_read_file": "读文件",
+    "dim_routing": "路由匹配",
+    "dim_fabrication": "事实可靠",
+    "dim_identity": "角色一致",
+    "dim_completion": "任务完成度",
+    "md_tokens": "- tokens：{{v}}",
+    "md_tokens_est": "- tokens：{{v}}（≈）",
+    "md_step": "- [{{kind}}] {{label}}（{{ms}}）",
+    "md_dim": "- {{label}}（{{score}}/10）：{{comment}}",
+    "view_replay": "查看回放"
+  },
+  "feed": {
+    "bucket": {
+      "text": "文本",
+      "web": "网页",
+      "pdf": "PDF",
+      "image": "图片",
+      "word": "Word"
+    },
+    "unsupported_format": "不支持的格式:{{name}}",
+    "paste_source": "粘贴"
   }
 }

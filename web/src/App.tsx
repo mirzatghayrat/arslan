@@ -170,11 +170,26 @@ export default function App() {
   wsSendRef.current = wsSend;
 
   // Derived UI messages from the live store
-  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems).map((m) =>
-    m.text.startsWith('__SPAWN_UPDATED__:')
-      ? { ...m, text: t('orchestrator.update_done', { name: m.text.slice('__SPAWN_UPDATED__:'.length) }) }
-      : m,
-  );
+  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems).map((m) => {
+    if (m.text.startsWith('__SPAWN_UPDATED__:')) {
+      return { ...m, text: t('orchestrator.update_done', { name: m.text.slice('__SPAWN_UPDATED__:'.length) }) };
+    }
+    // attachment_stored sentinel from arslanStore (stores stay i18n-free).
+    if (m.text.startsWith('__ATTACHMENT_STORED__:')) {
+      try {
+        const p = JSON.parse(m.text.slice('__ATTACHMENT_STORED__:'.length)) as { name?: string | null; chunks?: number };
+        return {
+          ...m,
+          text: p.name
+            ? t('chat.attachment_stored', { name: p.name, chunks: p.chunks ?? 0 })
+            : t('chat.attachment_stored_generic', { chunks: p.chunks ?? 0 }),
+        };
+      } catch {
+        return m;
+      }
+    }
+    return m;
+  });
 
   // Append an optimistic streaming bubble while a reply is streaming
   const orchestratorChatHistory: Message[] = arslanStreaming && arslanStreamingText
@@ -1116,7 +1131,7 @@ export default function App() {
                         {/* Level progress bar info segment */}
                         <div className="space-y-1">
                           <div className="flex justify-between items-center text-[7.5px] font-mono text-subtle-foreground uppercase tracking-wider">
-                            <span>Level 進度</span>
+                            <span>{t('rail.level_progress')}</span>
                             <span className="text-primary font-bold">{progressPercent}%</span>
                           </div>
                           <div className="w-full bg-background border border-border/30 h-[3px] rounded-full overflow-hidden">

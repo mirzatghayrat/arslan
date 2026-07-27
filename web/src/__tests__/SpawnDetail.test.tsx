@@ -38,7 +38,7 @@ describe("SpawnDetail", () => {
   it("lists knowledge sources on mount", async () => {
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
     await screen.findByText("policy.txt");
-    expect(screen.getByText(/4/)).toBeTruthy();
+    expect(screen.getByText("spawn.chunks_n")).toBeTruthy();
   });
 
   it("adds text knowledge and refreshes", async () => {
@@ -46,9 +46,9 @@ describe("SpawnDetail", () => {
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
     await screen.findByText("policy.txt");
 
-    fireEvent.change(screen.getByPlaceholderText(/标签|source/i), { target: { value: "note" } });
-    fireEvent.change(screen.getByPlaceholderText(/粘贴|文本|text/i), { target: { value: "some material" } });
-    fireEvent.click(screen.getByText("添加文本"));
+    fireEvent.change(screen.getByPlaceholderText("spawn.label_placeholder"), { target: { value: "note" } });
+    fireEvent.change(screen.getByPlaceholderText("spawn.text_placeholder"), { target: { value: "some material" } });
+    fireEvent.click(screen.getByText("spawn.add_text"));
 
     await waitFor(() => expect(m.ingestKnowledgeText).toHaveBeenCalledWith(7, "note", "some material", false));
     expect(m.getKnowledge).toHaveBeenCalledTimes(2);
@@ -116,8 +116,8 @@ describe("SpawnDetail", () => {
     m.ingestKnowledgeUrl.mockResolvedValue({ source: "https://x.com", chunks_added: 2 });
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
     await screen.findByText("policy.txt");
-    fireEvent.change(screen.getByPlaceholderText(/网址|url|http/i), { target: { value: "https://x.com" } });
-    fireEvent.click(screen.getByText("抓取"));
+    fireEvent.change(screen.getByPlaceholderText("spawn.url_placeholder"), { target: { value: "https://x.com" } });
+    fireEvent.click(screen.getByText("spawn.fetch"));
     await waitFor(() => expect(m.ingestKnowledgeUrl).toHaveBeenCalledWith(7, "https://x.com", false));
   });
 });

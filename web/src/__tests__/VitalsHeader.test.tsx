@@ -42,7 +42,7 @@ describe("VitalsHeader", () => {
   it("shows a muted empty state when total is 0", async () => {
     (api.getRunVitals as any).mockResolvedValue(makeVitals({ total: 0, duration_matrix: [[0], [0], [0], [0], [0], [0]] }));
     render(<VitalsHeader range="24h" />);
-    expect(await screen.findByText("暂无运行数据(仅分身派发时记录)")).toBeTruthy();
+    expect(await screen.findByText("diag.vitals_empty")).toBeTruthy();
     expect(screen.queryByTestId("echart")).toBeNull();
   });
 

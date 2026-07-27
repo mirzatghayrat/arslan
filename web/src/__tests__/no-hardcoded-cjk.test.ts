@@ -29,28 +29,8 @@ const PERMANENT_ALLOWLIST = new Set<string>([
 ]);
 
 const DEBT_INVENTORY = new Set<string>([
-  "App.tsx",
-  "api/adapters.ts",
-  "components/AnomalyTimeline.tsx",
-  "components/DiagnosisCatalog.tsx",
-  "components/EmbeddingSettings.tsx",
-  "components/EvalCharts.tsx",
-  "components/EvalDock.tsx",
-  "components/OrchestratorChat.tsx",
-  "components/RunCompareChart.tsx",
-  "components/RunReplay.tsx",
-  "components/SavedCandidates.tsx",
-  "components/SettingsScreen.tsx",
-  "components/Sidebar.tsx",
-  "components/SpawnDetail.tsx",
-  "components/SpawnDirectChat.tsx",
-  "components/SpawnRailKnowledge.tsx",
-  "components/SpawnRunDetail.tsx",
-  "components/SuggestCreateCard.tsx",
-  "components/VitalsHeader.tsx",
-  "lib/feed.ts",
-  "lib/toolHumanize.ts",
-  "stores/arslanStore.ts",
+  // EMPTY since S4.2-d M6 — every production file is clean. New hardcoded CJK
+  // has no grace period: register a locale key instead.
 ]);
 
 // CJK unified ideographs + CJK punctuation + Hiragana/Katakana + full-width forms.

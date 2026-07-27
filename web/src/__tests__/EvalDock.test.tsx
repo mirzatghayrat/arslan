@@ -23,9 +23,9 @@ describe("EvalDock recap timeline", () => {
     const onOpen = vi.fn();
     render(<EvalDock conversationId="c" onOpenDiagnosis={onOpen} />);
     // summary shows collapsed (inline in the header); timeline is hidden until expand
-    expect(await screen.findByText(/7.8/)).toBeTruthy();
+    expect(await screen.findByText("eval.dock_summary")).toBeTruthy();
     expect(screen.queryByText(/Deck Master/)).toBeNull();
-    fireEvent.click(screen.getByText(/本对话 · 回顾/));                    // expand
+    fireEvent.click(screen.getByText("eval.dock_title"));                    // expand
     expect(await screen.findByText(/Deck Master/)).toBeTruthy();          // run item now visible
     expect(screen.getByText(/Data Analyst/)).toBeTruthy();               // distill item
     fireEvent.click(screen.getByText(/Diagnostics/));                    // link → standalone view
@@ -37,8 +37,8 @@ describe("EvalDock recap timeline", () => {
     (api.getConversationRecap as any).mockResolvedValueOnce(
       { summary: { run_count: 0, avg_score: null, growth_count: 0 }, items: [] });
     render(<EvalDock conversationId="c2" onOpenDiagnosis={() => {}} />);
-    fireEvent.click(await screen.findByText(/本对话 · 回顾/));            // expand
-    expect(await screen.findByText(/还没有运行|还没有.*记录/)).toBeTruthy();
+    fireEvent.click(await screen.findByText("eval.dock_title"));            // expand
+    expect(await screen.findByText("eval.dock_empty")).toBeTruthy();
   });
 
   it("renders nothing without a conversation id", () => {

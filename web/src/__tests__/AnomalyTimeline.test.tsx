@@ -46,7 +46,7 @@ describe("AnomalyTimeline", () => {
   it("shows muted placeholder when there are no spawns", async () => {
     (api.getRunTimeline as any).mockResolvedValue({ range: "24h", buckets: [], spawns: [] });
     render(<AnomalyTimeline range="24h" onSelectSpawn={() => {}} />);
-    expect(await screen.findByText("暂无运行数据")).toBeTruthy();
+    expect(await screen.findByText("diag.no_runs")).toBeTruthy();
   });
 
   it("refetches when range changes", async () => {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunSummary } from "../api/client.types";
-import { DIMENSION_LABELS } from "../api/adapters";
+import { DIMENSION_LABEL_KEYS } from "../api/adapters";
 import type { UiRunDimension } from "../types";
 import EChart from "./EChart";
 
@@ -23,6 +24,7 @@ interface Props {
  * only mount it once the run is scored.
  */
 export default function RunCompareChart({ dimensions, overallScore }: Props) {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<RunSummary | null>(null);
 
   useEffect(() => {
@@ -45,15 +47,15 @@ export default function RunCompareChart({ dimensions, overallScore }: Props) {
     legend: { top: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 } },
     xAxis: {
       type: "category",
-      data: DIMENSIONS.map((d) => DIMENSION_LABELS[d] ?? d),
+      data: DIMENSIONS.map((d) => (DIMENSION_LABEL_KEYS[d] ? t(DIMENSION_LABEL_KEYS[d]) : d)),
       axisLabel: { fontSize: 10, interval: 0 },
     },
     yAxis: { type: "value", min: 0, max: 10 },
     series: [
-      { name: "本次", type: "bar", barWidth: "28%", data: DIMENSIONS.map((d) => scoreByDim[d] ?? null) },
-      { name: "平均", type: "bar", barWidth: "28%", data: DIMENSIONS.map((d) => summary?.dimension_averages[d] ?? null) },
+      { name: t("replay.this_run"), type: "bar", barWidth: "28%", data: DIMENSIONS.map((d) => scoreByDim[d] ?? null) },
+      { name: t("replay.compare_avg"), type: "bar", barWidth: "28%", data: DIMENSIONS.map((d) => summary?.dimension_averages[d] ?? null) },
     ],
-  }), [summary, scoreByDim]);
+  }), [summary, scoreByDim, t]);
 
   // Below 2 scored runs a fleet comparison is noise — render nothing.
   if (summary == null || summary.scored_count < 2) return null;
@@ -63,10 +65,13 @@ export default function RunCompareChart({ dimensions, overallScore }: Props) {
 
   return (
     <section className="run-replay__charts" data-testid="run-compare">
-      <h4>本次 vs 整体</h4>
+      <h4>{t("replay.compare_title")}</h4>
       {delta != null && avg != null && (
         <p className="run-compare__delta">
-          评分:平均 {avg.toFixed(1)} · 本次 {delta >= 0 ? "+" : ""}{delta.toFixed(1)}
+          {t("replay.compare_delta", {
+            avg: avg.toFixed(1),
+            delta: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`,
+          })}
         </p>
       )}
       <EChart option={option} height={180} />

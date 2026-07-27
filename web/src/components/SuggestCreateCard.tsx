@@ -244,7 +244,7 @@ export default function SuggestCreateCard({
       {/* Seed provenance */}
       {seedRefs.length > 0 && (
         <div className="suggest-create-card__provenance" data-testid="seed-provenance">
-          {t("create_card.seed_provenance")} {seedRefs.join("、")}
+          {t("create_card.seed_provenance")} {seedRefs.join(t("common.list_sep"))}
         </div>
       )}
 
@@ -254,7 +254,7 @@ export default function SuggestCreateCard({
           <span>
             {t("create_card.overlap_warning", { name: overlaps.name })}
             {overlaps.axes.length > 0 && (
-              <span className="suggest-create-card__overlap-axes">（{overlaps.axes.join("、")}）</span>
+              <span className="suggest-create-card__overlap-axes">{t("create_card.overlap_axes", { axes: overlaps.axes.join(t("common.list_sep")) })}</span>
             )}
           </span>
         </div>
@@ -337,7 +337,7 @@ function ChipRow({
           onClick={onAdd}
           data-testid={`add-${kind}`}
         >
-          ＋ {addLabel}
+          + {addLabel}
         </button>
       </div>
     </div>

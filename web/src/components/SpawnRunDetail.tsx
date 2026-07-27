@@ -58,9 +58,9 @@ export default function SpawnRunDetail({ spawnId, spawnName, onBack, onSelectRun
       </div>
 
       {loading && runs.length === 0 ? (
-        <p className="spawn-run-detail__empty">{t("diag.loading", "加载中…")}</p>
+        <p className="spawn-run-detail__empty">{t("diag.loading")}</p>
       ) : runs.length === 0 ? (
-        <p className="spawn-run-detail__empty">{t("diag.no_runs", "该分身还没有运行记录")}</p>
+        <p className="spawn-run-detail__empty">{t("diag.no_runs")}</p>
       ) : (
         <ul className="spawn-run-detail__list">
           {runs.map((r) => (
