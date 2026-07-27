@@ -28,16 +28,35 @@ async def _spawn(Session) -> int:
         return s.id
 
 
-async def test_ocr_fallback_when_no_text_layer(memdb, monkeypatch):
+async def test_no_text_layer_goes_to_the_vision_path_not_ocr(memdb, monkeypatch):
+    """CONTRACT CHANGE (vision round): a scan without a text layer is now READ BY
+    THE MODEL, not handed to tesseract. The old assertion described the
+    behaviour this round deliberately replaced — tesseract is not in the
+    packaged app at all, which is why scanned PDFs were unreadable in every
+    shipped build."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(200, 300)
+    buf = io.BytesIO()
+    pdf.save(buf)
+
     sid = await _spawn(memdb)
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "   ")
-    monkeypatch.setattr(ingest, "_ocr_pdf", lambda data: "OCR EXTRACTED TEXT from scan")
-    n = await ingest.ingest_file(sid, "scan.pdf", b"%PDF-fake")
+
+    async def _describe(data: bytes, mime: str) -> str:
+        return "MODEL READ THIS SCAN"
+
+    monkeypatch.setattr(ingest, "describe_image", _describe)
+    # Deliberately NOT stubbing _ocr_pdf: if the implementation still reached
+    # for it, this test would fail rather than quietly exercise a stub.
+    n = await ingest.ingest_file(sid, "scan.pdf", buf.getvalue())
     assert n >= 1
     async with memdb() as db:
         rows = (await db.execute(select(KnowledgeChunk.text)
                                  .where(KnowledgeChunk.spawn_id == sid))).scalars().all()
-    assert any("OCR EXTRACTED TEXT" in t for t in rows)
+    assert any("MODEL READ THIS SCAN" in t for t in rows)
 
 
 async def test_text_layer_pdf_skips_ocr(memdb, monkeypatch):

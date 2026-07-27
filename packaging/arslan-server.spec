@@ -45,6 +45,10 @@ for pkg in ("server", "arslan", "mcp"):
 # a dead chat transport behind a healthy-looking server. That was the state of
 # every build from 0.1.0 to 0.1.6. verify_bundle + selftest now assert it.
 hiddenimports += collect_submodules("websockets")
+# pypdfium2 loads libpdfium through its _raw ctypes module; collect both so
+# the .dylib is staged (and therefore signed by the Mach-O sweep).
+hiddenimports += collect_submodules("pypdfium2")
+hiddenimports += collect_submodules("pypdfium2_raw")
 
 # collect_submodules finds MODULES. It does not find package DATA, and the
 # arslan package is mostly data at runtime: pyproject.toml:112-118 lists five

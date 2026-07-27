@@ -45,6 +45,14 @@ dependencies = [
     # server looks healthy. This lived in the `dev` extra until v0.1.7, so
     # no packaged build (0.1.0-0.1.6) could hold a WebSocket at all.
     "websockets>=12.0",
+    # RUNTIME since the vision round: a scanned PDF has no text layer, so its
+    # pages are rasterised and read by the model. ~7.8 MB, of which 7.2 MB is
+    # libpdfium.dylib — ONE nested Mach-O, and build_dmg.sh discovers signing
+    # targets with `file -b | grep Mach-O` rather than by extension, so it is
+    # covered without touching the signing loop. BSD-3-Clause / Apache-2.0
+    # (Google's PDFium), verified at source per the licence rule — this is the
+    # library that replaced AGPL pymupdf.
+    "pypdfium2>=4.30",
     "trafilatura>=1.12",
     "pypdf>=4.0",
     "python-docx>=1.1",
@@ -89,7 +97,9 @@ dependencies = [
 # txt and md are unaffected. The fix is the vision round (BYOK image input),
 # NOT re-adding tesseract — see docs/specs/2026-07-26-s4.3a-packaging.md §9.
 ocr = [
-    "pypdfium2>=4.30",
+    # pypdfium2 moved to the runtime dependencies in the vision round (scanned
+    # PDFs are rasterised for the model, not only for OCR). Only the tesseract
+    # wrapper is optional now.
     "pytesseract>=0.3",
 ]
 # Build-only: PyInstaller freezes the desktop sidecar (packaging/arslan-server.spec).

@@ -135,6 +135,35 @@ def described_source(filename: str) -> str:
     return f"{filename}{_DESCRIBED_SUFFIX}"
 
 
+def _pdf_page_count(data: bytes) -> int:
+    import pypdfium2 as pdfium
+
+    return len(pdfium.PdfDocument(data))
+
+
+def rasterize_pdf(data: bytes, max_pages: int) -> list[bytes]:
+    """Render up to `max_pages` pages to PNG bytes.
+
+    Same long edge as any other image (imagePayload.MAX_EDGE on the client, and
+    this scale here) so a page costs what a screenshot costs — the arithmetic
+    behind VISION_PDF_MAX_PAGES assumes exactly that."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(data)
+    out: list[bytes] = []
+    for i in range(min(len(pdf), max(max_pages, 0))):
+        page = pdf[i]
+        # scale 2 ≈ 144 dpi: enough for small print, and the long edge lands
+        # near the 1568px the providers downscale to anyway.
+        bitmap = page.render(scale=2)
+        buf = io.BytesIO()
+        bitmap.to_pil().convert("RGB").save(buf, format="PNG")
+        out.append(buf.getvalue())
+    return out
+
+
 async def describe_image(data: bytes, mime_type: str) -> str:
     """Ask the configured model to describe an image. Raises on failure — the
     caller turns that into "stored nothing", which the UI reports honestly."""
@@ -155,6 +184,13 @@ async def describe_image(data: bytes, mime_type: str) -> str:
     return text
 
 
+# 🔴 PARTIAL COVERAGE, disclosed (vision round): these two OCR helpers are no
+# longer reached from ingest_file — PDFs and images are intercepted above and
+# read by the model. They remain reachable through _extract_file for the
+# /extract endpoint, which chat attachments use. So the same scanned PDF is
+# READ when fed to the second brain and still UNREADABLE when attached to a
+# chat message, because that route was not converted in this round. Registered
+# as follow-up; do not read this as "chat attachments got vision too".
 def _ocr_image(data: bytes) -> str:
     """OCR a standalone image attachment. Best-effort; returns '' on any failure
     (undecodable bytes, missing tesseract) or when no text is found. convert("RGB")
@@ -297,6 +333,33 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
                       collection_id: int | None = None, compress: bool = False) -> int:
     """Extract text from a supported file then ingest. Raises ValueError on
     unsupported extension; extraction errors propagate (API maps to 400)."""
+    if filename.lower().endswith(".pdf"):
+        # A PDF with a text layer is read for free by pypdf — rasterising it
+        # would burn image tokens on something already available as text.
+        text = _pdf_text_layer(data)
+        if len(text.strip()) >= _OCR_MIN_CHARS:
+            return await ingest_text(spawn_id, filename, text,
+                                     collection_id=collection_id, compress=compress)
+        # No text layer ⇒ a scan. Rasterise under the cap and let the model read
+        # the pages, saying plainly when only part of the document was read.
+        try:
+            total = _pdf_page_count(data)
+            take, note = pdf_page_plan(total)
+            pages = rasterize_pdf(data, take)
+            described = []
+            for n, png in enumerate(pages, 1):
+                described.append(f"[page {n}]\n{await describe_image(png, 'image/png')}")
+        except Exception as exc:  # noqa: BLE001 — honest zero, never a fake success
+            logger.warning("scanned PDF reading failed (stored nothing): %s", exc)
+            return 0
+        if not described:
+            return 0
+        body = "\n\n".join(described)
+        if note:
+            body = f"{note}\n\n{body}"
+        return await ingest_text(spawn_id, described_source(filename), body,
+                                 collection_id=collection_id, compress=compress)
+
     if _IMAGE_EXT_RE.search(filename):
         # The MODEL reads the picture (vision round). A failure here means the
         # image could not be read at all — surface it as zero chunks so the UI
