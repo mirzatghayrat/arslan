@@ -20,7 +20,7 @@ const LEAF = (kind: string, ref: string) => ({
 }) as never;
 
 const ENTRY = (over: Record<string, unknown> = {}) => ({
-  kind: "profile", ref: "fact:1", label: "北京", provenance: "身份背景 · auto",
+  kind: "profile", ref: "fact:1", label: "北京", provenance: "identity · auto",
   confidence: 0.8, excerpt: "住在北京", usage_count: 3, last_used_at: null,
   last_used_ref: null, valid_from: null, superseded_by: null,
   provenance_record: null, ...over,
@@ -85,6 +85,16 @@ describe("BrainEntryDetail", () => {
     const note = screen.getByTestId("sensitive-note").textContent ?? "";
     expect(note).toContain("brain.sensitive_note");
     expect(screen.getByText("住在北京")).toBeTruthy();   // content IS still shown
+  });
+
+  it("translates the category half of the provenance line (S4.2-d stable keys)", async () => {
+    // Server ships "identity · auto"; the UI must show the translated label for
+    // the key half and keep the source half verbatim. i18n is uninitialised in
+    // tests, so t() echoes the key: "brain.cat.identity · auto".
+    m.getBrainEntry.mockResolvedValue(ENTRY({}));
+    render(<BrainEntryDetail leaf={LEAF("profile", "fact:1")} onClose={() => {}} />);
+    expect((await screen.findByText(/brain\.cat\.identity · auto/)).textContent
+      ).toContain("brain.cat.identity · auto");
   });
 
   it("shows the audit provenance record, not just the legacy display string", async () => {

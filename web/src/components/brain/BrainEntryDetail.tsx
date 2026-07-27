@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { factCategoryLabel } from "./catLabel";
 import { X } from "lucide-react";
 import { ApiError, api, type BrainEntry, type BrainLeaf } from "../../api/client";
 
@@ -105,7 +106,14 @@ export default function BrainEntryDetail(
       ) : (
         <>
           <div className="text-[10.5px] text-subtle-foreground font-mono mb-2">
-            {entry.provenance ?? ""}
+            {(() => {
+              // fact provenance is "<category-key> · <source>" (server contract,
+              // see brain.py brain_entry); translate the key half, pass through
+              // learning/material shapes untouched.
+              const prov = entry.provenance ?? "";
+              const [head, ...rest] = prov.split(" · ");
+              return rest.length ? [factCategoryLabel(t, head), ...rest].join(" · ") : prov;
+            })()}
             {t("brain.used_n_dot", { n: entry.usage_count })}
             {entry.last_used_ref ? t("brain.last_used_for", { ref: entry.last_used_ref }) : ""}
           </div>

@@ -111,7 +111,15 @@
     "fed_ok": "Fed {{n}} items",
     "fed_partial": "Fed {{n}}, failed: {{names}}",
     "graph_load_failed": "Failed to load the knowledge graph",
-    "drop_to_feed": "Release to feed the second brain"
+    "drop_to_feed": "Release to feed the second brain",
+    "cat": {
+      "identity": "Identity",
+      "communication": "Communication style",
+      "interest": "Interests",
+      "task": "Tasks",
+      "spawn_wish": "Spawn wishes",
+      "other": "Other"
+    }
   },
   "dashboard": {
     "title": "Your Spawns",

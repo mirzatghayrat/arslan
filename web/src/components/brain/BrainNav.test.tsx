@@ -11,7 +11,7 @@ const branches = [
       confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
   { kind: "learning", label: "心得", children: [] },
   { kind: "profile", label: "画像", children: [
-    { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "身份背景",
+    { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "identity",
       confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
   { kind: "note", label: "笔记", children: [
     { kind: "note", ref: "note:1", label: "报销单", provenance: "手写", tags: ["finance"],
@@ -25,7 +25,7 @@ describe("BrainNav", () => {
   it("groups profile facts by category as a second level (once expanded)", () => {
     render(<BrainNav {...base} />);
     fireEvent.click(screen.getByText("画像"));   // categories start collapsed
-    expect(screen.getByText("身份背景")).toBeTruthy();
+    expect(screen.getByText("brain.cat.identity")).toBeTruthy();
   });
 
   it("shows a tag chip from note tags + fact category and filters on click", () => {

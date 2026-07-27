@@ -111,7 +111,15 @@
     "fed_ok": "{{n}} elementos añadidos",
     "fed_partial": "{{n}} añadidos, fallaron: {{names}}",
     "graph_load_failed": "Error al cargar el grafo",
-    "drop_to_feed": "Suelta para alimentar"
+    "drop_to_feed": "Suelta para alimentar",
+    "cat": {
+      "identity": "Identidad",
+      "communication": "Estilo de comunicación",
+      "interest": "Intereses",
+      "task": "Tareas",
+      "spawn_wish": "Spawns deseados",
+      "other": "Otros"
+    }
   },
   "dashboard": {
     "title": "Tus spawns",

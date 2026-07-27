@@ -33,7 +33,7 @@ const TREE = {
       { kind: "note", ref: "note:1", label: "报销单", provenance: "手写", tags: ["finance"],
         confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 }] },
     { kind: "profile", label: "画像", children: [
-      { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "身份背景",
+      { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "identity",
         confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1,
         sensitive: true, superseded_by: 9 }] },
   ],
@@ -167,7 +167,7 @@ describe("brain coordinated brushing", () => {
   it("shows the sensitive and superseded markers the backend already sent", async () => {
     render(<BrainSection />);
     fireEvent.click(await screen.findByText("画像"));   // branches start collapsed
-    fireEvent.click(await screen.findByText("身份背景"));
+    fireEvent.click(await screen.findByText("brain.cat.identity"));
     const rows = await screen.findAllByTestId("brain-nav-row");
     const fact = rows.find((r) => r.textContent?.includes("北京"))!;
     expect(fact.querySelector('[data-testid="sensitive-badge"]')).toBeTruthy();

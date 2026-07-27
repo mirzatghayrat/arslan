@@ -111,7 +111,15 @@
     "fed_ok": "{{n}}件を投入済み",
     "fed_partial": "{{n}}件投入、失敗:{{names}}",
     "graph_load_failed": "ナレッジグラフの読み込み失敗",
-    "drop_to_feed": "離してセカンドブレインへ投入"
+    "drop_to_feed": "離してセカンドブレインへ投入",
+    "cat": {
+      "identity": "身元・背景",
+      "communication": "コミュニケーション嗜好",
+      "interest": "興味分野",
+      "task": "タスク要望",
+      "spawn_wish": "作りたいスポーン",
+      "other": "その他"
+    }
   },
   "dashboard": {
     "title": "あなたのスポーン",

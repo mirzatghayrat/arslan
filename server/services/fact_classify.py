@@ -1,8 +1,8 @@
 """Classify each preference into a FIXED semantic category + short label via ONE
-few-shot LLM call. Fail-open: classify_one → (其他, None) (never blocks a write,
+few-shot LLM call. Fail-open: classify_one → ("other", None) (never blocks a write,
 never raises). Backfill mirrors embed_missing: single-flight, best-effort, and
 honest — a real provider outage aborts (surfaced via _state['error']) instead of
-silently mass-labeling 其他. Backfill judges on label IS NULL (also re-derives
+silently mass-labeling "other". Backfill judges on label IS NULL (also re-derives
 category, fixing stale/wrong labels from before this call returned a label).
 Fire-and-forget scheduling holds task refs so a bare create_task can't be GC'd
 mid-flight. classify_ids/schedule are wired into write paths (CL-T4): memory.py
@@ -22,19 +22,30 @@ from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
 
-FACT_CATEGORIES = ("身份背景", "沟通偏好", "领域兴趣", "任务需求", "想建的分身", "其他")
+FACT_CATEGORIES = ("identity", "communication", "interest", "task", "spawn_wish", "other")
+# Pre-0037 rows (and models still echoing the old vocabulary) used the Chinese
+# display strings as values; keep the exact map so _parse never fail-opens a
+# legacy-vocab reply to "other". Must stay in lockstep with migration 0037.
+LEGACY_CATEGORY_MAP = {
+    "身份背景": "identity",
+    "沟通偏好": "communication",
+    "领域兴趣": "interest",
+    "任务需求": "task",
+    "想建的分身": "spawn_wish",
+    "其他": "other",
+}
 _SYSTEM = (
     "你是用户长期偏好的分类器兼摘要器。对给定的一条偏好,做两件事:\n"
-    "1) 归到且仅归到以下类别之一:\n"
-    "   身份背景 = 籍贯/民族/公司/职位/所在地(例:「用户来自甲城,母语是甲语」「在 Acme 做客户经理」)\n"
-    "   沟通偏好 = 说话风格/语言/格式偏好(例:「喜欢中文沟通」「不喜欢列表式回答」)\n"
-    "   领域兴趣 = 关注的行业/主题(例:「关注广告科技」「对加密货币感兴趣」)\n"
-    "   任务需求 = 想让 AI 帮做的具体事(例:「每日抓 GitHub Trending 出分析」「要 OKX 永续合约调研 PPT」)\n"
-    "   想建的分身 = 明确说要创建一个…分身/助手(例:「想建一个处理 GitHub 项目分析的分身」)\n"
-    "   其他 = 都不属于时的兜底\n"
+    "1) 归到且仅归到以下类别之一(category 必须输出英文键本身,不是中文说明):\n"
+    "   identity(身份背景) = 籍贯/民族/公司/职位/所在地(例:「用户来自甲城,母语是甲语」「在 Acme 做客户经理」)\n"
+    "   communication(沟通偏好) = 说话风格/语言/格式偏好(例:「喜欢中文沟通」「不喜欢列表式回答」)\n"
+    "   interest(领域兴趣) = 关注的行业/主题(例:「关注广告科技」「对加密货币感兴趣」)\n"
+    "   task(任务需求) = 想让 AI 帮做的具体事(例:「每日抓 GitHub Trending 出分析」「要 OKX 永续合约调研 PPT」)\n"
+    "   spawn_wish(想建的分身) = 明确说要创建一个…分身/助手(例:「想建一个处理 GitHub 项目分析的分身」)\n"
+    "   other(其他) = 都不属于时的兜底\n"
     "2) 摘一个 3-8 字的短标签(label),抓这条偏好的核心关键词,语言随原文"
     "(例:「股票交易助手」「LinkedIn 优化」「GitHub Trending 分析」)。\n"
-    '只输出一行 JSON,形如 {"category": "任务需求", "label": "GitHub Trending 分析"},不要多余字。'
+    '只输出一行 JSON,形如 {"category": "task", "label": "GitHub Trending 分析"},不要多余字。'
 )
 
 _state: dict = {"running": False, "done": 0, "total": 0, "error": None}
@@ -55,7 +66,7 @@ def _fallback_label(label: str | None, content: str) -> str:
 
 
 def _parse(reply: str) -> tuple[str, str | None]:
-    """Parse the LLM reply into (category, label). Fail-open: bad/illegal → (其他, None)
+    """Parse the LLM reply into (category, label). Fail-open: bad/illegal → ("other", None)
     for category; JSON preferred, substring category match as fallback when no JSON."""
     reply = (reply or "").strip()
     m = re.search(r"\{.*\}", reply, re.S)
@@ -63,16 +74,21 @@ def _parse(reply: str) -> tuple[str, str | None]:
         try:
             obj = json.loads(m.group(0))
             c = str(obj.get("category", "")).strip()
-            cat = c if c in FACT_CATEGORIES else "其他"
+            cat = c if c in FACT_CATEGORIES else LEGACY_CATEGORY_MAP.get(c, "other")
             lb = str(obj.get("label", "") or "").strip()
             return cat, (lb[:40] or None)
         except Exception:  # noqa: BLE001 — bad JSON is fail-open, not fatal
             pass
-    cat = "其他"
+    cat = "other"
     for c in FACT_CATEGORIES:
-        if c in reply:
+        if c != "other" and c in reply:
             cat = c
             break
+    else:
+        for legacy, key in LEGACY_CATEGORY_MAP.items():
+            if legacy != "其他" and legacy in reply:
+                cat = key
+                break
     return cat, None
 
 
@@ -84,13 +100,13 @@ async def _classify_with(adapter, content: str) -> tuple[str, str | None]:  # no
 
 
 async def classify_one(content: str) -> tuple[str, str | None]:
-    """Return (category, label). Fail-open → (其他, None) on any error / illegal reply."""
+    """Return (category, label). Fail-open → ("other", None) on any error / illegal reply."""
     try:
         adapter = await build_adapter(role="converse")
         return await _classify_with(adapter, content)
     except Exception as exc:  # noqa: BLE001 — classification is never fatal
-        logger.warning("classify_one failed (non-fatal → 其他): %s", exc)
-        return "其他", None
+        logger.warning("classify_one failed (non-fatal → other): %s", exc)
+        return "other", None
 
 
 async def classify_missing(batch_size: int = 32) -> int:

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { factCategoryLabel } from "./catLabel";
 import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Upload, UserRound } from "lucide-react";
 import type { BrainBranch, BrainLeaf } from "../../api/client";
 import { feedFile, feedTextOrUrl } from "../../lib/feed";
@@ -65,7 +66,9 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
     const field = (l: BrainLeaf) => b.kind === "profile" ? (l.category || t("brain.uncategorized")) : (l.provenance || t("brain.other_source"));
     const map = new Map<string, BrainLeaf[]>();
     for (const l of b.children) (map.get(field(l)) ?? map.set(field(l), []).get(field(l))!).push(l);
-    return [...map.entries()].map(([key, leaves]) => ({ key, label: key, leaves }));
+    // group BY the raw value (stable category key); translate only what the eye sees
+    return [...map.entries()].map(([key, leaves]) => ({
+      key, label: b.kind === "profile" ? factCategoryLabel(t, key) : key, leaves }));
   };
 
   // tag explorer = note tags ∪ fact category, with counts
@@ -170,10 +173,10 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
             </button>
           </div>
           <div className="brain-nav__tags-chips">
-            {tagChips.map(([t, c]) => (
-              <button key={t} className={`brain-nav__chip${activeTag === `tag:${t.toLowerCase()}` ? " is-active" : ""}`}
-                onClick={() => onTagFilter(t)}>
-                #{t}<span className="brain-nav__chip-count">{c}</span>
+            {tagChips.map(([tag, c]) => (
+              <button key={tag} className={`brain-nav__chip${activeTag === `tag:${tag.toLowerCase()}` ? " is-active" : ""}`}
+                onClick={() => onTagFilter(tag)}>
+                #{factCategoryLabel(t, tag)}<span className="brain-nav__chip-count">{c}</span>
               </button>
             ))}
             {/* The tag filter used to be cleared as a SIDE EFFECT of moving the mouse off

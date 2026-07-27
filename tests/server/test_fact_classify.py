@@ -30,27 +30,53 @@ class _Adapter:
         return _R
 
 
+def test_categories_are_stable_keys():
+    # S4.2-d: category is a stable machine key (frontend translates it); any
+    # Chinese display string re-entering this tuple re-breaks non-Chinese UIs.
+    from server.services.fact_classify import FACT_CATEGORIES
+    assert FACT_CATEGORIES == (
+        "identity", "communication", "interest", "task", "spawn_wish", "other")
+
+
+def test_prompt_demands_stable_key_output():
+    # The classifier prompt must instruct the model to OUTPUT the stable key —
+    # Chinese explanations may stay, but the JSON contract is the key itself.
+    from server.services.fact_classify import _SYSTEM, FACT_CATEGORIES
+    for key in FACT_CATEGORIES:
+        assert key in _SYSTEM
+    assert '"category": "task"' in _SYSTEM  # the JSON example uses a key, not 任务需求
+
+
 def test_parse_json_category_and_label():
     from server.services.fact_classify import _parse
-    assert _parse('{"category": "身份背景", "label": "北京工作"}') == ("身份背景", "北京工作")
+    assert _parse('{"category": "identity", "label": "北京工作"}') == ("identity", "北京工作")
+
+
+def test_parse_legacy_chinese_category_maps_to_key():
+    # A model echoing the pre-0037 vocabulary must still land on the right key,
+    # never fail-open to other.
+    from server.services.fact_classify import _parse
+    assert _parse('{"category": "身份背景", "label": "北京工作"}') == ("identity", "北京工作")
+    assert _parse('{"category": "想建的分身", "label": ""}') == ("spawn_wish", None)
 
 
 def test_parse_illegal_category_falls_open():
     from server.services.fact_classify import _parse
-    assert _parse('{"category": "不合法", "label": ""}') == ("其他", None)
+    assert _parse('{"category": "不合法", "label": ""}') == ("other", None)
 
 
 def test_parse_non_json_substring_fallback():
     from server.services.fact_classify import _parse
-    assert _parse("这条属于 沟通偏好 类") == ("沟通偏好", None)
-    assert _parse("完全无关的回复") == ("其他", None)
+    assert _parse("category: communication") == ("communication", None)
+    assert _parse("这条属于 沟通偏好 类") == ("communication", None)  # legacy vocab fallback
+    assert _parse("完全无关的回复") == ("other", None)
 
 
 async def test_classify_one_returns_tuple(maker, monkeypatch):
     from server.services import fact_classify
-    async def _fake(role=None): return _Adapter('{"category":"身份背景","label":"北京工作"}')
+    async def _fake(role=None): return _Adapter('{"category":"identity","label":"北京工作"}')
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
-    assert await fact_classify.classify_one("用户在北京工作") == ("身份背景", "北京工作")
+    assert await fact_classify.classify_one("用户在北京工作") == ("identity", "北京工作")
 
 
 async def test_classify_one_adapter_exception_fails_open(maker, monkeypatch):
@@ -59,19 +85,19 @@ async def test_classify_one_adapter_exception_fails_open(maker, monkeypatch):
         async def chat(self, system, user, **kw): raise RuntimeError("no key")
     async def _fake(role=None): return _Boom()
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
-    assert await fact_classify.classify_one("x") == ("其他", None)
+    assert await fact_classify.classify_one("x") == ("other", None)
 
 
 async def test_classify_missing_backfills_label_and_overwrites_category(maker, monkeypatch):
     from server.services import fact_classify
-    async def _fake(role=None): return _Adapter('{"category":"沟通偏好","label":"中文沟通"}')
+    async def _fake(role=None): return _Adapter('{"category":"communication","label":"中文沟通"}')
     monkeypatch.setattr(fact_classify, "build_adapter", _fake)
     done = await fact_classify.classify_missing()
     assert done == 2
     async with maker() as s:
         rows = (await s.execute(sa_text(
             "SELECT category, label FROM user_facts ORDER BY id"))).all()
-    assert rows == [("沟通偏好", "中文沟通"), ("沟通偏好", "中文沟通")]
+    assert rows == [("communication", "中文沟通"), ("communication", "中文沟通")]
 
 
 async def test_classify_missing_zero_pending_no_provider(maker, monkeypatch):

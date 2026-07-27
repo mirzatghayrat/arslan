@@ -111,7 +111,15 @@
     "fed_ok": "已投喂 {{n}} 项",
     "fed_partial": "已投喂 {{n}},失败:{{names}}",
     "graph_load_failed": "加载知识图谱失败",
-    "drop_to_feed": "松开投喂到第二大脑"
+    "drop_to_feed": "松开投喂到第二大脑",
+    "cat": {
+      "identity": "身份背景",
+      "communication": "沟通偏好",
+      "interest": "领域兴趣",
+      "task": "任务需求",
+      "spawn_wish": "想建的分身",
+      "other": "其他"
+    }
   },
   "dashboard": {
     "title": "你的分身",

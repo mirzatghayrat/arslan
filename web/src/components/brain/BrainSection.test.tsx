@@ -6,7 +6,7 @@ vi.mock("../../api/client", () => ({ api: {
     { kind: "material", label: "材料", children: [] },
     { kind: "learning", label: "心得", children: [] },
     { kind: "profile", label: "画像", children: [
-      { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "身份背景",
+      { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "identity",
         confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
     { kind: "note", label: "笔记", children: [] },
   ] }),
@@ -41,7 +41,7 @@ describe("BrainSection", () => {
   it("clicking a tree row opens its detail rail while the graph stays mounted", async () => {
     render(<BrainSection />);
     fireEvent.click(await screen.findByText("画像"));      // every level starts collapsed…
-    fireEvent.click(await screen.findByText("身份背景"));   // …expand the category then its sub-group
+    fireEvent.click(await screen.findByText("brain.cat.identity"));   // …expand the category then its sub-group
     const row = await screen.findByTestId("brain-nav-row");
     fireEvent.click(row);
     await waitFor(() => expect(screen.getByText("在北京工作")).toBeTruthy());  // detail rail excerpt

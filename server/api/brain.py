@@ -384,7 +384,8 @@ async def brain_graph() -> dict:
 @router.get("/brain/entry/{kind}/{ref:path}")
 async def brain_entry(kind: str, ref: str) -> dict:
     # brain-P1 Task 5: fact/learning detail gains valid_from/superseded_by/provenance.
-    # "provenance" (the display string built below, e.g. "身份背景 · auto") already
+    # "provenance" (the display string built below, e.g. "identity · auto" — the
+    # category half is a stable key since 0037; the frontend translates it) already
     # existed pre-P1 and is a live frontend contract (BrainEntryDetail.tsx renders it
     # as text; BrainNav.tsx groups by it — see test_brain_entry_material_excerpt).
     # The real temporal audit payload is therefore surfaced under the non-colliding

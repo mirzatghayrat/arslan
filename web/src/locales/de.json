@@ -111,7 +111,15 @@
     "fed_ok": "{{n}} Elemente gefüttert",
     "fed_partial": "{{n}} gefüttert, fehlgeschlagen: {{names}}",
     "graph_load_failed": "Graph konnte nicht geladen werden",
-    "drop_to_feed": "Loslassen zum Füttern"
+    "drop_to_feed": "Loslassen zum Füttern",
+    "cat": {
+      "identity": "Identität",
+      "communication": "Kommunikationsstil",
+      "interest": "Interessen",
+      "task": "Aufgaben",
+      "spawn_wish": "Spawn-Wünsche",
+      "other": "Sonstiges"
+    }
   },
   "dashboard": {
     "title": "Deine Spawns",

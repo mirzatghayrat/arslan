@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { factCategoryLabel } from "./catLabel";
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from "d3-force";
 import { select } from "d3-selection";
 import { drag as d3drag } from "d3-drag";
@@ -250,7 +251,7 @@ export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTit
                   style={{ cursor: ghost || self || tag ? "default" : "pointer", transformOrigin: "center", transformBox: "fill-box", transition: reduced ? undefined : "transform 180ms", filter: glowIds?.has(n.id) ? "drop-shadow(0 0 5px var(--primary))" : undefined }}>
                   {/* native <title> tooltip only — no custom on-hover label; name also
                       shows in the right-rail detail on click. */}
-                  <title>{n.label}</title>
+                  <title>{tag ? factCategoryLabel(t, n.label) : n.label}</title>
                 </circle>
               </g>
             );

@@ -111,7 +111,15 @@
     "fed_ok": "{{n}} éléments ajoutés",
     "fed_partial": "{{n}} ajoutés, échecs : {{names}}",
     "graph_load_failed": "Échec du chargement du graphe",
-    "drop_to_feed": "Relâcher pour nourrir"
+    "drop_to_feed": "Relâcher pour nourrir",
+    "cat": {
+      "identity": "Identité",
+      "communication": "Style de communication",
+      "interest": "Intérêts",
+      "task": "Tâches",
+      "spawn_wish": "Spawns souhaités",
+      "other": "Autres"
+    }
   },
   "dashboard": {
     "title": "Vos spawns",
