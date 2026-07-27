@@ -68,4 +68,14 @@ describe("UpdatePill (v0.1.5 corner update UX)", () => {
     expect(screen.getByText("signature mismatch")).toBeTruthy();
     expect(screen.queryByText("updater.install")).toBeNull();
   });
+
+  it("renders nothing for the pre-check default / unknown states (allow-list)", async () => {
+    // The shell's state machine starts at "none"; a bug once made the default
+    // an EMPTY string, which a deny-list (state !== 'none') would render as a
+    // blank pill. Caught by the packaged IPC probe; pinned here.
+    mockShell({ state: "" });
+    render(<UpdatePill />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId("update-pill")).toBeNull();
+  });
 });

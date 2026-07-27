@@ -28,7 +28,9 @@ export default function UpdatePill() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  if (!status || status.state === 'none') return null;
+  // Allow-list, not deny-list: an unknown/empty state (e.g. a newer shell
+  // vocabulary, or the pre-check default) must render NOTHING, not a blank pill.
+  if (!status || !['available', 'downloading', 'error'].includes(status.state)) return null;
   if (status.state === 'available' && dismissed === status.version) return null;
 
   const installing = status.state === 'downloading';

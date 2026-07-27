@@ -204,12 +204,21 @@ struct UpdateShared {
     pending: Mutex<Option<tauri_plugin_updater::Update>>,
 }
 
-#[derive(Clone, Default, serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 struct UpdateStatus {
     /// "none" | "available" | "downloading" | "error"
     state: String,
     version: String,
     error: String,
+}
+
+// Not derived: a derived Default would say state:"" and the SPA would render a
+// pill for a state that means "nothing happened yet". Caught by the packaged
+// IPC probe before v0.1.5 shipped.
+impl Default for UpdateStatus {
+    fn default() -> Self {
+        Self { state: "none".into(), version: String::new(), error: String::new() }
+    }
 }
 
 impl UpdateShared {
