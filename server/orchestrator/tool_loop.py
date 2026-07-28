@@ -306,22 +306,73 @@ LIVE_FETCH_BUDGET = 25
 _FETCH_TOOLS = frozenset({"web_search", "web_extract"})
 
 
+#: FU-2b. The eval/replay allowance, and it is deliberately NOT per dispatch.
+#:
+#: The gate dispatches roughly `pairs x 2 arms x (epochs*lr_budget + 1)` times —
+#: a few hundred for one candidate. Giving each of those its own 25 would be a
+#: cap in name only: 25 x 224 is not a bound, it is a multiplier with a label.
+#: So the allowance spans the whole attempt, and it is smaller than the live one
+#: because an evaluation is not supposed to be doing research — a candidate that
+#: needs fifty pages is a candidate worth refusing.
+HERMETIC_FETCH_BUDGET = 50
+
+#: Spent-so-far per hermetic sentinel. Module state rather than a threaded
+#: parameter because every dispatch in an attempt already shares one sentinel
+#: conversation id, and threading a budget object through the evaluator would
+#: mean changing every layer between here and the watcher for a counter.
+#:
+#: If two spawns are evaluated at once they SHARE this allowance. That is the
+#: conservative direction for a spend gate and is left deliberately: a shared
+#: budget can only refuse earlier than a per-attempt one, never later.
+_hermetic_fetches: dict[str, int] = {}
+
+
+def reset_hermetic_fetch_budget(conversation_id: str | None = None) -> None:
+    """Start a fresh allowance. Called by the watcher at the top of an attempt.
+
+    Without this the counter would be process-lifetime and the first attempt
+    after a restart would get the budget while every later one got nothing —
+    a gate that tightens silently over uptime, which is worse than no gate
+    because it looks like a broken feature rather than a limit."""
+    if conversation_id is None:
+        _hermetic_fetches.clear()
+    else:
+        _hermetic_fetches.pop(conversation_id, None)
+
+
+def hermetic_fetches_used(conversation_id: str) -> int:
+    """For tests and diagnostics; never a control-flow input."""
+    return _hermetic_fetches.get(conversation_id, 0)
+
+
+def _check_hermetic_fetch_budget(conversation_id: str | None) -> dict | None:
+    key = conversation_id or "evolution"
+    used = _hermetic_fetches.get(key, 0)
+    if used >= HERMETIC_FETCH_BUDGET:
+        return {"ok": False,
+                "error": f"evaluation fetch budget reached ({HERMETIC_FETCH_BUDGET} "
+                         "web_search/web_extract calls for this attempt) — judge the "
+                         "candidate on what has already been gathered"}
+    _hermetic_fetches[key] = used + 1
+    return None
+
+
 async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
                               budget: dict) -> dict | None:
     """None to proceed, or an explicit refusal dict once a run has spent its allowance.
 
-    🔴 SCOPE — LIVE RUNS ONLY, AND THE UNCOVERED HALF IS THE BIGGER ONE.
-    A hermetic eval/replay is exempt here. That is NOT because it is safe: `web_search`
-    and `web_extract` are both in REPLAY_SAFE_BUILTINS (sealing keeps read-only web and
-    drops WRITE tools plus anything non-allowlisted), and the gate dispatches roughly
-    `pairs x 2 arms x (epochs*lr_budget + 1)` times — so one runaway candidate multiplies
-    its outbound requests by a few hundred. Bounding that means threading a budget through
-    the evaluator/replay loop, which is registered separately as FU-2b (with skill-forge
-    folded in) and is deliberately not in this batch.
+    🔴 SCOPE — BOTH HALVES ARE NOW COVERED, BY TWO DIFFERENT ALLOWANCES.
+    A live run gets LIVE_FETCH_BUDGET per run. A hermetic eval/replay gets
+    HERMETIC_FETCH_BUDGET for the WHOLE ATTEMPT, which is the only shape that
+    bounds anything there: `web_search` and `web_extract` are both in
+    REPLAY_SAFE_BUILTINS (sealing keeps read-only web and drops WRITE tools plus
+    anything non-allowlisted), and the gate dispatches roughly
+    `pairs x 2 arms x (epochs*lr_budget + 1)` times — so a per-dispatch cap would
+    multiply rather than limit. This was registered as FU-2b and is now in.
 
-    So: after this ships, the honest statement is "live fetches are capped" — never
-    "network use is capped". test_live_fetch_budget pins that wording to a test, so the
-    day eval is covered, the claim and the code change together.
+    The honest statement changes with it: it was "live fetches are capped, never
+    network use is capped". test_live_fetch_budget pinned that wording to a test
+    precisely so the claim and the code would move together, and they now have.
 
     The refusal is EXPLICIT rather than a silent drop: a swallowed fetch looks to the
     model like a page with no content, and it will simply try the next URL.
@@ -329,7 +380,7 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
     if tool_key not in _FETCH_TOOLS:
         return None
     if replay_safety.is_hermetic_context(conversation_id):
-        return None                      # out of scope for FU-2 — see FU-2b
+        return _check_hermetic_fetch_budget(conversation_id)
     used = budget.get("fetches", 0)
     if used >= LIVE_FETCH_BUDGET:
         return {"ok": False,

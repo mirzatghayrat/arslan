@@ -90,21 +90,64 @@ async def test_non_fetch_tools_are_not_counted():
 @pytest.mark.parametrize("sentinel", sorted(replay_safety._HERMETIC_CONVERSATION_IDS)
                          if hasattr(replay_safety, "_HERMETIC_CONVERSATION_IDS")
                          else ["evolution-replay"])
-async def test_the_EVAL_path_is_deliberately_NOT_capped_by_this_batch(sentinel):
-    """🔴 Pins the SCOPE, so the gap cannot be mistaken for coverage later.
+async def test_the_eval_path_is_capped_across_the_whole_attempt(sentinel):
+    """FU-2b: the eval surface is now bounded too, and NOT per dispatch.
 
-    A hermetic replay is exempt from this ceiling — not because it is safe (it is the
-    more dangerous surface: web tools stay available under sealing, and the gate
-    multiplies dispatches by a few hundred) but because bounding it means touching the
-    evaluator/replay loop, which is FU-2b. If someone later makes this cap apply to eval
-    runs, this test failing is the signal to also delete the "live only" wording from the
-    docstrings and the delivery notes.
+    This test used to assert the opposite — that eval was deliberately exempt —
+    and its docstring said its failure would be the signal to update the "live
+    only" wording everywhere. It did not fail when the cap landed, because it
+    probed only LIVE_FETCH_BUDGET + 3 fetches while the new hermetic allowance
+    is larger. A canary that only sings below one threshold is not a canary, so
+    it now asserts the real boundary: exactly HERMETIC_FETCH_BUDGET through, and
+    the next one refused.
+
+    The allowance spans the ATTEMPT rather than the dispatch on purpose. The
+    gate dispatches a few hundred times per candidate, so a per-dispatch ceiling
+    would multiply rather than limit.
     """
+    tool_loop.reset_hermetic_fetch_budget(sentinel)
     budget: dict = {}
-    verdicts = await _fetch(tool_loop.LIVE_FETCH_BUDGET + 3,
+    verdicts = await _fetch(tool_loop.HERMETIC_FETCH_BUDGET + 2,
                             conversation_id=sentinel, budget=budget)
-    assert all(v is None for v in verdicts), (
-        "eval dispatches are out of scope for FU-2; see FU-2b")
+
+    allowed = [v for v in verdicts if v is None]
+    refused = [v for v in verdicts if v is not None]
+    assert len(allowed) == tool_loop.HERMETIC_FETCH_BUDGET, (
+        f"expected exactly {tool_loop.HERMETIC_FETCH_BUDGET} fetches through, "
+        f"got {len(allowed)}")
+    assert len(refused) == 2
+    assert "evaluation fetch budget" in refused[0]["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sentinel", ["evolution-eval", "evolution-replay"])
+async def test_the_eval_allowance_does_not_reset_between_dispatches(sentinel):
+    """The whole point, stated as the thing that would break it.
+
+    Each dispatch arrives with its OWN `budget` dict — that is what makes the
+    live cap per-run. If the eval cap read from that dict it would reset a few
+    hundred times per candidate and bound nothing at all."""
+    tool_loop.reset_hermetic_fetch_budget(sentinel)
+    for _ in range(tool_loop.HERMETIC_FETCH_BUDGET):
+        await _fetch(1, conversation_id=sentinel, budget={})   # a fresh dict each time
+    verdict = (await _fetch(1, conversation_id=sentinel, budget={}))[0]
+    assert verdict is not None, (
+        "a fresh per-dispatch budget dict reset the attempt allowance")
+
+
+@pytest.mark.asyncio
+async def test_a_new_attempt_starts_with_a_fresh_allowance():
+    """Otherwise the counter is process-lifetime: the first attempt after a
+    restart gets the budget and every later one gets nothing, which reads as a
+    broken feature rather than a limit."""
+    tool_loop.reset_hermetic_fetch_budget("evolution-eval")
+    await _fetch(tool_loop.HERMETIC_FETCH_BUDGET + 1,
+                 conversation_id="evolution-eval", budget={})
+    assert tool_loop.hermetic_fetches_used("evolution-eval") >= tool_loop.HERMETIC_FETCH_BUDGET
+
+    tool_loop.reset_hermetic_fetch_budget("evolution-eval")
+    assert tool_loop.hermetic_fetches_used("evolution-eval") == 0
+    assert (await _fetch(1, conversation_id="evolution-eval", budget={}))[0] is None
 
 
 # ── through the real throat ────────────────────────────────────────────────────────

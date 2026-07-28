@@ -236,3 +236,37 @@ async def test_a_legacy_token_cap_that_WAS_set_is_reported_not_dropped(client, m
         "tokens needs to recognise their own number, not be told 'something was dropped'")
     # and the new cap really is absent, i.e. they are currently uncapped
     assert body["max_dispatches"] is None
+
+
+async def test_each_attempt_starts_with_a_fresh_fetch_allowance(wdb, monkeypatch):
+    """FU-2b's integration half, and the reason it exists as its own test.
+
+    The allowance is per ATTEMPT, so somebody has to start it. Mutation showed
+    the unit tests could not tell: they call reset_hermetic_fetch_budget()
+    directly, so deleting the watcher's call left them all green while the
+    counter became process-lifetime — first attempt after a restart gets the
+    budget, every later one is refused on its first fetch. That reads as a
+    broken feature rather than a limit.
+    """
+    from server.orchestrator import tool_loop
+
+    Session = wdb
+
+    async def spy(spawn_id, **k):
+        return {"proposal_id": None, "candidate_prompt": None,
+                "gate": {"passed": False, "reason": "x", "aggregate": None}, "evidence": {}}
+    monkeypatch.setattr(evolution_loop, "propose_improvement", spy)
+
+    # Spend the whole allowance, as a previous attempt would have.
+    tool_loop.reset_hermetic_fetch_budget("evolution-eval")
+    for _ in range(tool_loop.HERMETIC_FETCH_BUDGET):
+        await tool_loop._check_fetch_budget(
+            "web_search", conversation_id="evolution-eval", budget={})
+    assert tool_loop.hermetic_fetches_used("evolution-eval") == tool_loop.HERMETIC_FETCH_BUDGET
+
+    sid = await _spawn(Session)
+    aid = await _attempt(Session, sid, {"basis": "max", "dispatches_max": 4})
+    await evolution_watcher._perform_attempt(aid, sid)
+
+    assert tool_loop.hermetic_fetches_used("evolution-eval") == 0, (
+        "the new attempt inherited the previous attempt's spent allowance")
