@@ -565,7 +565,11 @@
     "embeddingDownload": "Herunterladen (~120 MB)",
     "embeddingOverrideLabel": "Embedding-Anbieter überschreiben",
     "embeddingAuto": "Auto (empfohlen)",
-    "embeddingLocalOption": "Lokales Modell"
+    "embeddingLocalOption": "Lokales Modell",
+    "ocrLanguagesLabel": "Sprachen der Texterkennung",
+    "ocrLanguagesFollowsUi": "Folgt der Oberflächensprache, plus Englisch. Sprachen wählen, um das zu überschreiben.",
+    "ocrLanguagesCapHint": "Bis zu {{max}}. Mehr Sprachen machen die Erkennung schlechter, nicht besser — Chinesisch und Japanisch gehen zuerst verloren.",
+    "ocrLanguagesUnavailable": "Dieses System hat keine eingebaute Texterkennung; Bilder liest nur dein Modell."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

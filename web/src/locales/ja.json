@@ -565,7 +565,11 @@
     "embeddingDownload": "ダウンロード(~120MB)",
     "embeddingOverrideLabel": "Embeddingプロバイダ上書き",
     "embeddingAuto": "自動(推奨)",
-    "embeddingLocalOption": "ローカルモデル"
+    "embeddingLocalOption": "ローカルモデル",
+    "ocrLanguagesLabel": "画像内テキストの認識言語",
+    "ocrLanguagesFollowsUi": "現在はインターフェース言語と英語に従っています。選ぶと上書きできます。",
+    "ocrLanguagesCapHint": "最大 {{max}} 種類。言語を増やすほど認識精度は下がります——中国語と日本語が最初に失われます。",
+    "ocrLanguagesUnavailable": "このシステムには内蔵の文字認識がないため、画像はモデルのみが読みます。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

@@ -36,6 +36,10 @@ class SettingsIn(BaseModel):
     embedding_config_id: str | None = None
     evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool | None = None
+    # Comma-separated BCP-47 tags for image text recognition. Empty string is a
+    # MEANINGFUL value, not "unset": it restores "follow the interface language
+    # plus English", which is how someone clears an explicit choice.
+    ocr_languages: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -59,6 +63,11 @@ class SettingsOut(BaseModel):
     embedding_config_id: str = ""
     evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool = False
+
+    # Empty string = follow the interface language plus English (the default),
+    # which is why the default here is "" and not None: the GET must be able to
+    # express "no explicit choice" without the client guessing.
+    ocr_languages: str = ""
 
 
 class AccessTokenOut(BaseModel):

@@ -176,7 +176,8 @@ def rasterize_pdf(data: bytes, max_pages: int) -> list[bytes]:
     return out
 
 
-def _ocr_pdf_pages_locally(data: bytes, ui_language: str | None) -> list[str]:
+def _ocr_pdf_pages_locally(data: bytes, ui_language: str | None,
+                           chosen_languages: str | None = None) -> list[str]:
     """Tier 2 for a scanned PDF: rasterise under the cap, recognise each page.
 
     Returns [] when NO page yielded text — not a list of "nothing here" labels.
@@ -195,7 +196,8 @@ def _ocr_pdf_pages_locally(data: bytes, ui_language: str | None) -> list[str]:
         total = _pdf_page_count(data)
         take, _ = pdf_page_plan(total)
         for n, png in enumerate(rasterize_pdf(data, take), 1):
-            text, status = ocr_fallback.read_locally(png, ui_language=ui_language)
+            text, status = ocr_fallback.read_locally(
+                png, ui_language=ui_language, chosen_languages=chosen_languages)
             if status == ocr_vision.OK and text.strip():
                 found_any = True
                 read.append(f"[page {n}]\n{text}")
@@ -252,7 +254,8 @@ def _ocr_image(data: bytes) -> str:
         return ""
 
 
-def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None) -> str:
+def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
+                  ocr_languages: str | None = None) -> str:
     # NOTE ON TIERS: this endpoint has no tier 1. A PDF attached to chat is
     # never rasterised for the model, so the system recogniser is not a SECOND
     # reader here, it is the only one. Running it is therefore not the "both
@@ -264,7 +267,7 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None)
         text = _pdf_text_layer(data)
         if len(text.strip()) < _OCR_MIN_CHARS:
             if ocr_vision.is_available():
-                pages = _ocr_pdf_pages_locally(data, ui_language)
+                pages = _ocr_pdf_pages_locally(data, ui_language, ocr_languages)
                 if pages:
                     joined = "\n\n".join(pages).strip()
                     if joined:
@@ -290,7 +293,8 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None)
     if _IMAGE_EXT_RE.search(name):
         # No text found / OCR unavailable → '' (caller surfaces "no text", never 500).
         if ocr_vision.is_available():
-            text, _status = ocr_fallback.read_locally(data, ui_language=ui_language)
+            text, _status = ocr_fallback.read_locally(
+                data, ui_language=ui_language, chosen_languages=ocr_languages)
             return text
         return _ocr_image(data)
     raise ValueError(f"unsupported file type: {filename}")
@@ -412,7 +416,8 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
             # answered, N times).
             if ocr_fallback.model_refused_the_image(str(exc)):
                 read = _ocr_pdf_pages_locally(
-                    data, await ocr_fallback.current_ui_language())
+                    data, await ocr_fallback.current_ui_language(),
+                    await ocr_fallback.current_ocr_languages())
                 if read:
                     body = "\n\n".join(read)
                     if note:
@@ -440,7 +445,8 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
             # ocr_fallback for why that determination is typed, not a catch-all.
             if ocr_fallback.model_refused_the_image(str(exc)):
                 text, status = ocr_fallback.read_locally(
-                    data, ui_language=await ocr_fallback.current_ui_language())
+                    data, ui_language=await ocr_fallback.current_ui_language(),
+                    chosen_languages=await ocr_fallback.current_ocr_languages())
                 if status == ocr_vision.OK:
                     # ocr_source, NOT described_source: this is transcription,
                     # not a description, and the two must not be confusable at

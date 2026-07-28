@@ -119,6 +119,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           i18n.changeLanguage(code);
           saveField({ language: code });
         }}
+        ocrLanguages={localSettings.ocrLanguages ?? ''}
+        onOcrLanguagesChange={(next) => saveField({ ocrLanguages: next })}
       />
     ),
 

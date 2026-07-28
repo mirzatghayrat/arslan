@@ -370,6 +370,12 @@ export const api = {
     request<{ token: string }>("/settings/mcp-token/generate", { method: "POST" }),
   listProviders: () => request<ProviderOption[]>("/settings/providers"),
   listSearchProviders: () => request<string[]>("/settings/search-providers"),
+  /** What THIS machine's text recognition can read, asked at request time.
+   * Never a constant: the set grows with the OS version, so a list baked
+   * into the UI would promise the user what their system may not do. */
+  listOcrLanguages: () =>
+    request<{ available: string[]; max_selectable: number; platform_supported: boolean }>(
+      "/settings/ocr-languages"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   getRegistry: () => request<RegistryCatalog>("/registry"),

@@ -149,6 +149,32 @@ async def search_providers() -> list[str]:
     return list_search_providers()
 
 
+@router.get("/settings/ocr-languages", response_model=dict)
+async def ocr_languages() -> dict:
+    """What THIS machine's text recognition can read, asked at request time.
+
+    Not a constant, and not a list we maintain: the set grows with the macOS
+    version, so a hardcoded one would describe the developer's machine and
+    promise the user something their system may not do. On a host without the
+    framework the list is empty and the UI says so rather than offering
+    choices that would do nothing.
+
+    `max_selectable` is a MEASURED limit, not tidiness. Recognition degrades as
+    the requested list grows and CJK is the first casualty: asking for all
+    thirty supported languages returns only the English line from a mixed
+    Chinese/English image, and nothing at all from a Japanese one, while
+    ("zh-Hans", "en-US") reads both. A picker with no ceiling would let someone
+    destroy the capability they were trying to widen.
+    """
+    from server.services import ocr_vision
+
+    return {
+        "available": list(ocr_vision.supported_languages()),
+        "max_selectable": ocr_vision.MAX_REQUESTED_LANGUAGES,
+        "platform_supported": ocr_vision.is_available(),
+    }
+
+
 @router.get("/settings", response_model=SettingsOut)
 async def read_settings(session: AsyncSession = Depends(get_session)) -> SettingsOut:
     data = await settings_service.get_settings(session)

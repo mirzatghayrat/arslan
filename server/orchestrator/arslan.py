@@ -977,6 +977,7 @@ async def _read_images_locally(images: list[dict]) -> str | None:
     from server.services import ocr_fallback, ocr_vision
 
     language = await ocr_fallback.current_ui_language()
+    chosen = await ocr_fallback.current_ocr_languages()
     parts = []
     for img in images:
         try:
@@ -984,7 +985,8 @@ async def _read_images_locally(images: list[dict]) -> str | None:
         except Exception as exc:  # noqa: BLE001 — a bad attachment is not fatal
             logger.warning("could not decode an attached image for OCR: %s", exc)
             continue
-        text, status = ocr_fallback.read_locally(raw, ui_language=language)
+        text, status = ocr_fallback.read_locally(
+            raw, ui_language=language, chosen_languages=chosen)
         if status == ocr_vision.OK and text.strip():
             parts.append(f"{ocr_fallback.ocr_source(img.get('name') or 'image')}\n{text}")
     return "\n\n".join(parts) if parts else None

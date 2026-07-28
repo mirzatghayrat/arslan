@@ -565,7 +565,11 @@
     "embeddingDownload": "Télécharger (~120 Mo)",
     "embeddingOverrideLabel": "Fournisseur d'embedding (override)",
     "embeddingAuto": "Auto (recommandé)",
-    "embeddingLocalOption": "Modèle local"
+    "embeddingLocalOption": "Modèle local",
+    "ocrLanguagesLabel": "Langues de reconnaissance de texte",
+    "ocrLanguagesFollowsUi": "Suit la langue de l'interface, plus l'anglais. Choisissez des langues pour remplacer.",
+    "ocrLanguagesCapHint": "Jusqu'à {{max}}. Demander plus de langues dégrade la reconnaissance au lieu de l'améliorer — le chinois et le japonais disparaissent en premier.",
+    "ocrLanguagesUnavailable": "Ce système n'a pas de reconnaissance de texte intégrée ; les images ne sont lues que par votre modèle."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

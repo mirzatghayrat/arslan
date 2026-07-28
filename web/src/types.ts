@@ -210,4 +210,8 @@ export interface AppSettings {
   evolutionAuto?: boolean;
   /** Cap on PROJECTED replay dispatches. null/undefined = no cap (the default). */
   evolutionMaxDispatches?: number | null;
+  /** Comma-separated BCP-47 tags for image text recognition. Empty/unset means
+   *  "follow the interface language, plus English". Deliberately a SHORT list:
+   *  recognition degrades as the request widens and CJK is lost first. */
+  ocrLanguages?: string;
 }

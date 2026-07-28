@@ -227,7 +227,7 @@ def test_the_threshold_holds_on_the_system_recogniser_path(monkeypatch):
 
     calls = []
 
-    def _spy(data, ui_language):
+    def _spy(data, ui_language, chosen_languages=None):
         calls.append(1)
         return ["[page 1]\nread by the system recogniser"]
 

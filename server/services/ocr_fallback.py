@@ -40,12 +40,14 @@ def model_refused_the_image(raw_error: str) -> bool:
     return vision_errors.explain(raw_error or "", had_images=True) is not None
 
 
-def read_locally(data: bytes, *, ui_language: str | None) -> tuple[str, str]:
+def read_locally(data: bytes, *, ui_language: str | None,
+                 chosen_languages: str | None = None) -> tuple[str, str]:
     """Tier 2. Returns (text, status) — never raises, never guesses.
 
-    The languages asked for come from the UI locale; the host's own list is what
+    The languages asked for are the user's explicit choice when they have made
+    one, and the UI locale plus English otherwise; the host's own list is what
     decides whether we run at all (ocr_vision.recognize gates before calling)."""
-    tags = ocr_vision.vision_tags_for(ui_language)
+    tags = ocr_vision.resolve_requested_tags(chosen_languages, ui_language)
     text, status = ocr_vision.recognize(data, languages=tags)
     if status != ocr_vision.OK:
         logger.info("tier-2 OCR produced no text: status=%s langs=%s", status, tags)
@@ -55,16 +57,29 @@ def read_locally(data: bytes, *, ui_language: str | None) -> tuple[str, str]:
 async def current_ui_language() -> str | None:
     """One reader for the locale, so the two routes cannot disagree about which
     languages to ask Vision for."""
+    return (await _ocr_settings())[0]
+
+
+async def current_ocr_languages() -> str | None:
+    """The user's explicit OCR language choice, or None when unset."""
+    return (await _ocr_settings())[1]
+
+
+async def _ocr_settings() -> tuple[str | None, str | None]:
+    """(ui_language, ocr_languages) from one read.
+
+    Both callers need both values, and reading them separately would mean two
+    round trips that could disagree if the settings changed between them."""
     try:
         from server.db import session as db_session
         from server.services import settings_service
 
         async with db_session.AsyncSessionLocal() as db:
             cfg = await settings_service.get_settings(db)
-        return cfg.get("language")
+        return cfg.get("language"), cfg.get("ocr_languages")
     except Exception as exc:  # noqa: BLE001 — a missing setting must not stop OCR
-        logger.warning("could not read the UI language, assuming English: %s", exc)
-        return None
+        logger.warning("could not read the OCR settings, assuming defaults: %s", exc)
+        return None, None
 
 
 def ocr_source(filename: str) -> str:

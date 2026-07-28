@@ -19,7 +19,7 @@ _PLAIN_KEYS = (
     "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
-               "evolution_auto", "mcp_server_enabled", "curation_enabled")
+               "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")

@@ -53,6 +53,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     embeddingConfigId: backend.embedding_config_id ?? "",
     evolutionAuto: backend.evolution_auto === "on",
     evolutionMaxDispatches: backend.evolution_max_dispatches ?? null,
+    ocrLanguages: backend.ocr_languages ?? '',
     runDebugRetentionDays: backend.run_debug_retention_days ?? 30,
     mcpServerEnabled: backend.mcp_server_enabled ?? false,
   };
@@ -76,6 +77,7 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     embedding_config_id: ui.embeddingConfigId ?? "",
     evolution_auto: ui.evolutionAuto ? "on" : "off",
     evolution_max_dispatches: ui.evolutionMaxDispatches ?? null,
+    ocr_languages: ui.ocrLanguages ?? '',
     run_debug_retention_days: ui.runDebugRetentionDays ?? 30,
     mcp_server_enabled: ui.mcpServerEnabled,
   };

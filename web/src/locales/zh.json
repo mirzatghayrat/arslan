@@ -565,7 +565,11 @@
     "embeddingDownload": "下载（~120MB）",
     "embeddingOverrideLabel": "Embedding 供应商覆盖",
     "embeddingAuto": "自动（推荐）",
-    "embeddingLocalOption": "本地模型"
+    "embeddingLocalOption": "本地模型",
+    "ocrLanguagesLabel": "图片文字识别语言",
+    "ocrLanguagesFollowsUi": "当前跟随界面语言并附带英文。选择语言可覆盖。",
+    "ocrLanguagesCapHint": "最多 {{max}} 种。语言选得越多识别越差，不是越好——中文和日文最先被丢掉。",
+    "ocrLanguagesUnavailable": "本系统没有内置文字识别，图片只能由你配置的模型来读。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

@@ -29,6 +29,8 @@ function setup(overrides: Partial<Props> = {}) {
   const props: Props = {
     language: "en",
     onLanguageChange: vi.fn(),
+    ocrLanguages: "",
+    onOcrLanguagesChange: vi.fn(),
     ...overrides,
   };
   render(<AppearanceSection {...props} />);

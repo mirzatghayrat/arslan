@@ -565,7 +565,11 @@
     "embeddingDownload": "Download (~120MB)",
     "embeddingOverrideLabel": "Embedding provider override",
     "embeddingAuto": "Auto (recommended)",
-    "embeddingLocalOption": "Local model"
+    "embeddingLocalOption": "Local model",
+    "ocrLanguagesLabel": "Text recognition languages",
+    "ocrLanguagesFollowsUi": "Following your interface language, plus English. Pick languages to override.",
+    "ocrLanguagesCapHint": "Up to {{max}}. Asking for more languages makes recognition worse, not better — Chinese and Japanese are lost first.",
+    "ocrLanguagesUnavailable": "This system has no built-in text recognition, so images are read by your model only."
   },
   "errors": {
     "load_failed": "Failed to load data.",

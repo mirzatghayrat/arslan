@@ -112,6 +112,53 @@ def vision_tags_for(ui_language: str | None) -> tuple[str, ...]:
     return (tag, "en-US")
 
 
+# How many languages may be requested at once.
+#
+# NOT a tidiness limit — MEASURED, and the measurement runs against intuition.
+# Recognition gets WORSE as the list grows, and CJK is the first thing lost:
+#
+#   requested                     mixed en+zh      ja       de
+#   ("zh-Hans", "en-US")          both lines       -        -
+#   the app's six UI locales      english only     none     ok
+#   all thirty supported          english only     none     -
+#
+# So a picker that lets someone tick every language would quietly destroy the
+# capability they were trying to improve. Three is the largest set measured to
+# still behave; the cap exists so the UI cannot offer a foot-gun.
+MAX_REQUESTED_LANGUAGES = 3
+
+
+def resolve_requested_tags(chosen: str | None, ui_language: str | None) -> tuple[str, ...]:
+    """The languages to ask Vision for: the user's explicit choice, or the
+    interface language plus English when they have not chosen.
+
+    `chosen` is the stored setting — a comma-separated list of BCP-47 tags.
+    Anything the host cannot recognise is dropped here rather than passed on:
+    handing Vision a language it does not know is how a scrambled result gets
+    produced (spec §0.6), and the gate in recognize() is the second line of the
+    same defence, not a substitute for this one."""
+    if not chosen or not chosen.strip():
+        return vision_tags_for(ui_language)
+
+    known = set(supported_languages())
+    seen: list[str] = []
+    for raw in chosen.split(","):
+        tag = raw.strip()
+        if not tag or tag in seen:
+            continue
+        if known and tag not in known:
+            logger.info("OCR language %r is not recognised by this host; dropped", tag)
+            continue
+        seen.append(tag)
+        if len(seen) >= MAX_REQUESTED_LANGUAGES:
+            break
+    # An empty result means every chosen language was unavailable. Falling back
+    # to the interface language would silently substitute a different question
+    # for the one the user asked, so the caller is told nothing is usable and
+    # recognize() answers unsupported_language.
+    return tuple(seen)
+
+
 def recognize(data: bytes, *, languages: Sequence[str]) -> tuple[str, str]:
     """Return (text, status). Never raises."""
     if not is_available():

@@ -18,11 +18,16 @@ import { Palette } from 'lucide-react';
 import Select from '../Select';
 import { AppearanceSettings } from '../AppearanceSettings';
 import { LANGUAGE_OPTIONS, normalizeLanguage } from '../../lib/languages';
+import OcrLanguagePicker from './OcrLanguagePicker';
 import { useProfileStore } from '../../stores/profileStore';
 
 export interface AppearanceSectionProps {
   /** Current UI language code (or legacy label). */
   language: string;
+  /** Comma-separated BCP-47 tags; '' = follow the interface language. */
+  ocrLanguages: string;
+  /** Persists the OCR language choice, same instant-save path as the rest. */
+  onOcrLanguagesChange: (next: string) => void;
   /**
    * Called with the picked language code. The host wires this to persist the
    * code and call i18n.changeLanguage — kept host-side so the switch behavior is
@@ -31,7 +36,7 @@ export interface AppearanceSectionProps {
   onLanguageChange: (code: string) => void;
 }
 
-export default function AppearanceSection({ language, onLanguageChange }: AppearanceSectionProps) {
+export default function AppearanceSection({ language, onLanguageChange, ocrLanguages, onOcrLanguagesChange }: AppearanceSectionProps) {
   const { t } = useTranslation();
   const displayName = useProfileStore((s) => s.displayName);
   const setDisplayName = useProfileStore((s) => s.setDisplayName);
@@ -84,6 +89,14 @@ export default function AppearanceSection({ language, onLanguageChange }: Appear
             {t('settings.language_i18n_note')}
           </p>
         </div>
+
+        {/* Text recognition languages. Next to the interface language on
+            purpose: unset means "follow it", so the relationship between the
+            two controls is the first thing a reader needs. */}
+        <OcrLanguagePicker
+          value={ocrLanguages}
+          onChange={onOcrLanguagesChange}
+        />
 
         {/* Appearance — palette picker + mode toggle */}
         <div className="md:col-span-2">

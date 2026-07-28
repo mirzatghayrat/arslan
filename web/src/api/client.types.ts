@@ -259,6 +259,9 @@ export interface AppSettings {
   evolution_auto?: string;
   /** Cap on PROJECTED replay dispatches, not tokens. null = no cap (default). */
   evolution_max_dispatches?: number | null;
+  /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
+   *  the interface language plus English. */
+  ocr_languages?: string;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
   run_debug_retention_days?: number;
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools

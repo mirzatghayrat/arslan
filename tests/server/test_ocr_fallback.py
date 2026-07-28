@@ -164,7 +164,10 @@ async def test_both_routes_go_through_the_one_degradation_helper(
     sid = await _spawn(memdb)
     seen = []
 
-    def spy(data, *, ui_language=None):
+    def spy(data, *, ui_language=None, chosen_languages=None):
+        # The double must track the real signature: when read_locally grew the
+        # explicit-language argument, a stale spy raised TypeError inside the
+        # except block and the test failed as if the wiring had broken.
         seen.append(ui_language)
         return "spied", ocr_vision.OK
 

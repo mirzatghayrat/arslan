@@ -28,7 +28,8 @@ async def extract_text(
 
         text = ingest._extract_file(
             filename or "file", data,
-            ui_language=await ocr_fallback.current_ui_language())
+            ui_language=await ocr_fallback.current_ui_language(),
+            ocr_languages=await ocr_fallback.current_ocr_languages())
     else:
         raise ValueError("provide url or file data")
 
