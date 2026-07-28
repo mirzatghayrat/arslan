@@ -111,3 +111,30 @@ def test_a_host_with_homebrew_ocr_is_refused_by_name_not_skipped(fic, monkeypatc
     # And it stops: making the claim on a host that could have borrowed the
     # capability is the failure this precondition exists to prevent.
     assert called == [], "the probe made its claim on a dirty host"
+
+
+# ---------------------------------------------------------------------------
+# The liveness additions (A2). Same rule as above: a probe that cannot fail is
+# not a probe. These drive the decision logic directly rather than rebuilding a
+# bundle per assertion.
+# ---------------------------------------------------------------------------
+
+def test_the_spa_check_rejects_the_catch_all_answering_for_a_missing_bundle(fic):
+    """The failure this exists for is NOT a 404.
+
+    A single-page app serves index.html for any unknown path, so a bundle that
+    was never staged answers 200 with HTML and reads as healthy. That exact
+    shape is how the WebSocket outage hid for six releases: the catch-all
+    answered, so nothing looked broken."""
+    page = b'<!doctype html><html><body>the app</body></html>'
+    assert fic._looks_like_catch_all(page) is True
+    assert fic._looks_like_catch_all(b'var x=1;//# sourceMappingURL=i.js.map') is False
+    # Leading whitespace must not smuggle it past: the check is about what the
+    # body IS, not how it is indented. Note the fixture carries NO <html> tag —
+    # with one, the second half of the condition matches anyway and the lstrip
+    # is untested (mutation caught exactly that).
+    assert fic._looks_like_catch_all(b'\n\n   <!DOCTYPE html>\n<body>x</body>') is True
+
+
+def test_an_empty_body_is_not_mistaken_for_a_bundle(fic):
+    assert fic._looks_like_catch_all(b"") is False  # empty is handled by the caller
