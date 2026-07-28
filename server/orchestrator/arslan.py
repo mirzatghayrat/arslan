@@ -12,6 +12,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from server.orchestrator import vision_errors
+from server.services import ocr_fallback
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
 from server.orchestrator import (
@@ -961,6 +962,34 @@ def _usage_frame(detail: dict) -> dict:
     }
 
 
+async def _read_images_locally(images: list[dict]) -> str | None:
+    """Tier 2 for a chat turn: hand the pictures to the system recogniser.
+
+    Returns a block of text to append to the user's message, or None when
+    nothing was read — None is the honest answer and the caller shows the
+    "switch models" advice instead of inventing a recovery.
+
+    The transcription is LABELLED. A retrieval hit renders as "[source] text"
+    and this is the same problem in the turn itself: the model must not read
+    characters lifted off a picture as if the user had typed them."""
+    import base64
+
+    from server.services import ocr_fallback, ocr_vision
+
+    language = await ocr_fallback.current_ui_language()
+    parts = []
+    for img in images:
+        try:
+            raw = base64.b64decode(img.get("data") or "")
+        except Exception as exc:  # noqa: BLE001 — a bad attachment is not fatal
+            logger.warning("could not decode an attached image for OCR: %s", exc)
+            continue
+        text, status = ocr_fallback.read_locally(raw, ui_language=language)
+        if status == ocr_vision.OK and text.strip():
+            parts.append(f"{ocr_fallback.ocr_source(img.get('name') or 'image')}\n{text}")
+    return "\n\n".join(parts) if parts else None
+
+
 async def _handle_answer(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
@@ -1017,12 +1046,13 @@ async def _handle_answer_body(
     llm_user = build_user_blocks(user_message, attached_context, images)
 
     emit({"type": "stream_start", "source": "arslan"})
-    try:
+
+    async def _dispatch(user_content):
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
         # no text-protocol narration-as-answer bug). Spawns stay on run() until migrated.
-        result = await tool_loop.run_native(
+        return await tool_loop.run_native(
             system=system,
-            user_content=llm_user,
+            user_content=user_content,
             history=ctx["history"][:-1],
             emit=emit,
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
@@ -1032,9 +1062,37 @@ async def _handle_answer_body(
             conversation_id=conversation_id,
             caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
         )
+
+    try:
+        result = await _dispatch(llm_user)
     except Exception as exc:  # noqa: BLE001
-        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
-        return
+        # THE MODEL WOULD NOT LOOK AT THE PICTURE. Two things used to go wrong
+        # here and both were invisible from this file: the raw provider JSON
+        # reached the user because explain() was never called on this path (it
+        # was wired only into spawn dispatch), and the OCR fallback shipped in
+        # v0.1.11 had no caller in this package at all — a chat image was the
+        # one route it could not serve.
+        recovered = None
+        if images and ocr_fallback.model_refused_the_image(str(exc)):
+            recovered = await _read_images_locally(images)
+        if recovered:
+            # Retry WITHOUT the picture. Sending it again to a model that just
+            # rejected it fails identically; what changed is that the words are
+            # now in the text, so the turn can finish.
+            result = None
+            try:
+                result = await _dispatch(build_user_blocks(
+                    f"{user_message}\n\n{recovered}", attached_context, None))
+            except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
+                emit({"type": "error", "code": "LLM_ERROR",
+                      "message": str(retry_exc), "recoverable": True})
+                return
+        else:
+            emit({"type": "error", "code": "LLM_ERROR",
+                  "message": vision_errors.explain(
+                      str(exc), had_images=bool(images)) or str(exc),
+                  "recoverable": True})
+            return
     # PA-3: the model asked for a structured user choice — ask_user_choice is a
     # TERMINAL tool, so the loop ended the turn with validated/clamped {question,
     # options}. Persist a compact text twin (question + bulleted labels) so
