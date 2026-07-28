@@ -24,12 +24,21 @@ from server.services import skill_import
 
 
 def test_mcp_connectors_come_from_the_static_catalog_only():
-    """CONNECTORS is data in the repository — versioned, reviewed, diffable."""
+    """CONNECTORS is data in the repository — versioned, reviewed, diffable.
+
+    Matched on IMPORT STATEMENTS, not on bare substrings. The first draft looked
+    for the word "requests" anywhere in the file and went red the moment a
+    connector exposed a tool called `browser_network_requests` — an assertion
+    that fires on something other than what it claims to detect is worse than
+    none, because the next person silences it rather than reading it.
+    """
     source = pathlib.Path(inspect.getfile(catalog)).read_text()
-    for forbidden in ("httpx", "requests", "urllib", "aiohttp"):
-        assert forbidden not in source, (
-            f"{forbidden} appears in the preset catalog — the connector list must "
-            "be static data, not something fetched at runtime")
+    imports = re.findall(r"^\s*(?:from|import)\s+([\w.]+)", source, re.M)
+    roots = {name.split(".")[0] for name in imports}
+    fetchers = roots & {"httpx", "requests", "urllib", "urllib3", "aiohttp", "socket"}
+    assert not fetchers, (
+        f"the preset catalog imports {sorted(fetchers)} — the connector list must "
+        "be static data, not something fetched at runtime")
 
 
 def test_installing_a_skill_requires_naming_a_repository():
