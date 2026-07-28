@@ -1,0 +1,132 @@
+# OCR 兜底轮 spec（两级降级：模型视觉一级 / macOS Vision 二级）
+
+base main = `2f76f7c`（v0.1.10）。落地路径：`docs/specs/2026-07-28-ocr-fallback-round.md`。
+上游：视觉轮 spec `docs/specs/2026-07-27-vision-round.md`；用户 2026-07-28 批准立项并给定三条验收。
+
+**两级降级已定（用户确认）**：**一级 = BYOK 模型视觉通路**（模型能读图就直接读，视觉轮已落地）；**二级 = macOS Vision 本地 OCR 兜底**（模型无视觉能力或读不了时）。
+
+---
+
+## 0. 前置核实（今天亲核，带 FILE:LINE，不引用记忆）
+
+### 0.1 现在有两条**行为不同**的文件入口，且分叉是**刻意留下的债**
+
+| 入口 | 代码 | 图片走什么 | 扫描版 PDF 走什么 |
+|---|---|---|---|
+| 第二大脑投喂 | `server/services/ingest.py:332` `ingest_file` | `:363-368` → `describe_image`（**模型视觉**） | `:348-351` rasterize + describe（**模型视觉**，36 页上限） |
+| 聊天附件 | `server/services/extract.py:24` → `ingest.py:212` `_extract_file` | `:237-239` → `_ocr_image`（**pytesseract**） | `:216-226` 文本层，不足则 `_ocr_pdf`（**pytesseract**） |
+
+`ingest.py:187-193` 的注释是我在视觉轮**自己写下的债务披露**，原文点名："the same scanned PDF is READ when fed to the second brain and still UNREADABLE when attached to a chat message"。**本轮就是来还这笔债的。**
+
+### 0.2 pytesseract 这条路在打包版里**从来没活过**（且是刻意的）
+
+- `pyproject.toml:81-84`：pytesseract **只是 wrapper**，真正干活的是**不属于 Arslan 的 `tesseract` 二进制**（开发机上来自 Homebrew）。
+- `pyproject.toml:99-104`：它在 **`ocr` extra**，打包版不装。
+- `ingest.py:194-209` `_ocr_image` / `:34-75` `_ocr_pdf`：函数内 `import pytesseract`，**`except → return ""`**。⇒ 打包版走到这里**永远返回空字符串**，这是**常态路径不是异常路径**。
+
+⇒ 用户口中的「tesseract 幻觉」有确切代码形状：**一个永远静默返回空的能力**。本轮的验收条款②正是钉死这一点。
+
+### 0.3 macOS Vision 可行性——**实测，不是查文档**（2026-07-28，本机 macOS 26.4.1）
+
+| 断言 | 手法 | 结果 |
+|---|---|---|
+| Vision 能识别中英混排 | pyobjc `VNRecognizeTextRequest`，PIL 生成图 | ✅ 两行全对：`Arslan OCR fallback probe 2026` / `本地识别 不依赖任何第三方安装` |
+| 支持语言 | `supportedRecognitionLanguagesAndReturnError_` | **30 种**：en/zh-Hans/zh-Hant/yue/ja/ko/ru/ar/th/vi/tr/… |
+| **冻结后仍然可用** | PyInstaller `--onedir` 冻结最小探针，`env -i HOME=… PATH=/usr/bin:/bin` 运行 | ✅ `FROZEN_OK True`，读出 `frozen sidecar reads this 冻结后仍然可读` |
+| 体积 | `du -sh` pyobjc 包 | Vision 216K + Quartz 1.9M + objc 9.8M + CoreML 136K ≈ **12MB 量级**（增量估算，需在真 sidecar 上复测） |
+
+**这一步是本轮的立项前提，所以先做的就是它** —— 上一次"能力其实不存在"的教训不允许再用文档推断代替实测。
+
+### 0.4 🔴 Vision 支持语言里**没有维吾尔语**
+
+上面 30 种语言列表里**无 `ug`**。用户本人是维语使用者，且仓库里有维语相关工作。⇒ **维语图片走 Vision 二级会得到错误结果或空结果**，而不是报错。这直接催生拍板项 ③。
+
+### 0.5 平台事实（决定文档矩阵怎么写）
+
+- `desktop/src-tauri/tauri.conf.json` `minimumSystemVersion: 11.0`；`targets: ['app']`；发布只出 **arm64**（`.github/workflows/release.yml:14` 自陈不出 Intel）。
+- **本机不是干净环境**：`which tesseract` → `/opt/homebrew/bin/tesseract`。⇒ 验收条款①**不能在本机验**，必须在 CI runner 上验，且**检查本身要先断言环境是干净的**（见 §4）。
+- Vision 的支持语言列表**随 macOS 版本变化**，本机是 26.4.1；**macOS 11 上的列表本轮无法实测**。⇒ 语言能力必须**运行时查询**，不许硬编码。
+
+---
+
+## 1. 范围
+
+**做**：
+1. `server/services/ocr_vision.py`（新）：macOS Vision 识别，纯本地、无第三方安装。
+2. **两级降级接线**：一级模型视觉 → 二级 Vision，接进**两条入口**（第二大脑投喂 + `/extract` 聊天附件），把 0.1 那笔债还掉。
+3. **扫描版 PDF 的聊天附件路径**一并打通（rasterize 已有，接 Vision）。
+4. **验收条款①**：`fresh_install_check.py` 加 OCR 探针（干净环境、装 dmg、投喂含字图、断言 `/extract` 非空）。
+5. **验收条款③**：README/文档按平台能力矩阵，禁止笼统"支持 OCR"。
+6. pytesseract 的处置（见拍板 ④）。
+
+**不做**（防蠕变）：Windows 实现（只写矩阵占位）、Linux Vision 等价物、手写识别、表格结构还原、语音、图片生成。
+
+---
+
+## 2. 拍板项（请逐条裁决）
+
+### ① 二级什么时候触发？
+- **A（推荐）**：**只在一级不可用或失败时**触发 —— 模型无视觉能力、视觉调用报错、或返回空。省钱、省延迟，语义清晰（"兜底"就是兜底）。
+- **B**：**总是先跑 Vision**，把 OCR 文本连同图片一起给模型。质量可能更好（模型拿到精确字符），但每张图都多一次本地计算，且两份内容可能打架。
+- **C**：用户在 Settings 里选。
+
+### ② Vision 结果怎么标出处？
+视觉轮拍板④的附加条款要求"模型描述"必须带 provenance 标记，防止被当 verbatim 引用。**但 Vision 的输出恰恰是 verbatim 原文**（不是描述）。
+- **A（推荐）**：**新增一个不同的标记**（如 `[OCR:文件名]` 对应 `[图片描述:文件名]`），因为二者的可信度语义**相反**：一个是"图上原文"，一个是"模型的转述"。混用同一个标记会把刚建立的诚实性搞坏。
+- **B**：复用现有标记。
+
+### ③ 🔴 维语（及任何不在 Vision 支持列表里的语言）怎么办？
+Vision 的 30 种语言**不含 `ug`**（0.4 实测）。
+- **A（推荐）**：**运行时查询支持列表**；用户界面语言不在列表内时，二级兜底**明确告知"本机系统 OCR 不支持你的语言，这张图的文字未被读取"**，而不是给一段错误识别结果。**宁可空，不可假**。
+- **B**：不管语言，一律用 en 识别，结果照收。（**我不建议**：维语图片会被识别成一串似是而非的拉丁字母，这是新的静默说谎。）
+
+### ④ 现有 pytesseract 怎么处置？
+- **A（推荐）**：**macOS 上彻底不走 pytesseract**；`ocr` extra **保留给 Linux/源码用户**（文档矩阵里明写"需自装 tesseract"）。理由：用户条款③本来就要求 Linux 那格写 ❌ + 可选 extra。
+- **B**：整个删掉 pytesseract。（Linux 源码用户就完全没有 OCR。）
+
+### ⑤ pyobjc 依赖怎么进 pyproject？
+- **A（推荐）**：正式依赖 + 平台 marker `pyobjc-framework-Vision; sys_platform == "darwin"`。Linux/Windows 装不上 pyobjc，marker 是唯一正确形状；`ocr_vision.py` 在非 macOS 上必须**明确不可用**而不是崩。
+- **B**：放进 `ocr` extra。（打包版就装不到，直接违背"能力必须随包走"。）
+
+---
+
+## 3. 设计要点
+
+- `ocr_vision.py` 暴露两个谓词，**分开**：`is_available()`（本平台有没有 Vision）与 `supported_languages()`（**运行时查询，不硬编码**）。0.5 的"语言列表随 OS 版本变"决定了这两个不能合成一个。
+- **失败与"没字"必须可区分**：返回 `(text, status)`，status ∈ `ok | unsupported_platform | unsupported_language | no_text | error`。0.2 的教训就是所有情况被压成同一个 `""`。
+- 调用点只有一处降级逻辑（不要在两条入口各写一遍），两条入口共用。
+- 扫描版 PDF：复用 `rasterize_pdf`（已在运行时依赖里），逐页送 Vision；**页数上限沿用 `VISION_PDF_MAX_PAGES`** —— 但注意 Vision 是本地免费的，钱不再是约束，**上限的理由要重新写**（拍板 ① 定了之后再定这个数，本轮先沿用并在代码注释里说明理由已变）。
+
+---
+
+## 4. 验收（用户给定的三条，逐条落成可执行断言）
+
+### 条款① 干净环境 OCR 探针
+在 `packaging/fresh_install_check.py` 里加：
+1. **⓪ 前置断言（环境本身必须干净）**：`shutil.which("tesseract") is None` 且无 Homebrew OCR。**不干净就 FAIL 并指名原因**，不许静默跳过 —— 否则这条探针在开发机上会因为借到 Homebrew 而假绿（本机就是这种机器，见 0.5）。
+2. 装/挂载 dmg 起 app，POST 一张**含文字的图**到 `/extract`，**断言返回文本非空且包含预期字串**。
+3. 断言用的图在**仓库里生成**（不引外部资源），中英各一行。
+
+### 条款② 能力随包走
+- 断言 sidecar 内**存在** Vision 通路（不是"没报错"）：探针要能区分"真的识别了"与"识别失败被吞成空"（用 §3 的 status 字段）。
+- 反向断言：**移走/屏蔽 tesseract 不影响结果**（mutation 形态：如果去掉 Vision 后探针仍绿，说明探针没区分力）。
+
+### 条款③ 按平台能力矩阵
+README/文档写成矩阵，**禁止笼统"支持 OCR"**：
+
+| 平台 | 图片/扫描件文字 | 依赖 |
+|---|---|---|
+| macOS（.dmg） | ✅ | **系统自带**（Vision），零额外安装 |
+| Windows | 计划中，将来对称 | — |
+| Linux（源码） | ❌ 默认不可用 | 需自装 `tesseract`，可选 `ocr` extra |
+
+并注明：**语言以系统 Vision 实际支持为准（运行时查询）**，且**维语不在其中**（0.4）。
+
+---
+
+## 5. 风险与未覆盖面（先写出来，不等事后补）
+
+- **macOS 11–12 未实测**：本机 26.4.1。语言列表与识别质量在低版本上可能不同；靠运行时查询 + status 字段兜住，但**无法在本轮给出低版本实测证据**。
+- **pyobjc 增量体积 ~12MB 是估算**，需在真 sidecar 上复测；且 pyobjc 带 `.so`，要过一遍嵌套 Mach-O 签名循环（视觉轮已把签名改成按内容嗅探 Mach-O，预期自动覆盖，仍需验）。
+- **维语不被支持**（0.4）——本轮不解决，只保证不撒谎。
+- CI runner 是否干净由 §4 的 ⓪ 前置断言现场证明，**不预先假定**。
