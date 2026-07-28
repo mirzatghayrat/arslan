@@ -105,11 +105,20 @@ here it is per platform rather than as a blanket "supports OCR":
 
 Two honest caveats:
 
-- **Languages are whatever your macOS recognises**, and that set grows with the
-  OS version — Arslan asks the system at runtime instead of promising a list.
-  If your language is not among them, Arslan says so and reads nothing, rather
-  than returning plausible-looking nonsense. **Uyghur is not currently
-  supported by macOS text recognition.**
+- **Text is read in your interface language (plus English).** This is a real
+  limitation, not a default: system text recognition only finds what it is
+  asked to look for, and asking for more makes it *worse* — measured, widening
+  the request from Chinese+English to all thirty supported languages loses the
+  Chinese text entirely. So if your interface is in English and you feed a
+  Chinese screenshot, the writing is not read, and Arslan tells you which
+  language it looked for rather than claiming the image was blank. Switch the
+  interface language to read that image.
+- **The available languages are whatever your macOS recognises**, and that set
+  grows with the OS version — Arslan asks the system at runtime instead of
+  promising a list. If your language is not among them, Arslan says so and
+  reads nothing, rather than returning plausible-looking nonsense. **Uyghur is
+  not supported by macOS text recognition**; we verified that asking anyway
+  produces convincing gibberish, which is why Arslan refuses instead.
 - Verified on macOS 26. **On macOS 11 and 12 the recognised-language set is
   smaller and has not been tested by us**; the runtime check means you will be
   told, not silently given wrong text.

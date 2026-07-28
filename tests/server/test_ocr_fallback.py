@@ -194,3 +194,25 @@ def test_the_ui_locale_decides_which_languages_are_asked_for():
     # than handing Vision something it will treat as a wrong-script guess.
     assert ocr_vision.vision_tags_for("ug") == ("en-US",)
     assert ocr_vision.vision_tags_for(None) == ("en-US",)
+
+
+def test_no_text_says_which_language_it_looked_for():
+    """"Nothing was found" is misleading when the reason is "we looked in the
+    wrong language" — and that is the case that actually happens, because a
+    fresh install asks for English only. Measured: widening the request does
+    not fix it (all thirty languages loses Chinese), so the user needs the
+    reason, not a broader search."""
+    msg = ocr_fallback.explain_status(ocr_vision.NO_TEXT, ("zh-Hans", "en-US"))
+    assert "zh-Hans" in msg and "en-US" in msg
+    # Discriminating: a message that merely said "no writing was found" would
+    # satisfy any assertion about non-emptiness, so pin the actionable half too.
+    assert "interface language" in msg
+
+    # The genuinely blank case still reads sensibly.
+    assert "No writing was found" in ocr_fallback.explain_status(ocr_vision.NO_TEXT)
+
+
+def test_an_unsupported_language_lists_what_the_host_can_do(monkeypatch):
+    monkeypatch.setattr(ocr_vision, "supported_languages", lambda: ("en-US", "fr-FR"))
+    msg = ocr_fallback.explain_status(ocr_vision.UNSUPPORTED_LANGUAGE)
+    assert "en-US, fr-FR" in msg

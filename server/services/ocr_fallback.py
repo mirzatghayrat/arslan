@@ -79,23 +79,34 @@ def ocr_source(filename: str) -> str:
     return f"[OCR:{filename}]"
 
 
-def explain_status(status: str) -> str | None:
+def explain_status(status: str, langs: tuple[str, ...] = ()) -> str | None:
     """What to tell the user when tier 2 did not produce text.
 
     None means "nothing to add" — the caller's own message stands. Every branch
     here names the actual reason instead of the old behaviour, which was to
     return "" for missing engine, unreadable file and blank page alike."""
     if status == ocr_vision.UNSUPPORTED_LANGUAGE:
-        langs = ", ".join(ocr_vision.supported_languages()) or "none"
+        available = ", ".join(ocr_vision.supported_languages()) or "none"
         return ("This system's built-in text recognition does not cover your "
                 f"language, so the writing in this image was not read. "
-                f"It can read: {langs}.")
+                f"It can read: {available}.")
     if status == ocr_vision.UNSUPPORTED_PLATFORM:
         return ("Built-in text recognition is available on macOS only. On this "
                 "system, install tesseract and the optional `ocr` extra to read "
                 "text from images.")
     if status == ocr_vision.NO_TEXT:
-        return "No writing was found in this image."
+        # NAMES THE LANGUAGES IT LOOKED FOR, because "no writing was found" is
+        # misleading in the one case that actually happens: text recognition
+        # only finds what it was asked to look for, and asking for more does
+        # not help — measured 2026-07-28, widening the list from ("zh-Hans",
+        # "en-US") to all thirty supported languages LOSES the Chinese line
+        # rather than adding to it. So an image whose writing is in a language
+        # other than the interface language reads as empty, and the user is
+        # owed the reason rather than a flat "there was nothing".
+        tried = ", ".join(langs or ()) or "the interface language"
+        return (f"No writing was found in this image (it was read as: {tried}). "
+                "If the picture is in another language, switch the interface "
+                "language to it and feed the image again.")
     if status == ocr_vision.ERROR:
         return "This image could not be read."
     return None
