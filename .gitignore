@@ -57,3 +57,8 @@ packaging/build/
 desktop/src-tauri/target/
 desktop/src-tauri/binaries/
 desktop/node_modules/
+
+# Remotion product-demo video (video/). The React source is committed; the
+# renders are not — the shipped MP4 + poster live in docs/assets/.
+video/node_modules/
+video/out/

@@ -1,0 +1,26 @@
+{
+  "name": "arslan-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion source for the Arslan product demo video",
+  "scripts": {
+    "dev": "remotion studio",
+    "studio": "remotion studio",
+    "build": "remotion render ArslanDemo out/arslan-demo.mp4",
+    "build:gif": "remotion render ArslanDemo out/arslan-demo.gif --codec=gif --width=960 --every-nth-frame=2",
+    "still": "remotion still ArslanDemo out/poster.png --frame=96",
+    "lint": "tsc --noEmit",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.500",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.500"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "typescript": "5.8.2"
+  }
+}
