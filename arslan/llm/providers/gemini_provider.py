@@ -14,6 +14,8 @@ from typing import Any
 
 import httpx
 
+from arslan.llm.providers import errors as provider_errors
+
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
 
@@ -106,7 +108,14 @@ class GeminiProvider(BaseLLMProvider):
                 url, json=self._payload(messages, temperature),
                 headers=self._headers(), timeout=timeout,
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as _exc:
+                # Carry the provider's OWN explanation, not just the status
+                # line — see providers/errors.py for why this matters.
+                raise httpx.HTTPStatusError(
+                    provider_errors.with_body(_exc),
+                    request=_exc.request, response=_exc.response) from None
             data = response.json()
         return self._parse_response(data)
 
@@ -134,7 +143,14 @@ class GeminiProvider(BaseLLMProvider):
                 "POST", url, json=self._payload(messages, temperature),
                 headers=self._headers(), timeout=timeout,
             ) as response:
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as _exc:
+                    # Carry the provider's OWN explanation, not just the status
+                    # line — see providers/errors.py for why this matters.
+                    raise httpx.HTTPStatusError(
+                        provider_errors.with_body(_exc),
+                        request=_exc.request, response=_exc.response) from None
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
                     if not line.startswith("data:"):

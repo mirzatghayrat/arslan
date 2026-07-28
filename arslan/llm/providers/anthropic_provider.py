@@ -14,6 +14,8 @@ from typing import Any
 
 import httpx
 
+from arslan.llm.providers import errors as provider_errors
+
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -165,7 +167,14 @@ class AnthropicProvider(BaseLLMProvider):
                 headers=self._headers(),
                 timeout=60.0,
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as _exc:
+                # Carry the provider's OWN explanation, not just the status
+                # line — see providers/errors.py for why this matters.
+                raise httpx.HTTPStatusError(
+                    provider_errors.with_body(_exc),
+                    request=_exc.request, response=_exc.response) from None
             data = response.json()
         return self._parse_response(data)
 
@@ -194,7 +203,14 @@ class AnthropicProvider(BaseLLMProvider):
                 headers=self._headers(),
                 timeout=60.0,
             ) as response:
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as _exc:
+                    # Carry the provider's OWN explanation, not just the status
+                    # line — see providers/errors.py for why this matters.
+                    raise httpx.HTTPStatusError(
+                        provider_errors.with_body(_exc),
+                        request=_exc.request, response=_exc.response) from None
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
                     if not line.startswith("data:"):
