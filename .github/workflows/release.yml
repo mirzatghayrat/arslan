@@ -47,14 +47,14 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: desktop/src-tauri
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           # Pin the interpreter uv provisions: unpinned, the runner resolved
           # the system's framework-build Python 3.14, PyInstaller bundled its
@@ -189,7 +189,7 @@ jobs:
             echo "::warning::no updater signatures — this release ships WITHOUT an update manifest"
           fi
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           # DRAFT. A release is reviewed by a human before it becomes an
           # update every installed copy will fetch — same "fail closed on the

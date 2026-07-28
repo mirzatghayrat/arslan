@@ -249,7 +249,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
           {t("feed.image_goes_to_model")}
         </p>
         <input ref={fileRef} type="file" multiple className="hidden"
-          accept=".pdf,.docx,.doc,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp"
+          accept=".pdf,.docx,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp"
           onChange={(e) => { void pickFiles(e.target.files); e.target.value = ""; }} />
       </div>
 
