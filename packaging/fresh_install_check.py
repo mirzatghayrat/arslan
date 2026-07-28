@@ -17,6 +17,29 @@ directory — it must exist in the right place AND not exist inside the bundle.
 Exits non-zero with a named reason. Prints every failure, not just the first:
 one broken assumption usually breaks several, and finding them one build at a
 time is the expensive way.
+
+NOT COVERED HERE, and deliberately named rather than quietly skipped:
+
+  * HTML5 drag-and-drop really reaching the page. wry intercepts NSDragging, so
+    this is a genuine packaged-only fact — but observing it needs a real window
+    with a real drag, and this script never launches the .app (it runs the
+    sidecar). tests/test_shell_window_config.py pins the source call that
+    disables the interception; that proves a line is in git, not that a drag
+    arrives. UNVERIFIED at the artifact level.
+
+  * The window actually moving when dragged. Same reason, plus a second one
+    found by measuring: the fallback idea — look for the start-dragging grant
+    inside the shipped binary — does not work. Tauri stores capability
+    identifiers in some form that is not plaintext (zero hits on the v0.1.11
+    binary for six spellings and for a generic `core:<x>:<y>` pattern), so the
+    check would fail on a binary that grants it. A control string is what
+    exposed that: it was absent too, which means the probe could not tell "not
+    granted" from "not stored this way". UNVERIFIED at the artifact level; the
+    source pin in tests/test_shell_window_config.py is all there is.
+
+Both need a GUI session driving the packaged app. Worth doing; not doable from
+a script that only boots the server, and pretending otherwise would put two
+green lines next to two unchecked claims.
 """
 from __future__ import annotations
 
@@ -109,6 +132,20 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
     sidecar = app / "Contents/Resources/sidecar/arslan-server"
     c.ok(sidecar.is_file() and os.access(sidecar, os.X_OK),
          "the sidecar is present and executable", str(sidecar))
+
+    # NO ASSERTION ON THE WINDOW-DRAGGING GRANT, and the reason is measured
+    # rather than assumed. The obvious artifact-level check is to look for
+    # "core:window:allow-start-dragging" in Contents/MacOS/Arslan. Measured on
+    # the shipped v0.1.11 binary: zero hits — and zero for every other form
+    # (allow-start-dragging, start_dragging, startDragging, remote-ui-drag,
+    # window:allow) and for a generic `core:<x>:<y>` pattern. Tauri does not
+    # store capability identifiers as plaintext, so such a check would report
+    # "not granted" for a binary that grants it perfectly well.
+    #
+    # A control string was in the first draft and is what caught this: it came
+    # back absent too, which meant the probe could not tell "not granted" from
+    # "not stored this way". A check that cannot fail for the right reason is
+    # worse than no check, so this one is not shipped. See the module docstring.
 
 
 def boot(app: pathlib.Path, home: pathlib.Path) -> tuple[subprocess.Popen, int, pathlib.Path]:
@@ -319,6 +356,42 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         c.ok(anon_ws in (401, 403), "the WebSocket refuses an unauthenticated handshake",
              f"anonymous /ws/ upgrade returned {anon_ws}")
 
+    # ---- the SPA is really SERVED, not merely present on disk -----------
+    # The existing bundle check asserts index.html and assets/ exist. A file
+    # that exists and a file that is served are different claims: a route that
+    # never matched, a mount pointed at the wrong directory, or an asset path
+    # that 404s all leave the files exactly where they are and give the user a
+    # blank window. So follow the page to its script and fetch that too.
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=20) as resp:
+            html = resp.read().decode("utf-8", "replace")
+            html_status = resp.status
+    except Exception as exc:  # noqa: BLE001
+        html, html_status = "", 0
+        print(f"    (index fetch raised {type(exc).__name__}: {exc})")
+
+    c.ok(html_status == 200 and "<script" in html.lower(),
+         "the SPA index is served with a script tag",
+         f"status={html_status}, {len(html)} bytes")
+
+    srcs = re.findall(r'<script[^>]+src="([^"]+)"', html)
+    if c.ok(bool(srcs), "the served index references at least one bundle",
+            f"scripts found: {srcs}"):
+        asset = srcs[0] if srcs[0].startswith("http") else \
+            f"http://127.0.0.1:{port}/{srcs[0].lstrip('/')}"
+        try:
+            with urllib.request.urlopen(asset, timeout=20) as resp:
+                body, status = resp.read(), resp.status
+                ctype = resp.headers.get("Content-Type", "")
+        except Exception as exc:  # noqa: BLE001
+            body, status, ctype = b"", 0, f"{type(exc).__name__}: {exc}"
+        # Not just 200: the SPA catch-all answers 200 with index.html for a
+        # path it does not know, which is how a missing bundle reads as fine.
+        # That exact shape is what made the WebSocket outage invisible.
+        c.ok(status == 200 and bool(body) and not _looks_like_catch_all(body),
+             "the referenced bundle is really served (not the catch-all page)",
+             f"{asset} -> status={status}, {len(body)} bytes, type={ctype}")
+
     # ---- the shipped app reads text off an image, borrowing nothing ----
     # The capability this replaces (pytesseract) needed a `tesseract` binary
     # that arrives with Homebrew and never with us, so on a developer Mac it
@@ -341,6 +414,17 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         and "404" not in ln
     ]
     c.ok(not errors, "no errors in the boot log", " | ".join(errors[:3]))
+
+
+
+def _looks_like_catch_all(body: bytes) -> bool:
+    """Is this the SPA's index page rather than the asset we asked for?
+
+    Extracted so it can be tested without building a bundle. Only the first
+    bytes matter: a real JS bundle never opens with a doctype, and the
+    catch-all always does."""
+    head = body[:400].lstrip().lower()
+    return head.startswith(b"<!doctype") or b"<html" in head
 
 
 def _text_png() -> bytes:

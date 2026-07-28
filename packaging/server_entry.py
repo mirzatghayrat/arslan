@@ -180,6 +180,60 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+def _lazy_resource_probes():
+    """(label, probe, why) for every resource the app resolves LATE.
+
+    Each probe exercises the resource rather than importing its module, because
+    the failures this census exists for all look like a healthy import: a name
+    that resolves to nothing, a data file that is not beside the code that
+    names it, a native library the wrapper loads on first use.
+    """
+    def certifi_ca():
+        import certifi
+
+        path = pathlib.Path(certifi.where())
+        return path.is_file() and path.stat().st_size > 0, str(path)
+
+    def sqlite_dialect():
+        from sqlalchemy.dialects import registry
+
+        cls = registry.load("sqlite.aiosqlite")
+        return cls is not None, getattr(cls, "__name__", "?")
+
+    def pdfium_native():
+        # pypdfium2 loads libpdfium through a ctypes module on first use; a
+        # staged package with an unstaged .dylib imports fine and raises when a
+        # scanned PDF arrives — i.e. only for the user, only sometimes.
+        import pypdfium2
+
+        doc = pypdfium2.PdfDocument.new()
+        doc.new_page(200, 200)
+        n = len(doc)
+        doc.close()
+        return n == 1, f"rendered a {n}-page document"
+
+    def http_client_tls():
+        # httpx picks its SSL context up from certifi at CLIENT CONSTRUCTION,
+        # not at import — the [Errno 2] incident was exactly this gap.
+        import httpx
+
+        with httpx.Client(timeout=1.0) as client:
+            return client is not None, "constructed with a TLS context"
+
+    return [
+        ("certifi CA bundle", certifi_ca,
+         "the CA file is missing, so every outbound HTTPS call would fail with "
+         "[Errno 2] long after a healthy boot"),
+        ("sqlite+aiosqlite dialect", sqlite_dialect,
+         "SQLAlchemy resolves this by STRING; without it the database is "
+         "unreachable although every module imported"),
+        ("pypdfium2 native library", pdfium_native,
+         "the rasteriser cannot render, so scanned PDFs silently yield nothing"),
+        ("httpx TLS client", http_client_tls,
+         "no provider call could be made"),
+    ]
+
+
 def selftest() -> int:
     """Import every feature module and report what a frozen build is missing.
 
@@ -267,6 +321,26 @@ def selftest() -> int:
                 ))
         except Exception as exc:  # noqa: BLE001 — report, never crash the selftest
             failed.append(("macOS Vision (tier-2 OCR)", f"{type(exc).__name__}: {exc}"))
+
+    # ── the lazy-resource census ──────────────────────────────────────────
+    # Generalising the websockets outage rather than patching its instance.
+    # That dependency was resolved BY NAME at use time, so nothing imported it,
+    # PyInstaller could not see it, and its absence was a log line rather than
+    # an error. Every entry below is the same shape: something the app reaches
+    # for late, whose absence degrades quietly instead of failing loudly.
+    #
+    # An import is not enough for any of them — each is asked to DO the thing.
+    # certifi in particular: the module imports fine while the .pem it points
+    # at is absent, and the symptom is every outbound request dying with
+    # [Errno 2] long after boot. That happened, on a real user's machine.
+    if not failed:
+        for label, probe, why in _lazy_resource_probes():
+            try:
+                ok, detail = probe()
+            except Exception as exc:  # noqa: BLE001 — a failed probe is a failure
+                ok, detail = False, f"{type(exc).__name__}: {exc}"
+            if not ok:
+                failed.append((label, f"{why} ({detail})"))
 
     # Importable modules are not enough: every module here can load while the
     # window still comes up blank, because the SPA is DATA, not code. Assert
