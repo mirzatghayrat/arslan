@@ -225,7 +225,8 @@ def _app_paths(monkeypatch, **env):
     import server.main as main
 
     app = main.create_app()
-    return {getattr(r, "path", None) for r in app.routes}, config.settings
+    from tests.route_introspection import iter_route_paths
+    return iter_route_paths(app), config.settings
 
 
 def test_seed_spawn_route_registered_in_dev(monkeypatch):
