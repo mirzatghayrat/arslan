@@ -120,6 +120,11 @@ def test_an_unsupported_language_is_refused_before_vision_is_touched(monkeypatch
 
 
 def test_one_supported_language_among_several_is_enough(monkeypatch):
+    # The platform seam is substituted because this test is about the LANGUAGE
+    # filter, not about the host. Without it the test passes on macOS and fails
+    # on Linux with unsupported_platform — which is how it reached CI: my local
+    # run only ever exercised one of the two platforms this round documents.
+    monkeypatch.setattr(ocr_vision, "_vision", lambda: object())
     monkeypatch.setattr(ocr_vision, "supported_languages", lambda: ("en-US",))
     seen = {}
 
