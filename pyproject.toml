@@ -104,10 +104,19 @@ dependencies = [
 # ingest.py is deliberately UNCHANGED in shape: its function-level imports and
 # `except -> ""` already handle absence. That predates this round.
 #
-# WHAT v1 CANNOT DO: scanned PDFs (no text layer) and standalone image
-# attachments yield no text. Text-layer PDFs (pypdf, BSD), docx, pptx, html,
-# txt and md are unaffected. The fix is the vision round (BYOK image input),
-# NOT re-adding tesseract — see docs/specs/2026-07-26-s4.3a-packaging.md §9.
+# SUPERSEDED ON macOS (OCR fallback round, decision ④A). This extra is now for
+# LINUX AND SOURCE INSTALLS ONLY. The desktop build reads images and scanned
+# PDFs with the system's own Vision framework — bundled, verified in the frozen
+# binary, borrowing nothing from the user's machine — so nothing on macOS
+# reaches pytesseract any more. It is kept, not deleted, because a Linux source
+# install has no Vision equivalent and would otherwise lose OCR entirely.
+#
+# The paragraph that used to sit here said scanned PDFs and image attachments
+# "yield no text" and that the fix was the vision round rather than tesseract.
+# Both halves are now out of date: the vision round covered images fed to the
+# second brain, and this round covers chat attachments and the model-cannot-see
+# case. See docs/specs/2026-07-28-ocr-fallback-round.md and the platform matrix
+# in README.md, which is the one place that states per-platform capability.
 ocr = [
     # pypdfium2 moved to the runtime dependencies in the vision round (scanned
     # PDFs are rasterised for the model, not only for OCR). Only the tesseract
