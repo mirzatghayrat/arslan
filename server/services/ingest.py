@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 _PRIVATE_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 _OCR_MIN_CHARS = 20
-_IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|webp|gif)$", re.IGNORECASE)
+# .bmp is here because the pickers offer it and PIL decodes it; leaving it
+# out made a listed file type answer 400 (tests/server/test_accepted_file_types_agree.py).
+_IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|webp|gif|bmp)$", re.IGNORECASE)
 
 
 def _strip_private(text: str) -> str:
