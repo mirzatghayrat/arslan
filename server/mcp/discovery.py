@@ -22,6 +22,24 @@ def suggest_tier(tool_name: str) -> str:
     return "orchestrator"           # unknown → conservative
 
 
+
+def suggested_tier_for(srv, tool_name: str) -> str:
+    """The tier hint for one tool of one server.
+
+    A HAND-GRADED table wins over the heuristic, because the heuristic is a
+    verb-list and some servers do not speak in those verbs. Playwright is the
+    worked example: not one of snapshot / click / navigate / type appears in
+    either list, so every tool — including the purely observational ones —
+    comes back "orchestrator", and a toolset with no safe tool cannot be
+    assigned to a spawn at all. Grading by hand is not a shortcut around the
+    conservative default; it is the only way to distinguish "we looked and this
+    one only reads" from "nothing matched a pattern".
+    """
+    from server.mcp.catalog import manual_tier
+
+    return manual_tier(getattr(srv, "args", None), tool_name) or suggest_tier(tool_name)
+
+
 def mcp_tool_key(server_id: int, name: str) -> str:
     """Namespaced, length-guarded (Tool.key is VARCHAR(50)). Original name lives in external_name."""
     key = f"mcp_{server_id}__{name}"
@@ -84,7 +102,7 @@ async def connect_and_discover(server_id: int) -> list[dict]:
                 existing.input_schema = schema
                 existing.external_name = t.name
             discovered.append({"key": key, "name": t.name, "description": t.description or "",
-                               "suggested_tier": suggest_tier(t.name)})
+                               "suggested_tier": suggested_tier_for(srv, t.name)})
         srv.status = "connected"
         srv.last_error = None
         await db.commit()

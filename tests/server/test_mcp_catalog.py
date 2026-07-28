@@ -68,7 +68,7 @@ async def test_get_catalog_endpoint(client):
     r = await client.get("/api/v1/mcp/catalog")
     assert r.status_code == 200
     data = r.json()
-    assert len(data) == 9
+    assert len(data) == 10  # +playwright (B3): a reviewed set, so the count is deliberate
     keys = {c["key"] for c in data}
     assert {"fetch", "memory", "github", "brave-search", "filesystem", "git",
-            "sequential-thinking", "time", "everything"} == keys
+            "sequential-thinking", "time", "everything", "playwright"} == keys
