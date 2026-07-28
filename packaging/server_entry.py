@@ -215,6 +215,8 @@ def selftest() -> int:
         # the SPA catch-all answers 200, and the entire chat transport is dead
         # behind a /health that says 200. Builds 0.1.0-0.1.6 all shipped this way.
         "websockets",
+        "server.services.ocr_vision",    # tier-2 OCR, macOS Vision bindings
+        "server.services.ocr_fallback",
     ]
     failed: list[tuple[str, str]] = []
     for name in required:
@@ -240,6 +242,31 @@ def selftest() -> int:
                 ))
         except Exception as exc:  # noqa: BLE001 — report, never crash the selftest
             failed.append(("uvicorn websocket protocol", f"{type(exc).__name__}: {exc}"))
+
+    # Same shape again, for the tier-2 OCR engine: importing the bindings does
+    # not prove the app can RECOGNISE anything. Ask the module the question the
+    # user's file will ask it. The failure this catches is not a crash — it is
+    # is_available() answering False in the bundle while answering True in dev,
+    # i.e. a capability that exists on the developer's machine and not in the
+    # product. That is precisely how the previous OCR path shipped.
+    if not failed and sys.platform == "darwin":
+        try:
+            from server.services import ocr_vision
+
+            if not ocr_vision.is_available():
+                failed.append((
+                    "macOS Vision (tier-2 OCR)",
+                    "the bindings did not load in the frozen build — images and "
+                    "scanned PDFs would silently yield no text",
+                ))
+            elif not ocr_vision.supported_languages():
+                failed.append((
+                    "macOS Vision languages",
+                    "the framework reported an empty language list, so the "
+                    "language gate would refuse every image",
+                ))
+        except Exception as exc:  # noqa: BLE001 — report, never crash the selftest
+            failed.append(("macOS Vision (tier-2 OCR)", f"{type(exc).__name__}: {exc}"))
 
     # Importable modules are not enough: every module here can load while the
     # window still comes up blank, because the SPA is DATA, not code. Assert

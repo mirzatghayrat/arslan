@@ -21,7 +21,14 @@ async def extract_text(
             raise ValueError(res.get("error") or "fetch failed")
         text = res.get("text", "")
     elif data is not None:
-        text = ingest._extract_file(filename or "file", data)
+        # The locale is read here, once, from the same helper the brain-feed
+        # route uses — two readers would eventually ask Vision for different
+        # languages on the same file depending on which door it came through.
+        from server.services import ocr_fallback
+
+        text = ingest._extract_file(
+            filename or "file", data,
+            ui_language=await ocr_fallback.current_ui_language())
     else:
         raise ValueError("provide url or file data")
 

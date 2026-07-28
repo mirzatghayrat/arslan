@@ -169,6 +169,15 @@ def _extract_with_text_layer(monkeypatch, layer_text: str) -> tuple[str, bool]:
         ran = True
         return "OCR-RAN"
 
+    # The behaviour under test is the THRESHOLD, which is engine-agnostic. On a
+    # host with the system recogniser _extract_file takes the Vision branch and
+    # never reaches _ocr_pdf, so the tesseract engine is selected explicitly
+    # here — that is a real configuration (Linux/source, decision ④A), not a
+    # convenience. The same threshold on the Vision branch is pinned by
+    # test_the_threshold_holds_on_the_system_recogniser_path below.
+    from server.services import ocr_vision
+
+    monkeypatch.setattr(ocr_vision, "is_available", lambda: False)
     monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: layer_text)
     monkeypatch.setattr(ingest, "_ocr_pdf", _tripwire)
     return ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])), ran
@@ -205,4 +214,50 @@ def test_ocr_output_is_discarded_when_it_finds_nothing(monkeypatch):
     """
     monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "short")
     monkeypatch.setattr(ingest, "_ocr_pdf", lambda data: "   \n  ")
+    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == "short"
+
+
+def test_the_threshold_holds_on_the_system_recogniser_path(monkeypatch):
+    """The same both-halves assertion, on the branch that actually ships.
+
+    The pair above selects the tesseract engine to pin the threshold; without
+    this twin, the shipping (Vision) branch could rasterise every text PDF and
+    nothing would notice."""
+    from server.services import ocr_vision
+
+    calls = []
+
+    def _spy(data, ui_language):
+        calls.append(1)
+        return ["[page 1]\nread by the system recogniser"]
+
+    monkeypatch.setattr(ocr_vision, "is_available", lambda: True)
+    monkeypatch.setattr(ingest, "_ocr_pdf_pages_locally", _spy)
+
+    rich = "x" * (ingest._OCR_MIN_CHARS + 1)
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: rich)
+    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == rich
+    assert calls == [], "a PDF that already has text was rasterized anyway"
+
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "")
+    out = ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A]))
+    assert "read by the system recogniser" in out
+    assert calls == [1]
+
+
+def test_a_scan_the_recogniser_cannot_read_falls_through_instead_of_shadowing(
+        monkeypatch):
+    """The regression the existing suite caught during this round.
+
+    Returning page-shaped placeholders when NO page yielded text is non-empty,
+    so it would (a) shadow a short but real text layer and (b) skip the
+    tesseract path a Linux install still depends on."""
+    from server.services import ocr_fallback, ocr_vision
+
+    monkeypatch.setattr(ocr_vision, "is_available", lambda: True)
+    monkeypatch.setattr(ocr_fallback, "read_locally",
+                        lambda data, ui_language=None: ("", ocr_vision.NO_TEXT))
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "short")
+    monkeypatch.setattr(ingest, "_ocr_pdf", lambda data: "")
+
     assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == "short"

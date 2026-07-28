@@ -65,6 +65,18 @@ dependencies = [
     # — true of OUR code, false of the dependency graph.
     "pillow>=10.0",
     "mcp>=1.0",
+    # RUNTIME, macOS only: the OCR fallback (tier 2) reads text with the
+    # system's own Vision framework. pyobjc is BINDINGS — the recogniser is
+    # part of macOS, so nothing is downloaded and nothing is borrowed from the
+    # user's machine. That is the whole point: the previous OCR path needed a
+    # `tesseract` binary that ships with Homebrew and not with us, so in every
+    # packaged build it silently produced "" (see the `ocr` extra below).
+    #
+    # The marker is not optional bookkeeping: pyobjc does not install on Linux
+    # or Windows at all, so an unmarked entry would break `uv sync` there.
+    # ocr_vision.py answers `unsupported_platform` on those hosts rather than
+    # raising on import.
+    "pyobjc-framework-Vision>=10.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]

@@ -21,6 +21,8 @@ time is the expensive way.
 from __future__ import annotations
 
 import argparse
+import io
+import json
 import os
 import pathlib
 import re
@@ -317,6 +319,19 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         c.ok(anon_ws in (401, 403), "the WebSocket refuses an unauthenticated handshake",
              f"anonymous /ws/ upgrade returned {anon_ws}")
 
+    # ---- the shipped app reads text off an image, borrowing nothing ----
+    # The capability this replaces (pytesseract) needed a `tesseract` binary
+    # that arrives with Homebrew and never with us, so on a developer Mac it
+    # worked and in every shipped build it silently returned "". A probe that
+    # merely posts an image would reproduce that mistake: on the machine that
+    # runs it, the host's own Homebrew install could be doing the work.
+    #
+    # So the probe proves its own precondition FIRST and fails by name if the
+    # environment cannot support the claim. It is not skipped when dirty —
+    # skipping is how a check quietly stops checking.
+    if token:
+        _check_ocr(port, token, c)
+
     # ---- a clean boot says nothing alarming ---------------------------
     text = log.read_text(errors="replace")
     errors = [
@@ -326,6 +341,78 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         and "404" not in ln
     ]
     c.ok(not errors, "no errors in the boot log", " | ".join(errors[:3]))
+
+
+def _text_png() -> bytes:
+    """Generate the probe image here, in the repo. An image checked in as a
+    fixture, or fetched, would let the assertion drift away from what it claims
+    to test the first time someone replaces the file."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 44)
+    except OSError:
+        font = ImageFont.load_default()
+    img = Image.new("RGB", (760, 200), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((20, 30), OCR_PROBE_EN, fill="black", font=font)
+    draw.text((20, 110), OCR_PROBE_ZH, fill="black", font=font)
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+OCR_PROBE_EN = "packaged build reads this"
+OCR_PROBE_ZH = "打包版读到这一行"
+
+
+def _check_ocr(port: int, token: str, c: Checks) -> None:
+    if sys.platform != "darwin":
+        c.ok(True, "OCR probe skipped (not macOS — see the platform matrix)")
+        return
+
+    # (0) THE PRECONDITION. A pass on a machine with Homebrew OCR installed
+    # would prove nothing about what we ship, so the claim is refused rather
+    # than made.
+    borrowed = [name for name in ("tesseract", "ocrmypdf")
+                if shutil.which(name) is not None]
+    if not c.ok(not borrowed, "the probe environment has no third-party OCR",
+                f"found on PATH: {', '.join(borrowed)} — this host cannot prove "
+                "the capability ships with the app; run the probe on a clean "
+                "machine or in CI"):
+        return
+
+    try:
+        png = _text_png()
+    except Exception as exc:  # noqa: BLE001 — a probe that cannot run is a failure
+        c.ok(False, "the OCR probe image could be generated", f"{type(exc).__name__}: {exc}")
+        return
+
+    boundary = "----arslanocrprobe"
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="probe.png"\r\n'
+        "Content-Type: image/png\r\n\r\n"
+    ).encode() + png + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/v1/extract", data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                 "Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            payload = json.loads(resp.read().decode())
+    except Exception as exc:  # noqa: BLE001
+        c.ok(False, "the shipped app reads text off an image",
+             f"/extract raised {type(exc).__name__}: {exc}")
+        return
+
+    got = (payload.get("text") or "")
+    # Asserting on the WORDS, not on "non-empty": a stub, a leftover filename
+    # echo or a truncated read would all satisfy len(text) > 0.
+    c.ok(OCR_PROBE_EN in got, "the shipped app reads English off an image",
+         f"/extract returned {got!r}")
+    c.ok(OCR_PROBE_ZH in got, "the shipped app reads Chinese off an image",
+         f"/extract returned {got!r}")
 
 
 def main() -> int:

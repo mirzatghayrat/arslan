@@ -11,6 +11,7 @@ from sqlalchemy import text as sa_text
 from arslan.core.chunking import chunk_text
 from server.db import session as db_session
 from server.db.models import KnowledgeChunk
+from server.services import ocr_fallback, ocr_vision
 from server.services.llm_factory import build_adapter
 from server.services.prompts.kb_compress import COMPRESS_SYSTEM
 
@@ -108,6 +109,15 @@ _DESCRIBED_SUFFIX = " (image description)"
 # (~83k) a 128k-context model still has ~45k left for the system prompt, the
 # history and its own answer. At 50 pages (~116k) any history at all overflows
 # it. The true ceiling sits near 40; 36 is the safe side of it.
+#
+# THE SAME CAP APPLIES TO THE TIER-2 (local OCR) PATH, and the reason has to be
+# restated rather than assumed. It is tempting to write "Vision is local and
+# free, so the constraint is gone" — that is half wrong, and the half it gets
+# wrong is the expensive half: the recognition itself costs nothing, but THE
+# TEXT IT PRODUCES IS THEN FED TO A MODEL, and that is tokens. So the cap
+# survives on a different pair of reasons: LATENCY (each page is its own
+# synchronous Vision pass) and DOWNSTREAM TOKEN COST. Same number, different
+# derivation — do not read the shared value as "the limit stopped mattering".
 VISION_PDF_MAX_PAGES = 36
 
 
@@ -164,6 +174,37 @@ def rasterize_pdf(data: bytes, max_pages: int) -> list[bytes]:
     return out
 
 
+def _ocr_pdf_pages_locally(data: bytes, ui_language: str | None) -> list[str]:
+    """Tier 2 for a scanned PDF: rasterise under the cap, recognise each page.
+
+    Returns [] when NO page yielded text — not a list of "nothing here" labels.
+    The distinction is load-bearing in both callers: a non-empty return means
+    "this document was read", and a page-shaped placeholder that says nothing
+    would satisfy that while shadowing a real (short) text layer and skipping
+    the tesseract path a Linux install still depends on. Caught by
+    test_ocr_output_is_discarded_when_it_finds_nothing.
+
+    Pages that individually yield nothing ARE labelled, but only once at least
+    one page produced text — so a document whose middle pages are photographs
+    does not silently renumber itself."""
+    read: list[str] = []
+    found_any = False
+    try:
+        total = _pdf_page_count(data)
+        take, _ = pdf_page_plan(total)
+        for n, png in enumerate(rasterize_pdf(data, take), 1):
+            text, status = ocr_fallback.read_locally(png, ui_language=ui_language)
+            if status == ocr_vision.OK and text.strip():
+                found_any = True
+                read.append(f"[page {n}]\n{text}")
+            else:
+                read.append(f"[page {n}]\n(no text was read from this page)")
+    except Exception as exc:  # noqa: BLE001 — honest partial, never a fake success
+        logger.warning("local OCR of a scanned PDF failed: %s", exc)
+        return []
+    return read if found_any else []
+
+
 async def describe_image(data: bytes, mime_type: str) -> str:
     """Ask the configured model to describe an image. Raises on failure — the
     caller turns that into "stored nothing", which the UI reports honestly."""
@@ -184,13 +225,13 @@ async def describe_image(data: bytes, mime_type: str) -> str:
     return text
 
 
-# 🔴 PARTIAL COVERAGE, disclosed (vision round): these two OCR helpers are no
-# longer reached from ingest_file — PDFs and images are intercepted above and
-# read by the model. They remain reachable through _extract_file for the
-# /extract endpoint, which chat attachments use. So the same scanned PDF is
-# READ when fed to the second brain and still UNREADABLE when attached to a
-# chat message, because that route was not converted in this round. Registered
-# as follow-up; do not read this as "chat attachments got vision too".
+# DEBT PAID (OCR fallback round). The vision round left this note here: "the
+# same scanned PDF is READ when fed to the second brain and still UNREADABLE
+# when attached to a chat message". _extract_file below now reads both with the
+# system recogniser, so the two routes agree.
+#
+# The pytesseract helpers stay for source installs on Linux, where there is no
+# Vision framework (decision ④A). They are unreachable on macOS.
 def _ocr_image(data: bytes) -> str:
     """OCR a standalone image attachment. Best-effort; returns '' on any failure
     (undecodable bytes, missing tesseract) or when no text is found. convert("RGB")
@@ -209,13 +250,23 @@ def _ocr_image(data: bytes) -> str:
         return ""
 
 
-def _extract_file(filename: str, data: bytes) -> str:
+def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None) -> str:
+    # NOTE ON TIERS: this endpoint has no tier 1. A PDF attached to chat is
+    # never rasterised for the model, so the system recogniser is not a SECOND
+    # reader here, it is the only one. Running it is therefore not the "both
+    # tiers at once" that decision ①A forbids.
     name = (filename or "").lower()
     if name.endswith(".txt") or name.endswith(".md"):
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):
         text = _pdf_text_layer(data)
         if len(text.strip()) < _OCR_MIN_CHARS:
+            if ocr_vision.is_available():
+                pages = _ocr_pdf_pages_locally(data, ui_language)
+                if pages:
+                    joined = "\n\n".join(pages).strip()
+                    if joined:
+                        return joined
             try:
                 ocr = _ocr_pdf(data)
             except Exception as exc:  # noqa: BLE001 — defense in depth (stubbed _ocr_pdf may raise)
@@ -236,6 +287,9 @@ def _extract_file(filename: str, data: bytes) -> str:
             return ""
     if _IMAGE_EXT_RE.search(name):
         # No text found / OCR unavailable → '' (caller surfaces "no text", never 500).
+        if ocr_vision.is_available():
+            text, _status = ocr_fallback.read_locally(data, ui_language=ui_language)
+            return text
         return _ocr_image(data)
     raise ValueError(f"unsupported file type: {filename}")
 
@@ -350,6 +404,20 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
             for n, png in enumerate(pages, 1):
                 described.append(f"[page {n}]\n{await describe_image(png, 'image/png')}")
         except Exception as exc:  # noqa: BLE001 — honest zero, never a fake success
+            # Tier 2 for the whole document: if the model refuses page 1 as an
+            # image it will refuse all of them, so the switch is made once here
+            # rather than per page (which would re-ask a question already
+            # answered, N times).
+            if ocr_fallback.model_refused_the_image(str(exc)):
+                read = _ocr_pdf_pages_locally(
+                    data, await ocr_fallback.current_ui_language())
+                if read:
+                    body = "\n\n".join(read)
+                    if note:
+                        body = f"{note}\n\n{body}"
+                    return await ingest_text(
+                        spawn_id, ocr_fallback.ocr_source(filename), body,
+                        collection_id=collection_id, compress=compress)
             logger.warning("scanned PDF reading failed (stored nothing): %s", exc)
             return 0
         if not described:
@@ -361,12 +429,25 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
                                  collection_id=collection_id, compress=compress)
 
     if _IMAGE_EXT_RE.search(filename):
-        # The MODEL reads the picture (vision round). A failure here means the
-        # image could not be read at all — surface it as zero chunks so the UI
-        # says so, rather than storing an empty "success".
+        # Tier 1: the MODEL reads the picture (vision round).
         try:
             described = await describe_image(data, "image/png")
         except Exception as exc:  # noqa: BLE001 — never fatal; honest zero
+            # Tier 2, and ONLY for a refusal that is about the image itself.
+            # A rate limit or a bad key must not start an OCR pass — see
+            # ocr_fallback for why that determination is typed, not a catch-all.
+            if ocr_fallback.model_refused_the_image(str(exc)):
+                text, status = ocr_fallback.read_locally(
+                    data, ui_language=await ocr_fallback.current_ui_language())
+                if status == ocr_vision.OK:
+                    # ocr_source, NOT described_source: this is transcription,
+                    # not a description, and the two must not be confusable at
+                    # retrieval time (decision ②A).
+                    return await ingest_text(
+                        spawn_id, ocr_fallback.ocr_source(filename), text,
+                        collection_id=collection_id, compress=compress)
+                logger.warning("tier-2 OCR stored nothing: %s", status)
+                return 0
             logger.warning("image description failed (stored nothing): %s", exc)
             return 0
         return await ingest_text(spawn_id, described_source(filename), described,

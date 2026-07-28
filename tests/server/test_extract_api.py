@@ -78,25 +78,58 @@ async def test_extract_file_upload(client, monkeypatch):
     assert r.json()["text"] == "hello attachment"
 
 
-async def test_extract_image_upload_ocr(client, monkeypatch):
-    """End-to-end image path: real extract_text/_extract_file, OCR stubbed."""
+async def test_extract_image_upload_reads_real_text(client):
+    """End-to-end image path with NOTHING stubbed.
+
+    This used to stub pytesseract and assert the stub's own return value, which
+    is a test that passes whether or not any recogniser exists — the exact shape
+    that let "OCR support" ship for months while every packaged build returned
+    "". The text asserted here has to come off the pixels."""
     import io
 
-    # The `ocr` extra is opt-in and is NOT in the packaged desktop build
-    # (S4.3-a). Skip rather than error so a plain `pip install .` checkout
-    # is green; CI installs --extra ocr so these DO run there.
-    pytesseract = pytest.importorskip("pytesseract")
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 
-    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, **kw: "receipt total 42")
-    img = Image.new("RGB", (120, 40), "white")
-    ImageDraw.Draw(img).text((4, 12), "42", fill="black")
+    from server.services import ocr_vision
+
+    if not ocr_vision.is_available():
+        pytest.skip("no system recogniser on this host (see the platform matrix)")
+
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 44)
+    except OSError:  # pragma: no cover - font layout differs across hosts
+        font = ImageFont.load_default()
+    img = Image.new("RGB", (700, 120), "white")
+    ImageDraw.Draw(img).text((20, 30), "receipt total 42", fill="black", font=font)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
+
     files = {"file": ("receipt.png", buf.getvalue(), "image/png")}
     r = await client.post("/api/v1/extract", files=files)
     assert r.status_code == 200
-    assert r.json()["text"] == "receipt total 42"
+    assert "receipt total 42" in r.json()["text"]
+
+
+async def test_a_host_without_vision_still_uses_the_tesseract_path(client, monkeypatch):
+    """Decision ④A: the Linux/source install keeps its optional OCR extra.
+
+    Forcing is_available() False is what a non-macOS host looks like, so this
+    covers the branch the macOS test above can never reach."""
+    import io
+
+    pytesseract = pytest.importorskip("pytesseract")
+    from PIL import Image
+
+    from server.services import ocr_vision
+
+    monkeypatch.setattr(ocr_vision, "is_available", lambda: False)
+    monkeypatch.setattr(pytesseract, "image_to_string",
+                        lambda img, **kw: "read by tesseract")
+    buf = io.BytesIO()
+    Image.new("RGB", (120, 40), "white").save(buf, format="PNG")
+    files = {"file": ("receipt.png", buf.getvalue(), "image/png")}
+    r = await client.post("/api/v1/extract", files=files)
+    assert r.status_code == 200
+    assert r.json()["text"] == "read by tesseract"
 
 
 async def test_extract_image_upload_no_text_200(client, monkeypatch):
@@ -110,6 +143,8 @@ async def test_extract_image_upload_no_text_200(client, monkeypatch):
         raise RuntimeError("no tesseract")
 
     monkeypatch.setattr(pytesseract, "image_to_string", _boom)
+    # Undecodable bytes reach ERROR in the Vision path and "" in the tesseract
+    # one; the endpoint's contract is the same either way — 200 with no text.
     files = {"file": ("shot.png", b"\x89PNG not really", "image/png")}
     r = await client.post("/api/v1/extract", files=files)
     assert r.status_code == 200

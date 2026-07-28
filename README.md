@@ -90,6 +90,30 @@ On first run, add your model API key in Settings and you're set.
 
 Running from source or with Docker (contributors & self-hosters): see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
+### Reading text in images and scanned PDFs
+
+A model with vision reads your pictures directly. When the model you configured
+cannot — many cheaper models cannot — Arslan falls back to the operating
+system's own text recognition. What that gives you depends on the platform, so
+here it is per platform rather than as a blanket "supports OCR":
+
+| Platform | Text in images / scanned PDFs | What it needs |
+|---|---|---|
+| **macOS** (the `.dmg`) | ✅ Works out of the box | **Nothing.** It uses macOS's built-in Vision framework — no download, no Homebrew, nothing borrowed from your machine |
+| **Windows** | Planned — the intent is the same capability through the OS | — |
+| **Linux** (from source) | ❌ Not available by default | Install `tesseract` yourself and the optional `ocr` extra |
+
+Two honest caveats:
+
+- **Languages are whatever your macOS recognises**, and that set grows with the
+  OS version — Arslan asks the system at runtime instead of promising a list.
+  If your language is not among them, Arslan says so and reads nothing, rather
+  than returning plausible-looking nonsense. **Uyghur is not currently
+  supported by macOS text recognition.**
+- Verified on macOS 26. **On macOS 11 and 12 the recognised-language set is
+  smaller and has not been tested by us**; the runtime check means you will be
+  told, not silently given wrong text.
+
 ## Security posture
 
 <div align="center">

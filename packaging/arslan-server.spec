@@ -19,6 +19,7 @@ not showing a terminal.
 """
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
@@ -49,6 +50,21 @@ hiddenimports += collect_submodules("websockets")
 # the .dylib is staged (and therefore signed by the Mach-O sweep).
 hiddenimports += collect_submodules("pypdfium2")
 hiddenimports += collect_submodules("pypdfium2_raw")
+
+# macOS Vision, the tier-2 OCR engine. ocr_vision.py imports these at MODULE
+# scope (inside a platform guard) precisely so static analysis can see them —
+# but pyobjc resolves framework bindings through its own loader, so the
+# submodules are named here too. Belt and braces on purpose: the failure mode
+# is not a crash, it is is_available() answering False in the packaged app
+# while answering True on every developer machine, i.e. OCR that exists in dev
+# and silently does not ship. That is the exact shape of the websockets outage
+# above and of the tesseract path this round replaces.
+if sys.platform == "darwin":
+    for pkg in ("Vision", "Foundation", "objc", "Quartz", "CoreFoundation"):
+        try:
+            hiddenimports += collect_submodules(pkg)
+        except Exception as exc:  # noqa: BLE001 — a missing optional binding
+            print(f"WARNING: could not collect {pkg} for the OCR path: {exc}")
 
 # collect_submodules finds MODULES. It does not find package DATA, and the
 # arslan package is mostly data at runtime: pyproject.toml:112-118 lists five
