@@ -1,0 +1,221 @@
+<meta charset="utf-8">
+<title>批次三 · 设计 mock（待裁决）</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d10; color:#e6e8ea;
+         font: 14px/1.65 -apple-system, "PingFang SC", system-ui, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 28px 80px; }
+  h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { color:#8b939c; font-size: 12.5px; margin-bottom: 34px; }
+  h2 { font-size: 15px; margin: 44px 0 4px; letter-spacing:.02em; }
+  h2 .n { color:#f0883e; font-family: ui-monospace, monospace; margin-right: 8px; }
+  .why { color:#9aa3ad; font-size: 12.5px; margin: 0 0 16px; }
+  .flag { border-left: 3px solid #d9534f; background:#1a1113; padding: 12px 16px;
+          margin: 14px 0 20px; font-size: 12.5px; color:#e8c4c4; border-radius: 0 6px 6px 0; }
+  .flag b { color:#ff8e8e; }
+  .ok { border-left-color:#3fb950; background:#0f1a12; color:#bfe6c6; }
+  .ok b { color:#7ee787; }
+  .row { display:grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 14px 0 8px; }
+  @media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+  .card { border:1px solid #21262d; border-radius: 10px; overflow:hidden; background:#0e1116; }
+  .cap { font-size: 11px; color:#8b939c; padding: 8px 12px; border-bottom:1px solid #21262d;
+         font-family: ui-monospace, monospace; letter-spacing:.03em; }
+  .cap.now { color:#8b939c; } .cap.next { color:#7ee787; }
+  .stage { padding: 14px; }
+
+  /* --- shared mock chrome --- */
+  .bar { height: 40px; border:1px solid #21262d; border-radius:7px; display:flex;
+         align-items:center; justify-content:space-between; padding: 0 12px;
+         background:#0d1117; font-family: ui-monospace, monospace; font-size: 9.5px;
+         color:#8b939c; letter-spacing:.08em; }
+  .bar .dot { width:6px; height:6px; border-radius:50%; background:#3fb950; margin-right:7px; }
+  .bar .lhs { display:flex; align-items:center; }
+  .bar b { color:#e6e8ea; margin-left:5px; }
+  .bar.empty { color:transparent; }
+  .drag { outline:1px dashed #f0883e55; outline-offset:-4px; position:relative; }
+  .drag::after { content:"drag region"; position:absolute; right:8px; top:-8px;
+                 font-size:8px; color:#f0883e; background:#0b0d10; padding:0 5px; }
+  .page { height: 92px; border:1px dashed #21262d; border-radius:7px; margin-top:10px;
+          display:flex; align-items:center; justify-content:center; color:#4d545c;
+          font-size:11px; font-family: ui-monospace, monospace; }
+
+  /* --- sidebar rows --- */
+  .side { width: 236px; background:#0d1117; border:1px solid #21262d; border-radius:8px; padding:8px; }
+  .sec { font-family: ui-monospace, monospace; font-size:9px; color:#6e7681;
+         letter-spacing:.12em; padding: 8px 6px 6px; display:flex; justify-content:space-between; }
+  .sr { display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:7px;
+        font-size:12px; color:#9aa3ad; position:relative; }
+  .sr .av { width:18px; height:18px; border-radius:5px; background:#1f6feb33; flex:0 0 auto; }
+  .sr.on { background: linear-gradient(90deg,#f0883e26,transparent); color:#e6e8ea; }
+  .sr.on::before { content:""; position:absolute; left:0; top:50%; transform:translateY(-50%);
+                   width:2px; height:16px; background:#f0883e; }
+  .badge { margin-left:auto; font-family: ui-monospace, monospace; font-size:8.5px;
+           color:#f0883e; border:1px solid #f0883e44; border-radius:4px; padding:0 4px; }
+  .fin { margin-left:auto; font-size:9.5px; color:#8b939c; border:1px solid #30363d;
+         border-radius:5px; padding:1px 7px; }
+  .hint { font-size:10.5px; color:#6e7681; padding:6px 8px 2px; font-style:italic; }
+
+  /* --- settings --- */
+  .set { display:grid; grid-template-columns: 132px 1fr; gap:12px; }
+  .nav { display:flex; flex-direction:column; gap:2px; }
+  .nav div { font-size:11px; color:#8b939c; padding:6px 9px; border-radius:6px; }
+  .nav div.on { background:#161b22; color:#e6e8ea; }
+  .fields { display:flex; flex-direction:column; gap:10px; }
+  .f { border:1px solid #21262d; border-radius:7px; padding:9px 11px; }
+  .f .l { font-family: ui-monospace, monospace; font-size:9px; color:#6e7681; letter-spacing:.1em; }
+  .f .v { font-size:12px; color:#c9d1d9; margin-top:4px; }
+  .f .d { font-size:10.5px; color:#6e7681; margin-top:3px; }
+  .grp { font-family: ui-monospace, monospace; font-size:9px; color:#f0883e;
+         letter-spacing:.1em; margin: 4px 0 2px; }
+  .ask { margin-top:44px; border-top:1px solid #21262d; padding-top:20px; font-size:13px; }
+  .ask li { margin: 9px 0; }
+  code { font-family: ui-monospace, monospace; font-size:11.5px; color:#f0883e; }
+</style>
+
+<div class="wrap">
+  <h1>批次三 · 设计 mock</h1>
+  <div class="sub">静态稿，未写任何生产代码。三项各给「现状 / 提案」，并标出实现前必须先裁决的冲突。</div>
+
+  <!-- ============================================================= -->
+  <h2><span class="n">01</span>ACTIVE SESSION WORKSPACE 条：只在对话界面</h2>
+  <p class="why">你的要求：这条只在对话界面出现，其他界面不该顶着它。</p>
+
+  <div class="flag">
+    <b>⚠ 直接删会让 v0.1.8 修好的 bug 回潮。</b>
+    这条栏同时是<b>全局窗口拖动区</b>（<code>App.tsx:719-723</code> 的注释自陈：“Shared by EVERY section,
+    which is what makes the window draggable everywhere rather than only in chat”）。
+    在非对话界面把它整条移除 = 那些界面又<b>拖不动窗口</b>——正是 v0.1.8 那个修复。
+    所以下面给两种画法，<b>都保住拖动区</b>，请你选一种。
+  </div>
+
+  <div class="row">
+    <div class="card"><div class="cap now">现状 · 每个界面都顶一条完整标签</div><div class="stage">
+      <div class="bar drag"><div class="lhs"><span class="dot"></span>ACTIVE SESSION WORKSPACE:<b>SPAWNS LEDGER DASHBOARD</b></div><span>SHOW RAIL</span></div>
+      <div class="page">Spawns Ledger（内容区被压低 40px）</div>
+    </div></div>
+
+    <div class="card"><div class="cap next">提案 A · 保留空栏（推荐）</div><div class="stage">
+      <div class="bar empty drag"><div class="lhs"></div></div>
+      <div class="page">Spawns Ledger（栏在、无字，拖动区完好）</div>
+    </div></div>
+  </div>
+
+  <div class="row">
+    <div class="card"><div class="cap next">提案 B · 缩成细拖动条（22px）</div><div class="stage">
+      <div class="bar drag" style="height:22px"></div>
+      <div class="page" style="height:110px">Spawns Ledger（多让出 18px 内容高度）</div>
+    </div></div>
+
+    <div class="card"><div class="cap now">对话界面 · 两案都不变</div><div class="stage">
+      <div class="bar drag"><div class="lhs"><span class="dot"></span>ACTIVE SESSION WORKSPACE:<b>NEW SESSION</b></div><span>SHOW RAIL</span></div>
+      <div class="page">对话内容</div>
+    </div></div>
+  </div>
+  <p class="why">A 的好处是零布局位移，其他界面只是“安静下来”；B 多还你 18px，但四个界面的顶部高度会变，需要各扫一眼。</p>
+
+  <!-- ============================================================= -->
+  <h2><span class="n">02</span>Active Spawns：会话作用域 + L.1 徽标 + hover「完结」</h2>
+  <p class="why">你的要求：Active Spawns 改成会话作用域，带 L.1 徽标，hover 出现「完结」按钮。</p>
+
+  <div class="row">
+    <div class="card"><div class="cap now">现状 · 全局列表，6 LIVE</div><div class="stage">
+      <div class="side">
+        <div class="sec"><span>ACTIVE SPAWNS</span><span style="color:#f0883e">6 LIVE</span></div>
+        <div class="sr"><span class="av"></span>Research…<span class="badge">L.1</span></div>
+        <div class="sr"><span class="av"></span>Data &amp; C…<span class="badge">L.1</span></div>
+        <div class="sr"><span class="av"></span>Financial…<span class="badge">L.1</span></div>
+        <div class="sr"><span class="av"></span>Content …<span class="badge">L.1</span></div>
+        <div class="sr"><span class="av"></span>Coding …<span class="badge">L.1</span></div>
+        <div class="sr"><span class="av"></span>Deck Ma…<span class="badge">L.1</span></div>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="cap next">提案 · 只列本会话参与的，hover 出「完结」</div><div class="stage">
+      <div class="side">
+        <div class="sec"><span>本会话的分身</span><span style="color:#8b939c">2</span></div>
+        <div class="sr on"><span class="av"></span>Research…<span class="badge">L.1</span></div>
+        <div class="sr"><span class="av"></span>Coding …<span class="fin">完结</span></div>
+        <div class="hint">↑ 第二行是 hover 态：徽标位置让给「完结」</div>
+        <div class="sec" style="margin-top:10px"><span>其他在跑</span><span style="color:#6e7681">4</span></div>
+        <div class="sr" style="opacity:.5"><span class="av"></span>Financial… <span class="badge">L.1</span></div>
+        <div class="hint">↑ 折叠区：不属于本会话，但没有“消失”</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="flag">
+    <b>? 一个语义要你定。</b>「会话作用域」有两种可能的意思：
+    <b>(a)</b> 只显示<b>本会话派发过</b>的分身；<b>(b)</b> 只显示<b>本会话打开过直聊</b>的分身。
+    现在的列表用的是后者（<code>hasActiveChat</code>）。上面画的是 (a)+折叠区。
+    另外：「完结」现有语义是<code>onCompleteChat</code>（结束直聊），
+    如果你要的是<b>结束分身本身</b>，那是另一件事，我不替你决定。
+  </div>
+
+  <!-- ============================================================= -->
+  <h2><span class="n">03</span>Settings 重设计</h2>
+  <p class="why">你的要求：2–3 张静态 mock。这里给两张方向不同的，不是两张同款。</p>
+
+  <div class="row">
+    <div class="card"><div class="cap now">现状 · 侧栏分区，字段平铺</div><div class="stage">
+      <div class="set">
+        <div class="nav"><div class="on">Providers</div><div>Search</div><div>Appearance</div><div>Access</div><div>Memory</div><div>Advanced</div></div>
+        <div class="fields">
+          <div class="f"><div class="l">PROVIDER</div><div class="v">DeepSeek</div></div>
+          <div class="f"><div class="l">MODEL</div><div class="v">deepseek-chat</div></div>
+          <div class="f"><div class="l">API KEY</div><div class="v">••••••••••••</div></div>
+          <div class="f"><div class="l">BASE URL</div><div class="v">https://api.deepseek.com</div></div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="cap next">提案 甲 · 每项自带「这会影响什么」</div><div class="stage">
+      <div class="set">
+        <div class="nav"><div class="on">模型</div><div>检索</div><div>外观与语言</div><div>访问</div><div>记忆</div><div>高级</div></div>
+        <div class="fields">
+          <div class="grp">当前在用</div>
+          <div class="f"><div class="l">PROVIDER · MODEL</div><div class="v">DeepSeek · deepseek-chat</div>
+            <div class="d">这个模型<b style="color:#e8c4c4">读不了图片</b>——贴图会由系统文字识别兜底。</div></div>
+          <div class="f"><div class="l">API KEY</div><div class="v">••••••••••••</div>
+            <div class="d">存在本机，加密后写入 <code>crypto_salt</code> 配对的库。</div></div>
+          <div class="grp">影响到的能力</div>
+          <div class="f"><div class="l">图片 / 扫描件</div><div class="v">系统识别（macOS 自带）</div>
+            <div class="d">语言：跟随界面语言 + 英文。可在下方单独指定。</div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="row">
+    <div class="card"><div class="cap next">提案 乙 · 按「你要做什么」组织，不按后端模块</div><div class="stage">
+      <div class="set">
+        <div class="nav"><div class="on">接上模型</div><div>让它上网</div><div>它记得什么</div><div>它能动什么</div><div>外观</div><div>诊断</div></div>
+        <div class="fields">
+          <div class="f"><div class="l">接上模型</div><div class="v">DeepSeek · deepseek-chat · 已连通</div>
+            <div class="d">换一个 →</div></div>
+          <div class="f"><div class="l">它能动什么</div><div class="v">Shell：关 · MCP：3 个已装 · 浏览器：未装</div>
+            <div class="d">其中 <b style="color:#e8c4c4">1 个在你当前模型下不会被调用</b>。</div></div>
+          <div class="f"><div class="l">它记得什么</div><div class="v">第二大脑：开 · 整理层：关</div></div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="cap now">对照 · 提案乙的取舍</div><div class="stage">
+      <div class="page" style="height:170px; padding:14px; text-align:left; align-items:flex-start; color:#8b939c; font-size:11.5px; line-height:1.8; font-family:inherit">
+        乙把导航从「后端模块名」换成「你要做什么」。<br>
+        好处：陌生人第一次打开知道点哪。<br>
+        代价：现有 6 个分区不是一一映射，
+        <b style="color:#e8c4c4">Advanced 里的东西要重新归类</b>，
+        且和 M7 已经点头的布局清单有重叠，需要一起看。
+      </div>
+    </div></div>
+  </div>
+
+  <div class="ask">
+    <b>请裁决（写代码前我不动）：</b>
+    <ol>
+      <li>①的画法：<b>A 空栏</b>（零位移，推荐）还是 <b>B 细拖动条</b>（多 18px，但四个界面顶部高度会变）？</li>
+      <li>②的「会话作用域」是 <b>(a) 本会话派发过</b> 还是 <b>(b) 本会话开过直聊</b>？「完结」是<b>结束直聊</b>还是<b>结束分身</b>？</li>
+      <li>③走 <b>甲</b>（保留现有分区、每项补“这会影响什么”）还是 <b>乙</b>（按意图重组导航，动的面更大）？</li>
+    </ol>
+  </div>
+</div>
