@@ -54,5 +54,6 @@ def test_recap_endpoint_registered():
     os.environ.setdefault("ARSLAN_SECRET_KEY", "dev")
     from server.main import create_app
     app = create_app()
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
+    from tests.route_introspection import iter_route_paths
+    paths = iter_route_paths(app)
     assert "/api/v1/conversations/{conversation_id}/recap" in paths

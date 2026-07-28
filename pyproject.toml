@@ -30,11 +30,28 @@ dependencies = [
     "httpcore>=1.0",
     "jinja2>=3.1",
     "rich>=13.0",
-    # Pin below fastapi 0.137 / starlette 1.3: starlette 1.3 changed router/route
-    # handling such that create_app()'s include_router() registers no routes (the whole
-    # API surface silently vanishes). CI installs unpinned, so it drifted to
-    # fastapi 0.139 / starlette 1.3.1 and the recap-route test failed there while local
-    # (0.136.3 / 1.2.1) passed. Cap until the code is validated against starlette 1.3.
+    # Capped below fastapi 0.137 / starlette 1.3.
+    #
+    # THE REASON WRITTEN HERE BEFORE WAS WRONG, and the correction matters. It
+    # said include_router() "registers no routes (the whole API surface
+    # silently vanishes)". Measured on fastapi 0.140.13 / starlette 1.3.1: the
+    # routes register and SERVE — a live request to an included route returns
+    # 200 on both version pairs. What changed is INTROSPECTION. include_router()
+    # no longer flattens a router's routes into app.routes; it appends one
+    # `fastapi.routing._IncludedRouter` wrapper, and the paths sit a level down.
+    # Anything walking app.routes for `.path` therefore finds nothing and
+    # concludes the API is gone — which is what the recap-route test did, and
+    # what the earlier diagnosis believed.
+    #
+    # So this cap protects our TESTS, not the product: five introspection sites
+    # in three test files, and ZERO production call sites (grepped, not
+    # recalled). tests/route_introspection.py flattens both shapes now, and
+    # tests/server/test_routes_are_registered.py asserts the surface itself.
+    #
+    # TO LIFT: run the full suite against the newer pair. That is the only step
+    # left — the compatibility question is now about our test code, and that
+    # part is fixed. Not lifted here, because "it should work" is not a verified
+    # suite and a dependency comment is the wrong place to find out.
     "fastapi>=0.110,<0.137",
     "starlette<1.3",
     "uvicorn>=0.29",
