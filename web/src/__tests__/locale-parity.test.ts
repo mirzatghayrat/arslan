@@ -78,7 +78,11 @@ describe("locale parity", () => {
     // 942 → 951: F1 brain.temporal.* (as-of slider + lineage), 9 keys x 6 languages
     // chat.roster_joined_no_pending — the never-silent explanation when a card
     // accept finds no parked task (joined only; @ to hand off).
-    expect(enKeys).toHaveLength(1203);
+    // 1203 → 1202: batch two removed sidebar.node_version. The build tag it
+    //              rendered had read "0630" since June while the app shipped
+    //              0.1.11, so the one thing it existed to prevent — mistaking a
+    //              stale UI for a current one — is what it was causing.
+    expect(enKeys).toHaveLength(1202);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

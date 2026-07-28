@@ -9,7 +9,6 @@ import { useTranslation } from 'react-i18next';
 import { Spawn } from '../types';
 import { SpawnAvatar } from './SpawnAvatar';
 import ThreadRowMenu from './ThreadRowMenu';
-import { BUILD_TAG } from '../buildInfo';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 
 interface ArslanThread {
@@ -88,12 +87,18 @@ export default function Sidebar({
             onChangeSection('arslan');
           }
         }}
-        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left cursor-pointer group ${
+        className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left cursor-pointer group border-l-2 border-transparent ${
           isActive
-            ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary shadow-sm shadow-primary/5'
-            : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
+            ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground shadow-sm shadow-primary/5'
+            : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]'
         }`}
       >
+        {/* The selected marker is a STRAIGHT bar, drawn over the row rather
+            than as its left border. A border on a rounded-lg element follows
+            the corner radius, which is what made the old indicator read as a
+            crescent. The transparent border stays on both states so the text
+            does not shift by 2px when a row is selected. */}
+        {isActive && <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />}
         <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-muted-foreground'}`} />
         <span className="truncate flex-1 pr-1 font-sans">{thread.title}</span>
         <ThreadRowMenu
@@ -120,11 +125,14 @@ export default function Sidebar({
             the brand header below it the window's drag handle (the overlay
             title bar has no native strip left to grab); it is inert in a
             plain browser. */}
-        <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="flex items-center px-5 pt-4 pb-3 flex-shrink-0">
-          <span className="text-[9.5px] text-subtle-foreground font-mono tracking-wider ml-auto uppercase opacity-60">
-            {t('sidebar.node_version')} · build {BUILD_TAG}
-          </span>
-        </div>
+        {/* The strip is now EMPTY, and its height is load-bearing rather than
+            decorative: the real traffic lights are placed at logical (13, 16)
+            by desktop/src-tauri/src/lib.rs, so a strip that collapsed to its
+            padding (28px) would leave them sitting on the brand header and
+            would shrink the only region the window can be dragged by. 41px is
+            the height this strip already had with the build tag in it — kept
+            deliberately so removing the text changes nothing but the text. */}
+        <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="flex items-center px-5 h-[41px] flex-shrink-0" />
 
         {/* Brand Header */}
         <div data-tauri-drag-region="deep" className="px-5 py-3 mb-6 flex items-center gap-3 flex-shrink-0">
@@ -334,12 +342,15 @@ export default function Sidebar({
                         onChangeSection('spawn');
                       }
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all cursor-pointer group ${
+                    className={`relative w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all cursor-pointer group border-l-2 border-transparent ${
                       isActive
-                        ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
+                        ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]'
                     }`}
                   >
+                    {/* Same straight marker as the thread rows above — see the
+                        comment there for why this is not a left border. */}
+                    {isActive && <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />}
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <SpawnAvatar seed={spawn.name} size={22} />
                       <span className="truncate flex-1 font-sans">{spawn.name}</span>
