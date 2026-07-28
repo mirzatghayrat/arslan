@@ -304,6 +304,14 @@ class SkillPackOut(BaseModel):
 class RegistryOut(BaseModel):
     toolsets: list[ToolsetOut]
     skills: list[SkillPackOut]
+    # REVERSE HONESTY (capability fitness audit). The library used to answer
+    # only "what is installed". On a provider whose transport drops tool
+    # definitions — measured: anthropic direct and gemini — every equipped tool
+    # is silently inert, and the page said "equipped" anyway. These two fields
+    # let it say so instead. `unverified` is a real value: a provider nobody has
+    # measured must not render as a green tick.
+    tool_calling: str = "unverified"
+    tool_calling_note: str | None = None
 
 
 class SuggestPrimaryOut(BaseModel):

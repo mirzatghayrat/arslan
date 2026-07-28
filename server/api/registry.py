@@ -3,6 +3,7 @@ marked assignable: false."""
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.models import SkillPack, Tool, Toolset
 from server.db.session import get_session
+from server.services import capability_fitness
 from server.registry.service import (
     skill_compatibility,
     skill_health,
@@ -19,6 +21,8 @@ from server.registry.service import (
 )
 from server.schemas import RegistryOut, SkillPackOut, ToolOut, ToolsetOut
 from server.services import code_sandbox
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -41,7 +45,18 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
     # P0-1 决定①b: the code_sandbox toolset (run_python) is DEGRADED when the escape valve is
     # open on a host with no isolation backend — surface it so the capability page badges it.
     py_degraded = code_sandbox.unsandboxed_active()
+    # Which provider is actually selected decides whether ANY of this can run.
+    provider = None
+    try:
+        from server.services import settings_service
+
+        provider = (await settings_service.get_settings(session)).get("llm_provider")
+    except Exception as exc:  # noqa: BLE001 — an unreadable setting must not hide the library
+        logger.warning("could not read the provider for the fitness badge: %s", exc)
+
     return RegistryOut(
+        tool_calling=capability_fitness.tool_calling_state(provider),
+        tool_calling_note=capability_fitness.tool_calling_reason(provider),
         toolsets=[
             ToolsetOut(
                 key=t.key, name=t.name, description=t.description, tier=t.tier,
