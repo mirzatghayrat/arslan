@@ -37,12 +37,26 @@ describe("Sidebar window chrome strip", () => {
   // v0.1.3: the decorative fake traffic-light buttons are gone — the packaged
   // shell overlays the REAL macOS controls in this corner (titleBarStyle
   // Overlay). The strip must contain no clickable decoys, only the build tag.
-  it("has no fake traffic-light buttons, only the build tag", () => {
+  it("has no fake traffic-light buttons and no build tag", () => {
     render(<Sidebar {...baseProps} />);
     const strip = screen.getByTestId("window-chrome-strip");
     expect(strip.querySelectorAll("div").length).toBe(0);
     expect(strip.querySelectorAll("[class*='rounded-full']").length).toBe(0);
-    expect(strip.textContent).toContain("sidebar.node_version");
+    // The build tag is gone (batch two). Asserting emptiness rather than the
+    // absence of one string: any text here would sit under the real traffic
+    // lights, which is why the strip carries none.
+    expect(strip.textContent?.trim()).toBe("");
+  });
+
+  // The strip's HEIGHT is geometry, not decoration: the traffic lights are
+  // placed at logical (13, 16), so a strip that collapsed to its padding would
+  // put them on top of the brand header and shrink the drag region. Removing
+  // the text must not be allowed to do that silently.
+  it("keeps enough height for the real traffic lights", () => {
+    render(<Sidebar {...baseProps} />);
+    expect(
+      screen.getByTestId("window-chrome-strip").className,
+    ).toMatch(/h-\[41px\]/);
   });
 
   // The overlay title bar has no native strip to grab, so the strip must be
@@ -53,5 +67,35 @@ describe("Sidebar window chrome strip", () => {
     expect(
       screen.getByTestId("window-chrome-strip").getAttribute("data-tauri-drag-region"),
     ).toBe("deep");
+  });
+});
+
+describe("Sidebar selected-row marker", () => {
+  // Batch two: the selected row used `border-l-2 border-primary` on a
+  // `rounded-lg` element. A border follows the corner radius, so the indicator
+  // rendered as a crescent rather than a line. The replacement is a straight
+  // bar drawn over the row; these assertions pin BOTH halves, because either
+  // one alone is satisfied by the old markup.
+  it("marks the active row with a straight bar, not a rounded border", () => {
+    render(<Sidebar {...baseProps} threads={[{ id: "t1", title: "one" }]}
+                   activeSection="arslan" activeThreadId="t1" />);
+    const row = document.getElementById("active-thread-btn-t1")!;
+    expect(row).toBeTruthy();
+    // (a) the bar exists and has no corner radius of its own
+    const bar = row.querySelector("span[aria-hidden]");
+    expect(bar).toBeTruthy();
+    expect(bar!.className).not.toMatch(/rounded/);
+    // (b) the coloured left border is gone — this is the half that regresses
+    // if someone "simplifies" the marker back into a border
+    expect(row.className).not.toMatch(/border-primary/);
+  });
+
+  it("keeps the row's left inset identical when unselected", () => {
+    // Otherwise selecting a row shifts its text by 2px, which reads as a jump.
+    render(<Sidebar {...baseProps} threads={[{ id: "t1", title: "one" }]}
+                   activeSection="ledger" activeThreadId="t1" />);
+    const row = document.getElementById("active-thread-btn-t1")!;
+    expect(row.className).toMatch(/border-l-2/);
+    expect(row.querySelector("span[aria-hidden]")).toBeNull();
   });
 });

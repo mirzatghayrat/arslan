@@ -602,7 +602,6 @@
     "system_settings": "System Settings",
     "daemon_core": "Daemon Core",
     "brand_subtitle": "One Becomes Many",
-    "node_version": "Node-Client v1.2",
     "capabilities": "Capabilities",
     "complete_chat": "Complete",
     "complete_confirm": "Completing this chat will distill the conversation into long-term memory and archive it. The spawn will still remember everything next time. Continue?",

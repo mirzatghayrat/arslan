@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1203 keys (baseline guard)", () => {
+  it("en locale has 1202 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -78,7 +78,11 @@ describe("locale parity", () => {
     // 942 → 951: F1 brain.temporal.* (as-of slider + lineage), 9 keys x 6 languages
     // chat.roster_joined_no_pending — the never-silent explanation when a card
     // accept finds no parked task (joined only; @ to hand off).
-    expect(enKeys).toHaveLength(1203);
+    // 1203 → 1202: batch two removed sidebar.node_version. The build tag it
+    //              rendered had read "0630" since June while the app shipped
+    //              0.1.11, so the one thing it existed to prevent — mistaking a
+    //              stale UI for a current one — is what it was causing.
+    expect(enKeys).toHaveLength(1202);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
