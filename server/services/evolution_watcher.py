@@ -254,6 +254,14 @@ async def _perform_attempt(attempt_id: int, spawn_id: int) -> None:
     gate would fail in the direction where setting a limit turns the feature off.
     Otherwise run it; outcome = 'passed' if a proposal was written, 'failed' if the gate
     failed, 'error' on exception."""
+    # FU-2b: one fetch allowance per ATTEMPT, so it has to start here. Without
+    # this the counter would be process-lifetime — the first attempt after a
+    # restart gets the budget and every later one is refused immediately, which
+    # reads as a broken feature rather than a limit.
+    from server.orchestrator import tool_loop as _tool_loop
+
+    _tool_loop.reset_hermetic_fetch_budget()
+
     async with db_session.AsyncSessionLocal() as db:
         attempt = await db.get(EvolutionAttempt, attempt_id)
         est = dict(attempt.estimate or {}) if attempt else {}
