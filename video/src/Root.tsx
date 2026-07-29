@@ -3,6 +3,8 @@ import {Composition} from 'remotion';
 import './fonts';
 import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
+import {ArslanShort, SHORT_FRAMES} from './ArslanShort';
+import {SHOT_COUNT, ShotMock} from './ShotMock';
 import {ColdOpen} from './scenes/ColdOpen';
 import {Outro} from './scenes/Outro';
 import {PromotionGate} from './scenes/PromotionGate';
@@ -48,6 +50,27 @@ export const RemotionRoot: React.FC = () => (
       width={VIDEO.width}
       height={VIDEO.height}
     />
+    {/* Cinematic cut: one continuous camera from the character filling the
+        frame out to the machine on a desk and the download. */}
+    <Composition
+      id="ArslanShort"
+      component={ArslanShort}
+      durationInFrames={SHORT_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    {/* Framing mock-ups: one frame per shot, for `remotion still`. */}
+    <Composition
+      id="ShotMock"
+      component={ShotMock}
+      durationInFrames={SHOT_COUNT}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
     <Composition
       id="Light-01-creature"
       component={Creature}

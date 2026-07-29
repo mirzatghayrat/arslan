@@ -122,12 +122,83 @@ product,** and wherever it ships it should be captioned as such.
   have no light equivalent yet.
 - **A close.** The film ends on the diagram, with no wordmark or call to action.
 
+## The cinematic cut — in progress, framings under review
+
+A third treatment, built after the light cut was judged to read as slides
+rather than shots. The diagnosis was that it had no camera: every scene was
+flat elements fading in and out, so nothing persisted across a cut and there
+was no space for a viewer to stay oriented in.
+
+This one has a room. `Stage` holds a floor plane the machines really stand on,
+`MacBook` is a display plane hinged to a base slab, and `lib/camera3d` orbits a
+camera through it. The spine is a single continuous move: the character clip
+fills the frame, the camera pulls back until the bezel arrives and it turns out
+to be a screen, the app takes over that screen, and the last pull-back opens
+clear space beside the machine for the download.
+
+CSS-3D rather than WebGL on purpose. A laptop is two hinged planes, which CSS
+models exactly; the screen stays live DOM — real text, a real `OffthreadVideo`
+— instead of being baked to a texture at some fixed resolution; and it keeps
+the render off software GL, which this project's headless pipeline has already
+shown to be its fragile part.
+
+### Two rules the earlier passes broke
+
+- **Product copy belongs on the screen, never on the machine.** A caption laid
+  across the hardware makes the shot read as a laptop advert instead of an app
+  demo. The only type in world space is the closing CTA, and it sits in clear
+  frame beside the machine.
+- **The metal is lit by the room.** Each entry in `ENVIRONMENTS` carries its own
+  aluminium palette. Rendering the bright silver body into the warm low-key
+  environment made the machine look pasted on — a white laptop floating in a
+  dark photograph.
+
+### Geometry
+
+Proportions are derived from a 14" MacBook Pro (312.6 x 221.2 x 15.5mm) rather
+than eyeballed: lid 1.41x wider than tall, base as deep as the lid is tall so
+they stack flush when shut, slab ~7% of the lid height. An earlier pass guessed
+these and produced something that read as a 17" desktop replacement.
+
+`dist` in a `CamKey` is a real distance, not a scale factor. CSS scales a plane
+at depth z by `P / (P - z)`, so parking the camera target at `P - dist` makes
+the framing come out at exactly `P / dist` — which is why the opening frame is
+full bleed without a hand-tuned number, and why distances can be reasoned about
+between shots.
+
+Two sign conventions cost a debugging pass each and are worth keeping in mind:
+the camera transform is the INVERSE applied to the world, so pitch and yaw are
+negated — getting pitch backwards puts the lens under the floor, which then
+fills frame with its own underside while the machine renders correctly and
+invisibly behind it. And a full-screen "horizon haze" gradient will happily
+paint the subject out of its own shot.
+
+### Reviewing framings
+
+`ShotMock` renders one shot per frame, so a framing can be checked with
+`npx remotion still ShotMock out/shot.png --frame=N` before anything is
+committed to a 900-frame render.
+
+### Known rough edges
+
+- Screen layouts do not fill the 1920x1240 display; the lower half runs empty.
+- The base still reads slightly large; the palm rest is more prominent than a
+  real machine's.
+- The promotion-gate screen layout has not been reworked for this format.
+- Environment (bright studio vs warm low-key) is not settled.
+
 ## Layout
 
 ```
 src/
   ArslanDemo.tsx      the dark film — walks SCENES and lays them out
   ArslanLight.tsx     the light cut — character clip into the architecture
+  ArslanShort.tsx     the cinematic cut (in progress) — one continuous camera
+  ShotMock.tsx        one frame per framing, for stills review
+  lib/camera3d.ts     orbiting camera over the CSS-3D world
+  components/MacBook.tsx  the machine, as hinged planes
+  components/Stage.tsx    the room: floor, light, environments
+  components/AppScreen.tsx  the client, laid out at the display's native size
   Root.tsx            composition registry (both films + one per scene)
   theme.ts            dark palette, type, scene table  ← start here
   lightTheme.ts       light palette (the product's own) + measured clip geometry
