@@ -28,6 +28,11 @@ npm run film      # renders out/arslan-60s.mp4    (the cinematic cut, 60s)
 npm run shots     # renders one framing, for review — pass --frame=N
 npm run still     # renders out/poster.png
 npm run lint      # tsc --noEmit
+
+npm run f1        # the four 30s style cuts — Terminal / Press / System / Pulse
+npm run f2
+npm run f3
+npm run f4
 ```
 
 `out/` is git-ignored. The committed render lives at
@@ -293,6 +298,68 @@ banding in the gradient:
 ffmpeg -i out/arslan-30s.mp4 -c:v libx264 -crf 24 -preset slow \
   -pix_fmt yuv420p -movflags +faststart docs/assets/arslan-30s.mp4
 ```
+
+## Four 30-second cuts, one per visual language
+
+A separate exercise from the cinematic cut: four films that share a product and
+nothing else. Each lives in `src/films/` and is self-contained — they import
+fonts and no other common code. That is deliberate. Shared components are how
+four films quietly become one film with four colour schemes, and the brief here
+was maximum stylistic distance.
+
+| | Composition | Ground | Argument | Ends on |
+| --- | --- | --- | --- | --- |
+| F1 | `F1-Terminal` | Near-black, monospace | Demonstration. A terminal and a TUI; no photography and no screenshot at all, on the argument that this product's interface *is* text. | `brew install` + macOS download |
+| F2 | `F2-Press` | Paper, 12-column grid | Assertion. Type at a size you cannot look away from; almost no UI. | Colophon + macOS download |
+| F3 | `F3-System` | Near-black, depth, glow | Structure. A host node, six spawns at six depths, light travelling between them. No interface at all. | Wordmark + macOS download |
+| F4 | `F4-Pulse` | White and saturated amber | Impact. Built for a feed: cards thrown into a grid, a slammed number, an odometer, three shutter flashes. | Wordmark + macOS download |
+
+```bash
+npx remotion render F1-Terminal out/F1-Terminal.mp4 --gl=angle
+```
+
+### Shots are taken, not invented
+
+The moves come from the video-shotcraft card library, and its parameters are
+honoured where they are counter-intuitive — which is most of the places they
+matter:
+
+- **Typing is frame-quantised.** `substring(0, floor((f - start) / step))`, never
+  an interpolation. Any easing applied to typing reads as a loading bar rather
+  than as someone typing, and the block cursor is a square wave for the same
+  reason: a cursor that fades belongs to a web page.
+- **The deal cue curve collapses rather than decreasing evenly.**
+  `30 + 4i − 0.16·i(i−1)`. Evenly spaced cards read as mechanical on sight, and
+  the anticipation beat before the first card is section-level, not per-card —
+  per-card anticipation flattens the acceleration it exists to set up.
+- **A slam uses ease-IN.** Ease-out is a thing being set down; ease-in is a
+  thing being dropped. The ring's expansion runs on out-cubic while its fade
+  runs linear, because sharing one curve makes it vanish before it has finished
+  opening.
+- **The odometer overshoots half a row and snaps back**, and its digits stop
+  left to right 7 frames apart. Without the overshoot it reads as sliding to a
+  stop, which is not a mechanism; stopping together loses the "tk, tk, tk" the
+  move exists for.
+- **Beat-cut intervals halve** (16/12/8/6/4), and the flash crops run wide →
+  panel → detail. Decrementing evenly does not read as acceleration, and any
+  other crop order reads as a mis-cut.
+- **Ambient freezes last.** In F3 the orb layer eases to a stop *after* the
+  flylines have resolved, and the flyline heads are unmounted rather than faded
+  to zero opacity, because an element at zero opacity is still animating and the
+  shot never actually comes to rest.
+- **`letter-spacing` is never animated.** F2's tracking-expand moves each
+  character with `translateX` against a fixed final tracking; animating the
+  property itself re-lays-out the line every frame and judders.
+
+### One thing the cards taught that generalises
+
+Several of the parameters in these files are two to twelve times larger than the
+"obvious" value, and the library is explicit about why: they were tested at the
+obvious value, found imperceptible at normal speed, and raised until they could
+be seen. The overshoot on a rising word is 10% rather than 6%; the anticipation
+on the card stack is tens of pixels rather than a few. The check is to watch at
+speed and ask whether the beat is visible without stepping frames — if it is
+not, it is not there.
 
 ### The mock-up assets
 
