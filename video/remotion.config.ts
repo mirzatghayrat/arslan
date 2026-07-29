@@ -7,6 +7,12 @@ Config.setOverwriteOutput(true);
 Config.setCrf(17);
 Config.setChromiumOpenGlRenderer('angle');
 
+// The film has no narration or score. Left on, Remotion writes a silent AAC
+// track at its default 320 kbps — 2.4 MB of encoded silence on a 58-second
+// render, 28% of the output. Set here rather than on the render command so
+// every render drops it, not just `npm run build`.
+Config.setMuted(true);
+
 /**
  * Inline the vendored `.woff2` faces as data URIs instead of serving them from
  * `public/`. Fonts fetched over the render-time static server were timing out

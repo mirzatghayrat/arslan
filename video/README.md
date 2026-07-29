@@ -9,7 +9,11 @@ near-black ground, engineering grid, registration ticks, amber accent, mono
 labels. Palette and type are lifted from `docs/index.html` and `web/src/theme`,
 so the video and the product read as one thing.
 
-**Output:** 1920×1080 · 30 fps · 1746 frames · 58.2 s
+**Output:** 1920×1080 · 30 fps · 1746 frames · 58.2 s · 6.1 MB · no audio track
+
+There is no narration or score, and `remotion.config.ts` sets `muted` so the
+render carries no audio stream at all. Left on, Remotion writes a silent AAC
+track at its default 320 kbps — 2.4 MB of encoded silence, 28% of the file.
 
 ## Run it
 
