@@ -2,6 +2,7 @@ import React from 'react';
 import {interpolate} from 'remotion';
 import {Mark} from './Mark';
 import {SCREEN} from './Mockup';
+import {GATE, NAV, SAMPLE, SPAWNS} from '../facts';
 import {light} from '../lightTheme';
 import {font} from '../theme';
 
@@ -10,6 +11,12 @@ import {font} from '../theme';
  * live onto a photographed display. Structure follows the real client — rail,
  * workspace header, content — rather than being invented for the film, so the
  * shots show something the product actually looks like.
+ *
+ * Copy and figures come from `../facts`, which carries a source comment for
+ * every claim. This module previously contained a roster of six named agents
+ * the product does not ship, four exam dimensions that do not exist, and two
+ * invented counts — all of it written early and carried through four rewrites
+ * without ever being checked against the repository.
  *
  * Every view fills its content box. An earlier pass positioned things at fixed
  * pixel offsets tuned for a taller screen, which left the bottom third of the
@@ -24,15 +31,6 @@ const HEAD = 78;
 
 /** What each view gets to fill. */
 export const CONTENT = {w: SCREEN.w - RAIL, h: SCREEN.h - HEAD};
-
-const NAV = [
-  'Host session',
-  'Spawns ledger',
-  'Capabilities',
-  'Second brain',
-  'Evolution inbox',
-  'Diagnostics',
-];
 
 const ramp = (frame: number, start: number, len: number) =>
   interpolate(frame, [start, start + len], [0, 1], {
@@ -225,7 +223,7 @@ export const ScreenThread: React.FC<{frame: number; extended?: boolean}> = ({
   const bars = [0.42, 0.55, 0.48, 0.7, 0.63, 0.82, 0.74, 0.95];
   const follow = ramp(frame, 116, 30);
   return (
-    <Shell active="Host session" title="Host session · one thread">
+    <Shell active={NAV[0]} title="orchestrator session · one thread">
       <div
         style={{
           position: 'absolute',
@@ -242,9 +240,9 @@ export const ScreenThread: React.FC<{frame: number; extended?: boolean}> = ({
 
         <div style={{display: 'flex', gap: 14, flexShrink: 0}}>
           {[
-            ['Research Analyst', 'fetch · 11 sources'],
-            ['Data & Chart Analyst', 'python · sandboxed'],
-            ['Coding Assistant', 'diff · 2 files'],
+            ['a spawn you raised', 'fetch · sandboxed'],
+            ['another', 'python · network denied'],
+            ['a third', 'edit · 2 files'],
           ].map(([n, s], i) => (
             <div
               key={n}
@@ -335,7 +333,7 @@ export const ScreenThread: React.FC<{frame: number; extended?: boolean}> = ({
                 letterSpacing: '0.1em',
               }}
             >
-              Q3 ACTUAL VS PLAN · SAMPLE DATA
+              Q3 ACTUAL VS PLAN · {SAMPLE.toUpperCase()}
             </span>
             <span style={{flex: 1}} />
             <span style={{fontFamily: font.mono, fontSize: 15, color: light.success}}>+8.4%</span>
@@ -400,15 +398,13 @@ export const ScreenThread: React.FC<{frame: number; extended?: boolean}> = ({
 
 /** The evolution inbox: a candidate that passed its exam, waiting on you. */
 export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
-  const dims: [string, number, number][] = [
-    ['faithfulness', 0.71, 0.86],
-    ['task completion', 0.64, 0.81],
-    ['tool discipline', 0.78, 0.83],
-    ['honesty', 0.82, 0.82],
-  ];
+  /* The real gate is a paired win-rate over holdout pairs, with these three
+     dimensions and a no-regression rule — not the four scored axes an earlier
+     pass invented. See server/services/replay_gate.py. */
+  const dims = GATE.dimensions;
   const promoted = frame > 168;
   return (
-    <Shell active="Evolution inbox" title="Evolution inbox · 1 proposal">
+    <Shell active={NAV[5]} title="evolution inbox · 1 proposal">
       {/* The pair sizes to its content and is centred, rather than stretched to
           the full height of the display. Stretched, both panels grew a dead
           band through their middle that read as an app still loading; centred,
@@ -445,7 +441,7 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
               flexShrink: 0,
             }}
           >
-            HELD-OUT EXAM · n=38 · SAMPLE DATA
+            REPLAY GATE · CANDIDATE vs INCUMBENT · {SAMPLE.toUpperCase()}
           </div>
           {/* Spread over the full height with `space-evenly` these four read as
               four unrelated bars floating in a panel. Grouped at the top with a
@@ -460,8 +456,8 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
               gap: 30,
             }}
           >
-            {dims.map(([n, inc, cand], i) => {
-              const v = interpolate(frame, [14 + i * 8, 44 + i * 8], [0, cand], {
+            {dims.map((n, i) => {
+              const v = interpolate(frame, [14 + i * 8, 44 + i * 8], [0, 1], {
                 extrapolateLeft: 'clamp',
                 extrapolateRight: 'clamp',
               });
@@ -479,7 +475,7 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
                         fontWeight: 600,
                       }}
                     >
-                      {v.toFixed(2)}
+                      not worse
                     </span>
                   </div>
                   <div
@@ -499,16 +495,7 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
                         background: `linear-gradient(90deg, ${light.primary}, ${light.success})`,
                       }}
                     />
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        bottom: 0,
-                        left: `${inc * 100}%`,
-                        width: 2.5,
-                        background: light.surface,
-                      }}
-                    />
+
                   </div>
                   <div
                     style={{
@@ -518,7 +505,7 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
                       color: light.subtle,
                     }}
                   >
-                    incumbent {inc.toFixed(2)}
+                    vs the incumbent, on the same tasks
                   </div>
                 </div>
               );
@@ -536,8 +523,9 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
               opacity: ramp(frame, 50, 20),
             }}
           >
-            The exam is held out. The rewrite never sees these cases, so a
-            candidate cannot be tuned into passing them.
+            {GATE.holdoutEnforced} — asking for a user-facing win-rate from the
+            training split raises an error, so a candidate cannot be tuned into
+            passing.
           </div>
         </div>
 
@@ -566,13 +554,13 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
             PROPOSAL · Research Analyst
           </div>
           <div style={{marginTop: 16, fontSize: 25, fontWeight: 600, lineHeight: 1.32}}>
-            Prompt rev 8 passed on all four dimensions.
+            Won {Math.round(GATE.winRate * 100)}%+ of held-out pairs. No dimension worse.
           </div>
           <div style={{marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10}}>
             {[
-              ['margin', '+0.13 avg'],
-              ['regressions', 'none'],
-              ['past runs', '214'],
+              ['holdout min', `${GATE.minHoldout} pairs`],
+              ['judged', 'positions swapped'],
+              ['length', 'capped — cannot win by bloating'],
             ].map(([k, v]) => (
               <div
                 key={k}
@@ -690,7 +678,7 @@ export const ScreenBrain: React.FC<{frame: number}> = ({frame}) => {
   });
 
   return (
-    <Shell active="Second brain" title="Second brain · 214 notes">
+    <Shell active={NAV[3]} title="second brain · beliefs carry time">
       <div style={{position: 'absolute', inset: 0, padding: PAD}}>
         <svg width={box.w} height={box.h} style={{position: 'absolute', left: PAD, top: PAD}}>
           {edges.map(([a, b], i) => (
@@ -844,16 +832,19 @@ export const ScreenBrain: React.FC<{frame: number}> = ({frame}) => {
  * these and you decide what they hold".
  */
 export const ScreenSpawns: React.FC<{frame: number}> = ({frame}) => {
+  /* Deliberately unnamed. The product ships no roster — you raise these, drafted
+     from a persona seed library, and the router can propose creating one for
+     work nothing covers. Naming six would assert a product that does not exist. */
   const rows: [string, string, string, boolean][] = [
-    ['Research Analyst', 'fetch · browser', 'sources.md', true],
-    ['Data & Chart Analyst', 'python · duckdb', 'charts.md', true],
-    ['Coding Assistant', 'edit · shell', 'repo.md', true],
-    ['Ops Runner', 'shell · k8s-mcp', 'runbooks.md', false],
-    ['Inbox Triage', 'gmail-mcp', 'triage.md', true],
-    ['Archivist', 'notes · search', 'brain.md', true],
+    ['a spawn you raised', 'fetch · browser', 'SKILL.md', true],
+    ['another', 'python · duckdb', 'SKILL.md', true],
+    ['a third', 'edit · shell', 'SKILL.md', true],
+    ['…and as many as', 'shell · mcp', 'SKILL.md', false],
+    ['…you decide to', 'gmail-mcp', 'SKILL.md', true],
+    ['…raise', 'notes · search', 'SKILL.md', true],
   ];
   return (
-    <Shell active="Spawns ledger" title="Spawns ledger · 6 spawns">
+    <Shell active={NAV[1]} title={`spawns ledger · ${SPAWNS.howMany}`}>
       <div style={{position: 'absolute', inset: 0, padding: '28px 34px', display: 'flex', flexDirection: 'column'}}>
         <div
           style={{
@@ -940,7 +931,7 @@ export const ScreenSafety: React.FC<{frame: number}> = ({frame}) => {
   } as const;
 
   return (
-    <Shell active="Diagnostics" title="Diagnostics · sandbox">
+    <Shell active={NAV[4]} title="diagnostics · sandbox">
       {/* Sized to its content and centred rather than stretched. Given
           `flex: 1` the log became a dark slab most of a display tall with seven
           short lines at the top of it, which on a warm set is the most

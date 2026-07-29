@@ -1,15 +1,26 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
+import {GATE, PRODUCT, SAMPLE} from '../facts';
 import {font} from '../theme';
 
 /**
  * FILM 1 of 4 — "CLI".
  *
+ * Carries ONE of the three hooks from docs/marketing/copy.md: **self-evolution
+ * that must pass an exam**. The other films carry the other two; four films all
+ * making the same four points is one film shown four times.
+ *
  * Dark, monospace, no photography, no chrome. The whole film happens inside a
  * terminal and a TUI, on the assumption that the audience for a local-first
- * agent orchestrator lives in one. It is the only cut of the four with no
- * product screenshot in it at all: the argument is that Arslan's interface is
- * text, and text is what the film is made of.
+ * agent orchestrator lives in one.
+ *
+ * The gate is shown as what it actually is — a paired win-rate gate from
+ * `server/services/replay_gate.py` — and not as the four score bars an earlier
+ * pass invented. Both prompts are replayed on the same tasks, judged with the
+ * positions swapped, and every user-facing number comes from the holdout split
+ * only; asking for one from the propose split raises `HoldoutViolation` in
+ * code. That detail is the most under-sold thing in the repository and it is
+ * the reason this film exists.
  *
  * Shot vocabulary, from the shotcraft library:
  *   - `typewriter-moves` A — the command is the fuse. 2f/char, square-wave
@@ -59,7 +70,7 @@ const ramp = (frame: number, start: number, len: number, easing = Easing.out(Eas
 /* ------------------------------------------------------------------ */
 /* 1. The fuse: a command, and the crash into the product.             */
 
-const CMD = 'arslan host --local --spawns 6';
+const CMD = 'arslan host --local';
 
 const Boot: React.FC<{frame: number}> = ({frame}) => {
   const typed = typeAt(frame, 14, CMD, 2);
@@ -171,12 +182,15 @@ const Chrome: React.FC<{title: string; children: React.ReactNode; right?: string
 /** `ai-stream-response`: the answer, then the working, then a single close. */
 const Stream: React.FC<{frame: number}> = ({frame}) => {
   const rows: [string, string][] = [
-    ['research-analyst', 'fetched 11 sources · sandboxed'],
-    ['data-analyst', 'ran q3_actuals.py · duckdb'],
-    ['data-analyst', 'built chart · 8 periods'],
-    ['coding-assistant', 'patched report.ts · 2 files'],
-    ['archivist', 'wrote 3 notes to second brain'],
-    ['host', 'merged 5 results into one thread'],
+    /* Unnamed on purpose: the product ships no roster, so naming spawns here
+       would assert agents that do not exist. What each one DID is real
+       behaviour; who did it is whoever you raised. */
+    ['a spawn', 'fetched sources · sandboxed'],
+    ['a spawn', 'ran generated python · network denied'],
+    ['a spawn', 'built the chart'],
+    ['a spawn', 'patched two files'],
+    ['a spawn', 'wrote what it learned to your second brain'],
+    ['host', 'merged every result into one thread'],
   ];
   // Cues tighten but stay countable — work accelerating, not a log flushing.
   const cue = [40, 51, 61, 70, 78, 85];
@@ -225,7 +239,7 @@ const Stream: React.FC<{frame: number}> = ({frame}) => {
               }}
             >
               <span style={{color: gc, width: 32}}>{glyph}</span>
-              <span style={{color: C.amber, width: 350}}>{who}</span>
+              <span style={{color: C.amber, width: 240}}>{who}</span>
               <span style={{color: C.dim}}>{what}</span>
             </div>
           );
@@ -247,11 +261,11 @@ const Stream: React.FC<{frame: number}> = ({frame}) => {
           opacity: ramp(frame, 96, 14),
         }}
       >
-        <span>5 spawns</span>
+        <span>spawns you raised</span>
         <span>1 thread</span>
-        <span>0 bytes egress</span>
+        <span>generated code: network denied</span>
         <span style={{flex: 1}} />
-        <span style={{color: C.dim}}>2.9s</span>
+        <span style={{color: C.dim}}>{SAMPLE}</span>
       </div>
     </div>
   );
@@ -366,111 +380,138 @@ const Palette: React.FC<{frame: number}> = ({frame}) => {
   );
 };
 
-/** The gate, as a diff and a table. The one screen that has to be read. */
+/**
+ * The gate. The one screen in the film that has to be read.
+ *
+ * A paired win-rate, not a scorecard: the count of holdout pairs the candidate
+ * won, against a 60% floor over at least 10 pairs. The three dimensions are the
+ * real ones — fabrication, identity, completion — and none of them may go
+ * backwards.
+ */
 const Gate: React.FC<{frame: number}> = ({frame}) => {
-  const dims: [string, number, number][] = [
-    ['faithfulness', 0.71, 0.86],
-    ['task completion', 0.64, 0.81],
-    ['tool discipline', 0.78, 0.83],
-    ['honesty', 0.82, 0.82],
-  ];
-  const promoted = frame > 128;
+  const won = Math.round(
+    interpolate(frame, [18, 62], [0, 9], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.out(Easing.cubic),
+    }),
+  );
+  const of = 13;
+  const rate = won / of;
+  const promoted = frame > 150;
+
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        padding: '44px 52px',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-      }}
-    >
-      <div style={{fontSize: 24, color: C.faint, letterSpacing: '0.14em'}}>
-        EVOLUTION INBOX · 1 PROPOSAL · HELD-OUT EXAM n=38 · SAMPLE DATA
+    <div style={{position: 'absolute', inset: 0, padding: '44px 52px', display: 'flex', flexDirection: 'column'}}>
+      <div style={{fontSize: 23, color: C.faint, letterSpacing: '0.14em'}}>
+        REPLAY GATE · CANDIDATE vs INCUMBENT · {SAMPLE.toUpperCase()}
       </div>
 
-      <div style={{marginTop: 44, display: 'flex', gap: 60}}>
-        <div style={{flex: 1}}>
-          {dims.map(([n, inc, cand], i) => {
-            const v = interpolate(frame, [16 + i * 9, 48 + i * 9], [inc, cand], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-              easing: Easing.out(Easing.cubic),
-            });
-            const w = 520;
-            return (
-              <div key={n} style={{marginBottom: 40, opacity: ramp(frame, 10 + i * 6, 12)}}>
-                <div style={{display: 'flex', fontSize: 29, color: C.dim}}>
-                  <span style={{flex: 1}}>{n}</span>
-                  <span style={{color: C.faint, marginRight: 26}}>
-                    {inc.toFixed(2)}
-                  </span>
-                  <span style={{color: C.green}}>{v.toFixed(2)}</span>
-                </div>
-                <div
-                  style={{
-                    marginTop: 14,
-                    height: 12,
-                    width: w,
-                    background: '#171B20',
-                    position: 'relative',
-                  }}
-                >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: v * w,
-                      background: `linear-gradient(90deg, ${C.amber}, ${C.green})`,
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: -3,
-                      bottom: -3,
-                      left: inc * w,
-                      width: 2,
-                      background: C.ruleHi,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+      <div style={{marginTop: 30, fontSize: 27, color: C.dim, lineHeight: 1.6, maxWidth: 1500}}>
+        Both prompts run the <span style={{color: C.ink}}>same tasks</span>. Each pair is
+        judged twice, with the positions swapped.
+      </div>
+
+      <div style={{marginTop: 34, display: 'flex', gap: 64, alignItems: 'flex-start'}}>
+        <div>
+          <div style={{fontSize: 22, color: C.faint, letterSpacing: '0.12em'}}>
+            HOLDOUT PAIRS WON
+          </div>
+          <div style={{marginTop: 14, display: 'flex', alignItems: 'baseline', gap: 14}}>
+            <span
+              style={{
+                fontSize: 128,
+                color: rate >= GATE.winRate ? C.green : C.amber,
+                fontVariantNumeric: 'tabular-nums',
+                lineHeight: 1,
+              }}
+            >
+              {won}
+            </span>
+            <span style={{fontSize: 52, color: C.faint}}>/ {of}</span>
+          </div>
+          <div style={{marginTop: 16, width: 520, height: 14, background: '#171B20', position: 'relative'}}>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: `${rate * 100}%`,
+                background: rate >= GATE.winRate ? C.green : C.amber,
+              }}
+            />
+            {/* the 60% floor, drawn where it actually is */}
+            <div
+              style={{
+                position: 'absolute',
+                top: -6,
+                bottom: -6,
+                left: `${GATE.winRate * 100}%`,
+                width: 2,
+                background: C.ink,
+              }}
+            />
+          </div>
+          <div style={{marginTop: 12, fontSize: 20, color: C.faint}}>
+            floor {Math.round(GATE.winRate * 100)}% · minimum {GATE.minHoldout} holdout pairs
+          </div>
         </div>
 
-        <div style={{width: 700, opacity: ramp(frame, 58, 16)}}>
-          <div style={{fontSize: 23, color: C.faint, letterSpacing: '0.14em'}}>
-            PROMPT DIFF · REV 7 → 8
+        <div style={{flex: 1}}>
+          <div style={{fontSize: 22, color: C.faint, letterSpacing: '0.12em'}}>
+            NO DIMENSION MAY GO BACKWARDS
           </div>
-          <div style={{marginTop: 20, fontSize: 25, lineHeight: 1.85}}>
-            <div style={{color: C.red, background: 'rgba(248,113,113,0.07)', padding: '8px 14px'}}>
-              − cite sources where possible
-            </div>
-            <div style={{color: C.green, background: 'rgba(74,222,128,0.07)', padding: '8px 14px'}}>
-              + cite a source for every claim, or say it is unsourced
-            </div>
+          <div style={{marginTop: 18, display: 'flex', flexDirection: 'column', gap: 16}}>
+            {GATE.dimensions.map((d, i) => {
+              const on = ramp(frame, 40 + i * 10, 14);
+              return (
+                <div
+                  key={d}
+                  style={{display: 'flex', fontSize: 26, color: C.dim, opacity: on}}
+                >
+                  <span style={{color: C.green, width: 40}}>✔</span>
+                  <span style={{flex: 1}}>{d}</span>
+                  <span style={{color: C.faint}}>not worse</span>
+                </div>
+              );
+            })}
           </div>
+
           <div
             style={{
-              marginTop: 40,
-              padding: '24px 28px',
-              border: `1px solid ${promoted ? C.green : C.amber}`,
-              color: promoted ? C.green : C.amber,
-              fontSize: 30,
-              letterSpacing: '0.1em',
-              textAlign: 'center',
-              background: promoted ? 'rgba(74,222,128,0.08)' : 'rgba(242,160,60,0.08)',
-              transform: `scale(${frame >= 126 && frame < 132 ? 0.97 : 1})`,
+              marginTop: 30,
+              paddingTop: 20,
+              borderTop: `1px solid ${C.rule}`,
+              fontSize: 21,
+              color: C.faint,
+              lineHeight: 1.7,
+              opacity: ramp(frame, 78, 18),
             }}
           >
-            {promoted ? '✔ PROMOTED' : '⏎ PROMOTE'}
+            {GATE.holdoutEnforced}.<br />
+            {GATE.neverMerged}.<br />
+            {GATE.lengthGuard}.
           </div>
-          <div style={{marginTop: 18, fontSize: 22, color: C.faint, textAlign: 'center'}}>
-            nothing ships until you press it
-          </div>
+        </div>
+      </div>
+
+      <div style={{flex: 1}} />
+
+      <div style={{display: 'flex', gap: 30, alignItems: 'center', opacity: ramp(frame, 108, 20)}}>
+        <div
+          style={{
+            padding: '22px 44px',
+            border: `1px solid ${promoted ? C.green : C.amber}`,
+            color: promoted ? C.green : C.amber,
+            fontSize: 29,
+            letterSpacing: '0.1em',
+            background: promoted ? 'rgba(74,222,128,0.08)' : 'rgba(242,160,60,0.08)',
+            transform: `scale(${frame >= 148 && frame < 154 ? 0.97 : 1})`,
+          }}
+        >
+          {promoted ? '✔ PROMOTED' : '⏎ PROMOTE'}
+        </div>
+        <div style={{fontSize: 22, color: C.faint, lineHeight: 1.6}}>
+          Passing only gets it into your inbox.<br />
+          Nothing ships until you press it.
         </div>
       </div>
     </div>
@@ -527,7 +568,7 @@ const Sprint: React.FC<{frame: number}> = ({frame}) => {
 };
 
 const Cta: React.FC<{frame: number}> = ({frame}) => {
-  const line1 = typeAt(frame, 8, 'brew install --cask arslan', 2);
+  const line1 = typeAt(frame, 8, 'arslan evolve --gate holdout', 2);
   const box = ramp(frame, 60, 20);
   return (
     <AbsoluteFill
@@ -560,7 +601,7 @@ const Cta: React.FC<{frame: number}> = ({frame}) => {
             opacity: ramp(frame, 6, 16),
           }}
         >
-          One host agent. Spawns you raised. Nothing ships until you press Promote.
+          Prompts that improve themselves — and have to prove it before they count.
         </div>
 
         <div
@@ -617,7 +658,7 @@ const Cta: React.FC<{frame: number}> = ({frame}) => {
             opacity: box,
           }}
         >
-          macOS 11+ · Apple Silicon · signed &amp; notarized · MIT
+          {PRODUCT.platform} · {PRODUCT.signing} · {PRODUCT.license} · {PRODUCT.status}
         </div>
       </div>
     </AbsoluteFill>

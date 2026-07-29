@@ -1,15 +1,26 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
+import {PRODUCT, SAFETY, SPAWNS} from '../facts';
 import {font} from '../theme';
 
 /**
  * FILM 3 of 4 — "SYSTEM".
  *
+ * Carries the hook `HOOKS.local` — "all local, your keys" — and the safety
+ * posture underneath it: a kernel sandbox that denies the network to generated
+ * code, a proxy that keeps raw tokens out of that sandbox, and a failure mode
+ * that closes rather than opens.
+ *
  * Near-black, and the only cut of the four that shows the architecture rather
- * than the interface. No UI, no photography, no page: a host node, six spawns
- * at different depths, and light travelling between them. The argument is
- * structural — this is what the thing IS — where the CLI cut argues by
- * demonstration and the press cut argues by assertion.
+ * than the interface. No UI, no photography, no page: a host node, spawns at
+ * different depths, and light travelling between them. The argument is
+ * structural — this is what the thing IS.
+ *
+ * The ring is drawn with five nodes and captioned as however many you raise,
+ * because the product has no fixed roster: spawns are drafted from a persona
+ * seed library and the router can propose creating one for work nothing covers.
+ * An earlier pass captioned this "six spawns", which was a number invented to
+ * fill a circle.
  *
  * Shot vocabulary, from the shotcraft library:
  *   - `glow-flyline-moves` C (orb-flyline-relay) — the whole spine. Three
@@ -52,22 +63,28 @@ const CX = 960;
 const CY = 540;
 
 /** Six spawns on a ring, each at its own depth so the camera gets parallax. */
-const SPAWNS = [
-  {a: -90, r: 330, z: -180, label: 'research', tone: S.cyan},
-  {a: -30, r: 380, z: 60, label: 'data', tone: S.amber},
-  {a: 30, r: 340, z: -60, label: 'coding', tone: S.cyan},
-  {a: 90, r: 370, z: 140, label: 'ops', tone: S.violet},
-  {a: 150, r: 345, z: -120, label: 'triage', tone: S.amber},
-  {a: 210, r: 385, z: 20, label: 'archivist', tone: S.violet},
+/**
+ * The ring. Unlabelled on purpose: naming them would assert a roster the
+ * product does not ship, and the count is illustrative — the caption says so.
+ * Each sits at its own z so the camera gets real parallax rather than a flat
+ * rotation.
+ */
+const RING = [
+  {a: -90, r: 330, z: -180, tone: S.cyan},
+  {a: -30, r: 380, z: 60, tone: S.amber},
+  {a: 30, r: 340, z: -60, tone: S.cyan},
+  {a: 90, r: 370, z: 140, tone: S.violet},
+  {a: 150, r: 345, z: -120, tone: S.amber},
+  {a: 210, r: 385, z: 20, tone: S.violet},
 ];
 
-const posOf = (s: (typeof SPAWNS)[number]) => {
+const posOf = (s: (typeof RING)[number]) => {
   const rad = (s.a * Math.PI) / 180;
   return {x: CX + Math.cos(rad) * s.r, y: CY + Math.sin(rad) * s.r * 0.62};
 };
 
 /** A quadratic bezier bulging away from the centre. */
-const arcOf = (s: (typeof SPAWNS)[number]) => {
+const arcOf = (s: (typeof RING)[number]) => {
   const p = posOf(s);
   const mx = (CX + p.x) / 2;
   const my = (CY + p.y) / 2;
@@ -259,7 +276,7 @@ export const System: React.FC = () => {
           }}
         >
           <svg width={1920} height={1080} style={{position: 'absolute', inset: 0}}>
-            {SPAWNS.map((s, i) => {
+            {RING.map((s, i) => {
               const {p, c} = arcOf(s);
               const d = `M ${CX} ${CY} Q ${c.x} ${c.y} ${p.x} ${p.y}`;
               const L = Math.hypot(p.x - CX, p.y - CY) * 1.22;
@@ -290,7 +307,7 @@ export const System: React.FC = () => {
           {/* Light heads, mounted only while their arc is growing — an opacity
               of zero is not the same as gone, and this film has to actually
               come to rest. */}
-          {SPAWNS.map((s, i) => {
+          {RING.map((s, i) => {
             const {p, c} = arcOf(s);
             const out = ramp(f, OUT_CUE[i] - 22, 22);
             const back = ramp(f, BACK_CUE[i] - 20, 20);
@@ -316,7 +333,7 @@ export const System: React.FC = () => {
           })}
 
           {/* Spawn ring. Each at its own z, so the camera gets real parallax. */}
-          {SPAWNS.map((s, i) => {
+          {RING.map((s, i) => {
             const p = posOf(s);
             const on = ramp(f, 96 + i * 7, 26);
             const pulse = Math.max(
@@ -325,7 +342,7 @@ export const System: React.FC = () => {
             );
             return (
               <div key={i} style={{position: 'absolute', inset: 0, transform: `translateZ(${s.z}px)`}}>
-                <Node x={p.x} y={p.y} r={13} tone={s.tone} label={s.label} on={on} pulse={pulse} />
+                <Node x={p.x} y={p.y} r={13} tone={s.tone} on={on} pulse={pulse} />
               </div>
             );
           })}
@@ -371,9 +388,9 @@ export const System: React.FC = () => {
 };
 
 const LINES: [number, number, string][] = [
-  [40, 140, 'one host agent · running on this machine'],
-  [150, 300, 'six spawns · each with only the capabilities you handed it'],
-  [320, 430, 'every result comes back to one thread'],
+  [40, 140, 'one host agent · your machine · your keys'],
+  [150, 300, `spawns — ${SPAWNS.howMany} · each holding only what you granted it`],
+  [320, 430, 'zero third-party servers in the middle'],
 ];
 
 const Caption: React.FC<{f: number}> = ({f}) => (
@@ -404,9 +421,19 @@ const Caption: React.FC<{f: number}> = ({f}) => (
   </>
 );
 
+/**
+ * The safety panel. Was a four-dimension scorecard with invented numbers in it;
+ * the exam belongs to the CLI cut and looks nothing like that anyway. This is
+ * the posture from SECURITY.md, which is all sentences and no statistics.
+ */
 const Gate: React.FC<{f: number}> = ({f}) => {
   const on = ramp(f, 0, 20);
-  const passed = f > 118;
+  const rows: [string, string][] = [
+    ['sandbox', SAFETY.sandbox],
+    ['egress', SAFETY.proxy],
+    ['failure', SAFETY.failsClosed],
+    ['memory', SAFETY.memoryInbox],
+  ];
   return (
     <AbsoluteFill
       style={{
@@ -418,51 +445,45 @@ const Gate: React.FC<{f: number}> = ({f}) => {
     >
       <div
         style={{
-          width: 900,
-          border: `1px solid ${passed ? S.green : S.amber}66`,
-          background: 'rgba(5,7,11,0.72)',
+          width: 1180,
+          border: `1px solid ${S.cyan}55`,
+          background: 'rgba(5,7,11,0.76)',
           backdropFilter: 'blur(8px)',
-          padding: '38px 46px',
+          padding: '40px 48px',
           fontFamily: font.mono,
         }}
       >
         <div style={{fontSize: 21, letterSpacing: '0.16em', color: S.faint}}>
-          PROMOTION GATE · HELD-OUT EXAM n=38 · SAMPLE DATA
+          SAFE BY DEFAULT · NOT DISCLAIMED
         </div>
-        <div style={{marginTop: 26, display: 'flex', flexDirection: 'column', gap: 14}}>
-          {([
-            ['faithfulness', 0.71, 0.86],
-            ['task completion', 0.64, 0.81],
-            ['tool discipline', 0.78, 0.83],
-            ['honesty', 0.82, 0.82],
-          ] as [string, number, number][]).map(([k, a, b], i) => {
-            const v = interpolate(f, [22 + i * 8, 58 + i * 8], [a, b], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-              easing: Easing.out(Easing.cubic),
-            });
-            return (
-              <div key={k} style={{display: 'flex', fontSize: 24, color: S.dim}}>
-                <span style={{flex: 1}}>{k}</span>
-                <span style={{color: S.faint, marginRight: 24}}>{a.toFixed(2)}</span>
-                <span style={{color: S.green}}>{v.toFixed(2)}</span>
-              </div>
-            );
-          })}
+        <div style={{marginTop: 28, display: 'flex', flexDirection: 'column', gap: 20}}>
+          {rows.map(([k, v], i) => (
+            <div
+              key={k}
+              style={{
+                display: 'flex',
+                gap: 26,
+                fontSize: 24,
+                color: S.dim,
+                opacity: ramp(f, 24 + i * 12, 16),
+              }}
+            >
+              <span style={{color: S.cyan, width: 130, flexShrink: 0}}>{k}</span>
+              <span>{v}</span>
+            </div>
+          ))}
         </div>
         <div
           style={{
-            marginTop: 32,
-            padding: '18px 0',
-            textAlign: 'center',
-            fontSize: 27,
-            letterSpacing: '0.12em',
-            color: passed ? S.green : S.amber,
-            border: `1px solid ${passed ? S.green : S.amber}`,
-            background: passed ? 'rgba(74,222,128,0.08)' : 'rgba(242,160,60,0.08)',
+            marginTop: 30,
+            paddingTop: 22,
+            borderTop: `1px solid ${S.faint}44`,
+            fontSize: 21,
+            color: S.faint,
+            opacity: ramp(f, 88, 20),
           }}
         >
-          {passed ? '✔ PROMOTED BY YOU' : '⏎ AWAITING YOUR PROMOTE'}
+          the kernel sandbox is macOS seatbelt · elsewhere it is unavailable and fails closed
         </div>
       </div>
     </AbsoluteFill>
@@ -506,7 +527,7 @@ const Cta: React.FC<{f: number}> = ({f}) => {
           maxWidth: 900,
         }}
       >
-        One host agent. Spawns you raised. Nothing ships until you press Promote.
+        {SAFETY.local}
       </div>
       <div
         style={{
@@ -537,7 +558,7 @@ const Cta: React.FC<{f: number}> = ({f}) => {
           opacity: b,
         }}
       >
-        macOS 11+ · Apple Silicon · signed &amp; notarized · MIT
+        {PRODUCT.platform} · {PRODUCT.signing} · {PRODUCT.license} · {PRODUCT.status}
       </div>
     </AbsoluteFill>
   );

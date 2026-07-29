@@ -1,16 +1,20 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
+import {GATE, HOOKS, PRODUCT, SAFETY, SPAWNS} from '../facts';
 import {font} from '../theme';
 
 /**
  * FILM 2 of 4 — "PRESS".
  *
+ * Carries the hook `HOOKS.machine` — "a machine, not a chat box", the sharpest
+ * line in docs/marketing/copy.md and the one an earlier pass left out of all
+ * four films. This cut is built entirely around it: the claim only works if the
+ * film itself looks drawn rather than chatted at, so it is set on a real
+ * 12-column grid with drawn hairlines and no interface at all.
+ *
  * Paper, grid, and very large type. The opposite pole from the CLI cut: light
  * instead of dark, proportional instead of monospace, and typography rather
- * than interface carrying every beat. There is almost no product UI in it —
- * what the product does is stated, in words, at a size you cannot look away
- * from, the way a design studio announces something rather than the way a SaaS
- * company demonstrates it.
+ * than interface carrying every beat.
  *
  * Shot vocabulary, from the shotcraft library:
  *   - `type-assembly-moves` A (split-text-stagger) — each word rises out of an
@@ -228,13 +232,15 @@ const One: React.FC<{frame: number}> = ({frame}) => (
     <div style={{position: 'absolute', left: MARGIN, top: 250, width: COLW * 10}}>
       <TrackingExpand text="LOCAL-FIRST AI ORCHESTRATOR" start={6} frame={frame} size={26} />
       <div style={{height: 46}} />
-      <SplitRise text="One host agent." start={26} frame={frame} size={168} />
-      <div style={{height: 18}} />
+      <SplitRise text="Most AI apps" start={22} frame={frame} size={150} />
+      <div style={{height: 10}} />
+      <SplitRise text="are a chat box." start={34} frame={frame} size={150} />
+      <div style={{height: 26}} />
       <SplitRise
-        text="Spawns you raised."
-        start={44}
+        text="This one is a machine."
+        start={54}
         frame={frame}
-        size={168}
+        size={150}
         color={P.red}
       />
     </div>
@@ -243,24 +249,39 @@ const One: React.FC<{frame: number}> = ({frame}) => (
   </Page>
 );
 
-/** 02 — the roster, as a grid of six. */
+/**
+ * 02 — the parts, as an engineering legend.
+ *
+ * Replaces a page that read "Six specialists." over a grid of six named
+ * agents. The product has no such roster: you raise spawns yourself, drafting
+ * them from a persona seed library, and the router can propose creating one for
+ * work nothing covers. Six was a number invented for the layout — the only six
+ * in the README is six languages and six theme palettes.
+ */
 const Two: React.FC<{frame: number}> = ({frame}) => {
-  const spawns = [
-    ['Research Analyst', 'fetch · browser'],
-    ['Data & Chart Analyst', 'python · duckdb'],
-    ['Coding Assistant', 'edit · shell'],
-    ['Ops Runner', 'shell · k8s'],
-    ['Inbox Triage', 'gmail'],
-    ['Archivist', 'notes · search'],
+  const parts: [string, string][] = [
+    ['Host agent', 'the only thing you talk to'],
+    ['Spawns', SPAWNS.howMany],
+    ['Kernel sandbox', 'network-denied, fails closed'],
+    ['Credential proxy', 'tokens stay outside'],
+    ['Promotion gate', 'a held-out exam'],
+    ['Second brain', 'beliefs carry time'],
   ];
   return (
     <Page>
       <Grid frame={frame} start={0} />
       <div style={{position: 'absolute', left: MARGIN, top: 150, width: COLW * 9}}>
-        <SplitRise text="Six specialists." start={4} frame={frame} size={132} />
-        <div style={{marginTop: 26, fontSize: 34, color: P.inkSoft, maxWidth: COLW * 7, opacity: ramp(frame, 26, 20)}}>
-          Each with its own tools, its own skill pack, and only the capabilities
-          you handed it.
+        <SplitRise text="Drawn like a machine." start={4} frame={frame} size={126} />
+        <div
+          style={{
+            marginTop: 26,
+            fontSize: 34,
+            color: P.inkSoft,
+            maxWidth: COLW * 7,
+            opacity: ramp(frame, 26, 20),
+          }}
+        >
+          Named parts, in fixed places, each doing one job you can point at.
         </div>
       </div>
 
@@ -277,7 +298,7 @@ const Two: React.FC<{frame: number}> = ({frame}) => {
           border: `2px solid ${P.ink}`,
         }}
       >
-        {spawns.map(([n, t], i) => {
+        {parts.map(([n, t], i) => {
           const p = ramp(frame, 40 + i * 6, 22, Easing.bezier(0.16, 1.15, 0.3, 1));
           return (
             <div
@@ -289,20 +310,27 @@ const Two: React.FC<{frame: number}> = ({frame}) => {
                 transform: `translateY(${(1 - p) * 26}px)`,
               }}
             >
-              <div style={{fontFamily: font.mono, fontSize: 19, color: P.red, letterSpacing: '0.14em'}}>
+              <div
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 19,
+                  color: P.red,
+                  letterSpacing: '0.14em',
+                }}
+              >
                 {String(i + 1).padStart(2, '0')}
               </div>
               <div style={{marginTop: 16, fontSize: 34, fontWeight: 640, letterSpacing: '-0.02em'}}>
                 {n}
               </div>
-              <div style={{marginTop: 10, fontFamily: font.mono, fontSize: 20, color: P.faint}}>
+              <div style={{marginTop: 10, fontFamily: font.mono, fontSize: 19, color: P.faint}}>
                 {t}
               </div>
             </div>
           );
         })}
       </div>
-      <Folio n="02" label="THE ROSTER" frame={frame} start={16} />
+      <Folio n="02" label="THE PARTS" frame={frame} start={16} />
     </Page>
   );
 };
@@ -353,21 +381,22 @@ const Three: React.FC<{frame: number}> = ({frame}) => {
         }}
       >
         <div style={{color: P.faint, letterSpacing: '0.14em', fontSize: 18}}>
-          HELD-OUT EXAM
+          THE REPLAY GATE
         </div>
         {[
-          ['faithfulness', '0.71 → 0.86'],
-          ['task completion', '0.64 → 0.81'],
-          ['tool discipline', '0.78 → 0.83'],
-          ['honesty', '0.82 → 0.82'],
+          ['method', 'paired replay'],
+          ['judged', 'positions swapped'],
+          ['win floor', `${Math.round(GATE.winRate * 100)}%`],
+          ['holdout min', `${GATE.minHoldout} pairs`],
+          ...GATE.dimensions.map((d) => [d, 'not worse']),
         ].map(([k, v]) => (
           <div key={k} style={{display: 'flex', borderBottom: `1px solid ${P.rule}`}}>
             <span style={{flex: 1}}>{k}</span>
             <span style={{color: P.ink}}>{v}</span>
           </div>
         ))}
-        <div style={{marginTop: 14, fontSize: 17, color: P.faint}}>
-          n=38 · sample data
+        <div style={{marginTop: 14, fontSize: 17, color: P.faint, lineHeight: 1.5}}>
+          {GATE.holdoutEnforced}
         </div>
       </div>
       <Folio n="03" label="THE GATE" frame={frame} start={20} />
@@ -377,10 +406,12 @@ const Three: React.FC<{frame: number}> = ({frame}) => {
 
 /** 04 — the numbers, set as a statistics spread. */
 const Four: React.FC<{frame: number}> = ({frame}) => {
+  /* Every one of these is in `facts.ts` with a source. The page this replaces
+     had "6 spawns", which the product does not have. */
   const stats: [string, string][] = [
-    ['0', 'bytes of egress from generated code'],
-    ['6', 'spawns, each with its own capabilities'],
-    ['1', 'thread — everything comes back to it'],
+    ['0', 'third-party servers in the middle — your machine, your keys'],
+    [`${Math.round(GATE.winRate * 100)}%`, 'of held-out pairs a new prompt must win to reach your inbox'],
+    ['1', 'thread — everything the spawns do comes back to it'],
   ];
   return (
     <Page>
@@ -415,12 +446,12 @@ const Four: React.FC<{frame: number}> = ({frame}) => {
             >
               <span
                 style={{
-                  fontSize: 176,
+                  fontSize: 150,
                   fontWeight: 700,
                   letterSpacing: '-0.06em',
                   lineHeight: 0.86,
                   color: i === 0 ? P.red : P.ink,
-                  minWidth: 200,
+                  minWidth: 280,
                 }}
               >
                 {n}
@@ -453,13 +484,14 @@ const Close: React.FC<{frame: number}> = ({frame}) => {
           left: MARGIN,
           top: y,
           fontSize: size,
+          maxWidth: COLW * 9,
           fontWeight: 680,
           letterSpacing: '-0.045em',
           color: P.faint,
           lineHeight: 1,
         }}
       >
-        Nothing ships until you press Promote.
+        {HOOKS.machine}.
       </div>
 
       <div style={{position: 'absolute', left: MARGIN, top: 260, opacity: ramp(frame, 26, 24)}}>
@@ -475,7 +507,7 @@ const Close: React.FC<{frame: number}> = ({frame}) => {
           Arslan
         </div>
         <div style={{marginTop: 20, fontSize: 34, color: P.inkSoft, maxWidth: COLW * 6}}>
-          A local-first orchestrator for agents you actually control.
+          {SAFETY.local}
         </div>
 
         <div
@@ -505,7 +537,7 @@ const Close: React.FC<{frame: number}> = ({frame}) => {
             opacity: btn,
           }}
         >
-          MACOS 11+ · APPLE SILICON · SIGNED &amp; NOTARIZED · MIT
+          {`${PRODUCT.platform} · ${PRODUCT.signing} · ${PRODUCT.license}`.toUpperCase()}
         </div>
       </div>
       <Rule y={946} frame={frame} start={40} color={P.red} />

@@ -1,15 +1,24 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
+import {PRODUCT, PROMISE_GUARD, SAMPLE} from '../facts';
 import {font} from '../theme';
 
 /**
  * FILM 4 of 4 — "PULSE".
  *
  * Bright, saturated, and the only cut of the four with any real violence in it.
- * Where the press cut states and the system cut explains, this one hits: cards
- * thrown into a grid, a number slammed down hard enough to shake the frame, an
- * odometer counting up, and three shutter flashes. It is the cut built for a
- * feed, where the first second decides everything.
+ * Built for a feed, where the first second decides everything.
+ *
+ * It carries the one claim in this repository nobody else is making: the
+ * **promise guard**. `server/orchestrator/promise_guard.py` is a deterministic
+ * interceptor for an agent telling you it handed work off when it dispatched
+ * nothing — and its docstring records the live incident it was written for,
+ * including a second one that ran five turns claiming a handoff with zero
+ * dispatches. Everyone who has used an agent has been lied to exactly this way,
+ * and it is a far better thing to put in a feed than a score bar.
+ *
+ * So the sequence is: the lie, at full size. The receipt that contradicts it.
+ * The guard catching it. What comes out instead.
  *
  * Shot vocabulary, from the shotcraft library:
  *   - `deck-deal-flyin` — a段落-level anticipation beat first (the stack presses
@@ -55,19 +64,22 @@ const jit = (k: number, m: number) => (((k * 7919) % (m * 2 + 1)) - m);
 /* ================================================================== */
 /* 1. deck-deal-flyin                                                  */
 
+/* Labels from web/src/locales/en.json (sidebar.* / nav.*), so what is on the
+   cards is what is in the client. The version this replaces listed a roster of
+   named agents the product does not ship and counts that were invented. */
 const DECK = [
-  ['Host session', 'one thread'],
-  ['Research Analyst', 'fetch · 11 sources'],
-  ['Data & Chart', 'python · duckdb'],
-  ['Coding Assistant', 'diff · 2 files'],
-  ['Ops Runner', 'shell · k8s'],
-  ['Inbox Triage', 'gmail-mcp'],
-  ['Archivist', 'notes · search'],
-  ['Second brain', '214 notes'],
-  ['Evolution inbox', '1 proposal'],
-  ['Capabilities', '6 grants'],
-  ['Diagnostics', 'net denied'],
-  ['Spawns ledger', '6 spawns'],
+  ['Orchestrator Session', 'one thread'],
+  ['Spawns Ledger', 'the ones you raised'],
+  ['Active Spawns', 'live'],
+  ['Capabilities', 'what each may touch'],
+  ['Second Brain', 'beliefs carry time'],
+  ['Evolution Inbox', 'awaiting Promote'],
+  ['Diagnostics', 'sandbox · network denied'],
+  ['Providers', 'your keys'],
+  ['Skill Packs', 'SKILL.md'],
+  ['MCP Servers', 'stdio, ones you trust'],
+  ['Scheduled Tasks', 'off by default'],
+  ['System Settings', '6 languages · 6 palettes'],
 ];
 
 const CARD_W = 418;
@@ -229,10 +241,10 @@ const Slam: React.FC<{f: number}> = ({f}) => {
             }}
           >
             <div style={{fontFamily: font.mono, fontSize: 19, color: K.grey}}>
-              {side < 0 ? 'INCUMBENT' : 'REGRESSIONS'}
+              {side < 0 ? 'TOOL CALLS' : 'SPAWN RUNS'}
             </div>
             <div style={{marginTop: 14, fontSize: 62, fontWeight: 720, color: K.grey}}>
-              {side < 0 ? '0.71' : 'none'}
+              {side < 0 ? 'some' : '0'}
             </div>
           </div>
         );
@@ -290,13 +302,13 @@ const Slam: React.FC<{f: number}> = ({f}) => {
         }}
       >
         <div style={{fontFamily: font.mono, fontSize: 22, letterSpacing: '0.16em', opacity: 0.85}}>
-          HELD-OUT EXAM · n=38 · SAMPLE DATA
+          WHAT ACTUALLY RAN
         </div>
         <div style={{marginTop: 18, fontSize: 168, fontWeight: 780, letterSpacing: '-0.05em', lineHeight: 1}}>
-          0.86
+          0
         </div>
         <div style={{marginTop: 10, fontSize: 34, fontWeight: 600}}>
-          faithfulness, up from 0.71
+          dispatches. Nothing was handed to anything.
         </div>
       </div>
 
@@ -312,22 +324,24 @@ const Slam: React.FC<{f: number}> = ({f}) => {
           opacity: ramp(f, 46, 20),
         }}
       >
-        It has to pass an exam it has never seen.
+        Tool use is not delegation. The guard knows the difference.
       </div>
     </AbsoluteFill>
   );
 };
 
 /* ================================================================== */
-/* 3. odometer-digit-roll                                              */
+/* 3. the lie, at full size                                            */
 
-const Odometer: React.FC<{f: number}> = ({f}) => {
-  const digits = '214'.split('');
-  const ROW = 268;
-
-  const allLocked = 20 + (digits.length - 1) * 7 + 22;
-  const pulse = ramp(f, allLocked, 4) * (1 - ramp(f, allLocked + 4, 6));
-
+/**
+ * The sentence, verbatim from the incident `promise_guard.py` was written for.
+ *
+ * It is set in quotes and in the product's own voice because the point is
+ * recognition: everyone watching has been told this by something. It sits on
+ * black so the receipt that follows can arrive on white and hit harder.
+ */
+const Lie: React.FC<{f: number}> = ({f}) => {
+  const words = PROMISE_GUARD.lie.split(' ');
   return (
     <AbsoluteFill
       style={{
@@ -335,94 +349,56 @@ const Odometer: React.FC<{f: number}> = ({f}) => {
         color: K.paper,
         fontFamily: font.sans,
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         flexDirection: 'column',
+        justifyContent: 'center',
+        padding: '0 122px',
       }}
     >
       <div
         style={{
-          display: 'flex',
-          transform: `scale(${1 + pulse * 0.035})`,
-          fontVariantNumeric: 'tabular-nums',
+          fontFamily: font.mono,
+          fontSize: 24,
+          letterSpacing: '0.16em',
+          color: K.amber,
+          opacity: ramp(f, 2, 16),
+          marginBottom: 34,
         }}
       >
-        {digits.map((d, i) => {
-          const start = 20 + i * 7;
-          const target = Number(d);
-          // Decelerate to half a row past, then snap back. No overshoot and it
-          // reads as sliding to a stop, which is not a mechanism.
-          const over = ramp(f, start, 16, Easing.out(Easing.cubic));
-          const back = ramp(f, start + 16, 6, Easing.out(Easing.cubic));
-          const spins = 3 + i;
-          const pos = over * (spins * 10 + target + 0.5) - back * 0.5;
-          const moving = f > start && f < start + 16;
-
+        WHAT THE AGENT SAID
+      </div>
+      <div style={{display: 'flex', flexWrap: 'wrap', gap: '0 22px', maxWidth: 1620}}>
+        {words.map((w, i) => {
+          const p = ramp(f, 10 + i * 3, 18, Easing.bezier(0.16, 1.25, 0.3, 1));
           return (
-            <div
+            <span
               key={i}
-              style={{
-                width: 196,
-                height: ROW,
-                overflow: 'hidden',
-                position: 'relative',
-              }}
+              style={{display: 'inline-block', overflow: 'hidden', lineHeight: 1.04, paddingBottom: 12}}
             >
-              {[0, -1, 1].map((gh) => (
-                <div
-                  key={gh}
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    transform: `translateY(${-(pos % 10) * ROW + gh * ROW * 0.5}px)`,
-                    opacity: gh === 0 ? 1 : moving ? (gh === -1 ? 0.25 : 0.12) : 0,
-                  }}
-                >
-                  {Array.from({length: 20}).map((_, n) => (
-                    <div
-                      key={n}
-                      style={{
-                        height: ROW,
-                        fontSize: 246,
-                        fontWeight: 800,
-                        lineHeight: `${ROW}px`,
-                        textAlign: 'center',
-                        letterSpacing: '-0.04em',
-                      }}
-                    >
-                      {n % 10}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+              <span
+                style={{
+                  display: 'inline-block',
+                  transform: `translateY(${(1 - p) * 118}%)`,
+                  fontSize: 92,
+                  fontWeight: 700,
+                  letterSpacing: '-0.035em',
+                }}
+              >
+                {w}
+              </span>
+            </span>
           );
         })}
       </div>
-
       <div
         style={{
-          marginTop: 26,
-          fontSize: 42,
-          fontWeight: 600,
-          color: K.amber,
-          opacity: ramp(f, allLocked, 16),
-        }}
-      >
-        notes it wrote for you, on its own
-      </div>
-      <div
-        style={{
-          marginTop: 14,
+          marginTop: 40,
           fontFamily: font.mono,
-          fontSize: 24,
-          color: 'rgba(255,255,255,0.42)',
-          opacity: ramp(f, allLocked + 8, 16),
+          fontSize: 26,
+          color: K.grey,
+          opacity: ramp(f, 62, 20),
         }}
       >
-        second brain · with a time axis · sample data
+        {SAMPLE} · reconstructed from the incident in promise_guard.py
       </div>
     </AbsoluteFill>
   );
@@ -440,12 +416,12 @@ const Odometer: React.FC<{f: number}> = ({f}) => {
  * floating on the page.
  */
 const LOG: [string, string, string][] = [
-  ['run', 'sandbox start \u00b7 net=none \u00b7 fs=scratch', 'ok'],
-  ['exec', 'charge_report.py \u00b7 84 lines \u00b7 generated', 'ok'],
-  ['deny', 'connect api.stripe.com:443 \u2014 no route', 'deny'],
-  ['deny', 'resolve api.stripe.com \u2014 no resolver', 'deny'],
-  ['route', 'credential proxy \u00b7 key held outside', 'ok'],
-  ['note', 'the code never saw the key', 'note'],
+  ['router', 'decision = route → spawn', 'ok'],
+  ['gate', 'doer-first diverted → Arslan answers', 'ok'],
+  ['answer', '"handed that to Deck Master, generating now"', 'deny'],
+  ['guard', 'handoff claimed · dispatches = 0', 'deny'],
+  ['guard', 'one bounded re-synthesis, then a fixed template', 'ok'],
+  ['out', 'says what it actually did, and asks', 'note'],
 ];
 
 const FlashFrame: React.FC<{zoom: number; ox: string; oy: string; settle: number}> = ({
@@ -471,10 +447,10 @@ const FlashFrame: React.FC<{zoom: number; ox: string; oy: string; settle: number
           fontWeight: 720,
           letterSpacing: '-0.045em',
           color: K.ink,
-          maxWidth: 1400,
+          maxWidth: 1500,
         }}
       >
-        Generated code runs with no network at all.
+        A regex catches it. Not another model.
       </div>
       <div
         style={{
@@ -487,7 +463,7 @@ const FlashFrame: React.FC<{zoom: number; ox: string; oy: string; settle: number
           borderRadius: 18,
           padding: '44px 48px',
           fontFamily: font.mono,
-          fontSize: 34,
+          fontSize: 32,
           lineHeight: 2.5,
           color: '#CBD5E1',
         }}
@@ -552,7 +528,7 @@ const Paparazzi: React.FC<{f: number}> = ({f}) => {
 /* 5. the line, and the close                                          */
 
 const Statement: React.FC<{f: number}> = ({f}) => {
-  const words = ['Nothing', 'ships', 'until', 'you', 'press', 'Promote.'];
+  const words = PROMISE_GUARD.claim.split(' ');
   return (
     <AbsoluteFill
       style={{
@@ -577,7 +553,7 @@ const Statement: React.FC<{f: number}> = ({f}) => {
                 style={{
                   display: 'inline-block',
                   transform: `translateY(${(1 - p) * 118}%)`,
-                  fontSize: 156,
+                  fontSize: 112,
                   fontWeight: 780,
                   letterSpacing: '-0.05em',
                 }}
@@ -622,7 +598,7 @@ const Cta: React.FC<{f: number}> = ({f}) => {
         Arslan
       </div>
       <div style={{marginTop: 8, fontSize: 36, color: K.grey, opacity: a, maxWidth: 1000}}>
-        One host agent. Spawns you raised.
+        {PRODUCT.tagline} — {PRODUCT.what}.
       </div>
       <div
         style={{
@@ -653,7 +629,7 @@ const Cta: React.FC<{f: number}> = ({f}) => {
           opacity: b,
         }}
       >
-        macOS 11+ · Apple Silicon · signed &amp; notarized · MIT
+        {PRODUCT.platform} · {PRODUCT.license} · {PRODUCT.status}
       </div>
     </AbsoluteFill>
   );
@@ -665,11 +641,11 @@ export const PULSE_FRAMES = 900;
 
 const BEATS = [
   {at: 0, C: Deal},
-  {at: 140, C: Slam},
-  {at: 290, C: Odometer},
-  {at: 440, C: Paparazzi},
-  {at: 580, C: Statement},
-  {at: 720, C: Cta},
+  {at: 130, C: Lie},
+  {at: 262, C: Slam},
+  {at: 402, C: Paparazzi},
+  {at: 542, C: Statement},
+  {at: 700, C: Cta},
 ];
 
 export const Pulse: React.FC = () => {

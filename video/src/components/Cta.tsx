@@ -1,5 +1,6 @@
 import React from 'react';
 import {Easing, interpolate, useCurrentFrame} from 'remotion';
+import {MASTHEAD, PRODUCT} from '../facts';
 import {font} from '../theme';
 
 /**
@@ -52,7 +53,7 @@ export const Cta: React.FC<{start: number}> = ({start}) => {
           transform: `translateY(${(1 - head) * 22}px)`,
         }}
       >
-        Arslan
+        {PRODUCT.name}
       </div>
       <div
         style={{
@@ -65,7 +66,7 @@ export const Cta: React.FC<{start: number}> = ({start}) => {
           transform: `translateY(${(1 - sub) * 18}px)`,
         }}
       >
-        One host agent. Spawns you raised. Nothing ships until you press Promote.
+        {MASTHEAD.a} {MASTHEAD.b}
       </div>
       <div
         style={{
@@ -97,7 +98,7 @@ export const Cta: React.FC<{start: number}> = ({start}) => {
           opacity: btn,
         }}
       >
-        macOS 11+ · Apple Silicon · signed &amp; notarized
+        {PRODUCT.platform} · {PRODUCT.license} · {PRODUCT.status}
       </div>
     </div>
   );
