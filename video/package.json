@@ -8,7 +8,7 @@
     "studio": "remotion studio",
     "build": "remotion render ArslanDemo out/arslan-demo.mp4",
     "build:gif": "remotion render ArslanDemo out/arslan-demo.gif --codec=gif --width=960 --every-nth-frame=2",
-    "still": "remotion still ArslanDemo out/poster.png --frame=96",
+    "still": "remotion still ArslanDemo out/poster.png --frame=120",
     "lint": "tsc --noEmit",
     "upgrade": "remotion upgrade"
   },

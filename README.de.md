@@ -37,6 +37,8 @@
 
 <p align="center"><em>Du fragst einmal. Der Host-Agent wählt den passenden Spawn, zerlegt den Job, führt generierten Code in einer Kernel-Sandbox aus und antwortet — alles in einem einzigen Thread.</em></p>
 
+<p align="center"><a href="docs/assets/arslan-demo.mp4"><b>▶ Die 58-Sekunden-Produkttour ansehen</b></a> — der Weg einer Anfrage, das Spawn-Register, das Promotion-Gate, das Second Brain und die Sandbox. <br><sub>Ein gerendertes Erklärvideo, keine Bildschirmaufnahme. Quelle: <a href="video/">video/</a>.</sub></p>
+
 **Arslan ist ein local-first Personal-AI-Orchestrator.** Er läuft auf deinem eigenen Rechner, mit deinen eigenen LLM-Keys, mit einer **standardmäßig sicheren Kernel-Sandbox**, **Ehrlichkeits-Guardrails** und einem **sichtbaren Second Brain**, das du durchstöbern und bearbeiten kannst.
 
 ## Warum Arslan

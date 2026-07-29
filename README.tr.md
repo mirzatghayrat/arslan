@@ -37,6 +37,8 @@
 
 <p align="center"><em>Bir kez sorarsın. Ana ajan (host agent) spawn'ı seçer, işi böler, üretilen kodu bir çekirdek sandbox'ında çalıştırır ve yanıtlar — hepsi tek bir thread'de.</em></p>
 
+<p align="center"><a href="docs/assets/arslan-demo.mp4"><b>▶ 58 saniyelik ürün turunu izleyin</b></a> — bir isteğin akışı, spawn defteri, terfi kapısı, ikinci beyin ve sandbox. <br><sub>Ekran kaydı değil, render edilmiş bir anlatım. Kaynak: <a href="video/">video/</a>.</sub></p>
+
 **Arslan, yerel öncelikli (local-first) kişisel bir yapay zeka orkestratörüdür.** Kendi makinende, kendi LLM anahtarlarınla çalışır; **varsayılan olarak güvenli bir çekirdek sandbox'ı**, **dürüstlük korkulukları** ve göz atıp düzenleyebileceğin **görünür bir ikinci beyin** ile birlikte gelir.
 
 ## Neden Arslan

@@ -37,6 +37,8 @@
 
 <p align="center"><em>You ask once. The host agent picks the spawn, splits the job, runs generated code in a kernel sandbox, and answers — all in one thread.</em></p>
 
+<p align="center"><a href="docs/assets/arslan-demo.mp4"><b>▶ Watch the 58-second product tour</b></a> — the request path, the spawn roster, the promotion gate, the second brain, and the sandbox. <br><sub>A rendered explainer, not a screen recording. Source: <a href="video/">video/</a>.</sub></p>
+
 **Arslan is a local-first personal AI orchestrator.** It runs on your own machine, against your own LLM keys, with a **safe-by-default kernel sandbox**, **honesty guardrails**, and a **visible second brain** you can browse and edit.
 
 ## Why Arslan

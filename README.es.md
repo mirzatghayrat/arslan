@@ -37,6 +37,8 @@
 
 <p align="center"><em>Pides una sola vez. El agente anfitrión elige el spawn, divide el trabajo, ejecuta el código generado en un sandbox a nivel de kernel y responde — todo en un mismo hilo.</em></p>
 
+<p align="center"><a href="docs/assets/arslan-demo.mp4"><b>▶ Ver el recorrido de producto de 58 segundos</b></a> — cómo fluye una solicitud, el registro de spawns, la puerta de promoción, el segundo cerebro y el sandbox. <br><sub>Un explicativo renderizado, no una grabación de pantalla. Fuente: <a href="video/">video/</a>.</sub></p>
+
 **Arslan es un orquestador personal de IA con enfoque local-first.** Corre en tu propia máquina, contra tus propias claves de LLM, con un **sandbox de kernel seguro por defecto**, **guardarraíles de honestidad** y un **segundo cerebro visible** que puedes explorar y editar.
 
 ## Por qué Arslan
