@@ -4,6 +4,10 @@ import './fonts';
 import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
+import {Press, PRESS_FRAMES} from './films/Press';
+import {Pulse, PULSE_FRAMES} from './films/Pulse';
+import {System, SYSTEM_FRAMES} from './films/System';
+import {Terminal, TERMINAL_FRAMES} from './films/Terminal';
 import {ArslanShort, SHORT_FRAMES} from './ArslanShort';
 import {SHOT_COUNT, ShotMock} from './ShotMock';
 import {ColdOpen} from './scenes/ColdOpen';
@@ -67,6 +71,45 @@ export const RemotionRoot: React.FC = () => (
       id="ArslanFilm"
       component={ArslanFilm}
       durationInFrames={FILM_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    {/* Four 30-second cuts, one per visual language. Each is self-contained:
+        they share fonts and nothing else, because the brief was maximum
+        stylistic distance between them. */}
+    <Composition
+      id="F1-Terminal"
+      component={Terminal}
+      durationInFrames={TERMINAL_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    <Composition
+      id="F2-Press"
+      component={Press}
+      durationInFrames={PRESS_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    <Composition
+      id="F3-System"
+      component={System}
+      durationInFrames={SYSTEM_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    <Composition
+      id="F4-Pulse"
+      component={Pulse}
+      durationInFrames={PULSE_FRAMES}
       fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}
