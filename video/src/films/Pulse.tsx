@@ -593,8 +593,10 @@ const Statement: React.FC<{f: number}> = ({f}) => {
 };
 
 const Cta: React.FC<{f: number}> = ({f}) => {
-  const a = ramp(f, 4, 24, Easing.bezier(0.16, 1.25, 0.3, 1));
-  const b = ramp(f, 26, 24, Easing.bezier(0.16, 1.25, 0.3, 1));
+  // Starts on the cut, not four frames after it: the statement beat ends
+  // on the same frame, so any delay here is a white flash.
+  const a = ramp(f, 0, 24, Easing.bezier(0.16, 1.25, 0.3, 1));
+  const b = ramp(f, 22, 24, Easing.bezier(0.16, 1.25, 0.3, 1));
   return (
     <AbsoluteFill
       style={{

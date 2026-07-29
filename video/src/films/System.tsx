@@ -246,7 +246,7 @@ export const System: React.FC = () => {
           that has to be read. */}
       <AbsoluteFill
         style={{
-          opacity: 1 - ramp(f, 706, 40) * 0.72,
+          opacity: 1 - ramp(f, 700, 54) * 0.72,
           perspective: 1600,
           transform: atGate ? `scale(${dolly})` : undefined,
           filter: atGate ? `blur(${(dolly - 1) * 3.2}px)` : undefined,
@@ -470,8 +470,8 @@ const Gate: React.FC<{f: number}> = ({f}) => {
 };
 
 const Cta: React.FC<{f: number}> = ({f}) => {
-  const a = ramp(f, 20, 28, Easing.bezier(0.16, 1.2, 0.3, 1));
-  const b = ramp(f, 42, 28, Easing.bezier(0.16, 1.2, 0.3, 1));
+  const a = ramp(f, 2, 30, Easing.bezier(0.16, 1.2, 0.3, 1));
+  const b = ramp(f, 24, 30, Easing.bezier(0.16, 1.2, 0.3, 1));
   return (
     <AbsoluteFill
       style={{
