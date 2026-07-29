@@ -3,6 +3,7 @@ import {Composition} from 'remotion';
 import './fonts';
 import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
+import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {ArslanShort, SHORT_FRAMES} from './ArslanShort';
 import {SHOT_COUNT, ShotMock} from './ShotMock';
 import {ColdOpen} from './scenes/ColdOpen';
@@ -50,12 +51,22 @@ export const RemotionRoot: React.FC = () => (
       width={VIDEO.width}
       height={VIDEO.height}
     />
-    {/* Cinematic cut: one continuous camera from the character filling the
-        frame out to the machine on a desk and the download. */}
+    {/* The cinematic cut, at two lengths. Both open on the character and pull
+        back until it turns out to have been a screen, and both close by pulling
+        back off the machine into the download rather than cutting to it. The 30
+        is built out of arrivals and the 60 out of holds — see either file. */}
     <Composition
       id="ArslanShort"
       component={ArslanShort}
       durationInFrames={SHORT_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+    <Composition
+      id="ArslanFilm"
+      component={ArslanFilm}
+      durationInFrames={FILM_FRAMES}
       fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}

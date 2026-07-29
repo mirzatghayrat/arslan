@@ -205,9 +205,25 @@ const Bubble: React.FC<{
   </div>
 );
 
-/** The host thread answering, with the spawns it fanned out to. */
-export const ScreenThread: React.FC<{frame: number}> = ({frame}) => {
+/**
+ * The host thread answering, with the spawns it fanned out to.
+ *
+ * `extended` adds a second exchange after the chart. The 30-second cut does not
+ * use it: that film is on this view for five seconds and the chart is the last
+ * thing it has time to say. The 60 holds here for seven, and a screen that
+ * finishes building and then sits still for four seconds reads as a screenshot
+ * no matter what the camera is doing. The follow-up is also the more honest
+ * picture of the product — the point of one thread is that you can keep asking.
+ *
+ * The pair grows in by height rather than fading in at full size, so the chart
+ * above gives up its space smoothly instead of jumping.
+ */
+export const ScreenThread: React.FC<{frame: number; extended?: boolean}> = ({
+  frame,
+  extended = false,
+}) => {
   const bars = [0.42, 0.55, 0.48, 0.7, 0.63, 0.82, 0.74, 0.95];
+  const follow = ramp(frame, 116, 30);
   return (
     <Shell active="Host session" title="Host session · one thread">
       <div
@@ -239,7 +255,7 @@ export const ScreenThread: React.FC<{frame: number}> = ({frame}) => {
                 border: `1px solid ${light.border}`,
                 borderRadius: 14,
                 padding: '16px 18px',
-                ...rise(frame, 22 + i * 7, 14, 12),
+                ...rise(frame, 12 + i * 6, 14, 12),
               }}
             >
               <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
@@ -270,7 +286,7 @@ export const ScreenThread: React.FC<{frame: number}> = ({frame}) => {
                 <div
                   style={{
                     height: '100%',
-                    width: `${ramp(frame, 34 + i * 8, 42) * 100}%`,
+                    width: `${ramp(frame, 22 + i * 7, 40) * 100}%`,
                     background: light.primary,
                   }}
                 />
@@ -296,7 +312,7 @@ export const ScreenThread: React.FC<{frame: number}> = ({frame}) => {
             padding: '22px 26px',
             display: 'flex',
             flexDirection: 'column',
-            ...rise(frame, 80, 20, 16),
+            ...rise(frame, 44, 20, 16),
           }}
         >
           <div style={{fontSize: 22, lineHeight: 1.45, flexShrink: 0, maxWidth: 900}}>
@@ -347,7 +363,7 @@ export const ScreenThread: React.FC<{frame: number}> = ({frame}) => {
               >
                 <div
                   style={{
-                    height: `${v * 100 * ramp(frame, 96 + i * 3, 20)}%`,
+                    height: `${v * 100 * ramp(frame, 58 + i * 3, 22)}%`,
                     borderRadius: 7,
                     background: i > 5 ? light.primary : `${light.primary}55`,
                   }}
@@ -356,6 +372,27 @@ export const ScreenThread: React.FC<{frame: number}> = ({frame}) => {
             ))}
           </div>
         </div>
+
+        {extended ? (
+          <div
+            style={{
+              flexShrink: 0,
+              maxHeight: follow * 250,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 18,
+            }}
+          >
+            <Bubble me o={ramp(frame, 122, 16)} max={620}>
+              Which renewals, and who owns them?
+            </Bubble>
+            <Bubble o={ramp(frame, 156, 20)} max={880}>
+              Three: <b>Northwind</b>, <b>Acorn Health</b>, <b>Lumen</b> — all with
+              Dana. I put the account notes in your second brain.
+            </Bubble>
+          </div>
+        ) : null}
       </div>
     </Shell>
   );
@@ -369,7 +406,7 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
     ['tool discipline', 0.78, 0.83],
     ['honesty', 0.82, 0.82],
   ];
-  const promoted = frame > 118;
+  const promoted = frame > 168;
   return (
     <Shell active="Evolution inbox" title="Evolution inbox · 1 proposal">
       {/* The pair sizes to its content and is centred, rather than stretched to
@@ -599,7 +636,7 @@ export const ScreenPromotion: React.FC<{frame: number}> = ({frame}) => {
               fontSize: 19,
               fontWeight: 700,
               letterSpacing: '0.02em',
-              transform: `scale(${frame >= 116 && frame < 122 ? 0.96 : 1})`,
+              transform: `scale(${frame >= 166 && frame < 172 ? 0.96 : 1})`,
             }}
           >
             {promoted ? 'PROMOTED' : 'Promote'}
@@ -791,6 +828,211 @@ export const ScreenBrain: React.FC<{frame: number}> = ({frame}) => {
             <span>FIRST BELIEF</span>
             <span>NOW</span>
           </div>
+        </div>
+      </div>
+    </Shell>
+  );
+};
+
+/**
+ * The spawns ledger: every agent the host can hand work to, and what each one
+ * is actually allowed to touch.
+ *
+ * Only the 60-second cut has room for this. The 30 has to assert that spawns
+ * exist and move on; the 60 can show that they are a roster with capabilities
+ * attached, which is the difference between "it has sub-agents" and "you raised
+ * these and you decide what they hold".
+ */
+export const ScreenSpawns: React.FC<{frame: number}> = ({frame}) => {
+  const rows: [string, string, string, boolean][] = [
+    ['Research Analyst', 'fetch · browser', 'sources.md', true],
+    ['Data & Chart Analyst', 'python · duckdb', 'charts.md', true],
+    ['Coding Assistant', 'edit · shell', 'repo.md', true],
+    ['Ops Runner', 'shell · k8s-mcp', 'runbooks.md', false],
+    ['Inbox Triage', 'gmail-mcp', 'triage.md', true],
+    ['Archivist', 'notes · search', 'brain.md', true],
+  ];
+  return (
+    <Shell active="Spawns ledger" title="Spawns ledger · 6 spawns">
+      <div style={{position: 'absolute', inset: 0, padding: '28px 34px', display: 'flex', flexDirection: 'column'}}>
+        <div
+          style={{
+            display: 'flex',
+            fontFamily: font.mono,
+            fontSize: 12.5,
+            color: light.subtle,
+            letterSpacing: '0.14em',
+            paddingBottom: 14,
+            borderBottom: `1px solid ${light.border}`,
+            flexShrink: 0,
+          }}
+        >
+          <span style={{flex: 1.35}}>SPAWN</span>
+          <span style={{flex: 1.15}}>TOOLS</span>
+          <span style={{flex: 0.9}}>SKILL PACK</span>
+          <span style={{width: 132, textAlign: 'right'}}>EGRESS</span>
+        </div>
+
+        <div style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly'}}>
+          {rows.map(([n, tools, pack, proxied], i) => (
+            <div
+              key={n}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${light.border}`,
+                paddingBottom: 16,
+                paddingTop: 16,
+                ...rise(frame, 6 + i * 7, 16, 10),
+              }}
+            >
+              <span style={{flex: 1.35, display: 'flex', alignItems: 'center', gap: 12}}>
+                <span style={{width: 9, height: 9, borderRadius: 9, background: light.primary, flexShrink: 0}} />
+                <span style={{fontSize: 19, fontWeight: 600}}>{n}</span>
+              </span>
+              <span style={{flex: 1.15, fontFamily: font.mono, fontSize: 15, color: light.muted}}>{tools}</span>
+              <span style={{flex: 0.9, fontFamily: font.mono, fontSize: 15, color: light.muted}}>{pack}</span>
+              <span style={{width: 132, textAlign: 'right'}}>
+                <span
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 13,
+                    padding: '5px 11px',
+                    borderRadius: 999,
+                    background: proxied ? `${light.info}14` : '#F1F5F9',
+                    color: proxied ? light.info : light.subtle,
+                  }}
+                >
+                  {proxied ? 'proxied' : 'none'}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Shell>
+  );
+};
+
+/**
+ * Diagnostics, showing the sandbox refusing a direct connection.
+ *
+ * The claim this makes is the one worth making precisely: generated code has no
+ * network at all, and the only route out is a proxy that holds the credentials
+ * so the code never sees them. Two log lines say it better than a diagram does,
+ * and unlike a diagram they look like something the product would actually
+ * print.
+ */
+export const ScreenSafety: React.FC<{frame: number}> = ({frame}) => {
+  const lines: [string, string, string][] = [
+    ['run', 'sandbox start · net=none · fs=scratch', 'ok'],
+    ['exec', 'charge_report.py · 84 lines · generated', 'ok'],
+    ['deny', 'connect api.stripe.com:443 — no route from sandbox', 'deny'],
+    ['deny', 'resolve api.stripe.com — no resolver in namespace', 'deny'],
+    ['route', 'credential proxy · key held outside the sandbox', 'ok'],
+    ['ok', 'GET /v1/charges 200 · 41ms · 1 of 1 allowed host', 'ok'],
+    ['note', 'the generated code never saw the key', 'note'],
+  ];
+  const tone = {
+    ok: light.success,
+    deny: light.danger,
+    note: light.subtle,
+  } as const;
+
+  return (
+    <Shell active="Diagnostics" title="Diagnostics · sandbox">
+      {/* Sized to its content and centred rather than stretched. Given
+          `flex: 1` the log became a dark slab most of a display tall with seven
+          short lines at the top of it, which on a warm set is the most
+          conspicuous empty space in either film. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          padding: '28px 34px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          gap: 24,
+        }}
+      >
+        <div style={{display: 'flex', gap: 16, flexShrink: 0}}>
+          {[
+            ['NETWORK', 'denied', light.danger],
+            ['FILESYSTEM', 'scratch only', light.warning],
+            ['EGRESS', 'proxy only', light.info],
+          ].map(([k, v, c], i) => (
+            <div
+              key={k}
+              style={{
+                flex: 1,
+                background: light.surface,
+                border: `1px solid ${light.border}`,
+                borderRadius: 14,
+                padding: '16px 18px',
+                ...rise(frame, 4 + i * 8, 16, 12),
+              }}
+            >
+              <div style={{fontFamily: font.mono, fontSize: 12, color: light.subtle, letterSpacing: '0.14em'}}>
+                {k}
+              </div>
+              <div style={{marginTop: 9, fontSize: 21, fontWeight: 600, color: c as string}}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            flexShrink: 0,
+            background: '#0F172A',
+            borderRadius: 16,
+            padding: '26px 30px',
+            fontFamily: font.mono,
+            fontSize: 18,
+            lineHeight: 2.15,
+            color: '#CBD5E1',
+            overflow: 'hidden',
+            ...rise(frame, 26, 18, 14),
+          }}
+        >
+          {lines.map(([tag, text, t], i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                gap: 16,
+                opacity: ramp(frame, 34 + i * 13, 12),
+              }}
+            >
+              <span style={{color: tone[t as keyof typeof tone], width: 82, flexShrink: 0}}>
+                {tag}
+              </span>
+              <span style={{color: t === 'deny' ? '#FCA5A5' : '#CBD5E1'}}>{text}</span>
+            </div>
+          ))}
+          <div
+            style={{
+              marginTop: 12,
+              width: 11,
+              height: 22,
+              background: light.primary,
+              opacity: frame > 130 && Math.floor(frame / 15) % 2 === 0 ? 1 : 0,
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            fontSize: 17,
+            color: light.muted,
+            lineHeight: 1.5,
+            maxWidth: 940,
+            opacity: ramp(frame, 140, 22),
+          }}
+        >
+          Generated code runs with no network at all. The credential proxy is
+          the only route out, and it holds the key — so a leak has nothing to
+          leak.
         </div>
       </div>
     </Shell>

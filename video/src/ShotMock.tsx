@@ -10,8 +10,8 @@ import {
   type MockupName,
   type View,
 } from './components/Mockup';
+import {Cta} from './components/Cta';
 import {CHARACTER_OPEN} from './lightTheme';
-import {font} from './theme';
 
 /**
  * One frame per shot, so a framing can be rendered with `remotion still` and
@@ -133,80 +133,6 @@ const Screen: React.FC<{kind: Content; at: number}> = ({kind, at}) => {
   return <ScreenBrain frame={at} />;
 };
 
-/**
- * The close.
- *
- * Type in world space is the one thing that must never touch the machine — a
- * caption laid across the hardware turns an app demo into a laptop advert. The
- * top-down mock-up earns this shot because the set around the machine is empty
- * amber, so the words have somewhere of their own to sit.
- */
-export const Cta: React.FC<{o?: number}> = ({o = 1}) => (
-  <div
-    style={{
-      position: 'absolute',
-      left: 128,
-      top: 296,
-      width: 620,
-      fontFamily: font.sans,
-      opacity: o,
-    }}
-  >
-    <div
-      style={{
-        fontSize: 92,
-        fontWeight: 650,
-        letterSpacing: '-0.04em',
-        color: '#FFF6EA',
-        lineHeight: 1.02,
-        textShadow: '0 10px 40px rgba(60,26,0,0.4)',
-      }}
-    >
-      Arslan
-    </div>
-    <div
-      style={{
-        marginTop: 20,
-        fontSize: 26,
-        color: 'rgba(255,238,219,0.86)',
-        lineHeight: 1.45,
-        maxWidth: 510,
-      }}
-    >
-      One host agent. Spawns you raised. Nothing ships until you press Promote.
-    </div>
-    <div
-      style={{
-        marginTop: 44,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 15,
-        background: '#FFF6EA',
-        color: '#231204',
-        borderRadius: 999,
-        padding: '20px 38px',
-        fontSize: 25,
-        fontWeight: 600,
-        boxShadow: '0 20px 54px rgba(48,20,0,0.45)',
-      }}
-    >
-      <span style={{fontSize: 23}}>↓</span>
-      Download for macOS
-    </div>
-    <div
-      style={{
-        marginTop: 18,
-        fontFamily: font.mono,
-        fontSize: 15,
-        color: 'rgba(255,235,213,0.66)',
-        letterSpacing: '0.06em',
-      }}
-    >
-      macOS 11+ · Apple Silicon · signed &amp; notarized
-    </div>
-  </div>
-);
-
 export const ShotMock: React.FC = () => {
   const frame = useCurrentFrame();
   const shot = SHOTS[Math.min(frame, SHOTS.length - 1)];
@@ -216,7 +142,7 @@ export const ShotMock: React.FC = () => {
       <Mockup mockup={shot.mockup} view={shot.view}>
         <Screen kind={shot.content} at={shot.at} />
       </Mockup>
-      {shot.cta ? <Cta /> : null}
+      {shot.cta ? <Cta start={0} /> : null}
     </AbsoluteFill>
   );
 };

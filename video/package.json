@@ -9,7 +9,10 @@
     "build": "remotion render ArslanDemo out/arslan-demo.mp4",
     "still": "remotion still ArslanDemo out/poster.png --frame=120",
     "lint": "tsc --noEmit",
-    "upgrade": "remotion upgrade"
+    "upgrade": "remotion upgrade",
+    "short": "remotion render ArslanShort out/arslan-30s.mp4",
+    "film": "remotion render ArslanFilm out/arslan-60s.mp4",
+    "shots": "remotion still ShotMock out/shot.png --frame=0"
   },
   "dependencies": {
     "@remotion/cli": "4.0.500",
