@@ -15,7 +15,9 @@ export const Mark: React.FC<{
   delay?: number;
   /** Pulses the spawn nodes once they have landed. */
   live?: boolean;
-}> = ({frame, size = 220, delay = 0, live = false}) => {
+  /** Accent, so the light film can pass the product's light-theme primary. */
+  tone?: string;
+}> = ({frame, size = 220, delay = 0, live = false, tone = color.amber}) => {
   const f = frame - delay;
 
   const host = pop(f, 0);
@@ -62,7 +64,7 @@ export const Mark: React.FC<{
               y1={l.y1}
               x2={l.x2}
               y2={l.y2}
-              stroke={color.amber}
+              stroke={tone}
               strokeWidth={2}
               strokeLinecap="round"
               {...drawPath(p, len)}
@@ -74,7 +76,7 @@ export const Mark: React.FC<{
           cx={16}
           cy={13}
           r={3 * host}
-          fill={color.amber}
+          fill={tone}
         />
 
         {spawns.map((sp, i) => {
@@ -88,7 +90,7 @@ export const Mark: React.FC<{
               cx={sp.cx}
               cy={sp.cy}
               r={2.5 * p * (f > 40 ? pulse : 1)}
-              fill={color.amber}
+              fill={tone}
             />
           );
         })}

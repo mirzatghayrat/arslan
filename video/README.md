@@ -64,19 +64,80 @@ sum of its plates.
 Each plate is also registered as its own composition (`Scene-02-request-path`,
 …) so a single scene can be re-timed without scrubbing the whole film.
 
+## The light cut (`ArslanLight`) — direction proof, not finished
+
+A second, lighter film built around the brand character. **19.6 s, two scenes.**
+It is a proof of the direction, not a finished piece — see "What is missing".
+
+The hinge is not decoration: the emblem glowing on the cat's chest **is** the
+Arslan mark — one node with legs radiating out of it, the same figure as
+`web/public/favicon.svg` and the same figure the request-path diagram draws. So
+the cut runs character → chest → mark → architecture with nothing in between.
+The creature is already wearing the product's architecture; the film only has
+to point at it.
+
+| Scene | Frames | Beat |
+| --- | --- | --- |
+| `Creature` | 300 | The character sits in negative space. Push into the chest emblem, hand off to the vector mark at the emblem's exact position and size. |
+| `Architecture` | 300 | The mark's legs keep going until they reach the spawns. |
+
+### Why it looks the way it does
+
+- **The palette is the product's, not a new one.** `src/lightTheme.ts` copies
+  the `:root` / `[data-palette="current"]` block from `web/src/theme/tokens.css`
+  — the app's **default** theme. `--primary` (`#D9741A`) runs a hair warmer than
+  the dark film's `#e6863c`, which happens to put the product's accent and the
+  emblem on the cat's chest at effectively the same colour.
+- **The footage sits under its native size** — a card ~1180px wide against
+  1280px of source. 1280x720 stretched to full bleed on a 1920 frame is visibly
+  soft; a plate floating in negative space is both sharper and closer to the
+  language being borrowed.
+- **The hand-off is measured, not eyeballed.** The emblem's centre came from the
+  centroid of saturated-amber pixels in the lower-centre box of the clip's
+  settled final frame — the eyes are the same hue, so the upper third is
+  excluded — giving `(0.477, 0.582)` normalised. The mark is placed there and
+  scaled by `1 / 0.594`, because its figure fills only the middle ~59% of its
+  32-unit viewBox. Sizing the SVG box to the emblem span would have drawn a mark
+  visibly smaller than the glow it replaces, and the hand-off would have read as
+  a shrink instead of a morph.
+- **No springs anywhere.** One long even curve for every move, and the type is
+  off screen before the push starts so nothing competes with it.
+
+### The character asset
+
+`public/character/arslan-cat.mp4` is the light half (4.40s to 7.97s) of a
+supplied 8-second character clip: head tilt, settle, wall lights up. The head of
+the original is framed by dark server racks that fight the light treatment, so
+it is cut. **The clip is generated brand imagery, not a screen recording of the
+product,** and wherever it ships it should be captioned as such.
+
+### What is missing
+
+- **Sound.** Apple-style pacing leans on a score and there is none here. The
+  source clip carries a quiet mechanical bed that could underlay the opening,
+  but a real track has to be licensed and supplied. `remotion.config.ts`
+  currently renders everything muted.
+- **The rest of the story.** Only the request path is covered. The promotion
+  gate, the second brain and the sandbox — plates 04 to 06 of the dark film —
+  have no light equivalent yet.
+- **A close.** The film ends on the diagram, with no wordmark or call to action.
+
 ## Layout
 
 ```
 src/
-  ArslanDemo.tsx      the film — walks SCENES and lays them out with cross-fades
-  Root.tsx            composition registry (film + one per scene)
-  theme.ts            palette, type, scene table  ← start here
+  ArslanDemo.tsx      the dark film — walks SCENES and lays them out
+  ArslanLight.tsx     the light cut — character clip into the architecture
+  Root.tsx            composition registry (both films + one per scene)
+  theme.ts            dark palette, type, scene table  ← start here
+  lightTheme.ts       light palette (the product's own) + measured clip geometry
   fonts.ts            vendored face registration
   fonts/              Inter + IBM Plex Mono woff2 (OFL, see fonts/README.md)
   lib/anim.ts         the shared easing / spring / typing / draw-on helpers
   lib/geom.ts         bezier wires, so packets can fly the same path a line draws
   components/         Plate chrome, the mark, and the shared primitives
-  scenes/             one file per plate
+  scenes/             one file per plate of the dark film
+  scenes/light/       the light cut's scenes
 ```
 
 ### Fonts
