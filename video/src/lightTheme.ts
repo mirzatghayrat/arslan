@@ -66,6 +66,28 @@ export const CHARACTER = {
   },
 } as const;
 
+/**
+ * A longer cut of the same source, 2.20s to 7.97s, for the cinematic film.
+ *
+ * The opening of that film is one continuous pull-back out of the character's
+ * face to a machine on a desk, which needs close to six seconds of the clip
+ * where the light cut only needed three and a half. It is a separate asset
+ * rather than a re-cut of `CHARACTER` because the emblem hand-off in
+ * `scenes/light/Creature` is measured against that clip's final frame, and
+ * moving its edges would silently invalidate the measurement.
+ *
+ * The clip's own slow push-in is worth knowing about when timing the move: run
+ * against a camera pulling back, it holds the cat at roughly constant size on
+ * frame while the room opens out around it.
+ */
+export const CHARACTER_OPEN = {
+  src: 'character/arslan-cat-open.mp4',
+  width: 1280,
+  height: 720,
+  /** 139 source frames at 24fps → 174 frames at the film's 30fps. */
+  frames: 174,
+} as const;
+
 export const LIGHT_SCENES = [
   {id: 'creature', duration: 300},
   {id: 'architecture', duration: 300},
