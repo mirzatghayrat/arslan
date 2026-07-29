@@ -28,94 +28,65 @@ type Shot = {
   /** Frame fed to the screen's own animation. */
   at: number;
   cta?: boolean;
-  second?: boolean;
 };
 
 const SHOTS: Shot[] = [
   {
     id: 'A',
-    note: 'Open — the character fills the frame. No laptop yet, no type.',
-    env: 'studio',
+    note: 'Open. The character fills the frame — this is the same shot as B, not a separate one.',
+    env: 'amber',
     cam: {frame: 0, target: HERO, dist: 1500, yaw: 0, pitch: 0},
     content: 'cat',
-    at: 60,
+    at: 40,
   },
   {
     id: 'B',
-    note: 'Mid pull-back — the bezel arrives and it turns out to be a screen.',
-    env: 'studio',
-    cam: {frame: 0, target: [0, -624, -60], dist: 2620, yaw: -3, pitch: 4},
+    note: 'The SAME shot, later. Camera has pulled back, clip is still running, bezel arrives.',
+    env: 'amber',
+    cam: {frame: 0, target: [0, -636, -96], dist: 2500, yaw: -2, pitch: 3},
     content: 'cat',
-    at: 92,
+    at: 78,
   },
   {
     id: 'C',
-    note: 'Reveal settles — machine on the desk, character still playing.',
-    env: 'studio',
-    cam: {frame: 0, target: [0, -566, 120], dist: 4700, yaw: -7, pitch: 8},
+    note: 'Still the same move, settled. One machine on a desk, character still playing.',
+    env: 'amber',
+    cam: {frame: 0, target: [0, -572, 110], dist: 4600, yaw: -6, pitch: 8},
     content: 'cat',
     at: 106,
   },
   {
     id: 'D',
-    note: 'Same framing, warm environment. Arslan amber used as the key light.',
+    note: 'App takes the screen. Camera has drifted to a three-quarter.',
     env: 'amber',
-    cam: {frame: 0, target: [0, -566, 120], dist: 4700, yaw: -7, pitch: 8},
-    content: 'cat',
-    at: 106,
+    cam: {frame: 0, target: [0, -580, 100], dist: 4200, yaw: 17, pitch: 9},
+    content: 'thread',
+    at: 150,
   },
   {
     id: 'E',
-    note: 'Three-quarter — the app is on the screen. Nothing written on the machine.',
-    env: 'studio',
-    cam: {frame: 0, target: [0, -570, 110], dist: 4300, yaw: 19, pitch: 9},
-    content: 'thread',
-    at: 150,
-  },
-  {
-    id: 'F',
-    note: 'Same shot, warm environment.',
+    note: 'Push in on the promotion gate so the exam scores are legible.',
     env: 'amber',
-    cam: {frame: 0, target: [0, -570, 110], dist: 4300, yaw: 19, pitch: 9},
-    content: 'thread',
-    at: 150,
-  },
-  {
-    id: 'G',
-    note: 'Promotion gate, pushed a little closer so the exam is readable.',
-    env: 'studio',
-    cam: {frame: 0, target: [0, -600, 40], dist: 3500, yaw: -12, pitch: 8},
+    cam: {frame: 0, target: [0, -610, 20], dist: 3300, yaw: -10, pitch: 7},
     content: 'promotion',
     at: 150,
   },
   {
-    id: 'H',
-    note: 'Two machines. The camera has backed off; both are on the same desk.',
-    env: 'studio',
-    cam: {frame: 0, target: [760, -520, 300], dist: 8200, yaw: 7, pitch: 14},
+    id: 'F',
+    note: 'Second brain, eased back out. Still one machine.',
+    env: 'amber',
+    cam: {frame: 0, target: [0, -590, 70], dist: 4400, yaw: 12, pitch: 10},
     content: 'brain',
     at: 150,
-    second: true,
   },
   {
-    id: 'I',
-    note: 'Close — machine right, CTA in clear space at left. Copy never on the hardware.',
-    env: 'studio',
-    cam: {frame: 0, target: [-1180, -520, 300], dist: 9200, yaw: 5, pitch: 12},
-    content: 'brain',
-    at: 170,
-    cta: true,
-    second: true,
-  },
-  {
-    id: 'J',
-    note: 'Same close, warm environment.',
+    id: 'G',
+    note: 'Close. Machine right, CTA in clear space at left. Never two machines.',
     env: 'amber',
-    cam: {frame: 0, target: [-1180, -520, 300], dist: 9200, yaw: 5, pitch: 12},
+    cam: {frame: 0, target: [-1250, -560, 160], dist: 6400, yaw: 4, pitch: 9},
     content: 'brain',
-    at: 170,
+    at: 190,
     cta: true,
-    second: true,
   },
 ];
 
@@ -211,18 +182,6 @@ export const ShotMock: React.FC = () => {
         <Screen kind={shot.content} at={shot.at} />
       </MacBook>
 
-      {shot.second ? (
-        <MacBook
-          position={[2980, 0, 700]}
-          yaw={-27}
-          scale={0.94}
-          rim={e.rim}
-          shadow={e.shadow}
-          alu={e.alu}
-        >
-          <ScreenThread frame={200} />
-        </MacBook>
-      ) : null}
     </Stage>
   );
 };
