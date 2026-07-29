@@ -1,0 +1,177 @@
+<meta charset="utf-8">
+<title>搜我的大脑 · 设计 mock（B4，待裁决）</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d10; color:#e6e8ea;
+         font: 14px/1.65 -apple-system, "PingFang SC", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 28px 90px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { color:#8b939c; font-size: 12.5px; margin-bottom: 30px; }
+  h2 { font-size: 15px; margin: 40px 0 4px; }
+  h2 .n { color:#f0883e; font-family: ui-monospace, monospace; margin-right: 8px; }
+  .why { color:#9aa3ad; font-size: 12.5px; margin: 0 0 14px; }
+  .flag { border-left: 3px solid #d9534f; background:#1a1113; padding: 12px 16px;
+          margin: 14px 0 18px; font-size: 12.5px; color:#e8c4c4; border-radius:0 6px 6px 0; }
+  .flag b { color:#ff8e8e; }
+  .row { display:grid; grid-template-columns: 1fr 1fr; gap:18px; margin:14px 0 6px; }
+  @media (max-width: 860px){ .row{grid-template-columns:1fr;} }
+  .card { border:1px solid #21262d; border-radius:10px; overflow:hidden; background:#0e1116; }
+  .cap { font-size:11px; color:#8b939c; padding:8px 12px; border-bottom:1px solid #21262d;
+         font-family: ui-monospace, monospace; letter-spacing:.03em; }
+  .cap.a { color:#7ee787; } .cap.b { color:#79c0ff; }
+  .stage { padding:14px; }
+
+  .searchbar { display:flex; align-items:center; gap:8px; border:1px solid #30363d;
+               border-radius:8px; padding:8px 11px; background:#0d1117; font-size:12.5px; }
+  .searchbar .ph { color:#6e7681; flex:1; }
+  .searchbar .kbd { font-family:ui-monospace,monospace; font-size:9px; color:#6e7681;
+                    border:1px solid #30363d; border-radius:4px; padding:1px 5px; }
+  .mode { display:flex; gap:6px; margin:9px 0 4px; }
+  .mode span { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:.08em;
+               border:1px solid #30363d; border-radius:5px; padding:2px 7px; color:#6e7681; }
+  .mode span.on { color:#e6e8ea; border-color:#f0883e66; background:#f0883e18; }
+
+  .res { border:1px solid #21262d; border-radius:8px; margin-top:10px; overflow:hidden; }
+  .rhead { font-family:ui-monospace,monospace; font-size:9px; color:#6e7681;
+           padding:7px 11px; border-bottom:1px solid #21262d; letter-spacing:.09em;
+           display:flex; justify-content:space-between; }
+  .r { padding:9px 11px; border-bottom:1px solid #161b22; }
+  .r:last-child{border-bottom:none}
+  .r.on { background:#f0883e12; box-shadow: inset 2px 0 0 #f0883e; }
+  .rt { font-size:12.5px; color:#e6e8ea; }
+  .rk { font-family:ui-monospace,monospace; font-size:8.5px; color:#6e7681;
+        border:1px solid #30363d; border-radius:4px; padding:0 5px; margin-left:7px; }
+  .rs { font-size:11px; color:#8b939c; margin-top:3px; }
+  .rs mark { background:#f0883e33; color:#ffd7b5; padding:0 2px; border-radius:2px; }
+  .note { font-size:10.5px; color:#6e7681; padding:8px 11px; font-style:italic;
+          border-top:1px solid #161b22; }
+
+  .graph { height:120px; border:1px dashed #21262d; border-radius:8px; margin-top:10px;
+           position:relative; background:#0a0c0f; }
+  .node { position:absolute; width:9px; height:9px; border-radius:50%; background:#30363d; }
+  .node.hit { background:#f0883e; box-shadow:0 0 0 4px #f0883e33; }
+  .strip { height:44px; border:1px dashed #21262d; border-radius:8px; margin-top:8px;
+           background:#0a0c0f; position:relative; overflow:hidden; }
+  .tick { position:absolute; top:8px; width:1px; height:12px; background:#30363d; }
+  .tick.hit { background:#f0883e; height:22px; top:6px; }
+  .lbl { position:absolute; right:8px; bottom:4px; font-family:ui-monospace,monospace;
+         font-size:8px; color:#4d545c; }
+
+  .ask { margin-top:42px; border-top:1px solid #21262d; padding-top:20px; font-size:13px; }
+  .ask li { margin:10px 0; }
+  code { font-family:ui-monospace,monospace; font-size:11.5px; color:#f0883e; }
+</style>
+
+<div class="wrap">
+  <h1>搜我的大脑 · mock（B4）</h1>
+  <div class="sub">
+    只读核对结论：第二大脑前端十项里九项已在 main，这是唯一真缺口。静态稿，未写生产代码。
+  </div>
+
+  <div class="flag">
+    <b>先说清「现在有什么」，别把两件事混成一件。</b>
+    <code>BrainNav.tsx:134</code> 已经有一个搜索框，但它是<b>前端对已加载的树做字符串过滤</b>。
+    缺的是任务书要的那件：<b>走后端 <code>retrieve_scoped</code> —— spawn 真正读记忆时用的同一条管线</b>。
+    差别不是程度：本地过滤只能匹配已经拉到前端的标题；同管线检索能命中正文，
+    而且<b>你看到的召回就是它看到的召回</b>——这才是「搜我的大脑」的意义。
+  </div>
+
+  <!-- ========================================================= -->
+  <h2><span class="n">决定一</span>结果要不要带正文片段（snippet）</h2>
+  <p class="why">带 = 不点开就知道命中在哪；代价是端点多返回一份正文，是一个新的数据出口。</p>
+
+  <div class="row">
+    <div class="card"><div class="cap a">甲 · 带 snippet（我倾向）</div><div class="stage">
+      <div class="searchbar"><span class="ph">迁移后 secret key 和 salt 的配对</span><span class="kbd">↵</span></div>
+      <div class="res">
+        <div class="rhead"><span>4 条命中 · 词面匹配</span><span>共 12 条</span></div>
+        <div class="r on"><div class="rt">crypto_salt 与 SECRET_KEY 必须配对<span class="rk">fact</span></div>
+          <div class="rs">…<mark>secret key</mark> 与 <code>Arslan/data/<mark>crypto_salt</mark></code> 不配对时 provider key 永久解不开…</div></div>
+        <div class="r"><div class="rt">开源迁移后的唯一开发树<span class="rk">note</span></div>
+          <div class="rs">…易混：<mark>~/.arslan/secret_key</mark>、Application Support 下另一份 db…</div></div>
+        <div class="r"><div class="rt">首启 SECRET_KEY 自动化<span class="rk">learning</span></div>
+          <div class="rs">…首次启动时生成并写入，<mark>salt</mark> 随之落盘…</div></div>
+      </div>
+      <div class="note">按词面匹配排序 · 未启用嵌入</div>
+    </div></div>
+
+    <div class="card"><div class="cap b">乙 · 只给标题</div><div class="stage">
+      <div class="searchbar"><span class="ph">迁移后 secret key 和 salt 的配对</span><span class="kbd">↵</span></div>
+      <div class="res">
+        <div class="rhead"><span>4 条命中 · 词面匹配</span><span>共 12 条</span></div>
+        <div class="r on"><div class="rt">crypto_salt 与 SECRET_KEY 必须配对<span class="rk">fact</span></div></div>
+        <div class="r"><div class="rt">开源迁移后的唯一开发树<span class="rk">note</span></div></div>
+        <div class="r"><div class="rt">首启 SECRET_KEY 自动化<span class="rk">learning</span></div></div>
+        <div class="r"><div class="rt">备份脚本 backup-data.sh<span class="rk">material</span></div></div>
+      </div>
+      <div class="note">命中在哪要点开才知道</div>
+    </div></div>
+  </div>
+
+  <div class="flag">
+    <b>两案都必须遵守的一条，不是可选项。</b>
+    <code>knowledge.rerank</code> 现在是<b>词面重叠</b>（CJK-aware），<b>不是语义分</b>。
+    所以界面<b>绝不出现 0.92 这种相关度数字</b>——那会把一个词面匹配包装成语义理解。
+    上面两案都只写「词面匹配」，并在未启用嵌入时如实说。
+    这条我会写成测试断言，因为它最容易被「顺手加个分数好看点」破坏。
+  </div>
+
+  <!-- ========================================================= -->
+  <h2><span class="n">决定二</span>本地过滤和服务端搜索：一个框还是两个入口</h2>
+  <p class="why">本地过滤仍然有用（快速找已知条目），但两种召回混在一个框里，用户不知道自己看的是哪一种。</p>
+
+  <div class="row">
+    <div class="card"><div class="cap a">甲 · 一个框：输入即过滤，回车走管线</div><div class="stage">
+      <div class="searchbar"><span class="ph">salt</span><span class="kbd">↵ 深搜</span></div>
+      <div class="mode"><span class="on">正在本地过滤 3 条</span><span>↵ 搜全部记忆</span></div>
+      <div class="note" style="border:none;padding-left:0">省一个入口；代价是「我现在看的是哪一种」全靠那行小字。</div>
+    </div></div>
+
+    <div class="card"><div class="cap b">乙 · 两个入口，各自说清自己是什么</div><div class="stage">
+      <div class="searchbar"><span class="ph">筛选这棵树…</span></div>
+      <div class="searchbar" style="margin-top:8px;border-color:#f0883e55">
+        <span class="ph">搜全部记忆（同 spawn 检索管线）</span><span class="kbd">↵</span></div>
+      <div class="note" style="border:none;padding-left:0">多占一行；但两种召回永远不会被混淆。</div>
+    </div></div>
+  </div>
+
+  <!-- ========================================================= -->
+  <h2><span class="n">共通</span>命中要在三处同步高亮（这条不是选项）</h2>
+  <p class="why">任务书的核心是多视图刷选联动：命中同时点亮图谱节点与时间条竖线，点击开详情。下面是效果示意。</p>
+
+  <div class="card"><div class="stage">
+    <div class="graph">
+      <div class="node" style="left:12%;top:30%"></div>
+      <div class="node hit" style="left:28%;top:55%"></div>
+      <div class="node" style="left:41%;top:22%"></div>
+      <div class="node hit" style="left:55%;top:62%"></div>
+      <div class="node" style="left:68%;top:35%"></div>
+      <div class="node hit" style="left:79%;top:48%"></div>
+      <div class="node" style="left:90%;top:70%"></div>
+      <div class="lbl">图谱：命中节点点亮</div>
+    </div>
+    <div class="strip">
+      <div class="tick" style="left:6%"></div><div class="tick" style="left:14%"></div>
+      <div class="tick hit" style="left:23%"></div><div class="tick" style="left:31%"></div>
+      <div class="tick" style="left:38%"></div><div class="tick hit" style="left:47%"></div>
+      <div class="tick" style="left:56%"></div><div class="tick" style="left:63%"></div>
+      <div class="tick hit" style="left:74%"></div><div class="tick" style="left:86%"></div>
+      <div class="lbl">时间条：对应行点亮</div>
+    </div>
+    <div class="note">命中超过上限时显示「还有 N 条未显示」，不静默截断（同 D5 读端点的 <code>truncated</code> 先例）。</div>
+  </div></div>
+
+  <div class="ask">
+    <b>B4 请裁决两项：</b>
+    <ol>
+      <li>结果<b>带 snippet（甲）</b>还是<b>只给标题（乙）</b>？</li>
+      <li>本地过滤与服务端搜索：<b>一个框（甲）</b>还是<b>两个入口（乙）</b>？</li>
+    </ol>
+    <b>A4 三项（另一份 mock，已推 <code>design/batch-three-mocks</code>）：</b>
+    <ol start="3">
+      <li>workspace 条：<b>A 空栏</b>还是 <b>B 细拖动条</b>？（两案都保住窗口拖动区）</li>
+      <li>「会话作用域」：<b>(a) 本会话派发过</b>还是 <b>(b) 本会话开过直聊</b>？「完结」是<b>结束直聊</b>还是<b>结束分身</b>？</li>
+      <li>Settings：<b>甲</b>（保留分区 + 每项补「这会影响什么」）还是 <b>乙</b>（按意图重组导航）？</li>
+    </ol>
+  </div>
+</div>
