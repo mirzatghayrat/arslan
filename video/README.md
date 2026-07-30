@@ -361,6 +361,44 @@ on the card stack is tens of pixels rather than a few. The check is to watch at
 speed and ask whether the beat is visible without stepping frames — if it is
 not, it is not there.
 
+## F5 Blueprint — the square one, for LinkedIn
+
+A fifth cut, and the only one with a named destination. **1080×1080, 30s.**
+
+Square is not a stylistic choice: a square post takes roughly half again the
+vertical space of 16:9 in a LinkedIn feed. It also suits the content, since a
+block diagram reads top-to-bottom and that is the axis a square gives you.
+
+The register is an engineering drawing — sheet border, title block, revision
+line, dimension leaders, mono annotation, one accent. Nothing moves that a pen
+could not have drawn. That is deliberate: it goes out under the byline of
+someone who is not an engineer, so the film should not imitate a screen
+recording of the software it is explaining. A drawing is honest about being an
+explanation.
+
+| Sheet | Frames | Draws |
+| --- | --- | --- |
+| 1/4 · REQUEST PATH | 0–250 | You → host agent → a decision diamond that prefers *not* to route → back to one thread. |
+| 2/4 · SANDBOX | 250–500 | The dashed kernel boundary, a crossed-out arrow to the internet, and the credential proxy as the only way out. |
+| 3/4 · PROMOTION GATE | 500–790 | Run history → a new prompt → both arms replayed → the threshold → a FAIL branch drawn to a stub that goes nowhere, and a PASS branch to your inbox. |
+| 4/4 · GENERAL ARRANGEMENT | 790–900 | The parts list, and the download. |
+
+Every stroke uses `draw-svg-trace` properly: `pathLength={1}` with
+`strokeDasharray="1"` and the offset run 1 → 0, so no path length is ever
+measured, and each one carries a pen head — a second, thicker, short-dash copy
+of the same path riding at the front. Without the head it is a border getting
+longer; with it, someone is drawing. Each shape closes on a two-frame darken
+that eases back over six, which is the full stop.
+
+One failure worth recording: a sheet whose slot is shorter than its own last cue
+simply never finishes, and sheets 2 and 4 overran a first split by 18 and 8
+frames. Nothing in a still review shows that — the missing element is missing
+from frames nobody chose to look at. The slot comments in `SHEETS` now carry
+each sheet's last cue so the arithmetic is visible.
+
+The accompanying post is in
+[`docs/marketing/linkedin-post.md`](../docs/marketing/linkedin-post.md).
+
 ### The mock-up assets
 
 `public/mockups/*.jpg` are four supplied 2048-square renders of the same

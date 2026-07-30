@@ -4,6 +4,7 @@ import './fonts';
 import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
+import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
 import {Press, PRESS_FRAMES} from './films/Press';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
 import {System, SYSTEM_FRAMES} from './films/System';
@@ -113,6 +114,18 @@ export const RemotionRoot: React.FC = () => (
       fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}
+    />
+
+    {/* Square, for a LinkedIn feed — the only film with a named destination.
+        A square post takes roughly half again the vertical space of 16:9 there,
+        and a block diagram reads top-to-bottom anyway. */}
+    <Composition
+      id="F5-Blueprint"
+      component={Blueprint}
+      durationInFrames={BLUEPRINT_FRAMES}
+      fps={VIDEO.fps}
+      width={BLUEPRINT_SIZE}
+      height={BLUEPRINT_SIZE}
     />
 
     {/* Framing mock-ups: one frame per shot, for `remotion still`. */}

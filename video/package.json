@@ -16,7 +16,8 @@
     "f1": "remotion render F1-Terminal out/F1-Terminal.mp4",
     "f2": "remotion render F2-Press out/F2-Press.mp4",
     "f3": "remotion render F3-System out/F3-System.mp4",
-    "f4": "remotion render F4-Pulse out/F4-Pulse.mp4"
+    "f4": "remotion render F4-Pulse out/F4-Pulse.mp4",
+    "f5": "remotion render F5-Blueprint out/F5-Blueprint.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.500",
