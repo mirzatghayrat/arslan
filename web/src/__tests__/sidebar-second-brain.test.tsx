@@ -44,6 +44,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     onUnarchiveThread: vi.fn(),
     onDeleteThread: vi.fn(),
     backendStatus: "online" as const,
+  // decision (a): the list is scoped by dispatch; tests supply the set
+  dispatchedSpawnIds: new Set<number>([1, 2]),
     ...overrides,
   };
 }

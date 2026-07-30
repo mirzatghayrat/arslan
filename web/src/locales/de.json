@@ -120,7 +120,14 @@
       "spawn_wish": "Spawn-Wünsche",
       "other": "Sonstiges"
     },
-    "fed_unreadable": "{{n}} eingespeist · {{reasons}}"
+    "fed_unreadable": "{{n}} eingespeist · {{reasons}}",
+    "search_no_hits": "Nichts in deinem Gedächtnis passt.",
+    "search_hits": "{{count}} gefunden",
+    "search_ranking_lexical": "Wortübereinstimmung",
+    "search_ranking_hybrid": "Wort- und Bedeutungsübereinstimmung",
+    "search_truncated": "Es gibt mehr Treffer als angezeigt.",
+    "search_hint_local": "Filtert das bereits Geladene – Enter durchsucht dein ganzes Gedächtnis",
+    "search_hint_pipeline": "Das ganze Gedächtnis durchsucht – so, wie dein Agent es liest"
   },
   "dashboard": {
     "title": "Deine Spawns",

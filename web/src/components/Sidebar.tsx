@@ -41,6 +41,11 @@ interface SidebarProps {
 
   /** Real backend reachability signal from useBackendStatus */
   backendStatus: BackendStatus;
+
+  /** Spawn ids THIS conversation has dispatched to (decision (a)). Everything
+   *  else that happens to be running is shown collapsed rather than hidden —
+   *  "not part of this session" and "not there" must not look alike. */
+  dispatchedSpawnIds: Set<number>;
 }
 
 export default function Sidebar({
@@ -59,6 +64,7 @@ export default function Sidebar({
   onUnarchiveThread,
   onDeleteThread,
   backendStatus,
+  dispatchedSpawnIds,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
@@ -67,6 +73,18 @@ export default function Sidebar({
 
   const activeThreads = threads.filter((th) => !th.archived);
   const archivedThreads = threads.filter((th) => th.archived);
+
+  // Decision (a): "this session's spawns" means the ones THIS conversation
+  // dispatched to. `hasActiveChat` answers a different question — whether a
+  // direct chat was ever opened — and using it made a spawn you talked to once
+  // look like part of today's work.
+  //
+  // The rest are COLLAPSED, not dropped. A spawn that is running but belongs to
+  // another conversation still exists, and a sidebar that simply omits it would
+  // read as "nothing else is happening".
+  const inSession = (s: Spawn) => dispatchedSpawnIds.has(Number(s.id));
+  const sessionSpawns = spawns.filter(inSession);
+  const otherRunning = spawns.filter((s) => s.hasActiveChat && !inSession(s));
 
   // Shared renderer for a conversation row (active + archived sections).
   const renderThreadRow = (thread: ArslanThread, isArchived: boolean) => {
@@ -287,7 +305,7 @@ export default function Sidebar({
               </span>
               <div className="flex items-center gap-1">
                 <span className="text-[9.5px] text-success font-mono bg-success/10 rounded px-2 py-0.5 select-none font-bold">
-                  {t('sidebar.live_count', { count: spawns.filter(s => s.hasActiveChat).length })}
+                  {t('sidebar.live_count', { count: sessionSpawns.length })}
                 </span>
                 <button
                   title={t('sidebar.new_chat')}
@@ -324,7 +342,7 @@ export default function Sidebar({
             )}
 
             <div className="space-y-1 pr-1 max-h-[32vh] overflow-y-auto scrollbar-thin">
-              {spawns.filter(s => s.hasActiveChat).map((spawn) => {
+              {sessionSpawns.map((spawn) => {
                 const isActive = activeSection === 'spawn' && activeSpawnChatId === spawn.id;
                 return (
                   <div

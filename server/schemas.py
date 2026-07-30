@@ -700,6 +700,12 @@ class CollectionOut(BaseModel):
 
 class RunListItemOut(BaseModel):
     id: int
+    # The STABLE identifier. spawn_name alone cannot answer "which spawns has
+    # this conversation dispatched to": names are editable and can repeat, and
+    # matching on one would silently merge two spawns or lose a renamed one.
+    # Nullable because Run.spawn_id is ON DELETE SET NULL — a replay outlives
+    # the spawn it came from, and spawn_name is what remains of it.
+    spawn_id: int | None = None
     spawn_name: str | None
     status: str
     overall_score: float | None

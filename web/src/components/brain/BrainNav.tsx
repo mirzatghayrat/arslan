@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from "react";
+import { api } from "../../api/client";
+import BrainSearchResults, { type BrainSearchHit } from "./BrainSearchResults";
 import { useTranslation } from "react-i18next";
 import { factCategoryLabel } from "./catLabel";
 import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Upload, UserRound } from "lucide-react";
@@ -41,6 +43,29 @@ interface Props {
 export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate, inboxOpen, onToggleInbox }: Props) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
+  // ONE BOX (decision 甲): typing filters what is loaded; Enter runs the real
+  // retrieval. The panel below says which of the two produced what is shown —
+  // without that line an absent result is ambiguous between "not in your
+  // memory" and "not in the part already fetched".
+  const [pipeline, setPipeline] = useState<{
+    query: string; ranking: "lexical" | "hybrid"; truncated: boolean;
+    results: BrainSearchHit[];
+  } | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  const runPipelineSearch = async () => {
+    const query = q.trim();
+    if (!query) { setPipeline(null); return; }
+    setSearching(true);
+    try {
+      setPipeline(await api.searchBrain(query));
+    } catch {
+      // A failed search must not look like an empty memory.
+      setPipeline(null);
+    } finally {
+      setSearching(false);
+    }
+  };
   const [feed, setFeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -132,9 +157,29 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
   return (
     <aside className="brain-nav">
       <div className="brain-nav__search">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("brain.search_ph")}
+        <input value={q}
+          onChange={(e) => { setQ(e.target.value); setPipeline(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") void runPipelineSearch(); }}
+          placeholder={t("brain.search_ph")}
           className="brain-nav__search-input" />
+        {q.trim() !== "" && (
+          <p className="brain-nav__search-hint">
+            {pipeline ? t("brain.search_hint_pipeline") : t("brain.search_hint_local")}
+          </p>
+        )}
       </div>
+
+      {pipeline && !searching && (
+        <BrainSearchResults
+          query={pipeline.query}
+          ranking={pipeline.ranking}
+          truncated={pipeline.truncated}
+          results={pipeline.results}
+          focusedRef={litId}
+          onHover={(_kind, ref) => onHover(ref)}
+          onOpen={(kind, ref) => onPick({ kind, ref, label: ref } as any)}
+        />
+      )}
 
       <div className="brain-nav__tree">
         {branches.map((b) => {

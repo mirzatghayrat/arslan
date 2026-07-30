@@ -120,7 +120,14 @@
       "spawn_wish": "想建的分身",
       "other": "其他"
     },
-    "fed_unreadable": "已投喂 {{n}} 个 · {{reasons}}"
+    "fed_unreadable": "已投喂 {{n}} 个 · {{reasons}}",
+    "search_no_hits": "你的记忆里没有匹配的内容。",
+    "search_hits": "命中 {{count}} 条",
+    "search_ranking_lexical": "词面匹配",
+    "search_ranking_hybrid": "词面 + 语义匹配",
+    "search_truncated": "还有更多命中未显示。",
+    "search_hint_local": "正在过滤已加载的内容 —— 按回车搜索全部记忆",
+    "search_hint_pipeline": "已搜索全部记忆，走的是分身读记忆的同一条路"
   },
   "dashboard": {
     "title": "你的分身",

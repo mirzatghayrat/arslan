@@ -869,6 +869,8 @@ export interface RollbackResult {
 
 export interface RunListItem {
   id: number;
+  /** Stable identifier; null once the spawn is deleted (the run survives it). */
+  spawn_id: number | null;
   spawn_name: string | null;
   status: string;
   overall_score: number | null;

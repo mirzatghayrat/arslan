@@ -17,6 +17,7 @@ import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/
 import { listProviderConfigs, distillConversation, deleteConversation } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
+import { useDispatchedSpawns } from './hooks/useDispatchedSpawns';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import SpawnDirectChat from './components/SpawnDirectChat';
@@ -80,6 +81,10 @@ export default function App() {
   const restoredInit = useRef(restoreThreads()).current;
   const [threads, setThreads] = useState<ArslanThread[]>(restoredInit.threads);
   const [activeThreadId, setActiveThreadId] = useState<string>(restoredInit.activeThreadId);
+  // Which spawns THIS conversation has dispatched to — the Active Spawns
+  // list is scoped by that (decision (a)), not by whether a direct chat
+  // was ever opened.
+  const { dispatchedSpawnIds } = useDispatchedSpawns(activeThreadId);
 
   // Lightweight transient toast (no toast component exists yet) — used for the
   // distill result confirmation. Auto-clears after a few seconds.
@@ -703,6 +708,7 @@ export default function App() {
         onUnarchiveThread={handleUnarchiveThread}
         onDeleteThread={handleDeleteThread}
         backendStatus={backendStatus}
+              dispatchedSpawnIds={dispatchedSpawnIds}
       />
 
       {/* Main Workspace Frame container with glass window feel */}
@@ -721,18 +727,26 @@ export default function App() {
               inside; Tauri's drag script skips real controls on its own. */}
           <div data-tauri-drag-region="deep" data-testid="workspace-bar"
             className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+            {/* The label is a CONVERSATION thing, so it appears only there.
+                The BAR itself stays on every section, and that is not tidiness:
+                it carries data-tauri-drag-region, and it is the only region the
+                window can be dragged by under titleBarStyle Overlay. Removing
+                it outside chat would reintroduce the bug fixed in v0.1.8 —
+                every non-chat screen becomes unmovable. Empty, same height, no
+                layout shift (decision A). */}
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-success"></span>
-              <span className="text-[10.5px] font-mono text-muted-foreground capitalize uppercase tracking-wider">
-                {t('modal.workspace_label')} <span className="text-foreground font-bold">
-                  {activeSection === 'arslan' ? t('modal.workspace_orchestrator', { title: activeThread.title }) :
-                   activeSection === 'spawn' ? t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' }) :
-                   activeSection === 'ledger' ? t('modal.workspace_ledger') :
-                   activeSection === 'capabilities' ? t('modal.workspace_capabilities') :
-                   activeSection === 'brain' ? t('modal.workspace_brain') :
-                   activeSection === 'diagnosis' ? 'Diagnostics' : t('modal.workspace_settings')}
-                </span>
-              </span>
+              {(activeSection === 'arslan' || activeSection === 'spawn') && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-success"></span>
+                  <span className="text-[10.5px] font-mono text-muted-foreground capitalize uppercase tracking-wider">
+                    {t('modal.workspace_label')} <span className="text-foreground font-bold">
+                      {activeSection === 'arslan'
+                        ? t('modal.workspace_orchestrator', { title: activeThread.title })
+                        : t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' })}
+                    </span>
+                  </span>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-3">

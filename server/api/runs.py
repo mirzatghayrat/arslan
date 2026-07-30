@@ -118,7 +118,7 @@ async def list_runs(
     rows = (await db.execute(q)).scalars().all()
     return [
         RunListItemOut(
-            id=r.id, spawn_name=r.spawn_name, status=r.status,
+            id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
             overall_score=r.overall_score, overall_badge=r.overall_badge,
             total_ms=r.total_ms, user_message=r.user_message,
             created_at=r.created_at.isoformat() if r.created_at else None,

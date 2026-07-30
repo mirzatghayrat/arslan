@@ -373,6 +373,16 @@ export const api = {
   /** What THIS machine's text recognition can read, asked at request time.
    * Never a constant: the set grows with the OS version, so a list baked
    * into the UI would promise the user what their system may not do. */
+  /** Search the brain through the SAME pipeline a spawn reads it with.
+   *  `ranking` names the pipeline that actually ran — rerank is lexical
+   *  overlap, not semantics, so the UI must never render a relevance score. */
+  searchBrain: (q: string, limit = 20) =>
+    request<{
+      query: string;
+      ranking: "lexical" | "hybrid";
+      truncated: boolean;
+      results: { kind: string; ref: string; title: string; snippet: string }[];
+    }>(`/brain/search?q=${encodeURIComponent(q)}&limit=${limit}`),
   listOcrLanguages: () =>
     request<{ available: string[]; max_selectable: number; platform_supported: boolean }>(
       "/settings/ocr-languages"),

@@ -120,7 +120,14 @@
       "spawn_wish": "Spawn wishes",
       "other": "Other"
     },
-    "fed_unreadable": "Fed {{n}} · {{reasons}}"
+    "fed_unreadable": "Fed {{n}} · {{reasons}}",
+    "search_no_hits": "Nothing in your memory matched.",
+    "search_hits": "{{count}} found",
+    "search_ranking_lexical": "word match",
+    "search_ranking_hybrid": "word + meaning match",
+    "search_truncated": "More matches exist than are shown.",
+    "search_hint_local": "Filtering what is loaded — press Enter to search all of your memory",
+    "search_hint_pipeline": "Searched all of your memory, the same way your agent reads it"
   },
   "dashboard": {
     "title": "Your Spawns",

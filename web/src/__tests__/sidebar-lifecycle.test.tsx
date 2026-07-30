@@ -15,6 +15,8 @@ const baseProps = {
   onChangeSection: () => {}, onCompleteChat: vi.fn(),
   onDistillThread: vi.fn(), onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(), onDeleteThread: vi.fn(),
   backendStatus: "online" as const,
+  // decision (a): the list is scoped by dispatch; tests supply the set
+  dispatchedSpawnIds: new Set<number>([1, 2]),
 } as any;
 
 describe("Sidebar a11y (M7-#5)", () => {
@@ -26,10 +28,29 @@ describe("Sidebar a11y (M7-#5)", () => {
 });
 
 describe("Sidebar ACTIVE SPAWNS lifecycle", () => {
-  it("lists only spawns with an active chat", () => {
-    render(<Sidebar {...baseProps} />);
-    expect(screen.getByText("小美")).toBeDefined();
-    expect(screen.queryByText("Mermer")).toBeNull();  // no active chat → hidden
+  // The rule CHANGED (decision (a)): the list is scoped to the spawns THIS
+  // conversation dispatched to, not to the ones with a direct chat open. The
+  // old assertion pinned the old rule and is replaced rather than relaxed —
+  // both halves below, because either alone is satisfied by a list that shows
+  // everything or nothing.
+  it("lists a spawn this session dispatched to, even with no direct chat", () => {
+    render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set([2])} />);
+    // Mermer has hasActiveChat: false, and is still listed — it is part of THIS
+    // session's work, which is the question the list now answers.
+    expect(screen.getByText("Mermer")).toBeDefined();
+  });
+
+  it("leaves out a spawn this session never dispatched to", () => {
+    render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set([2])} />);
+    expect(screen.queryByText("小美")).toBeNull();
+  });
+
+  it("shows nothing when the session has dispatched to nobody", () => {
+    // Not an error state: a fresh conversation has no spawns of its own yet,
+    // and an empty list is the truthful answer.
+    render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set<number>()} />);
+    expect(screen.queryByText("小美")).toBeNull();
+    expect(screen.queryByText("Mermer")).toBeNull();
   });
 });
 

@@ -381,6 +381,60 @@ async def brain_graph() -> dict:
     return {"nodes": [self_node, *nodes, *tag_nodes, *ghosts.values()], "links": links}
 
 
+@router.get("/brain/search")
+async def brain_search(q: str = Query(..., min_length=1),
+                       limit: int = Query(20, ge=1, le=50)) -> dict:
+    """Search the brain through the SAME pipeline a spawn reads it with.
+
+    The point is not "a search box" — BrainNav already filters the loaded tree
+    as a string match. The point is that what you see here is what the agent
+    sees: retrieve_scoped is the single retrieval entry point for dispatch and
+    for Arslan's own chat, so a result missing here is a result the agent would
+    also have missed.
+
+    🔴 `ranking` IS A HONESTY FIELD, not metadata. knowledge.rerank is LEXICAL
+    overlap (CJK-aware), not semantic similarity. A relevance percentage beside
+    these rows would dress a word match as understanding, so the endpoint
+    reports which pipeline actually ran and the UI is tested for not rendering a
+    score. `hybrid` only when an embedding provider is configured.
+
+    `truncated` follows the /brain/usage-events precedent: a capped list that
+    does not say it was capped gets read as the complete answer.
+
+    record_usage=False on purpose: browsing your own memory is not the agent
+    using it, and counting it would inflate the usage counters that drive the
+    activity strip — the instrument would start measuring the person looking at
+    it.
+    """
+    from server.services import embedding_service, knowledge
+
+    hits = await knowledge.retrieve_scoped(
+        q, spawn_id=None, k=limit + 1, record_usage=False)
+
+    truncated = len(hits) > limit
+    hits = hits[:limit]
+
+    try:
+        ranking = "hybrid" if await embedding_service.active_provider() else "lexical"
+    except Exception:  # noqa: BLE001 — an unreadable provider must not fail the search
+        ranking = "lexical"
+
+    results = []
+    for source, text in hits:
+        kind, _, ref = (source or "").partition(":")
+        results.append({
+            "kind": kind or "material",
+            "ref": ref or source or "",
+            "title": (source or "").strip(),
+            # The snippet is the matched body, capped. Decision: results carry
+            # it so a hit can be judged without opening it.
+            "snippet": (text or "").strip()[:400],
+        })
+
+    return {"query": q, "ranking": ranking, "truncated": truncated,
+            "results": results}
+
+
 @router.get("/brain/entry/{kind}/{ref:path}")
 async def brain_entry(kind: str, ref: str) -> dict:
     # brain-P1 Task 5: fact/learning detail gains valid_from/superseded_by/provenance.

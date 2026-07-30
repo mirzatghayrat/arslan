@@ -120,7 +120,14 @@
       "spawn_wish": "Spawns souhaités",
       "other": "Autres"
     },
-    "fed_unreadable": "{{n}} alimenté(s) · {{reasons}}"
+    "fed_unreadable": "{{n}} alimenté(s) · {{reasons}}",
+    "search_no_hits": "Rien dans votre mémoire ne correspond.",
+    "search_hits": "{{count}} trouvés",
+    "search_ranking_lexical": "correspondance de mots",
+    "search_ranking_hybrid": "correspondance de mots et de sens",
+    "search_truncated": "Il y a plus de résultats que ceux affichés.",
+    "search_hint_local": "Filtrage de ce qui est chargé — Entrée pour chercher dans toute votre mémoire",
+    "search_hint_pipeline": "Toute votre mémoire a été cherchée, comme votre agent la lit"
   },
   "dashboard": {
     "title": "Vos spawns",

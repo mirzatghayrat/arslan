@@ -120,7 +120,14 @@
       "spawn_wish": "Spawns deseados",
       "other": "Otros"
     },
-    "fed_unreadable": "{{n}} alimentados · {{reasons}}"
+    "fed_unreadable": "{{n}} alimentados · {{reasons}}",
+    "search_no_hits": "Nada en tu memoria coincide.",
+    "search_hits": "{{count}} encontrados",
+    "search_ranking_lexical": "coincidencia de palabras",
+    "search_ranking_hybrid": "coincidencia de palabras y significado",
+    "search_truncated": "Hay más coincidencias de las que se muestran.",
+    "search_hint_local": "Filtrando lo ya cargado: pulsa Intro para buscar en toda tu memoria",
+    "search_hint_pipeline": "Se buscó en toda tu memoria, igual que la lee tu agente"
   },
   "dashboard": {
     "title": "Tus spawns",

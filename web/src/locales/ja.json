@@ -120,7 +120,14 @@
       "spawn_wish": "作りたいスポーン",
       "other": "その他"
     },
-    "fed_unreadable": "{{n}} 件を取り込み · {{reasons}}"
+    "fed_unreadable": "{{n}} 件を取り込み · {{reasons}}",
+    "search_no_hits": "記憶の中に一致するものはありません。",
+    "search_hits": "{{count}} 件",
+    "search_ranking_lexical": "語句一致",
+    "search_ranking_hybrid": "語句 + 意味の一致",
+    "search_truncated": "表示しきれていない一致があります。",
+    "search_hint_local": "読み込み済みの内容を絞り込み中 —— Enter で記憶全体を検索",
+    "search_hint_pipeline": "記憶全体を検索しました（エージェントと同じ経路）"
   },
   "dashboard": {
     "title": "あなたのスポーン",
