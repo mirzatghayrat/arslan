@@ -127,7 +127,15 @@
     "search_ranking_hybrid": "correspondance de mots et de sens",
     "search_truncated": "Il y a plus de résultats que ceux affichés.",
     "search_hint_local": "Filtrage de ce qui est chargé — Entrée pour chercher dans toute votre mémoire",
-    "search_hint_pipeline": "Toute votre mémoire a été cherchée, comme votre agent la lit"
+    "search_hint_pipeline": "Toute votre mémoire a été cherchée, comme votre agent la lit",
+    "kind_material": "Matériel",
+    "kind_learning": "Apprentissages",
+    "kind_profile": "Profil",
+    "kind_note": "Notes",
+    "kind_self": "Vous",
+    "prov_fed": "Ajouté",
+    "prov_spawn": "D'un spawn",
+    "prov_handwritten": "Écrit par vous"
   },
   "dashboard": {
     "title": "Vos spawns",

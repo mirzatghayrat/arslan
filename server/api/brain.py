@@ -176,7 +176,7 @@ async def brain_tree() -> dict:
               sensitive=_sensitive(r["sensitive"])) for r in facts]
     material_leaves = [
         _leaf("material", _mat_ref(m["collection_id"], m["spawn_id"], m["source"]),
-              m["source"], ("投喂" if m["collection_id"] is not None else "分身"),
+              m["source"], ("fed" if m["collection_id"] is not None else "spawn"),
               None, umap, weight=m["n"])
         for m in mats]
     learning_leaves = [
@@ -191,14 +191,20 @@ async def brain_tree() -> dict:
             return raw if isinstance(raw, list) else _json_tree.loads(raw or "[]")
         except Exception:  # noqa: BLE001
             return []
-    note_leaves = [_leaf("note", f"note:{r['id']}", r["title"], "手写", None, umap,
+    note_leaves = [_leaf("note", f"note:{r['id']}", r["title"], "handwritten", None, umap,
                          tags=_note_tags(r["tags"])) for r in notes]
 
     return {"branches": [
-        {"kind": "material", "label": "材料", "children": material_leaves},
-        {"kind": "learning", "label": "心得", "children": learning_leaves},
-        {"kind": "profile", "label": "画像", "children": profile_leaves},
-        {"kind": "note", "label": "笔记", "children": note_leaves},
+        # STABLE KEYS, never display text. These labels used to be Chinese
+        # literals, so an English interface showed 材料 / 心得 / 画像 / 笔记 —
+        # and the frontend's no-hardcoded-CJK guard could never catch it,
+        # because that guard scans web/src and these strings are born here.
+        # The UI translates from `kind`; `label` stays as the key it always
+        # should have been.
+        {"kind": "material", "label": "material", "children": material_leaves},
+        {"kind": "learning", "label": "learning", "children": learning_leaves},
+        {"kind": "profile", "label": "profile", "children": profile_leaves},
+        {"kind": "note", "label": "note", "children": note_leaves},
     ]}
 
 
@@ -376,7 +382,7 @@ async def brain_graph() -> dict:
             links.append({"source": "self", "target": n["id"], "type": "hub"})
 
     max_val = max((n["val"] for n in nodes), default=1)
-    self_node = {"id": "self", "ref": "self", "kind": "self", "label": "你", "val": max_val + 2}
+    self_node = {"id": "self", "ref": "self", "kind": "self", "label": "self", "val": max_val + 2}
 
     return {"nodes": [self_node, *nodes, *tag_nodes, *ghosts.values()], "links": links}
 
@@ -493,7 +499,7 @@ async def brain_entry(kind: str, ref: str) -> dict:
             if not rows:
                 raise HTTPException(404)
             excerpt = "\n\n".join(r[0] for r in rows)
-            label, prov, conf = source, ("投喂" if scope_col == "coll" else "分身"), None
+            label, prov, conf = source, ("fed" if scope_col == "coll" else "spawn"), None
         else:
             raise HTTPException(404)
 

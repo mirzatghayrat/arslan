@@ -127,7 +127,15 @@
     "search_ranking_hybrid": "词面 + 语义匹配",
     "search_truncated": "还有更多命中未显示。",
     "search_hint_local": "正在过滤已加载的内容 —— 按回车搜索全部记忆",
-    "search_hint_pipeline": "已搜索全部记忆，走的是分身读记忆的同一条路"
+    "search_hint_pipeline": "已搜索全部记忆，走的是分身读记忆的同一条路",
+    "kind_material": "材料",
+    "kind_learning": "心得",
+    "kind_profile": "画像",
+    "kind_note": "笔记",
+    "kind_self": "你",
+    "prov_fed": "投喂",
+    "prov_spawn": "分身",
+    "prov_handwritten": "手写"
   },
   "dashboard": {
     "title": "你的分身",

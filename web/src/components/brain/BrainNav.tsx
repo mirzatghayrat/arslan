@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import BrainSearchResults, { type BrainSearchHit } from "./BrainSearchResults";
 import { useTranslation } from "react-i18next";
-import { factCategoryLabel } from "./catLabel";
+import { brainKindLabel, factCategoryLabel, provenanceLabel } from "./catLabel";
 import { Boxes, Eye, EyeOff, Lightbulb, NotebookPen, Upload, UserRound } from "lucide-react";
 import type { BrainBranch, BrainLeaf } from "../../api/client";
 import { feedFile, feedTextOrUrl, NothingIngestedError } from "../../lib/feed";
@@ -93,7 +93,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
     for (const l of b.children) (map.get(field(l)) ?? map.set(field(l), []).get(field(l))!).push(l);
     // group BY the raw value (stable category key); translate only what the eye sees
     return [...map.entries()].map(([key, leaves]) => ({
-      key, label: b.kind === "profile" ? factCategoryLabel(t, key) : key, leaves }));
+      key, label: b.kind === "profile" ? factCategoryLabel(t, key) : provenanceLabel(t, key), leaves }));
   };
 
   // tag explorer = note tags ∪ fact category, with counts
@@ -192,7 +192,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
               <div className="brain-nav__branch-head" onClick={() => toggle(b.kind)}>
                 <span className="brain-nav__caret">{open ? "▾" : "▸"}</span>
                 <Icon className="brain-nav__kind-icon" style={{ color: hueVar(b.kind) }} />
-                <span className="brain-nav__branch-label">{b.label}</span>
+                <span className="brain-nav__branch-label">{brainKindLabel(t, b.kind)}</span>
                 <span className="brain-nav__count">{b.children.length}</span>
               </div>
               {open && groups

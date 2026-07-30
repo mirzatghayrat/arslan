@@ -29,10 +29,10 @@ const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 const TREE = {
   branches: [
-    { kind: "note", label: "笔记", children: [
-      { kind: "note", ref: "note:1", label: "报销单", provenance: "手写", tags: ["finance"],
+    { kind: "note", label: "note", children: [
+      { kind: "note", ref: "note:1", label: "报销单", provenance: "handwritten", tags: ["finance"],
         confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 }] },
-    { kind: "profile", label: "画像", children: [
+    { kind: "profile", label: "profile", children: [
       { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "identity",
         confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1,
         sensitive: true, superseded_by: 9 }] },
@@ -139,7 +139,7 @@ describe("brain coordinated brushing", () => {
   it("hovering a tree row lights the matching graph node", async () => {
     render(<BrainSection />);
     await screen.findByTestId("brain-graph");
-    fireEvent.click(await screen.findByText("笔记"));   // branches start collapsed
+    fireEvent.click(await screen.findByText("brain.kind_note"));   // branches start collapsed
     const rows = await screen.findAllByTestId("brain-nav-row");
     const noteRow = rows.find((r) => r.textContent?.includes("报销单"))!;
 
@@ -166,7 +166,7 @@ describe("brain coordinated brushing", () => {
 
   it("shows the sensitive and superseded markers the backend already sent", async () => {
     render(<BrainSection />);
-    fireEvent.click(await screen.findByText("画像"));   // branches start collapsed
+    fireEvent.click(await screen.findByText("brain.kind_profile"));   // branches start collapsed
     fireEvent.click(await screen.findByText("brain.cat.identity"));
     const rows = await screen.findAllByTestId("brain-nav-row");
     const fact = rows.find((r) => r.textContent?.includes("北京"))!;

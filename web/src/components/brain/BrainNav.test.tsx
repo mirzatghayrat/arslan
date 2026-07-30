@@ -5,16 +5,20 @@ import BrainNav from "./BrainNav";
 vi.mock("./BrainIndexHealth", () => ({ default: () => <div /> }));
 vi.mock("../../lib/feed", () => ({ feedFile: vi.fn(), feedTextOrUrl: vi.fn() }));
 
+// Shaped like what the backend NOW sends: stable keys, never display text.
+// The fixture used to carry Chinese labels because the backend did, which is
+// why nothing here noticed that an English interface was showing 材料 / 心得 /
+// 画像 / 笔记. A fixture that does not resemble the wire cannot catch that.
 const branches = [
-  { kind: "material", label: "材料", children: [
-    { kind: "material", ref: "material:coll:1:okx.pdf", label: "okx.pdf", provenance: "投喂",
+  { kind: "material", label: "material", children: [
+    { kind: "material", ref: "material:coll:1:okx.pdf", label: "okx.pdf", provenance: "fed",
       confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
-  { kind: "learning", label: "心得", children: [] },
-  { kind: "profile", label: "画像", children: [
-    { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "identity",
+  { kind: "learning", label: "learning", children: [] },
+  { kind: "profile", label: "profile", children: [
+    { kind: "profile", ref: "fact:1", label: "甲城", provenance: "auto", category: "identity",
       confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
-  { kind: "note", label: "笔记", children: [
-    { kind: "note", ref: "note:1", label: "报销单", provenance: "手写", tags: ["finance"],
+  { kind: "note", label: "note", children: [
+    { kind: "note", ref: "note:1", label: "报销单", provenance: "handwritten", tags: ["finance"],
       confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
 ] as any;
 
@@ -24,7 +28,7 @@ describe("BrainNav", () => {
 
   it("groups profile facts by category as a second level (once expanded)", () => {
     render(<BrainNav {...base} />);
-    fireEvent.click(screen.getByText("画像"));   // categories start collapsed
+    fireEvent.click(screen.getByText("brain.kind_profile"));   // categories start collapsed
     expect(screen.getByText("brain.cat.identity")).toBeTruthy();
   });
 

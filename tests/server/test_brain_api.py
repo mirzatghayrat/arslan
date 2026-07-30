@@ -81,7 +81,7 @@ async def test_brain_entry_material_excerpt(maker):
 
     entry = await brain.brain_entry("material", "material:coll:2:doc.pdf")
     assert "CHUNK ONE" in entry["excerpt"]
-    assert entry["provenance"] == "投喂"
+    assert entry["provenance"] == "fed"
 
 
 # --- brain-P1 Task 5: temporal fields on /brain/entry (fact/learning) ------------

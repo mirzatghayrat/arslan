@@ -127,7 +127,15 @@
     "search_ranking_hybrid": "word + meaning match",
     "search_truncated": "More matches exist than are shown.",
     "search_hint_local": "Filtering what is loaded — press Enter to search all of your memory",
-    "search_hint_pipeline": "Searched all of your memory, the same way your agent reads it"
+    "search_hint_pipeline": "Searched all of your memory, the same way your agent reads it",
+    "kind_material": "Material",
+    "kind_learning": "Learning",
+    "kind_profile": "Profile",
+    "kind_note": "Notes",
+    "kind_self": "You",
+    "prov_fed": "Fed in",
+    "prov_spawn": "From a spawn",
+    "prov_handwritten": "Written by you"
   },
   "dashboard": {
     "title": "Your Spawns",

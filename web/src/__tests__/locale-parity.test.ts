@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1213 keys (baseline guard)", () => {
+  it("en locale has 1221 keys (baseline guard)", () => {
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -86,7 +86,10 @@ describe("locale parity", () => {
     //              and the honest "this system has no recognition" line).
     // 1206 → 1213: brain search (no-hits, count, two ranking labels,
     //              truncated notice, and the two mode hints).
-    expect(enKeys).toHaveLength(1213);
+    // 1213 → 1221: brain branch kinds + provenance labels, moved out of the
+    //              backend where they were Chinese literals no frontend guard
+    //              could see.
+    expect(enKeys).toHaveLength(1221);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../api/client", () => ({ api: {
   getBrainTree: vi.fn().mockResolvedValue({ branches: [
-    { kind: "material", label: "材料", children: [] },
-    { kind: "learning", label: "心得", children: [] },
-    { kind: "profile", label: "画像", children: [
+    { kind: "material", label: "material", children: [] },
+    { kind: "learning", label: "learning", children: [] },
+    { kind: "profile", label: "profile", children: [
       { kind: "profile", ref: "fact:1", label: "北京", provenance: "auto", category: "identity",
         confidence: null, usage_count: 0, last_used_at: null, last_used_ref: null, value: 1 } ] },
-    { kind: "note", label: "笔记", children: [] },
+    { kind: "note", label: "note", children: [] },
   ] }),
   getBrainEntry: vi.fn().mockResolvedValue({ kind: "profile", ref: "fact:1", label: "北京",
     provenance: "auto", excerpt: "在北京工作", usage_count: 0, last_used_at: null, last_used_ref: null }),
@@ -40,7 +40,7 @@ describe("BrainSection", () => {
 
   it("clicking a tree row opens its detail rail while the graph stays mounted", async () => {
     render(<BrainSection />);
-    fireEvent.click(await screen.findByText("画像"));      // every level starts collapsed…
+    fireEvent.click(await screen.findByText("brain.kind_profile"));      // every level starts collapsed…
     fireEvent.click(await screen.findByText("brain.cat.identity"));   // …expand the category then its sub-group
     const row = await screen.findByTestId("brain-nav-row");
     fireEvent.click(row);

@@ -127,7 +127,15 @@
     "search_ranking_hybrid": "coincidencia de palabras y significado",
     "search_truncated": "Hay más coincidencias de las que se muestran.",
     "search_hint_local": "Filtrando lo ya cargado: pulsa Intro para buscar en toda tu memoria",
-    "search_hint_pipeline": "Se buscó en toda tu memoria, igual que la lee tu agente"
+    "search_hint_pipeline": "Se buscó en toda tu memoria, igual que la lee tu agente",
+    "kind_material": "Material",
+    "kind_learning": "Aprendizajes",
+    "kind_profile": "Perfil",
+    "kind_note": "Notas",
+    "kind_self": "Tú",
+    "prov_fed": "Aportado",
+    "prov_spawn": "De un spawn",
+    "prov_handwritten": "Escrito por ti"
   },
   "dashboard": {
     "title": "Tus spawns",

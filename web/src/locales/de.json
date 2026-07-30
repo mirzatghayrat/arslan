@@ -127,7 +127,15 @@
     "search_ranking_hybrid": "Wort- und Bedeutungsübereinstimmung",
     "search_truncated": "Es gibt mehr Treffer als angezeigt.",
     "search_hint_local": "Filtert das bereits Geladene – Enter durchsucht dein ganzes Gedächtnis",
-    "search_hint_pipeline": "Das ganze Gedächtnis durchsucht – so, wie dein Agent es liest"
+    "search_hint_pipeline": "Das ganze Gedächtnis durchsucht – so, wie dein Agent es liest",
+    "kind_material": "Material",
+    "kind_learning": "Erkenntnisse",
+    "kind_profile": "Profil",
+    "kind_note": "Notizen",
+    "kind_self": "Du",
+    "prov_fed": "Eingespeist",
+    "prov_spawn": "Von einem Spawn",
+    "prov_handwritten": "Selbst geschrieben"
   },
   "dashboard": {
     "title": "Deine Spawns",
