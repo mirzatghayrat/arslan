@@ -33,6 +33,7 @@ npm run f1        # the four 30s style cuts — Terminal / Press / System / Puls
 npm run f2
 npm run f3
 npm run f4
+npm run f5        # the square LinkedIn cut (1080x1080)
 ```
 
 `out/` is git-ignored. The committed render lives at
