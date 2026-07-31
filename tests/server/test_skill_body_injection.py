@@ -50,4 +50,9 @@ def test_equipment_block_truncates_long_body():
     # bounded: the long body becomes a summary+TOC block, never the raw 5000-char dump
     assert len(block) < len(long_body)
     assert ("x" * 5000) not in block
-    assert _SKILL_BLOCK_LIMIT == 2000                        # the cap the block is bounded by
+    # 3000 since the truncation-trap fix (user-approved queue-jump D2): the old
+    # 2000 cap was silently truncating two SHIPPING seeds (competitive-analysis
+    # 2199, deck-authoring 2742) into bare TOCs. This pin exists to force exactly
+    # this kind of conscious change — do not edit it without re-measuring the
+    # seed sizes the way the dispatcher.py comment records them.
+    assert _SKILL_BLOCK_LIMIT == 3000

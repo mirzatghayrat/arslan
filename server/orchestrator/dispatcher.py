@@ -113,7 +113,16 @@ async def _spawn_history(spawn_id: int) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
-_SKILL_BLOCK_LIMIT = 2000   # 约束①: cap of one skill's injected block (header+summary+TOC)
+# 约束①: cap of one skill's injected block (header+summary+TOC).
+#
+# 3000, not 2000, and the number is MEASURED, not preferred: the shipped seed
+# bodies are 550-1900 chars except competitive-analysis (2199) and
+# deck-authoring (2742) — both of which were being truncated by the old 2000
+# cap, i.e. two shipping spawns' method content never reached the model — and
+# designed-html-report (11756), which genuinely must stay summarized. 3000
+# inlines everything except the one skill that is a whole design system, at a
+# worst-case cost of ~250 extra tokens for skills in the 2000-3000 band.
+_SKILL_BLOCK_LIMIT = 3000
 
 # PC-4: single anti-fabrication line prepended ONCE above the per-skill technique blocks.
 _TECHNIQUE_HONESTY_PREAMBLE = (
@@ -170,7 +179,15 @@ def _skill_technique_block(name: str, body: str, *, has_scripts: bool, key: str,
     def _assemble(lines: list[str]) -> str:
         toc = ("\n目录:\n" + "\n".join(f"- {t}" for t in lines)) if lines else ""
         budget = _SKILL_BLOCK_LIMIT - len(header) - len(toc) - len(hint)
-        summary = intro[:max(0, budget)].rsplit("\n", 1)[0] if budget > 0 else ""
+        # THE TRUNCATION TRAP (gap assessment §0.2): house-style SKILL.md starts
+        # AT its first heading, so `intro` — the prose before it — was the empty
+        # string for every seed in the repo, and an over-cap skill collapsed to
+        # a bare TOC. When there is no intro prose, the head of the BODY is the
+        # summary: the opening sections carry the trigger and the leading rules,
+        # which is precisely the method content the spawn needs most. The TOC
+        # still lists everything, so later sections stay discoverable.
+        source = intro if intro else body
+        summary = source[:max(0, budget)].rsplit("\n", 1)[0] if budget > 0 else ""
         return header + summary + toc + hint
 
     block = _assemble(toc_lines)
