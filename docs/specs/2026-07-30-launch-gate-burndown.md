@@ -122,6 +122,17 @@ Homebrew tesseract）。两个结果不矛盾，它们一起说明了同一件�
 release run id `30565785174`；spctl：`accepted / Notarized Developer ID /
 Developer ID Application: Mierzati Aireti (XULY3SAJ22)`。
 
+## 📌 门规修订记录（2026-08-01，用户裁决 D1-D4）
+
+- **D2 截断陷阱获准插队**（用户明示"插队修掉"——行使的是门主的裁量权，非三类自动插队）。
+  已修：分支 `fix/skill-truncation-trap`，两半（空简介兜底 + 上限 2000→3000 实测定值），
+  真实种子验证 deck-authoring 整段送达。**插入即划掉。**
+- **D1** 工具传输层：确认**不插**，门外第一批。
+- **D3** Settings mock 三个子决定全按提案（分组导航 / provider 卡片 / 删两个占位 tab）——
+  ③ 从"mock 待批"变为"**mock 已批，待实现**"。
+- **D4** 主动性循环 spec 已立（`docs/specs/2026-08-01-proactive-loop.md`），四个拍板项待审——
+  门外第三批，不占门内。
+
 ## 门内余额
 
 **2 项待我做**（① 后端文案清零、② 空状态）
