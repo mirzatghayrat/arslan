@@ -1,0 +1,211 @@
+<meta charset="utf-8">
+<title>Settings 整界面重设计 · mock（门内③，待裁决）</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d10; color:#e6e8ea;
+         font: 14px/1.6 -apple-system, "PingFang SC", system-ui, sans-serif; }
+  .wrap { max-width: 1180px; margin:0 auto; padding: 36px 26px 90px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .sub { color:#8b939c; font-size:12.5px; margin-bottom:26px; }
+  h2 { font-size:15px; margin:38px 0 6px; }
+  h2 .n { color:#f0883e; font-family:ui-monospace,monospace; margin-right:8px; }
+  .why { color:#9aa3ad; font-size:12.5px; margin:0 0 14px; }
+  .src { color:#6e7681; font-size:11px; font-family:ui-monospace,monospace; }
+  .flag { border-left:3px solid #d9534f; background:#1a1113; padding:11px 15px;
+          margin:12px 0 18px; font-size:12.5px; color:#e8c4c4; border-radius:0 6px 6px 0; }
+  .flag b{color:#ff8e8e}
+  .ok { border-left-color:#3fb950; background:#0f1a12; color:#bfe6c6; } .ok b{color:#7ee787}
+
+  /* ============ the full-app mock ============ */
+  .app { display:grid; grid-template-columns: 208px 1fr; border:1px solid #21262d;
+         border-radius:12px; overflow:hidden; background:#0d1117; min-height:640px; }
+  .nav { border-right:1px solid #191f26; padding:14px 10px; background:#0b0e12; }
+  .nav .find { display:flex; align-items:center; gap:6px; border:1px solid #262d35;
+               border-radius:7px; padding:6px 9px; font-size:11.5px; color:#6e7681; margin-bottom:14px; }
+  .nav .grp { font-family:ui-monospace,monospace; font-size:8.5px; letter-spacing:.14em;
+              color:#59626c; padding:10px 8px 4px; }
+  .nav .it { display:flex; align-items:center; gap:8px; padding:6.5px 9px; border-radius:7px;
+             font-size:12.5px; color:#9aa3ad; position:relative; }
+  .nav .it.on { background:#f0883e14; color:#e6e8ea; }
+  .nav .it.on::before { content:""; position:absolute; left:0; top:50%; transform:translateY(-50%);
+                        width:2px; height:15px; background:#f0883e; }
+  .nav .ic { width:13px; height:13px; border-radius:3px; background:#2a3138; flex:0 0 auto; }
+  .nav .it.on .ic { background:#f0883e55; }
+
+  .pane { padding:22px 26px; }
+  .pane h3 { margin:0; font-size:15.5px; }
+  .pane .crumb { font-size:11px; color:#6e7681; margin-bottom:4px; font-family:ui-monospace,monospace; }
+
+  .cards { display:flex; gap:9px; margin:16px 0 4px; flex-wrap:wrap; }
+  .pcard { border:1px solid #262d35; border-radius:9px; padding:10px 13px; min-width:160px;
+           background:#10151b; position:relative; }
+  .pcard.on { border-color:#f0883e66; background:#f0883e0d; }
+  .pcard .pn { font-size:12.5px; color:#e6e8ea; display:flex; align-items:center; gap:7px; }
+  .pcard .dot { width:7px; height:7px; border-radius:50%; background:#3fb950; }
+  .pcard .dot.warn { background:#d29922; }
+  .pcard .pm { font-size:10.5px; color:#6e7681; margin-top:3px; font-family:ui-monospace,monospace; }
+  .pcard .badge { position:absolute; top:9px; right:10px; font-size:8.5px; color:#f0883e;
+                  border:1px solid #f0883e44; border-radius:4px; padding:0 4px;
+                  font-family:ui-monospace,monospace; }
+  .addcard { border:1px dashed #2a3138; border-radius:9px; min-width:120px; display:flex;
+             align-items:center; justify-content:center; color:#59626c; font-size:12px; }
+
+  .three { border:1px solid #21262d; border-radius:10px; margin-top:14px; overflow:hidden; }
+  .row3 { display:grid; grid-template-columns: 148px 1fr auto; gap:12px; align-items:center;
+          padding:13px 16px; border-bottom:1px solid #161b22; }
+  .row3:last-child { border-bottom:none; }
+  .lb { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.1em; color:#8b939c; }
+  .vv { font-size:12.5px; color:#c9d1d9; }
+  .vv .mask { letter-spacing:2px; color:#6e7681; }
+  .btn { font-size:11px; border:1px solid #30363d; border-radius:6px; padding:4px 11px;
+         color:#c9d1d9; white-space:nowrap; }
+  .btn.ok { border-color:#3fb95055; color:#7ee787; background:#3fb95011; }
+
+  .capline { display:flex; gap:7px; margin:12px 2px 0; flex-wrap:wrap; }
+  .cap { font-size:10px; border-radius:5px; padding:2.5px 8px; font-family:ui-monospace,monospace; }
+  .cap.y { border:1px solid #3fb95044; color:#7ee787; background:#3fb95010; }
+  .cap.n { border:1px solid #d9534f55; color:#ff9d9d; background:#d9534f12; }
+  .cap.u { border:1px solid #30363d; color:#8b939c; }
+
+  .inv { border:1px solid #21262d; border-radius:10px; margin-top:14px; }
+  .invh { display:flex; justify-content:space-between; align-items:center; padding:10px 15px;
+          border-bottom:1px solid #161b22; font-size:11px; color:#8b939c;
+          font-family:ui-monospace,monospace; }
+  .invr { display:flex; justify-content:space-between; padding:8px 15px; font-size:12px;
+          color:#c9d1d9; border-bottom:1px solid #11151a; }
+  .invr:last-child{border-bottom:none}
+  .invr .tag { font-size:9.5px; color:#6e7681; font-family:ui-monospace,monospace; }
+
+  .adv { margin-top:14px; border:1px solid #1a2027; border-radius:9px; padding:10px 15px;
+         color:#6e7681; font-size:12px; }
+  .danger { margin-top:18px; border:1px solid #d9534f3d; border-radius:9px; padding:12px 15px; }
+  .danger .dt { color:#ff9d9d; font-size:11px; font-family:ui-monospace,monospace;
+                letter-spacing:.08em; margin-bottom:6px; }
+  .danger .dr { display:flex; justify-content:space-between; align-items:center; font-size:12.5px;
+                color:#c9d1d9; }
+  .foot { border-top:1px solid #191f26; padding:9px 26px; font-size:10.5px; color:#59626c;
+          font-family:ui-monospace,monospace; grid-column:1/3; display:flex; justify-content:space-between; }
+
+  .ask { margin-top:40px; border-top:1px solid #21262d; padding-top:18px; font-size:13px; }
+  .ask li { margin:9px 0; }
+  code { font-family:ui-monospace,monospace; font-size:11.5px; color:#f0883e; }
+</style>
+
+<div class="wrap">
+  <h1>Settings 整界面重设计</h1>
+  <div class="sub">
+    门内③。基于两份输入：全字段清点（8 分区 · providers 一区就有 ≈24 个控件 = 拥挤的元凶）
+    + 六个成熟产品的模式研究（LobeChat / Cherry Studio / LibreChat / Jan / Open WebUI / Dify）。
+    静态稿，未写代码。<b>清点保证一个现有字段都不丢</b>：token 生成、MCP 开关、进化上限、
+    保留期、OCR 语言、即时保存条 —— 全部有新家（见 §03）。
+  </div>
+
+  <div class="flag ok">
+    <b>研究收敛出的一句话</b>：主面板只放三样 —— 凭据、端点、一个真的连通检查；
+    其余一切进抽屉。模型列表当「受管清单」（刷新按钮 + 上次更新时间 + 设计过的空态），
+    不当静态下拉。拥挤的反面不是留白，是<b>披露层级</b>。
+  </div>
+
+  <!-- ================= 01 整体 ================= -->
+  <h2><span class="n">01</span>整体：分组导航 + 设置内搜索 + Provider 卡片</h2>
+  <p class="why">现状 8 个平铺 tab（其中两个是占位）。提案：三组有节奏的导航 + 顶部搜索（LibreChat 的 registry 模式：每个设置一条注册项，搜索结果直接渲染活控件）。</p>
+
+  <div class="app">
+    <div class="nav">
+      <div class="find">⌕ 搜索设置…</div>
+      <div class="grp">连接</div>
+      <div class="it on"><span class="ic"></span>模型</div>
+      <div class="it"><span class="ic"></span>联网搜索</div>
+      <div class="grp">个性化</div>
+      <div class="it"><span class="ic"></span>外观与语言</div>
+      <div class="it"><span class="ic"></span>记忆</div>
+      <div class="grp">系统</div>
+      <div class="it"><span class="ic"></span>自动化 <span class="src">(进化·整理·定时)</span></div>
+      <div class="it"><span class="ic"></span>访问与安全</div>
+      <div class="it"><span class="ic"></span>高级</div>
+    </div>
+
+    <div class="pane">
+      <div class="crumb">连接 / 模型</div>
+      <h3>模型</h3>
+
+      <div class="cards">
+        <div class="pcard on">
+          <div class="pn"><span class="dot"></span>DeepSeek</div>
+          <div class="pm">deepseek-chat · 主力</div>
+          <span class="badge">PRIMARY</span>
+        </div>
+        <div class="pcard">
+          <div class="pn"><span class="dot warn"></span>Anthropic</div>
+          <div class="pm">claude-sonnet · 备用</div>
+        </div>
+        <div class="addcard">＋ 添加</div>
+      </div>
+
+      <!-- 主面板三件套 -->
+      <div class="three">
+        <div class="row3"><span class="lb">API KEY</span>
+          <span class="vv"><span class="mask">••••••••••••••••</span> 已保存 · 点击替换</span>
+          <span class="btn">替换</span></div>
+        <div class="row3"><span class="lb">端点</span>
+          <span class="vv">https://api.deepseek.com</span>
+          <span class="btn">改</span></div>
+        <div class="row3"><span class="lb">连通检查</span>
+          <span class="vv">走真实聊天链路，对你选的模型发一条最小请求</span>
+          <span class="btn ok">✓ 通过 · 412ms</span></div>
+      </div>
+
+      <!-- 能力诚实行：Jan 两级警示 × 我们的 fitness matrix -->
+      <div class="capline">
+        <span class="cap y">工具调用 ✓</span>
+        <span class="cap n">视觉 ✗ — 贴图将由系统文字识别兜底</span>
+        <span class="cap u">未测能力不显绿</span>
+      </div>
+
+      <!-- 模型受管清单 -->
+      <div class="inv">
+        <div class="invh"><span>模型清单</span><span>上次更新 2 小时前 · <u>刷新</u></span></div>
+        <div class="invr"><span>deepseek-chat</span><span class="tag">在用</span></div>
+        <div class="invr"><span>deepseek-reasoner</span><span class="tag">可选</span></div>
+      </div>
+
+      <div class="adv">▸ 高级（自定义 header · 路由策略 · 嵌入/合成模型指派）—— 收进抽屉，主面板不再摆 24 个控件</div>
+
+      <div class="danger">
+        <div class="dt">DANGER ZONE</div>
+        <div class="dr"><span>删除此 provider 配置（已存的 key 一并删除）</span><span class="btn">删除…</span></div>
+      </div>
+    </div>
+
+    <div class="foot"><span>✓ 已保存 · 即时保存照旧</span><span>后端在线</span></div>
+  </div>
+
+  <!-- ================= 02 能力诚实 ================= -->
+  <h2><span class="n">02</span>能力诚实行 —— fitness matrix 的落地处</h2>
+  <p class="why">
+    Jan 给每个控件挂两级警示（红=会被剥掉 / 琥珀=可能被忽略），由每-provider 能力表驱动。
+    我们已经有那张表（wire 实测的 fitness matrix）—— 这一行就是它的 UI：
+    <b>选中 Anthropic 时这里直接写「工具调用 ✗ — 已装的工具在此 provider 下不会被调用」</b>，
+    而不是让用户装完没反应自己猜。未测的 provider 显示灰色「未验证」，永不默认绿。
+  </p>
+
+  <!-- ================= 03 字段迁移表 ================= -->
+  <h2><span class="n">03</span>每个现有字段的新家（清点对账，不丢一个）</h2>
+  <p class="why src">
+    providers(≈24控件) → 「模型」主面板3 + 能力行 + 清单 + 高级抽屉 ·
+    search → 「联网搜索」 · appearance(显示名/语言/OCR语言/主题) → 「外观与语言」 ·
+    memory(蒸馏/保留期/嵌入) → 「记忆」 · access(token生成/MCP server开关) → 「访问与安全」 ·
+    advanced 里的进化开关+派发上限+整理层 → 「自动化」（花钱的东西住一起，配那句诚实文案：
+    上限约束数量级，账单页硬限仍建议保留） · scheduled/usage 两个占位 tab → 删除，改为
+    「自动化」内一条跳转 Diagnostics 的链接 · 硬编码英文 H1 → 本地化键 · 离线横幅/即时保存条 → 保留
+  </p>
+
+  <div class="ask">
+    <b>D3 请裁决：</b>
+    <ol>
+      <li>导航分组（连接/个性化/系统 三组）这个切法行不行？还是你有别的分组直觉？</li>
+      <li>Provider 用<b>卡片列</b>（如 mock）还是保留现在的<b>下拉选择</b>？卡片多占一行，但「哪个是主力、哪个健康」一眼可见。</li>
+      <li>两个占位 tab（Scheduled/Usage）按提案<b>删除</b>并在「自动化」里放跳转，可以吗？</li>
+    </ol>
+  </div>
+</div>
