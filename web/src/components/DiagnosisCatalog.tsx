@@ -1,9 +1,11 @@
+import { Activity } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunCatalogDto, AnomalyDto } from "../api/client.types";
 import VitalsHeader from "./VitalsHeader";
 import AnomalyTimeline from "./AnomalyTimeline";
+import EmptyState, { EmptyStateAction } from "./EmptyState";
 
 interface Props {
   onClose: () => void;
@@ -12,6 +14,11 @@ interface Props {
   conversationId?: string;
   /** Narrow container (e.g. mobile-width DiagnosisView) — render cards instead of a table. */
   narrow?: boolean;
+  /** Gate item ②. The next step for an empty diagnostics page lives on ANOTHER
+   *  screen (runs only exist once a spawn is dispatched), so unlike the other
+   *  empty states this one cannot act locally. Optional: callers that cannot
+   *  navigate render the explanation without a dead button. */
+  onGoToChat?: () => void;
 }
 
 type RangeKey = "1h" | "24h" | "all";
@@ -93,7 +100,7 @@ function SeverityDot({ severity }: { severity: string }) {
   return <span className="anomaly-row__dot" style={{ background: color }} aria-hidden="true" />;
 }
 
-export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
+export default function DiagnosisCatalog({ onSelectSpawn, narrow, onGoToChat }: Props) {
   const { t } = useTranslation();
   const [range, setRange] = useState<RangeKey>("1h");
   const [catalog, setCatalog] = useState<RunCatalogDto | null>(null);
@@ -213,7 +220,15 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
       {loading && spawns.length === 0 ? (
         <p className="diag-catalog__empty">{t("diag.loading")}</p>
       ) : spawns.length === 0 ? (
-        <p className="diag-catalog__empty">{t("diag.no_runs")}</p>
+        <EmptyState
+          icon={Activity}
+          title={t("diag.empty_title")}
+          body={t("diag.empty_body")}
+          testId="empty-diagnosis"
+          action={onGoToChat && (
+            <EmptyStateAction onClick={onGoToChat}>{t("diag.empty_action")}</EmptyStateAction>
+          )}
+        />
       ) : narrow ? (
         <div className="diag-cards">
           {spawns.map((s) => (

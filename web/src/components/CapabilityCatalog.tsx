@@ -7,11 +7,12 @@
 // Infeasible items stay hidden entirely (existing behavior).
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Stethoscope } from "lucide-react";
+import { Stethoscope, Boxes } from "lucide-react";
 import { api } from "../api/client";
 import type { RegistryCatalog, RegistrySkill, RegistryToolset, SkillHealth } from "../api/client.types";
 import FilterChips from "./FilterChips";
 import EquipPopover from "./EquipPopover";
+import EmptyState, { EmptyStateAction } from "./EmptyState";
 
 type AvailChip = "usable" | "unimplemented" | "orchestrator" | "all";
 type AvailClass = Exclude<AvailChip, "all">;
@@ -36,7 +37,11 @@ export default function CapabilityCatalog({ kind }: { kind: "tools" | "skills" }
 
   const items = kind === "tools" ? cat.toolsets : cat.skills;
   const visible = items.filter((it) => it.status !== "infeasible");
-  if (visible.length === 0) return <div className="text-[11px] text-subtle-foreground">{t("capabilities.catalog.empty")}</div>;
+  if (visible.length === 0)
+    return (
+      <EmptyState icon={Boxes} testId="empty-capabilities"
+        title={t("capabilities.catalog.empty")} body={t("capabilities.catalog.empty_desc")} />
+    );
 
   return (
     <div>
@@ -98,7 +103,14 @@ function ToolsView({ toolsets }: { toolsets: RegistryToolset[] }) {
       />
       {chip === "orchestrator" && <OrchestratorNote />}
       {shown.length === 0 ? (
-        <div className="text-[11px] text-subtle-foreground">{t("capabilities.catalog.empty")}</div>
+        <EmptyState size="inline" testId="empty-capabilities-filtered"
+          title={t("capabilities.catalog.filtered_empty")}
+          action={
+            <EmptyStateAction onClick={() => setChip("all")}>
+              {t("capabilities.catalog.filtered_clear")}
+            </EmptyStateAction>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {shown.map((ts) => (
@@ -194,7 +206,14 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
         />
       )}
       {pool.length === 0 && (
-        <div className="text-[11px] text-subtle-foreground">{t("capabilities.catalog.empty")}</div>
+        <EmptyState size="inline" testId="empty-skills-filtered"
+          title={t("capabilities.catalog.filtered_empty")}
+          action={
+            <EmptyStateAction onClick={() => { setChip("all"); setCatChip("all"); }}>
+              {t("capabilities.catalog.filtered_clear")}
+            </EmptyStateAction>
+          }
+        />
       )}
       {visibleCategories.map((cat) => (
         <div key={cat}>

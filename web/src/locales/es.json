@@ -14,7 +14,6 @@
     "empty": "Your second brain is empty — feed it a source.",
     "error": "Couldn't load your knowledge graph.",
     "connections": "Connections",
-    "noConnections": "No connections yet.",
     "inbox": {
       "empty": "No hay propuestas de memoria pendientes.",
       "accept": "Aceptar",
@@ -135,13 +134,13 @@
     "kind_self": "Tú",
     "prov_fed": "Aportado",
     "prov_spawn": "De un spawn",
-    "prov_handwritten": "Escrito por ti"
+    "prov_handwritten": "Escrito por ti",
+    "graph_empty_title": "Tu segundo cerebro está vacío",
+    "graph_empty_body": "Aliméntalo con un enlace, un archivo o una nota desde el panel de la izquierda, y lo que aprenda aparecerá aquí como un grafo que puedes recorrer."
   },
   "dashboard": {
     "title": "Tus spawns",
     "create": "Crear nuevo spawn",
-    "empty_title": "Aún no hay spawns",
-    "empty_body": "Crea tu primer spawn de IA para empezar.",
     "stat_spawns": "Spawns",
     "stat_conversations": "Conversaciones",
     "stat_rules": "Reglas activas",
@@ -195,7 +194,6 @@
     "reconnecting": "Reconectando…",
     "remember_note": "Recordaré que tú…",
     "spawn_created": "Spawn {{name}} creado",
-    "empty": "Saluda a Arslan para empezar.",
     "thinking_arslan": "Arslan está pensando…",
     "thinking_spawn": "{{name}} está trabajando…"
   },
@@ -323,7 +321,6 @@
   "spawn_edit": {
     "close": "Cerrar",
     "loading": "Cargando registro…",
-    "empty": "Nada asignable aquí.",
     "cancel": "Cancelar",
     "save": "Guardar",
     "saving": "Guardando…",
@@ -348,8 +345,7 @@
     "more": "+{{count}} más",
     "granted_create": "Equipado al crear",
     "granted_escalation": "Concedido por Arslan",
-    "granted_user": "Definido por ti",
-    "empty": "Sin equipamiento"
+    "granted_user": "Definido por ti"
   },
   "activity": {
     "summary": "Usó {{summary}}",
@@ -389,7 +385,6 @@
   "facts": {
     "section": "Memoria",
     "subtitle": "Lo que Arslan recuerda sobre ti. Editable.",
-    "empty": "Aún no hay nada recordado.",
     "add_placeholder": "Añade algo que Arslan deba recordar…",
     "add": "Añadir",
     "delete": "Eliminar",
@@ -635,7 +630,9 @@
     "archived_section": "Archived",
     "distilled_toast": "Se destilaron {{count}} agente(s) en la memoria",
     "distilled_none": "Nada que destilar",
-    "distill_failed": "Distill failed"
+    "distill_failed": "Distill failed",
+    "no_spawns": "Aún no hay spawns",
+    "no_spawns_desc": "Aparecerán aquí cuando crees uno."
   },
   "orchestrator": {
     "greeting_morning": "Buenos días",
@@ -699,8 +696,8 @@
     "subtitle": "Persistent micro-agents synthesized by the Arslan host core. Review status, run metrics, and equip tools.",
     "style_glass": "Glass Glow",
     "synthesize_spawn": "Synthesize Spawn",
-    "empty_no_spawns": "No active spawns active",
-    "empty_no_spawns_desc": "Create or instantiate micro-specialists to start delegating complex quantitative algorithms.",
+    "empty_no_spawns": "Aún no hay spawns",
+    "empty_no_spawns_desc": "Los spawns son los especialistas a los que Arslan delega. Crea uno, o describe una tarea en el chat y deja que Arslan proponga uno.",
     "empty_backend_offline": "Backend not connected",
     "empty_backend_offline_desc": "Spawn list could not be loaded — the backend is unreachable. Start the backend and the list will reload automatically.",
     "equipped_systems": "Equipped systems",
@@ -732,7 +729,8 @@
     "connectedExit": "Conectado — Salir",
     "pullIn": "Invitar spawn al chat",
     "pullIntoChat": "+ Traer al Chat",
-    "kickConfirm": "¿Eliminar este spawn de la conversación?"
+    "kickConfirm": "¿Eliminar este spawn de la conversación?",
+    "empty_no_spawns_action": "Crear un spawn"
   },
   "spawn_chat": {
     "direct_channel_suffix": "Direct Channel",
@@ -824,11 +822,14 @@
     },
     "catalog": {
       "loading": "Loading registry…",
-      "empty": "Nothing here yet.",
+      "empty": "Aún no hay capacidades registradas",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "No implementado — solo marcador de catálogo, no se puede equipar.",
       "orchestrator_note": "Por seguridad, solo Arslan (el orquestador) puede usarlos; no se pueden equipar a los spawns.",
-      "degraded": "SIN SANDBOX"
+      "degraded": "SIN SANDBOX",
+      "empty_desc": "Las capacidades son las herramientas y habilidades que un spawn puede usar. Importa habilidades de un repositorio o registra un servidor MCP con los paneles de esta página.",
+      "filtered_empty": "Nada coincide con este filtro",
+      "filtered_clear": "Mostrar todo"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",
@@ -1187,7 +1188,8 @@
       "outcome_error": "El intento #{{id}} no pudo ejecutarse: {{reason}}",
       "outcome_skipped_budget": "El intento #{{id}} se rechazó antes de gastar nada: {{reason}}",
       "outcome_skipped_structural": "El intento #{{id}} todavía no pudo evaluarse: {{reason}}",
-      "watch_lost": "El intento #{{id}} sigue en curso; este panel dejó de seguirlo. Vuelve a abrirlo para comprobarlo."
+      "watch_lost": "El intento #{{id}} sigue en curso; este panel dejó de seguirlo. Vuelve a abrirlo para comprobarlo.",
+      "empty_desc": "La evolución reescribe el prompt de un spawn a partir de sus propias ejecuciones puntuadas y deja la reescritura aquí para que la aceptes o rechaces. Nada se aplica sin ti."
     },
     "diag": {
       "title": "Por qué aún no hay propuestas",
@@ -1292,7 +1294,8 @@
       "cron_required": "Se requiere una expresión cron",
       "enabled_limit_reached": "Ya tienes {{max_enabled}} tareas programadas activas: pausa o elimina una primero",
       "spawn_id_required": "Debes elegir un spawn"
-    }
+    },
+    "empty_desc": "Una tarea programada despacha un spawn por su cuenta, según un intervalo o una expresión cron: un resumen diario, una comprobación cada hora."
   },
   "diag": {
     "range_1h": "Última 1h",
@@ -1322,7 +1325,10 @@
     "vitals_empty": "Aún no hay datos de ejecución (solo se registran al despachar Spawns)",
     "times_n": "{{n}} veces",
     "cell_tooltip": "{{count}} ejecuciones · {{errors}} errores",
-    "overall_performance": "Rendimiento global"
+    "overall_performance": "Rendimiento global",
+    "empty_title": "Aún no hay ejecuciones registradas",
+    "empty_body": "Se registra una ejecución cada vez que se despacha un spawn. Envía una tarea en el chat y esta página se llenará: puntuaciones, tasas de error y anomalías provienen de ejecuciones reales.",
+    "empty_action": "Ir al chat"
   },
   "replay": {
     "title": "Repetición",

@@ -92,7 +92,17 @@ describe("locale parity", () => {
     // 1221 → 1240: gate item ① — the anomaly/recap/scheduled sentences moved
     //              out of the backend, where they were Chinese f-strings that
     //              no interface could translate.
-    expect(enKeys).toHaveLength(1240);
+    // 1240 → 1246: gate item ② (empty states). +13 new (a body and, where the
+    //              next step is not already on screen, an action for each Tier A
+    //              panel; plus the filtered-vs-empty split), 5 existing strings
+    //              rewritten in place, and −7 DEAD keys deleted: dashboard.
+    //              empty_title/empty_body, conversation.empty, facts.empty,
+    //              equipment.empty, spawn_edit.empty, brain.noConnections had
+    //              zero call sites in web/src. One of them, "Create your first
+    //              AI spawn to get started.", was friendlier than the copy that
+    //              actually shipped — dead copy that reads better than live copy
+    //              is a trap for whoever greps next.
+    expect(enKeys).toHaveLength(1246);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

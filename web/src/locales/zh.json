@@ -14,7 +14,6 @@
     "empty": "第二大脑还是空的——喂它一份资料。",
     "error": "知识图谱加载失败。",
     "connections": "关联",
-    "noConnections": "还没有关联。",
     "inbox": {
       "empty": "没有待处理的记忆提案。",
       "accept": "接受",
@@ -135,13 +134,13 @@
     "kind_self": "你",
     "prov_fed": "投喂",
     "prov_spawn": "分身",
-    "prov_handwritten": "手写"
+    "prov_handwritten": "手写",
+    "graph_empty_title": "你的第二大脑还是空的",
+    "graph_empty_body": "用左侧面板投喂一个链接、一个文件或一条笔记，它学到的东西会在这里长成一张可以走的图。"
   },
   "dashboard": {
     "title": "你的分身",
     "create": "创建新分身",
-    "empty_title": "还没有分身",
-    "empty_body": "创建你的第一个 AI 分身来开始吧。",
     "stat_spawns": "分身",
     "stat_conversations": "对话",
     "stat_rules": "活跃规则",
@@ -195,7 +194,6 @@
     "reconnecting": "正在重新连接…",
     "remember_note": "我会记住你…",
     "spawn_created": "已创建分身 {{name}}",
-    "empty": "向 Arslan 打个招呼开始吧。",
     "thinking_arslan": "Arslan 正在思考…",
     "thinking_spawn": "{{name}} 正在处理…"
   },
@@ -323,7 +321,6 @@
   "spawn_edit": {
     "close": "关闭",
     "loading": "加载注册表…",
-    "empty": "这里没有可装备的项。",
     "cancel": "取消",
     "save": "保存",
     "saving": "保存中…",
@@ -348,8 +345,7 @@
     "more": "还有 {{count}} 个",
     "granted_create": "创建时装备",
     "granted_escalation": "由 Arslan 授予",
-    "granted_user": "由你设置",
-    "empty": "暂无装备"
+    "granted_user": "由你设置"
   },
   "activity": {
     "summary": "使用了 {{summary}}",
@@ -389,7 +385,6 @@
   "facts": {
     "section": "记忆",
     "subtitle": "Arslan 记住的关于你的信息，可编辑。",
-    "empty": "暂无记忆。",
     "add_placeholder": "添加 Arslan 应记住的内容…",
     "add": "添加",
     "delete": "删除",
@@ -635,7 +630,9 @@
     "archived_section": "已归档",
     "distilled_toast": "已蒸馏 {{count}} 个分身的对话",
     "distilled_none": "没有可蒸馏的内容",
-    "distill_failed": "蒸馏失败"
+    "distill_failed": "蒸馏失败",
+    "no_spawns": "还没有分身",
+    "no_spawns_desc": "创建之后会出现在这里。"
   },
   "orchestrator": {
     "greeting_morning": "早上好",
@@ -699,8 +696,8 @@
     "subtitle": "由 Arslan 核心主机合成的持久微智能体。查看状态、运行指标并配置工具。",
     "style_glass": "玻璃发光",
     "synthesize_spawn": "合成分身",
-    "empty_no_spawns": "暂无活跃分身",
-    "empty_no_spawns_desc": "创建或实例化微专家，开始委托复杂的定量算法。",
+    "empty_no_spawns": "还没有分身",
+    "empty_no_spawns_desc": "分身是 Arslan 派活的专家。你可以自己建一个，或者在对话里描述任务、让 Arslan 提议一个。",
     "empty_backend_offline": "后端未连接",
     "empty_backend_offline_desc": "无法加载分身列表——后端不可达。启动后端后列表将自动刷新。",
     "equipped_systems": "已装备系统",
@@ -732,7 +729,8 @@
     "connectedExit": "已连接 — 退出",
     "pullIn": "邀请分身加入对话",
     "pullIntoChat": "+ 拉入对话",
-    "kickConfirm": "从对话中移除此分身？"
+    "kickConfirm": "从对话中移除此分身？",
+    "empty_no_spawns_action": "创建分身"
   },
   "spawn_chat": {
     "direct_channel_suffix": "直连频道",
@@ -824,11 +822,14 @@
     },
     "catalog": {
       "loading": "正在加载注册表…",
-      "empty": "这里还没有内容。",
+      "empty": "还没有注册任何能力",
       "equip_hint": "从分身的菜单中装配这些能力。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
       "orchestrator_note": "出于安全仅主脑可用,不能装备给分身。",
-      "degraded": "裸跑·无沙箱"
+      "degraded": "裸跑·无沙箱",
+      "empty_desc": "能力就是分身能用的工具和技能。用本页的面板从仓库导入技能，或注册一个 MCP 服务器。",
+      "filtered_empty": "没有符合当前筛选的项",
+      "filtered_clear": "显示全部"
     },
     "hero": {
       "placeholder": "贴一个 GitHub 链接，或搜索…",
@@ -1187,7 +1188,8 @@
       "outcome_error": "第 #{{id}} 次尝试没能跑起来:{{reason}}",
       "outcome_skipped_budget": "第 #{{id}} 次尝试在花钱之前就被拒绝了:{{reason}}",
       "outcome_skipped_structural": "第 #{{id}} 次尝试还无法被评估:{{reason}}",
-      "watch_lost": "第 #{{id}} 次尝试仍在运行,本面板已停止跟踪。重新打开可查看。"
+      "watch_lost": "第 #{{id}} 次尝试仍在运行,本面板已停止跟踪。重新打开可查看。",
+      "empty_desc": "进化会用一个分身自己被评分的 run 重写它的提示词，然后把重写结果停在这里等你接受或拒绝。任何改动都不会绕过你生效。"
     },
     "diag": {
       "title": "为什么还没有提案",
@@ -1292,7 +1294,8 @@
       "cron_required": "cron 表达式不能为空",
       "enabled_limit_reached": "已启用的定时任务已达上限 {{max_enabled}} 个，请先暂停或删除",
       "spawn_id_required": "必须选择一个分身"
-    }
+    },
+    "empty_desc": "定时任务会按间隔或 cron 表达式自动派发分身 —— 比如每天一份摘要、每小时一次检查。"
   },
   "diag": {
     "range_1h": "近1h",
@@ -1322,7 +1325,10 @@
     "vitals_empty": "暂无运行数据(仅分身派发时记录)",
     "times_n": "{{n}} 次",
     "cell_tooltip": "{{count}} 次 · {{errors}} 错",
-    "overall_performance": "整体表现"
+    "overall_performance": "整体表现",
+    "empty_title": "还没有记录到任何 run",
+    "empty_body": "每次派发分身都会记录一条 run。在对话里发一个任务，这一页就会有内容 —— 评分、错误率、异常全都来自真实的 run。",
+    "empty_action": "去对话"
   },
   "replay": {
     "title": "编排回放",

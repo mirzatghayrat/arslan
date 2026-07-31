@@ -1,3 +1,4 @@
+import { Brain } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, type BrainLeaf, type GraphNodeDto } from "../../api/client";
@@ -11,6 +12,7 @@ import BrainAsOfSlider from "./BrainAsOfSlider";
 import BrainLineage from "./BrainLineage";
 import BrainNav from "./BrainNav";
 import NoteEditor from "./NoteEditor";
+import EmptyState from "../EmptyState";
 
 export default function BrainSection() {
   const { t } = useTranslation();
@@ -135,6 +137,17 @@ export default function BrainSection() {
         <BrainAsOfSlider nodes={graphNodes} value={asOf} onChange={setAsOf}
           className="absolute bottom-14 left-3 right-3 z-10 rounded bg-surface-raised/80 px-2 py-1.5 backdrop-blur" />
         {loading && <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-subtle-foreground uppercase tracking-widest pointer-events-none">loading…</div>}
+
+        {/* Gate item ②. A brand-new brain used to render a silent black canvas —
+            the only copy was in the left nav, and only when a branch happened to
+            be expanded. No action button here on purpose: the feed field IS the
+            left panel this points at, and a second one would be a decoy. */}
+        {!loading && !error && graphNodes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
+            <EmptyState icon={Brain} testId="empty-brain-graph"
+              title={t("brain.graph_empty_title")} body={t("brain.graph_empty_body")} />
+          </div>
+        )}
 
         {/* picked entry slides in as the right rail OVER the graph (both are absolute right-0) */}
         {picked && picked.kind === "note" ? (

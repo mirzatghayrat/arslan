@@ -3,12 +3,12 @@ import { Spawn } from '../types';
 import { useCapabilityLabel } from '../stores/registryStore';
 import SpawnDetail from './SpawnDetail';
 import {
-  Sliders, Activity, Cpu, WifiOff
-} from 'lucide-react';
+  Sliders, Activity, Cpu, WifiOff, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
 import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
+import EmptyState, { EmptyStateAction } from "./EmptyState";
 
 interface SpawnsDashboardProps {
   spawns: Spawn[];
@@ -74,21 +74,21 @@ export default function SpawnsDashboard({
       {/* Spawns Grid Render */}
       {spawns.length === 0 ? (
         backendStatus === 'offline' ? (
-          <div className="h-64 border border-dashed border-danger/40 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-danger/10">
-            <WifiOff className="w-8 h-8 text-danger/60 mb-2" />
-            <h3 className="text-sm font-sans font-medium text-danger">{t('ledger.empty_backend_offline')}</h3>
-            <p className="text-xs text-danger/70 max-w-sm mt-1">
-              {t('ledger.empty_backend_offline_desc')}
-            </p>
-          </div>
+          <EmptyState icon={WifiOff} tone="danger" testId="empty-spawn-ledger-offline"
+            title={t('ledger.empty_backend_offline')} body={t('ledger.empty_backend_offline_desc')} />
         ) : (
-          <div className="h-64 border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-background">
-            <Cpu className="w-8 h-8 text-subtle-foreground mb-2 animate-bounce" />
-            <h3 className="text-sm font-sans font-medium text-foreground">{t('ledger.empty_no_spawns')}</h3>
-            <p className="text-xs text-subtle-foreground max-w-sm mt-1">
-              {t('ledger.empty_no_spawns_desc')}
-            </p>
-          </div>
+          <EmptyState
+            icon={Cpu}
+            title={t('ledger.empty_no_spawns')}
+            body={t('ledger.empty_no_spawns_desc')}
+            testId="empty-spawn-ledger"
+            action={
+              <EmptyStateAction onClick={onCreateSpawnClick}>
+                <Plus className="w-3 h-3" />
+                {t('ledger.empty_no_spawns_action')}
+              </EmptyStateAction>
+            }
+          />
         )
       ) : (
         <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">

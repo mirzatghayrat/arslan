@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, CalendarClock } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type {
   ScheduledTaskCreateBody,
@@ -9,6 +9,7 @@ import type {
   SpawnSummary,
 } from "../api/client.types";
 import Select from "./Select";
+import EmptyState, { EmptyStateAction } from "./EmptyState";
 
 /**
  * S3-M4 Diagnostics 定时任务卡 — list + create/edit form + execution history.
@@ -433,7 +434,18 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
       {error && <p className="sched-card__error" data-testid="sched-error">{error}</p>}
 
       {loaded && tasks.length === 0 ? (
-        <p className="diag-catalog__empty">{t("scheduled.empty")}</p>
+        <EmptyState
+          icon={CalendarClock}
+          title={t("scheduled.empty")}
+          body={t("scheduled.empty_desc")}
+          testId="empty-scheduled"
+          action={
+            <EmptyStateAction onClick={() => setForm({ editing: null })}>
+              <Plus className="w-3 h-3" />
+              {t("scheduled.new")}
+            </EmptyStateAction>
+          }
+        />
       ) : tasks.length > 0 ? (
         <table className="diag-table sched-table">
           <thead>

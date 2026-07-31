@@ -11,6 +11,7 @@ import type {
 } from "../api/client.types";
 import PromotionCard from "./PromotionCard";
 import { EvolutionEligibilityPanel } from "./EvolutionEligibilityPanel";
+import EmptyState from "./EmptyState";
 
 interface Props {
   /** Opens the run-trace replay for a pair arm (wired to DiagnosisView's RunReplay). */
@@ -391,10 +392,17 @@ export default function EvolutionInbox({ onOpenRun }: Props) {
       {rows == null ? (
         <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.loading")}</div>
       ) : rows.length === 0 ? (
-        <div className="space-y-2">
-          <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.inbox.empty")}</div>
+        <div className="space-y-1">
+          <EmptyState
+            size="inline"
+            title={t("evolution.inbox.empty")}
+            body={t("evolution.inbox.empty_desc")}
+            testId="empty-evolution-inbox"
+          />
+          {/* A pointer, not a control — it lives outside the `action` slot so the
+              gate-② guard keeps meaning "there is something here you can click". */}
           {!diag && (
-            <div className="text-[12px] font-mono text-muted-foreground">{t("evolution.diag.pick_spawn")}</div>
+            <p className="text-[10px] font-sans text-subtle-foreground">{t("evolution.diag.pick_spawn")}</p>
           )}
         </div>
       ) : (

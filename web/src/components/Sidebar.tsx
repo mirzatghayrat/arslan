@@ -10,6 +10,7 @@ import { Spawn } from '../types';
 import { SpawnAvatar } from './SpawnAvatar';
 import ThreadRowMenu from './ThreadRowMenu';
 import type { BackendStatus } from '../hooks/useBackendStatus';
+import EmptyState from "./EmptyState";
 
 interface ArslanThread {
   id: string;
@@ -336,7 +337,10 @@ export default function Sidebar({
                   </button>
                 ))}
                 {spawns.length === 0 && (
-                  <p className="px-3 py-2 text-[10px] text-subtle-foreground italic font-mono">No spawns yet</p>
+                  <div className="px-3">
+                    <EmptyState size="inline" testId="empty-sidebar-spawns"
+                      title={t('sidebar.no_spawns')} body={t('sidebar.no_spawns_desc')} />
+                  </div>
                 )}
               </div>
             )}

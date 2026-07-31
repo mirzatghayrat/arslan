@@ -14,7 +14,6 @@
     "empty": "Your second brain is empty — feed it a source.",
     "error": "Couldn't load your knowledge graph.",
     "connections": "Connections",
-    "noConnections": "No connections yet.",
     "inbox": {
       "empty": "No memory proposals waiting.",
       "accept": "Accept",
@@ -135,13 +134,13 @@
     "kind_self": "You",
     "prov_fed": "Fed in",
     "prov_spawn": "From a spawn",
-    "prov_handwritten": "Written by you"
+    "prov_handwritten": "Written by you",
+    "graph_empty_title": "Your second brain is empty",
+    "graph_empty_body": "Feed it a link, a file or a note using the panel on the left, and what it learns appears here as a graph you can walk."
   },
   "dashboard": {
     "title": "Your Spawns",
     "create": "Create New Spawn",
-    "empty_title": "No spawns yet",
-    "empty_body": "Create your first AI spawn to get started.",
     "stat_spawns": "Spawns",
     "stat_conversations": "Conversations",
     "stat_rules": "Active rules",
@@ -195,7 +194,6 @@
     "reconnecting": "Reconnecting…",
     "remember_note": "I'll remember that you…",
     "spawn_created": "Created spawn {{name}}",
-    "empty": "Say hello to Arslan to get started.",
     "thinking_arslan": "Arslan is thinking…",
     "thinking_spawn": "{{name}} is working…"
   },
@@ -323,7 +321,6 @@
   "spawn_edit": {
     "close": "Close",
     "loading": "Loading registry…",
-    "empty": "Nothing assignable here.",
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving…",
@@ -348,8 +345,7 @@
     "more": "+{{count}} more",
     "granted_create": "Equipped at creation",
     "granted_escalation": "Granted by Arslan",
-    "granted_user": "Set by you",
-    "empty": "No equipment"
+    "granted_user": "Set by you"
   },
   "activity": {
     "summary": "Used {{summary}}",
@@ -389,7 +385,6 @@
   "facts": {
     "section": "Memory",
     "subtitle": "What Arslan remembers about you. Editable.",
-    "empty": "Nothing remembered yet.",
     "add_placeholder": "Add something Arslan should remember…",
     "add": "Add",
     "delete": "Delete",
@@ -635,7 +630,9 @@
     "archived_section": "Archived",
     "distilled_toast": "Distilled {{count}} agent(s) into memory",
     "distilled_none": "Nothing to distill",
-    "distill_failed": "Distill failed"
+    "distill_failed": "Distill failed",
+    "no_spawns": "No spawns yet",
+    "no_spawns_desc": "They appear here once you create one."
   },
   "orchestrator": {
     "greeting_morning": "Good morning",
@@ -699,8 +696,8 @@
     "subtitle": "Persistent micro-agents synthesized by the Arslan host core. Review status, run metrics, and equip tools.",
     "style_glass": "Glass Glow",
     "synthesize_spawn": "Synthesize Spawn",
-    "empty_no_spawns": "No active spawns active",
-    "empty_no_spawns_desc": "Create or instantiate micro-specialists to start delegating complex quantitative algorithms.",
+    "empty_no_spawns": "No spawns yet",
+    "empty_no_spawns_desc": "Spawns are the specialists Arslan hands work to. Create one, or describe a task in chat and let Arslan propose one.",
     "empty_backend_offline": "Backend not connected",
     "empty_backend_offline_desc": "Spawn list could not be loaded — the backend is unreachable. Start the backend and the list will reload automatically.",
     "equipped_systems": "Equipped systems",
@@ -732,7 +729,8 @@
     "connectedExit": "Connected — Exit",
     "pullIn": "Invite spawn into chat",
     "pullIntoChat": "+ Pull Into Chat",
-    "kickConfirm": "Remove this spawn from the conversation?"
+    "kickConfirm": "Remove this spawn from the conversation?",
+    "empty_no_spawns_action": "Create a spawn"
   },
   "spawn_chat": {
     "direct_channel_suffix": "Direct Channel",
@@ -824,11 +822,14 @@
     },
     "catalog": {
       "loading": "Loading registry…",
-      "empty": "Nothing here yet.",
+      "empty": "No capabilities registered yet",
       "equip_hint": "Equip these from a spawn's menu.",
       "unimplemented_note": "Not implemented — catalog placeholder only, cannot be equipped.",
       "orchestrator_note": "For safety, these are usable only by Arslan (the orchestrator) and cannot be equipped to spawns.",
-      "degraded": "UNSANDBOXED"
+      "degraded": "UNSANDBOXED",
+      "empty_desc": "Capabilities are the tools and skills a spawn can use. Import skills from a repo, or register an MCP server, using the panels on this page.",
+      "filtered_empty": "Nothing matches this filter",
+      "filtered_clear": "Show all"
     },
     "hero": {
       "placeholder": "Paste a GitHub link, or search…",
@@ -1187,7 +1188,8 @@
       "outcome_error": "Attempt #{{id}} failed to run: {{reason}}",
       "outcome_skipped_budget": "Attempt #{{id}} was refused before spending anything: {{reason}}",
       "outcome_skipped_structural": "Attempt #{{id}} could not be evaluated yet: {{reason}}",
-      "watch_lost": "Attempt #{{id}} is still running; this panel stopped following it. Reopen to check."
+      "watch_lost": "Attempt #{{id}} is still running; this panel stopped following it. Reopen to check.",
+      "empty_desc": "Evolution rewrites a spawn's prompt from its own scored runs, then parks the rewrite here for you to accept or reject. Nothing is ever applied without you."
     },
     "diag": {
       "title": "Why no proposals yet",
@@ -1292,7 +1294,8 @@
       "cron_required": "A cron expression is required",
       "enabled_limit_reached": "You already have {{max_enabled}} scheduled tasks enabled — pause or delete one first",
       "spawn_id_required": "A spawn must be chosen"
-    }
+    },
+    "empty_desc": "A scheduled task dispatches a spawn on its own, on an interval or a cron expression — a daily digest, an hourly check."
   },
   "diag": {
     "range_1h": "Last 1h",
@@ -1322,7 +1325,10 @@
     "vitals_empty": "No run data yet (recorded only when spawns are dispatched)",
     "times_n": "{{n}} runs",
     "cell_tooltip": "{{count}} runs · {{errors}} errors",
-    "overall_performance": "Overall performance"
+    "overall_performance": "Overall performance",
+    "empty_title": "No runs recorded yet",
+    "empty_body": "A run is recorded every time a spawn is dispatched. Send a task in chat and this page fills in — scores, error rates and anomalies all come from real runs.",
+    "empty_action": "Go to chat"
   },
   "replay": {
     "title": "Run replay",

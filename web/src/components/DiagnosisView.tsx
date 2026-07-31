@@ -22,7 +22,7 @@ const NARROW_BREAKPOINT = 700;
  * "进化" tab hosts the S2 evolution inbox + promotion cards (spec §E7); a pair's
  * "查看重放" opens the same RunReplay this view already uses.
  */
-export default function DiagnosisView() {
+export default function DiagnosisView({ onGoToChat }: { onGoToChat?: () => void } = {}) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("diag");
   const [sel, setSel] = useState<Selection>(null);
@@ -98,6 +98,7 @@ export default function DiagnosisView() {
                 onClose={() => {}}
                 onSelectSpawn={(spawnId, name) => setSel({ spawnId: spawnId ?? 0, name })}
                 narrow={narrow}
+                onGoToChat={onGoToChat}
               />
               {/* S3-M3 cost visibility: fleet-wide usage summary (tokens + honest USD). */}
               <UsageCard />

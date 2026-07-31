@@ -978,7 +978,7 @@ export default function App() {
 
             {activeSection === 'brain' && <BrainSection />}
 
-            {activeSection === 'diagnosis' && <DiagnosisView />}
+            {activeSection === 'diagnosis' && <DiagnosisView onGoToChat={() => setActiveSection('arslan')} />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
