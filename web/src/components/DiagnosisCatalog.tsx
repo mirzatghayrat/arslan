@@ -188,8 +188,12 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow }: Props) {
             <div className="anomaly-row" key={i}>
               <SeverityDot severity={a.severity} />
               <div className="anomaly-row__body">
-                <div className="anomaly-row__title">{a.title}</div>
-                <div className="anomaly-row__detail">{a.detail}</div>
+                <div className="anomaly-row__title">
+                  {t(a.title_key, { ...a.params, name: a.spawn_name ?? t('diagnosis.a_spawn') })}
+                </div>
+                {a.detail_key && (
+                  <div className="anomaly-row__detail">{t(a.detail_key, a.params)}</div>
+                )}
                 {a.since && <div className="anomaly-row__since">{a.since}</div>}
               </div>
               <button

@@ -40,16 +40,24 @@ describe("DiagnosisCatalog", () => {
   });
   it("anomaly badge is collapsed by default and expands on click", async () => {
     const { api } = await import("../api/client");
+    // Shaped like the wire NOW: keys + params, never an assembled sentence.
+    // The fixture used to carry Chinese titles because the server sent them —
+    // which is exactly why nothing here noticed that an English interface was
+    // being shown Chinese.
     (api.getRunAnomalies as any).mockResolvedValueOnce([
-      { severity:"red", kind:"error_rate", spawn_id:1, spawn_name:"Bad", title:"Bad 错误率偏高", detail:"20% · 1/5 报错", since:null, run_id:null },
-      { severity:"amber", kind:"tool_error", spawn_id:3, spawn_name:"CI", title:"CI 工具报错", detail:"web_extract 失败", since:null, run_id:58 },
+      { severity:"red", kind:"error_rate", spawn_id:1, spawn_name:"Bad",
+        title_key:"anomaly.error_rate.high", detail_key:"anomaly.error_rate.detail",
+        params:{ pct:20, errs:1, n:5 }, since:null, run_id:null },
+      { severity:"amber", kind:"tool_error", spawn_id:3, spawn_name:"CI",
+        title_key:"anomaly.tool_error.title", detail_key:"anomaly.tool_error.detail",
+        params:{ tool:"web_extract", run_id:58 }, since:null, run_id:58 },
     ]);
     render(<DiagnosisCatalog onClose={() => {}} onSelectSpawn={() => {}} />);
     const badge = await screen.findByTestId("anomaly-badge");
     expect(badge.textContent).toContain("diag.anomalies_n")  // mocked t drops interpolation; the real count is in the key params;                    // count while collapsed
-    expect(screen.queryByText(/错误率偏高/)).toBeNull();         // detail hidden by default
+    expect(screen.queryByText("anomaly.error_rate.high")).toBeNull();   // hidden by default
     fireEvent.click(badge);
-    expect(screen.getByText(/错误率偏高/)).toBeTruthy();         // expanded shows detail
+    expect(screen.getByText("anomaly.error_rate.high")).toBeTruthy();   // expanded shows it
   });
   it("renders spawn cards (not a table) when narrow", async () => {
     render(<DiagnosisCatalog onClose={() => {}} onSelectSpawn={() => {}} narrow />);

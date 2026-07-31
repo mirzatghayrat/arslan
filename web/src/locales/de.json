@@ -1284,6 +1284,14 @@
       "submit_create": "Erstellen",
       "submit_save": "Speichern",
       "required": "Name, Prompt und Spawn sind erforderlich"
+    },
+    "err": {
+      "task_not_found": "Geplante Aufgabe {{task_id}} existiert nicht",
+      "spawn_not_found": "Spawn {{spawn_id}} existiert nicht",
+      "interval_too_small": "Das Intervall muss mindestens {{min_seconds}} Sekunden betragen",
+      "cron_required": "Ein Cron-Ausdruck ist erforderlich",
+      "enabled_limit_reached": "Es sind bereits {{max_enabled}} geplante Aufgaben aktiv — pausiere oder lösche zuerst eine",
+      "spawn_id_required": "Es muss ein Spawn gewählt werden"
     }
   },
   "diag": {
@@ -1401,5 +1409,34 @@
     "later": "Später",
     "installing": "Aktualisierung auf {{version}}…",
     "failed": "Das Update konnte nicht installiert werden"
+  },
+  "anomaly": {
+    "error_rate": {
+      "high": "Fehlerrate von {{name}} ist hoch",
+      "rising": "Fehlerrate von {{name}} steigt",
+      "detail": "{{pct}}% · {{errs}}/{{n}} fehlerhaft",
+      "pct_only": "{{pct}}%"
+    },
+    "dim_streak": {
+      "title": "{{name}} hat die {{dim}}-Prüfung mehrfach nicht bestanden",
+      "detail": "{{streak}}+ Läufe in Folge mit {{dim}}-Fehler"
+    },
+    "pass_rate": {
+      "low": "Bestehensquote von {{name}} ist niedrig",
+      "detail": "{{pct}}% bestanden"
+    },
+    "tool_error": {
+      "title": "{{name}} hatte einen Werkzeugfehler",
+      "detail": "{{tool}} fehlgeschlagen · run #{{run_id}}"
+    }
+  },
+  "diagnosis": {
+    "a_spawn": "Ein Spawn"
+  },
+  "recap": {
+    "distill": {
+      "manual": "{{distilled}} Spawns manuell destilliert",
+      "manual_with_failures": "{{distilled}} Spawns manuell destilliert ({{failed}} fehlgeschlagen)"
+    }
   }
 }

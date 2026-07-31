@@ -1284,6 +1284,14 @@
       "submit_create": "Create",
       "submit_save": "Save",
       "required": "Name, prompt and spawn are required"
+    },
+    "err": {
+      "task_not_found": "Scheduled task {{task_id}} does not exist",
+      "spawn_not_found": "Spawn {{spawn_id}} does not exist",
+      "interval_too_small": "The interval must be at least {{min_seconds}} seconds",
+      "cron_required": "A cron expression is required",
+      "enabled_limit_reached": "You already have {{max_enabled}} scheduled tasks enabled — pause or delete one first",
+      "spawn_id_required": "A spawn must be chosen"
     }
   },
   "diag": {
@@ -1401,5 +1409,34 @@
     "later": "Later",
     "installing": "Updating to {{version}}…",
     "failed": "The update could not be installed"
+  },
+  "anomaly": {
+    "error_rate": {
+      "high": "{{name}} error rate is high",
+      "rising": "{{name}} error rate is rising",
+      "detail": "{{pct}}% · {{errs}}/{{n}} errored",
+      "pct_only": "{{pct}}%"
+    },
+    "dim_streak": {
+      "title": "{{name}} failed the {{dim}} check repeatedly",
+      "detail": "{{streak}}+ runs in a row failed {{dim}}"
+    },
+    "pass_rate": {
+      "low": "{{name}} pass rate is low",
+      "detail": "{{pct}}% passing"
+    },
+    "tool_error": {
+      "title": "{{name}} hit a tool error",
+      "detail": "{{tool}} failed · run #{{run_id}}"
+    }
+  },
+  "diagnosis": {
+    "a_spawn": "A spawn"
+  },
+  "recap": {
+    "distill": {
+      "manual": "Distilled {{distilled}} spawns by hand",
+      "manual_with_failures": "Distilled {{distilled}} spawns by hand ({{failed}} failed)"
+    }
   }
 }

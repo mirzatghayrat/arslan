@@ -1284,6 +1284,14 @@
       "submit_create": "Créer",
       "submit_save": "Enregistrer",
       "required": "Nom, prompt et spawn sont requis"
+    },
+    "err": {
+      "task_not_found": "La tâche planifiée {{task_id}} n'existe pas",
+      "spawn_not_found": "Le spawn {{spawn_id}} n'existe pas",
+      "interval_too_small": "L'intervalle doit être d'au moins {{min_seconds}} secondes",
+      "cron_required": "Une expression cron est requise",
+      "enabled_limit_reached": "Vous avez déjà {{max_enabled}} tâches planifiées actives — mettez-en une en pause ou supprimez-la",
+      "spawn_id_required": "Un spawn doit être choisi"
     }
   },
   "diag": {
@@ -1401,5 +1409,34 @@
     "later": "Plus tard",
     "installing": "Mise à jour vers {{version}}…",
     "failed": "La mise à jour n'a pas pu être installée"
+  },
+  "anomaly": {
+    "error_rate": {
+      "high": "Le taux d'erreur de {{name}} est élevé",
+      "rising": "Le taux d'erreur de {{name}} augmente",
+      "detail": "{{pct}}% · {{errs}}/{{n}} en erreur",
+      "pct_only": "{{pct}}%"
+    },
+    "dim_streak": {
+      "title": "{{name}} a échoué plusieurs fois au contrôle {{dim}}",
+      "detail": "{{streak}}+ exécutions consécutives en échec sur {{dim}}"
+    },
+    "pass_rate": {
+      "low": "Le taux de réussite de {{name}} est faible",
+      "detail": "{{pct}}% réussi"
+    },
+    "tool_error": {
+      "title": "{{name}} a rencontré une erreur d'outil",
+      "detail": "{{tool}} a échoué · run #{{run_id}}"
+    }
+  },
+  "diagnosis": {
+    "a_spawn": "Un spawn"
+  },
+  "recap": {
+    "distill": {
+      "manual": "{{distilled}} spawns distillés à la main",
+      "manual_with_failures": "{{distilled}} spawns distillés à la main ({{failed}} en échec)"
+    }
   }
 }

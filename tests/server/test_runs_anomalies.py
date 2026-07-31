@@ -2,6 +2,8 @@
 agent diagnosis dashboard plan)."""
 from __future__ import annotations
 
+import re
+
 from server.db.models import Run, RunEvaluation
 
 
@@ -38,7 +40,15 @@ async def test_anomalies_flags_high_error_and_fabrication(client):
     assert "error_rate" in kinds
     assert "fabrication" in kinds
     assert out[0]["severity"] == "red"  # sorted severity-first
-    assert all({"severity", "kind", "spawn_name", "title", "detail"} <= set(a) for a in out)
+    assert all({"severity", "kind", "spawn_name", "title_key", "params"} <= set(a) for a in out)
+    # Discriminating: `title_key` merely EXISTING would still pass if a rule
+    # went back to putting an assembled Chinese sentence in it. What must hold
+    # is that it is a key — the server does not know the reader's language.
+    cjk = re.compile(r"[\u4e00-\u9fff]")
+    for a in out:
+        assert not cjk.search(a["title_key"]), a["title_key"]
+        assert not cjk.search(a.get("detail_key") or "")
+        assert isinstance(a["params"], dict)  # the numbers travel beside the key
 
 
 async def test_anomalies_empty_when_healthy(client):

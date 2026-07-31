@@ -781,14 +781,24 @@ class RunCatalogOut(BaseModel):
 
 
 class AnomalyOut(BaseModel):
-    """One deterministic threshold-rule finding (GET /runs/anomalies)."""
+    """One deterministic threshold-rule finding (GET /runs/anomalies).
+
+    KEYS AND NUMBERS, never a sentence. These used to be f-strings ("错误率偏高",
+    "{pct}% 达标"), which meant the diagnostics panel spoke Chinese to an English
+    interface and nothing could translate it — the server has no idea what
+    language the reader uses. The interface composes the sentence from
+    `title_key`/`detail_key` + `params`; `spawn_name` stays a separate field
+    because it is USER DATA and must never be baked into a translatable string.
+    """
 
     severity: str
     kind: str
     spawn_id: int | None = None
     spawn_name: str | None = None
-    title: str
-    detail: str
+    title_key: str
+    detail_key: str | None = None
+    #: Interpolation values for the two keys (percentages, counts, dimension).
+    params: dict = {}
     since: str | None = None
     run_id: int | None = None
 

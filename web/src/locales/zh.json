@@ -1284,6 +1284,14 @@
       "submit_create": "创建",
       "submit_save": "保存",
       "required": "名称、提示词和分身必填"
+    },
+    "err": {
+      "task_not_found": "定时任务 {{task_id}} 不存在",
+      "spawn_not_found": "分身 {{spawn_id}} 不存在",
+      "interval_too_small": "间隔至少 {{min_seconds}} 秒",
+      "cron_required": "cron 表达式不能为空",
+      "enabled_limit_reached": "已启用的定时任务已达上限 {{max_enabled}} 个，请先暂停或删除",
+      "spawn_id_required": "必须选择一个分身"
     }
   },
   "diag": {
@@ -1401,5 +1409,34 @@
     "later": "稍后",
     "installing": "正在更新到 {{version}}…",
     "failed": "更新安装失败"
+  },
+  "anomaly": {
+    "error_rate": {
+      "high": "{{name}} 错误率偏高",
+      "rising": "{{name}} 错误率上升",
+      "detail": "{{pct}}% · {{errs}}/{{n}} 报错",
+      "pct_only": "{{pct}}%"
+    },
+    "dim_streak": {
+      "title": "{{name}} 连续 {{dim}} 校验失败",
+      "detail": "连续 ≥{{streak}} 个 run {{dim}} 未通过"
+    },
+    "pass_rate": {
+      "low": "{{name}} 达标率偏低",
+      "detail": "{{pct}}% 达标"
+    },
+    "tool_error": {
+      "title": "{{name}} 工具报错",
+      "detail": "{{tool}} 失败 · run #{{run_id}}"
+    }
+  },
+  "diagnosis": {
+    "a_spawn": "分身"
+  },
+  "recap": {
+    "distill": {
+      "manual": "手动蒸馏 {{distilled}} 个分身",
+      "manual_with_failures": "手动蒸馏 {{distilled}} 个分身（失败 {{failed}} 个）"
+    }
   }
 }

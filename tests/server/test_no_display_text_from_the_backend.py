@@ -29,25 +29,22 @@ CJK = "一-鿿぀-ヿ가-힯"
 # Modules whose CJK string literals are NOT display text. Each entry needs a
 # reason: an allowlist without one becomes the place bugs are parked.
 #
-# 🔴 EVERY ENTRY IS A KNOWN DEBT, NOT AN EXEMPTION. The four brain-navigation
-# labels were fixed in this round because they are what the user hit; the rest
-# were FOUND by this guard on its first run and are listed here so they are
-# visible instead of invisible. A user with an English interface still sees
-# Chinese in each of these places.
+# 🔴 EVERY ENTRY IS A KNOWN DEBT, NOT AN EXEMPTION.
+#
+# This guard found four modules on its first run. Three of them —
+# conversations.py, runs.py, scheduled_tasks.py — were gate item ① and are now
+# CLEARED: they ship keys and parameters, and the interface composes the
+# sentence. They came out of this list rather than the list being widened,
+# which was the stated completion criterion.
+#
+# registry.py remains, and its reason is a placement decision rather than a
+# deferral: the unsandboxed-python warning is operator-facing, and the user put
+# it outside the launch gate on purpose.
 ALLOWED: dict[str, str] = {
     "registry.py": (
         "the run_python unsandboxed warning — operator-facing, shown on the "
-        "capability page when the escape valve is open"),
-    "conversations.py": (
-        "the manual-distillation summary ('手动蒸馏 N 个分身 (失败 M 个)') — one "
-        "composed sentence with two counts inside it"),
-    "runs.py": (
-        "diagnostics anomaly descriptions ('错误率偏高', '达标率偏低', …) — six "
-        "sentences assembled from numbers, so keying them means splitting the "
-        "composition too"),
-    "scheduled_tasks.py": (
-        "API error messages ('定时任务 N 不存在', 'cron 表达式不能为空') — these "
-        "reach the user through HTTPException detail, which nothing translates"),
+        "capability page when the escape valve is open. Placed OUTSIDE the "
+        "launch gate deliberately: it is not user-facing copy."),
 }
 
 

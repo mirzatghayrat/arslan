@@ -941,9 +941,14 @@ export interface AnomalyDto {
   severity: string;
   kind: string;
   spawn_id: number | null;
+  /** USER DATA — never part of a translatable string, interpolated separately. */
   spawn_name: string | null;
-  title: string;
-  detail: string;
+  /** Locale keys + their numbers. The server used to send assembled Chinese
+   *  sentences, which an English interface displayed verbatim because nothing
+   *  downstream could translate them. */
+  title_key: string;
+  detail_key: string | null;
+  params: Record<string, string | number>;
   since: string | null;
   run_id: number | null;
 }

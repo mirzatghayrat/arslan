@@ -1284,6 +1284,14 @@
       "submit_create": "Crear",
       "submit_save": "Guardar",
       "required": "Nombre, prompt y spawn son obligatorios"
+    },
+    "err": {
+      "task_not_found": "La tarea programada {{task_id}} no existe",
+      "spawn_not_found": "El spawn {{spawn_id}} no existe",
+      "interval_too_small": "El intervalo debe ser de al menos {{min_seconds}} segundos",
+      "cron_required": "Se requiere una expresión cron",
+      "enabled_limit_reached": "Ya tienes {{max_enabled}} tareas programadas activas: pausa o elimina una primero",
+      "spawn_id_required": "Debes elegir un spawn"
     }
   },
   "diag": {
@@ -1401,5 +1409,34 @@
     "later": "Más tarde",
     "installing": "Actualizando a {{version}}…",
     "failed": "No se pudo instalar la actualización"
+  },
+  "anomaly": {
+    "error_rate": {
+      "high": "La tasa de errores de {{name}} es alta",
+      "rising": "La tasa de errores de {{name}} está subiendo",
+      "detail": "{{pct}}% · {{errs}}/{{n}} con error",
+      "pct_only": "{{pct}}%"
+    },
+    "dim_streak": {
+      "title": "{{name}} falló la verificación {{dim}} varias veces",
+      "detail": "{{streak}}+ ejecuciones seguidas fallaron {{dim}}"
+    },
+    "pass_rate": {
+      "low": "La tasa de aprobación de {{name}} es baja",
+      "detail": "{{pct}}% aprobado"
+    },
+    "tool_error": {
+      "title": "{{name}} tuvo un error de herramienta",
+      "detail": "{{tool}} falló · run #{{run_id}}"
+    }
+  },
+  "diagnosis": {
+    "a_spawn": "Un spawn"
+  },
+  "recap": {
+    "distill": {
+      "manual": "Se destilaron {{distilled}} spawns manualmente",
+      "manual_with_failures": "Se destilaron {{distilled}} spawns manualmente ({{failed}} fallaron)"
+    }
   }
 }

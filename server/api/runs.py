@@ -336,10 +336,12 @@ async def runs_anomalies(range: str = Query("1h"),
         since0 = errs[0].created_at.isoformat() if errs and errs[0].created_at else None
         if n >= 3 and err_ratio > ERR_RED:
             out.append(AnomalyOut(severity="red", kind="error_rate", spawn_id=sid, spawn_name=name,
-                title=f"{name} 错误率偏高", detail=f"{round(err_ratio*100)}% · {len(errs)}/{n} 报错", since=since0))
+                title_key="anomaly.error_rate.high", detail_key="anomaly.error_rate.detail",
+                params={"pct": round(err_ratio * 100), "errs": len(errs), "n": n}, since=since0))
         elif n >= 3 and err_ratio > ERR_AMBER:
             out.append(AnomalyOut(severity="amber", kind="error_rate", spawn_id=sid, spawn_name=name,
-                title=f"{name} 错误率上升", detail=f"{round(err_ratio*100)}%", since=since0))
+                title_key="anomaly.error_rate.rising", detail_key="anomaly.error_rate.pct_only",
+                params={"pct": round(err_ratio * 100)}, since=since0))
         for dim in DIMENSIONS:
             streak = 0
             first_ts = None
@@ -349,8 +351,9 @@ async def runs_anomalies(range: str = Query("1h"),
                     first_ts = first_ts or (r.created_at.isoformat() if r.created_at else None)
                     if streak >= 2:
                         out.append(AnomalyOut(severity="red", kind="fabrication" if dim == "fabrication" else dim,
-                            spawn_id=sid, spawn_name=name, title=f"{name} 连续 {dim} 校验失败",
-                            detail=f"连续 ≥2 个 run {dim} fail", since=first_ts, run_id=r.id))
+                            spawn_id=sid, spawn_name=name, title_key="anomaly.dim_streak.title",
+                            detail_key="anomaly.dim_streak.detail", params={"dim": dim, "streak": streak},
+                            since=first_ts, run_id=r.id))
                         break
                 else:
                     streak = 0
@@ -360,7 +363,8 @@ async def runs_anomalies(range: str = Query("1h"),
             pr = round(sum(1 for s in scored if s >= PASS_THRESHOLD) / len(scored) * 100)
             if pr < PASS_RED:
                 out.append(AnomalyOut(severity="amber", kind="pass_rate", spawn_id=sid, spawn_name=name,
-                    title=f"{name} 达标率偏低", detail=f"{pr}% 达标", since=None))
+                    title_key="anomaly.pass_rate.low", detail_key="anomaly.pass_rate.detail",
+                    params={"pct": pr}, since=None))
 
     if run_ids:
         for rid, ref in (await db.execute(
@@ -370,8 +374,8 @@ async def runs_anomalies(range: str = Query("1h"),
                 rn = next((r for r in runs if r.id == rid), None)
                 out.append(AnomalyOut(severity="amber", kind="tool_error",
                     spawn_id=rn.spawn_id if rn else None, spawn_name=(rn.spawn_name if rn else None),
-                    title=f"{rn.spawn_name if rn else '分身'} 工具报错",
-                    detail=f"{ref.get('tool','tool')} 失败 · run #{rid}",
+                    title_key="anomaly.tool_error.title", detail_key="anomaly.tool_error.detail",
+                    params={"tool": ref.get("tool", "tool"), "run_id": rid},
                     since=(rn.created_at.isoformat() if rn and rn.created_at else None), run_id=rid))
                 break
     out.sort(key=lambda a: 0 if a.severity == "red" else 1)

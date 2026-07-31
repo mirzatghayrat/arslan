@@ -58,14 +58,14 @@ def _task_out(task: ScheduledTask, *, spawn_name: str | None,
 async def _load_task(db: AsyncSession, task_id: int) -> ScheduledTask:
     task = await db.get(ScheduledTask, task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail=f"定时任务 {task_id} 不存在")
+        raise _err(404, "scheduled.task_not_found", task_id=task_id)
     return task
 
 
 async def _require_spawn(db: AsyncSession, spawn_id: int) -> Spawn:
     spawn = await db.get(Spawn, spawn_id)
     if spawn is None:
-        raise HTTPException(status_code=422, detail=f"spawn {spawn_id} 不存在")
+        raise _err(422, "scheduled.spawn_not_found", spawn_id=spawn_id)
     return spawn
 
 
@@ -73,12 +73,11 @@ def _validate_schedule(kind: str, interval_s: int | None, cron: str | None) -> N
     """Schedule fields against the scheduler's own rules (single source of truth)."""
     if kind == "interval":
         if interval_s is None or interval_s < scheduler.MIN_INTERVAL_S:
-            raise HTTPException(
-                status_code=422,
-                detail=f"interval_s 必须 >= {scheduler.MIN_INTERVAL_S} 秒(15 分钟)")
+            raise _err(422, "scheduled.interval_too_small",
+                       min_seconds=scheduler.MIN_INTERVAL_S)
     else:  # "cron" — kinds are Literal-constrained by the schema
         if not cron:
-            raise HTTPException(status_code=422, detail="cron 表达式不能为空")
+            raise _err(422, "scheduled.cron_required")
         try:
             scheduler.parse_cron(cron)
         except ValueError as exc:
@@ -91,9 +90,8 @@ async def _check_enabled_quota(db: AsyncSession) -> None:
         .where(ScheduledTask.enabled.is_(True))
     )).scalar() or 0
     if count >= scheduler.MAX_ENABLED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"已启用的定时任务已达上限 {scheduler.MAX_ENABLED} 个,请先暂停或删除")
+        raise _err(409, "scheduled.enabled_limit_reached",
+                   max_enabled=scheduler.MAX_ENABLED)
 
 
 def _recompute_next_due(task: ScheduledTask, now: datetime) -> None:
@@ -114,6 +112,20 @@ async def _latest_outcome(db: AsyncSession, task_id: int) -> str | None:
 
 
 # ── list ─────────────────────────────────────────────────────────────────────────────
+
+
+def _err(status: int, code: str, **params) -> HTTPException:
+    """A structured, translatable API error.
+
+    These reach the user through HTTPException detail, and NOTHING translates a
+    detail string — so a Chinese sentence here was shown verbatim to an English
+    interface. FastAPI allows a dict, and the client already parses structured
+    details that carry a `code` (web/src/api/client.ts, the evolve spend-gate
+    precedent), so this shape needs no client plumbing beyond the lookup table.
+    """
+    return HTTPException(status_code=status,
+                         detail={"code": code, "params": params})
+
 
 @router.get("/scheduled-tasks", response_model=list[ScheduledTaskOut])
 async def list_scheduled_tasks() -> list[ScheduledTaskOut]:
@@ -164,7 +176,7 @@ async def update_scheduled_task(task_id: int,
             # M4 final review I-2: an explicit spawn_id: null would silently
             # orphan the task (the loop can't dispatch without a spawn) — reject.
             if data["spawn_id"] is None:
-                raise HTTPException(status_code=422, detail="spawn_id 不可置空")
+                raise _err(422, "scheduled.spawn_id_required")
             await _require_spawn(db, data["spawn_id"])
         # Validate the EFFECTIVE schedule (current row + patch), then recompute
         # next_due_at only when the schedule actually changed.

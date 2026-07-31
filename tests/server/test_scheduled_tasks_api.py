@@ -320,7 +320,9 @@ async def test_put_explicit_null_spawn_id_rejected(client):
     r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"spawn_id": None},
                          headers=AUTH)
     assert r.status_code == 422
-    assert "不可置空" in r.text
+    # The code, not the sentence: the message this used to pin was a Chinese
+    # string the API handed straight to whatever language the reader used.
+    assert r.json()["detail"]["code"] == "scheduled.spawn_id_required"
     # partial PUT without spawn_id: unchanged behaviour
     r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"name": "改名"},
                          headers=AUTH)

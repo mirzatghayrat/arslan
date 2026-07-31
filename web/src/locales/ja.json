@@ -1284,6 +1284,14 @@
       "submit_create": "作成",
       "submit_save": "保存",
       "required": "名前・プロンプト・スポーンは必須です"
+    },
+    "err": {
+      "task_not_found": "定期タスク {{task_id}} は存在しません",
+      "spawn_not_found": "スポーン {{spawn_id}} は存在しません",
+      "interval_too_small": "間隔は最低 {{min_seconds}} 秒必要です",
+      "cron_required": "cron 式を入力してください",
+      "enabled_limit_reached": "有効な定期タスクが上限 {{max_enabled}} 件に達しています。まず一時停止か削除をしてください",
+      "spawn_id_required": "スポーンを選択してください"
     }
   },
   "diag": {
@@ -1401,5 +1409,34 @@
     "later": "後で",
     "installing": "{{version}} に更新中…",
     "failed": "アップデートをインストールできませんでした"
+  },
+  "anomaly": {
+    "error_rate": {
+      "high": "{{name}} のエラー率が高い",
+      "rising": "{{name}} のエラー率が上昇",
+      "detail": "{{pct}}% · {{errs}}/{{n}} 件がエラー",
+      "pct_only": "{{pct}}%"
+    },
+    "dim_streak": {
+      "title": "{{name}} が {{dim}} 検証に連続で失敗",
+      "detail": "{{streak}} 回以上連続で {{dim}} 不合格"
+    },
+    "pass_rate": {
+      "low": "{{name}} の合格率が低い",
+      "detail": "{{pct}}% 合格"
+    },
+    "tool_error": {
+      "title": "{{name}} でツールエラー",
+      "detail": "{{tool}} 失敗 · run #{{run_id}}"
+    }
+  },
+  "diagnosis": {
+    "a_spawn": "スポーン"
+  },
+  "recap": {
+    "distill": {
+      "manual": "{{distilled}} 体を手動で蒸留",
+      "manual_with_failures": "{{distilled}} 体を手動で蒸留（{{failed}} 件失敗）"
+    }
   }
 }
