@@ -121,6 +121,15 @@ class OpenAIProvider(BaseLLMProvider):
         and stashes it on self._last_stream_usage (read by LLMAdapter after the
         loop). Servers that never send the frame simply leave it None.
         """
+        if tools:
+            # Ruling ④B. `run_native` only ever calls `chat`, so nothing passes
+            # tools here — and a signature that accepts them and drops them on the
+            # floor is precisely the bug G1 exists to fix. Refusing keeps the
+            # parameter honest until someone actually implements streaming
+            # tool-use, rather than leaving a feature that looks usable.
+            raise NotImplementedError(
+                f"{type(self).__name__}.chat_stream does not support tools; "
+                "use chat() for tool-calling turns")
         payload = self._payload(messages, tools, temperature)
         payload["stream"] = True
         # Ask for the trailing usage frame (a data frame with empty choices
