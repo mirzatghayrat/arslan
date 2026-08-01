@@ -245,6 +245,30 @@ async def _finalize_attempt(attempt_id: int, *, outcome: str, reason: str,
 
 
 async def _perform_attempt(attempt_id: int, spawn_id: int) -> None:
+    """Claim the hermetic fetch allowance for the length of this attempt.
+
+    🔴 This wrapper exists because the previous code reset the allowance
+    UNCONDITIONALLY here, and `_running_spawns` allows one attempt per SPAWN,
+    not one overall. Attempt B starting refunded attempt A mid-flight: measured
+    at 90 spent against a cap of 50 from a single overlap, N x 50 for N — the
+    gate loosening exactly when evolution activity, and so spend, is highest.
+
+    `begin` refreshes only when nothing else is in flight, so overlapping
+    attempts SHARE one allowance. That is what `_hermetic_fetches`'s own comment
+    has always promised ("can only refuse earlier ... never later") and what the
+    unconditional reset quietly broke. `finally` matters: an attempt that raises
+    must not leave the claim held, or the allowance never refreshes again.
+    """
+    from server.orchestrator import tool_loop as _tool_loop
+
+    _tool_loop.begin_hermetic_attempt()
+    try:
+        await _perform_attempt_inner(attempt_id, spawn_id)
+    finally:
+        _tool_loop.end_hermetic_attempt()
+
+
+async def _perform_attempt_inner(attempt_id: int, spawn_id: int) -> None:
     """Run the estimate/budget/propose flow for a pre-created attempt row and finalize it.
 
     Budget gate: if an `evolution_max_dispatches` cap is set and the attempt's DERIVED
@@ -254,14 +278,6 @@ async def _perform_attempt(attempt_id: int, spawn_id: int) -> None:
     gate would fail in the direction where setting a limit turns the feature off.
     Otherwise run it; outcome = 'passed' if a proposal was written, 'failed' if the gate
     failed, 'error' on exception."""
-    # FU-2b: one fetch allowance per ATTEMPT, so it has to start here. Without
-    # this the counter would be process-lifetime — the first attempt after a
-    # restart gets the budget and every later one is refused immediately, which
-    # reads as a broken feature rather than a limit.
-    from server.orchestrator import tool_loop as _tool_loop
-
-    _tool_loop.reset_hermetic_fetch_budget()
-
     async with db_session.AsyncSessionLocal() as db:
         attempt = await db.get(EvolutionAttempt, attempt_id)
         est = dict(attempt.estimate or {}) if attempt else {}

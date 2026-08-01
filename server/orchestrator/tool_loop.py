@@ -324,7 +324,57 @@ HERMETIC_FETCH_BUDGET = 50
 #: If two spawns are evaluated at once they SHARE this allowance. That is the
 #: conservative direction for a spend gate and is left deliberately: a shared
 #: budget can only refuse earlier than a per-attempt one, never later.
+#:
+#: 🔴 That last sentence was FALSE, and the sharing was never why. The RESET
+#: was: the watcher cleared the counter at the top of EVERY attempt, and
+#: `_running_spawns` allows one attempt per SPAWN, not one overall. Attempt B
+#: starting refunded attempt A mid-flight — 90 spent against a cap of 50 from a
+#: single overlap, N x 50 for N overlaps, i.e. the gate loosened exactly when
+#: evolution activity and therefore spend was highest.
+#:
+#: Passing the sentinel to the reset does NOT fix it, which is worth writing
+#: down because it is the obvious fix and it is empty: every hermetic dispatch
+#: shares the one id, so popping that key and clearing the dict are the same
+#: operation. What restores the promise is refcounting the attempts in flight —
+#: a fresh allowance when the first one starts, and nothing but sharing after.
+#: Covered by tests/server/test_hermetic_budget_refund.py.
 _hermetic_fetches: dict[str, int] = {}
+
+
+#: How many hermetic attempts are in flight. The allowance is refreshed when
+#: this goes 0 -> 1 and never while it is above zero, so concurrent attempts
+#: SHARE one allowance (conservative, and what the comment above has always
+#: claimed) instead of refunding each other (what actually happened).
+_hermetic_attempts_inflight = 0
+
+
+def begin_hermetic_attempt() -> None:
+    """Claim the allowance for an attempt that is starting.
+
+    Production callers use this instead of `reset_hermetic_fetch_budget`, which
+    is unconditional and therefore unsafe while anything else is running.
+
+    Deliberately NOT called by `skill_forge.evaluate_candidate` or
+    `evolution_loop.refresh_proposal`: those run on whatever the last attempt
+    left, and that stays true. Giving them their own refresh would turn one
+    shared 50 into 50 per caller per watcher tick, per open proposal — a
+    loosening dressed as a fix.
+    """
+    global _hermetic_attempts_inflight
+    if _hermetic_attempts_inflight == 0:
+        _hermetic_fetches.clear()
+    _hermetic_attempts_inflight += 1
+
+
+def end_hermetic_attempt() -> None:
+    """Release one in-flight claim. Must run even when the attempt raised."""
+    global _hermetic_attempts_inflight
+    _hermetic_attempts_inflight = max(0, _hermetic_attempts_inflight - 1)
+
+
+def hermetic_attempts_inflight() -> int:
+    """For tests and diagnostics; never a control-flow input."""
+    return _hermetic_attempts_inflight
 
 
 def reset_hermetic_fetch_budget(conversation_id: str | None = None) -> None:
