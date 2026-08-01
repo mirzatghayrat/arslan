@@ -34,6 +34,7 @@ npm run f2
 npm run f3
 npm run f4
 npm run f5        # the square LinkedIn cut (1080x1080)
+npm run f6        # Runway — eight named shots, cut from the screen recording
 ```
 
 `out/` is git-ignored. The committed render lives at
@@ -312,7 +313,7 @@ was maximum stylistic distance.
 | --- | --- | --- | --- | --- |
 | F1 | `F1-Terminal` | Near-black, monospace | Demonstration. A terminal and a TUI; no photography and no screenshot at all, on the argument that this product's interface *is* text. | `brew install` + macOS download |
 | F2 | `F2-Press` | Paper, 12-column grid | Assertion. Type at a size you cannot look away from; almost no UI. | Colophon + macOS download |
-| F3 | `F3-System` | Near-black, depth, glow | Structure. A host node, six spawns at six depths, light travelling between them. No interface at all. | Wordmark + macOS download |
+| F3 | `F3-System` | Near-black, depth, glow | Structure. A host node, a ring of spawns at six different depths, light travelling between them. No interface at all. | Wordmark + macOS download |
 | F4 | `F4-Pulse` | White and saturated amber | Impact. Built for a feed: cards thrown into a grid, a slammed number, an odometer, three shutter flashes. | Wordmark + macOS download |
 
 ```bash
@@ -411,12 +412,99 @@ into a frame. They ship as JPEG rather than PNG because they are photographic
 and the region that would suffer from compression is the region being
 overwritten: 905 KB for all four, against 6.9 MB as PNG.
 
+## F6 — `F6-Runway`, from a named shot list and a screen recording
+
+The one film here whose frames are the real client. Everything else composites
+the app onto a photographed machine or draws it; this is a screen recording,
+sliced up and flown around.
+
+```bash
+npm run f6      # or: npx remotion render F6-Runway out/F6-Runway.mp4 --gl=angle
+```
+
+Eight cards, named up front, in this order — `spotlight-hero-card` →
+`neon-frame-forerun` → `graze-face-tour` → `steep-tilt-glide` →
+`page-waterfall-wall` → `runway-ground-skim` → `neon-frame-orbit-drop`, with
+`shot-transitions` A (flash-cut) on three of the seams. 36 seconds rather than
+30, because several of these moves specify their own minimum hold and
+compressing them produces eight signature moves none of which reads.
+
+### The cards disagree with each other, and that is the point
+
+Three of the eight involve elements dropping onto a surface, and all three
+reject the others' grammar by name:
+
+| Shot | Grammar | Starts | Gravity | Landing |
+| --- | --- | --- | --- | --- |
+| `graze-face-tour` | a tour | staggered, 14f apart | 30f | falls overlap in parallel |
+| `runway-ground-skim` | a downpour | 1.5f apart | 9f | dead stop, zero bounce, 5–6 in the air at once |
+| `neon-frame-orbit-drop` | an ensemble debut | all on the same frame | 30f | every element lands on the same frame |
+
+Two pairs are marked never-adjacent and are separated accordingly: the two neon
+frames are the same language twice, so they open and close with five shots
+between them; and `graze-face-tour` moves the camera over a still page while
+`steep-tilt-glide` locks the camera and moves the page, so a flash cut sits
+between them rather than a straight one.
+
+### What the 480p capture can and cannot carry
+
+The recording upscales to 1280×872 plates (8 pages, 308 KB total, in
+`public/rec/`) and holds to about 1.7×. Every shot is built around that: slices
+on a receding wall, a page foreshortened at 46 degrees, cards small under a low
+camera.
+
+The opening is the shot that costs. `spotlight-hero-card` wants a hard push onto
+one card, and a ledger card is only 276×282 in the plate. The push is held to
+1.6× of a page already at 1.17× — about 2.2× of source, soft but legible, in a
+dark scene where softness reads as depth. A first version drew that card in code
+to dodge the upscale entirely; it looked better frozen and worse moving, because
+the cut to real footage 165 frames later gave the trick away. **An HD capture
+would only change this one shot** — it would let the push go where the card
+actually asks, at 2.6×.
+
+### Four failures worth writing down
+
+- **A steep rake is not free.** `graze-face-tour` was first built at 74 degrees.
+  At that angle a 66-pixel-tall band foreshortens to a bright line, and six
+  tiles went past the camera without one of them reading as an interface. Fixed
+  at 52 degrees, and by making every tile the same 2:1 aspect so the rake
+  affects all of them equally.
+- **Lift needs the right axis.** On a page facing the camera "up" is
+  `translateY`; on a ground plane the same transform slides the element
+  backwards along the floor and reads as receding. `translateZ` is the only
+  real lift, and it needs an unbroken `preserve-3d` chain — an `overflow:
+  hidden` anywhere above it flattens the scene and kills the lift silently.
+- **`background` is a shorthand.** A tile style setting `background: '#0B0F15'`
+  as a backing colour resets `background-image` to `none`, and every slice in
+  the shot rendered as an empty bordered rectangle. `Slice` now applies its
+  image properties *after* the caller's spread so this cannot happen again.
+- **The drop has to happen inside the frame.** `runway-ground-skim` originally
+  dropped from 700 surface pixels; on a plane raked to 66 degrees that is above
+  the top of the picture, so the shot opened on half a second of black
+  immediately after a flash cut. Nothing starts higher than 460 now.
+
+The check that caught the last one, and the dead beats at the end of F3 and F4
+before it, is not picking interesting stills — it is sampling the rendered file
+at a fixed interval end to end and looking at every frame in the strip.
+
 ## Content
 
-Copy and figures come from the repository, not from imagination — the masthead
-claims in `README.md`, the promotion-gate and second-brain behaviour described
-there, the security posture in `SECURITY.md`, and the client screens in
-`docs/assets/screens.jpg`. The spawn roster mirrors the Spawns Ledger.
+`src/facts.ts` is the only place a film may take a claim from, and nothing goes
+into it without a comment naming the file in the repository it came from. This
+is not a style rule. Four finished films shipped with the wrong licence in every
+call to action, a fixed roster of six named spawns the product does not have,
+exam dimensions that do not exist, and a hero statistic that was invented — copy
+written in the first pass, carried through four rewrites, and never once checked
+against the thing it described. A module you have to edit, with a source comment
+per line, is harder to drift than a habit.
 
-Numbers shown on the exam and proposal plates (scores, `n=38`, `214 past runs`)
-are illustrative sample data, not measurements.
+Anything shown as a concrete value that is not measured carries `SAMPLE`
+("illustrative — not measured") on screen beside it.
+
+The one exception is F6, and it is an exception in the safe direction: its
+frames are a screen recording of the client rather than a re-creation of it, so
+the figures visible in the Diagnostics page are one developer's real local
+numbers on a machine with a single run recorded. They are shown because they are
+true, and the slices deliberately skip the run-scoped tiles, which on that
+machine read "PASS RATE 0%" — accurate, meaningless, and not worth a viewer's
+attention for the four seconds the shot lasts.

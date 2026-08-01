@@ -7,6 +7,7 @@ import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
 import {Press, PRESS_FRAMES} from './films/Press';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
+import {Runway, RUNWAY_FRAMES} from './films/Runway';
 import {System, SYSTEM_FRAMES} from './films/System';
 import {Terminal, TERMINAL_FRAMES} from './films/Terminal';
 import {ArslanShort, SHORT_FRAMES} from './ArslanShort';
@@ -126,6 +127,19 @@ export const RemotionRoot: React.FC = () => (
       fps={VIDEO.fps}
       width={BLUEPRINT_SIZE}
       height={BLUEPRINT_SIZE}
+    />
+
+    {/* Built from a named shot list rather than a free hand, and from the real
+        client rather than drawn UI — the only cut here whose frames are screen
+        capture. 36s, because eight signature moves with the holds their cards
+        require do not fit in thirty. */}
+    <Composition
+      id="F6-Runway"
+      component={Runway}
+      durationInFrames={RUNWAY_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
     />
 
     {/* Framing mock-ups: one frame per shot, for `remotion still`. */}
