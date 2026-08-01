@@ -181,12 +181,18 @@ async def test_under_floor_prefix_still_constructs_no_error():
     assert captured["payload"]["system"][0]["cache_control"] == {"type": "ephemeral"}
 
 
-async def test_tools_present_still_constructs_and_not_serialized():
-    """Arslan's Anthropic path is intentionally text-in/text-out (native tool-use is not
-    implemented — the OpenAI-protocol convo is incompatible with Anthropic's strict
-    tool_use/tool_result block pairing). So tools passed to chat() are NOT serialized into
-    the Anthropic payload (unchanged behavior); D3's 'cache_control on the last tool' is
-    N/A because there is no tool block. The request must still construct with tools passed."""
+async def test_tools_are_serialized_and_the_cached_system_prefix_survives():
+    """G1 reversed this test's subject; the half worth keeping is the cache.
+
+    It used to assert tools were NOT serialized, and its stated reason was that
+    "the OpenAI-protocol convo is incompatible with Anthropic's strict
+    tool_use/tool_result block pairing". That reason was wrong: tool RESULTS go
+    back as neutral text (tool_loop._record_tool_result), so no tool_use block
+    ever re-enters the wire history and the pairing constraint never activates.
+    The belief, not the API, was what kept tools off this wire.
+
+    What still needs protecting is the CACHE: tools render before the system
+    prefix that carries the breakpoint, so adding them must not disturb it."""
     captured = {}
     p = AnthropicProvider(model="claude-opus-4-8", api_key="k",
                           transport=httpx.MockTransport(_capture_handler(captured)))
@@ -195,5 +201,5 @@ async def test_tools_present_still_constructs_and_not_serialized():
     resp = await p.chat(
         [{"role": "system", "content": system}, {"role": "user", "content": "hi"}], tools=tools)
     assert resp.content == "ok"
-    assert "tools" not in captured["payload"]
+    assert [t["name"] for t in captured["payload"]["tools"]] == ["web_search"]
     assert captured["payload"]["system"][0]["cache_control"] == {"type": "ephemeral"}

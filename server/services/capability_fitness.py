@@ -5,10 +5,10 @@ what would actually RUN. Measured on the wire (tests/server/test_capability_fitn
 captures the real request body rather than reading the source):
 
     openai-compatible   tools ARE sent
-    anthropic direct    tools are DROPPED
+    anthropic direct    tools ARE sent   (G1, 2026-08-01)
     gemini              tools are DROPPED
 
-On the two that drop them, every MCP tool and every native tool a spawn is
+On a provider that drops them, every MCP tool and every native tool a spawn is
 equipped with is silently inert. The equipment page says "equipped", the model
 is never told the tool exists, and nothing anywhere says so. A user watching
 their agent ignore a tool they just installed has no way to learn why.
@@ -42,7 +42,9 @@ NATIVE_TOOL_CALLS: dict[str, str] = {
     "custom": SUPPORTED,        # OpenAI-compatible endpoints use the same payload
     "ollama": SUPPORTED,        # ditto
     "deepseek": SUPPORTED,      # ditto
-    "anthropic": UNSUPPORTED,   # arslan/llm/providers/anthropic_provider.py builds no `tools`
+    # G1 ①A. Flipped only because the wire test above re-measures it — the
+    # table is a claim and that test is what stops it becoming decoration.
+    "anthropic": SUPPORTED,     # _translate_tools -> tools[].input_schema; tool_use parsed back
     "gemini": UNSUPPORTED,      # arslan/llm/providers/gemini_provider.py builds no `tools`
     # Tier-0 presets. The Settings dropdown stores the PRESET KEY as the
     # provider (presets.provider_options: "the frontend renders label, stores
@@ -65,9 +67,9 @@ NATIVE_TOOL_CALLS: dict[str, str] = {
 #: a limit of their model rather than of this app, which would send them
 #: shopping for a different subscription to fix our gap.
 REASONS: dict[str, str] = {
-    "anthropic": ("Arslan's direct Anthropic path sends text only — it does not "
-                  "pass tool definitions to the model yet. Tools you install "
-                  "will not be called while this provider is selected."),
+    # anthropic has no entry any more: a reason exists to explain a capability
+    # that will NOT run, and leaving a stale one here would have it surface
+    # beside a capability that now does.
     "gemini": ("Arslan's Gemini path sends text only — it does not pass tool "
                "definitions to the model yet. Tools you install will not be "
                "called while this provider is selected."),

@@ -3,8 +3,20 @@
 Differences handled here: the system prompt is a TOP-LEVEL field (not a message),
 ``max_tokens`` is required, auth is ``x-api-key`` + ``anthropic-version``, the
 response is a list of content blocks, and streaming uses ``content_block_delta``
-events. Arslan drives tools via its own prompt/JSON protocol, so native tool-use
-mapping is intentionally not implemented (text in -> text out + usage).
+events, and tool schemas travel as a top-level ``tools`` array whose entries carry
+``input_schema`` (not OpenAI's nested function/parameters).
+
+G1: native tool-use IS implemented here now. The docstring previously said Arslan
+drove tools "via its own prompt/JSON protocol" and therefore did not need this —
+that protocol is ``tool_loop.run()``, which has had zero production callers for
+some time (only ``run_native`` is reachable). The disclosure outlived its reason,
+which is worse than no disclosure: it reads as a considered trade-off rather than
+a gap, so nobody rechecks it.
+
+Tool RESULTS still go back as neutral text (``tool_loop._record_tool_result``),
+so no ``tool_use`` block ever re-enters the wire history and Anthropic's
+tool_use/tool_result pairing constraint never activates. That is what keeps this
+cheap — do not start echoing native blocks back without pricing the round-trip.
 """
 from __future__ import annotations
 
@@ -125,7 +137,36 @@ class AnthropicProvider(BaseLLMProvider):
             blocks.append({"type": "text", "text": trailing})
         return blocks, convo
 
-    def _payload(self, messages: list[dict[str, Any]], temperature: float) -> dict[str, Any]:
+    @staticmethod
+    def _translate_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """Neutral (OpenAI-function) schemas -> Anthropic's `tools` shape.
+
+        G1. The neutral shape comes from `_native_tool_schemas` (tool_loop.py:938):
+        `{"type":"function","function":{"name","description","parameters"}}`.
+        Anthropic flattens that and calls the schema `input_schema`.
+
+        Returns None for an empty/absent list so the caller can omit the key
+        entirely: sending `"tools": []` would be a payload change on every
+        toolless request, and on this provider a payload change is a prompt-cache
+        change (tools render BEFORE system, see _payload).
+        """
+        if not tools:
+            return None
+        out: list[dict[str, Any]] = []
+        for t in tools:
+            fn = t.get("function") or {}
+            name = fn.get("name") or t.get("name")
+            if not name:
+                continue
+            out.append({
+                "name": name,
+                "description": fn.get("description", t.get("description", "")),
+                "input_schema": fn.get("parameters") or t.get("input_schema") or {},
+            })
+        return out or None
+
+    def _payload(self, messages: list[dict[str, Any]], temperature: float,
+                 tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         # D4/R4 — cache_control floors (which models actually benefit from the breakpoint):
         # a prefix below the model's minimum-cacheable floor is silently NOT cached (no
         # error, cache_creation_input_tokens == 0), so we never gate/branch on the model —
@@ -152,6 +193,14 @@ class AnthropicProvider(BaseLLMProvider):
         }
         if system:
             payload["system"] = system
+        # Order matters for the cache, not just for readability: Anthropic renders
+        # tools -> system -> messages, and the breakpoint sits at the system
+        # prefix, so anything unstable in `tools` invalidates everything after it.
+        # The stability requirement is discharged upstream (resolve_tools orders
+        # its rows) and asserted by test_tool_transport.
+        translated = self._translate_tools(tools)
+        if translated:
+            payload["tools"] = translated
         return payload
 
     async def chat(
@@ -163,7 +212,7 @@ class AnthropicProvider(BaseLLMProvider):
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/messages",
-                json=self._payload(messages, temperature),
+                json=self._payload(messages, temperature, tools),
                 headers=self._headers(),
                 timeout=60.0,
             )
@@ -184,6 +233,15 @@ class AnthropicProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
+        if tools:
+            # Ruling ④B. `run_native` only ever calls `chat`, so nothing passes
+            # tools here — and a signature that accepts them and drops them on the
+            # floor is precisely the bug G1 exists to fix. Refusing keeps the
+            # parameter honest until someone actually implements streaming
+            # tool-use, rather than leaving a feature that looks usable.
+            raise NotImplementedError(
+                f"{type(self).__name__}.chat_stream does not support tools; "
+                "use chat() for tool-calling turns")
         payload = {**self._payload(messages, temperature), "stream": True}
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
@@ -242,9 +300,19 @@ class AnthropicProvider(BaseLLMProvider):
     def _parse_response(data: dict[str, Any]) -> LLMResponse:
         blocks = data.get("content") or []
         text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+        # G1. `tool_use` blocks become the SAME normalised shape openai_provider
+        # emits, because run_native reads tc["function"]["name"]/["arguments"] and
+        # must not have to know which provider answered. `input` arrives already
+        # decoded here (OpenAI sends a JSON string and that parser decodes it), so
+        # arguments is a dict on both paths.
+        tool_calls = [
+            {"id": b.get("id", ""), "type": "function",
+             "function": {"name": b.get("name", ""), "arguments": b.get("input") or {}}}
+            for b in blocks if b.get("type") == "tool_use"
+        ]
         return LLMResponse(
             role=data.get("role", "assistant"),
             content=text or None,
-            tool_calls=[],
+            tool_calls=tool_calls,
             usage=data.get("usage", {}) or {},
         )
