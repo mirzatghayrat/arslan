@@ -75,6 +75,25 @@
 
 **⇒ ③ 实际只剩 Settings 一项。** 其余全部已覆盖或已结案。
 
+### ~~⑥ 并发 attempt 互相退款（花钱失控）~~ · ✅ **插队并划掉**（用户 2026-08-01 裁决）
+
+**这是清单建立后第一次往门内插项，走的是三类例外里的「花钱失控」。**
+分支 `fix/hermetic-budget-refund`（base `origin/main`=`4a9848e`，CI `30675537391` success）。
+
+`_perform_attempt` 无参 `reset_hermetic_fetch_budget()` 清**全部**键，
+而 `_running_spawns` 只按 **spawn** 限并发 ⇒ 两个 attempt 常态重叠，
+B 启动会把 A 正在花的计数器归零。**实测 A 花到 90 / 名义上限 50**，N 次重叠 = N×50。
+坏的方向是**进化活动越多闸越松** —— 与计数器注释自称的
+「a shared budget can only refuse earlier … never later」正相反。
+
+🔴 **显而易见的修法是空的**：传 sentinel 不解决问题，因为全体 hermetic 派发共用
+`"evolution-replay"` 一个键，pop 那个键 == clear 整个 dict。我第一次就是这么写的，测试拒绝了它。
+真修法 = **attempt 引用计数**（重叠共享一份、串行各自一份），保住"共享是保守方向"这个原本正确的设计。
+
+⇒ 出处不是本清单里的任何一项，是做 D4 spec 的预算推导时挖出来的。
+**它证明了一件事**：`docs/specs/2026-08-01-proactive-loop.md` §3.1 那套"照 FU-2b 推导"的做法，
+第一次真去照做，就发现被参照的那个先例自己漏了。
+
 ### ④ 用户验收回执 · **用户的活**
 装上 v0.1.12 后逐条验并回执。当前待验（v0.1.12 主交付）：
 - DeepSeek + 聊天贴中英截图**能读出**（A1 主交付；v0.1.11 上这条不工作）
@@ -159,6 +178,7 @@ Developer ID Application: Mierzati Aireti (XULY3SAJ22)`。
 **1 项待我做**（③ 里只剩 Settings 重设计，mock 已批）
 **2 项待用户**（④ 验收回执、⑤ demo 素材）
 
-> ①② 于 2026-08-01 划掉（分支 `i18n/backend-display-text`）。**待合 main 后生效**。
+> 2026-08-01 一次划掉三项：①② （`i18n/backend-display-text`）+ ⑥（`fix/hermetic-budget-refund`，
+> 插队即划掉）。⑥ 是清单建立以来**唯一一次插入**，用的是"花钱失控"例外。
 
 > 每轮交付末尾附一行余额，格式：`门内余额：我 N 项 / 用户 M 项（剩：…）`
