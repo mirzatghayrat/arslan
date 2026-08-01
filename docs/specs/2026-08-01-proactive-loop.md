@@ -103,7 +103,71 @@ issues-only 仍然只是**链接进提案**，人读、人选；诊断执行器�
 本循环是 **≤6 次派发的 live 路径**（真的出网抓 GitHub）。把 50 搬过来，
 等于给每次派发 8 倍于 live 路径的抓取额度，**而理由那一半留在原地没跟过来**。
 
-（数值与推导以对抗核验结果为准，见本节末的核验记录。）
+#### 对抗核验结果（21 agent，5 条主张 × 3 视角）：**0/5 存活，全是「结论对、理由错」**
+
+**连我上面那段纠正本身也没存活。** 派发次数论证的是**作用域**（"So the allowance spans the
+whole attempt"），量级在同一句下半段给的是**反号**的理由：
+"and it is **smaller** than the live one because an evaluation is not supposed to be doing research"
+—— 而那句话本身就假，50 > 25。它只在**每派发**口径下才小（50/224 ≈ 0.22 vs 25/run）。
+⇒ 结论「别把 50 搬过来」成立，我给的理由不成立。**这正是本轮要猎的那类错，猎到了我自己头上。**
+
+#### ③ 的真答案：**现在给不出数字，而缺的不是"填几"**
+
+**先钉单位** —— 本仓「派发」= `dispatcher.dispatch()`（`dispatcher.py:565`）= 一整个 agent run，
+**自带工具循环和自己的抓取额度**。所以 §1 四段里，假设与草稿是**同一次派发内**的推理轮（0 派发），
+GitHub 检索是该派发内的**工具调用**（计抓取额度，不计派发额度）。
+
+```
+K = 一条提案可引用的证据 run 数上限      ← 仓里不存在，必须新增
+r = 证据收集是否需要重跑 run             ∈ {0,1}   ← spec 未定
+v = 自检重跑范围                         ∈ {1, K}  ← §1 :45 复数 vs :49 单数，spec 自相矛盾
+
+D_max = 1（执行器本体）+ r·K（证据收集）+ v（自检重跑）
+```
+两个端点：证据收集纯读既有 `runs` 行 ⇒ `r=0, v=1` ⇒ **D_max = 2**；
+`r=1` 且 K 取去抖阈值 10 ⇒ **D_max = 21**。
+
+🔴 **所以「≤6」两头都不对**：在前一端点它是 3 倍冗余，闸**永不触发**
+（`evolution_watcher.py:284` 是严格 `>`），验收里那条 mutation 测的是**不可达分支**；
+在后一端点它在证据收集阶段就杀掉诊断，**而故障越系统性（k 越大）越确定被杀**。
+⇒ 欠的设计决策是 **K / r / v 三个参数**，且 cap 必须**等于**推出的 `D_max`、不留余量，否则终态不可达。
+参数照 `evolution_estimate.py:55-66` 用 `inspect` 从活签名读，不写死常量。
+
+**抓取预算的前置条件（不满足则闸的覆盖率为 0）**：
+`_check_fetch_budget` 第一句是 `if tool_key not in _FETCH_TOOLS: return None`（`tool_loop.py:380`）。
+而 §1 当作现成积木的 GitHub 通路是 `skill_import.py` 里的**裸 httpx，不是注册表工具**；
+裁决 ④ 又要求 issues-only 服务端强制 ⇒ 它必然是**一个新工具**，
+**必须同时加进 `_FETCH_TOOLS`**，否则这个闸一次都不会被调用。
+
+```
+F_attempt = q · (1 + e)      q = 检索查询数（结构上界 _SEARCH_CAP = 3）
+                             e = 每条查询展开读的 issue 线程数 ← 无分布数据，实现轮实测
+```
+结构硬顶 = `1（force_tools 预跑）+ MAX_TOOL_CALLS(8)` 每派发 ⇒ 按 D_max=2 端点是 18。
+**原提法的 50 超过结构上界本身**，是"闸存在但不生效"的教科书形态。
+
+#### 🔴 两条强制形状（不可协商）
+
+1. **计数器 per-attempt、每次派发前 read-check-increment，键必须是 attempt id**，
+   reset **必须带参数** —— 否则复刻 `_hermetic_fetches` 的并发互相退款缺陷（见下）。
+2. **不得靠 `is_hermetic_context` 走通**。§1 原写的"新 sentinel `proactive-diagnosis`"
+   要生效就得加进 `_HERMETIC_CONVERSATION_IDS`，那会**一并**封死本循环自己的 PROPOSE 写入
+   （`tool_loop.py:445-455`）、把 run 记成 `kind='replay'`、标为 non-curatable。
+   需要在 `_check_fetch_budget` 里开**第三条分支**（live + per-attempt 计数器）。
+   —— §1 那句话本轮**作废**，实现轮不许照抄。
+
+#### 尚无证据
+- `D_max` 两个端点是**参数化推导，不是实测**：K/r/v 和诊断执行器都不存在，无法 dry-run 计数。
+- `e` **无任何分布数据**，本轮不给数字。照 `tests/server/test_estimate_ceiling_dryrun.py` 的做法
+  桩掉花钱缝跑真执行器，取成功样本的观测最大值，且紧致度 ≥80%。
+- 抓取结构上界 18 假设**一步只回一个 tool_call**；并行 tool_calls 数组未核。
+
+#### ⚠️ 最可能仍然错的一处：**单位**
+若诊断执行器不走 spawn dispatcher、而像 `arslan.py:1055` 那样由 service 直调 `tool_loop.run_native`，
+则整个 attempt 的 `dispatch()` 计数是 **0 或 1**，"≤N 次派发"是**对空集设限**，
+真正的花钱轴变成**单次 run_native 内的轮数 × 每轮重发的上下文**（每个抓回的 issue 线程都留在
+`convo` 里被后续每轮重发），而那条轴本仓**没有任何按次计数的闸**。
+**实现轮第一件事**：确定执行器入口是 `dispatch` 还是 `run_native`；若是后者，本节 D_max 整段作废。
 
 ## 4. 验收（写死，实现轮照抄）
 
