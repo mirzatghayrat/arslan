@@ -38,17 +38,12 @@ export interface AdvancedSectionProps {
   /** How sub-agents are created. */
   spawnMode: SpawnMode;
   onSpawnModeChange: (value: SpawnMode) => void;
-  /** Inbound MCP server — expose read-only tools to external MCP clients. */
-  mcpServerEnabled: boolean;
-  onMcpServerChange: (value: boolean) => void;
-  /** Background auto-evolution. Optional so existing prop literals stay valid; absent
-   * reads as OFF, which is also the backend default. */
-  evolutionAuto?: boolean;
-  onEvolutionAutoChange?: (value: boolean) => void;
-  /** null = no cap in effect, which changes what the warning is allowed to claim. */
-  evolutionMaxDispatches?: number | null;
-  onEvolutionMaxDispatchesChange?: (value: number | null) => void;
 }
+
+// Moved out of here, deliberately, and the moves are the point of the redesign:
+//   mcpServerEnabled  → AccessTokenSettings (beside the token that guards it)
+//   evolutionAuto     → AutomationSection   (beside the other things that spend)
+//   evolutionMaxDispatches → AutomationSection (beside what it caps)
 
 export default function AdvancedSection({
   telemetry,
@@ -59,12 +54,6 @@ export default function AdvancedSection({
   onShellConfirmPolicyChange,
   spawnMode,
   onSpawnModeChange,
-  mcpServerEnabled,
-  onMcpServerChange,
-  evolutionAuto = false,
-  onEvolutionAutoChange,
-  evolutionMaxDispatches = null,
-  onEvolutionMaxDispatchesChange,
 }: AdvancedSectionProps) {
   const { t } = useTranslation();
 
@@ -158,89 +147,6 @@ export default function AdvancedSection({
           />
         </div>
 
-        {/* Separation divider */}
-        <div className="h-[1px] bg-border/40"></div>
-
-        {/* Inbound MCP server — expose read-only metadata tools to external MCP clients (default off) */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelMcpServer')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              {t('settings.mcpServerDesc')}
-            </p>
-          </div>
-          <input
-            id="settings-mcp-server-toggle"
-            type="checkbox"
-            checked={mcpServerEnabled}
-            onChange={(e) => onMcpServerChange(e.target.checked)}
-            className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
-          />
-        </div>
-        <McpTokenControl />
-
-        <div className="h-[1px] bg-border/40"></div>
-
-        {/* Background auto-evolution — default OFF. It spends the user's API credits and
-            no working spend cap exists, so the warning below is not decoration: it is the
-            information someone needs to decide, and the mitigation is the only real one
-            available today. Styling carries the warning, not an emoji in the string —
-            emoji render inconsistently across platforms and across six locales. */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
-              {t('settings.labelEvolutionAuto')}
-            </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              {t('settings.evolutionAutoDesc')}
-            </p>
-            <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
-               data-testid="evolution-auto-warning">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
-              {/* 🔴 Conditional on purpose. Saying "the cap counts dispatches" while no
-                  cap is in effect would describe a guard that is not there — the same
-                  "looks armed" failure this feature's default was changed to avoid,
-                  moved into copy. Only once a value is actually set does the other
-                  sentence become true. */}
-              <span>
-                {evolutionMaxDispatches == null
-                  ? t('settings.evolutionAutoSpendWarning')
-                  : t('settings.evolutionAutoSpendWarningCapped',
-                      { cap: evolutionMaxDispatches })}
-              </span>
-            </p>
-          </div>
-          <input
-            id="settings-evolution-auto-toggle"
-            type="checkbox"
-            checked={evolutionAuto}
-            onChange={(e) => onEvolutionAutoChange?.(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
-              {t('settings.labelEvolutionMaxDispatches')}
-            </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              {t('settings.evolutionMaxDispatchesDesc')}
-            </p>
-          </div>
-          <input
-            id="settings-evolution-max-dispatches"
-            type="number"
-            min={1}
-            value={evolutionMaxDispatches ?? ''}
-            placeholder={t('settings.evolutionMaxDispatchesUnset')}
-            onChange={(e) => {
-              const raw = e.target.value.trim();
-              onEvolutionMaxDispatchesChange?.(raw === '' ? null : Number(raw));
-            }}
-            className="w-28 px-2 py-1 text-[11px] font-mono rounded bg-background border border-border focus:ring-0"
-          />
-        </div>
       </div>
     </div>
   );

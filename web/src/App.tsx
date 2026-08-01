@@ -989,6 +989,7 @@ export default function App() {
                 backendStatus={backendStatus}
                 providerConfigs={providerConfigs}
                 onProviderConfigsChange={setProviderConfigs}
+                onOpenDiagnostics={() => setActiveSection('diagnosis')}
               />
             )}
           </div>

@@ -253,6 +253,9 @@ export interface AppSettings {
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
+  /** Sleep-time curation sweep. Wire type is a real bool here (unlike
+   *  evolution_auto's "on"/"off" string), matching SettingsOut.curation_enabled. */
+  curation_enabled?: boolean;
   /** S4.2-a: whether the background evolution watcher may run. Wire type is the STRING
    * "on"/"off", not a bool. Default "off" — it spends the user's API credits and there
    * is no working cap (the pre-run estimate is a known over-estimate). */

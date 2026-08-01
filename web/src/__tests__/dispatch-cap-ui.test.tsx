@@ -22,19 +22,17 @@ vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: vi.fn() },
 }));
 
-import AdvancedSection from "../components/settings/AdvancedSection";
+// Relocated with the control it tests: the cap and its warning moved from
+// Advanced to Automation, beside the other things that spend. The ASSERTIONS
+// are unchanged on purpose — a move is only a move if what it guaranteed
+// before it still guarantees after.
+import AutomationSection from "../components/settings/AutomationSection";
 
 const base = {
-  telemetry: false,
-  onTelemetryChange: vi.fn(),
-  orchestratorShellEnabled: false,
-  onOrchestratorShellChange: vi.fn(),
-  shellConfirmPolicy: "ask_all" as never,
-  onShellConfirmPolicyChange: vi.fn(),
-  spawnMode: "auto" as never,
-  onSpawnModeChange: vi.fn(),
-  mcpServerEnabled: false,
-  onMcpServerChange: vi.fn(),
+  evolutionAuto: false,
+  onEvolutionAutoChange: vi.fn(),
+  curationEnabled: false,
+  onCurationEnabledChange: vi.fn(),
 };
 
 describe("the spend warning may only claim a cap that exists", () => {
@@ -43,14 +41,14 @@ describe("the spend warning may only claim a cap that exists", () => {
     // while no limit is in force describes a guard that is not there — the same
     // "looks armed" failure that made auto-evolution default to off, relocated into
     // copy. Unset is the default and will be most users' state.
-    render(<AdvancedSection {...base} evolutionMaxDispatches={null} />);
+    render(<AutomationSection {...base} evolutionMaxDispatches={null} />);
     const warn = screen.getByTestId("evolution-auto-warning");
     expect(warn.textContent).toContain("settings.evolutionAutoSpendWarning");
     expect(warn.textContent).not.toContain("Capped");
   });
 
   it("switches to the capped wording, carrying the actual number, once one is set", () => {
-    render(<AdvancedSection {...base} evolutionMaxDispatches={250} />);
+    render(<AutomationSection {...base} evolutionMaxDispatches={250} />);
     const warn = screen.getByTestId("evolution-auto-warning");
     expect(warn.textContent).toContain("settings.evolutionAutoSpendWarningCapped");
     expect(warn.textContent).toContain("250");
@@ -59,7 +57,7 @@ describe("the spend warning may only claim a cap that exists", () => {
   it("emits null when the field is cleared, not 0", () => {
     // 0 would be a cap of zero dispatches — every attempt refused. Empty means "no cap".
     const onChange = vi.fn();
-    render(<AdvancedSection {...base} evolutionMaxDispatches={5}
+    render(<AutomationSection {...base} evolutionMaxDispatches={5}
                             onEvolutionMaxDispatchesChange={onChange} />);
     const input = document.getElementById(
       "settings-evolution-max-dispatches") as HTMLInputElement;

@@ -92,13 +92,16 @@ function renderSettings(overrides: Partial<AppSettings> = {}) {
   return { setSettings };
 }
 
+// The control moved to Automation, not Advanced — the assertions below are
+// unchanged, which is the test that the MOVE preserved behaviour rather than
+// quietly changing it.
 describe("auto-evolution settings", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("is OFF on mount when the backend says off", async () => {
     const user = userEvent.setup();
     renderSettings({ evolutionAuto: false });
-    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(screen.getByTestId("settings-nav-automation"));
     const toggle = document.getElementById("settings-evolution-auto-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(false);
   });
@@ -108,7 +111,7 @@ describe("auto-evolution settings", () => {
     // wired to nothing at all — the default is false, so a dead prop looks identical.
     const user = userEvent.setup();
     renderSettings({ evolutionAuto: true });
-    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(screen.getByTestId("settings-nav-automation"));
     const toggle = document.getElementById("settings-evolution-auto-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(true);
   });
@@ -119,7 +122,7 @@ describe("auto-evolution settings", () => {
     // work while never persisting.
     const user = userEvent.setup();
     renderSettings({ evolutionAuto: false });
-    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(screen.getByTestId("settings-nav-automation"));
     const toggle = document.getElementById("settings-evolution-auto-toggle") as HTMLInputElement;
     await user.click(toggle);
     await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled(), { timeout: 2000 });
@@ -129,7 +132,7 @@ describe("auto-evolution settings", () => {
   it("turning it off sends \"off\"", async () => {
     const user = userEvent.setup();
     renderSettings({ evolutionAuto: true });
-    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(screen.getByTestId("settings-nav-automation"));
     await user.click(document.getElementById("settings-evolution-auto-toggle") as HTMLInputElement);
     await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled(), { timeout: 2000 });
     expect(mockUpdateSettings.mock.calls[0][0].evolution_auto).toBe("off");
@@ -144,7 +147,7 @@ describe("auto-evolution settings", () => {
     for (const state of [false, true]) {
       cleanup();
       renderSettings({ evolutionAuto: state });
-      await user.click(screen.getByTestId("settings-nav-advanced"));
+      await user.click(screen.getByTestId("settings-nav-automation"));
       expect(screen.getByTestId("evolution-auto-warning").textContent)
         .toContain("settings.evolutionAutoSpendWarning");
     }

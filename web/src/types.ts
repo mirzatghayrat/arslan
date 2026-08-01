@@ -206,6 +206,10 @@ export interface AppSettings {
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
    *  to external MCP clients like Claude Code/Codex) is enabled. Default off. */
   mcpServerEnabled: boolean;
+  /** Sleep-time curation sweep. Optional on purpose, like evolutionAuto: it
+   *  keeps existing AppSettings literals valid. Default off — it spends, and
+   *  until this round it had NO UI at all, only a server field. */
+  curationEnabled?: boolean;
   /** optional on purpose: keeps existing AppSettings literals valid */
   evolutionAuto?: boolean;
   /** Cap on PROJECTED replay dispatches. null/undefined = no cap (the default). */

@@ -102,7 +102,16 @@ describe("locale parity", () => {
     //              AI spawn to get started.", was friendlier than the copy that
     //              actually shipped — dead copy that reads better than live copy
     //              is a trap for whoever greps next.
-    expect(enKeys).toHaveLength(1246);
+    // 1246 → 1257: gate item ③ (Settings redesign). +16 new — the three group
+    //              headings, the Models/Automation nav labels, the automation
+    //              lede and the curation toggle's copy (including the note that
+    //              this one has NO cap of its own), the search box, and the two
+    //              chrome strings that were hardcoded English: the page H1 (which
+    //              also called this page "Diagnostics") and the offline banner's
+    //              body. −5 killed with the placeholder tabs they belonged to:
+    //              navProviders, navScheduled, navUsage, navComingSoon,
+    //              placeholderHint — all verified to have zero call sites first.
+    expect(enKeys).toHaveLength(1257);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

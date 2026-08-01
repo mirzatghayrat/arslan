@@ -16,6 +16,7 @@ import MemoryDataSection from './settings/MemoryDataSection';
 import AdvancedSection from './settings/AdvancedSection';
 import type { SettingsSectionId } from './settings/sectionRegistry';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
+import AutomationSection from './settings/AutomationSection';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -27,14 +28,17 @@ interface SettingsScreenProps {
   providerConfigs?: ProviderConfig[];
   /** Called when the configs list changes (add/update/delete/set-primary). */
   onProviderConfigsChange?: (configs: ProviderConfig[]) => void;
-  /** Deep-link: which section opens first (defaults to 'providers'). */
+  /** Deep-link: which section opens first (defaults to 'models'). */
   initialSection?: SettingsSectionId;
+  /** Automation points at Diagnostics for scheduled tasks and usage — the two
+   *  placeholder nav entries it replaced did the same, but as dead tabs. */
+  onOpenDiagnostics?: () => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenDiagnostics }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'providers');
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
 
   // ── Persistence (Task 6) ───────────────────────────────────────────────────
   // Instant auto-save replaces the old top Save button + <form onSubmit>.
@@ -74,7 +78,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   // section differs. (Task 1: no internal edits, no save-logic change.)
   const sections: Partial<Record<SettingsSectionId, React.ReactNode>> = {
     // Providers — the multi-model LLM provider list (embedding moved to memory).
-    providers: (
+    models: (
       <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
         <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
           <Sliders className="w-4.5 h-4.5 text-primary" />
@@ -126,7 +130,11 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
     // Access token card — token-entry / copy / reset (packaged builds).
     access: (
-      <AccessTokenSettings backendStatus={backendStatus} />
+      <AccessTokenSettings
+        backendStatus={backendStatus}
+        mcpServerEnabled={localSettings.mcpServerEnabled ?? false}
+        onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
+      />
     ),
 
     // Memory & Data — embedding config + distillation + run-debug retention.
@@ -142,6 +150,20 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       />
     ),
 
+    // Automation — everything that runs on its own and spends. See the section's
+    // own docstring for why they had to stop being scattered.
+    automation: (
+      <AutomationSection
+        evolutionAuto={localSettings.evolutionAuto ?? false}
+        onEvolutionAutoChange={(v) => saveField({ evolutionAuto: v })}
+        evolutionMaxDispatches={localSettings.evolutionMaxDispatches ?? null}
+        onEvolutionMaxDispatchesChange={(v) => saveField({ evolutionMaxDispatches: v })}
+        curationEnabled={localSettings.curationEnabled ?? false}
+        onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
+        onOpenDiagnostics={onOpenDiagnostics}
+      />
+    ),
+
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (
       <AdvancedSection
@@ -153,12 +175,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
         spawnMode={localSettings.spawnMode}
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
-        mcpServerEnabled={localSettings.mcpServerEnabled ?? false}
-        onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
-        evolutionAuto={localSettings.evolutionAuto ?? false}
-        onEvolutionAutoChange={(v) => saveField({ evolutionAuto: v })}
-        evolutionMaxDispatches={localSettings.evolutionMaxDispatches ?? null}
-        onEvolutionMaxDispatchesChange={(v) => saveField({ evolutionMaxDispatches: v })}
       />
     ),
   };
@@ -170,7 +186,13 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
       {/* Header bar */}
       <div className="mb-8">
-        <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">System Diagnostics & Configuration</h1>
+        {/* Was a hardcoded English string naming the Diagnostics screen — wrong
+            twice over: untranslatable, and describing a different page than the
+            one it sat on. The old wording is deliberately not quoted here: the
+            guard for this greps the source, and unlike the backend's AST guard
+            it cannot tell a comment from a rendered string. A strict guard that
+            costs one reworded comment is the better trade. */}
+        <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('settings.pageTitle')}</h1>
         <p className="text-xs text-subtle-foreground font-sans mt-1">
           {t('settings.headerLore')}
         </p>
@@ -185,7 +207,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
               {t('ledger.empty_backend_offline')}
             </p>
             <p className="text-[11px] text-danger/80 font-sans mt-1 leading-relaxed">
-              Settings could not be loaded from the server. Displaying defaults — do not treat these values as real configuration. Save is disabled until the backend is reachable.
+              {t('settings.offlineBody')}
             </p>
           </div>
         </div>

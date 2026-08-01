@@ -104,7 +104,7 @@ describe("SettingsScreen", () => {
   it("renders without crashing", () => {
     renderSettings();
     // The heading is hardcoded text in the component (not translated)
-    expect(screen.getByText("System Diagnostics & Configuration")).toBeInTheDocument();
+    expect(screen.getByText("settings.pageTitle")).toBeInTheDocument();
   });
 
   // ── Legacy LLM fields must be ABSENT ──────────────────────────────────────────

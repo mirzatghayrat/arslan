@@ -19,12 +19,21 @@ import { KeyRound, ShieldCheck, Copy, Check, RefreshCw, Eye, EyeOff } from "luci
 import { api } from "../api/client";
 import { useAuthStore } from "../stores/authStore";
 import type { BackendStatus } from "../hooks/useBackendStatus";
+import McpTokenControl from './settings/McpTokenControl';
 
 interface AccessTokenSettingsProps {
+  /** Inbound MCP server — moved here from Advanced. It belongs beside the
+   *  token that guards it: the toggle opens a door and the token is its key,
+   *  and having them on different screens meant you could turn one on without
+   *  ever meeting the other. */
+  mcpServerEnabled?: boolean;
+  onMcpServerChange?: (v: boolean) => void;
   backendStatus: BackendStatus;
 }
 
-export default function AccessTokenSettings({ backendStatus }: AccessTokenSettingsProps) {
+export default function AccessTokenSettings({
+  backendStatus, mcpServerEnabled = false, onMcpServerChange,
+}: AccessTokenSettingsProps) {
   const { t } = useTranslation();
   const storedToken = useAuthStore((s) => s.token);
   const setToken = useAuthStore((s) => s.setToken);
@@ -210,6 +219,24 @@ export default function AccessTokenSettings({ backendStatus }: AccessTokenSettin
           </p>
         </div>
       )}
+
+      {/* ── Inbound MCP server (relocated from Advanced) ─────────────────── */}
+      <div className="mt-6 pt-6 border-t border-border/40 flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelMcpServer')}</h4>
+          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            {t('settings.mcpServerDesc')}
+          </p>
+        </div>
+        <input
+          id="settings-mcp-server-toggle"
+          type="checkbox"
+          checked={mcpServerEnabled}
+          onChange={(e) => onMcpServerChange?.(e.target.checked)}
+          className="w-4 h-4 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+        />
+      </div>
+      <div className="mt-4"><McpTokenControl /></div>
     </div>
   );
 }
