@@ -8,6 +8,14 @@
 >
 > **日期说明:** R-001~R-006 首轮登记与 R-007~R-024 同属 2026-08-02 一次调研会话;R-001 引用的上游来源来自更早的 claude.ai 会话。
 
+> ### 🔴 工程侧复核覆盖面(2026-08-02,main=`09917c2`)
+>
+> **只复核了三条**——R-015、R-016、R-017——理由是**只有这三条我将来要亲手动代码**。
+> **其余 21 条未逐条亲核**,登记册里各自的 `⚠ 待工程侧复核` 标记**依然有效**,
+> 不因为本次复核而降级。**动某一条之前先核那一条。**
+>
+> 新增 R-025(前缀缓存约束)为设计规则,已亲核。
+
 ## 索引
 
 | # | 标题 | 结论 | 复核 |
@@ -36,6 +44,7 @@
 | R-022 | different-ai/openwork | **拒接**,借 2 项 | — |
 | R-023 | Auto-Company:多分身组队 + 人类方向盘 | 借 | — |
 | R-024 | 竞品雷达汇总 | 参考 | — |
+| **R-025** | 🔴 **前缀缓存约束**(设计规则,非某项的脚注) | **决策** | ✅ 已亲核 |
 
 ---
 
@@ -142,6 +151,9 @@
 
 ## R-011 Graphify → 从"架构蓝图"升级为可落地 preset
 
+> **⚠ 动手前置(未做,catalog 既定纪律)**:确切 PyPI 包名(`graphifyy`?)与 uvx 命令行**人工确认**;
+> 许可**回源核**(源仓库 LICENSE + 包内文件),**PyPI 元数据不作依据**——这条骗过我们两次且方向相反。
+
 - **结论:接**(preset 目录)+ 借(架构背书)
 - **状态:** 登记 —— **本条已升级**,原登记为"仅蓝图参照"
 - **升级依据(复核发现):** ① **它有 MCP server** —— `graphify --mcp`(stdio)+ `python -m graphify.serve`(HTTP),工具 `query_graph`/`get_node`/`get_neighbors`/`shortest_path`/`list_prs`/`get_pr_impact`;② **双许可 Apache-2.0 / MIT**,对 Apache-2.0 的 Arslan 完全干净;③ PyPI 包名 `graphifyy`,走 `uvx` 模式,与现有 `mcp-server-fetch` 同款形状;④ 无 key = one-click。
@@ -188,6 +200,9 @@
 ## R-015 beautiful-mermaid:聊天内 mermaid 渲染
 
 > ✅ **工程侧复核(2026-08-02,main=`09917c2`)**:`web/package.json` 中 mermaid 计数 **0**,`web/src/` 零引用。缺口属实,可按计划接。
+>
+> **⚠ 动手前置(未做):** ① 量前端体积(内置 ELK.js);② 实测它那 6 种图型的覆盖,
+> 并确认 gantt/pie/mindmap 的**回落到代码块**路径真的存在。两条都在接入前,不在接入后。
 
 - **结论:接**(本轮唯一能直接 `npm install` 的)
 - **是什么:** Craft 团队(笔记 app)为 Craft Agents 做的 mermaid 渲染库,**10.8k★,MIT,纯 TypeScript,零 DOM 依赖,同步渲染**(配 React `useMemo`),输出 SVG **或 ASCII/Unicode**,6 种图型(flowchart/state/sequence/class/ER/XY),15 套主题 + 兼容 Shiki。内置 ELK.js 布局(FakeWorker 同步跑)。ASCII 引擎移植自 Alexander Grooff 的 mermaid-ascii(Go→TS)。
@@ -256,23 +271,17 @@
 
 **⇒ 缺陷在结构上真实,在当前效果上不真实。** 不构成缺陷排期理由。
 
-### 🔴 但 deferral 与 prompt 缓存**直接冲突** —— 这条比原主张重要
+### 🔴 deferral 与 prompt 缓存直接冲突 → **规则已单独立项,见 R-025**
 
-G1(2026-08-01,main `bebb87a`)之后 Anthropic **真的收到 tools 了**,而 Anthropic 的渲染序是
-**tools → system → messages,缓存断点在 system 前缀之前** ⇒ **tools 块现在位于被缓存的前缀里**。
+本轮复核最有价值的产出不属于 R-017,已按用户 2026-08-02 裁定**升级为独立设计规则 R-025**
+(前缀缓存约束)——它将来还会撞上能力卡、动态组队、MCP 扩展,不该埋在某一条的脚注里。
 
-两个后果,方向相反:
-1. **削弱原主张**:一个大 tools 块的边际成本远低于其 token 数看起来的样子 —— 它每个缓存窗口只付一次。
-2. **🔴 反对 deferral**:`toolSearch {defer:'auto'}` 的本质是**每轮按需选不同的工具子集**
-   ⇒ tools 数组逐轮变化 ⇒ **每次请求都击穿整个缓存前缀**。
-   这与 [prompt-cache 轮] 把命中率从 80.5% 提到 98.5% 的成果**正面冲突**,
-   也与 G1 刚加的 `order_by(Tool.key)`(为逐字稳定而加)背道而驰。
+对 R-017 的直接结论只有一句:**`toolSearch {defer:'auto'}` 不可照搬**——
+它每轮换工具集,而 G1 之后 tools 位于被缓存的前缀里,逐轮变化 = 每次请求击穿整个前缀。
+**理由、判据与未验项全部见 R-025,此处不复述**(规则只能有一处真源)。
 
-⇒ **若将来真要做工具预算,必须先解决"如何在不破坏缓存前缀稳定性的前提下变更工具集"。**
-静态分层(如按 spawn 装备固定分组)与缓存兼容;**每轮动态搜索不兼容。**
-copilot-sdk 那个形状是给**无前缀缓存**的架构设计的,直接搬会亏。
-
-**未验:** OpenAI 系是否同样把 tools 计入可缓存前缀,本轮未核(只核了 Anthropic 的渲染序)。
+**⚠ 动手前置(压在 R-017 自己头上):** R-025 的未验项——OpenAI 系是否同样把 tools
+计入可缓存前缀——**必须先补测**,否则不知道这条约束适用一家还是全部。
 
 ## R-018 记忆策略接口 + 记忆质量基准(借自 qm)
 
@@ -379,3 +388,53 @@ copilot-sdk 那个形状是给**无前缀缓存**的架构设计的,直接搬会
 4. **零代码接入面(最宽的门,按成本排序):** ① MCP 任意 server 运行时注册(UI 或 `POST /api/v1/mcp/servers`);② MCP preset catalog(`server/mcp/catalog.py` 加一条 dict ≈ 10 行纯数据,同时点亮 Settings 推荐列表 + 对话式"连一下 GitHub",前端零改动);③ SKILL.md(shipped seeds 或经 `skill_import.py` 的 GitHub 导入,后者有 SPDX 许可白名单硬闸);④ 说 OpenAI `/chat/completions` 的 LLM provider(presets 一条 dict 或现成的 custom base_url)。
 5. **MCP server 侧(S4.1-C)当前在代码中不存在。** `mcp>=1.0` 是依赖但**仅作客户端使用**;近期那批 commit 发的是对话式 MCP **客户端**接入。**server 侧是 greenfield**:需要新模块、一个 auth 模型(`require_auth` 仅 Bearer/HTTP 层)、以及 `dispatch_spawn` 的 tier 决策。
 6. **MCP 客户端的三道默认关闭闸(设计正确,勿动):** ① discovery 出来的一切锁死 tier=orchestrator/status=registered;② `wire_tool` 是**逐工具**的人工动作(`suggest_tier` 仅 UI 提示,从不强制);③ `Tool.host_enabled` 默认 False。外部输出被当作不可信,经 `wrap_external` 包进 EXTERNAL_WEB_CONTENT 数据帧。
+
+---
+
+## R-025 🔴 前缀缓存约束 —— 任何"按轮变更提示前缀"的设计都要先过这一关
+
+- **结论:决策**(**持久设计规则,不是 R-017 的脚注**——用户 2026-08-02 裁定单独立项)
+- **状态:** 登记(规则即时生效,无需排期)
+- **⚠ 复核:** ✅ 工程侧亲核(2026-08-02,main=`09917c2`)
+
+### 规则
+
+> **提示前缀里的东西,一旦按轮变化,就不再是"多花几个 token",而是"每次请求丢掉整个缓存前缀"。
+> 任何让前缀内容随轮次/上下文/选择而变的设计,必须先算这笔账,再谈它省了多少 token。**
+
+### 为什么现在成立(G1 之后才成立)
+
+- Anthropic 的渲染序是 **tools → system → messages**,缓存断点打在 **system 前缀**;
+- **G1(2026-08-01,`bebb87a`)之前 Anthropic 根本不发 `tools`**,所以这条约束当时够不着工具;
+- G1 之后 **tools 块进入被缓存的前缀**,这条约束从此对**工具集**生效。
+
+⇒ 两个方向相反的后果,都要记住:
+1. **大前缀比看起来便宜**:一个大 tools 块每个缓存窗口只付一次,不是每次请求都付。
+2. **动态前缀极贵**:每轮换一批工具 ⇒ tools 数组逐轮不同 ⇒ **每次请求击穿整个前缀**。
+
+### 已知会撞上它的设计(登记时可预见的)
+
+| 设计 | 怎么撞 |
+|---|---|
+| **R-017 工具 schema deferral**(`toolSearch {defer:'auto'}`) | 每轮按需选工具子集 = 逐轮不同的 tools 数组。**这就是 R-017 不该照搬 copilot-sdk 的原因**——那个形状是给**没有前缀缓存**的架构设计的 |
+| **能力卡 / Capability Library 诚实化** | 若把"当前可用能力"按会话状态注入前缀 |
+| **动态组队(R-023)** | 按任务选 2-5 个分身 ⇒ 每个分身的工具/persona 若进前缀,组队变化即前缀变化 |
+| **MCP 扩展**(R-001、graphify preset、任何新 preset) | 新增工具本身没问题(前缀变一次);**按条件启用/禁用**才是问题 |
+
+### 判据(拿来直接用)
+
+- **兼容**:静态分层——前缀内容由**慢变量**决定(用户装备了什么、开启了哪些 host 工具)。变一次,缓存重建一次,之后稳定。
+- **不兼容**:前缀内容由**快变量**决定(本轮问题、检索结果、模型的选择)。
+- **已有的护栏**:G1 加的 `order_by(Tool.key)`(`arslan.py` `_arslan_tools`)+ `tests/llm/test_tool_transport.py::test_the_serialised_tools_are_byte_identical_across_calls`。
+  **任何新的前缀内容都要有同形状的稳定性断言**,否则它是"看起来稳定"。
+
+### 参照数字
+
+prompt-cache 轮把命中率从 **80.5% → 98.5%**。这是一项**已经兑现的资产**;
+动态前缀方案在提案里必须**先扣掉这笔损失再算收益**,不能只报自己省的 token。
+
+### ⚠ 未验
+
+**OpenAI 系(含 DeepSeek——用户日主力)是否同样把 `tools` 计入可缓存前缀,本轮未核。**
+只核了 Anthropic 的渲染序。这决定本规则的适用面是"一家"还是"全部",
+**在动 R-017 或任何前缀设计之前必须先补这一测。**
