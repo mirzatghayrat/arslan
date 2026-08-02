@@ -9,6 +9,7 @@ import {Press, PRESS_FRAMES} from './films/Press';
 import {Origin, ORIGIN_FRAMES} from './films/Origin';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
 import {Runway, RUNWAY_FRAMES} from './films/Runway';
+import {Silk, SILK_FPS, SILK_FRAMES} from './films/Silk';
 import {System, SYSTEM_FRAMES} from './films/System';
 import {Terminal, TERMINAL_FRAMES} from './films/Terminal';
 import {ArslanShort, SHORT_FRAMES} from './ArslanShort';
@@ -152,6 +153,18 @@ export const RemotionRoot: React.FC = () => (
       component={Origin}
       durationInFrames={ORIGIN_FRAMES}
       fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    {/* Sixty frames a second, no cuts at all, and every transition through a
+        bloomed defocus — built after a reference ad was pulled apart frame by
+        frame. The only composition here that is not 30fps. */}
+    <Composition
+      id="F8-Silk"
+      component={Silk}
+      durationInFrames={SILK_FRAMES}
+      fps={SILK_FPS}
       width={VIDEO.width}
       height={VIDEO.height}
     />

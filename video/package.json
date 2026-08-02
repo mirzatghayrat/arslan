@@ -19,7 +19,8 @@
     "f4": "remotion render F4-Pulse out/F4-Pulse.mp4",
     "f5": "remotion render F5-Blueprint out/F5-Blueprint.mp4",
     "f6": "remotion render F6-Runway out/F6-Runway.mp4",
-    "f7": "remotion render F7-Origin out/F7-Origin.mp4"
+    "f7": "remotion render F7-Origin out/F7-Origin.mp4",
+    "f8": "remotion render F8-Silk out/F8-Silk.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.500",

@@ -36,6 +36,7 @@ npm run f4
 npm run f5        # the square LinkedIn cut (1080x1080)
 npm run f6        # Runway — eight named shots, cut from the real client
 npm run f7        # Origin — the same shot list at 60s, with the character
+npm run f8        # Silk — 15s at 60fps, no cuts (see "What makes motion silky")
 ```
 
 `out/` is git-ignored. The committed render lives at
@@ -591,6 +592,50 @@ product. `BRAND CHARACTER · GENERATED IMAGERY` sits in the corner for as long a
 the character is on screen, and comes off the moment the film cuts to the client.
 The repo has asked for that caption since the light cut and no film had carried
 it until this one.
+
+## F8 — `F8-Silk`, and what makes motion silky
+
+Built to answer a direct complaint: a reference ad looked smoother than
+anything here, why. The reference was pulled apart frame by frame before a line
+of this film was written, and the smoothness turned out to be five things —
+four of them free.
+
+| | The reference | F6 / F7 before this |
+| --- | --- | --- |
+| Frame rate | 59.94 fps | 30 fps |
+| Hard cuts in 12s | **zero** | five, plus three flash cuts |
+| Properties per move | scale + blur + exposure + background, one curve | usually one |
+| How elements arrive | oversized, blown out, defocused → settle | at final size, fading up |
+| Subjects on screen | one, centred, 2–3s at a time | up to twelve (the waterfall) |
+
+1. **60 fps.** A move that takes four frames there takes two here, and two
+   samples of a fast move is a stutter no easing curve can fix. This is the one
+   that is not free: twice the frames to render, roughly twice the file.
+2. **No cuts.** Every scene change goes *through* a bloomed defocus — the
+   outgoing frame blurs, blows out and shrinks a couple of per cent while the
+   incoming one resolves out of the same haze. There is never an instant where
+   a hard edge moves, so there is no seam to catch.
+3. **One curve for everything.** Scale, exposure, blur and background all
+   resolve on the same ramp. Animating one property while the others sit still
+   reads as a sticker sliding, not an object arriving.
+4. **Arrive hot and oversized.** Nothing fades up at its final size. Everything
+   comes in a few per cent too big, too bright and out of focus, then settles.
+   That settle is the whole feeling.
+5. **One thing on screen.** A single centred subject, held. The waterfall's
+   twelve simultaneous slices read as busy, which is the opposite of smooth.
+
+The numbers in `entering()` / `leaving()` look absurd written down — 24 px of
+blur, 2.7× exposure. Across 40 frames at 60 fps they are gone before you can
+name them, and what survives is only the impression that the picture went soft
+and bright for a moment. Tuned to a value that looks reasonable in a still, the
+effect vanishes in motion — the same trap the shot-card library warns about for
+every other parameter.
+
+**What is not borrowed.** The reference is an advertisement for another
+product, and none of its identity is in this film: no starburst, no wordmark,
+no copy, no model names. The mark is `web/public/favicon.svg`, the amber is the
+app's, every screen is a screenshot of this client, and every claim comes from
+`facts.ts`. Technique is fair to learn from; a brand is not.
 
 ## Content
 
