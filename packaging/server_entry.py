@@ -206,6 +206,18 @@ def choose_port() -> int:
     conversations come back from the server either way.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        # 🔴 SO_REUSEADDR because UVICORN SETS IT. A probe that binds more
+        # strictly than the server it is probing for reports a usable port as
+        # taken — and the port left in TIME_WAIT by the instance that just
+        # exited is exactly that case.
+        #
+        # Shipped without this in v0.1.15 and caught the same day on the user's
+        # machine: DEFAULT_PORT free, app on v0.1.15, sidecar still came up
+        # ephemeral. A too-LOOSE probe gives a false green, which is the
+        # familiar failure; a too-STRICT one gives a false NEGATIVE, and this
+        # one fired precisely on RESTART — the one scenario the fixed port
+        # exists to protect.
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", DEFAULT_PORT))
         except OSError:

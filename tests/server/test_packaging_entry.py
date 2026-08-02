@@ -364,3 +364,68 @@ def test_the_launch_path_actually_calls_it(entry):
     src = inspect.getsource(entry)
     assert "choose_port()" in src
     assert 'os.environ.get("ARSLAN_PORT") or choose_port()' in src
+
+
+def _leave_a_port_in_time_wait() -> int:
+    """Return a port left in TIME_WAIT, the way a just-exited Arslan leaves one.
+
+    The server side closes LAST, which is what puts the listener's tuple into
+    TIME_WAIT — exactly the state the next launch finds a moment later.
+    """
+    import socket
+
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+    srv.listen(1)
+    cli = socket.create_connection(("127.0.0.1", port))
+    con, _ = srv.accept()
+    cli.close()
+    con.close()
+    srv.close()
+    return port
+
+
+def test_the_probe_is_no_stricter_than_the_server_it_probes_for(entry, monkeypatch):
+    """🔴 The probe must bind the way uvicorn binds, or it rejects usable ports.
+
+    Shipped in v0.1.15 and observed failing on the user's machine the same day:
+    the app was v0.1.15, DEFAULT_PORT was free, and the sidecar still came up on
+    an ephemeral port. Cause — `choose_port` test-bound WITHOUT `SO_REUSEADDR`
+    while uvicorn binds WITH it, so a port left in TIME_WAIT by the previous
+    instance looked taken to the probe and usable to the server.
+
+    The failure mode is the ugly one: a probe that is too LOOSE gives a false
+    green, which is the familiar disease; one that is too STRICT gives a false
+    NEGATIVE, and this false negative fires precisely on RESTART — the single
+    scenario the fixed port exists to protect.
+
+    Verified before writing the fix: on a TIME_WAIT port, bind without
+    SO_REUSEADDR fails with errno 48; bind with it succeeds.
+    """
+    port = _leave_a_port_in_time_wait()
+    monkeypatch.setattr(entry, "DEFAULT_PORT", port)
+
+    assert entry.choose_port() == port, (
+        "choose_port abandoned a port that uvicorn could have bound — the probe "
+        "is stricter than its consumer"
+    )
+
+
+def test_a_genuinely_held_port_still_falls_back(entry, monkeypatch):
+    """Discriminating: setting SO_REUSEADDR must not turn the probe into a
+    rubber stamp. A port with a LIVE listener on it is really unusable, and the
+    fallback still has to fire."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+        held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        held.bind(("127.0.0.1", 0))
+        port = held.getsockname()[1]
+        held.listen(1)
+        monkeypatch.setattr(entry, "DEFAULT_PORT", port)
+        chosen = entry.choose_port()
+
+    assert chosen != port, "the probe accepted a port with a live listener on it"
+    assert 1024 < chosen < 65536
