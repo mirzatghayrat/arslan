@@ -26,9 +26,9 @@
 | R-012 | 定位收窄 + 进化循环 kill-criteria | 决策 + 实验 | — |
 | R-013 | apple/container 沙箱升级 | 借(spike) | ⚠ |
 | R-014 | OpenWorker:威胁 + F 蓝图 | 借 | — |
-| R-015 | beautiful-mermaid | 接 | 已亲核(缺口) |
-| R-016 | **MCP 客户端零 OAuth** | 接(真缺口) | ⚠ 高置信 |
-| R-017 | **工具 schema 无预算全量入 prompt** | 待证实 | ⚠⚠ **疑似** |
+| R-015 | beautiful-mermaid | 接 | ✅ 工程侧复核(2026-08-02) |
+| R-016 | **MCP 客户端零 OAuth** | 接(真缺口) | ✅ 工程侧复核(2026-08-02) |
+| R-017 | **工具 schema 无预算全量入 prompt** | **部分证实,严重性证伪** | ✅ 已亲核(三步) |
 | R-018 | 记忆策略接口 + 记忆质量基准 | 借(最高杠杆) | — |
 | R-019 | github/copilot-sdk | **拒接**,借思想 | — |
 | R-020 | yc-software/qm | **拒接**,借思想 | — |
@@ -187,6 +187,8 @@
 
 ## R-015 beautiful-mermaid:聊天内 mermaid 渲染
 
+> ✅ **工程侧复核(2026-08-02,main=`09917c2`)**:`web/package.json` 中 mermaid 计数 **0**,`web/src/` 零引用。缺口属实,可按计划接。
+
 - **结论:接**(本轮唯一能直接 `npm install` 的)
 - **是什么:** Craft 团队(笔记 app)为 Craft Agents 做的 mermaid 渲染库,**10.8k★,MIT,纯 TypeScript,零 DOM 依赖,同步渲染**(配 React `useMemo`),输出 SVG **或 ASCII/Unicode**,6 种图型(flowchart/state/sequence/class/ER/XY),15 套主题 + 兼容 Shiki。内置 ELK.js 布局(FakeWorker 同步跑)。ASCII 引擎移植自 Alexander Grooff 的 mermaid-ascii(Go→TS)。
 - **✅ 已亲核的缺口:** `web/package.json` 依赖里**没有 mermaid**(现有:echarts、d3-*、react-markdown、remark-gfm、motion、ogl、zustand…)。→ **agent 写出的 mermaid 现在在聊天里是一段纯代码块**,而 seeds 里有 `architecture-diagram` 和 `excalidraw` 两个产图技能。
@@ -199,6 +201,8 @@
 ---
 
 ## R-016 【真缺口】MCP 客户端零 OAuth 支持
+
+> ✅ **工程侧复核(2026-08-02,main=`09917c2`)**:`server/mcp/` 与 `server/services/` 全树无 `oauth`/`pkce`/`authorization_code`;`server/mcp/session.py:38` 是 `streamablehttp_client(server["url"], headers=server.get("env") or {})` —— **仅 header 认证**。缺口属实。
 
 - **结论:接**(独立于任何外部项目的自有缺口,本轮最高价值发现之一)
 - **依据:** 两个独立 agent 分别 grep 确认:`server/` 下**无任何** `oauth` / `pkce` / `authorization_code` / `client_credentials` 命中;`server/mcp/session.py:36-40` 的 http transport 只把 env dict 当 **HTTP headers** 传(即仅支持 header 认证)。
@@ -214,6 +218,61 @@
 - **若属实的后果:** 与"随便挂 MCP server"的产品主张直接冲突——挂多了就撑爆上下文。
 - **现成解法参照:** copilot-sdk 的 `toolSearch: {defer:'auto'}`(工具搜索延迟加载)。
 - **⚠ 复核要求(必做,优先于任何修复):** ① 亲自读 `tool_loop.py` 确认 `_native_tool_schemas` 的实际行为;② 确认是否真无任何上限/过滤(注意 `Tool.host_enabled` 默认 False、discovery 锁 `registered` 等既有闸门可能已实际限制了规模);③ 量一次真实 prompt 体积再判严重性。**证实前不要动代码。**
+
+---
+
+### ✅ 三步复核结果(2026-08-02,工程侧亲核,main=`09917c2`)
+
+**裁决:结构性主张成立,严重性主张证伪。不排期为缺陷;deferral 思路另有价值(见末段)。**
+
+**行号先更正**:声称的 `tool_loop.py:749` 命中不了,实际在 **`:938`**(审计怀疑的行号漂移属实)。
+**行号错不等于主张错**,所以三步照做。
+
+**① 实际行为 —— 主张的这一半成立。**
+`_native_tool_schemas`(`tool_loop.py:938-953`)对 `wired` 里**每一项**都吐一份完整 schema,
+**没有任何上限、过滤或预算**;`_tool_params` 的优先级是 内置硬编码 > 存储的 `input_schema` > 宽松兜底。
+
+**② 既有闸门 —— 这一半被漏算了,而它决定严重性。**
+| 路径 | 边界 | 出处 |
+|---|---|---|
+| **spawn** | `wired ∩ safe ∩ equipped` —— **天然有界**,取决于用户装备了什么 | `spawn_loop.py:30` |
+| **host** | MCP 工具必须 `status=="wired"` **且** `host_enabled==True`,**默认 False** | `models.py:199`、`arslan.py` 的 `_arslan_tools` |
+
+`host_enabled` 是**逐个工具的人工准入闸**。它管准入**不管数量** —— 所以"无预算"成立,
+但"挂多了就撑爆"要求用户**逐个手动开启几十个**。
+
+**③ 实测体积(真实代码 + 真实库,只读)。**
+| 库 | tools | toolsets | MCP | MCP wired | **MCP wired + host_enabled** |
+|---|---|---|---|---|---|
+| 打包版(用户在用) | 18 | 10 | **0** | 0 | **0** |
+| dev | 78 | 14 | 60 | 27 | **1** |
+
+⇒ 研究里的「16 工具/9 toolsets」是**注册表数量**,不是进 prompt 的数量。
+
+真实 prompt 贡献(`_native_tool_schemas` 真实输出序列化):
+- 今天的 host 集合 = 7 内置 + escalate = **8 个 schema,2,563 字节 ≈ 730 token**
+- 加上 dev 库里唯一那个 host_enabled 的 MCP 工具:**2,973 字节**
+- 假想开启 50 个 MCP 工具:25,403 字节 ≈ 7,258 token
+
+**⇒ 缺陷在结构上真实,在当前效果上不真实。** 不构成缺陷排期理由。
+
+### 🔴 但 deferral 与 prompt 缓存**直接冲突** —— 这条比原主张重要
+
+G1(2026-08-01,main `bebb87a`)之后 Anthropic **真的收到 tools 了**,而 Anthropic 的渲染序是
+**tools → system → messages,缓存断点在 system 前缀之前** ⇒ **tools 块现在位于被缓存的前缀里**。
+
+两个后果,方向相反:
+1. **削弱原主张**:一个大 tools 块的边际成本远低于其 token 数看起来的样子 —— 它每个缓存窗口只付一次。
+2. **🔴 反对 deferral**:`toolSearch {defer:'auto'}` 的本质是**每轮按需选不同的工具子集**
+   ⇒ tools 数组逐轮变化 ⇒ **每次请求都击穿整个缓存前缀**。
+   这与 [prompt-cache 轮] 把命中率从 80.5% 提到 98.5% 的成果**正面冲突**,
+   也与 G1 刚加的 `order_by(Tool.key)`(为逐字稳定而加)背道而驰。
+
+⇒ **若将来真要做工具预算,必须先解决"如何在不破坏缓存前缀稳定性的前提下变更工具集"。**
+静态分层(如按 spawn 装备固定分组)与缓存兼容;**每轮动态搜索不兼容。**
+copilot-sdk 那个形状是给**无前缀缓存**的架构设计的,直接搬会亏。
+
+**未验:** OpenAI 系是否同样把 tools 计入可缓存前缀,本轮未核(只核了 Anthropic 的渲染序)。
 
 ## R-018 记忆策略接口 + 记忆质量基准(借自 qm)
 
