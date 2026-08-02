@@ -615,7 +615,11 @@
     "cancel": "Cancel",
     "search_placeholder": "Search…",
     "soon": "soon",
-    "list_sep": ", "
+    "list_sep": ", ",
+    "discard_title": "Cambios sin guardar",
+    "discard_body": "Tienes cambios sin guardar. ¿Cerrar de todos modos?",
+    "keep_editing": "Seguir editando",
+    "discard_ok": "Descartar"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

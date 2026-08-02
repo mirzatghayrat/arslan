@@ -111,7 +111,10 @@ describe("locale parity", () => {
     //              body. −5 killed with the placeholder tabs they belonged to:
     //              navProviders, navScheduled, navUsage, navComingSoon,
     //              placeholderHint — all verified to have zero call sites first.
-    expect(enKeys).toHaveLength(1257);
+    // 1257 → 1261: the overlay-dismissal round added common.discard_* — Escape in
+    //              a DIRTY editor asks before closing (ruling ①A) instead of
+    //              destroying work on a reflexive keystroke.
+    expect(enKeys).toHaveLength(1261);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -615,7 +615,11 @@
     "cancel": "Cancel",
     "search_placeholder": "Search…",
     "soon": "soon",
-    "list_sep": ", "
+    "list_sep": ", ",
+    "discard_title": "Unsaved changes",
+    "discard_body": "You have unsaved changes. Close anyway?",
+    "keep_editing": "Keep editing",
+    "discard_ok": "Discard"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

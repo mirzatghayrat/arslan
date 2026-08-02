@@ -615,7 +615,11 @@
     "cancel": "取消",
     "search_placeholder": "搜索…",
     "soon": "即将",
-    "list_sep": "、"
+    "list_sep": "、",
+    "discard_title": "有未保存的改动",
+    "discard_body": "你有未保存的改动。仍要关闭吗？",
+    "keep_editing": "继续编辑",
+    "discard_ok": "放弃改动"
   },
   "sidebar": {
     "new_session": "新建编排会话",

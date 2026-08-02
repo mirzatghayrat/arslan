@@ -615,7 +615,11 @@
     "cancel": "Cancel",
     "search_placeholder": "Search…",
     "soon": "soon",
-    "list_sep": "、"
+    "list_sep": "、",
+    "discard_title": "未保存の変更",
+    "discard_body": "未保存の変更があります。閉じますか？",
+    "keep_editing": "編集を続ける",
+    "discard_ok": "破棄"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

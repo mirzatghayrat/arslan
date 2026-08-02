@@ -27,6 +27,16 @@ import { useEffect, useRef, type RefObject } from "react";
 export function useDismissable<A extends HTMLElement, F extends HTMLElement>(
   open: boolean,
   onClose: () => void,
+  opts?: {
+    /** Set false for anything holding user input or awaiting a decision.
+     *
+     *  🔴 Not a preference. Losing an open dropdown costs nothing, which is why
+     *  the anchored-dropdown sweep closed them on anything. An editor holding
+     *  unsaved text and a proposal card awaiting accept/decline both cost
+     *  something, and a stray click on the background is not consent to pay it.
+     *  Escape stays on: it is deliberate, a background click is not. */
+    outsideClick?: boolean;
+  },
 ): { anchorRef: RefObject<A | null>; floatingRef: RefObject<F | null> } {
   const anchorRef = useRef<A | null>(null);
   const floatingRef = useRef<F | null>(null);
@@ -44,7 +54,9 @@ export function useDismissable<A extends HTMLElement, F extends HTMLElement>(
       (Boolean(anchorRef.current?.contains(target)) ||
        Boolean(floatingRef.current?.contains(target)));
 
+    const outsideClick = opts?.outsideClick ?? true;
     const onPointer = (e: MouseEvent | TouchEvent) => {
+      if (!outsideClick) return;
       if (!inside(e.target)) onCloseRef.current();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -62,7 +74,7 @@ export function useDismissable<A extends HTMLElement, F extends HTMLElement>(
       document.removeEventListener("touchstart", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, opts?.outsideClick]);
 
   return { anchorRef, floatingRef };
 }

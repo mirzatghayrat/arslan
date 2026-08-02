@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+
+import { useDismissable } from "../hooks/useDismissable";
+import DiscardChangesBar from "./DiscardChangesBar";
 import { useTranslation } from "react-i18next";
 import {
   Wrench, BookOpen, Boxes, Check, Lock, Save, X, Sparkles,
@@ -76,14 +79,42 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
   const deletable = !detail?.is_default;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Esc to close.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // ── Dismissal (overlay-dismissal round, rulings ①A + ③A) ────────────────
+  //
+  // 🔴 ③A REMOVED the backdrop's onClick. This editor was the only one in the
+  // app that closed on an outside click while holding an in-progress spawn
+  // edit — not a missing feature, a live way to lose work. Escape is the exit
+  // now, and ①A makes it safe.
+  //
+  // Dirty is computed HERE rather than from a shared `isDirty`, because there
+  // isn't one: every editor in this app keeps its own fields against its own
+  // baseline. Assuming a common flag would have been the fastest way to ship a
+  // dirty check that is always false.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  /** Equipment as it was when the spawn loaded — the only baseline edit mode has. */
+  const [baselineEquip, setBaselineEquip] =
+    useState<{ toolsets: Set<string>; skills: Set<string> } | null>(null);
+  // 🔴 Written after READING what each mode actually edits, not from the shape
+  // I assumed. My first attempt compared name/description/domain against
+  // `detail` — `SpawnDetail` has no `description` at all (the type checker
+  // caught it), and in EDIT mode those three fields are never populated from
+  // the loaded spawn: they belong to CREATE. Edit mode edits the equipment
+  // sets, seeded at load from `d.equipment` (:118-119); `persona_role` is
+  // read-only display.
+  const dirty = useMemo(() => {
+    if (mode === "create") {
+      return Boolean(name.trim() || description.trim() || domain.trim()
+        || selectedToolsets.size || selectedSkills.size);
+    }
+    if (!baselineEquip) return false;      // nothing loaded yet = nothing to lose
+    const same = (a: Set<string>, b: Set<string>) =>
+      a.size === b.size && [...a].every((k) => b.has(k));
+    return !same(selectedToolsets, baselineEquip.toolsets)
+      || !same(selectedSkills, baselineEquip.skills);
+  }, [mode, baselineEquip, name, description, domain, selectedToolsets, selectedSkills]);
+
+  const requestClose = () => (dirty ? setConfirmingClose(true) : onClose());
+  useDismissable<HTMLDivElement, HTMLDivElement>(true, requestClose, { outsideClick: false });
 
   // Load registry (both modes) + spawn detail (edit mode).
   useEffect(() => {
@@ -95,8 +126,13 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
           if (!alive) return;
           setCat(registry);
           setDetail(d);
-          setSelectedToolsets(new Set((d.equipment?.toolsets ?? []).map((e) => e.key)));
-          setSelectedSkills(new Set((d.equipment?.skills ?? []).map((e) => e.key)));
+          const ts0 = new Set((d.equipment?.toolsets ?? []).map((e) => e.key));
+          const sk0 = new Set((d.equipment?.skills ?? []).map((e) => e.key));
+          setSelectedToolsets(ts0);
+          setSelectedSkills(sk0);
+          // Snapshot for the dirty check — separate Sets, not the same objects,
+          // or every later mutation would move the baseline with it.
+          setBaselineEquip({ toolsets: new Set(ts0), skills: new Set(sk0) });
           setLoaded(true);
         })
         .catch((e) => alive && setError(String(e instanceof Error ? e.message : e)));
@@ -311,7 +347,6 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
       data-testid="spawn-studio"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
     >
       <div
         className="w-full max-w-5xl max-h-[85vh] flex flex-col bg-surface border border-border-strong rounded-2xl shadow-2xl shadow-background/60 overflow-hidden"
@@ -685,6 +720,13 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
             )}
           </div>
         </footer>
+
+        {confirmingClose && (
+          <DiscardChangesBar
+            onDiscard={onClose}
+            onCancel={() => setConfirmingClose(false)}
+          />
+        )}
       </div>
     </div>
   );

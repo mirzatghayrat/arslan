@@ -46,6 +46,7 @@ import UpdatePill from './components/UpdatePill';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
+import { useDismissable } from './hooks/useDismissable';
 
 interface ArslanThread {
   id: string;
@@ -267,6 +268,24 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveOrchestratorHistory, activeThreadId]);
+
+  // ── Ruling ②A: Escape declines a pending proposal card ──────────────────
+  //
+  // ONE listener for all five cards, because they are mutually exclusive in
+  // practice and share a single decline action. Escape only — a stray click on
+  // the background is not a decision, and these cards ARE a decision.
+  //
+  // Silent, matching the implicit decline that already happens when the user
+  // types a new message (`noteUserSend`): declining a suggestion is not a
+  // growth event, and writing one would put noise in the recap timeline for
+  // every card a user ever ignored.
+  const anyCardPending = Boolean(
+    pendingUpdate || suggestion || pendingStaffing || pendingInvite);
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    anyCardPending,
+    () => useArslanStore.getState().dismissAllPending(),
+    { outsideClick: false },
+  );
 
   // Send a user message to the live backend
   const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => {
