@@ -35,6 +35,7 @@ npm run f3
 npm run f4
 npm run f5        # the square LinkedIn cut (1080x1080)
 npm run f6        # Runway — eight named shots, cut from the real client
+npm run f7        # Origin — the same shot list at 60s, with the character
 ```
 
 `out/` is git-ignored. The committed render lives at
@@ -522,6 +523,74 @@ show one machine's state; a caption may not quote it as a product fact. See
 The check that caught the last one, and the dead beats at the end of F3 and F4
 before it, is not picking interesting stills — it is sampling the rendered file
 at a fixed interval end to end and looking at every frame in the strip.
+
+## F7 — `F7-Origin`, the same shot list at sixty seconds, with the character
+
+F6 is thirty-six seconds of interface with no way in and no way out: it cuts up
+on a spotlight and cuts off on a download. That is the right shape for a feed
+and the wrong shape for a minute — a minute wants somebody to meet.
+
+```bash
+npm run f7      # or: npx remotion render F7-Origin out/F7-Origin.mp4 --gl=angle
+```
+
+| | Frames | |
+| --- | --- | --- |
+| Creature | 0–365 | The character, a slow push into the emblem on its chest, hand-off to the mark |
+| `neon-frame-forerun` | 365–535 | The empty CREATE dialog assembles — raise one |
+| `spotlight-hero-card` | 535–720 | …and here is what you raised |
+| `graze-face-tour` | 720–875 | Equip it |
+| `steep-tilt-glide` | 875–1020 | All of it, local |
+| `page-waterfall-wall` | 1020–1170 | And it keeps going |
+| `runway-ground-skim` | 1170–1330 | Every spawn on one page |
+| `neon-frame-orbit-drop` | 1330–1480 | Off by default |
+| Close | 1480–1800 | The character returns beside the download |
+
+The shots are **imported from `Runway.tsx`**, not forked, so a fix to either
+film is a fix to both. Durations are longer than F6's almost everywhere; the two
+that are not are the glide, whose strip runs out at 138 frames and stalls if
+held past it, and the waterfall, which is atmosphere and reads as padding the
+moment it outstays its point.
+
+### The hinge, and what it is honest about
+
+The amber emblem on the cat's chest is the same *idea* as the Arslan mark — one
+lit node with arms radiating out to more nodes — so the film pushes into the
+chest until the emblem fills the frame, hands the figure to the vector mark at
+that exact position and size, and lets the mark's legs fan out. The product's
+own line for that figure is **One Becomes Many**, and the shot straight after it
+is the page where you raise the many.
+
+**They are not the same drawing, and this film does not pretend they are.** The
+emblem is a four-armed cross; `web/public/favicon.svg` is one host node with
+three legs down to three spawns. So the swap is timed to the peak of the push,
+where the plate is at 4.5 px of blur and 40% opacity and the emblem is a soft
+glare rather than a readable shape — a hand-off the eye reads as continuous,
+rather than a morph claimed between two figures that do not match. The light cut
+above calls the two "literally the same drawing". It is wrong, and counting the
+arms takes five seconds.
+
+The emblem's centre — `(0.477, 0.582)` normalised, span `98/1280` — is imported
+from `lightTheme.ts` rather than restated. A hand-off out by twenty pixels reads
+as a dissolve instead of a morph, and the only way to guarantee it is to never
+type the number twice.
+
+### Why the shot order changes
+
+The mark hands off *into* a neon frame, so `neon-frame-forerun` has to go first.
+That is a constraint, and it improves two things at once: the two neon frames
+land at positions one and eight — the maximum separation the cards ask for,
+against F6's two and seven — and the story runs in causal order. Raise one, then
+look at what you raised, then equip it. F6 has the spotlight before the dialog,
+which is the effect before the cause.
+
+### The provenance caption
+
+The character clip is generated brand imagery, not a screen recording of the
+product. `BRAND CHARACTER · GENERATED IMAGERY` sits in the corner for as long as
+the character is on screen, and comes off the moment the film cuts to the client.
+The repo has asked for that caption since the light cut and no film had carried
+it until this one.
 
 ## Content
 
