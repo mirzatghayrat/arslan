@@ -271,8 +271,14 @@ export interface MemoryProposalDto {
   old_excerpt?: string | null;
 }
 
+import type { ServerConversation } from "../lib/sessionPersistence";
+
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
+  /** Gate item ⑦ — which conversations exist. The SERVER is the source of
+   *  truth for this; localStorage cannot be, because the packaged app gets a
+   *  fresh origin (and so a fresh, empty store) on every launch. */
+  listConversations: () => request<ServerConversation[]>("/conversations"),
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),
   getBrainEntry: (kind: string, ref: string) =>
     request<BrainEntry>(`/brain/entry/${kind}/${encodeURIComponent(ref)}`),

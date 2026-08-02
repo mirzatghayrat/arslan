@@ -138,20 +138,23 @@ def test_free_port_returns_a_genuinely_bindable_loopback_port(entry):
         s.bind(("127.0.0.1", port))  # raises if the OS had not freed it
 
 
-def test_main_asks_the_os_for_a_port_rather_than_hardcoding_one(entry, monkeypatch):
-    """main() must ROUTE THROUGH _free_port — not merely have it available.
+def test_main_routes_through_the_port_chooser_rather_than_hardcoding_one(entry, monkeypatch):
+    """main() must ROUTE THROUGH the chooser — not merely have it available.
 
-    An earlier version of this file only exercised _free_port() directly, so
-    replacing main()'s call with a hardcoded 8741 left every test green. A
-    fixed port turns "Arslan is already running" — the common case on a
-    desktop, not the rare one — into a launch crash.
+    An earlier version of this file only exercised the helper directly, so
+    replacing main()'s call with a literal left every test green.
 
-    Stubbing _free_port to a sentinel is what makes the two designs
-    distinguishable: a hardcoded implementation cannot produce the sentinel.
+    🔴 Gate item ⑦ inverted this test's SUBJECT while keeping its concern. It
+    used to stub `_free_port` and its docstring warned that a fixed port turns
+    "Arslan is already running" into a launch crash. That worry was right, and
+    `choose_port` answers it by FALLING BACK — asserted in
+    test_it_falls_back_rather_than_refusing_to_start. What the old ephemeral
+    port cost instead was the user's conversation list: a new origin every
+    launch, and localStorage is partitioned by origin.
     """
     monkeypatch.delenv("ARSLAN_PORT", raising=False)
     sentinel = 61234
-    monkeypatch.setattr(entry, "_free_port", lambda: sentinel)
+    monkeypatch.setattr(entry, "choose_port", lambda: sentinel)
 
     captured: dict = {}
     printed: list[str] = []
@@ -163,7 +166,7 @@ def test_main_asks_the_os_for_a_port_rather_than_hardcoding_one(entry, monkeypat
     entry.main()
 
     assert captured["port"] == sentinel, (
-        "main() served on a port _free_port never produced — it is hardcoded"
+        "main() served on a port choose_port never produced — it is hardcoded"
     )
     # The announced port must be the SAME one served on; announcing a port
     # the server is not listening to would leave the shell pointing at nothing.
@@ -177,7 +180,7 @@ def test_an_explicit_port_env_var_wins_over_the_os_assigned_one(entry, monkeypat
     would pass the sentinel test and break the escape hatch used for debugging.
     """
     monkeypatch.setenv("ARSLAN_PORT", "5599")
-    monkeypatch.setattr(entry, "_free_port", lambda: 61234)
+    monkeypatch.setattr(entry, "choose_port", lambda: 61234)
 
     captured: dict = {}
     import uvicorn
@@ -315,3 +318,49 @@ def test_a_source_checkout_gets_neither_packaged_flag_nor_token_stripping(entry,
 
     assert "ARSLAN_PACKAGED" not in os.environ
     assert os.environ.get("ARSLAN_API_TOKEN") == "dev-chosen-token"
+
+
+# ---------------------------------------------------------------------------
+# Gate item ⑦, half (i) — the port must be STABLE
+# ---------------------------------------------------------------------------
+
+def test_the_default_port_is_fixed_not_ephemeral(entry):
+    """The window loads `http://127.0.0.1:<port>`, and WebKit partitions
+    localStorage by ORIGIN — of which the port is part. An ephemeral port meant
+    a fresh, empty store on every launch, and the conversation list lived there
+    and nowhere else. Measured in the user's packaged database: 10
+    conversations, 74 messages, five distinct thread ids in a single day, while
+    the sidebar showed one chat.
+
+    The server-side listing is what RECOVERS conversations; this is what stops
+    new ones being orphaned, and it also stops every other origin-scoped thing
+    (theme, panel state) resetting each launch.
+    """
+    assert isinstance(entry.DEFAULT_PORT, int)
+    assert 1024 < entry.DEFAULT_PORT < 65536
+    assert entry.choose_port() == entry.DEFAULT_PORT
+
+
+def test_it_falls_back_rather_than_refusing_to_start(entry):
+    """Discriminating: a version that just returned DEFAULT_PORT would pass the
+    test above and fail to launch whenever anything else holds the port — an
+    annoyance turned into a dead app. Survivable precisely BECAUSE the listing
+    is server-side: a different origin costs some UI state, not the history."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", entry.DEFAULT_PORT))
+        s.listen(1)
+        fallback = entry.choose_port()
+    assert fallback != entry.DEFAULT_PORT
+    assert 1024 < fallback < 65536
+
+
+def test_the_launch_path_actually_calls_it(entry):
+    """The shape that keeps catching me: a correct helper with no caller."""
+    import inspect
+
+    src = inspect.getsource(entry)
+    assert "choose_port()" in src
+    assert 'os.environ.get("ARSLAN_PORT") or choose_port()' in src

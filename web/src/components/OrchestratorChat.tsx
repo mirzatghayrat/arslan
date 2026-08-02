@@ -54,7 +54,7 @@ interface OrchestratorChatProps {
   /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation.
    *  `display` echoes ALL attachments into the sent bubble (session-only); `context`/`names`
    *  carry only the text-bearing ones to the backend. */
-  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }) => void;
+  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => void;
   spawns: Spawn[];
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
@@ -601,7 +601,10 @@ export default function OrchestratorChat({
                     answered={co.answered}
                     onPick={(label) => {
                       useArslanStore.getState().markClarifyAnswered(Number(msg.id));
-                      onSendMessage?.(label);
+                      // fromClarify: answering Arslan's own question is not
+                      // "moving on", so it must not implicitly decline the
+                      // spawn invite sitting beside it.
+                      onSendMessage?.(label, undefined, { fromClarify: true });
                     }}
                   />
                 </div>

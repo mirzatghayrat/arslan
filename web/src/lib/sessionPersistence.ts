@@ -142,3 +142,63 @@ export function consumeFreshSessionFlag(): boolean {
     return false;
   }
 }
+
+
+/** One row of `GET /conversations` (server/api/conversations.py). */
+export interface ServerConversation {
+  conversation_id: string;
+  title: string;
+  message_count: number;
+  last_at?: string | null;
+}
+
+/**
+ * Fold the server's conversation list into the locally-remembered one.
+ *
+ * 🔴 Gate item ⑦. localStorage used to be the ONLY record of which
+ * conversations existed — the frontend mints the id and every server endpoint
+ * takes it as a path parameter. In the packaged app that record does not
+ * survive a restart: the sidecar took an ephemeral port each launch, the window
+ * origin changed with it, and WebKit partitions localStorage by origin. The
+ * messages were always safe in `arslan_messages`; nothing could name them.
+ *
+ * Who wins what, and why:
+ *   - the SERVER owns which conversations EXIST (that is the recovery);
+ *   - localStorage owns TITLES it already has, because the user may have
+ *     renamed a thread and the server's title is a raw opening line;
+ *   - a locally-known thread the server has not seen is KEPT, not dropped — a
+ *     brand-new session has no messages yet, so it is legitimately absent
+ *     server-side, and replacing the list would delete it before its first word.
+ *
+ * Fail-open: an empty server list changes nothing. A backend still booting must
+ * never render as "you have no conversations".
+ */
+export function mergeServerConversations<T extends ThreadLike>(
+  stored: T[],
+  server: ServerConversation[],
+): (T | PersistedThread)[] {
+  if (!server.length) return stored;
+
+  const known = new Map(stored.map((t) => [t.id, t]));
+  const recency = new Map(server.map((c) => [c.conversation_id, c.last_at ?? ""]));
+
+  const merged = server.map((c) => {
+    const local = known.get(c.conversation_id);
+    // 🔴 A thread already in memory is returned AS IS apart from its title.
+    // Rebuilding it would replace `history` with [] — and for the thread the
+    // user is currently looking at, that is the visible conversation going
+    // blank. Only threads the client has never heard of are constructed here.
+    if (local) return { ...local, title: local.title || c.title || "New Session" };
+    return {
+      id: c.conversation_id,
+      title: c.title || "New Session",
+      history: [] as [],
+    } satisfies PersistedThread;
+  });
+  merged.sort((a, b) => (recency.get(b.id) ?? "").localeCompare(recency.get(a.id) ?? ""));
+
+  // Threads the server has never seen (no messages yet) stay at the front:
+  // one of them is usually the empty session the user is looking at.
+  const unseen = stored.filter((t) => !recency.has(t.id));
+  return [...unseen, ...merged];
+}

@@ -65,6 +65,24 @@ def _restore_config_after_test():
     _heal_config_drift()
 
 
+def _patch_session_global(maker):
+    """Point `db_session.AsyncSessionLocal` at `maker`; returns an undo callable.
+
+    Done by hand rather than with monkeypatch because this fixture is
+    async-generator based and monkeypatch's own teardown ordering relative to
+    the yield is not what we want here.
+    """
+    from server.db import session as db_session
+
+    previous = db_session.AsyncSessionLocal
+    db_session.AsyncSessionLocal = maker
+
+    def _undo() -> None:
+        db_session.AsyncSessionLocal = previous
+
+    return _undo
+
+
 @pytest_asyncio.fixture
 async def client(tmp_path):
     """Async HTTP client with an isolated temp-file SQLite DB."""
@@ -93,10 +111,21 @@ async def client(tmp_path):
 
     app = create_app()
     app.dependency_overrides[get_session] = _override_get_session
+    # 🔴 The module global TOO, not just the dependency. Overriding only
+    # `get_session` isolates endpoints that inject a session and leaves any
+    # endpoint that opens `db_session.AsyncSessionLocal()` itself pointed at the
+    # REAL database — which on this machine is the user's live packaged app
+    # (~/Library/Application Support/Arslan/arslan.db). A new test walked
+    # straight into it and came back holding the user's own conversations; the
+    # same path would have let a DELETE test purge real rows if an id had
+    # happened to collide. Files that need it already patch this themselves; the
+    # shared fixture should not be the one that forgets.
+    monkeypatch_session = _patch_session_global(maker)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         ac.db_maker = maker  # type: ignore[attr-defined]  # direct DB access for fixtures
         yield ac
+    monkeypatch_session()
     await engine.dispose()
 
 

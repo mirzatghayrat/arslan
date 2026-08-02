@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select
 
 from server.auth import require_auth
-from server.db import session as db_session
+from server.db.session import get_session
 from server.db.models import (
     ArslanMessage,
     ArslanSummary,
@@ -14,9 +15,82 @@ from server.db.models import (
     DistilledSession,
     SpawnPhase,
 )
-from server.schemas import ConversationUsageOut, RecapOut, ScopeUsageOut
+from server.schemas import (
+    ConversationListItem,
+    ConversationUsageOut,
+    RecapOut,
+    ScopeUsageOut,
+)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+
+#: How much of the opening message becomes the recovered conversation's name.
+_TITLE_CHARS = 60
+
+
+@router.get("/conversations", response_model=list[ConversationListItem])
+async def list_conversations(
+    db: AsyncSession = Depends(get_session),
+) -> list[ConversationListItem]:
+    """Every conversation that has messages, most recently active first.
+
+    🔴 The point of this endpoint is DISCOVERY. Every sibling here takes the id
+    as a path parameter, which silently made the frontend's localStorage the
+    only record of what existed — and in the packaged app that record does not
+    survive a restart. The rows were never lost; they were unreachable.
+
+    Auth-gated by the router dependency, and that matters more here than for the
+    by-id endpoints: this one hands back the user's own opening sentences
+    without needing an id to be guessed first.
+    """
+    # 🔴 Injected session, unlike this file's older endpoints which open
+    # `AsyncSessionLocal()` directly. That difference is deliberate:
+    # the shared test client overrides `get_session` but NOT the module global,
+    # so an endpoint built the old way silently reads the REAL user database in
+    # tests. This one was caught doing exactly that — it came back with the
+    # user's own conversations — and `get_session` is the codebase's normal
+    # dependency anyway (spawns.py, registry.py, create.py).
+    if True:
+        agg = (await db.execute(
+            select(ArslanMessage.conversation_id,
+                   func.count(ArslanMessage.id),
+                   func.max(ArslanMessage.timestamp))
+            .group_by(ArslanMessage.conversation_id)
+        )).all()
+        if not agg:
+            return []
+        # Titles from the first USER message per conversation — not simply the
+        # first message, which is often Arslan's greeting and would name every
+        # recovered conversation the same thing.
+        first_user = (await db.execute(
+            select(ArslanMessage.conversation_id, func.min(ArslanMessage.id))
+            .where(ArslanMessage.role == "user")
+            .group_by(ArslanMessage.conversation_id)
+        )).all()
+        ids = [mid for _, mid in first_user]
+        bodies = {}
+        if ids:
+            rows = (await db.execute(
+                select(ArslanMessage.id, ArslanMessage.content)
+                .where(ArslanMessage.id.in_(ids))
+            )).all()
+            by_msg = dict(rows)
+            bodies = {cid: (by_msg.get(mid) or "") for cid, mid in first_user}
+
+    out = [
+        ConversationListItem(
+            conversation_id=cid,
+            title=" ".join((bodies.get(cid) or "").split())[:_TITLE_CHARS],
+            message_count=int(n),
+            last_at=last.isoformat() if last else None,
+        )
+        for cid, n, last in agg
+    ]
+    # Most recently active first. `last_at` can be None on rows predating the
+    # default, so those sort last rather than blowing up the comparison.
+    out.sort(key=lambda c: (c.last_at is not None, c.last_at or ""), reverse=True)
+    return out
 
 
 @router.get("/conversations/{conversation_id}/usage", response_model=ConversationUsageOut)
@@ -110,14 +184,23 @@ async def conversation_distill(conversation_id: str) -> dict:
 
 
 @router.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str) -> dict:
+async def delete_conversation(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> dict:
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
     Deliberately KEEPS `runs` + `router_decisions` + `usage_ledger` (audit/diagnosis
     and cost-accounting data must survive conversation deletion, mirroring how audit
     rows survive spawn deletion).
     Auth-gated (inherited from the router-level require_auth dependency)."""
     deleted: dict[str, int] = {}
-    async with db_session.AsyncSessionLocal() as db:
+    # Injected session — see list_conversations for why. With this endpoint on
+    # the module global and the listing on the injection, the two talked to
+    # DIFFERENT databases under the shared test client: the delete landed in the
+    # user's real one and the listing read a temp one. `get_session` reads the
+    # module global at call time, so fixtures that patch AsyncSessionLocal keep
+    # working exactly as before.
+    if True:
         for model in (
             ArslanMessage,
             ArslanSummary,

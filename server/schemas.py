@@ -927,6 +927,29 @@ class ScopeUsageOut(BaseModel):
     usd: float | None = None
 
 
+class ConversationListItem(BaseModel):
+    """One row of GET /conversations — enough to rebuild a sidebar entry.
+
+    Gate item ⑦. This endpoint exists because the frontend used to be the ONLY
+    place that knew which conversations existed: it mints the id and kept the
+    list in localStorage, while every other endpoint here takes the id as a path
+    parameter. In the packaged app that store is wiped on every launch (the
+    sidecar takes an ephemeral port, and localStorage is partitioned by origin),
+    so conversations became unreachable while their rows sat untouched.
+
+    `title` is DERIVED, not stored: no title ever existed server-side. It comes
+    from the first USER message, which is the only thing on this side that
+    reflects what the conversation was about.
+    """
+
+    conversation_id: str
+    #: First user message, truncated. Empty when the conversation has none.
+    title: str
+    message_count: int
+    #: ISO timestamp of the most recent message, for most-recent-first ordering.
+    last_at: str | None = None
+
+
 class ConversationUsageOut(BaseModel):
     tokens_total: int
     usd_total: float | None = None   # None when NOTHING was priceable (≠ $0)

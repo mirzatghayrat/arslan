@@ -8,7 +8,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
-import { restoreThreads, persistThreads, consumeFreshSessionFlag } from './lib/sessionPersistence';
+import { restoreThreads, persistThreads, consumeFreshSessionFlag, mergeServerConversations } from './lib/sessionPersistence';
 import { firstLiveThread } from './lib/threadLifecycle';
 import { cardAcceptInvite, ledgerInvite } from './lib/rosterInvite';
 import { normalizeLanguage } from './lib/languages';
@@ -111,6 +111,27 @@ export default function App() {
   const titledThreadIds = useRef<Set<string>>(
     new Set(restoredInit.threads.map((t) => t.id)),
   );
+
+  // Gate item ⑦ — recover conversations from the SERVER on boot.
+  //
+  // localStorage was the only record of which conversations existed, and the
+  // packaged app wipes it every launch (ephemeral sidecar port -> new origin ->
+  // fresh partition), so every restart orphaned the previous conversation while
+  // its rows sat untouched in the database. Runs once; failure is silent by
+  // design — a backend still booting must not look like an empty history.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await api.listConversations();
+        if (cancelled || !rows.length) return;
+        setThreads((prev) => mergeServerConversations(prev, rows));
+      } catch {
+        /* offline / still booting — keep whatever localStorage had */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Persist threads + active id whenever either changes (history is dropped).
   useEffect(() => {
@@ -248,13 +269,13 @@ export default function App() {
   }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
-  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }) => {
+  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => {
     // display = session-only echo for the sent bubble (image thumbnails / doc chips);
     // only text-bearing attachments ride to the backend as attached_context below.
     // Sending a new message without acting on a pending proposal card = implicitly
     // dismiss it, so un-acted suggest_create / propose_invite / propose_staffing /
     // suggest_update cards clear when the user moves on instead of stacking forever.
-    useArslanStore.getState().dismissAllPending();
+    useArslanStore.getState().noteUserSend(opts);
     useArslanStore.getState().addUserMessage(text, attached?.display);
     useArslanStore.getState().setThinking(true);
     wsSend({

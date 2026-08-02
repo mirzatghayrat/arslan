@@ -85,6 +85,8 @@ interface ArslanState {
   // the user sends a new message without acting on a pending card. Does NOT touch
   // pendingRoute / pendingProposalSpawnId (execution-phase markers cleared on stream_end).
   dismissAllPending: () => void;
+  /** The user just sent something. Applies the implicit-decline rule. */
+  noteUserSend: (opts?: { fromClarify?: boolean }) => void;
   markProposalConfirmed: (spawnId: number) => void;
   // PA-3: flip a clarify card to its answered (disabled) state once the user picked
   // an option — a stale re-click can never send a second user_message.
@@ -207,6 +209,20 @@ function makeActions(set: SetState, get: GetState) {
       suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null,
       pendingInvite: null, pendingStaffing: null, pendingUpdate: null,
     }),
+    // The implicit-decline rule lives HERE, beside the state it governs, rather
+    // than as a bare dismissAllPending() at the top of the send path.
+    //
+    // Sending a typed message without acting on a pending card means the user
+    // moved on, so the card clears instead of stacking forever — that half is
+    // unchanged. But answering a CLARIFY question also goes through the send
+    // path, and that is the opposite of moving on: it is the user engaging with
+    // the question Arslan just asked. It used to destroy the spawn invite
+    // sitting beside it, so the two were mutually exclusive by construction and
+    // the user had to choose one.
+    noteUserSend: (opts) => {
+      if (opts?.fromClarify) return;
+      get().dismissAllPending();
+    },
     // One-shot confirm (doom-loop guard, frontend half): flipping isProposal off disables the
     // confirm button immediately so a stale re-click can never re-fire execute_confirmed.
     markProposalConfirmed: (spawnId: number) =>

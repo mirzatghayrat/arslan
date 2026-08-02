@@ -166,18 +166,51 @@ def _watch_stdin(stream, on_eof=None) -> None:
     (on_eof or (lambda: os._exit(0)))()
 
 
-def _free_port() -> int:
-    """Ask the OS for a free port on the loopback interface.
+#: The loopback port the sidecar prefers. FIXED, and that is the whole point.
+#:
+#: 🔴 This used to be ephemeral, and the docstring below used to reassure the
+#: reader that a collision "surfaces immediately as a failed launch rather than
+#: as data loss". The ephemeral port WAS the data loss, through a channel that
+#: sentence did not consider: the window loads `http://127.0.0.1:<port>`, and
+#: WebKit partitions localStorage by ORIGIN — of which the port is part. A new
+#: port on every launch meant a new, empty store every launch, and the conversation
+#: list lived there and nowhere else. Measured in the user's packaged database:
+#: 10 conversations, 74 messages, five distinct thread ids in a single day.
+#:
+#: Chosen in the IANA dynamic range and away from common dev servers (5173
+#: Vite, 3000 Node, 8000/8080 the usual suspects) so a developer's own stack
+#: does not routinely push us onto the fallback.
+DEFAULT_PORT = 47317
 
-    Bound and closed here, then re-bound by uvicorn a moment later. That gap
-    is a real (if tiny) race; it is accepted because the alternative — passing
-    a pre-bound socket through uvicorn — costs more than it buys for a
-    single-user desktop app, and a collision surfaces immediately as a failed
-    launch rather than as data loss.
+
+def _free_port() -> int:
+    """Ask the OS for an ephemeral free port on the loopback interface.
+
+    Only the FALLBACK now — see `choose_port`. Bound and closed here, then
+    re-bound by uvicorn a moment later; that gap is a real (if tiny) race,
+    accepted because passing a pre-bound socket through uvicorn costs more than
+    it buys for a single-user desktop app.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
+
+
+def choose_port() -> int:
+    """DEFAULT_PORT when it is free, otherwise an ephemeral one.
+
+    Falling back rather than refusing to start is deliberate: with the
+    server-side conversation listing in place, an occasional different origin
+    costs a reset of origin-scoped UI state, while refusing to launch costs the
+    user their whole app. The listing is what makes the fallback survivable —
+    conversations come back from the server either way.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", DEFAULT_PORT))
+        except OSError:
+            return _free_port()
+        return DEFAULT_PORT
 
 
 def _lazy_resource_probes():
@@ -393,7 +426,7 @@ def main() -> int:
 
     _sanitize_env()
 
-    port = int(os.environ.get("ARSLAN_PORT") or _free_port())
+    port = int(os.environ.get("ARSLAN_PORT") or choose_port())
 
     # Announce BEFORE uvicorn.run(), which blocks. flush because stdout is a
     # pipe here (block-buffered), so without it the shell would wait for the
