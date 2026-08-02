@@ -1,6 +1,6 @@
 // ThreadRowMenu — the per-conversation "⋯" overflow menu shown on each
-// sidebar thread row. Opens a small inline menu (mirrors EquipPopover's
-// click-away + absolute dialog pattern) with three actions:
+// sidebar thread row. Portalled and dismissable via the shared primitives, with
+// three actions:
 //   · Distill  — harvest this conversation's spawn chats into memory
 //   · Archive  — hide it into the collapsible "Archived" section (client-side)
 //   · Delete   — opens an inline confirmation first, then removes it
@@ -10,6 +10,9 @@
 // sidebar/App wire up. Styling uses semantic tokens only (no raw colors).
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { useDismissable } from "../hooks/useDismissable";
+import AnchoredPortal from "./AnchoredPortal";
 import { MoreHorizontal, Wand2, Archive, ArchiveRestore, Trash2, AlertTriangle } from "lucide-react";
 
 interface ThreadRowMenuProps {
@@ -39,11 +42,20 @@ export default function ThreadRowMenu({
     setConfirming(false);
   };
 
+  // Two fixes, one cause each:
+  //  · the menu was `absolute` inside the thread list's `overflow-y-auto`, so
+  //    the BOTTOM row's menu was clipped — AnchoredPortal takes it out of that
+  //    ancestor and flips it up near the viewport edge;
+  //  · dismissal was a `fixed inset-0` backdrop, i.e. implemented as LAYOUT.
+  //    Measured before replacing it: clicking the backdrop closed the menu,
+  //    clicking anywhere else did not, and Escape did nothing at all.
+  const { anchorRef, floatingRef } = useDismissable<HTMLSpanElement, HTMLDivElement>(open, close);
+
   const itemClass =
     "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-sans text-left text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all";
 
   return (
-    <span className="relative inline-flex">
+    <span ref={anchorRef} className="relative inline-flex">
       <button
         type="button"
         aria-label={t("sidebar.thread_menu")}
@@ -60,21 +72,12 @@ export default function ThreadRowMenu({
         <MoreHorizontal className="w-3.5 h-3.5" />
       </button>
 
-      {open && (
-        <>
-          {/* click-away layer */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={(e) => {
-              e.stopPropagation();
-              close();
-            }}
-          />
-          <div
-            role="menu"
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-0 top-6 z-50 w-52 bg-surface-raised border border-border-strong rounded-lg shadow-lg p-1"
-          >
+      <AnchoredPortal anchorRef={anchorRef} floatingRef={floatingRef} open={open}>
+        <div
+          role="menu"
+          onClick={(e) => e.stopPropagation()}
+          className="w-52 bg-surface-raised border border-border-strong rounded-lg shadow-lg p-1"
+        >
             {!confirming ? (
               <>
                 <button
@@ -156,10 +159,9 @@ export default function ThreadRowMenu({
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-        </>
-      )}
+          )}
+        </div>
+      </AnchoredPortal>
     </span>
   );
 }
