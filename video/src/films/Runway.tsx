@@ -54,7 +54,7 @@ import {font} from '../theme';
  * material did not just raise the resolution — it retired two compromises.
  */
 
-const N = {
+export const N = {
   bg: '#05070B',
   ink: '#E9EEF6',
   dim: '#8792A3',
@@ -325,7 +325,7 @@ const STOPS = [
   {x: HERO_CX, y: HERO_CY, r: 330},
 ];
 
-const Spotlight: React.FC<{f: number}> = ({f}) => {
+export const Spotlight: React.FC<{f: number}> = ({f}) => {
   const leg = interpolate(f, [6, 20, 34, 48], [0, 1, 2, 3], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -556,7 +556,7 @@ const NeonFrame: React.FC<{
  * The drop window runs with the lighting window and finishes about 20 frames
  * after it; landing furniture in a dark room is the failure the card names.
  */
-const Forerun: React.FC<{f: number}> = ({f}) => {
+export const Forerun: React.FC<{f: number}> = ({f}) => {
   const W = 1180;
   const H = 804;
   const lit = ramp(f, 22, 54);
@@ -670,7 +670,7 @@ const CREATE_PARTS = (
  * Depth of field is part of the grammar rather than decoration — everything
  * sharp reads as a flat scroll.
  */
-const Graze: React.FC<{f: number}> = ({f}) => {
+export const Graze: React.FC<{f: number}> = ({f}) => {
   const travel = interpolate(f, [0, 138], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -801,7 +801,7 @@ const GLIDE_H = (1260 / 1920) * GLIDE_W;
 const GLIDE_GAP = 90;
 const GLIDE_STEP = GLIDE_W + GLIDE_GAP;
 
-const Glide: React.FC<{f: number}> = ({f}) => {
+export const Glide: React.FC<{f: number}> = ({f}) => {
   // travel measured in page-steps, so the pages arrive on the beat rather than
   // wherever a hand-picked pixel range happens to put them
   const at = (g: number) =>
@@ -946,7 +946,7 @@ const COLS: {loop: number; dir: number; src: string; rects: Rect[]}[] = [
   },
 ];
 
-const Waterfall: React.FC<{f: number}> = ({f}) => {
+export const Waterfall: React.FC<{f: number}> = ({f}) => {
   const push = interpolate(f, [0, 128], [1.0, 1.05], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -1035,7 +1035,7 @@ const Waterfall: React.FC<{f: number}> = ({f}) => {
 /** A nudge to separate the cards from the set — see the graze on the number. */
 const SKIM_LIFT: React.CSSProperties = {filter: 'brightness(1.1)'};
 
-const Skim: React.FC<{f: number}> = ({f}) => {
+export const Skim: React.FC<{f: number}> = ({f}) => {
   const stand = ramp(f, 46, 58, Easing.bezier(0.3, 0, 0.2, 1));
   const rotX = 66 - stand * 66;
   const pull = interpolate(f, [46, 104], [1.16, 0.9], {
@@ -1163,7 +1163,7 @@ const AUTO_PARTS = (
  * on the rotation — rotating first and landing after reads as two separate
  * pieces of business.
  */
-const OrbitDrop: React.FC<{f: number}> = ({f}) => {
+export const OrbitDrop: React.FC<{f: number}> = ({f}) => {
   const W = 1240;
   const H = 846;
   const arc = ramp(f, 8, 96, Easing.bezier(0.35, 0, 0.3, 1));
@@ -1243,7 +1243,7 @@ const OrbitDrop: React.FC<{f: number}> = ({f}) => {
 
 /* ================================================================== */
 
-const Caption: React.FC<{f: number; at: number; text: string}> = ({f, at, text}) => {
+export const Caption: React.FC<{f: number; at: number; text: string}> = ({f, at, text}) => {
   const o = ramp(f, at, 18);
   if (o <= 0.01) return null;
   return (
@@ -1267,7 +1267,7 @@ const Caption: React.FC<{f: number; at: number; text: string}> = ({f, at, text})
   );
 };
 
-const Cta: React.FC<{f: number}> = ({f}) => {
+export const Cta: React.FC<{f: number}> = ({f}) => {
   const a = ramp(f, 2, 26, Easing.bezier(0.16, 1.2, 0.3, 1));
   const b = ramp(f, 22, 26, Easing.bezier(0.16, 1.2, 0.3, 1));
   return (

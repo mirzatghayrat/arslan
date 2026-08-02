@@ -6,6 +6,7 @@ import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
 import {Press, PRESS_FRAMES} from './films/Press';
+import {Origin, ORIGIN_FRAMES} from './films/Origin';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
 import {Runway, RUNWAY_FRAMES} from './films/Runway';
 import {System, SYSTEM_FRAMES} from './films/System';
@@ -137,6 +138,19 @@ export const RemotionRoot: React.FC = () => (
       id="F6-Runway"
       component={Runway}
       durationInFrames={RUNWAY_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    {/* The Runway shot list at sixty seconds, opening and closing on the brand
+        character. The emblem on the cat's chest is the Arslan mark, so the film
+        pushes into it, hands off to the vector at the same place and size, and
+        lets the mark hand off again into the first neon frame. */}
+    <Composition
+      id="F7-Origin"
+      component={Origin}
+      durationInFrames={ORIGIN_FRAMES}
       fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}
