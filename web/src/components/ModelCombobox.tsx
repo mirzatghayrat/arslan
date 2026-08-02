@@ -15,6 +15,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
 import type { ModelInfo } from "../api/client.types";
+import { useDismissable } from "../hooks/useDismissable";
+import AnchoredPortal from "./AnchoredPortal";
 
 export interface ModelComboboxProps {
   value: string;
@@ -63,7 +65,6 @@ export default function ModelCombobox({
   /** Index into [ ...filtered, customRow ]; -1 = none highlighted. */
   const [highlighted, setHighlighted] = useState(-1);
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Refs so document-level listeners see current values without re-binding,
   // and so commit/revert clears the draft SYNCHRONOUSLY (before React
@@ -129,16 +130,15 @@ export default function ModelCombobox({
   }, [options]);
 
   // ── click-outside: close; commit pending free text (blur-save semantics) ──
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (e: PointerEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        commitRef.current(draftRef.current ?? valueRef.current);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
+  // Class fix (floating-element sweep): portalled out of Settings'
+  // `overflow-y-auto`, and Escape moved to the document — it used to live on
+  // the input's own onKeyDown, so it did nothing once focus left the input.
+  //
+  // 🔴 Dismissal here COMMITS rather than merely closing (blur-save semantics
+  // the provider form depends on). Losing that would silently discard a
+  // half-typed model id, so the hook's onClose keeps the original call.
+  const { anchorRef, floatingRef } = useDismissable<HTMLDivElement, HTMLDivElement>(
+    open, () => commitRef.current(draftRef.current ?? valueRef.current));
 
   // ── keyboard ──────────────────────────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -178,7 +178,7 @@ export default function ModelCombobox({
   const listboxId = dataTestId ? `${dataTestId}-listbox` : undefined;
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={anchorRef} className="relative w-full">
       <div className="flex items-center gap-1.5">
         <input
           ref={inputRef}
@@ -200,7 +200,12 @@ export default function ModelCombobox({
             // Focus moves within the component (refresh button) are ignored;
             // option rows never blur (their pointerdown is preventDefault'd).
             const next = e.relatedTarget as Node | null;
-            if (next && containerRef.current?.contains(next)) return;
+            // Both refs: the panel is portalled now, so focus landing in it is
+            // no longer inside the anchor's subtree. Option rows still never
+            // blur (their pointerdown is preventDefault'd), but a future
+            // focusable control in the panel would silently commit without it.
+            if (next && (anchorRef.current?.contains(next) ||
+                         floatingRef.current?.contains(next))) return;
             commitRef.current(draftRef.current ?? valueRef.current);
           }}
           onChange={(e) => {
@@ -235,13 +240,13 @@ export default function ModelCombobox({
       </div>
 
       {/* Suggestion panel */}
-      {open && (
+      <AnchoredPortal anchorRef={anchorRef} floatingRef={floatingRef} open={open}
+                      align="left" matchAnchorWidth>
         <ul
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
           className={[
-            "absolute z-50 left-0 right-0 mt-1",
             "bg-surface border border-border rounded-xl shadow-lg",
             "overflow-hidden max-h-64 overflow-y-auto",
             "animate-select-open",
@@ -327,7 +332,7 @@ export default function ModelCombobox({
             {t("settings.modelCustomId", { id: displayValue })}
           </li>
         </ul>
-      )}
+      </AnchoredPortal>
 
       {/* Inline stale hint under the field */}
       {staleHint && (

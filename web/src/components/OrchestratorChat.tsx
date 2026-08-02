@@ -32,6 +32,7 @@ import MentionText from './MentionText';
 import UsageChip from './UsageChip';
 import { resolveSpawnName } from '../api/resolveSpawnName';
 import { activeMention, filterRoster, insertMention } from '../lib/mentions';
+import { useDismissable } from "../hooks/useDismissable";
 
 /** S3-M1: muted "interrupted" line under a bubble whose run was cancelled
  *  mid-stream — same look as the stall indicator (⏸ + working.stalled, which
@@ -182,7 +183,18 @@ export default function OrchestratorChat({
   // gets an exact name). Chat composer only (empty-state hero intentionally excluded).
   const chatInputRef = useRef<HTMLInputElement>(null);
   const [mention, setMention] = useState<{ query: string; index: number } | null>(null);
-  const mentionCands = React.useMemo(
+
+  // Class fix (floating-element sweep). Dismissal only:
+  //  · it closed via the input's `onBlur`, so it stayed open for any click that
+  //    did not move focus — most of the page;
+  //  · Escape was bound to the input's own onKeyDown, i.e. only while the input
+  //    held focus.
+  // No portal: this one is anchored `bottom-full` to the composer and opens
+  // UPWARD into the message region, so it is not clipped in a normal window.
+  // The inventory flagged it as LATENT (a very short window could cut its top),
+  // which is a real but unobserved case — registered rather than churned.
+  const { anchorRef: mentionAnchorRef, floatingRef: mentionPanelRef } =
+    useDismissable<HTMLDivElement, HTMLDivElement>(Boolean(mention), () => setMention(null));  const mentionCands = React.useMemo(
     () => (mention ? filterRoster(roster, mention.query).slice(0, 8) : []),
     [mention, roster],
   );
@@ -473,6 +485,7 @@ export default function OrchestratorChat({
             <div
               className={`relative w-full max-w-xl bg-surface border rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all ${attach.dragActive ? 'border-primary border-dashed' : 'border-border-strong'}`}
               {...attach.dndHandlers}
+              ref={mentionAnchorRef}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <textarea
@@ -1377,7 +1390,7 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               {mention && mentionCands.length > 0 && (
-                <div data-testid="mention-dropdown"
+                <div ref={mentionPanelRef} data-testid="mention-dropdown"
                   className="absolute bottom-full left-0 mb-1 w-64 max-h-56 overflow-auto bg-surface border border-border-strong rounded-xl shadow-2xl z-30 py-1">
                   {mentionCands.map((m, i) => (
                     <button key={m.spawnId} type="button"

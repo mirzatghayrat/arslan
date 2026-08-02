@@ -11,6 +11,7 @@ import { SpawnAvatar } from './SpawnAvatar';
 import ThreadRowMenu from './ThreadRowMenu';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import EmptyState from "./EmptyState";
+import { useDismissable } from "../hooks/useDismissable";
 
 interface ArslanThread {
   id: string;
@@ -71,6 +72,13 @@ export default function Sidebar({
   const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
   const [picking, setPicking] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  // Class fix (floating-element sweep). Dismissal only, and NOT a portal:
+  // this picker is in normal flow — it pushes the spawn list down rather than
+  // floating over it — so there is no clipping ancestor and nothing to escape.
+  // It shares the other half of the bug though: no outside-click, no Escape,
+  // so it stayed open until the "+" was pressed again.
+  const { anchorRef: pickerAnchorRef, floatingRef: pickerPanelRef } =
+    useDismissable<HTMLDivElement, HTMLDivElement>(picking, () => setPicking(false));
 
   const activeThreads = threads.filter((th) => !th.archived);
   const archivedThreads = threads.filter((th) => th.archived);
@@ -309,6 +317,7 @@ export default function Sidebar({
                   {t('sidebar.live_count', { count: sessionSpawns.length })}
                 </span>
                 <button
+                  ref={(el) => { pickerAnchorRef.current = el?.parentElement as HTMLDivElement | null; }}
                   title={t('sidebar.new_chat')}
                   aria-label={t('sidebar.new_chat')}
                   onClick={() => setPicking((p) => !p)}
@@ -321,7 +330,7 @@ export default function Sidebar({
 
             {/* Picker dropdown: all spawns to start a new direct chat */}
             {picking && (
-              <div className="mx-2 mb-2 bg-background border border-border rounded-lg shadow-lg overflow-hidden">
+              <div ref={pickerPanelRef} className="mx-2 mb-2 bg-background border border-border rounded-lg shadow-lg overflow-hidden">
                 {spawns.map((spawn) => (
                   <button
                     key={spawn.id}

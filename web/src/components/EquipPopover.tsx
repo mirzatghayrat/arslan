@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { Equipment, EquipmentItem, SpawnSummary } from "../api/client.types";
+import { useDismissable } from "../hooks/useDismissable";
+import AnchoredPortal from "./AnchoredPortal";
 
 /** Keys the user-equipment editor manages: permanent grants from create/user.
  * Temporary (escalation) grants are excluded — sending them in a replace PUT
@@ -87,8 +89,15 @@ export default function EquipPopover({ kind, capKey }: { kind: "toolset" | "skil
     }
   };
 
+  // Class fix (floating-element sweep): this popover was `absolute` inside
+  // Capabilities' `overflow-y-auto`, so a card near the bottom had its equip
+  // list clipped; and its dismissal was a `fixed inset-0` backdrop with no
+  // Escape at all.
+  const { anchorRef, floatingRef } = useDismissable<HTMLSpanElement, HTMLDivElement>(
+    open, () => setOpen(false));
+
   return (
-    <span className="relative inline-block">
+    <span ref={anchorRef} className="relative inline-block">
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
@@ -96,13 +105,10 @@ export default function EquipPopover({ kind, capKey }: { kind: "toolset" | "skil
       >
         {t("capabilities.equip.action")}
       </button>
-      {open && (
-        <>
-          {/* click-away layer */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+      <AnchoredPortal anchorRef={anchorRef} floatingRef={floatingRef} open={open}>
           <div
             role="dialog"
-            className="absolute right-0 z-50 mt-1 w-60 max-h-64 overflow-y-auto bg-surface-raised border border-border-strong rounded-lg shadow-lg p-2"
+            className="w-60 max-h-64 overflow-y-auto bg-surface-raised border border-border-strong rounded-lg shadow-lg p-2"
           >
             {error && <div className="text-[10px] text-danger font-mono mb-1">{error}</div>}
             {!spawns && !error && (
@@ -126,8 +132,7 @@ export default function EquipPopover({ kind, capKey }: { kind: "toolset" | "skil
               </label>
             ))}
           </div>
-        </>
-      )}
+      </AnchoredPortal>
     </span>
   );
 }

@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { ApiError, api } from "../../api/client";
 import type { NoteDto, NoteSuggestDto } from "../../api/client.types";
 import { activeWikilink, insertWikilink, type WikilinkToken } from "../../lib/wikilinks";
+import { useDismissable } from "../../hooks/useDismissable";
 
 interface Props {
   noteId: number;
@@ -29,6 +30,18 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [token, setToken] = useState<WikilinkToken | null>(null);
+  // Class fix (floating-element sweep). Dismissal ONLY — no portal, and that is
+  // a judgement not an omission: this dropdown is pinned inside its own
+  // textarea wrap (`bottom:8px; left:8px; right:8px`), so it never reaches the
+  // editor's scroll edge and has no clipping defect to fix. Churning a layout
+  // that works would be change without a cause.
+  //
+  // What it genuinely lacked was ANY way to close it: no outside-click, no
+  // Escape. It went away only when the `[[` token stopped matching or a row was
+  // picked, so clicking elsewhere left it hanging over the text.
+  const { anchorRef: wikilinkAnchorRef, floatingRef: wikilinkPanelRef } =
+    useDismissable<HTMLDivElement, HTMLDivElement>(
+      Boolean(token), () => setToken(null));
   const [suggest, setSuggest] = useState<NoteSuggestDto | null>(null);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -160,7 +173,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
         <div className="text-[11px] text-subtle-foreground">loading…</div>
       ) : (
         <>
-          <div className="note-editor__textarea-wrap">
+          <div ref={wikilinkAnchorRef} className="note-editor__textarea-wrap">
             <textarea
               ref={textareaRef}
               className="note-editor__textarea"
@@ -173,7 +186,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
               rows={12}
             />
             {token && dropdownItems.length > 0 && (
-              <div className="note-editor__wikilink-dropdown">
+              <div ref={wikilinkPanelRef} className="note-editor__wikilink-dropdown">
                 {dropdownItems.map((l) => (
                   <button key={l} type="button" className="note-editor__wikilink-item" onClick={() => pickWikilink(l)}>
                     {l}

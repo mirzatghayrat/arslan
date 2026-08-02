@@ -10,6 +10,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Check } from "lucide-react";
+import { useDismissable } from "../hooks/useDismissable";
+import AnchoredPortal from "./AnchoredPortal";
 
 export interface SelectOption {
   value: string;
@@ -43,7 +45,6 @@ export default function Select({
   // highlighted index when navigating with keyboard (-1 = none)
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const selectedLabel =
@@ -75,16 +76,16 @@ export default function Select({
 
   // ── click-outside ───────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (e: PointerEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        closePanel();
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open, closePanel]);
+  // Class fix (floating-element sweep). Two changes, one visible and one not:
+  //  · the panel is PORTALLED, because `absolute` inside Settings'
+  //    `overflow-y-auto` (SettingsScreen) and Diagnostics' `overflow-auto`
+  //    clipped it at every one of this component's ten call sites;
+  //  · Escape becomes DOCUMENT-level. It used to live on the trigger's own
+  //    onKeyDown, so it worked only while the trigger still held focus —
+  //    move focus into the list, or click the panel, and Escape did nothing.
+  const { anchorRef, floatingRef } = // floatingRef belongs to AnchoredPortal's own wrapper div, not the <ul> inside it.
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    open, closePanel);
 
   // ── keyboard handling on the trigger ───────────────────────────────────
 
@@ -150,7 +151,7 @@ export default function Select({
   const listboxId = id ? `${id}-listbox` : undefined;
 
   return (
-    <div ref={containerRef} className={`relative w-full${className ? ` ${className}` : ""}`}>
+    <div ref={anchorRef} className={`relative w-full${className ? ` ${className}` : ""}`}>
       {/* Trigger */}
       <button
         ref={triggerRef}
@@ -187,13 +188,13 @@ export default function Select({
       </button>
 
       {/* Options panel */}
-      {open && (
+      <AnchoredPortal anchorRef={anchorRef} floatingRef={floatingRef} open={open}
+                      align="left" matchAnchorWidth>
         <ul
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
           className={[
-            "absolute z-50 left-0 right-0 mt-1",
             "bg-surface border border-border rounded-xl shadow-lg",
             "overflow-hidden",
             // Smooth entrance via CSS (opacity + translate)
@@ -246,7 +247,7 @@ export default function Select({
             );
           })}
         </ul>
-      )}
+      </AnchoredPortal>
     </div>
   );
 }

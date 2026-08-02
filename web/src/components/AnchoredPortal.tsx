@@ -26,6 +26,10 @@ export default function AnchoredPortal({
   children,
   align = "right",
   gap = 6,
+  /** Match the anchor's width — what `left-0 right-0` did before portalling.
+   *  A listbox narrower or wider than the control it belongs to reads as a
+   *  different widget, so this is not cosmetic for Select/Combobox. */
+  matchAnchorWidth = false,
   /** Space that must remain below the anchor, or the menu flips above it. */
   flipMargin = 12,
 }: {
@@ -35,9 +39,10 @@ export default function AnchoredPortal({
   children: ReactNode;
   align?: "left" | "right";
   gap?: number;
+  matchAnchorWidth?: boolean;
   flipMargin?: number;
 }) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width?: number } | null>(null);
 
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
@@ -50,7 +55,7 @@ export default function AnchoredPortal({
       // Fall back to a nominal size on the first pass: the floating element is
       // measured only once it has rendered, and a first frame with no position
       // would flash at 0,0.
-      const fw = f?.offsetWidth || 208;
+      const fw = matchAnchorWidth ? r.width : (f?.offsetWidth || 208);
       const fh = f?.offsetHeight || 160;
 
       const below = window.innerHeight - r.bottom;
@@ -60,7 +65,7 @@ export default function AnchoredPortal({
       let left = align === "right" ? r.right - fw : r.left;
       left = Math.max(8, Math.min(left, window.innerWidth - fw - 8));
 
-      setPos({ top, left });
+      setPos({ top, left, ...(matchAnchorWidth ? { width: r.width } : {}) });
     };
 
     place();
@@ -72,7 +77,7 @@ export default function AnchoredPortal({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, anchorRef, floatingRef, align, gap, flipMargin]);
+  }, [open, anchorRef, floatingRef, align, gap, flipMargin, matchAnchorWidth]);
 
   if (!open) return null;
 
@@ -87,6 +92,7 @@ export default function AnchoredPortal({
         // Hidden until measured rather than rendered offscreen-and-visible:
         // a menu that flashes in the corner is worse than one that appears a
         // frame later.
+        ...(pos?.width != null ? { width: pos.width } : {}),
         visibility: pos ? "visible" : "hidden",
         zIndex: 1000,
       }}
