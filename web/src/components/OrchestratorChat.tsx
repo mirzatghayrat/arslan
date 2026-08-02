@@ -418,10 +418,22 @@ export default function OrchestratorChat({
                 <button
                   key={spawn.id}
                   onClick={() => {
+                    // 🔴 Toggling the chip SWITCHES PANES; it does not close.
+                    // It used to call closeSandbox, which removes the session
+                    // from `openSandboxes` and unmounts the panel — taking the
+                    // whole conversation with it. That contradicted this file's
+                    // own design a few lines up ("all open sessions stay
+                    // mounted, only the active one is visible"), which is the
+                    // entire reason SandboxPanel has a `hidden` prop.
+                    //
+                    // A sandbox is closed by an explicit decision — Confirm &
+                    // Merge, Discard, or ✕ — because those are the two moments
+                    // the user means "I am done with this". Going back to read
+                    // the main thread is not one of them.
                     if (activeSandboxSpawnId === spawn.id) {
-                      closeSandbox(spawn.id);
+                      setActiveSandboxSpawnId(null);      // back to the main thread
                     } else {
-                      openSandbox(spawn.id);
+                      openSandbox(spawn.id);              // resumes if already open
                     }
                   }}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold select-none cursor-pointer ${
