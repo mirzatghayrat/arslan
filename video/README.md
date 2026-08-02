@@ -34,7 +34,7 @@ npm run f2
 npm run f3
 npm run f4
 npm run f5        # the square LinkedIn cut (1080x1080)
-npm run f6        # Runway — eight named shots, cut from the screen recording
+npm run f6        # Runway — eight named shots, cut from the real client
 ```
 
 `out/` is git-ignored. The committed render lives at
@@ -412,11 +412,11 @@ into a frame. They ship as JPEG rather than PNG because they are photographic
 and the region that would suffer from compression is the region being
 overwritten: 905 KB for all four, against 6.9 MB as PNG.
 
-## F6 — `F6-Runway`, from a named shot list and a screen recording
+## F6 — `F6-Runway`, from a named shot list and screenshots of the real client
 
-The one film here whose frames are the real client. Everything else composites
-the app onto a photographed machine or draws it; this is a screen recording,
-sliced up and flown around.
+The one film here whose frames are the shipped app. Everything else composites
+the app onto a photographed machine or draws it in code; this is twelve Retina
+window screenshots, sliced up and flown around.
 
 ```bash
 npm run f6      # or: npx remotion render F6-Runway out/F6-Runway.mp4 --gl=angle
@@ -446,21 +446,48 @@ between them; and `graze-face-tour` moves the camera over a still page while
 `steep-tilt-glide` locks the camera and moves the page, so a flash cut sits
 between them rather than a straight one.
 
-### What the 480p capture can and cannot carry
+### The plates
 
-The recording upscales to 1280×872 plates (8 pages, 308 KB total, in
-`public/rec/`) and holds to about 1.7×. Every shot is built around that: slices
-on a receding wall, a page foreshortened at 46 degrees, cards small under a low
-camera.
+`public/rec/` is twelve macOS window screenshots at Retina scale, 2.3 MB of
+JPEG. `ledger.jpg` is kept at native 2560×1680 because the opening pushes onto
+a single card; the rest are at 1920 wide, still above 1:1 for every use they
+get.
 
-The opening is the shot that costs. `spotlight-hero-card` wants a hard push onto
-one card, and a ledger card is only 276×282 in the plate. The push is held to
-1.6× of a page already at 1.17× — about 2.2× of source, soft but legible, in a
-dark scene where softness reads as depth. A first version drew that card in code
-to dodge the upscale entirely; it looked better frozen and worse moving, because
-the cut to real footage 165 frames later gave the trick away. **An HD capture
-would only change this one shot** — it would let the push go where the card
-actually asks, at 2.6×.
+The film was first cut from a 480p screen recording upscaled to 1280×872, and
+what the screenshots changed is not only that the type is sharp — it changed
+what the shots were allowed to do:
+
+| | 480p recording | Retina screenshots |
+| --- | --- | --- |
+| A ledger card | 276 px wide | 603 px wide |
+| `spotlight-hero-card` push | 1.6× — and that was already a 2.2× upscale | **2.42×, the 2.6× the card asks for**, landing at ~1.45× of native |
+| Pages available | 8, all reachable in one recording session | 12, including five the recording never visited |
+
+Two of those new pages changed what the film *says*, not how it looks:
+
+- **The forerun** used to assemble the Spawns Ledger — six spawns already built
+  — under a caption about raising your own. It now assembles the empty
+  **CREATE dialog**: no name, no domain, an empty mission box, a seed library
+  to draft from. Showing six finished cards while claiming "a roster you
+  raise" is showing the result and asserting the act; the blank dialog *is*
+  the act, and it is the one page in the product that proves the film's central
+  claim rather than restating it.
+- **The close** used to be Diagnostics, whose tiles read `PASS RATE 0%` on a
+  machine with one run recorded — true, meaningless, and the last thing on
+  screen before the call to action. It is now the **Automation page**, where
+  every switch that can spend money or write to memory is off and the product
+  says so in its own words ("all off by default and none of them changes
+  anything without you"), under the local-first caption. That page also warns,
+  in amber, that auto-evolution spends API credits and has no cap yet — a
+  product shipping the warning against itself is the claim, so the film shows
+  the page instead of paraphrasing it.
+
+One number on screen is deliberately never captioned. The CREATE dialog reads
+"Search 249 seeds…", but `server/services/persona_seed_service.py` *imports*
+those personas from the agency-agents repository at runtime — 249 is one
+install's count, not a shipped constant. A screenshot of the real client may
+show one machine's state; a caption may not quote it as a product fact. See
+`SPAWNS.seeds` in `src/facts.ts`.
 
 ### Four failures worth writing down
 
@@ -482,6 +509,15 @@ actually asks, at 2.6×.
   dropped from 700 surface pixels; on a plane raked to 66 degrees that is above
   the top of the picture, so the shot opened on half a second of black
   immediately after a flash cut. Nothing starts higher than 460 now.
+- **Derive layouts, never eyeball them.** The orbit-drop's four panels were
+  first sized by hand, and one of them — a 348-wide crop asked to render 380
+  wide — came out 743 px tall inside an 826 px frame, landed on its neighbour
+  and pushed a third outside the neon frame. Both that shot and the forerun now
+  scale each piece's *real position on the page* by one constant, which makes
+  the mistake unwriteable.
+- **Exposure is tuned to the plates, not to taste.** The graze tiles carried
+  `brightness(1.4)` because the 480p plates were dark. The same number on
+  Retina screenshots blew the amber chips out to flat yellow. 1.12 now.
 
 The check that caught the last one, and the dead beats at the end of F3 and F4
 before it, is not picking interesting stills — it is sampling the rendered file
@@ -502,9 +538,10 @@ Anything shown as a concrete value that is not measured carries `SAMPLE`
 ("illustrative — not measured") on screen beside it.
 
 The one exception is F6, and it is an exception in the safe direction: its
-frames are a screen recording of the client rather than a re-creation of it, so
-the figures visible in the Diagnostics page are one developer's real local
-numbers on a machine with a single run recorded. They are shown because they are
-true, and the slices deliberately skip the run-scoped tiles, which on that
-machine read "PASS RATE 0%" — accurate, meaningless, and not worth a viewer's
-attention for the four seconds the shot lasts.
+frames are screenshots of the client rather than a re-creation of it, so the
+figures on screen are one developer's real local numbers — a seed count that
+reflects what that install imported, token usage from a handful of runs. They
+are shown because a picture of the real client is allowed to show one machine's
+state. What is *not* allowed is a caption quoting any of them as a product
+fact, which is why the film's captions carry only sourced claims and the
+numbers are left to speak for themselves inside the frame.

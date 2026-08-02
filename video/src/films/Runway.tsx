@@ -30,21 +30,28 @@ import {font} from '../theme';
  * `steep-tilt-glide` locks the camera and moves the page, so they are separated
  * by a flash cut rather than run together.
  *
- * ON THE FOOTAGE. Every frame in this film is the real client — nothing here is
- * drawn UI. The capture is 480p, upscaled to 1280x872 plates, and it holds to
- * about 1.7x: a full page at ~1100px reads fine, which is what the shots are
- * built around — slices on a receding wall, a page foreshortened at 60 degrees,
- * cards small under a low camera.
+ * ON THE FOOTAGE. Every frame is the real client — nothing here is drawn UI.
  *
- * The opening is the shot that costs. `spotlight-hero-card` wants a hard push
- * onto a single card, and a ledger card is only 276x282 in the plate, so the
- * push is held to 1.6x of a page already at 1.17x — about 2.2x of source on the
- * hero card, which is soft but legible, and it is a dark scene with one lit
- * region so softness reads as depth. A first version drew that card in code to
- * dodge the upscale; it looked better frozen and worse moving, because the cut
- * to real footage 165 frames later gave the whole trick away. Real and slightly
- * soft beats sharp and fake. An HD capture would let the push go where the card
- * actually asks (2.6x) — this is the one shot that would gain from it.
+ * The film was first cut from a 480p screen recording, upscaled to 1280x872,
+ * which held to about 1.7x and set the ceiling on every shot in it. It is now
+ * cut from Retina window screenshots at 2560x1680, and the difference is not
+ * only that the type is sharp: it changed what the shots are allowed to do.
+ * `spotlight-hero-card` asks for a 2.6x push onto one card. A ledger card was
+ * 276 pixels wide in the old plate, so the push stopped at 1.6x and even that
+ * was a 2.2x upscale; the card is 603 pixels now, the page sits at 0.59x, and
+ * the move the card actually specifies lands at about 1.45x of native — the
+ * bigger push AND the sharper frame, which is not a trade that was available
+ * before.
+ *
+ * The screenshots also brought seven pages the recording never visited, and
+ * two of them changed what the film says rather than how it looks. The forerun
+ * used to assemble the ledger — six spawns already built — under a caption
+ * about raising your own; it now assembles the empty CREATE dialog, which is
+ * the act instead of the result. The close used to be Diagnostics, whose tiles
+ * read "PASS RATE 0%" on a machine with one run; it is now the Automation page,
+ * where every switch that can spend money or write to memory is off and the
+ * product says so in its own words, under a caption about local-first. Better
+ * material did not just raise the resolution — it retired two compromises.
  */
 
 const N = {
@@ -72,15 +79,44 @@ const jit = (k: number, m: number) => ((k * 7919) % (2 * m + 1)) - m;
 /* ================================================================== */
 /* The capture, and slices of it                                       */
 
-const SRC = {w: 1280, h: 872};
+/**
+ * Plate dimensions, per plate.
+ *
+ * These are macOS window screenshots at Retina scale — 2560x1680 native — not
+ * frames lifted from a screen recording, which is what this film was first cut
+ * from. `ledger` is the only one kept at full size, because the opening pushes
+ * onto a single card and that is the one place in the film where the extra
+ * pixels get spent. The rest are at 1920, still above 1:1 for every use.
+ *
+ * They carry a light desktop in the window's own rounded corners, so anything
+ * showing a whole page has to clip its own radius or four pale wedges appear on
+ * a black set.
+ */
+const PLATES: Record<string, {w: number; h: number}> = {
+  'rec/ledger.jpg': {w: 2560, h: 1680},
+  'rec/create.jpg': {w: 1920, h: 1260},
+  'rec/equip.jpg': {w: 1920, h: 1260},
+  'rec/home.jpg': {w: 1920, h: 1260},
+  'rec/chat.jpg': {w: 1920, h: 1260},
+  'rec/skills.jpg': {w: 1920, h: 1260},
+  'rec/tools.jpg': {w: 1920, h: 1260},
+  'rec/mcp.jpg': {w: 1920, h: 1260},
+  'rec/forge.jpg': {w: 1920, h: 1260},
+  'rec/diag.jpg': {w: 1920, h: 1260},
+  'rec/brain.jpg': {w: 1920, h: 1260},
+  'rec/auto.jpg': {w: 1920, h: 1260},
+};
+
+/** Clips the window's own rounded corners off a full-page plate. */
+const PAGE_RADIUS = 16;
 
 /**
- * A rectangle of the capture, in SOURCE pixel coordinates, drawn at `w` wide.
+ * A rectangle of a plate, in that plate's pixel coordinates, drawn at `w` wide.
  *
  * Slicing rather than showing whole pages is what makes the drop shots possible
- * at all: a screen recording is one flat image, so "components falling from
- * above" has to be regions of that image moving independently. It is also what
- * the waterfall card asks for directly — card-level blocks, because whole-page
+ * at all: a screenshot is one flat image, so "components falling from above"
+ * has to be regions of that image moving independently. It is also what the
+ * waterfall card asks for directly — card-level blocks, because whole-page
  * slices scroll past faster than anyone can read them.
  */
 type Rect = {x: number; y: number; w: number; h: number};
@@ -92,6 +128,7 @@ const Slice: React.FC<{
   style?: React.CSSProperties;
 }> = ({src, rect, w, style}) => {
   const k = w / rect.w;
+  const p = PLATES[src];
   return (
     <div
       style={{
@@ -102,8 +139,25 @@ const Slice: React.FC<{
         // shorthand to set a backing colour resets `background-image` to none,
         // and the slice renders as an empty rectangle with a border on it
         backgroundImage: `url(${staticFile(src)})`,
-        backgroundSize: `${SRC.w * k}px ${SRC.h * k}px`,
+        backgroundSize: `${p.w * k}px ${p.h * k}px`,
         backgroundPosition: `${-rect.x * k}px ${-rect.y * k}px`,
+      }}
+    />
+  );
+};
+
+/** A whole page, with the window's own corners clipped off. */
+const Page: React.FC<{src: string; w: number; style?: React.CSSProperties}> = ({src, w, style}) => {
+  const p = PLATES[src];
+  return (
+    <Img
+      src={staticFile(src)}
+      style={{
+        width: w,
+        height: (p.h / p.w) * w,
+        display: 'block',
+        borderRadius: PAGE_RADIUS,
+        ...style,
       }}
     />
   );
@@ -172,41 +226,42 @@ const fall = (f: number, start: number, dur: number) => {
 };
 
 /* ================================================================== */
-/* Slice tables, in source coordinates of the 1280x872 plates          */
+/* Slice tables. LEDGER_* are in the 2560 plate; everything else 1920.  */
 
 const LEDGER_CARDS: Rect[] = [
-  {x: 316, y: 184, w: 276, h: 282},
-  {x: 618, y: 184, w: 276, h: 282},
-  {x: 922, y: 184, w: 276, h: 282},
-  {x: 316, y: 488, w: 276, h: 282},
-  {x: 618, y: 488, w: 276, h: 282},
-  {x: 922, y: 488, w: 276, h: 282},
+  {x: 577, y: 338, w: 603, h: 603},
+  {x: 1233, y: 338, w: 603, h: 603},
+  {x: 1889, y: 338, w: 603, h: 603},
+  {x: 577, y: 995, w: 603, h: 603},
+  {x: 1233, y: 995, w: 603, h: 603},
+  {x: 1889, y: 995, w: 603, h: 603},
 ];
-const LEDGER_HEAD: Rect = {x: 316, y: 110, w: 882, h: 60};
-const SIDEBAR: Rect = {x: 52, y: 34, w: 236, h: 768};
+/** Title, count pill, subtitle and the SYNTHESIZE SPAWN button, in one band. */
+const LEDGER_HEAD: Rect = {x: 577, y: 176, w: 1918, h: 124};
+const SIDEBAR: Rect = {x: 8, y: 8, w: 500, h: 1664};
 
 /**
  * Tiles for the ground shot, all at 2:1.
  *
- * The first version cut these along the equip dialog's own regions — a header
- * band, a scope band, three columns — and every one of them came out a
- * different shape. Laid on a plane raked past fifty degrees, a 66-pixel-tall
- * band foreshortens to a bright line: six tiles went past the camera and not
- * one of them read as an interface. Everything on the runway is now the same
- * aspect, so the rake affects all of them equally and the eye has something
- * constant to measure the travel against.
+ * The first version cut these along one dialog's own regions — a header band, a
+ * scope band, three columns — and every one came out a different shape. Laid on
+ * a plane raked past fifty degrees, a 66-pixel band foreshortens to a bright
+ * line: six tiles went past the camera and not one read as an interface.
+ * Everything on the runway is now the same aspect, so the rake affects all of
+ * them equally and the eye has something constant to measure the travel against.
  *
- * The equip dialog still carries two of the six, because it is the page that
- * shows what `SPAWNS.equip` claims — skills, tools and MCP servers as three
- * separate columns you tick — and that is the caption on this shot.
+ * All six now come from *different* pages, which is the other half of the fix:
+ * six crops of one dialog is one tile shown six times, however well it moves.
+ * They are the four Capability tabs plus the two dialogs, because the caption on
+ * this shot is `SPAWNS.equip` and these are the pages that show it.
  */
 const TILES: {src: string; rect: Rect}[] = [
-  {src: 'rec/spawn.jpg', rect: {x: 180, y: 120, w: 900, h: 450}}, // identity + scope + columns
-  {src: 'rec/forge.jpg', rect: {x: 320, y: 400, w: 880, h: 440}}, // skill packs, row after row
-  {src: 'rec/spawn.jpg', rect: {x: 180, y: 280, w: 900, h: 450}}, // SKILLS · TOOLS · MCPS
-  {src: 'rec/ledger.jpg', rect: {x: 310, y: 180, w: 890, h: 445}}, // the roster
-  {src: 'rec/forge.jpg', rect: {x: 320, y: 150, w: 880, h: 440}}, // import from a repo
-  {src: 'rec/replay.jpg', rect: {x: 360, y: 180, w: 560, h: 280}}, // what a run actually did
+  {src: 'rec/tools.jpg', rect: {x: 440, y: 300, w: 1420, h: 710}}, // tools, wired and not
+  {src: 'rec/skills.jpg', rect: {x: 440, y: 600, w: 1420, h: 710}}, // skill packs, row after row
+  {src: 'rec/mcp.jpg', rect: {x: 440, y: 330, w: 1420, h: 710}}, // MCP servers, one-click
+  {src: 'rec/equip.jpg', rect: {x: 226, y: 500, w: 1470, h: 735}}, // SKILLS · TOOLS · MCPS, ticked
+  {src: 'rec/forge.jpg', rect: {x: 440, y: 195, w: 1420, h: 710}}, // forge your own
+  {src: 'rec/create.jpg', rect: {x: 226, y: 540, w: 1470, h: 735}}, // seeds · skills · tools
 ];
 
 /* ================================================================== */
@@ -234,9 +289,10 @@ const TILES: {src: string; rect: Rect}[] = [
 /* The hero card's home position, in screen pixels, at PAGE_K. Everything in the
    shot — the lift, the seat, the beam, the push origin — is derived from this
    one rectangle rather than restated, because they have to agree exactly. */
-const PAGE_K = 1500 / SRC.w;
-const PAGE_L = 960 - (SRC.w * PAGE_K) / 2;
-const PAGE_T = 540 - (SRC.h * PAGE_K) / 2;
+const LEDGER_SRC = PLATES['rec/ledger.jpg'];
+const PAGE_K = 1520 / LEDGER_SRC.w;
+const PAGE_L = 960 - (LEDGER_SRC.w * PAGE_K) / 2;
+const PAGE_T = 540 - (LEDGER_SRC.h * PAGE_K) / 2;
 const HERO = LEDGER_CARDS[0];
 const HERO_BOX = {
   left: PAGE_L + HERO.x * PAGE_K,
@@ -247,13 +303,26 @@ const HERO_BOX = {
 const HERO_CX = HERO_BOX.left + HERO_BOX.w / 2;
 const HERO_CY = HERO_BOX.top + HERO_BOX.h / 2;
 
+/* The card is the first of six, so it sits high and left on the page. Scaling
+   about its own centre keeps it exactly there, and at the full push that runs it
+   off the top of the frame — so the stage slides by this much as the camera
+   moves in, and the card ends up composed rather than merely enlarged. */
+const HERO_TO = {x: 900, y: 575};
+const HERO_DX = HERO_TO.x - HERO_CX;
+const HERO_DY = HERO_TO.y - HERO_CY;
+
+/* The lift happens inside the scaled layer, so on screen it is this times the
+   zoom — 44 at 2.42x is already a 106-pixel rise. The first pass kept the 96
+   that suited a 1.6x push and floated the card's head clean out of frame. */
+const LIFT_PX = 44;
+
 const STOPS = [
   {x: 1480, y: 300, r: 460},
   {x: 1180, y: 820, r: 500},
   {x: 620, y: 760, r: 380},
   // at lock the pool is the pushed card plus a margin, and no more: a pool wide
   // enough to catch the neighbouring cards is not a spotlight, it is a lamp
-  {x: HERO_CX, y: HERO_CY, r: 190},
+  {x: HERO_CX, y: HERO_CY, r: 330},
 ];
 
 const Spotlight: React.FC<{f: number}> = ({f}) => {
@@ -264,24 +333,41 @@ const Spotlight: React.FC<{f: number}> = ({f}) => {
   const i = Math.min(STOPS.length - 1, Math.floor(leg));
   const j = Math.min(STOPS.length - 1, i + 1);
   const t = leg - i;
-  const px = STOPS[i].x + (STOPS[j].x - STOPS[i].x) * t;
-  const py = STOPS[i].y + (STOPS[j].y - STOPS[i].y) * t;
+
+  // Camera: static wide, then the push onto the card and a three-quarter.
+  //
+  // 0.94 → 2.42 is the 2.6x the shot card actually asks for, which the film
+  // could not afford when it was cut from a 480p recording — the push stopped
+  // at 1.62 and even that was a 2.2x upscale. Off a 2560 Retina plate the page
+  // sits at 0.59x, so the card lands at about 1.45x of native: the move is the
+  // one the card specifies AND it is sharper than the compromise was.
+  const zoom = interpolate(f, [0, 32, 60], [0.94, 0.94, 2.42], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.4, 0, 0.2, 1),
+  });
+  const rotY = interpolate(f, [32, 60], [0, 22], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.4, 0, 0.2, 1),
+  });
+  // the reframing rides the same curve as the push, so it is one camera move
+  const dolly = interpolate(f, [32, 60], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.4, 0, 0.2, 1),
+  });
+  const tx = HERO_DX * dolly;
+  const ty = HERO_DY * dolly;
+
+  // the pool travels with the stage once the camera starts moving, or the light
+  // stays where the card used to be
+  const px = STOPS[i].x + (STOPS[j].x - STOPS[i].x) * t + tx;
+  const py = STOPS[i].y + (STOPS[j].y - STOPS[i].y) * t + ty;
   const lockPulse = ramp(f, 48, 3) * (1 - ramp(f, 51, 9));
   // the pool opens up as the camera pushes, so the card does not outgrow it
   const grow = ramp(f, 34, 46);
   const pr = (STOPS[i].r + (STOPS[j].r - STOPS[i].r) * t) * (1 + lockPulse * 0.08 + grow * 0.6);
-
-  // camera: static wide, then a modest push onto the card and a three-quarter
-  const zoom = interpolate(f, [0, 32, 60], [0.94, 0.94, 1.62], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.bezier(0.4, 0, 0.2, 1),
-  });
-  const rotY = interpolate(f, [32, 60], [0, 18], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.bezier(0.4, 0, 0.2, 1),
-  });
 
   // rise (with overshoot) → hover (sine bob) → reseat. ~98f lock to landing.
   const rise = ramp(f, 52, 10, Easing.bezier(0.2, 1.25, 0.3, 1));
@@ -294,20 +380,15 @@ const Spotlight: React.FC<{f: number}> = ({f}) => {
     <AbsoluteFill style={{perspective: 1500}}>
       <AbsoluteFill
         style={{
-          transform: `scale(${zoom}) rotateY(${rotY}deg)`,
+          transform: `translate(${tx}px, ${ty}px) scale(${zoom}) rotateY(${rotY}deg)`,
           transformOrigin: `${(HERO_CX / 1920) * 100}% ${(HERO_CY / 1080) * 100}%`,
         }}
       >
         {/* the page the card belongs to */}
-        <Img
-          src={staticFile('rec/ledger.jpg')}
-          style={{
-            position: 'absolute',
-            left: PAGE_L,
-            top: PAGE_T,
-            width: SRC.w * PAGE_K,
-            height: SRC.h * PAGE_K,
-          }}
+        <Page
+          src="rec/ledger.jpg"
+          w={LEDGER_SRC.w * PAGE_K}
+          style={{position: 'absolute', left: PAGE_L, top: PAGE_T}}
         />
 
         {/* where it came from: the seat breathes while the card is up */}
@@ -330,7 +411,7 @@ const Spotlight: React.FC<{f: number}> = ({f}) => {
             position: 'absolute',
             left: HERO_BOX.left,
             top: HERO_BOX.top,
-            transform: `translateY(${-lift * 96 + bob}px) scale(${press})`,
+            transform: `translateY(${-lift * LIFT_PX + bob}px) scale(${press})`,
             filter: `drop-shadow(0 ${44 * lift}px ${70 * lift}px rgba(0,0,0,${0.75 * lift}))`,
           }}
         >
@@ -382,7 +463,7 @@ const Spotlight: React.FC<{f: number}> = ({f}) => {
   return (
     <AbsoluteFill style={{background: '#020407', overflow: 'hidden'}}>
       {/* everything, pressed down to what a room with the lights off looks like */}
-      <AbsoluteFill style={{filter: 'brightness(0.24) saturate(0.75)'}}>{stage}</AbsoluteFill>
+      <AbsoluteFill style={{filter: 'brightness(0.16) saturate(0.72)'}}>{stage}</AbsoluteFill>
       {/* and the same thing again at full strength, but only inside the pool */}
       <AbsoluteFill
         style={{
@@ -525,29 +606,21 @@ const Forerun: React.FC<{f: number}> = ({f}) => {
               filter: `brightness(${0.22 + lit * 0.78})`,
             }}
           >
-            {/* sidebar drops first, then the header, then the cards in reading
-                order — starts staggered, falls overlapping. */}
-            <div style={{position: 'absolute', left: 0, top: 0}}>
-              <FloatWrap h={fall(f, 34, 26) * 140}>
-                <Slice src="rec/ledger.jpg" rect={SIDEBAR} w={214} />
-              </FloatWrap>
-            </div>
-            <div style={{position: 'absolute', left: 236, top: 26}}>
-              <FloatWrap h={fall(f, 44, 26) * 140}>
-                <Slice src="rec/ledger.jpg" rect={LEDGER_HEAD} w={880} />
-              </FloatWrap>
-            </div>
-            {LEDGER_CARDS.map((r, k) => (
-              <div
-                key={k}
-                style={{
-                  position: 'absolute',
-                  left: 236 + (k % 3) * 298,
-                  top: 110 + Math.floor(k / 3) * 304,
-                }}
-              >
-                <FloatWrap h={fall(f, 52 + k * 7, 28) * 150}>
-                  <Slice src="rec/ledger.jpg" rect={r} w={286} />
+            {/* An empty spawn, being raised. Title first, then the mission
+                field, then the three columns you equip it from — starts
+                staggered, falls overlapping.
+
+                This shot used to assemble the ledger, which was the roster
+                already built. Saying "a roster you raise" over six finished
+                cards is showing the result and claiming the act; the blank
+                CREATE dialog — no name, no domain, an empty mission box and a
+                seed library to draft from — is the act itself, and it is the
+                one page in the product that proves the film's central claim
+                instead of asserting it. */}
+            {CREATE_PARTS.map((c, k) => (
+              <div key={k} style={{position: 'absolute', left: c.left, top: c.top}}>
+                <FloatWrap h={fall(f, 30 + k * 6, 24) * 145}>
+                  <Slice src="rec/create.jpg" rect={c.rect} w={c.w} />
                 </FloatWrap>
               </div>
             ))}
@@ -555,10 +628,38 @@ const Forerun: React.FC<{f: number}> = ({f}) => {
         </div>
       </AbsoluteFill>
 
-      <Caption f={f} at={88} text="A roster you build, not one that ships." />
+      <Caption f={f} at={88} text="Not a roster that ships. One you raise." />
     </AbsoluteFill>
   );
 };
+
+/**
+ * The CREATE dialog, taken apart along its own seams and laid back out at
+ * k = 0.74 inside the neon frame's 1160x784 interior. Positions are the
+ * dialog's real geometry scaled, not a new arrangement — the point of the shot
+ * is that the thing assembling is a page from the product, so if the pieces
+ * land somewhere the page never puts them, the shot is a collage instead.
+ */
+const CREATE_K = 0.74;
+const CREATE_ORIGIN = {x: 194, y: 104};
+const CREATE_PARTS = (
+  [
+    {x: 194, y: 104, w: 1529, h: 118}, // Untitled spawn · CREATE
+    {x: 226, y: 262, w: 1465, h: 126}, // SCOPE / MISSION — an empty box
+    {x: 226, y: 405, w: 1465, h: 62}, // Name · Domain · RECOMMEND
+    {x: 226, y: 477, w: 1465, h: 55}, // Role / persona
+    {x: 226, y: 553, w: 360, h: 190}, // SEEDS — the persona library to draft from
+    {x: 598, y: 553, w: 352, h: 475}, // SKILLS
+    {x: 970, y: 553, w: 352, h: 475}, // TOOLS
+    {x: 1344, y: 553, w: 346, h: 81}, // MCPS
+    {x: 1470, y: 1080, w: 240, h: 62}, // CANCEL · CREATE
+  ] as Rect[]
+).map((rect) => ({
+  rect,
+  w: rect.w * CREATE_K,
+  left: 14 + (rect.x - CREATE_ORIGIN.x) * CREATE_K,
+  top: 8 + (rect.y - CREATE_ORIGIN.y) * CREATE_K,
+}));
 
 /* ================================================================== */
 /* 3. graze-face-tour                                                  */
@@ -639,9 +740,11 @@ const Graze: React.FC<{f: number}> = ({f}) => {
                         borderRadius: 12,
                         border: '1px solid #2C3846',
                         backgroundColor: '#0B0F15',
-                        // the scene has no light of its own; the plates are dark
-                        // UI on a dark set and need lifting to read at all
-                        filter: 'brightness(1.4)',
+                        // A nudge, not a lift. The 480p plates this film was
+                        // first cut from were dark enough to need 1.4x; the
+                        // Retina screenshots are already exposed, and the same
+                        // number blows the amber chips out to flat yellow.
+                        filter: 'brightness(1.12)',
                         boxShadow: '0 0 60px rgba(120,160,255,0.06)',
                       }}
                     />
@@ -688,11 +791,13 @@ const Graze: React.FC<{f: number}> = ({f}) => {
  * work", and that the angle is 60 degrees exactly after three rounds of
  * argument about it.
  */
-// Four dense pages. The Capability Library's landing state is mostly empty set,
-// and an empty page sliding past at this angle is a dead second.
-const GLIDE_PAGES = ['rec/home.jpg', 'rec/forge.jpg', 'rec/replay.jpg', 'rec/diag.jpg'];
+// Four dense pages, and four different ones — ask, memory, the live thread with
+// its diagnostics rail, and the numbers. The Capability Library's landing state
+// is mostly empty set; an empty page sliding past at this angle is a dead
+// second, and the tabs behind it already carry the graze.
+const GLIDE_PAGES = ['rec/home.jpg', 'rec/brain.jpg', 'rec/chat.jpg', 'rec/diag.jpg'];
 const GLIDE_W = 1180;
-const GLIDE_H = 804;
+const GLIDE_H = (1260 / 1920) * GLIDE_W;
 const GLIDE_GAP = 90;
 const GLIDE_STEP = GLIDE_W + GLIDE_GAP;
 
@@ -727,9 +832,14 @@ const Glide: React.FC<{f: number}> = ({f}) => {
     >
       {GLIDE_PAGES.map((p, k) => (
         <div key={p} style={{position: 'relative', flexShrink: 0}}>
-          <Img src={staticFile(p)} style={{width: GLIDE_W, height: GLIDE_H, display: 'block'}} />
+          <Page src={p} w={GLIDE_W} />
           <div
-            style={{position: 'absolute', inset: 0, border: `1px solid ${k % 2 ? N.neon2 : N.neon}55`}}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: PAGE_RADIUS,
+              border: `1px solid ${k % 2 ? N.neon2 : N.neon}55`,
+            }}
           />
         </div>
       ))}
@@ -796,41 +906,42 @@ const Glide: React.FC<{f: number}> = ({f}) => {
  * padding.
  */
 const COLS: {loop: number; dir: number; src: string; rects: Rect[]}[] = [
-  // All three columns crop at roughly the same width, so all three land at the
-  // same zoom on the wall. A single ledger card is 276 source pixels; shown in
-  // a 560-wide column beside two 880-wide crops it is twice their scale, and
-  // the wall stops reading as one surface.
+  // Every column crops at roughly the same fraction of its plate's width, so
+  // all three land at the same zoom on the wall. A single ledger card is 603
+  // pixels of a 2560 plate; shown in a 560-wide column beside two crops taken
+  // 1420 wide off a 1920 plate, it is twice their scale and the wall stops
+  // reading as one surface.
   {
     loop: 360,
     dir: -1,
     src: 'rec/ledger.jpg',
     rects: [
-      {x: 316, y: 176, w: 882, h: 300},
-      {x: 316, y: 480, w: 882, h: 300},
-      {x: 316, y: 104, w: 882, h: 300},
-      {x: 316, y: 330, w: 882, h: 300},
+      {x: 577, y: 320, w: 1918, h: 640},
+      {x: 577, y: 980, w: 1918, h: 640},
+      {x: 577, y: 170, w: 1918, h: 640},
+      {x: 577, y: 650, w: 1918, h: 640},
     ],
   },
   {
     loop: 270,
     dir: 1,
-    src: 'rec/forge.jpg',
+    src: 'rec/skills.jpg',
     rects: [
-      {x: 330, y: 180, w: 880, h: 150},
-      {x: 330, y: 350, w: 880, h: 150},
-      {x: 330, y: 520, w: 880, h: 150},
-      {x: 330, y: 690, w: 880, h: 150},
+      {x: 440, y: 610, w: 1420, h: 474},
+      {x: 440, y: 1080, w: 1420, h: 474},
+      {x: 440, y: 195, w: 1420, h: 474},
+      {x: 440, y: 845, w: 1420, h: 474},
     ],
   },
   {
     loop: 420,
     dir: -1,
-    src: 'rec/spawn.jpg',
+    src: 'rec/mcp.jpg',
     rects: [
-      {x: 194, y: 340, w: 890, h: 170},
-      {x: 194, y: 510, w: 890, h: 170},
-      {x: 194, y: 205, w: 890, h: 110},
-      {x: 194, y: 120, w: 890, h: 110},
+      {x: 440, y: 336, w: 1420, h: 474},
+      {x: 440, y: 770, w: 1420, h: 474},
+      {x: 440, y: 195, w: 1420, h: 474},
+      {x: 440, y: 1000, w: 1420, h: 474},
     ],
   },
 ];
@@ -884,7 +995,7 @@ const Waterfall: React.FC<{f: number}> = ({f}) => {
                         style={{
                           borderRadius: 12,
                           border: '1px solid #232D3B',
-                          filter: 'brightness(1.35)',
+                          filter: 'brightness(1.1)',
                           boxShadow: '0 18px 40px rgba(0,0,0,0.5)',
                         }}
                       />
@@ -921,8 +1032,8 @@ const Waterfall: React.FC<{f: number}> = ({f}) => {
  * shot's full stop: the audience stops watching a performance and starts
  * looking at an interface.
  */
-/** The set has no light; the plates are dark UI and need lifting to read. */
-const SKIM_LIFT: React.CSSProperties = {filter: 'brightness(1.3)'};
+/** A nudge to separate the cards from the set — see the graze on the number. */
+const SKIM_LIFT: React.CSSProperties = {filter: 'brightness(1.1)'};
 
 const Skim: React.FC<{f: number}> = ({f}) => {
   const stand = ramp(f, 46, 58, Easing.bezier(0.3, 0, 0.2, 1));
@@ -1011,6 +1122,37 @@ const Skim: React.FC<{f: number}> = ({f}) => {
 /* 7. neon-frame-orbit-drop                                            */
 
 /**
+ * The Automation page, in four pieces, at ONE scale.
+ *
+ * Every piece is placed by scaling its real position on the page, exactly as
+ * the CREATE dialog is in the forerun. The first version sized each block by
+ * eye instead, and one of them — a 348-wide crop asked to render 380 wide —
+ * came out 743 pixels tall inside an 826-pixel frame, landed on top of its
+ * neighbour and pushed a third outside the neon frame entirely. Deriving the
+ * layout makes that class of mistake impossible to write.
+ *
+ * The crop is the page's content band rather than the whole page: below the
+ * automation panel the real page is empty, and reproducing 300 pixels of
+ * faithful nothing in a four-second shot is not honesty, it is a dead corner.
+ */
+const AUTO_BAND = {x: 0, y: 96, w: 1900, h: 829}; // the part of the page with things on it
+const AUTO_K = 1220 / AUTO_BAND.w;
+const AUTO_TOP = (826 - AUTO_BAND.h * AUTO_K) / 2; // centred in the frame's interior
+const AUTO_PARTS = (
+  [
+    {x: 8, y: 140, w: 392, h: 785}, // the nav, all the way down to System Settings
+    {x: 410, y: 100, w: 1480, h: 128}, // Settings · what it remembers and what runs on its own
+    {x: 424, y: 240, w: 366, h: 690}, // the settings nav, Automation selected
+    {x: 800, y: 240, w: 1092, h: 680}, // AUTOMATION — every switch off, and it says so
+  ] as Rect[]
+).map((rect) => ({
+  rect,
+  w: rect.w * AUTO_K,
+  left: (rect.x - AUTO_BAND.x) * AUTO_K,
+  top: AUTO_TOP + (rect.y - AUTO_BAND.y) * AUTO_K,
+}));
+
+/**
  * `neon-frame-orbit-drop`. The frame is drawn, then the camera arcs from a
  * left-side view to a right-side one while every element in the page leaves,
  * falls and lands ON THE SAME FRAME.
@@ -1073,25 +1215,20 @@ const OrbitDrop: React.FC<{f: number}> = ({f}) => {
               background: '#080B10',
             }}
           >
-            <div style={{position: 'absolute', left: 0, top: 20}}>
-              <FloatWrap h={h}>
-                <Slice src="rec/diag.jpg" rect={SIDEBAR} w={226} />
-              </FloatWrap>
-            </div>
-            {/* Diagnostics, in three bands. The bands skip the run-scoped tiles
-                in the middle of that page on purpose: on a machine with one run
-                and no evals recorded they read "PASS RATE 0%", which is true and
-                meaningless, and unreadably small numbers are exactly what a
-                4-second orbit shot should not be arguing about. */}
-            {[
-              {top: 25, r: {x: 300, y: 100, w: 916, h: 160}}, // tabs, window, headline numbers
-              {top: 254, r: {x: 300, y: 250, w: 916, h: 130}}, // latency histogram
-              // stops at 805: below that the capture is the desktop, not the app
-              {top: 451, r: {x: 300, y: 600, w: 916, h: 205}}, // usage · daily tokens · providers
-            ].map((b) => (
-              <div key={b.top} style={{position: 'absolute', left: 248, top: b.top}}>
+            {/* The Automation page, arriving all at once.
+
+                This shot closed on Diagnostics until the screenshots arrived,
+                and Diagnostics was always a compromise: on a machine with one
+                run and no evals recorded, its tiles read "PASS RATE 0%" — true,
+                meaningless, and not what you want a viewer squinting at over
+                the last line of the film. Automation says the thing the caption
+                claims instead of sitting next to it. Everything that can spend
+                money or write to memory is on this page, every switch is off,
+                and the page says so in the product's own words. */}
+            {AUTO_PARTS.map((b, k) => (
+              <div key={k} style={{position: 'absolute', left: b.left, top: b.top}}>
                 <FloatWrap h={h}>
-                  <Slice src="rec/diag.jpg" rect={b.r} w={950} />
+                  <Slice src="rec/auto.jpg" rect={b.rect} w={b.w} />
                 </FloatWrap>
               </div>
             ))}

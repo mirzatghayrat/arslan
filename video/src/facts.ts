@@ -69,6 +69,16 @@ export const SPAWNS = {
    */
   howMany: 'as many as you raise',
   equip: 'tools · SKILL.md skill packs · MCP servers',
+  /**
+   * The CREATE dialog offers a searchable persona-seed library to draft from.
+   * `server/services/persona_seed_service.py` IMPORTS those seeds from the
+   * agency-agents repository at runtime, so the count on screen is whatever a
+   * given install has pulled — it is not a shipped constant. F6 shows the
+   * dialog, seed count and all, because a screenshot of the real client is
+   * allowed to show one machine's state; no caption anywhere may quote the
+   * number as if the product shipped with it.
+   */
+  seeds: 'drafted from a persona seed library, imported not bundled',
   /** ARCHITECTURE.md: the router's bias. */
   doerFirst: 'if Arslan can do it itself, it does — routing is not the default',
 } as const;
@@ -135,6 +145,16 @@ export const SAFETY = {
   memoryInbox: 'memory the model wants to delete goes to an inbox, never applies silently',
   /** README: your machine, your keys, zero third-party servers in the middle. */
   local: 'your machine · your keys · zero third-party servers in the middle',
+  /**
+   * System Settings → Automation, verbatim from the shipped page: "They are all
+   * off by default and none of them changes anything without you", and for
+   * background tidying, "Proposals land in the second brain's inbox for you to
+   * accept or dismiss — nothing is written on its own". The same page warns, in
+   * amber, that auto-evolution spends API credits and currently has no cap.
+   * That a product ships the warning against itself is the claim; F6 closes on
+   * the page rather than paraphrasing it.
+   */
+  automationOff: 'everything that can spend or write is off by default',
 } as const;
 
 /* ------------------------------------------------------------------ */
