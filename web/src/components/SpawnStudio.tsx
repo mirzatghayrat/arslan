@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useDismissable } from "../hooks/useDismissable";
 import DiscardChangesBar from "./DiscardChangesBar";
+import { spawnStudioDirty } from "../lib/dirty";
 import { useTranslation } from "react-i18next";
 import {
   Wrench, BookOpen, Boxes, Check, Lock, Save, X, Sparkles,
@@ -101,17 +102,10 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
   // the loaded spawn: they belong to CREATE. Edit mode edits the equipment
   // sets, seeded at load from `d.equipment` (:118-119); `persona_role` is
   // read-only display.
-  const dirty = useMemo(() => {
-    if (mode === "create") {
-      return Boolean(name.trim() || description.trim() || domain.trim()
-        || selectedToolsets.size || selectedSkills.size);
-    }
-    if (!baselineEquip) return false;      // nothing loaded yet = nothing to lose
-    const same = (a: Set<string>, b: Set<string>) =>
-      a.size === b.size && [...a].every((k) => b.has(k));
-    return !same(selectedToolsets, baselineEquip.toolsets)
-      || !same(selectedSkills, baselineEquip.skills);
-  }, [mode, baselineEquip, name, description, domain, selectedToolsets, selectedSkills]);
+  const dirty = useMemo(() => spawnStudioDirty({
+    mode, name, description, domain,
+    toolsets: selectedToolsets, skills: selectedSkills, baseline: baselineEquip,
+  }), [mode, baselineEquip, name, description, domain, selectedToolsets, selectedSkills]);
 
   const requestClose = () => (dirty ? setConfirmingClose(true) : onClose());
   useDismissable<HTMLDivElement, HTMLDivElement>(true, requestClose, { outsideClick: false });

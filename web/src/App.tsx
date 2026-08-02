@@ -47,6 +47,8 @@ import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firs
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { useDismissable } from './hooks/useDismissable';
+import DiscardChangesBar from './components/DiscardChangesBar';
+import { createSpawnDirty } from './lib/dirty';
 
 interface ArslanThread {
   id: string;
@@ -446,11 +448,28 @@ export default function App() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
+  // Read-only ledger: nothing to lose. It had neither half — only the ✕.
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    showLedgerModal, () => setShowLedgerModal(false));
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [newSpawnName, setNewSpawnName] = useState('');
   const [newSpawnEmoji, setNewSpawnEmoji] = useState('🦊');
   const [newSpawnDomain, setNewSpawnDomain] = useState('');
   const [newSpawnDescription, setNewSpawnDescription] = useState('');
+  // ── create-spawn modal: editor rules (①A) ────────────────────────────────
+  // Dirty = any field typed. No baseline to diff against: the form starts empty
+  // (the emoji has a default and is not counted, or every open would be dirty).
+  const [confirmingCreateClose, setConfirmingCreateClose] = useState(false);
+  const createDirty = createSpawnDirty(newSpawnName, newSpawnDomain, newSpawnDescription);
+  const closeCreateModal = () => {
+    setConfirmingCreateClose(false);
+    setShowCreateModal(false);
+  };
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    showCreateModal,
+    () => (createDirty ? setConfirmingCreateClose(true) : closeCreateModal()),
+    { outsideClick: false },   // holds form input
+  );
 
   // Handle addition of a brand new Orchestrator thread context
   const handleAddArslanThread = () => {
@@ -1364,14 +1383,22 @@ export default function App() {
               </div>
 
             </form>
+              {confirmingCreateClose && (
+                <DiscardChangesBar
+                  onDiscard={closeCreateModal}
+                  onCancel={() => setConfirmingCreateClose(false)}
+                />
+              )}
           </div>
         </div>
       )}
 
       {/* Spawns Ledger Invitation Modal */}
       {showLedgerModal && (
-        <div id="spawns-ledger-modal" className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="w-full max-w-4xl h-[80vh] bg-surface/95 border border-border-strong rounded-2xl shadow-2xl overflow-hidden shadow-primary/25 flex flex-col">
+        <div id="spawns-ledger-modal" onClick={() => setShowLedgerModal(false)}
+             className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div onClick={(e) => e.stopPropagation()}
+               className="w-full max-w-4xl h-[80vh] bg-surface/95 border border-border-strong rounded-2xl shadow-2xl overflow-hidden shadow-primary/25 flex flex-col">
 
             {/* Header */}
             <div className="px-6 py-4.5 border-b border-border/80 flex items-center justify-between bg-background shrink-0">

@@ -16,6 +16,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Check, Download, ChevronDown, ChevronUp, Eye, X, FileCode } from 'lucide-react';
 import Markdown from './Markdown';
+import { useDismissable } from "../hooks/useDismissable";
 
 const LONG_CHARS = 1800;      // prose longer than this collapses in-bubble AND gets .md/.html downloads
 const COPY_MIN_CHARS = 240;   // shorter messages don't get a standalone copy row (keeps chat clean)
@@ -165,6 +166,9 @@ export function HtmlDocCard({
 }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState(false);
+  // Read-only viewer: nothing to lose, so it closes on anything. It already
+  // closed on the backdrop; Escape was the missing half.
+  useDismissable<HTMLDivElement, HTMLDivElement>(preview, () => setPreview(false));
   const [copied, setCopied] = useState(false);
   const kb = Math.max(1, Math.round((bytes ?? html.length) / 1024));
 

@@ -34,9 +34,21 @@ beforeEach(() => vi.clearAllMocks());
 const OVERLAYS = [
   { file: "components/MessageBody.tsx",     outsideCloses: true,  why: "read-only HTML preview — nothing to lose" },
   { file: "components/SpawnStudio.tsx",     outsideCloses: false, why: "holds an in-progress spawn edit (ruling ③A removed it)" },
-  { file: "components/GapFillModal.tsx",    outsideCloses: false, why: "holds form input" },
+  { file: "components/GapFillModal.tsx",    outsideCloses: false, why: "holds form input and drafts awaiting consent" },
   { file: "components/FirstRunWizard.tsx",  outsideCloses: false, why: "closing it skips setup" },
+  { file: "components/brain/NoteEditor.tsx",     outsideCloses: false, why: "holds unsaved note text" },
+  { file: "components/brain/BrainEntryDetail.tsx", outsideCloses: false, why: "sits over the graph — every graph interaction is an outside click" },
 ];
+
+/** Everything given Escape this round, and what kind of thing it is. */
+const ESCAPE_WIRED = [
+  ["components/SpawnStudio.tsx",            "editor — confirms when dirty"],
+  ["components/GapFillModal.tsx",           "editor — confirms when dirty"],
+  ["components/brain/NoteEditor.tsx",       "editor — confirms when dirty"],
+  ["components/MessageBody.tsx",            "read-only viewer"],
+  ["components/brain/BrainEntryDetail.tsx", "read-only rail"],
+  ["App.tsx",                               "ledger modal + create modal + the five proposal cards"],
+] as const;
 
 describe("the classification is recorded, not implied", () => {
   for (const o of OVERLAYS) {
@@ -61,6 +73,32 @@ describe("the classification is recorded, not implied", () => {
 // ---------------------------------------------------------------------------
 // Ruling ①A — Escape is safe in an editor
 // ---------------------------------------------------------------------------
+
+describe("everything classified got its Escape", () => {
+  for (const [file, kind] of ESCAPE_WIRED) {
+    it(`${file} (${kind})`, () => {
+      expect(read(file)).toContain("useDismissable");
+    });
+  }
+});
+
+describe("every editor confirms rather than discarding", () => {
+  // The three editors each compute dirty against a DIFFERENT baseline, because
+  // that is what they actually have: SpawnStudio diffs equipment sets against a
+  // load-time snapshot, NoteEditor diffs against the loaded note, GapFillModal
+  // has no baseline at all (empty is clean) and additionally counts drafts and
+  // in-flight work. Asserting a shared `isDirty` would have been asserting a
+  // fiction.
+  for (const f of ["components/SpawnStudio.tsx", "components/GapFillModal.tsx",
+                   "components/brain/NoteEditor.tsx"]) {
+    it(`${f} routes closing through a dirty check`, () => {
+      const src = read(f);
+      expect(src).toContain("DiscardChangesBar");
+      expect(src).toMatch(/setConfirmingClose\(true\)/);
+      expect(src).toContain("outsideClick: false");
+    });
+  }
+});
 
 describe("Escape in an editor", () => {
   it("asks before discarding when the editor is dirty", () => {

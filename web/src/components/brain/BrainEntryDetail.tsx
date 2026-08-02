@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { factCategoryLabel } from "./catLabel";
 import { X } from "lucide-react";
 import { ApiError, api, type BrainEntry, type BrainLeaf } from "../../api/client";
+import { useDismissable } from "../../hooks/useDismissable";
 
 /** Slide-in detail for a clicked brain node: real excerpt + provenance + usage.
  *
@@ -19,6 +20,10 @@ export default function BrainEntryDetail(
     children?: React.ReactNode;
   },
 ) {
+  // Read-only rail: nothing to lose, so Escape closes it. Outside-click stays
+  // OFF — it sits over the graph, and every graph interaction is an outside
+  // click; closing on those would make the rail unusable rather than dismissable.
+  useDismissable<HTMLDivElement, HTMLDivElement>(true, onClose, { outsideClick: false });
   const { t } = useTranslation();
   const [entry, setEntry] = useState<BrainEntry | null>(null);
   // 🔴 "not loaded yet" and "failed to load" used to be the SAME state (null), so a 404

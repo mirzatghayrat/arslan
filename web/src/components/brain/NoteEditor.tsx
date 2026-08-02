@@ -5,6 +5,8 @@ import { ApiError, api } from "../../api/client";
 import type { NoteDto, NoteSuggestDto } from "../../api/client.types";
 import { activeWikilink, insertWikilink, type WikilinkToken } from "../../lib/wikilinks";
 import { useDismissable } from "../../hooks/useDismissable";
+import DiscardChangesBar from "../DiscardChangesBar";
+import { noteDirty as isNoteDirty } from "../../lib/dirty";
 
 interface Props {
   noteId: number;
@@ -39,6 +41,21 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
   // What it genuinely lacked was ANY way to close it: no outside-click, no
   // Escape. It went away only when the `[[` token stopped matching or a row was
   // picked, so clicking elsewhere left it hanging over the text.
+  // ── Drawer dismissal, editor rules (①A) ────────────────────────────────
+  // Baseline is the LOADED note, which is the shape this editor actually has —
+  // unlike SpawnStudio, whose edit mode diffs equipment sets. Four editors,
+  // four baselines; there is no shared isDirty to lean on.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const noteDirty = isNoteDirty({
+    loaded: note ? { title: note.title ?? "", content: note.content ?? "", tags: note.tags ?? [] } : null,
+    title, content, tags,
+  });
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    !token,                       // while the [[ ]] picker is open, Escape belongs to IT
+    () => (noteDirty ? setConfirmingClose(true) : onClose()),
+    { outsideClick: false },      // holds unsaved note text
+  );
+
   const { anchorRef: wikilinkAnchorRef, floatingRef: wikilinkPanelRef } =
     useDismissable<HTMLDivElement, HTMLDivElement>(
       Boolean(token), () => setToken(null));
@@ -195,6 +212,13 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
               </div>
             )}
           </div>
+
+          {confirmingClose && (
+            <DiscardChangesBar
+              onDiscard={onClose}
+              onCancel={() => setConfirmingClose(false)}
+            />
+          )}
 
           <div className="note-editor__tags">
             {tags.map((t) => (

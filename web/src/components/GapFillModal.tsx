@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { evaluateRepo, generateSkill, createSkill, type EvalResult, type SkillDraft } from "../api/discovery";
 import { addMcpServer, connectMcpServer, exposeMcpServer } from "../api/mcp";
+import { useDismissable } from "../hooks/useDismissable";
+import DiscardChangesBar from "./DiscardChangesBar";
+import { gapFillDirty } from "../lib/dirty";
 
 export type GapFillKind = "discover_mcp" | "distill_skill";
 export type GapFillResult = { row: "tools" | "skills" | "mcps"; key: string };
@@ -34,6 +37,20 @@ export default function GapFillModal({ kind, gap, onDone }: Props) {
 
   // distill_skill draft (review/edit before create — the consent step).
   const [skillDraft, setSkillDraft] = useState<({ full_name: string } & SkillDraft) | null>(null);
+
+  // ── Editor rules (①A). Dirty = anything typed OR a draft awaiting consent.
+  // The drafts count because they are the review step: losing one means the
+  // evaluate call has to be paid for again. `busy` counts too — closing during
+  // an in-flight step would orphan it.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const dirty = gapFillDirty({
+    ref, busy, hasEvalResult: Boolean(evalRes), hasSkillDraft: Boolean(skillDraft), mcpDraft,
+  });
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    true,
+    () => (dirty ? setConfirmingClose(true) : onDone(null)),
+    { outsideClick: false },   // holds form input
+  );
 
   async function handleEvaluate() {
     const trimmed = ref.trim();
@@ -267,6 +284,12 @@ export default function GapFillModal({ kind, gap, onDone }: Props) {
               {busy ? t("gap_fill.working") : t("gap_fill.create_skill")}
             </button>
           </div>
+        )}
+      {confirmingClose && (
+          <DiscardChangesBar
+            onDiscard={() => onDone(null)}
+            onCancel={() => setConfirmingClose(false)}
+          />
         )}
       </div>
     </div>
