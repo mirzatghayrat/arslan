@@ -5,7 +5,7 @@ import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
-import {Glass, Glass15, GLASS_FRAMES, GLASS15_FRAMES} from './films/Glass';
+import {Glass, Glass15, Glass15V, GLASS_FRAMES, GLASS15_FRAMES} from './films/Glass';
 import {Press, PRESS_FRAMES} from './films/Press';
 import {Origin, ORIGIN_FRAMES} from './films/Origin';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
@@ -207,6 +207,19 @@ export const RemotionRoot: React.FC = () => (
       durationInFrames={GLASS15_FRAMES}
       fps={VIDEO.fps}
       width={2560}
+      height={1440}
+    />
+
+    {/* The same 15 in 3:4 for Xiaohongshu. A 16:9 note is shown letterboxed and
+        small in that feed; the mock-up maths is normalised to frame width, so a
+        taller frame keeps the machine the same size and gives it room above and
+        below instead of cropping it. */}
+    <Composition
+      id="F12-Glass15-RED"
+      component={Glass15V}
+      durationInFrames={GLASS15_FRAMES}
+      fps={VIDEO.fps}
+      width={1080}
       height={1440}
     />
 

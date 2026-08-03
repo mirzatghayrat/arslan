@@ -280,11 +280,23 @@ const Film: React.FC<{
   since: Record<string, number>;
   ctaAt: number;
   handoff: {at: number; to: string; len: number};
-}> = ({shots, since, ctaAt, handoff}) => {
+  /**
+   * Multiplies every shot's width. Below 1 the camera sits closer.
+   *
+   * A 3:4 frame is 44% narrower than 16:9 at the same height, and the mock-up
+   * maths is normalised to frame WIDTH — so reusing the landscape framing puts
+   * the machine at the same fraction of a much narrower frame, which is a much
+   * smaller machine, with the plate's own top and bottom edges showing as bands
+   * either side of it. Closing in fixes both at once: the screen fills the
+   * width and the glass covers the frame.
+   */
+  tighten?: number;
+}> = ({shots, since, ctaAt, handoff, tighten = 1}) => {
   const frame = useCurrentFrame();
   const {width, height} = useVideoConfig();
   const {shot, t} = shotAt(shots, frame);
-  const view = viewAt(shot, t);
+  const raw = viewAt(shot, t);
+  const view = tighten === 1 ? raw : {...raw, w: raw.w * tighten};
   const k = width / 1920;
 
   return (
@@ -422,5 +434,23 @@ export const Glass15: React.FC = () => (
     // The character gives way inside the pull-back rather than after it, so the
     // machine is already showing the client by the time it is fully revealed.
     handoff={{at: 92, to: 'rec/chat.jpg', len: 34}}
+  />
+);
+
+/**
+ * The 3:4 cut, for a Xiaohongshu feed. Same film, closer camera.
+ *
+ * A 16:9 note is shown letterboxed and small there, and small is fatal on a
+ * platform where the first frame is the whole pitch — so this is a reframe
+ * rather than a crop of the landscape render, which would have cut the screen
+ * in half on every shot.
+ */
+export const Glass15V: React.FC = () => (
+  <Film
+    shots={SHOTS_15}
+    since={SINCE_15}
+    ctaAt={380}
+    handoff={{at: 92, to: 'rec/chat.jpg', len: 34}}
+    tighten={0.6}
   />
 );
