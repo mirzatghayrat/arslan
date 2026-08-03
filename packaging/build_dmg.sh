@@ -195,26 +195,45 @@ if [ -n "$(find "$APP_PATH" \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqli
   exit 1
 fi
 
-# The launch clip, for the same reason and in the opposite direction: this one
-# must be PRESENT. It has to be asserted here because a missing clip is the one
-# defect in this feature that produces no symptom — the launch screen catches
-# the load failure and degrades to its pulsing dot, so the app starts normally
-# and looks deliberate. Nobody would report it, and the first sign would be
-# wondering why the animation never shipped.
+# The launch clip, for the same reason and in the opposite direction: it must
+# be PRESENT. A missing clip is the one defect in this feature that produces no
+# symptom — the launch screen catches the load failure and degrades to its
+# pulsing dot, so the app starts normally, looks deliberate, and nobody reports
+# anything.
 #
-# Derived from the page rather than hardcoded, so renaming the asset cannot
-# leave this checking a filename that no longer matters.
+# 🔴 The first version of this check looked for the file inside Arslan.app and
+# failed the v0.1.19 build. It was the CHECK that was wrong: Tauri embeds
+# everything under frontendDist into the executable rather than copying it into
+# Resources (measured against the shipped v0.1.18 — its .app contains no loose
+# splash files, and its binary carries the frontendDist path). Probing for a
+# file while the consumer reads an embedded blob is a false negative, and a
+# false negative here blocks a release that was fine.
+#
+# So this asserts what can actually be asserted at each layer:
+#   HARD  — the clip is on disk where tauri build will pick it up. This is the
+#           real regression risk (renamed, deleted, or never committed).
+#   SOFT  — the asset key survives into the binary. Reported, not enforced,
+#           because Tauri may compress the embedded key table; a check whose
+#           failure mode is unknown must not be allowed to fail a release.
 SPLASH_HTML="$DESKTOP/splash/index.html"
-CLIP_NAME="$(sed -n 's/.*<video[^>]*src="\([^"]*\)".*/\1/p' "$SPLASH_HTML" | head -1)"
+CLIP_NAME="$(sed -n 's/.*<video[^>]*data-clip="\([^"]*\)".*/\1/p' "$SPLASH_HTML" | head -1)"
 if [ -z "$CLIP_NAME" ]; then
   echo "ERROR: $SPLASH_HTML no longer references a launch clip" >&2
   exit 1
 fi
-if [ -z "$(find "$APP_PATH" -name "$CLIP_NAME" | head -1)" ]; then
-  echo "ERROR: the launch clip '$CLIP_NAME' is not inside $APP.app." >&2
-  echo "       The app would still start — the launch screen falls back to a" >&2
-  echo "       loading dot — which is exactly why this is checked here." >&2
+if [ ! -s "$DESKTOP/splash/$CLIP_NAME" ]; then
+  echo "ERROR: the launch clip '$CLIP_NAME' is missing or empty at $DESKTOP/splash/." >&2
+  echo "       tauri build embeds frontendDist, so it would ship without one and" >&2
+  echo "       the launch screen would silently fall back to a loading dot." >&2
   exit 1
+fi
+APP_BIN="$APP_PATH/Contents/MacOS/arslan-desktop"
+if [ -f "$APP_BIN" ] && LC_ALL=C grep -qa "$CLIP_NAME" "$APP_BIN"; then
+  echo "     launch clip embedded: $CLIP_NAME ($(du -h "$DESKTOP/splash/$CLIP_NAME" | cut -f1))"
+else
+  echo "     NOTE: '$CLIP_NAME' is on disk but its key was not found in the binary." >&2
+  echo "           Expected if Tauri compresses the embedded asset table; if the" >&2
+  echo "           animation is also missing at runtime, start here." >&2
 fi
 
 # --------------------------------------------------------------------------

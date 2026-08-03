@@ -83,7 +83,10 @@ describe("launch hand-off constants", () => {
 
   it("keeps the splash asset and the page that plays it in agreement", () => {
     const html = code(read("desktop/splash/index.html"));
-    const src = html.match(/<video[^>]*\bsrc="([^"]+)"/);
+    // data-clip, not src: the element's src is assigned at runtime from a blob
+    // built by fetching this file, because WebKit will not play media from a
+    // source that cannot serve byte ranges and tauri:// cannot.
+    const src = html.match(/<video[^>]*\bdata-clip="([^"]+)"/);
     expect(src, "the splash page no longer references a clip").not.toBeNull();
     // Throws if the file is missing — which is the whole point, since a missing
     // asset degrades to the pulsing-dot fallback and looks deliberate.

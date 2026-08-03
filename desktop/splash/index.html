@@ -74,7 +74,7 @@
 <div id="fallback">
   <div class="row"><span class="dot"></span><span>Starting Arslan…</span></div>
 </div>
-<video id="clip" muted playsinline autoplay preload="auto" src="arslan-splash.mp4"></video>
+<video id="clip" muted playsinline autoplay preload="auto" data-clip="arslan-splash.mp4"></video>
 <div id="slow">First launch sets up your database — this can take a moment.</div>
 <div id="failed"></div>
 
@@ -108,6 +108,18 @@
     clip.addEventListener('error', function () { abandonVideo('decode-error'); });
     clip.addEventListener('playing', function () { window.__arslanClipState = 'playing'; });
 
+    // The clip is fetched and handed to the element as a blob: URL rather than
+    // pointed at directly, and that is not indirection for its own sake.
+    //
+    // Tauri embeds everything under frontendDist INTO THE BINARY and serves it
+    // over the tauri:// protocol — verified against the shipped v0.1.18, whose
+    // .app contains no loose splash files at all. That protocol answers a whole
+    // GET fine, but WebKit will not play a <video> whose source cannot serve
+    // byte ranges, and it fails by simply never starting. A blob: URL is
+    // range-capable, so this converts one into the other: fetch pulls the body
+    // once (which the protocol does support), and the element then plays from
+    // something it is willing to seek in.
+
     // One retry before giving up: a rejection raised before the document has
     // settled is not the same as a policy that will refuse forever, and the
     // retry costs a tick on a path that is already waiting for a subprocess.
@@ -119,7 +131,15 @@
         else abandonVideo('autoplay-refused');
       });
     }
-    attempt(1);
+
+    fetch(clip.dataset.clip)
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(function (b) {
+        if (!b.size) throw new Error('empty clip');
+        clip.src = URL.createObjectURL(b);
+        attempt(1);
+      })
+      .catch(function () { abandonVideo('fetch-failed'); });
 
     // Only after a delay, so a normal fast start never shows it.
     setTimeout(function () { slow.classList.add('shown'); }, 5000);
