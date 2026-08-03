@@ -166,9 +166,16 @@ export function HtmlDocCard({
 }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState(false);
-  // Read-only viewer: nothing to lose, so it closes on anything. It already
-  // closed on the backdrop; Escape was the missing half.
-  useDismissable<HTMLDivElement, HTMLDivElement>(preview, () => setPreview(false));
+  // Read-only viewer: nothing to lose, so it closes on anything.
+  //
+  // 🔴 `outsideClick: false` here is not a contradiction — the backdrop's own
+  // onClick already handles clicking outside, and it does so with the geometry
+  // right. The document-level listener would need the refs bound to know what
+  // "inside" means, and unbound it treats EVERY click as outside, closing the
+  // preview the moment you click the content you opened it to read. Same defect
+  // as the ledger modal; both shipped in v0.1.17.
+  useDismissable<HTMLDivElement, HTMLDivElement>(
+    preview, () => setPreview(false), { outsideClick: false });
   const [copied, setCopied] = useState(false);
   const kb = Math.max(1, Math.round((bytes ?? html.length) / 1024));
 

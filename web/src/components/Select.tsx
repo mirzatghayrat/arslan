@@ -83,8 +83,8 @@ export default function Select({
   //  · Escape becomes DOCUMENT-level. It used to live on the trigger's own
   //    onKeyDown, so it worked only while the trigger still held focus —
   //    move focus into the list, or click the panel, and Escape did nothing.
-  const { anchorRef, floatingRef } = // floatingRef belongs to AnchoredPortal's own wrapper div, not the <ul> inside it.
-  useDismissable<HTMLDivElement, HTMLDivElement>(
+  // floatingRef belongs to AnchoredPortal's own wrapper div, not the <ul> inside it.
+  const { anchorRef, floatingRef } = useDismissable<HTMLDivElement, HTMLDivElement>(
     open, closePanel);
 
   // ── keyboard handling on the trigger ───────────────────────────────────

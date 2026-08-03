@@ -449,8 +449,25 @@ export default function App() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   // Read-only ledger: nothing to lose. It had neither half — only the ✕.
+  // 🔴 REGRESSION FIXED (shipped in v0.1.17, reported the same day).
+  //
+  // Two mistakes, and the second only bit because of the first:
+  //
+  //  1. I classified this as a "read-only viewer — nothing to lose" from its
+  //     markup. It is not: this is the "+ INVITE SPAWNS" surface, with a search
+  //     box and invite actions. Reading a modal's JSX does not tell you what it
+  //     is FOR.
+  //  2. The hook was called and its refs were never bound to anything, so
+  //     `inside()` answered false for every target and EVERY document mousedown
+  //     — including one on the search box — closed it. Spawns could not be
+  //     invited at all.
+  //
+  // Escape still closes it (deliberate, nothing is lost), the backdrop's own
+  // onClick still closes it (that IS an outside click), and the document-level
+  // outside-click is off because with a search box inside there is no version
+  // of it that does not fight the user.
   useDismissable<HTMLDivElement, HTMLDivElement>(
-    showLedgerModal, () => setShowLedgerModal(false));
+    showLedgerModal, () => setShowLedgerModal(false), { outsideClick: false });
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [newSpawnName, setNewSpawnName] = useState('');
   const [newSpawnEmoji, setNewSpawnEmoji] = useState('🦊');
