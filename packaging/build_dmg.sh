@@ -195,6 +195,28 @@ if [ -n "$(find "$APP_PATH" \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqli
   exit 1
 fi
 
+# The launch clip, for the same reason and in the opposite direction: this one
+# must be PRESENT. It has to be asserted here because a missing clip is the one
+# defect in this feature that produces no symptom — the launch screen catches
+# the load failure and degrades to its pulsing dot, so the app starts normally
+# and looks deliberate. Nobody would report it, and the first sign would be
+# wondering why the animation never shipped.
+#
+# Derived from the page rather than hardcoded, so renaming the asset cannot
+# leave this checking a filename that no longer matters.
+SPLASH_HTML="$DESKTOP/splash/index.html"
+CLIP_NAME="$(sed -n 's/.*<video[^>]*src="\([^"]*\)".*/\1/p' "$SPLASH_HTML" | head -1)"
+if [ -z "$CLIP_NAME" ]; then
+  echo "ERROR: $SPLASH_HTML no longer references a launch clip" >&2
+  exit 1
+fi
+if [ -z "$(find "$APP_PATH" -name "$CLIP_NAME" | head -1)" ]; then
+  echo "ERROR: the launch clip '$CLIP_NAME' is not inside $APP.app." >&2
+  echo "       The app would still start — the launch screen falls back to a" >&2
+  echo "       loading dot — which is exactly why this is checked here." >&2
+  exit 1
+fi
+
 # --------------------------------------------------------------------------
 step "[6/7] wrapping into a .dmg"
 # --------------------------------------------------------------------------
