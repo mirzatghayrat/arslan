@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>搜我的大脑 · 设计 mock（B4，待裁决）</title>
+<title>搜我的大脑 · 设计 mock（B4，已裁决）</title>
 <style>
   :root { color-scheme: dark; }
   body { margin:0; background:#0b0d10; color:#e6e8ea;
@@ -10,6 +10,10 @@
   h2 { font-size: 15px; margin: 40px 0 4px; }
   h2 .n { color:#f0883e; font-family: ui-monospace, monospace; margin-right: 8px; }
   .why { color:#9aa3ad; font-size: 12.5px; margin: 0 0 14px; }
+  .ruled { border-left: 3px solid #3fb950; background:#0e1a11; padding: 14px 18px;
+           margin: 0 0 26px; border-radius: 0 6px 6px 0; font-size: 13px; }
+  .ruled b { color:#3fb950; }
+  .ruled .note { color:#9aa3ad; font-size:12.5px; margin-top:10px; }
   .flag { border-left: 3px solid #d9534f; background:#1a1113; padding: 12px 16px;
           margin: 14px 0 18px; font-size: 12.5px; color:#e8c4c4; border-radius:0 6px 6px 0; }
   .flag b { color:#ff8e8e; }
@@ -66,6 +70,18 @@
   <h1>搜我的大脑 · mock（B4）</h1>
   <div class="sub">
     只读核对结论：第二大脑前端十项里九项已在 main，这是唯一真缺口。静态稿，未写生产代码。
+  </div>
+
+  <div class="ruled">
+    <b>已裁决（用户 2026-08-04）：① 乙 —— 只给标题，不带 snippet。② 甲 —— 一个框，输入即过滤、回车走管线。</b>
+    <div class="note">
+      <b>实现时必须一起解决的一个后果</b>（两项单看都成立，合起来才出现）：<br>
+      选了乙，结果只剩标题，<b>本地过滤的结果和管线检索的结果长得一模一样</b>；
+      而甲又把这两种召回放进同一个框。原本「甲带 snippet」时，管线结果带正文是天然的区分信号，
+      选乙把这个信号拿掉了 —— 于是「我现在看的是哪一种」<b>完全落在那行状态小字上</b>。
+      所以这一行不能是弱提示：要么做成强状态（明显的模式标识），要么两种结果用不同的行样式。
+      这不是重开裁决，是把裁决的代价写在它旁边。
+    </div>
   </div>
 
   <div class="flag">
@@ -162,10 +178,10 @@
   </div></div>
 
   <div class="ask">
-    <b>B4 请裁决两项：</b>
+    <b>B4 两项已裁决（2026-08-04）：</b>
     <ol>
-      <li>结果<b>带 snippet（甲）</b>还是<b>只给标题（乙）</b>？</li>
-      <li>本地过滤与服务端搜索：<b>一个框（甲）</b>还是<b>两个入口（乙）</b>？</li>
+      <li>结果带 snippet（甲）还是只给标题（乙）？ → <b>乙 · 只给标题</b></li>
+      <li>本地过滤与服务端搜索：一个框（甲）还是两个入口（乙）？ → <b>甲 · 一个框</b></li>
     </ol>
     <b>A4 三项（另一份 mock，已推 <code>design/batch-three-mocks</code>）：</b>
     <ol start="3">
