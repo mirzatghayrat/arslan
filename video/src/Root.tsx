@@ -5,6 +5,7 @@ import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
+import {Glass, GLASS_FRAMES} from './films/Glass';
 import {Press, PRESS_FRAMES} from './films/Press';
 import {Origin, ORIGIN_FRAMES} from './films/Origin';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
@@ -178,6 +179,19 @@ export const RemotionRoot: React.FC = () => (
       id="F9-Stage"
       component={Stage}
       durationInFrames={STAGE_FRAMES}
+      fps={VIDEO.fps}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    {/* The 60s cinematic cut with the real client behind the glass instead of a
+        drawing of it. Same SHOTS array as ArslanFilm — imported, not copied — so
+        the camera is identical; only what is on the screen changes. Everything
+        stays inside the machine, and there are no captions. */}
+    <Composition
+      id="F10-Glass"
+      component={Glass}
+      durationInFrames={GLASS_FRAMES}
       fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}
