@@ -324,7 +324,24 @@ def test_a_source_checkout_gets_neither_packaged_flag_nor_token_stripping(entry,
 # Gate item ⑦, half (i) — the port must be STABLE
 # ---------------------------------------------------------------------------
 
-def test_the_default_port_is_fixed_not_ephemeral(entry):
+def _a_free_port() -> int:
+    """A port this test owns, so the assertions do not depend on what else is
+    running on the developer's machine.
+
+    🔴 The first version of these two tests asserted against the REAL
+    DEFAULT_PORT, so they went red the moment the user had Arslan open — which
+    is most of the time for the person most likely to run them. CI never saw it
+    because CI has no app running. A test whose result depends on whether an
+    unrelated program is open is not testing the thing it names.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def test_the_default_port_is_fixed_not_ephemeral(entry, monkeypatch):
     """The window loads `http://127.0.0.1:<port>`, and WebKit partitions
     localStorage by ORIGIN — of which the port is part. An ephemeral port meant
     a fresh, empty store on every launch, and the conversation list lived there
@@ -336,24 +353,37 @@ def test_the_default_port_is_fixed_not_ephemeral(entry):
     new ones being orphaned, and it also stops every other origin-scoped thing
     (theme, panel state) resetting each launch.
     """
+    # The shipped constant is what matters for the CLAIM…
     assert isinstance(entry.DEFAULT_PORT, int)
     assert 1024 < entry.DEFAULT_PORT < 65536
-    assert entry.choose_port() == entry.DEFAULT_PORT
+    # …but the BEHAVIOUR is checked against a port this test owns, so a running
+    # Arslan on the real one cannot decide the outcome.
+    free = _a_free_port()
+    monkeypatch.setattr(entry, "DEFAULT_PORT", free)
+    assert entry.choose_port() == free
 
 
-def test_it_falls_back_rather_than_refusing_to_start(entry):
+def test_it_falls_back_rather_than_refusing_to_start(entry, monkeypatch):
     """Discriminating: a version that just returned DEFAULT_PORT would pass the
     test above and fail to launch whenever anything else holds the port — an
     annoyance turned into a dead app. Survivable precisely BECAUSE the listing
-    is server-side: a different origin costs some UI state, not the history."""
+    is server-side: a different origin costs some UI state, not the history.
+
+    🔴 Binds a port this test OWNS rather than the real DEFAULT_PORT. The first
+    version bound 47317 directly, so it blew up with EADDRINUSE whenever the
+    user had Arslan running — which is most of the time for the person most
+    likely to run these tests. CI never noticed because CI has no app open.
+    """
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(("127.0.0.1", entry.DEFAULT_PORT))
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
         s.listen(1)
+        monkeypatch.setattr(entry, "DEFAULT_PORT", port)
         fallback = entry.choose_port()
-    assert fallback != entry.DEFAULT_PORT
+    assert fallback != port
     assert 1024 < fallback < 65536
 
 

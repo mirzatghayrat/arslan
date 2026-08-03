@@ -93,7 +93,10 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
     e.preventDefault();
     if (!input.trim() || streaming) return;
     setMessages((p) => [...p, { id: `u-${Date.now()}`, role: 'user', text: input }]);
-    send({ type: 'user_message', content: input, ...(seed ? { attached_context: seed } : {}) });
+    send({ type: 'user_message', content: input,
+      // The sandbox asks the server for the main thread's last turn as
+      // read-only background; the server needs to know WHICH thread.
+      conversation_id: conversationId, ...(seed ? { attached_context: seed } : {}) });
     setInput('');
     setStreaming(true);
   };

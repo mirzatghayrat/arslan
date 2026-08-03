@@ -11,8 +11,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from server import security
 from server.auth import is_ws_token_valid
+from sqlalchemy import select
+
 from server.db import session as db_session
-from server.db.models import Spawn
+from server.db.models import ArslanMessage, Spawn
 from server.orchestrator import arslan as arslan_mod
 from server.orchestrator import spawn_loop
 from server.orchestrator.dispatcher import build_spawn_system
@@ -33,6 +35,77 @@ def _signals(transcript: list[dict]) -> str:
     return f"用户消息:\n{users}\n\n分身产出:\n{outs}"
 
 
+#: How much of the main thread's last turn the sandbox may carry.
+#:
+#: 🔴 A character budget, not a message count, and that was a correction. In the
+#: user's own database a message ranges from 52 characters (median) to 21,960
+#: (max) — a factor of 420 — so "the last N turns" names a bound that varies by
+#: three orders of magnitude. The TURN decides where to cut; this decides how
+#: much. Without it a single screenshot-sized report would be re-sent on every
+#: sandbox turn, since it lands in the per-turn system prompt.
+MAIN_CONTEXT_BUDGET = 6000
+
+#: Roles as they appear in `arslan_messages`. `spawn_summary` is included on
+#: purpose: if another spawn produced something inside the turn being discussed,
+#: that IS the context — leaving it out would show the question and hide half
+#: the answer.
+_SPEAKER = {"user": "用户", "arslan": "Arslan", "spawn_summary": "分身产出"}
+
+
+async def main_thread_context(conversation_id: str) -> str:
+    """The main thread's LAST TURN, framed as read-only background.
+
+    A turn is one `user` message plus everything after it — user's ruling, and
+    the right unit here: a spawn's deliverable already has its own refine path,
+    so the sandbox only needs enough to answer conceptually about what is being
+    discussed with Arslan right now.
+
+    Returns "" when there is nothing to show. An empty frame would announce
+    context and then present none, which is worse than silence.
+    """
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(ArslanMessage)
+            .where(ArslanMessage.conversation_id == conversation_id)
+            .order_by(ArslanMessage.id)
+        )).scalars().all()
+    if not rows:
+        return ""
+
+    # Walk back to the last `user` message; everything from there is one turn.
+    start = next((i for i in range(len(rows) - 1, -1, -1) if rows[i].role == "user"), None)
+    if start is None:
+        return ""
+    turn = rows[start:]
+
+    lines: list[str] = []
+    used = 0
+    truncated = False
+    for m in turn:
+        body = (m.display_content or m.content or "").strip()
+        if not body:
+            continue
+        speaker = _SPEAKER.get(m.role, m.role)
+        room = MAIN_CONTEXT_BUDGET - used
+        if room <= 0:
+            truncated = True
+            break
+        if len(body) > room:
+            body = body[:room] + " …"
+            truncated = True
+        used += len(body)
+        lines.append(f"{speaker}: {body}")
+
+    if not lines:
+        return ""
+
+    head = "[主对话背景 · 只读 · 不是你的任务 / main thread, read-only, NOT your task]"
+    tail = "[背景结束 · 你要做的事在下面 / end of background]"
+    note = "（部分内容已省略）" if truncated else None
+    body_lines = ([note] if note else []) + lines
+    return "\n".join([head, *body_lines, tail])
+
+
 async def sandbox_endpoint(ws: WebSocket, spawn_id: int) -> None:
     # Reject a cross-site WebSocket open BEFORE accept (fail-closed).
     if not security.ws_origin_allowed(ws.headers.get("origin"), ws.headers.get("host")):
@@ -50,6 +123,11 @@ async def sandbox_endpoint(ws: WebSocket, spawn_id: int) -> None:
     await ws.send_json({"type": "history", "messages": []})  # always a fresh session
 
     transcript: list[dict] = []            # in-memory only
+    # Fetched ONCE per session, not per turn: it is background, it does not
+    # change while the sandbox is open, and re-reading it every turn would put a
+    # varying block in the system prompt — which is what busts a prompt-cache
+    # prefix (see the prefix-cache rule, research backlog R-025).
+    main_ctx: str | None = None
     opened_at = datetime.utcnow()
 
     try:
@@ -112,6 +190,15 @@ async def sandbox_endpoint(ws: WebSocket, spawn_id: int) -> None:
                 spawn, retrieval_query=user_content, current_turn=current_turn,
                 attached_context=(attached or None),
             )
+            # The main thread's last turn, as read-only background. In the SYSTEM
+            # prompt rather than the history: it is not a turn anyone took in
+            # this sandbox, and putting it here keeps it stable across the
+            # session instead of drifting through the message list.
+            if main_ctx is None:
+                cid = (data.get("conversation_id") or "").strip()
+                main_ctx = await main_thread_context(cid) if cid else ""
+            if main_ctx:
+                system = f"{system}\n\n{main_ctx}"
 
             await ws.send_json(protocol.stream_start(0))
             queue: asyncio.Queue = asyncio.Queue()
