@@ -5,6 +5,7 @@ import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
+import {Clay, CLAY_FRAMES, CLAY_H, CLAY_W} from './films/Clay';
 import {Glass, Glass15, Glass15V, GLASS_FRAMES, GLASS15_FRAMES} from './films/Glass';
 import {Press, PRESS_FRAMES} from './films/Press';
 import {Origin, ORIGIN_FRAMES} from './films/Origin';
@@ -221,6 +222,19 @@ export const RemotionRoot: React.FC = () => (
       fps={VIDEO.fps}
       width={1080}
       height={1440}
+    />
+
+    {/* Two H3 generations fused at sixty seconds, claymation leading. The clay
+        world is metaphor and stays metaphor; the two chapters footage cannot
+        honestly carry (the exam, the promise guard) are drawn as clay-styled
+        cards; every claim on screen is typeset from facts.ts. */}
+    <Composition
+      id="F13-Clay"
+      component={Clay}
+      durationInFrames={CLAY_FRAMES}
+      fps={VIDEO.fps}
+      width={CLAY_W}
+      height={CLAY_H}
     />
 
     {/* Framing mock-ups: one frame per shot, for `remotion still`. */}

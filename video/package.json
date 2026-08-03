@@ -24,7 +24,8 @@
     "f9": "remotion render F9-Stage out/F9-Stage.mp4",
     "f10": "remotion render F10-Glass out/F10-Glass.mp4",
     "f11": "remotion render F11-Glass15 out/F11-Glass15.mp4",
-    "f12": "remotion render F12-Glass15-RED out/F12-Glass15-RED.mp4"
+    "f12": "remotion render F12-Glass15-RED out/F12-Glass15-RED.mp4",
+    "f13": "remotion render F13-Clay out/F13-Clay.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.500",
