@@ -754,18 +754,6 @@ export default function ProviderConfigList({
 
   return (
     <div className="space-y-4">
-      {/* B2: routing strategy + suggest-primary card at the TOP of the section */}
-      <RoutingStrategyCard
-        strategy={strategy}
-        onStrategyChange={onStrategyChange}
-        configCount={providerConfigs.length}
-        onSuggestPrimary={handleSuggest}
-        suggestBusy={suggestBusy}
-        suggestion={suggestion}
-        onUseThis={handleUseThis}
-        useThisBusy={suggestion ? busy === suggestion.id : false}
-      />
-
       {/* Provider master-detail (B2): left list + right detail/draft pane */}
       <div className="flex flex-col md:flex-row gap-4">
         <ProviderMasterList
@@ -935,6 +923,20 @@ export default function ProviderConfigList({
           )}
         </div>
       )}
+
+      {/* Routing strategy sits BELOW the model configuration now: it is the
+          question you answer AFTER there is more than one model, and having
+          it first pushed the thing everyone actually came here for down. */}
+      <RoutingStrategyCard
+        strategy={strategy}
+        onStrategyChange={onStrategyChange}
+        configCount={providerConfigs.length}
+        onSuggestPrimary={handleSuggest}
+        suggestBusy={suggestBusy}
+        suggestion={suggestion}
+        onUseThis={handleUseThis}
+        useThisBusy={suggestion ? busy === suggestion.id : false}
+      />
 
     </div>
   );

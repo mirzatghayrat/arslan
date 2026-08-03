@@ -65,7 +65,9 @@ describe("AppearanceSection", () => {
     setup();
     // AppearanceSettings renders the palette label + a radiogroup of palettes.
     expect(screen.getByText("settings.palette")).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup")).toBeInTheDocument();
+    // Two radiogroups now (palette + the three-way mode selector), so this
+    // must name the one it means.
+    expect(screen.getByRole("radiogroup", { name: "settings.palette" })).toBeTruthy();
   });
 
   it("renders the display name input and persists edits to localStorage", () => {

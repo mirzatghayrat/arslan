@@ -117,7 +117,9 @@ describe("locale parity", () => {
     // 1261 → 1264: the header/rail polish batch added orchestrator.shell_on /
     //              shell_off / browser_soon — tooltips for the two new status
     //              indicators, which carry meaning no icon can.
-    expect(enKeys).toHaveLength(1264);
+    // 1264 → 1265: settings.modeSystem — "follow the OS" is a third CHOICE, and a
+    //              two-state toggle had no way to say it.
+    expect(enKeys).toHaveLength(1265);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

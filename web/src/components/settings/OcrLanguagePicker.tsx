@@ -98,11 +98,25 @@ export default function OcrLanguagePicker({ value, onChange }: Props) {
     nextSelection(selected, tag, host.max_selectable).join(','));
 
   return (
-    <div className="space-y-2" data-testid="ocr-languages">
-      <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-        {t('settings.ocrLanguagesLabel')}
-      </label>
-      <div className="flex flex-wrap gap-1.5">
+    /* Collapsed by default: the chip grid is the tallest thing on this page and
+       most people set it once. `<details>` rather than a popover on purpose —
+       it is a long multi-select list, so it needs to push layout rather than
+       float over it, and it stays keyboard- and screen-reader-native for free. */
+    <details className="space-y-2 group" data-testid="ocr-languages">
+      <summary className="flex items-center justify-between cursor-pointer list-none">
+        <span className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+          {t('settings.ocrLanguagesLabel')}
+        </span>
+        <span className="text-[10px] font-mono text-subtle-foreground">
+          {/* The count is the whole point of collapsing: you can tell what is
+              set without opening it. */}
+          {selected.length
+            ? selected.join(', ')
+            : t('settings.ocrLanguagesFollowsUi')}
+          <span className="ml-1.5 inline-block transition-transform group-open:rotate-90">›</span>
+        </span>
+      </summary>
+      <div className="flex flex-wrap gap-1.5 pt-2">
         {host.available.map((tag) => {
           const on = selected.includes(tag);
           const blocked = !on && atCap;
@@ -126,11 +140,14 @@ export default function OcrLanguagePicker({ value, onChange }: Props) {
           );
         })}
       </div>
-      <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-        {selected.length === 0
-          ? t('settings.ocrLanguagesFollowsUi')
-          : t('settings.ocrLanguagesCapHint', { max: host.max_selectable })}
-      </p>
-    </div>
+      {/* The "follows your interface language" line moved to the SUMMARY, where
+          it is visible while collapsed — which is when a user needs to know the
+          state. Rendering it here too put the same sentence on screen twice. */}
+      {selected.length > 0 && (
+        <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+          {t('settings.ocrLanguagesCapHint', { max: host.max_selectable })}
+        </p>
+      )}
+    </details>
   );
 }

@@ -590,7 +590,8 @@
     "automationElsewhere": "Scheduled tasks and token usage live in Diagnostics, where their history is.",
     "automationOpenDiagnostics": "Open Diagnostics",
     "searchPlaceholder": "Search settings…",
-    "searchNoHits": "No section matches"
+    "searchNoHits": "No section matches",
+    "modeSystem": "System"
   },
   "errors": {
     "load_failed": "Failed to load data.",

@@ -260,13 +260,17 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             </a>
           </p>
         )}
-        {/* B2: per-model capability badges (Cherry override) under the combobox */}
+        {/* Spans BOTH grid columns: the chips were wrapping onto a second row
+            because they lived inside one half of a 2-column grid. That is what
+            made this block read as cramped. */}
+        <div className="sm:col-span-2 min-w-0">
         <CapabilityBadges
           configId={config.id}
           model={config.model}
           capabilities={props.modelCapabilities}
           onOverride={props.onCapabilityOverride}
         />
+        </div>
       </div>
 
       {/* Base URL (non-native providers only) — saved on blur */}

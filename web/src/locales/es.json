@@ -590,7 +590,8 @@
     "automationElsewhere": "Las tareas programadas y el uso de tokens están en Diagnósticos, donde está su historial.",
     "automationOpenDiagnostics": "Abrir Diagnósticos",
     "searchPlaceholder": "Buscar ajustes…",
-    "searchNoHits": "Ninguna sección coincide"
+    "searchNoHits": "Ninguna sección coincide",
+    "modeSystem": "Sistema"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

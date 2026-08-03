@@ -590,7 +590,8 @@
     "automationElsewhere": "定期タスクとトークン使用量は「診断」にあります。履歴がそこにあるためです。",
     "automationOpenDiagnostics": "診断を開く",
     "searchPlaceholder": "設定を検索…",
-    "searchNoHits": "一致するセクションはありません"
+    "searchNoHits": "一致するセクションはありません",
+    "modeSystem": "システム"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

@@ -18,7 +18,6 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, PlugZap, FlaskConical } from 'lucide-react';
 import type { ProviderConfig } from '../../api/client.types';
-import { formatRelativeTime } from './relativeTime';
 
 /** Transient level-2 (deep chat test) status for the selected config. */
 export interface DeepTestStatus {
@@ -106,11 +105,9 @@ export default function ConnectionTester({
         >
           {state ? '●' : '○'}
         </span>
-        {at && (
-          <span className="text-[9px] font-mono text-subtle-foreground">
-            {formatRelativeTime(at, t)}
-          </span>
-        )}
+        {/* The dot carries the result. A "just now" beside it added a second
+            thing to read for information the colour already gave, and it was
+            the widest element in a row that has to fit the capability chips. */}
       </div>
       {state === 'reachable_no_list' && (
         <p

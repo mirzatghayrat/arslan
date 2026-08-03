@@ -1218,7 +1218,13 @@ export default function App() {
 
             {/* Per-spawn knowledge panel (when in spawn direct-chat) */}
             {activeSection === 'spawn' && spawns.find((s) => s.id === activeSpawnChatId) ? (
-              <SpawnRailKnowledge spawnId={Number(spawns.find((s) => s.id === activeSpawnChatId)!.id)} />
+              /* Same scroll container the sibling branch has. Without it this
+                 panel had no `flex-1`, so the rail's free space collected
+                 BETWEEN the capability block and the knowledge panel instead of
+                 below them — which is the gap that read as messy. */
+              <div className="flex-1 overflow-y-auto">
+                <SpawnRailKnowledge spawnId={Number(spawns.find((s) => s.id === activeSpawnChatId)!.id)} />
+              </div>
             ) : (
             /* Spawns Active Pool list */
             <div className="p-5 flex-1 space-y-4 overflow-y-auto">

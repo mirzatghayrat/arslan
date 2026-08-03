@@ -590,7 +590,8 @@
     "automationElsewhere": "Geplante Aufgaben und Token-Verbrauch liegen in der Diagnose, wo auch ihr Verlauf ist.",
     "automationOpenDiagnostics": "Diagnose öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
-    "searchNoHits": "Kein Bereich passt"
+    "searchNoHits": "Kein Bereich passt",
+    "modeSystem": "System"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

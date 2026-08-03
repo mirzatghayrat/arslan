@@ -119,7 +119,7 @@ beforeEach(() => {
 // add-model button (which lives at the bottom of the master list).
 
 describe("(C) Strategy control position", () => {
-  it("strategy control appears BEFORE the add-model button in the DOM", () => {
+  it("strategy control appears AFTER the models — it is the question you answer once there is more than one", () => {
     render(
       <ProviderConfigList
         llmProviders={providers}
@@ -136,10 +136,12 @@ describe("(C) Strategy control position", () => {
     // Get add button
     const addBtn = screen.getByRole("button", { name: /btnAddModel/i });
 
-    // Strategy control should come BEFORE the add-model button in DOM order.
-    // Node.DOCUMENT_POSITION_PRECEDING = 2 means strategyEl is before addBtn.
+    // Inverted deliberately in v0.1.18: routing strategy now sits BELOW the
+    // model configuration. It is the question you answer once you have more
+    // than one model, and having it first pushed down the thing everyone comes
+    // to this page for. FOLLOWING = strategyEl comes after addBtn.
     const position = addBtn.compareDocumentPosition(strategyEl!);
-    expect(position & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

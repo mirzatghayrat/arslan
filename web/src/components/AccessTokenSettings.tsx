@@ -236,7 +236,10 @@ export default function AccessTokenSettings({
           className="w-4 h-4 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
         />
       </div>
-      <div className="mt-4"><McpTokenControl /></div>
+      {/* Only when the inbound server is ON. The token exists to guard THAT
+          endpoint, so offering to mint one while the endpoint is off asks the
+          user to make a decision about something that is not running. */}
+      {mcpServerEnabled && <div className="mt-4"><McpTokenControl /></div>}
     </div>
   );
 }

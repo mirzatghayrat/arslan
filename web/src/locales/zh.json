@@ -590,7 +590,8 @@
     "automationElsewhere": "定时任务和用量在「诊断台」，它们的历史记录在那里。",
     "automationOpenDiagnostics": "打开诊断台",
     "searchPlaceholder": "搜索设置…",
-    "searchNoHits": "没有匹配的分区"
+    "searchNoHits": "没有匹配的分区",
+    "modeSystem": "跟随系统"
   },
   "errors": {
     "load_failed": "加载数据失败。",

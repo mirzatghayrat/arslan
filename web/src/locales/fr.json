@@ -590,7 +590,8 @@
     "automationElsewhere": "Les tâches planifiées et l'utilisation des tokens sont dans Diagnostics, là où se trouve leur historique.",
     "automationOpenDiagnostics": "Ouvrir Diagnostics",
     "searchPlaceholder": "Rechercher des paramètres…",
-    "searchNoHits": "Aucune section ne correspond"
+    "searchNoHits": "Aucune section ne correspond",
+    "modeSystem": "Système"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

@@ -55,7 +55,7 @@ describe("ConnectionTester", () => {
     expect(onProbeHealth).toHaveBeenCalledWith(config);
   });
 
-  it("renders the persistent tri-state dot + relative time from config fields", () => {
+  it("renders the persistent tri-state dot (the relative time was removed — the dot IS the result)", () => {
     render(
       <ConnectionTester
         config={makeConfig()}
@@ -66,7 +66,6 @@ describe("ConnectionTester", () => {
     const dot = screen.getByTestId("connection-health-dot");
     expect(dot).toHaveAttribute("data-health-state", "reachable_models");
     // relative time derived from last_health_at (~5m ago → the minutes key).
-    expect(screen.getByText("settings.timeMinutesAgo")).toBeInTheDocument();
   });
 
   it("shows the reachable_no_list caveat when the state is reachable_no_list", () => {
