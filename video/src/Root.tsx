@@ -10,6 +10,7 @@ import {Origin, ORIGIN_FRAMES} from './films/Origin';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
 import {Runway, RUNWAY_FRAMES} from './films/Runway';
 import {Silk, SILK_FPS, SILK_FRAMES} from './films/Silk';
+import {Stage, STAGE_FRAMES} from './films/Stage';
 import {System, SYSTEM_FRAMES} from './films/System';
 import {Terminal, TERMINAL_FRAMES} from './films/Terminal';
 import {ArslanShort, SHORT_FRAMES} from './ArslanShort';
@@ -165,6 +166,19 @@ export const RemotionRoot: React.FC = () => (
       component={Silk}
       durationInFrames={SILK_FRAMES}
       fps={SILK_FPS}
+      width={VIDEO.width}
+      height={VIDEO.height}
+    />
+
+    {/* The staging of the MiniMax H3 generation — a screen floating in black on
+        a reflective floor with an amber rim, the creature beside it — rebuilt so
+        that the text on every screen is a real screenshot instead of a
+        hallucination. Opens on the 2K character the model got right. */}
+    <Composition
+      id="F9-Stage"
+      component={Stage}
+      durationInFrames={STAGE_FRAMES}
+      fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}
     />
