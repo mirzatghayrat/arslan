@@ -1,0 +1,78 @@
+ARSLAN — MiniMax H3 (Hailuo 3.0) PROMPTS
+Plain text. Each block below is one complete prompt — select from the first
+word to the last and paste straight into the prompt box. Nothing needs editing.
+
+Settings for every shot: 16:9, 2K, 24fps. Durations are given per shot.
+Seed images live in video/out/seed/. Regenerate them with:
+
+  cd video
+  for t in 0.2 2.6 5.6; do npx remotion ffmpeg -y -ss $t -i public/character/arslan-cat-open.mp4 -frames:v 1 -vf scale=1280:-1 out/seed/seed-$t.png; done
+
+
+=====================================================================
+A. STANDALONE — 15s, text-to-video, no seed image
+=====================================================================
+
+A cream-white robotic cat with matte ceramic body panels, amber-orange inner ears, round glowing amber eyes, black articulated joints at the shoulders and hips, a segmented cream-and-black mechanical tail, and a small four-armed amber emblem glowing at the centre of its chest sits upright and perfectly still in the centre of the frame. Its eyes brighten, the chest emblem pulses once, and warm amber light spreads outward from behind it along the etched traces of a pale off-white circuit-board wall until the whole wall is lit. The cat then tilts its head a few degrees toward the lens and its tail curls slowly around its feet. [Push in,Pedestal up]Soft diffuse studio light, shallow depth of field, matte ceramic and warm amber, calm and expensive, commercial product-film finish, the cat stays centred throughout. Audio: a low mechanical room tone and one soft servo click as the head turns, no music, no voice. Ending state: the cat settled and still, the wall fully lit, the chest emblem the brightest point in the frame. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people. Do not change the cat's colour or markings.
+
+
+=====================================================================
+1. WAKE — 6s, image-to-video, seed: seed-0.2.png
+=====================================================================
+
+[Static shot]A cream-white robotic cat with matte ceramic body panels, amber-orange inner ears, round glowing amber eyes, black articulated joints, a segmented cream-and-black mechanical tail, and a small four-armed amber emblem at the centre of its chest sits upright and motionless in the centre of the frame. Its eyes brighten from dim to full amber, the chest emblem pulses on, and warm amber light spreads outward from behind the cat along the etched traces of a pale off-white circuit-board wall until the whole wall is lit. Nothing else moves. Soft diffuse studio light, shallow depth of field, matte ceramic and warm amber, calm, commercial product-film finish. Audio: a low mechanical hum rising, one soft power-on click, no music, no voice. Ending state: the cat still, the wall fully lit, the emblem glowing steadily. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people. Do not change the cat's colour or markings.
+
+
+=====================================================================
+2. REGARD — 6s, image-to-video, seed: seed-5.6.png
+=====================================================================
+
+[Push in]A cream-white robotic cat with matte ceramic body panels, amber-orange inner ears, round glowing amber eyes, black articulated joints, a segmented cream-and-black mechanical tail, and a small four-armed amber emblem glowing at the centre of its chest sits upright in front of a pale off-white circuit-board wall whose etched traces glow warm amber. It turns its head a few degrees toward the lens, one ear flicks, and it holds the look. The tail sways once and settles. The camera pushes in slowly and steadily to a chest-up framing. Soft diffuse studio light, shallow depth of field, calm, commercial product-film finish. Audio: low room tone and one soft servo click as the head turns, no music, no voice. Ending state: the cat looking directly at the lens, still, the chest emblem centred and glowing. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people. Do not change the cat's colour or markings.
+
+
+=====================================================================
+3. EMBLEM — 5s, image-to-video, seed: seed-5.6.png
+=====================================================================
+
+[Push in]Extreme slow push onto the small four-armed amber emblem glowing at the centre of the chest of a cream-white robotic cat with matte ceramic body panels, until the emblem fills the frame and its glow blooms softly past the edges. The cat does not move. Everything except the emblem falls out of focus and into darkness as the camera closes in. Macro lens, very shallow depth of field, warm amber against matte cream ceramic, commercial product-film finish. Audio: low room tone and a rising electrical hum, no music, no voice. Ending state: the emblem filling the frame, blown out at its centre, the surroundings black. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people. Do not change the emblem's colour.
+
+
+=====================================================================
+4. MANY — 8s, text-to-video, no seed image
+=====================================================================
+
+[Static shot]A single point of warm amber light floats in the centre of a black void. It pulses once, then three smaller amber lights separate from it and drift outward and downward on slow, even arcs, each settling into place and holding steady while the original light stays where it is. Fine dust drifts through the beams. Volumetric light, deep black background, warm amber only, no other colour, commercial product-film finish. Audio: a low sustained tone and three soft chimes as the lights settle, no music, no voice. Ending state: one bright light above and three smaller lights below it, all still. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people, no animals.
+
+
+=====================================================================
+5. ROOM — 8s, image-to-video, seed: seed-5.6.png
+=====================================================================
+
+[Truck left,Zoom out]A cream-white robotic cat with matte ceramic body panels, amber-orange inner ears, round glowing amber eyes and a small four-armed amber emblem glowing at the centre of its chest sits lit and still in a shallow alcove in a pale off-white circuit-board wall. The camera trucks slowly left and pulls back to reveal a long row of identical alcoves receding into the dark, each one empty and unlit. The cat stays lit and stays still. Soft diffuse light on the cat only, deep falloff into black, shallow depth of field, commercial product-film finish. Audio: low room tone and a distant mechanical hum, no music, no voice. Ending state: the cat small in frame at the right, one lit alcove among many dark ones. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people.
+
+
+=====================================================================
+6. SETTLE — 5s, image-to-video, seed: seed-5.6.png
+=====================================================================
+
+[Static shot]A cream-white robotic cat with matte ceramic body panels, amber-orange inner ears, round glowing amber eyes and a small four-armed amber emblem glowing at the centre of its chest sits in front of a pale off-white circuit-board wall whose etched traces glow warm amber. The cat blinks slowly once, its tail curls in around its feet, and the wall's amber traces dim smoothly to black from the edges of the frame inward until only the chest emblem is still lit. Soft diffuse light fading to a single warm point, commercial product-film finish. Audio: room tone fading to silence and one soft mechanical settle, no music, no voice. Ending state: a black frame with one small amber glow at its centre. No text, no captions, no subtitles, no user interface, no screens, no monitors, no laptop, no logos, no watermark, no human hands, no people.
+
+
+=====================================================================
+NOTES
+=====================================================================
+
+Syntax: the bracketed camera command must sit at the very front with NO space
+between the closing bracket and the first word. Three movements maximum.
+
+Order to generate in, if budget is limited: 3 (EMBLEM) first, then 6 (SETTLE),
+then 1 (WAKE). Shot 3 replaces a move that is currently faked by pushing 3.4x
+into 720p footage, and shot 6's last frame is the first frame of F8-Silk.
+
+Do not prompt for the Arslan interface — no composer, no ledger, no dashboard,
+no laptop with the app on it. The model will produce a confident, plausible,
+fictional Arslan. Real screens come from video/public/rec/, which holds twelve
+2560x1680 screenshots of the actual client.
+
+If a monitor, laptop or caption appears in a take anyway, discard the take
+rather than re-rolling with heavier negative weighting.
