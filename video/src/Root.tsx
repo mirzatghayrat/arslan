@@ -5,7 +5,7 @@ import {ArslanDemo} from './ArslanDemo';
 import {ArslanLight} from './ArslanLight';
 import {ArslanFilm, FILM_FRAMES} from './ArslanFilm';
 import {Blueprint, BLUEPRINT_FRAMES, BLUEPRINT_SIZE} from './films/Blueprint';
-import {Glass, GLASS_FRAMES} from './films/Glass';
+import {Glass, Glass15, GLASS_FRAMES, GLASS15_FRAMES} from './films/Glass';
 import {Press, PRESS_FRAMES} from './films/Press';
 import {Origin, ORIGIN_FRAMES} from './films/Origin';
 import {Pulse, PULSE_FRAMES} from './films/Pulse';
@@ -195,6 +195,19 @@ export const RemotionRoot: React.FC = () => (
       fps={VIDEO.fps}
       width={VIDEO.width}
       height={VIDEO.height}
+    />
+
+    {/* The same film at fifteen seconds and 2560x1440 — three product screens
+        instead of six, because at a quarter of the length a change every two
+        seconds gives no page time to be read and multiplies the chances of the
+        join between screenshot and glass being noticed. */}
+    <Composition
+      id="F11-Glass15"
+      component={Glass15}
+      durationInFrames={GLASS15_FRAMES}
+      fps={VIDEO.fps}
+      width={2560}
+      height={1440}
     />
 
     {/* Framing mock-ups: one frame per shot, for `remotion still`. */}

@@ -8,8 +8,11 @@ import {
   OffthreadVideo,
   staticFile,
   useCurrentFrame,
+  useVideoConfig,
 } from 'remotion';
 import {FILM_FRAMES, SHOTS} from '../ArslanFilm';
+import {glassBox, type MockupName} from '../components/Mockup';
+import {filmLength, sequence} from '../lib/shots';
 import {Cta} from '../components/Cta';
 import {Mockup, MOCKUPS, SCREEN} from '../components/Mockup';
 import {shotAt, viewAt} from '../lib/shots';
@@ -61,44 +64,39 @@ const plateSize = (src: string) => PLATES[src] ?? {w: 1920, h: 1260};
 /**
  * A screenshot filling the glass.
  *
- * Fitted by WIDTH, not height. The plates are 1.524:1 and the glass is 1.447:1,
- * so a height fit overhangs by about 2.6% each side — and with any push on top
- * of that the first thing off the right edge is the SYNTHESIZE SPAWN button,
- * which is the one control on the ledger worth seeing. Fitted by width the
- * whole window is in frame and the 28px of screen background above and below is
- * the same near-black as the app, so it reads as bezel and disappears.
+ * Covered, not contained — see the note on the fit below.
  *
  * `drift` is what stops the screen being a photograph. It is small on purpose —
  * a few per cent over a whole shot — because the camera is already moving, and
  * two moves fighting each other is what made the earliest cut read as slides.
  */
-const Plate: React.FC<{src: string; f: number; from?: number; to?: number; ox?: string}> = ({
-  src,
-  f,
-  from = 1.0,
-  to = 1.04,
-  ox = '50% 50%',
-}) => {
+const Plate: React.FC<{src: string}> = ({src}) => {
   const p = plateSize(src);
-  const w = SCREEN.w;
-  const h = (p.h / p.w) * w;
-  const k = interpolate(f, [0, 240], [from, to], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: Easing.bezier(0.3, 0, 0.4, 1),
-  });
+  // Contain, and no push. Both follow from the same fact: a screenshot is a
+  // window that runs to its own edges, so anything that scales it up crops the
+  // chrome first — the traffic lights, the left rail, SYNTHESIZE SPAWN. Cover
+  // costs 2.5% a side before any move; a 4% drift costs another 2%; together
+  // that took the sidebar labels off. The screen already moves, because the
+  // camera moves and the cursor moves, and it does not need a third motion
+  // paid for in cropped interface.
+  //
+  // Containing used to leave a visible band, which is why cover was tried at
+  // all. That band was never the plate: it was the mock-up's own bright screen
+  // showing between the measured quad and the bezel, and `Mockup`'s `bleed`
+  // fixes it at the source. The bands are now the same near-black as the app.
+  const fit = Math.min(SCREEN.w / p.w, SCREEN.h / p.h);
+  const w = p.w * fit;
+  const h = p.h * fit;
   return (
     <AbsoluteFill style={{overflow: 'hidden', background: '#0B0F14'}}>
       <Img
         src={staticFile(src)}
         style={{
           position: 'absolute',
-          left: 0,
+          left: (SCREEN.w - w) / 2,
           top: (SCREEN.h - h) / 2,
           width: w,
           height: h,
-          transform: `scale(${k})`,
-          transformOrigin: ox,
         }}
       />
     </AbsoluteFill>
@@ -164,7 +162,6 @@ const Cursor: React.FC<{f: number; path: [number, number][]; clicks: number[]}> 
 /** 3.35s at 24fps → 100 frames on this 30fps timeline. */
 const CAT = {src: 'character/arslan-cat-2k.mp4', frames: 100};
 
-const HANDOFF = 322; // frame the opening clip gives way to the client
 const HANDOFF_LEN = 52;
 
 /**
@@ -172,8 +169,13 @@ const HANDOFF_LEN = 52;
  * The clip is 2K now, so at full glass width it is running under its native
  * size instead of over it for the first time in this film's life.
  */
-const Opening: React.FC<{f: number}> = ({f}) => {
-  const out = ramp(f, HANDOFF, HANDOFF_LEN);
+const Opening: React.FC<{f: number; at: number; to: string; len: number}> = ({
+  f,
+  at,
+  to,
+  len,
+}) => {
+  const out = ramp(f, at, len);
   return (
     <AbsoluteFill style={{background: '#0B0F14', overflow: 'hidden'}}>
       {out > 0 ? (
@@ -183,7 +185,7 @@ const Opening: React.FC<{f: number}> = ({f}) => {
             filter: `blur(${(1 - out) * 16}px) brightness(${1 + (1 - out) * 1.1})`,
           }}
         >
-          <Plate src="rec/home.jpg" f={f - HANDOFF} from={1.06} to={1.0} />
+          <Plate src={to} />
         </AbsoluteFill>
       ) : null}
       {out < 1 ? (
@@ -216,13 +218,13 @@ const Opening: React.FC<{f: number}> = ({f}) => {
  * `brain` sits on the rotated top-down plate and gets the graph, which has no
  * rows to misread.
  */
-const VIEWS: Record<string, {src: string; from?: number; to?: number; ox?: string}> = {
-  thread: {src: 'rec/chat.jpg', from: 1.0, to: 1.05, ox: '62% 42%'},
-  spawns: {src: 'rec/ledger.jpg', from: 1.04, to: 1.0},
-  promotion: {src: 'rec/create.jpg', from: 1.0, to: 1.045, ox: '46% 56%'},
-  safety: {src: 'rec/auto.jpg', from: 1.04, to: 1.0, ox: '66% 46%'},
-  brain: {src: 'rec/brain.jpg', from: 1.0, to: 1.05},
-  close: {src: 'rec/brain.jpg', from: 1.0, to: 1.05},
+const VIEWS: Record<string, {src: string}> = {
+  thread: {src: 'rec/chat.jpg'},
+  spawns: {src: 'rec/ledger.jpg'},
+  promotion: {src: 'rec/create.jpg'},
+  safety: {src: 'rec/auto.jpg'},
+  brain: {src: 'rec/brain.jpg'},
+  close: {src: 'rec/brain.jpg'},
 };
 
 /** Where the pointer goes on each page, in 1600x1106 screen space. */
@@ -234,14 +236,20 @@ const PATHS: Record<string, {path: [number, number][]; clicks: number[]}> = {
   brain: {path: [[900, 520], [1080, 620]], clicks: [118]},
 };
 
-const Screen: React.FC<{id: string; f: number; since: number}> = ({id, f, since}) => {
-  if (id === 'open' || id === 'reveal' || id === 'settle') return <Opening f={f} />;
+const Screen: React.FC<{
+  id: string;
+  f: number;
+  since: number;
+  handoff: {at: number; to: string; len: number};
+}> = ({id, f, since, handoff}) => {
+  if (id === 'open' || id === 'reveal' || id === 'settle')
+    return <Opening f={f} at={handoff.at} to={handoff.to} len={handoff.len} />;
   const v = VIEWS[id] ?? VIEWS.brain;
   const p = PATHS[id];
   const t = f - since;
   return (
     <AbsoluteFill style={{overflow: 'hidden'}}>
-      <Plate src={v.src} f={t} from={v.from} to={v.to} ox={v.ox} />
+      <Plate src={v.src} />
       {p ? <Cursor f={t} path={p.path} clicks={p.clicks} /> : null}
     </AbsoluteFill>
   );
@@ -261,17 +269,158 @@ const SINCE: Record<string, number> = {
   close: 1240,
 };
 
-export const Glass: React.FC = () => {
+/**
+ * Both cuts render through this. `frame` is taken from the composition rather
+ * than assumed, so the same code lays out correctly at 1920x1080 and at
+ * 2560x1440 — the mock-up maths is all normalised, and the only thing that was
+ * hard-coded to 1080p was the call to action, which is scaled to suit.
+ */
+const Film: React.FC<{
+  shots: typeof SHOTS;
+  since: Record<string, number>;
+  ctaAt: number;
+  handoff: {at: number; to: string; len: number};
+}> = ({shots, since, ctaAt, handoff}) => {
   const frame = useCurrentFrame();
-  const {shot, t} = shotAt(SHOTS, frame);
+  const {width, height} = useVideoConfig();
+  const {shot, t} = shotAt(shots, frame);
   const view = viewAt(shot, t);
+  const k = width / 1920;
 
   return (
     <AbsoluteFill style={{background: MOCKUPS[shot.mockup].void, overflow: 'hidden'}}>
-      <Mockup mockup={shot.mockup} view={view}>
-        <Screen id={shot.id} f={frame} since={SINCE[shot.id] ?? 0} />
+      <Mockup
+        mockup={shot.mockup}
+        view={view}
+        frame={{w: width, h: height}}
+        bleed={1.012}
+      >
+        <Screen id={shot.id} f={frame} since={since[shot.id] ?? 0} handoff={handoff} />
       </Mockup>
-      <Cta start={GLASS_FRAMES - 142} />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: 1920,
+          height: 1080,
+          transform: `scale(${k})`,
+          transformOrigin: '0 0',
+        }}
+      >
+        <Cta start={ctaAt} />
+      </div>
     </AbsoluteFill>
   );
 };
+
+export const Glass: React.FC = () => (
+  <Film
+    shots={SHOTS}
+    since={SINCE}
+    ctaAt={GLASS_FRAMES - 142}
+    handoff={{at: 322, to: 'rec/home.jpg', len: HANDOFF_LEN}}
+  />
+);
+
+/* ================================================================== */
+/* The fifteen                                                         */
+
+/**
+ * Three product screens, not six.
+ *
+ * The 60 has eight shots and at a quarter of the length that would be a screen
+ * change every two seconds — which is the wrong trade twice over. It gives no
+ * page long enough to be read, and every change is another chance for the join
+ * between the screenshot and the glass to be noticed. Fewer, longer holds are
+ * both calmer and harder to catch out.
+ *
+ * The opening keeps its full share. The pull-back out of the character is the
+ * only moment in any of these films where something is revealed rather than
+ * shown, and cutting it to fit is how a short film becomes a slideshow.
+ */
+const at15 = (m: MockupName, out: number, dx = 0, dy = 0) => {
+  const b = glassBox(m);
+  return {
+    cx: (b.x0 + b.x1) / 2 + dx,
+    cy: (b.y0 + b.y1) / 2 + dy,
+    w: (b.x1 - b.x0) * out,
+  };
+};
+
+export const SHOTS_15 = sequence([
+  {
+    id: 'open',
+    mockup: 'front' as MockupName,
+    duration: 54,
+    from: at15('front', 0.8),
+    to: at15('front', 0.95, 0, 0.003),
+    ease: 'ease' as const,
+    tail: 40,
+  },
+  {
+    id: 'reveal',
+    mockup: 'front' as MockupName,
+    duration: 72,
+    from: at15('front', 0.95, 0, 0.003),
+    to: at15('front', 2.28, 0, 0.055),
+    ease: 'ease' as const,
+    tail: 22,
+  },
+  {
+    id: 'thread',
+    mockup: 'threequarter' as MockupName,
+    duration: 76,
+    from: at15('threequarter', 1.88, 0.014, 0.046),
+    to: at15('threequarter', 1.68, 0.006, 0.024),
+    ease: 'drift' as const,
+    tail: 54,
+  },
+  {
+    id: 'spawns',
+    mockup: 'front' as MockupName,
+    duration: 76,
+    from: at15('front', 1.88, 0, 0.03),
+    to: at15('front', 1.7, 0, 0.018),
+    ease: 'drift' as const,
+    tail: 54,
+  },
+  {
+    id: 'safety',
+    mockup: 'threequarter' as MockupName,
+    duration: 74,
+    from: at15('threequarter', 1.84, 0.012, 0.042),
+    to: at15('threequarter', 1.62, 0.004, 0.02),
+    ease: 'drift' as const,
+    tail: 48,
+  },
+  {
+    id: 'close',
+    mockup: 'top' as MockupName,
+    duration: 98,
+    from: at15('top', 1.9, 0, 0.02),
+    to: at15('top', 3.05, 0.055, 0.012),
+    ease: 'settle' as const,
+  },
+]);
+
+export const GLASS15_FRAMES = filmLength(SHOTS_15);
+
+/** Every view restarts at its own cut — nothing is carried across in the 15. */
+const SINCE_15: Record<string, number> = {
+  thread: 126,
+  spawns: 202,
+  safety: 278,
+  close: 352,
+};
+
+export const Glass15: React.FC = () => (
+  <Film
+    shots={SHOTS_15}
+    since={SINCE_15}
+    ctaAt={380}
+    // The character gives way inside the pull-back rather than after it, so the
+    // machine is already showing the client by the time it is fully revealed.
+    handoff={{at: 92, to: 'rec/chat.jpg', len: 34}}
+  />
+);

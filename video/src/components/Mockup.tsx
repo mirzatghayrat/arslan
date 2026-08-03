@@ -214,6 +214,18 @@ const Glass: React.FC<{spec: MockupSpec}> = ({spec}) => (
  * homography instead would recompute the projection every frame for no gain and
  * make the numbers impossible to reason about between shots.
  */
+
+/** Scales a quad about its own centroid. See `Mockup`'s `bleed`. */
+const bleedQuad = (q: Quad, k: number): Quad => {
+  if (k === 1) return q;
+  const pts = [q.tl, q.tr, q.br, q.bl];
+  const cx = pts.reduce((n, p) => n + p[0], 0) / 4;
+  const cy = pts.reduce((n, p) => n + p[1], 0) / 4;
+  const out = (p: readonly [number, number]) =>
+    [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k] as [number, number];
+  return {tl: out(q.tl), tr: out(q.tr), br: out(q.br), bl: out(q.bl)};
+};
+
 export const Mockup: React.FC<{
   mockup: MockupName;
   view: View;
@@ -221,8 +233,24 @@ export const Mockup: React.FC<{
   /** Frame size. Defaults to the composition's 1920x1080. */
   frame?: {w: number; h: number};
   opacity?: number;
-}> = ({mockup, view, children, frame = {w: 1920, h: 1080}, opacity = 1}) => {
+  /**
+   * Pushes the screen quad outward from its own centre, as a multiplier.
+   *
+   * The quads were measured to the inside of each machine's glass, which is the
+   * honest place to put them and half a per cent too small to composite against.
+   * The mock-ups' own screens are bright, so that half per cent shows as a pale
+   * hairline between the bezel and the content on the top and left edges — the
+   * two the light falls on. Bleeding the quad out past the measurement hides the
+   * photograph's screen under ours instead of beside it.
+   *
+   * 1 keeps the measurement, which is what the older films want: their screens
+   * are drawn on a near-white ground that matches the photograph underneath, so
+   * there is nothing to see. Anything compositing a dark screenshot wants ~1.01.
+   */
+  bleed?: number;
+}> = ({mockup, view, children, frame = {w: 1920, h: 1080}, opacity = 1, bleed = 1}) => {
   const spec = MOCKUPS[mockup];
+  const quad = bleedQuad(spec.quad, bleed);
   const scale = frame.w / (view.w * MOCKUP_SIZE);
   const tx = frame.w / 2 - scale * view.cx * MOCKUP_SIZE;
   const ty = frame.h / 2 - scale * view.cy * MOCKUP_SIZE;
@@ -296,7 +324,7 @@ export const Mockup: React.FC<{
           width: SCREEN.w,
           height: SCREEN.h,
           transformOrigin: '0 0',
-          transform: matrix3dFor(SCREEN.w, SCREEN.h, spec.quad),
+          transform: matrix3dFor(SCREEN.w, SCREEN.h, quad),
           borderRadius: GLASS_RADIUS,
           overflow: 'hidden',
           background: '#FAFBFC',
