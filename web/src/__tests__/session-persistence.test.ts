@@ -101,3 +101,33 @@ describe("consumeFreshSessionFlag", () => {
     expect(consumeFreshSessionFlag()).toBe(false);
   });
 });
+
+describe("mintedFresh — did restore invent this thread, or did the user have one?", () => {
+  it("reports true when nothing was stored and a thread had to be invented", () => {
+    // planBoot uses this to avoid minting a SECOND empty session beside the one
+    // restore just made. Getting it wrong shows two "New Session" rows on a
+    // clean install — and in the packaged app on every launch where the sidecar
+    // port changed the origin, which is not a first run at all.
+    const restored = restoreThreads();
+
+    expect(restored.mintedFresh).toBe(true);
+    expect(restored.threads).toHaveLength(1);
+  });
+
+  it("reports false when the user's own threads came back", () => {
+    persistThreads(
+      [{ id: "thread-1", title: "Quarterly report", history: [] }],
+      "thread-1",
+    );
+
+    expect(restoreThreads().mintedFresh).toBe(false);
+  });
+
+  it("reports true when the stored value is corrupt and nothing survives it", () => {
+    // Same as an empty store from the caller's point of view: whatever comes
+    // back was invented here, so it must not be minted beside.
+    localStorage.setItem(THREADS_KEY, "{not json");
+
+    expect(restoreThreads().mintedFresh).toBe(true);
+  });
+});

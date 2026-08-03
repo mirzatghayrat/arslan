@@ -9,6 +9,7 @@ import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
 import { api } from './api/client';
 import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
 import { restoreThreads, persistThreads, consumeFreshSessionFlag, mergeServerConversations } from './lib/sessionPersistence';
+import { planBoot, pruneEmptyThreads } from './lib/bootSession';
 import { firstLiveThread } from './lib/threadLifecycle';
 import { cardAcceptInvite, ledgerInvite } from './lib/rosterInvite';
 import { normalizeLanguage } from './lib/languages';
@@ -78,12 +79,29 @@ export default function App() {
 
   // ── Orchestrator threads — declared early so activeThreadId is available for
   // the WS hook below (hooks must be called in a consistent order).
-  // Restore the persisted thread list + active id on init (resume last
-  // conversation, Claude/Gemini-style). Never reintroduce a literal
-  // "thread-default"; on first run / post-wipe we get one fresh "New Session".
+  // Restore the persisted thread list on init. The thread list is resumed; the
+  // ACTIVE thread is not — launching the app opens a new session (see bootPlan
+  // below). Never reintroduce a literal "thread-default"; on first run /
+  // post-wipe restore hands back one fresh "New Session" and says so.
   const restoredInit = useRef(restoreThreads()).current;
-  const [threads, setThreads] = useState<ArslanThread[]>(restoredInit.threads);
-  const [activeThreadId, setActiveThreadId] = useState<string>(restoredInit.activeThreadId);
+  // Detect a FRESH app session (absent on a brand-new tab/app launch, present
+  // across same-tab reloads). Declared here because the boot plan below needs
+  // it; it also scopes the session-ephemeral spawn roster further down.
+  const freshSession = useRef(consumeFreshSessionFlag()).current;
+  // Launching the app opens a NEW session; a same-tab reload does not. Empty
+  // sessions do not accumulate because the recovery effect below prunes the
+  // ones the server has never heard of — see lib/bootSession.ts for why there
+  // is no "is this session empty" flag anywhere.
+  const bootPlan = useRef(
+    planBoot(restoredInit, { freshLaunch: freshSession, now: Date.now() }),
+  ).current;
+  const [threads, setThreads] = useState<ArslanThread[]>(bootPlan.threads);
+  const [activeThreadId, setActiveThreadId] = useState<string>(bootPlan.activeThreadId);
+  // The recovery effect runs once with [] deps but must prune against whichever
+  // thread is active when its fetch RESOLVES, not the one that was active when
+  // it started.
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
   // Which spawns THIS conversation has dispatched to — the Active Spawns
   // list is scoped by that (decision (a)), not by whether a direct chat
   // was ever opened.
@@ -98,12 +116,11 @@ export default function App() {
     return () => window.clearTimeout(h);
   }, [toast]);
 
-  // ── Session-ephemeral roster: detect a FRESH app session (absent on a brand-new
-  // tab/app launch, present across same-tab reloads). Computed exactly once.
-  const freshSession = useRef(consumeFreshSessionFlag()).current;
-  // The thread id that was resumed on this fresh load — the ONLY thread whose
-  // roster we reset (not threads the user later switches to or creates).
-  const resumedThreadId = useRef(restoredInit.activeThreadId);
+  // The thread the app opened on — the ONLY thread whose roster we reset (not
+  // threads the user later switches to or creates). It is the BOOT plan's id,
+  // not the restored one: on a fresh launch those differ, and pointing at the
+  // restored id would leave the reset waiting for a socket that never opens.
+  const resumedThreadId = useRef(bootPlan.activeThreadId);
   // Guard so the one-shot roster_reset fires once per fresh session.
   const rosterResetSent = useRef(false);
 
@@ -128,7 +145,18 @@ export default function App() {
       try {
         const rows = await api.listConversations();
         if (cancelled || !rows.length) return;
-        setThreads((prev) => mergeServerConversations(prev, rows));
+        // A row exists server-side only once a conversation has at least one
+        // message, so "the server has never heard of it" IS "it has no
+        // messages" — the only emptiness signal that cannot go stale. Pruning
+        // here rather than at boot is also what keeps it fail-open: offline,
+        // still booting, or 401 prunes nothing.
+        const serverIds = new Set(rows.map((r) => r.conversation_id));
+        setThreads((prev) =>
+          pruneEmptyThreads(mergeServerConversations(prev, rows), {
+            serverIds,
+            activeThreadId: activeThreadIdRef.current,
+          }),
+        );
       } catch {
         /* offline / still booting — keep whatever localStorage had */
       }

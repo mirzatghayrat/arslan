@@ -28,6 +28,17 @@ export interface PersistedThread {
 export interface RestoredThreads {
   threads: PersistedThread[];
   activeThreadId: string;
+  /**
+   * True when nothing valid was stored and the thread below was invented here.
+   *
+   * bootSession.planBoot needs to tell "the store was empty so I made one" apart
+   * from "the user has threads", because on a fresh launch it mints a new
+   * session — and minting beside an already-invented one would show two empty
+   * sessions on a clean install. The packaged app hits this constantly: an
+   * ephemeral sidecar port changes the origin, so localStorage reads as absent
+   * on launches that are not first runs at all.
+   */
+  mintedFresh: boolean;
 }
 
 export const THREADS_KEY = "arslan.threads";
@@ -67,10 +78,16 @@ export function persistThreads(
   }
 }
 
-/** Build a single fresh thread (used on first run / post-wipe). */
-function makeFreshThread(): PersistedThread {
+/**
+ * Build a single fresh thread — first run, post-wipe, or a new session at boot.
+ *
+ * `now` is injected rather than read from the clock so the id is a function of
+ * its input and a test can assert which thread came back instead of asserting
+ * that some string starting with "thread-" exists.
+ */
+export function makeFreshThread(now: number = Date.now()): PersistedThread {
   return {
-    id: `thread-${Date.now()}`,
+    id: `thread-${now}`,
     title: "New Session",
     history: [],
     memberSpawnIds: [],
@@ -115,7 +132,7 @@ export function restoreThreads(): RestoredThreads {
   // First run / post-wipe / corrupt store → start with one fresh thread.
   if (threads.length === 0) {
     const fresh = makeFreshThread();
-    return { threads: [fresh], activeThreadId: fresh.id };
+    return { threads: [fresh], activeThreadId: fresh.id, mintedFresh: true };
   }
 
   // If the stored active id no longer points at a thread, fall back to the first.
@@ -123,7 +140,7 @@ export function restoreThreads(): RestoredThreads {
     activeThreadId = threads[0].id;
   }
 
-  return { threads, activeThreadId };
+  return { threads, activeThreadId, mintedFresh: false };
 }
 
 /**
