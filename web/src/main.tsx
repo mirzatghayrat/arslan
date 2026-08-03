@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {ErrorBoundary} from './components/ErrorBoundary';
 import {bootstrapInjectedToken} from './lib/injectedToken';
+import {dismissBootVeil} from './lib/bootVeil';
 import './index.css';
 import './i18n';
 
@@ -17,3 +18,9 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+// Two frames, not one. `render` only schedules work, and a single rAF can fire
+// before React has committed and painted — which would fade the veil away from
+// an empty page and show the flash it exists to hide. The second rAF is
+// dispatched after the first frame has gone to the compositor.
+requestAnimationFrame(() => requestAnimationFrame(() => dismissBootVeil()));

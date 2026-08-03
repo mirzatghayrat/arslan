@@ -6,10 +6,54 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Arslan · One Becomes Many</title>
+    <style>
+      /*
+        Boot veil — the second half of the desktop launch hand-off.
+
+        The packaged shell shows desktop/splash/index.html in its own window on
+        a #17150F background, then swaps this window in on top of it. Without
+        this veil that swap would flash: the splash cannot read the SPA's theme
+        (different origin, so the theme in localStorage is unreachable), so it
+        cannot end on the user's background colour. Instead BOTH sides meet on
+        one fixed colour and the SPA fades up from it — which works for the
+        light theme and the dark theme without either side knowing which is on.
+
+        #17150F must stay identical to --arslan-boot-bg in desktop/splash/index.html
+        and to the fade colour baked into arslan-splash.mp4's first and last frame.
+
+        The animation is a dead-man's switch, not the normal path: bootVeil.ts
+        removes this element right after React's first paint. If the bundle
+        fails to load at all, the veil would otherwise leave a permanently dark
+        window with no error on it, so CSS uncovers the page on its own at 2.5s.
+      */
+      #boot-veil {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        background: #17150f;
+        pointer-events: none;
+        transition: opacity 350ms ease-out;
+        animation: boot-veil-deadman 350ms ease-out 2500ms forwards;
+      }
+      @keyframes boot-veil-deadman {
+        to { opacity: 0; }
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-veil"></div>
+    <script>
+      // Runs during parse, before the veil has ever painted, so a browser tab
+      // sees no dark frame at all. Only the packaged shell asks for the fade —
+      // it sets this flag from an initialization script (desktop/src-tauri/src/lib.rs)
+      // that runs before any page script. In dev, and in a plain browser, there
+      // is no splash to hand off from, so there is nothing to fade up from.
+      if (!window.__ARSLAN_SHELL_FADE_IN__) {
+        var v = document.getElementById("boot-veil");
+        if (v) v.remove();
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

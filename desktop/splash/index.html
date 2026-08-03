@@ -2,29 +2,148 @@
 <meta charset="utf-8" />
 <title>Arslan</title>
 <!--
-  Tauri requires a frontendDist, but Arslan's UI is served by the Python
-  sidecar (server/main.py mounts the SPA), not bundled into the webview. So
-  this page is what the window shows for the second or two between launch and
-  the sidecar announcing its port — a deliberate loading state rather than the
-  white flash a blank frontendDist would give.
+  The launch screen. Shown in its own frameless window from the instant the
+  process starts until the sidecar answers /api/v1/health and the real window
+  is ready to take over.
+
+  HISTORY WORTH KNOWING: this file existed since the first packaged build and
+  had NEVER been on screen. tauri.conf.json declares `app.windows: []` and the
+  only window was built after wait_for_health() returned, so there was no
+  surface to render it into — and because a fast start would have shown it for
+  under two seconds anyway, "the splash flashed by" and "the splash does not
+  exist" looked identical. lib.rs now creates this window first and moves the
+  sidecar wait off the setup thread (Tauri's event loop does not run until
+  setup returns, so a window created there could not have painted either).
+
+  EVERY COLOUR HERE IS #17150F ON PURPOSE. The clip fades in from it and back
+  to it (verified per-frame: frame 0 and frame 95 are exactly #17150F), this
+  page's background is it, and web/index.html's boot veil is it. That single
+  shared colour is what makes the hand-off invisible: the splash can be swapped
+  for the real window at any moment without a flash, whatever theme the user
+  has, because the splash cannot read the SPA's theme across origins.
 -->
 <style>
-  :root { color-scheme: light dark; }
-  body { margin:0; height:100vh; display:grid; place-items:center;
-         font:15px/1.5 -apple-system, system-ui, sans-serif;
-         background:#faf9f7; color:#3d3833; }
-  @media (prefers-color-scheme: dark) { body { background:#17150f; color:#d9d2c7; } }
-  .dot { width:9px; height:9px; border-radius:50%; background:#d97706;
-         animation:p 1.1s ease-in-out infinite; }
-  @keyframes p { 0%,100%{opacity:.25;transform:scale(.85)} 50%{opacity:1;transform:scale(1)} }
-  .row { display:flex; gap:10px; align-items:center; }
-  #slow { margin-top:14px; font-size:13px; opacity:.65; visibility:hidden; text-align:center; }
+  :root { --arslan-boot-bg: #17150F; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--arslan-boot-bg);
+    /* Not `color-scheme: light dark`: this window must be this colour in both
+       OS appearances, because it is matched against a fixed video frame. */
+    color-scheme: dark;
+    color: #d9d2c7;
+    font: 15px/1.5 -apple-system, system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    cursor: default;
+  }
+  #clip {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    /* Kept in lockstep with FADE_OUT in desktop/src-tauri/src/lib.rs, which
+       waits this long after asking for the fade before swapping windows. */
+    transition: opacity 400ms ease-out;
+  }
+  #clip.gone { opacity: 0; }
+
+  /* The fallback layer sits UNDER the clip, so it costs nothing when the video
+     plays and is already composited when it does not. */
+  #fallback {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+  }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: #d97706;
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: .25; transform: scale(.85); }
+    50%      { opacity: 1;   transform: scale(1);   }
+  }
+  #slow, #failed {
+    position: fixed; left: 0; right: 0; bottom: 44px;
+    font-size: 13px; opacity: 0; text-align: center;
+    padding: 0 32px;
+    transition: opacity 400ms ease-in;
+  }
+  #slow { color: #d9d2c7; }
+  #failed { color: #f0a58c; white-space: pre-wrap; }
+  .shown { opacity: .85 !important; }
 </style>
-<div>
+
+<div id="fallback">
   <div class="row"><span class="dot"></span><span>Starting Arslan…</span></div>
-  <div id="slow">First launch sets up your database — this can take a moment.</div>
 </div>
+<video id="clip" muted playsinline autoplay preload="auto" src="arslan-splash.mp4"></video>
+<div id="slow">First launch sets up your database — this can take a moment.</div>
+<div id="failed"></div>
+
 <script>
-  // Only after a delay, so a normal fast start never shows it.
-  setTimeout(() => { document.getElementById('slow').style.visibility = 'visible' }, 4000);
+  (function () {
+    var clip = document.getElementById('clip');
+    var slow = document.getElementById('slow');
+    var failed = document.getElementById('failed');
+
+    // Two different failures hide behind "the clip did not play", and they were
+    // measured to be different: served over http, WebKit reached readyState 4
+    // with error === null — the media decoded perfectly — and still rejected
+    // play() on autoplay policy. So a decode failure and a policy refusal must
+    // not share one code path.
+    //
+    // Either way the element is dropped so the pulsing dot underneath shows
+    // through: the app still launches and the launch screen degrades to what
+    // this file used to be. A paused video would be worse than no video, since
+    // its first frame IS the background colour — the screen would go blank with
+    // nothing to say it was still working.
+    //
+    // `__arslanClipState` is left behind deliberately. This whole feature fails
+    // silently by design, and "the animation quietly never plays" is
+    // indistinguishable from "the app started fast" unless something records
+    // which branch ran.
+    window.__arslanClipState = 'pending';
+    function abandonVideo(why) {
+      window.__arslanClipState = why;
+      clip.style.display = 'none';
+    }
+    clip.addEventListener('error', function () { abandonVideo('decode-error'); });
+    clip.addEventListener('playing', function () { window.__arslanClipState = 'playing'; });
+
+    // One retry before giving up: a rejection raised before the document has
+    // settled is not the same as a policy that will refuse forever, and the
+    // retry costs a tick on a path that is already waiting for a subprocess.
+    function attempt(retriesLeft) {
+      var played = clip.play();
+      if (!played || typeof played.catch !== 'function') return;
+      played.catch(function () {
+        if (retriesLeft > 0) setTimeout(function () { attempt(retriesLeft - 1); }, 120);
+        else abandonVideo('autoplay-refused');
+      });
+    }
+    attempt(1);
+
+    // Only after a delay, so a normal fast start never shows it.
+    setTimeout(function () { slow.classList.add('shown'); }, 5000);
+
+    // Called from Rust (WebviewWindow::eval) once the sidecar is healthy and
+    // the minimum on-screen time has elapsed. Fading the clip rather than
+    // cutting it is what makes an early hand-off work: the clip only dims to
+    // the background colour on its own during its last half second, so a hard
+    // cut at, say, 2.0s would swap away from a fully bright frame and put the
+    // white flash right back.
+    window.__arslanFadeOut = function () {
+      slow.classList.remove('shown');
+      clip.classList.add('gone');
+    };
+
+    // Called from Rust when the sidecar never became healthy. The old code
+    // returned Err from setup, which panicked with no window ever created, so
+    // the user saw nothing at all; this window is already on screen, so it is
+    // the honest place to say so.
+    window.__arslanBootError = function (message) {
+      abandonVideo();
+      document.getElementById('fallback').style.display = 'none';
+      failed.textContent = String(message);
+      failed.classList.add('shown');
+    };
+  })();
 </script>

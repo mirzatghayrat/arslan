@@ -29,6 +29,30 @@ const PORT_LINE_PREFIX: &str = "ARSLAN_PORT=";
 /// screen explains the wait.
 const STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
+/// Shared window geometry. The splash and the real window are built at the same
+/// size and both `.center()`, so the swap between them moves nothing.
+const WINDOW_W: f64 = 1280.0;
+const WINDOW_H: f64 = 840.0;
+
+/// Minimum time the launch screen stays up, measured from when its window is
+/// created — not from process start, because the DMG "install to Applications"
+/// prompt runs before it and can hold for minutes.
+///
+/// A cold start measured 1.43s from launch to health-OK, so this is mostly a
+/// floor rather than a wait: it buys roughly 0.6s so the clip reads as a launch
+/// screen instead of a flicker. It is one constant on purpose.
+const SPLASH_FLOOR: std::time::Duration = std::time::Duration::from_millis(2000);
+
+/// Lockstep with the `#clip` transition duration in desktop/splash/index.html.
+/// Rust asks the page to fade, waits this long, then swaps windows; if the two
+/// numbers drift apart the swap happens mid-fade and the flash comes back.
+const SPLASH_FADE_OUT: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Backstop for a main window whose page never finishes loading. Showing a
+/// half-loaded window beats leaving the user on a launch screen that will never
+/// end, and the boot veil means a page still rendering looks like the splash.
+const REVEAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// Holds the sidecar so it can be killed on exit. `Mutex<Option<Child>>`
 /// rather than a bare Child: `take()` on shutdown means a second exit event
 /// cannot try to kill an already-reaped process.
@@ -396,6 +420,199 @@ fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
     std::process::exit(0);
 }
 
+/// Window labels. The boot thread looks windows up by label instead of
+/// carrying handles, so a window that is gone is a `None` to skip rather than a
+/// handle to something destroyed.
+const SPLASH_LABEL: &str = "splash";
+const MAIN_LABEL: &str = "main";
+
+/// Everything between "the launch screen is up" and "the real window is up".
+///
+/// Runs on its own thread. Both of the steps it owns can take a long time on a
+/// first launch — the sidecar announces its port only after migrations finish,
+/// and health comes after that — and on the setup thread either one would
+/// freeze the launch screen rather than play under it.
+fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
+    let port = match start_sidecar(&app) {
+        Ok((port, child)) => {
+            app.state::<Sidecar>().0.lock().unwrap().replace(child);
+            port
+        }
+        Err(e) => return report_boot_failure(&app, &e),
+    };
+    if let Err(e) = wait_for_health(port) {
+        return report_boot_failure(&app, &e);
+    }
+
+    // The floor, then the fade.
+    //
+    // Fading rather than cutting is what lets the hand-off happen at any point
+    // in the clip. The clip dims to the background colour only during its own
+    // last half second, so cutting at the floor — which a 1.4s cold start
+    // always reaches first — would swap away from a fully bright frame and put
+    // back exactly the flash this whole arrangement exists to remove.
+    let shown = splash_since.elapsed();
+    if shown < SPLASH_FLOOR {
+        std::thread::sleep(SPLASH_FLOOR - shown);
+    }
+    if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
+        let _ = splash.eval("window.__arslanFadeOut && window.__arslanFadeOut()");
+        std::thread::sleep(SPLASH_FADE_OUT);
+    }
+
+    // Windows have to be built on the main thread on macOS.
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || open_main_window(&handle, port));
+}
+
+/// Report a failed start on the window that is already in front of the user.
+///
+/// This path used to be `?` out of `setup`, which panicked before any window
+/// had been built: the app died having shown nothing at all, and the user had
+/// no way to tell a crash from a slow launch. The launch screen is on screen
+/// by the time anything here can fail, so it carries the message.
+fn report_boot_failure(app: &tauri::AppHandle, message: &str) {
+    eprintln!("Arslan failed to start: {message}");
+    if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
+        // These strings are ours, not user input, but they are being pasted
+        // into a JS string literal — quote them rather than trusting that no
+        // future error message will ever contain a quote or a backslash.
+        let escaped = message
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
+        let _ = splash.eval(&format!(
+            "window.__arslanBootError && window.__arslanBootError(\
+             \"Arslan could not start.\\n\\n{escaped}\")"
+        ));
+    }
+}
+
+/// Build the real window hidden, and reveal it once its page has loaded.
+///
+/// Hidden-then-show is the whole point: the swap has to land on a painted page.
+/// The SPA paints a #17150F boot veil before React exists (web/index.html), so
+/// by the time the page reports Finished it is already the colour the launch
+/// screen ended on and the exchange has nothing to show.
+fn open_main_window(app: &tauri::AppHandle, port: u16) {
+    // 127.0.0.1, never "localhost": on a machine where localhost resolves to
+    // ::1 first, the webview would try IPv6 against a server bound only to
+    // IPv4 and show a connection error.
+    let url: tauri::Url = match format!("http://127.0.0.1:{port}").parse() {
+        Ok(url) => url,
+        Err(e) => {
+            return report_boot_failure(app, &format!("built an invalid sidecar URL: {e}"));
+        }
+    };
+
+    let mut win = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
+        .title("Arslan")
+        .inner_size(WINDOW_W, WINDOW_H)
+        .min_inner_size(900.0, 600.0)
+        // Same size and same centring as the splash, so the swap moves nothing.
+        .center()
+        // Revealed by on_page_load below. A window shown at build time would be
+        // white for as long as the SPA takes to load, which is the flash the
+        // launch screen was added to remove.
+        .visible(false)
+        // Give file drags back to the page. wry installs an NSDragging
+        // interceptor on macOS too (wkwebview/drag_drop.rs) and, once it
+        // reports the drop handled, the OS default is never invoked — and the
+        // OS default is what delivers HTML5 dragover/drop to the webview. So in
+        // the packaged app a file dragged onto the second brain produced
+        // NOTHING: no dashed-border feedback, no error, not even the "this build
+        // can't read images" message, because the SPA never saw the event. Dev
+        // browsers were unaffected, which is why this shipped. Arslan has no
+        // native drop handler of its own — every drop target is HTML — so
+        // disabling it costs nothing.
+        .disable_drag_drop_handler()
+        .on_page_load(|win, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                reveal(win.app_handle());
+            }
+        });
+
+    // No opaque white title bar: the webview fills the window and the native
+    // traffic lights float over the sidebar's top-left corner (which the SPA
+    // keeps free of content). Overlay leaves no native strip to drag by, so the
+    // SPA marks its sidebar header as data-tauri-drag-region and
+    // capabilities/remote-ui-drag.json grants that local origin exactly the two
+    // drag commands.
+    #[cfg(target_os = "macos")]
+    {
+        win = win
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(13.0, 16.0));
+    }
+
+    // One initialization script carrying two unrelated facts, because it has to
+    // run before any page script does.
+    //
+    // The fade flag is unconditional: web/index.html removes its boot veil
+    // during parse unless this says a launch screen is handing off to it, so a
+    // browser tab and `npm run dev` never see a dark frame, and a missing token
+    // must not also cost the fade.
+    let mut init = String::from("window.__ARSLAN_SHELL_FADE_IN__ = true;");
+
+    // The other half of the auth contract. The sidecar enforces auth
+    // (ARSLAN_PACKAGED=1); the SPA reads window.__ARSLAN_TOKEN__ at startup
+    // (web/src/lib/injectedToken.ts). Skipping injection when the file is
+    // unreadable is deliberate fail-visible: the UI's API calls 401
+    // immediately, instead of the server silently running open to every local
+    // process.
+    match read_api_token() {
+        Some(token) => init.push_str(&format!("window.__ARSLAN_TOKEN__ = \"{token}\";")),
+        None => eprintln!(
+            "WARNING: no readable api_token — the UI will be unauthenticated \
+             against an auth-enforcing server"
+        ),
+    }
+    win = win.initialization_script(&init);
+
+    if let Err(e) = win.build() {
+        return report_boot_failure(app, &format!("could not open the main window: {e}"));
+    }
+
+    // Backstop for a page that never reports Finished. Without it a stalled
+    // load leaves a hidden main window behind a launch screen that will never
+    // end — a hang with no symptom to report. `reveal` is idempotent, so this
+    // firing after a normal reveal does nothing.
+    let deadline_handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(REVEAL_DEADLINE);
+        let inner = deadline_handle.clone();
+        let _ = deadline_handle.run_on_main_thread(move || reveal(&inner));
+    });
+
+    // AFTER the window exists so the pill has somewhere to appear. Startup-only
+    // + the menu item — deliberately no periodic timer (user decision, v0.1.5).
+    check_for_updates(app.clone(), false);
+}
+
+/// Show the main window and retire the launch screen, in that order and once.
+///
+/// The order is load-bearing twice over: closing the splash first would leave a
+/// moment with no window at all, which shows the desktop through and — worse —
+/// is the condition Tauri reports as ExitRequested, i.e. it would quit the app
+/// during its own launch.
+///
+/// Idempotent because two things call it: the page-load callback and the
+/// deadline backstop.
+fn reveal(app: &tauri::AppHandle) {
+    let Some(main) = app.get_webview_window(MAIN_LABEL) else {
+        return;
+    };
+    if main.is_visible().unwrap_or(false) {
+        return;
+    }
+    let _ = main.show();
+    let _ = main.set_focus();
+    if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
+        let _ = splash.close();
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -416,82 +633,41 @@ pub fn run() {
                 }
             }
 
-            let handle = app.handle().clone();
-            let (port, child) = start_sidecar(&handle)?;
-            app.state::<Sidecar>().0.lock().unwrap().replace(child);
-
-            // 127.0.0.1, never "localhost": on a machine where localhost
-            // resolves to ::1 first, the webview would try IPv6 against a
-            // server bound only to IPv4 and show a connection error.
-            let url = format!("http://127.0.0.1:{port}")
-                .parse()
-                .map_err(|e| format!("built an invalid sidecar URL: {e}"))?;
-
-            // Health first: the webview navigates once, and the token file is
-            // written during server startup — both need the server actually up.
-            wait_for_health(port)?;
-
-            let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+            // The launch screen goes up FIRST, before anything that can block,
+            // and two separate facts each make that mandatory.
+            //
+            // (1) `app.windows` in tauri.conf.json is an empty array, so no
+            //     window exists until one is built here. That is why
+            //     desktop/splash/index.html shipped from the first packaged
+            //     build onward and was never once on screen: nothing rendered
+            //     it. Nobody noticed because a launch screen that never appears
+            //     and a launch screen that flashes past in 1.4s look the same.
+            // (2) Tauri's event loop does not start until this closure returns,
+            //     so a window built here that then waited for the sidecar
+            //     inline would exist without ever painting a frame.
+            //
+            // Hence the boot work moves to its own thread below.
+            let splash_since = std::time::Instant::now();
+            WebviewWindowBuilder::new(app, SPLASH_LABEL, WebviewUrl::App("index.html".into()))
                 .title("Arslan")
-                .inner_size(1280.0, 840.0)
-                .min_inner_size(900.0, 600.0)
-                // Give file drags back to the page. wry installs an NSDragging
-                // interceptor on macOS too (wkwebview/drag_drop.rs) and, once it
-                // reports the drop handled, the OS default is never invoked —
-                // and the OS default is what delivers HTML5 dragover/drop to the
-                // webview. So in the packaged app a file dragged onto the second
-                // brain produced NOTHING: no dashed-border feedback, no error,
-                // not even the "this build can't read images" message, because
-                // the SPA never saw the event. Dev browsers were unaffected,
-                // which is why this shipped. Arslan has no native drop handler
-                // of its own — every drop target is HTML — so disabling it costs
-                // nothing.
-                .disable_drag_drop_handler();
+                .inner_size(WINDOW_W, WINDOW_H)
+                .resizable(false)
+                .decorations(false)
+                .center()
+                .build()?;
 
-            // No opaque white title bar: the webview fills the window and the
-            // native traffic lights float over the sidebar's top-left corner
-            // (which the SPA keeps free of content). Overlay leaves no native
-            // strip to drag by, so the SPA marks its sidebar header as
-            // data-tauri-drag-region and capabilities/remote-ui-drag.json
-            // grants that local origin exactly the two drag commands.
-            #[cfg(target_os = "macos")]
-            {
-                win = win
-                    .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .hidden_title(true)
-                    .traffic_light_position(tauri::LogicalPosition::new(13.0, 16.0));
-            }
-
-            // The other half of the auth contract. The sidecar enforces auth
-            // (ARSLAN_PACKAGED=1); the SPA reads window.__ARSLAN_TOKEN__ at
-            // startup (web/src/lib/injectedToken.ts). Skipping injection when
-            // the file is unreadable is deliberate fail-visible: the UI's API
-            // calls 401 immediately, instead of the server silently running
-            // open to every local process.
-            match read_api_token() {
-                Some(token) => {
-                    win = win.initialization_script(&format!(
-                        "window.__ARSLAN_TOKEN__ = \"{token}\";"
-                    ));
-                }
-                None => eprintln!(
-                    "WARNING: no readable api_token — the UI will be unauthenticated \
-                     against an auth-enforcing server"
-                ),
-            }
-
-            win.build()?;
-
-            // "Check for Updates…" lives in the app submenu, right under
-            // About — the place macOS users actually look. Built from the
-            // default menu so Edit/copy-paste etc. all survive.
+            // Built before the main window now, because at this point there is
+            // no main window. The menu belongs to the app rather than to a
+            // window, so nothing here depended on the old ordering.
+            //
+            // "Check for Updates…" lives in the app submenu, right under About
+            // — the place macOS users actually look. Built from the default
+            // menu so Edit/copy-paste etc. all survive.
             #[cfg(target_os = "macos")]
             {
                 use tauri::menu::{Menu, MenuItem};
                 let menu = Menu::default(app.handle())?;
-                if let Some(tauri::menu::MenuItemKind::Submenu(app_menu)) =
-                    menu.items()?.first()
-                {
+                if let Some(tauri::menu::MenuItemKind::Submenu(app_menu)) = menu.items()?.first() {
                     let check = MenuItem::with_id(
                         app,
                         "check-for-updates",
@@ -504,10 +680,8 @@ pub fn run() {
                 app.set_menu(menu)?;
             }
 
-            // AFTER the window exists so the pill has somewhere to appear.
-            // Startup-only + the menu item — deliberately no periodic timer
-            // (user decision, v0.1.5 round).
-            check_for_updates(handle, false);
+            let handle = app.handle().clone();
+            std::thread::spawn(move || boot(handle, splash_since));
             Ok(())
         })
         .build(tauri::generate_context!())
