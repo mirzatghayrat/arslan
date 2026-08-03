@@ -304,7 +304,10 @@ const Reveal: React.FC<{f: number}> = ({f}) => (
 
 const City: React.FC<{f: number}> = ({f}) => (
   <AbsoluteFill>
-    <Clip src="clay/world.mp4" f={f} from={4.6} play={2.4} />
+    {/* stops at 6.4s: the hold lands on the wide city rather than on the first
+        frame of the Deployment macro, which beat 8 then plays in full — holding
+        it here showed the same framing twice, captioned differently */}
+    <Clip src="clay/world.mp4" f={f} from={4.6} play={1.8} />
     <Cap f={f} at={36} lines={[MASTHEAD.b]} />
     <Prov />
   </AbsoluteFill>
@@ -312,7 +315,12 @@ const City: React.FC<{f: number}> = ({f}) => (
 
 const Factory: React.FC<{f: number}> = ({f}) => (
   <AbsoluteFill>
-    <Clip src="clay/world.mp4" f={f} from={11.0} play={2.0} />
+    {/* stops at 11.55s. The source leaves the factory for its own end card at
+        about 11.9 — the first retime (to 13.0) froze the card, misspelling and
+        all, under this caption for four seconds; the second (12.3) froze the
+        blank card. 11.55 was verified sharp: mid-motion frames either side of
+        it carry the whip-pan's blur. */}
+    <Clip src="clay/world.mp4" f={f} from={11.0} play={0.55} />
     <Cap f={f} at={36} lines={[`Spawns: ${SPAWNS.howMany}`, SPAWNS.equip]} />
     <Prov />
   </AbsoluteFill>
