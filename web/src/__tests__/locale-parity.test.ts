@@ -114,7 +114,10 @@ describe("locale parity", () => {
     // 1257 → 1261: the overlay-dismissal round added common.discard_* — Escape in
     //              a DIRTY editor asks before closing (ruling ①A) instead of
     //              destroying work on a reflexive keystroke.
-    expect(enKeys).toHaveLength(1261);
+    // 1261 → 1264: the header/rail polish batch added orchestrator.shell_on /
+    //              shell_off / browser_soon — tooltips for the two new status
+    //              indicators, which carry meaning no icon can.
+    expect(enKeys).toHaveLength(1264);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

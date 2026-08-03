@@ -704,7 +704,10 @@
     "update_persona_tone": "Tone",
     "update_capabilities": "Capabilities",
     "update_equipment": "Equipment changes",
-    "update_done": "{{name}} updated"
+    "update_done": "{{name}} updated",
+    "shell_on": "Local tools: Arslan may propose whitelisted commands (git, gh, ffmpeg, pandoc) — each one still needs your confirmation",
+    "shell_off": "Local tools are off — Arslan cannot propose commands. Turn on in Settings.",
+    "browser_soon": "Built-in browser — not connected to anything yet"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -1079,7 +1082,7 @@
     "kind_skill": "Skill",
     "kind_evolution": "Evolution",
     "kind_invite": "Invite",
-    "dock_title": "This conversation · Recap",
+    "dock_title": "Recap",
     "dock_summary": "{{runs}} runs · avg {{avg}} · growth {{growth}}",
     "dock_empty": "No runs or growth events in this conversation yet",
     "run_label": "Run"

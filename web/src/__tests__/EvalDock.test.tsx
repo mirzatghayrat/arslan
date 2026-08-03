@@ -28,7 +28,10 @@ describe("EvalDock recap timeline", () => {
     fireEvent.click(screen.getByText("eval.dock_title"));                    // expand
     expect(await screen.findByText(/Deck Master/)).toBeTruthy();          // run item now visible
     expect(screen.getByText(/Data Analyst/)).toBeTruthy();               // distill item
-    fireEvent.click(screen.getByText(/Diagnostics/));                    // link → standalone view
+    // The Diagnostics entry is an ICON now (the dock header was crowded and
+    // the old label was hardcoded English). Found by its accessible name, which
+    // is what a screen-reader user has too.
+    fireEvent.click(screen.getByRole("button", { name: "nav.diagnosis" }));
     expect(onOpen).toHaveBeenCalled();
   });
 

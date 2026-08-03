@@ -704,7 +704,10 @@
     "update_persona_tone": "语气",
     "update_capabilities": "能力标签",
     "update_equipment": "装备变更",
-    "update_done": "已更新 {{name}}"
+    "update_done": "已更新 {{name}}",
+    "shell_on": "本地工具：Arslan 可以提议运行白名单命令（git、gh、ffmpeg、pandoc）——每条仍需你逐条确认",
+    "shell_off": "本地工具已关闭——Arslan 不会提议运行命令。可在设置里开启。",
+    "browser_soon": "内置浏览器——目前还没有接任何东西"
   },
   "ledger": {
     "title": "活跃分身账本",
@@ -1079,7 +1082,7 @@
     "kind_skill": "技能",
     "kind_evolution": "进化",
     "kind_invite": "邀请",
-    "dock_title": "本对话 · 回顾",
+    "dock_title": "回顾",
     "dock_summary": "{{runs}} 运行 · 均分 {{avg}} · 成长 {{growth}}",
     "dock_empty": "本对话还没有运行 / 成长记录",
     "run_label": "运行"

@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { ConversationUsage, RecapDto } from "../api/client.types";
 import { fmtTok, fmtUsd } from "../lib/usageFormat";
 import { useArslanStore } from "../stores/arslanStore";
+import { HeartPulse } from "lucide-react";
 
 interface Props {
   /** Backend numeric spawn id (spawn section) — unused by the recap timeline. */
@@ -105,9 +106,14 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
         <button
           type="button"
           className="recap-dock__link"
+          title={t("nav.diagnosis")}
+          aria-label={t("nav.diagnosis")}
           onClick={(e) => { e.stopPropagation(); onOpenDiagnosis(); }}
         >
-          Diagnostics ↗
+          {/* Icon instead of "Diagnostics ↗": the dock header was crowded, and
+              that string was hardcoded English — a Chinese reader saw a label
+              nothing could translate. aria-label keeps it reachable. */}
+          <HeartPulse className="w-3.5 h-3.5" />
         </button>
       </div>
       {/* S3-M3: conversation cumulative usage — Σ tok · $usd. ≈ = some tokens are

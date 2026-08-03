@@ -704,7 +704,10 @@
     "update_persona_tone": "Tone",
     "update_capabilities": "Capabilities",
     "update_equipment": "Equipment changes",
-    "update_done": "{{name}} updated"
+    "update_done": "{{name}} updated",
+    "shell_on": "Lokale Werkzeuge: Arslan darf Befehle von der Whitelist vorschlagen (git, gh, ffmpeg, pandoc) — jeder einzelne braucht weiterhin deine Bestätigung",
+    "shell_off": "Lokale Werkzeuge sind aus. In den Einstellungen aktivierbar.",
+    "browser_soon": "Eingebauter Browser — noch mit nichts verbunden"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -1079,7 +1082,7 @@
     "kind_skill": "Skill",
     "kind_evolution": "Evolution",
     "kind_invite": "Einladung",
-    "dock_title": "Diese Unterhaltung · Rückblick",
+    "dock_title": "Rückblick",
     "dock_summary": "{{runs}} Läufe · Ø {{avg}} · Wachstum {{growth}}",
     "dock_empty": "Noch keine Läufe oder Wachstumsereignisse in dieser Unterhaltung",
     "run_label": "Lauf"

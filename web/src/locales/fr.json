@@ -704,7 +704,10 @@
     "update_persona_tone": "Tone",
     "update_capabilities": "Capabilities",
     "update_equipment": "Equipment changes",
-    "update_done": "{{name}} updated"
+    "update_done": "{{name}} updated",
+    "shell_on": "Outils locaux : Arslan peut proposer des commandes de la liste blanche (git, gh, ffmpeg, pandoc) ; chacune requiert toujours votre confirmation",
+    "shell_off": "Outils locaux désactivés. Activez-les dans les Réglages.",
+    "browser_soon": "Navigateur intégré — pas encore relié à quoi que ce soit"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -1079,7 +1082,7 @@
     "kind_skill": "Compétence",
     "kind_evolution": "Évolution",
     "kind_invite": "Invitation",
-    "dock_title": "Cette conversation · Récapitulatif",
+    "dock_title": "Récap",
     "dock_summary": "{{runs}} exécutions · moy. {{avg}} · progression {{growth}}",
     "dock_empty": "Aucune exécution ni événement de progression dans cette conversation pour l'instant",
     "run_label": "Exécution"

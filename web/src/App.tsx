@@ -25,7 +25,7 @@ import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnStudio from './components/SpawnStudio';
 import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
-import { X, Sparkles, Cpu, Sliders, Layers, Terminal, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, LayoutGrid, Paintbrush, Wrench, Brain, HeartPulse } from 'lucide-react';
+import { X, Sparkles, Cpu, Sliders, Layers, Terminal, Globe, ShieldAlert, Network, Wifi, Settings2, ChevronRight, ChevronLeft, Plus, Play, CheckCircle2, LayoutGrid, Paintbrush, Wrench, Brain, HeartPulse } from 'lucide-react';
 import { getIcon } from './components/iconMap';
 import { SpawnAvatar } from './components/SpawnAvatar';
 import { ThemeApplier } from './components/ThemeApplier';
@@ -810,18 +810,30 @@ export default function App() {
                 it outside chat would reintroduce the bug fixed in v0.1.8 —
                 every non-chat screen becomes unmovable. Empty, same height, no
                 layout shift (decision A). */}
-            <div className="flex items-center gap-2">
-              {(activeSection === 'arslan' || activeSection === 'spawn') && (
+            <div className="flex items-center gap-2 min-w-0">
+              {(activeSection === 'arslan' || activeSection === 'spawn') ? (
                 <>
-                  <span className="w-2 h-2 rounded-full bg-success"></span>
-                  <span className="text-[10.5px] font-mono text-muted-foreground capitalize uppercase tracking-wider">
-                    {t('modal.workspace_label')} <span className="text-foreground font-bold">
-                      {activeSection === 'arslan'
-                        ? t('modal.workspace_orchestrator', { title: activeThread.title })
-                        : t('modal.workspace_specialist', { name: activeSpawn?.name || 'Direct Chat' })}
-                    </span>
+                  {/* The dot IS the "active session workspace" label — it was
+                      three words of chrome saying what a green dot already says. */}
+                  <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
+                  <span className="text-[11px] font-mono text-foreground font-bold truncate">
+                    {activeSection === 'arslan'
+                      ? activeThread.title
+                      : (activeSpawn?.name || 'Direct Chat')}
                   </span>
                 </>
+              ) : (
+                /* 🔴 The bar itself must stay on EVERY section — it carries
+                   data-tauri-drag-region, and v0.1.7 shipped with it only on
+                   chat: "The window could only be dragged from the chat view"
+                   (bab6273). Deleting it outside chat, which is what "remove
+                   this empty strip" literally asks for, brings that back.
+                   So the strip stops being EMPTY instead: each section's own
+                   title moves up into it, which is what made the space read as
+                   dead in the first place. */
+                <span className="text-[11px] font-mono text-foreground font-bold truncate">
+                  {t(`nav.${activeSection}`)}
+                </span>
               )}
             </div>
 
@@ -840,9 +852,42 @@ export default function App() {
                   }`}
                 >
                   <Cpu className="w-3.5 h-3.5" />
-                  <span>{showControlPanel ? t('orchestrator.hide_rail') : t('orchestrator.show_rail')}</span>
                 </button>
               )}
+
+              {/* Shell posture — an INDICATOR, not a control (user ruling C).
+                  Lit when Arslan may PROPOSE a whitelisted local command,
+                  grey when it cannot. Deliberately not clickable: the switch
+                  lives in Settings, and there is nothing here to open — this
+                  is not a terminal. The four allowed binaries run as an argv
+                  list inside a seatbelt with no shell, no pty and no network
+                  (server/services/command_sandbox.py), so "open a terminal"
+                  would mean dismantling the model that makes it safe. */}
+              <span
+                data-testid="shell-indicator"
+                title={t(settings.orchestratorShellEnabled ? 'orchestrator.shell_on' : 'orchestrator.shell_off')}
+                aria-label={t(settings.orchestratorShellEnabled ? 'orchestrator.shell_on' : 'orchestrator.shell_off')}
+                className={`flex items-center px-2 py-1.5 rounded-lg border ${
+                  settings.orchestratorShellEnabled
+                    ? 'border-primary/30 bg-primary/5 text-primary'
+                    : 'border-border text-subtle-foreground/50'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5" />
+              </span>
+
+              {/* Browser — placeholder, deliberately inert and grey. Nothing is
+                  wired behind it; it is here so the slot exists when a built-in
+                  browser is evaluated. Not a disabled BUTTON: a control that
+                  looks pressable and does nothing is worse than a marker. */}
+              <span
+                data-testid="browser-indicator"
+                title={t('orchestrator.browser_soon')}
+                aria-label={t('orchestrator.browser_soon')}
+                className="flex items-center px-2 py-1.5 rounded-lg border border-border text-subtle-foreground/50"
+              >
+                <Globe className="w-3.5 h-3.5" />
+              </span>
             </div>
           </div>
 

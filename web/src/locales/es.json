@@ -704,7 +704,10 @@
     "update_persona_tone": "Tone",
     "update_capabilities": "Capabilities",
     "update_equipment": "Equipment changes",
-    "update_done": "{{name}} updated"
+    "update_done": "{{name}} updated",
+    "shell_on": "Herramientas locales: Arslan puede proponer comandos de la lista blanca (git, gh, ffmpeg, pandoc); cada uno sigue requiriendo tu confirmación",
+    "shell_off": "Herramientas locales desactivadas. Actívalas en Ajustes.",
+    "browser_soon": "Navegador integrado: aún no está conectado a nada"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -1079,7 +1082,7 @@
     "kind_skill": "Habilidad",
     "kind_evolution": "Evolución",
     "kind_invite": "Invitación",
-    "dock_title": "Esta conversación · Resumen",
+    "dock_title": "Resumen",
     "dock_summary": "{{runs}} ejecuciones · media {{avg}} · crecimiento {{growth}}",
     "dock_empty": "Esta conversación aún no tiene ejecuciones ni eventos de crecimiento",
     "run_label": "Ejecución"

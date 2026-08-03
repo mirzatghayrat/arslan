@@ -704,7 +704,10 @@
     "update_persona_tone": "Tone",
     "update_capabilities": "Capabilities",
     "update_equipment": "Equipment changes",
-    "update_done": "{{name}} updated"
+    "update_done": "{{name}} updated",
+    "shell_on": "ローカルツール：Arslan は許可リストのコマンド（git, gh, ffmpeg, pandoc）を提案できます。実行には毎回あなたの確認が必要です",
+    "shell_off": "ローカルツールはオフです。設定から有効にできます。",
+    "browser_soon": "内蔵ブラウザ — まだ何にも接続されていません"
   },
   "ledger": {
     "title": "Active Spawns Ledger",
@@ -1079,7 +1082,7 @@
     "kind_skill": "スキル",
     "kind_evolution": "進化",
     "kind_invite": "招待",
-    "dock_title": "この会話 · 振り返り",
+    "dock_title": "リキャップ",
     "dock_summary": "{{runs}} 実行 · 平均 {{avg}} · 成長 {{growth}}",
     "dock_empty": "この会話にはまだ実行・成長の記録がありません",
     "run_label": "実行"
