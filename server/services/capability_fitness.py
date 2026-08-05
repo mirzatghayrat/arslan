@@ -44,6 +44,21 @@ NATIVE_TOOL_CALLS: dict[str, str] = {
     "deepseek": SUPPORTED,      # ditto
     "anthropic": UNSUPPORTED,   # arslan/llm/providers/anthropic_provider.py builds no `tools`
     "gemini": UNSUPPORTED,      # arslan/llm/providers/gemini_provider.py builds no `tools`
+    # Tier-0 presets. The Settings dropdown stores the PRESET KEY as the
+    # provider (presets.provider_options: "the frontend renders label, stores
+    # key"), and expand_preset turns every one of these into provider "openai"
+    # — so tools are sent. Keyed on the expanded provider alone, all eight
+    # answered UNVERIFIED, and the Settings notice told users with a working
+    # setup that nobody had checked theirs. Measured, not guessed: eight of the
+    # eleven dropdown options were mis-stated.
+    "qwen": SUPPORTED,
+    "kimi": SUPPORTED,
+    "zhipu": SUPPORTED,
+    "minimax": SUPPORTED,
+    "groq": SUPPORTED,
+    "together": SUPPORTED,
+    "mistral": SUPPORTED,
+    "openrouter": SUPPORTED,
 }
 
 #: Why, in words a user can act on. Never "not supported" alone — that reads as

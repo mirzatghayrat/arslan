@@ -45,6 +45,19 @@ export const TOOL_TRANSPORT: Readonly<Record<string, ToolTransport>> = {
   deepseek: "supported", // ditto
   anthropic: "unsupported", // arslan/llm/providers/anthropic_provider.py builds no `tools`
   gemini: "unsupported", // arslan/llm/providers/gemini_provider.py builds no `tools`
+  // Tier-0 presets: the dropdown stores the PRESET KEY, and expand_preset maps
+  // every one of these to provider "openai", so tools are sent. Omitting them
+  // made the notice claim "nobody has measured this" on eight of the eleven
+  // dropdown options — untrue, and untrue in the cautious direction is still
+  // untrue.
+  qwen: "supported",
+  kimi: "supported",
+  zhipu: "supported",
+  minimax: "supported",
+  groq: "supported",
+  together: "supported",
+  mistral: "supported",
+  openrouter: "supported",
 };
 
 /** Tool-transport verdict for a provider id. Unknown or empty ⇒ `unverified`. */
