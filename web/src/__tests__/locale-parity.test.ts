@@ -118,8 +118,11 @@ describe("locale parity", () => {
     //              shell_off / browser_soon — tooltips for the two new status
     //              indicators, which carry meaning no icon can.
     // 1264 → 1265: settings.modeSystem — "follow the OS" is a third CHOICE, and a
+    // 1265 → 1268: tool-transport notice in Settings — title +
+    // unsupported + unverified, warning that Anthropic/Gemini drop
+    // tool definitions so equipped tools and MCP never fire.
     //              two-state toggle had no way to say it.
-    expect(enKeys).toHaveLength(1265);
+    expect(enKeys).toHaveLength(1268);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

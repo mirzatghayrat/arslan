@@ -21,6 +21,7 @@ import type { SelectOption } from '../Select';
 import ModelCombobox from '../ModelCombobox';
 import ConnectionTester, { type DeepTestStatus } from './ConnectionTester';
 import CapabilityBadges from './CapabilityBadges';
+import ToolTransportWarning from './ToolTransportWarning';
 
 const INPUT_CLS =
   'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
@@ -120,6 +121,10 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             ariaLabel="Provider"
           />
         </div>
+
+        {/* Shown while choosing, not only after saving: the point is to catch
+            someone before they pick a provider whose tools will never fire. */}
+        <ToolTransportWarning provider={draft.provider} />
 
         {/* Model combobox (static seed options until the config is saved) */}
         <div className="min-w-0">
@@ -232,6 +237,8 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           ariaLabel="Provider"
         />
       </div>
+
+      <ToolTransportWarning provider={config.provider} />
 
       {/* Model combobox (dynamic catalog, lazy-fetched on first focus) */}
       <div className="min-w-0" onFocus={props.onModelFocus}>

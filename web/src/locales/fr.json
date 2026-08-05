@@ -591,7 +591,10 @@
     "automationOpenDiagnostics": "Ouvrir Diagnostics",
     "searchPlaceholder": "Rechercher des paramètres…",
     "searchNoHits": "Aucune section ne correspond",
-    "modeSystem": "Système"
+    "modeSystem": "Système",
+    "tool_transport_title": "Les outils ne fonctionneront pas avec ce fournisseur",
+    "tool_transport_unsupported": "Arslan ne transmet pas encore les définitions d'outils à ce fournisseur : les outils équipés et les serveurs MCP connectés ne sont donc jamais proposés au modèle et ne seront pas appelés. Les compétences parviennent toujours au modèle sous forme d'instructions, mais toute étape d'une compétence qui repose sur un appel d'outil ne peut pas aboutir. Choisissez un fournisseur compatible OpenAI si vous avez besoin d'outils.",
+    "tool_transport_unverified": "Ce fournisseur n'a pas été mesuré face au transport d'outils d'Arslan. Les outils seront peut-être appelés — personne ne l'a vérifié."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

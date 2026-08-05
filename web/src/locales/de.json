@@ -591,7 +591,10 @@
     "automationOpenDiagnostics": "Diagnose öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
     "searchNoHits": "Kein Bereich passt",
-    "modeSystem": "System"
+    "modeSystem": "System",
+    "tool_transport_title": "Werkzeuge laufen bei diesem Anbieter nicht",
+    "tool_transport_unsupported": "Arslan übergibt diesem Anbieter noch keine Werkzeugdefinitionen. Ausgerüstete Werkzeuge und verbundene MCP-Server werden dem Modell daher nie angeboten und nicht aufgerufen. Skills erreichen das Modell weiterhin als Anweisungen, aber jeder Schritt eines Skills, der einen Werkzeugaufruf braucht, kann nicht abgeschlossen werden. Wähle einen OpenAI-kompatiblen Anbieter, wenn du Werkzeuge brauchst.",
+    "tool_transport_unverified": "Dieser Anbieter wurde nicht gegen Arslans Werkzeugübertragung gemessen. Ob Werkzeuge aufgerufen werden, hat niemand geprüft."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

@@ -591,7 +591,10 @@
     "automationOpenDiagnostics": "打开诊断台",
     "searchPlaceholder": "搜索设置…",
     "searchNoHits": "没有匹配的分区",
-    "modeSystem": "跟随系统"
+    "modeSystem": "跟随系统",
+    "tool_transport_title": "此 provider 上工具不会运行",
+    "tool_transport_unsupported": "Arslan 目前不向此 provider 传递工具定义，因此已装备的工具和已连接的 MCP 服务器根本不会被交给模型，也不会触发。技能仍会作为指令进入模型，但技能中任何依赖调用工具的步骤都无法完成。需要用工具请改选 OpenAI 兼容的 provider。",
+    "tool_transport_unverified": "此 provider 尚未针对 Arslan 的工具通路做过实测。工具可能触发也可能不触发——目前没人验过。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

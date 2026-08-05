@@ -591,7 +591,10 @@
     "automationOpenDiagnostics": "診断を開く",
     "searchPlaceholder": "設定を検索…",
     "searchNoHits": "一致するセクションはありません",
-    "modeSystem": "システム"
+    "modeSystem": "システム",
+    "tool_transport_title": "このプロバイダーではツールが動作しません",
+    "tool_transport_unsupported": "Arslan は現在このプロバイダーにツール定義を渡していないため、装備済みのツールや接続済みの MCP サーバーはモデルに提示されず、呼び出されません。スキルは指示としてモデルに届きますが、ツール呼び出しに依存する手順は完了できません。ツールが必要な場合は OpenAI 互換のプロバイダーを選んでください。",
+    "tool_transport_unverified": "このプロバイダーは Arslan のツール伝送について未計測です。ツールが呼ばれるかどうかは誰も確認していません。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
