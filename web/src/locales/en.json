@@ -468,7 +468,7 @@
     "capColProvider": "Provider",
     "capColCost": "Cost",
     "capColSpeed": "Speed",
-    "capColTools": "Tools",
+    "capColTools": "Tool aptitude",
     "capColReasoning": "Reasoning",
     "capColContext": "Context",
     "appearance": "Appearance",
@@ -594,7 +594,8 @@
     "modeSystem": "System",
     "tool_transport_title": "Tools will not run on this provider",
     "tool_transport_unsupported": "Arslan does not yet pass tool definitions to this provider, so equipped tools and connected MCP servers are never offered to the model and will not be called. Skills still reach the model as instructions, but any step of a skill that relies on calling a tool cannot complete. Choose an OpenAI-compatible provider if you need tools.",
-    "tool_transport_unverified": "This provider has not been measured against Arslan's tool transport. Tools may or may not be called — nobody has checked yet."
+    "tool_transport_unverified": "This provider has not been measured against Arslan's tool transport. Tools may or may not be called — nobody has checked yet.",
+    "capabilityTableNote": "0–10 ratings used to pick a model for a job. They describe the model's own strengths — not whether Arslan can send tools to that provider on your setup."
   },
   "errors": {
     "load_failed": "Failed to load data.",

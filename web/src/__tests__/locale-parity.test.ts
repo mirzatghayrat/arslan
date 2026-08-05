@@ -118,11 +118,14 @@ describe("locale parity", () => {
     //              shell_off / browser_soon — tooltips for the two new status
     //              indicators, which carry meaning no icon can.
     // 1264 → 1265: settings.modeSystem — "follow the OS" is a third CHOICE, and a
+    // 1268 → 1269: capabilityTableNote — the routing table's five columns are
+    // 0-10 model ratings, and "Tool aptitude" reads as the same thing as the
+    // transport notice next to it. The caption says which is which.
     // 1265 → 1268: tool-transport notice in Settings — title +
     // unsupported + unverified, warning that Anthropic/Gemini drop
     // tool definitions so equipped tools and MCP never fire.
     //              two-state toggle had no way to say it.
-    expect(enKeys).toHaveLength(1268);
+    expect(enKeys).toHaveLength(1269);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

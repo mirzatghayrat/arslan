@@ -468,7 +468,7 @@
     "capColProvider": "供应商",
     "capColCost": "费用",
     "capColSpeed": "速度",
-    "capColTools": "工具",
+    "capColTools": "工具运用",
     "capColReasoning": "推理",
     "capColContext": "上下文",
     "appearance": "外观",
@@ -594,7 +594,8 @@
     "modeSystem": "跟随系统",
     "tool_transport_title": "此 provider 上工具不会运行",
     "tool_transport_unsupported": "Arslan 目前不向此 provider 传递工具定义，因此已装备的工具和已连接的 MCP 服务器根本不会被交给模型，也不会触发。技能仍会作为指令进入模型，但技能中任何依赖调用工具的步骤都无法完成。需要用工具请改选 OpenAI 兼容的 provider。",
-    "tool_transport_unverified": "此 provider 尚未针对 Arslan 的工具通路做过实测。工具可能触发也可能不触发——目前没人验过。"
+    "tool_transport_unverified": "此 provider 尚未针对 Arslan 的工具通路做过实测。工具可能触发也可能不触发——目前没人验过。",
+    "capabilityTableNote": "0–10 评分，用于给任务挑模型。它描述的是模型自身的强项——不代表 Arslan 在你这套配置下能不能把工具发给该供应商。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

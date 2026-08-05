@@ -919,6 +919,16 @@ export default function ProviderConfigList({
                   ))}
                 </tbody>
               </table>
+              {/* These five columns are hand-authored 0-10 ROUTING scores from
+                  arslan/llm/catalog.py, used to pick a model for a job. The
+                  "Tool aptitude" one collides in wording with a completely
+                  different fact shown elsewhere in Settings — whether Arslan
+                  transmits tool definitions to the provider at all. A user
+                  could otherwise read "9" and "tools will not run" on one
+                  screen and reasonably conclude the app contradicts itself. */}
+              <p className="mt-2 text-[10px] leading-relaxed text-subtle-foreground">
+                {t('settings.capabilityTableNote')}
+              </p>
             </div>
           )}
         </div>

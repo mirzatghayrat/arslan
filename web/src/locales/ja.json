@@ -468,7 +468,7 @@
     "capColProvider": "プロバイダー",
     "capColCost": "コスト",
     "capColSpeed": "速度",
-    "capColTools": "ツール",
+    "capColTools": "ツール適性",
     "capColReasoning": "推論",
     "capColContext": "コンテキスト",
     "appearance": "外観",
@@ -594,7 +594,8 @@
     "modeSystem": "システム",
     "tool_transport_title": "このプロバイダーではツールが動作しません",
     "tool_transport_unsupported": "Arslan は現在このプロバイダーにツール定義を渡していないため、装備済みのツールや接続済みの MCP サーバーはモデルに提示されず、呼び出されません。スキルは指示としてモデルに届きますが、ツール呼び出しに依存する手順は完了できません。ツールが必要な場合は OpenAI 互換のプロバイダーを選んでください。",
-    "tool_transport_unverified": "このプロバイダーは Arslan のツール伝送について未計測です。ツールが呼ばれるかどうかは誰も確認していません。"
+    "tool_transport_unverified": "このプロバイダーは Arslan のツール伝送について未計測です。ツールが呼ばれるかどうかは誰も確認していません。",
+    "capabilityTableNote": "タスクに合うモデルを選ぶための 0〜10 の評点です。モデル自身の得手不得手を示すもので、この環境で Arslan がそのプロバイダーにツールを送れるかどうかを表すものではありません。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
