@@ -1,4 +1,4 @@
-<title>Arslan — One Becomes Many</title>
+<title>Arslan — a local-first AI orchestrator · One Becomes Many</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="A local-first personal AI orchestrator. One host agent, persona spawns you raised yourself; every prompt change passes a held-out exam and ships only when you press Promote.">
 <style>
@@ -197,9 +197,10 @@ footer a{color:var(--cream)}
   <div class="hero-inner"><div class="wrapc" id="heropara">
     <p class="kick" style="color:var(--butter)">Local-first · Open source · macOS</p>
     <h1><span class="w">One</span> <span class="w">becomes</span> <span class="w">many.</span></h1>
-    <p class="sub"><strong>Arslan</strong> is a local-first personal AI orchestrator. You talk to one
-    host agent; it routes work to persona spawns you raised yourself — and nothing ships until you
-    press <strong>Promote</strong>.</p>
+    <p class="sub"><strong>Arslan</strong> is a local-first personal AI orchestrator. You talk to
+    one host agent; it routes work to persona spawns you raised yourself. Their prompts improve on
+    their own — but every change passes a held-out exam, and nothing ships until you press
+    <strong>Promote</strong>.</p>
     <div class="cta-row">
       <a class="pill" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg">↓&nbsp;&nbsp;Download for macOS</a>
       <a class="pill ghost" href="https://github.com/mirzatghayrat/arslan">View on GitHub</a>
@@ -224,8 +225,9 @@ footer a{color:var(--cream)}
   <div>
     <p class="kick rv">A machine, not a chat box</p>
     <h2 class="rv d1">Not another wrapper.</h2>
-    <p class="lead rv d2">If Arslan can do it itself, it does — routing is not the default. Real work
-    is dispatched, executed and logged on your machine, in one thread you can read.</p>
+    <p class="lead rv d2">A chat box talks about the work. Arslan dispatches it — and if it can do
+    the job itself, it does; routing is not the default. Everything runs and logs on your machine,
+    in one thread you can read end to end.</p>
     <p class="mline rv d3">doer-first routing · every dispatch lands in the ledger</p>
   </div>
 </div></section>
@@ -241,7 +243,7 @@ footer a{color:var(--cream)}
         <div class="spawnrow" id="spawnrow"></div>
       </div>
       <p class="lead rv d3">Spawns are drafted from a persona seed library, named by you, kept on
-      your roster. Each one equips only what you grant it:</p>
+      your Spawns Ledger. Each one equips only what you grant it — and nothing more:</p>
       <div class="toolchips rv d3">
         <span class="chip" style="background:#f9d9c8;color:#8a3d1c">🔧 tools</span>
         <span class="chip" style="background:#e6d9f7;color:#4d2f86">⚙ SKILL.md packs</span>
@@ -260,15 +262,19 @@ footer a{color:var(--cream)}
   <div class="wrapc" style="position:relative">
     <p class="kick rv" style="color:var(--butter)">Self-evolution, with an exam</p>
     <h2 class="rv d1">Prompts improve on their own.<br>Changes pass an exam first.</h2>
+    <p class="lead rv d1" style="color:rgba(246,235,214,.9)">Your spawns get better at their jobs —
+    without ever changing behind your back. A rewrite only replaces the incumbent prompt if it wins
+    where it counts:</p>
     <div class="stats">
       <div class="stat rv d1"><b data-count="60" data-suffix="%">0%</b><span>WIN RATE REQUIRED</span></div>
-      <div class="stat rv d2"><b data-count="10" data-suffix="+">0+</b><span>HELD-OUT TASKS MIN</span></div>
+      <div class="stat rv d2"><b data-count="10" data-suffix="+">0+</b><span>HELD-OUT TASKS, MINIMUM</span></div>
       <div class="stat rv d3"><b>blind</b><span>JUDGED, POSITIONS SWAPPED</span></div>
     </div>
     <ul class="facts rv d2" style="margin-top:30px">
       <li>No dimension may score worse than the incumbent.</li>
       <li>A candidate cannot win by getting longer.</li>
       <li>The holdout is enforced in code, not by convention.</li>
+      <li>Real and synthetic win-rates are never merged into one number.</li>
       <li>Fail → discarded, you never see it. Pass → a readable diff, in your inbox.</li>
     </ul>
     <div class="promote rv d3">
@@ -287,10 +293,22 @@ footer a{color:var(--cream)}
     <div class="bub lie" data-step="1">“I have handed that to Deck Master — generating now, one moment.”</div>
   </div>
   <span class="stamp" data-step="2">0 DISPATCHES</span>
-  <p class="lead" style="color:rgba(246,235,214,.85);margin-top:24px">Every agent user has been lied
-  to exactly like this. Arslan intercepts it with a deterministic check — not another model call.
+  <p class="lead" style="color:rgba(246,235,214,.85);margin-top:24px">If you have used an agent, you have been lied to exactly like this. Arslan intercepts it with a deterministic check — not another model call.
   One rewrite allowed; if it promises again, an honest template goes out instead.</p>
   <p class="guard-claim" style="color:var(--cream)">Arslan cannot tell you it did something it did not do.</p>
+</div></section>
+
+<!-- ================= SECOND BRAIN ================= -->
+<section class="band cream-bg"><div class="wrapc">
+  <p class="kick rv">The second brain</p>
+  <h2 class="rv d1">Memory with a time axis.</h2>
+  <p class="lead rv d2">What your spawns learn lands in a shared brain: [[wiki-link]] notes on a
+  live force-directed graph, retrieved by hybrid FTS5 + embedding search.</p>
+  <ul class="facts rv d3">
+    <li>Every belief records when it took effect — and what superseded it.</li>
+    <li>Scrub the graph back to any past instant.</li>
+    <li>Ask it directly: “what did my second brain learn this week?”</li>
+  </ul>
 </div></section>
 
 <!-- ================= REAL SCREENS ================= -->
