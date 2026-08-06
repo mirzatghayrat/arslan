@@ -193,6 +193,16 @@ packages = ["arslan"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 timeout = 120
+# Platform markers, so a CI job can SELECT the tests that only mean something on
+# one OS instead of a hand-kept file list that rots. Registered here because an
+# unregistered mark is a warning at collection and, worse, `-m <name>` silently
+# selects nothing: `macos_only` in test_ocr_vision.py was a plain skipif held in
+# a local variable, and `pytest -m macos_only` deselected all 3161 tests without
+# complaining.
+markers = [
+    "macos: only meaningful on macOS (native frameworks — Vision, seatbelt). Arslan ships a macOS dmg, so these are the tests closest to what users run, and CI has never executed one.",
+    "linux_only: only meaningful off macOS (asserts the fail-closed path a macOS host does not take).",
+]
 
 [tool.ruff]
 target-version = "py311"

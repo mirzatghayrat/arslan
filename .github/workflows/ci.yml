@@ -70,8 +70,23 @@ jobs:
       - name: Pytest
         # No rerun bridge: the cross-loop SQLite "database is locked" flake was root-fixed
         # (single-loop test harness — see docs/tech-debt/single-loop-sqlite-flake.md, RESOLVED).
-        # Any failure is red on the first attempt. -rR prints a short-test summary.
-        run: .venv/bin/pytest tests/ -q -rR
+        # Any failure is red on the first attempt.
+        #
+        # -rfEs, and every character is load-bearing. This step used to say -rR
+        # with a comment claiming it "prints a short-test summary". R IS NOT A
+        # VALID -r CHARACTER (f E s x X p P a A w N are), and pytest does not
+        # reject it — it silently accepted the string and printed NO SUMMARY AT
+        # ALL. So this log has been hiding two different things:
+        #   f/E  the FAILED/ERROR list. An invalid char replaces pytest's own
+        #        default of 'fE', so on a red run the summary naming which tests
+        #        failed was never printed. That is why chasing intermittent
+        #        failures here has meant reading the whole log.
+        #   s    the skip list WITH REASONS. Without it, "20 skipped" is a bare
+        #        number in a green report, and a test that never runs anywhere
+        #        is indistinguishable from one that passes. That is exactly how
+        #        the macOS Vision suite went un-executed on every platform: on
+        #        Linux it skips, and nothing said so out loud.
+        run: .venv/bin/pytest tests/ -q -rfEs
 
   secrets:
     # FULL-HISTORY secret scan, not a diff scan.
