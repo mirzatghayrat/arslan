@@ -69,8 +69,9 @@ section{position:relative}
 .strip .cell.shot img{border-radius:14px}
 @media (max-width:860px){.mongrid{grid-template-columns:1fr}}
 /* ============ MARQUEE ============ */
-.strip{background:var(--butter);padding:clamp(40px,5.5vw,78px) 0;overflow:hidden}
+.strip{background:var(--butter);padding:0 0 clamp(34px,4.5vw,62px);overflow:visible;position:relative;z-index:3;display:flow-root}
 .strip .track{display:flex;align-items:center;gap:clamp(14px,2vw,26px);width:max-content;
+  margin-top:calc(-1*clamp(84px,10vw,150px));
   transform:rotate(-1.6deg);animation:mq 52s linear infinite}
 .strip:hover .track{animation-play-state:paused}
 @keyframes mq{to{transform:rotate(-1.6deg) translateX(-50%)}}
