@@ -167,6 +167,14 @@ needs_vision = pytest.mark.skipif(
     not ocr_vision.is_available(), reason="no system recogniser on this host")
 
 
+# @pytest.mark.macos is a SELECTION marker added alongside the `needs_vision`
+# skipif above — never instead of it. That skipif gates on
+# ocr_vision.is_available(), i.e. on whether the host has a system recogniser at
+# all, which is why it reads as a capability check rather than a platform one.
+# The skip is what keeps this green off macOS; the marker is how a macOS CI job
+# finds it. Measured 2026-08-06: part of a 25-test set that skips on Linux and
+# had never executed on any CI runner.
+@pytest.mark.macos
 @needs_vision
 @pytest.mark.asyncio
 async def test_a_refused_image_is_read_locally_and_the_turn_continues(db, monkeypatch):

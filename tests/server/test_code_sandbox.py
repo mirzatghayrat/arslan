@@ -15,11 +15,24 @@ pytestmark = pytest.mark.asyncio
 # ships on macOS (seatbelt). On Linux `run_python` is deliberately fail-closed (P0-1), so
 # these would fail there — the correct Linux behavior (refusal) is asserted separately and
 # UNconditionally by the refusal tests further down, which run on every platform incl. CI.
-_NEEDS_REAL_SANDBOX = pytest.mark.skipif(
+_SKIP_OFF_DARWIN = pytest.mark.skipif(
     sys.platform != "darwin",
     reason="run_python happy-path needs a real sandbox backend (macOS seatbelt); "
     "Linux is fail-closed and covered by the refusal tests",
 )
+
+
+def _NEEDS_REAL_SANDBOX(fn):
+    """Skip off macOS AND tag for selection, in that order.
+
+    Written as a composing function rather than
+    `pytest.mark.macos(pytest.mark.skipif(...))`, which MEASURABLY LOSES THE
+    SKIPIF: a probe showed `-m macos` still selected the test while the skip
+    silently vanished, which on Linux turns a skip into a failure. The marker is
+    added ALONGSIDE the skip — the skip is the only reason these pass on Linux,
+    the marker is only how a macOS CI job finds them.
+    """
+    return pytest.mark.macos(_SKIP_OFF_DARWIN(fn))
 
 
 @pytest.fixture(autouse=True)
@@ -134,6 +147,7 @@ async def test_unsandboxed_active_truth_table(monkeypatch):
     assert code_sandbox.unsandboxed_active() is False
 
 
+@pytest.mark.linux_only
 @pytest.mark.skipif(
     sys.platform == "darwin",
     reason="asserts the REAL non-macOS fail-closed refusal; macOS ships a working seatbelt "

@@ -134,6 +134,11 @@ async def test_import_stores_scripts_and_notes_them(maker, monkeypatch, tmp_path
     reason="executes the skill script in a REAL sandbox (macOS seatbelt); Linux run_python "
     "is fail-closed (refusal path covered in test_code_sandbox.py)",
 )
+# @pytest.mark.macos is a SELECTION marker added alongside the per-test skipif
+# above — never instead of it. The skipif is why this passes off macOS; the
+# marker is how a macOS CI job finds it. Measured 2026-08-06: part of a 25-test
+# set that skips on Linux and had never executed on any CI runner.
+@pytest.mark.macos
 async def test_skill_script_runs_with_siblings(maker, monkeypatch, tmp_path):
     # store a two-file script set, then run the entry via the executor's skill_script path
     from server.registry.executors import RunPythonExecutor

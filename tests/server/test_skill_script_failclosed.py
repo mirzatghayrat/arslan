@@ -13,6 +13,17 @@ from server.registry.executors import RunPythonExecutor
 
 pytestmark = pytest.mark.asyncio
 
+# @pytest.mark.macos on the three seatbelt tests below is a SELECTION marker, added
+# alongside their skipif — never instead of it. The skipif is the only reason they
+# do not FAIL on Linux; the marker is how a macOS CI job can find them.
+#
+# These three are the highest-priority members of the 25-test macOS set (measured
+# 2026-08-06: skipped on Linux, never run on any CI runner). They are not
+# "3 of 25" — Arslan's whole admission model grades capabilities by escapability
+# (run_python may degrade, run_command refuses to), and that grading rests on the
+# sandbox actually holding. These are the tests that prove it holds, and until a
+# macOS job exists they have never been executed anywhere.
+
 
 @pytest.fixture
 def skill_root(tmp_path, monkeypatch):
@@ -123,6 +134,7 @@ async def test_references_passed_readonly_original_untouched(skill_root, monkeyp
     assert (ref_dir / "data.txt").read_text() == original
 
 
+@pytest.mark.macos
 @pytest.mark.skipif(
     sys.platform != "darwin",
     reason="runs the skill script in the REAL sandbox (macOS seatbelt); Linux run_python "
@@ -152,6 +164,7 @@ async def test_references_readonly_end_to_end(skill_root, monkeypatch):
     assert (d / "references" / "data.txt").read_text() == original
 
 
+@pytest.mark.macos
 @pytest.mark.skipif(
     sys.platform != "darwin",
     reason="REAL seatbelt: proves the POSIX chmod-then-WRITE bypass of the advisory mode bits "
@@ -188,6 +201,7 @@ async def test_references_chmod_write_bypass_denied(skill_root, monkeypatch):
     assert (d / "references" / "data.txt").read_text() == original  # stored original unchanged
 
 
+@pytest.mark.macos
 @pytest.mark.skipif(
     sys.platform != "darwin",
     reason="REAL seatbelt: proves the POSIX chmod-then-UNLINK bypass is DENIED. "

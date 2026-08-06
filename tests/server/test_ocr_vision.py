@@ -20,9 +20,16 @@ from PIL import Image, ImageDraw, ImageFont
 
 from server.services import ocr_vision
 
-macos_only = pytest.mark.skipif(
+_skip_off_darwin = pytest.mark.skipif(
     sys.platform != "darwin", reason="Vision is a macOS framework"
 )
+
+
+def macos_only(fn):
+    """Skip off macOS AND tag for selection. See test_code sandbox for why this
+    is a composing function and not pytest.mark.macos(pytest.mark.skipif(...)) —
+    that form measurably drops the skipif while still selecting."""
+    return pytest.mark.macos(_skip_off_darwin(fn))
 
 
 def _font(size: int):

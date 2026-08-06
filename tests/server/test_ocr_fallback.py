@@ -76,6 +76,13 @@ needs_vision = pytest.mark.skipif(
 )
 
 
+# @pytest.mark.macos is a SELECTION marker added alongside the `needs_vision`
+# skipif above — never instead of it. That skipif gates on
+# ocr_vision.is_available() rather than on sys.platform, so it reads as a
+# capability check; on Linux there is no system recogniser and these skip.
+# Measured 2026-08-06: part of a 25-test set that skips on Linux and had never
+# executed on any CI runner.
+@pytest.mark.macos
 @needs_vision
 async def test_a_model_that_cannot_see_hands_off_to_the_system_recogniser(
         memdb, monkeypatch):
@@ -94,6 +101,7 @@ async def test_a_model_that_cannot_see_hands_off_to_the_system_recogniser(
     assert "tier two read this" in " ".join(await _texts(memdb, sid))
 
 
+@pytest.mark.macos
 @needs_vision
 async def test_an_unrelated_failure_does_not_start_an_ocr_pass(memdb, monkeypatch):
     """Discriminating twin of the test above.
@@ -117,6 +125,7 @@ async def test_an_unrelated_failure_does_not_start_an_ocr_pass(memdb, monkeypatc
     assert ran == [], "a rate limit started an OCR pass"
 
 
+@pytest.mark.macos
 @needs_vision
 async def test_transcription_and_description_are_labelled_differently(
         memdb, monkeypatch):

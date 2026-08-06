@@ -1,3 +1,21 @@
+"""Ingest-side OCR routing.
+
+PLATFORM PREMISE, written down because this file had none and that was a latent
+trap. These tests are CROSS-PLATFORM: they need `pypdfium2` (a declared runtime
+dependency, pyproject.toml) and nothing macOS-specific, so they run and pass on
+Linux CI today. They carry no skip marker deliberately.
+
+DO NOT "fix" a missing pypdfium2 by adding a skip. A declared dependency that is
+absent is an environment bug and should fail loudly — measured 2026-08-06, a
+stale local venv made these six error with ModuleNotFoundError while CI was
+green, and the first instinct was to read that as a platform difference. Turning
+it into a skip would have converted a loud, fixable environment fault into a
+silent pass, which is the exact failure this project spent a round removing from
+its CI report.
+
+If a test HERE ever grows a real macOS dependency, mark it @pytest.mark.macos
+alongside its own skipif — see test_ocr_vision.py for the composing form.
+"""
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

@@ -78,6 +78,12 @@ async def test_extract_file_upload(client, monkeypatch):
     assert r.json()["text"] == "hello attachment"
 
 
+# These tests skip themselves from INSIDE the body (no decorator to hang a mark
+# on), so the selection marker is added here explicitly. It does not replace the
+# in-body skip — that skip is why they pass off macOS; the marker is how a macOS
+# CI job finds them. Measured 2026-08-06: part of a 25-test set that skips on
+# Linux and has never executed on any CI runner.
+@pytest.mark.macos
 async def test_extract_image_upload_reads_real_text(client):
     """End-to-end image path with NOTHING stubbed.
 
