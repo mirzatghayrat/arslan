@@ -102,6 +102,97 @@ jobs:
         # fail-closed path works. Measured: it is 1 of exactly 1 Linux-only test.
         run: .venv/bin/pytest tests/ -q -rfEs
 
+  # ---------------------------------------------------------------------------
+  # The platform Arslan actually ships on.
+  # ---------------------------------------------------------------------------
+  # Until 2026-08-06 no CI job had ever run pytest on macOS: all the other jobs
+  # here are ubuntu-latest, and release.yml's macos-latest job builds the dmg
+  # without running tests. A two-platform skip-list comparison found 25 tests
+  # that skip on Linux and had therefore executed NOWHERE — 15 of them seatbelt
+  # sandbox tests, including three that prove the kernel denies a
+  # chmod-then-write and chmod-then-unlink escape. Arslan's admission model
+  # grades capabilities by escapability, and that grading rested on a premise no
+  # machine had ever checked.
+  #
+  # This job is PURELY ADDITIVE. It does not split the backend job — see the
+  # comment on that job's Pytest step for why filtering it would silently drop
+  # the one Linux-only test.
+  macos:
+    runs-on: macos-latest
+    env:
+      ARSLAN_SECRET_KEY: ci-secret
+      ARSLAN_API_TOKEN: ""
+      ARSLAN_DATA_DIR: data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        env:
+          # The macOS runner ships python.org's FRAMEWORK build of 3.11 and uv
+          # prefers a discovered system interpreter over downloading its own.
+          # Same reason as the backend job and release.yml.
+          UV_PYTHON_PREFERENCE: only-managed
+        run: uv sync --frozen --extra dev --extra server --extra ocr
+
+      - name: Assert the macOS-native bindings are present
+        # These are declared runtime dependencies (pyobjc-framework-Vision is
+        # marked sys_platform == 'darwin'), and their absence is exactly what
+        # makes the tests below SKIP rather than fail. A stale local venv
+        # missing them once read as a platform difference for an entire round.
+        run: |
+          .venv/bin/python - <<'PY'
+          import importlib.util as u, sys
+          missing = [m for m in ("Vision", "Foundation", "pypdfium2") if not u.find_spec(m)]
+          if missing:
+              sys.exit(
+                  f"::error::macOS-native deps missing: {missing}. The macos-marked "
+                  "tests would SKIP and this job would be falsely green — the very "
+                  "failure it exists to end."
+              )
+          print("macOS bindings present: Vision Foundation pypdfium2")
+          PY
+
+      - name: Pytest (macOS-only set)
+        # -m macos selects the 25. The marker is additive: each of those tests
+        # still carries its own skip, which is why they stay green on Linux.
+        run: .venv/bin/pytest tests/ -m macos -q -rfEs --junitxml=macos-results.xml
+
+      - name: Assert they RAN, and did not skip
+        # 🔴 THE LOAD-BEARING STEP. pytest exits 0 when every selected test is
+        # skipped, so without this the job would go green on a runner that lacks
+        # Vision or refuses seatbelt — reproducing, on the new platform, the
+        # exact "a skip reads as a pass" failure that motivated the whole job.
+        #
+        # The expected count is 25, established by measurement rather than
+        # preference (see tests/server/test_macos_marker_covers_the_platform_set.py).
+        # If it legitimately changes, re-run the two-platform comparison and move
+        # this number with the evidence — do not tune it to whatever CI reports.
+        run: |
+          .venv/bin/python - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          EXPECTED = 25
+          suite = ET.parse("macos-results.xml").getroot().find("testsuite")
+          total = int(suite.get("tests", 0))
+          skipped = int(suite.get("skipped", 0))
+          failures = int(suite.get("failures", 0)) + int(suite.get("errors", 0))
+          print(f"collected={total} skipped={skipped} failed={failures}")
+          problems = []
+          if skipped:
+              problems.append(f"{skipped} of {total} SKIPPED — a skip here is a silent pass")
+          if total - skipped != EXPECTED:
+              problems.append(f"{total - skipped} tests actually ran, expected {EXPECTED}")
+          if failures:
+              problems.append(f"{failures} failed/errored")
+          if problems:
+              sys.exit("::error::" + "; ".join(problems))
+          print(f"all {EXPECTED} macOS-only tests executed on the shipping platform")
+          PY
+
   secrets:
     # FULL-HISTORY secret scan, not a diff scan.
     #
