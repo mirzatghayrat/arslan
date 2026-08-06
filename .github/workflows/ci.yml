@@ -86,6 +86,20 @@ jobs:
         #        is indistinguishable from one that passes. That is exactly how
         #        the macOS Vision suite went un-executed on every platform: on
         #        Linux it skips, and nothing said so out loud.
+        #
+        # 🔴 THIS JOB STAYS FULL. Do not add -m "not macos" here, however
+        # tempting it looks once a macOS job exists. The macOS-specific tests
+        # already skip themselves on Linux via their own skipif, so there is
+        # nothing to exclude and nothing to save — a macOS job is a pure FOURTH
+        # job, not a split of this one.
+        #
+        # And the reason it must not be "optimised" that way is concrete:
+        # tests/server/test_code_sandbox.py:137 runs in the OTHER direction. It
+        # is skipif(darwin) and asserts the NON-macOS fail-closed refusal —
+        # run_python must refuse where there is no seatbelt. macOS skips it. So
+        # this Linux job is the only place it ever executes, and a
+        # -m "not macos" filter would silently drop the one test proving the
+        # fail-closed path works. Measured: it is 1 of exactly 1 Linux-only test.
         run: .venv/bin/pytest tests/ -q -rfEs
 
   secrets:
