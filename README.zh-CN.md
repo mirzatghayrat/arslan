@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://mirzatghayrat.github.io/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan——一台被画成机器而非聊天框的编排器" width="100%">
+  <img src="docs/assets/banner.jpg" alt="Arslan——一生多：本地优先的个人 AI 编排器（macOS）" width="100%">
 </a>
 
 <br/><br/>
@@ -32,12 +32,12 @@
 ## 一次请求，端到端跑完
 
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Arslan 演示——一次请求在同一个线程内完成路由、沙箱执行与回答" width="90%">
+  <img src="docs/assets/demo.gif" alt="Arslan 客户端的四个真实界面——编排线程、分身名册、第二大脑、诊断" width="90%">
 </div>
 
 <p align="center"><em>你只问一次。主控 agent 挑选合适的分身、拆分任务、在内核沙箱里运行生成的代码，然后给出答案——全程都在同一个线程里。</em></p>
 
-<p align="center"><a href="docs/assets/arslan-demo.mp4"><b>▶ 观看 58 秒产品导览</b></a>——请求的流转、分身名册、晋升关卡、第二大脑与沙箱。<br><sub>这是渲染出来的说明视频，不是录屏。源码：<a href="video/">video/</a></sub></p>
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 观看 60 秒短片</b></a>——与<a href="https://mirzatghayrat.github.io/arslan/">官网</a>同源的黏土动画短片。<br><sub>上面的界面截图来自已发布的客户端，未经修饰。片源：<a href="video/">video/</a></sub></p>
 
 **Arslan 是一个本地优先（local-first）的个人 AI 编排器。**它跑在你自己的机器上、用你自己的 LLM 密钥，自带**默认安全的内核沙箱**、**诚实护栏**，以及一个可浏览、可编辑的**可见第二大脑**。
 
@@ -57,7 +57,7 @@
 ## 走进真实的客户端
 
 <div align="center">
-  <img src="docs/assets/screens.jpg" alt="Arslan 客户端界面——分身名册、能力库、MCP 服务器、专家频道" width="100%">
+  <img src="docs/assets/screens.jpg" alt="Arslan 客户端的四个界面——编排线程、分身名册、第二大脑、诊断" width="100%">
 </div>
 
 ## 一次请求如何流转

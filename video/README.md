@@ -39,9 +39,16 @@ npm run f7        # Origin — the same shot list at 60s, with the character
 npm run f8        # Silk — 15s at 60fps, no cuts (see "What makes motion silky")
 ```
 
-`out/` is git-ignored. The committed render lives at
-[`docs/assets/arslan-demo.mp4`](../docs/assets/arslan-demo.mp4); re-render and
-copy it over when the film changes.
+`out/` is git-ignored. The committed render is the film the READMEs link,
+[`docs/assets/arslan-clay-60s.mp4`](../docs/assets/arslan-clay-60s.mp4) — F13
+below, scaled down for the web. Re-render and copy it over when it changes.
+
+**`ArslanDemo` (the 58s dark film) is not shipped anywhere.** It predates
+`src/facts.ts`, and it shows: a fixed roster of six spawns, four exam
+dimensions the promotion gate does not have, and holdout numbers with no
+source. It stays in the repository because the plates are still a useful
+reference, but it must not be linked from a README again until its scenes are
+rebuilt against `facts.ts` the way F1–F4 were.
 
 ### Headless Linux
 

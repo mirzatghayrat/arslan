@@ -155,6 +155,13 @@ export const SAFETY = {
    * the page rather than paraphrasing it.
    */
   automationOff: 'everything that can spend or write is off by default',
+  /**
+   * arslan/llm/catalog.py — thirteen provider keys: openai, deepseek, qwen,
+   * kimi, zhipu, minimax, groq, together, mistral, openrouter, ollama,
+   * anthropic, gemini. Registered here because `docs/assets/safety.jpg` bakes
+   * the number into a raster, where no reader and no test can re-check it.
+   */
+  providers: 13,
 } as const;
 
 /* ------------------------------------------------------------------ */
