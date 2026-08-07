@@ -1,0 +1,25 @@
+THROWAWAY CANARY — this branch is never merged.
+
+WHAT THIS IS. A deliberately fake high-entropy string, generated from
+/dev/urandom on 2026-08-07, whose only purpose is to trip gitleaks'
+generic-api-key rule so the `secrets` CI check goes red. That answers one
+question with evidence instead of reasoning: does a red `secrets` check block a
+merge into main, now that it is a required check?
+
+WHAT IT IS NOT. It is not a credential, and it is deliberately not shaped like
+one. It matches no provider pattern — not sk-, AKIA, ghp_, xox, AIza, tvly-,
+npm_ — for two reasons that were specified before it was written:
+
+  1. A pushed object survives branch deletion. force-push cuts nothing on
+     GitHub; this repository has proven that twice, and the only thing that ever
+     removed public content was deleting and recreating the repo. So anything
+     pushed here is permanent, and a real-shaped key would become a permanent
+     source of false alarm for whoever finds this object later.
+  2. A real-shaped key risks being stopped by GitHub push protection at push
+     time — which would verify a different gate entirely, not gitleaks.
+
+The value therefore announces itself in its first 14 characters and gets its
+entropy from the remaining 34. Verified locally against the pinned gitleaks
+8.30.1 and this repository's own .gitleaks.toml before being pushed: it trips.
+
+canary_api_key = "GITLEAKSCANARYUhLO4gGXUatKrTNZR5hIQNoOaMHc10wwu7"
