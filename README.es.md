@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://mirzatghayrat.github.io/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan — un orquestador dibujado como una máquina, no como una caja de chat" width="100%">
+  <img src="docs/assets/banner.jpg" alt="Arslan — uno se vuelve muchos: un orquestador de IA local-first para macOS" width="100%">
 </a>
 
 <br/><br/>
@@ -32,10 +32,12 @@
 ## Una solicitud, de principio a fin
 
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Demo de Arslan — una solicitud enrutada, aislada en sandbox y respondida en un solo hilo" width="90%">
+  <img src="docs/assets/demo.gif" alt="Cuatro pantallas del cliente publicado de Arslan — hilo de orquestación, registro de spawns, segundo cerebro, diagnóstico" width="90%">
 </div>
 
 <p align="center"><em>Pides una sola vez. El agente anfitrión elige el spawn, divide el trabajo, ejecuta el código generado en un sandbox a nivel de kernel y responde — todo en un mismo hilo.</em></p>
+
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ Ver el film de 60 segundos</b></a> — el film en animación de plastilina del que sale el <a href="https://mirzatghayrat.github.io/arslan/">sitio del proyecto</a>. <br><sub>Las pantallas de arriba son el cliente publicado, sin retoques.</sub></p>
 
 **Arslan es un orquestador personal de IA con enfoque local-first.** Corre en tu propia máquina, contra tus propias claves de LLM, con un **sandbox de kernel seguro por defecto**, **guardarraíles de honestidad** y un **segundo cerebro visible** que puedes explorar y editar.
 
@@ -55,7 +57,7 @@
 ## Dentro del cliente real
 
 <div align="center">
-  <img src="docs/assets/screens.jpg" alt="Pantallas del cliente de Arslan — libro de spawns, biblioteca de capacidades, servidores MCP, canal de especialistas" width="100%">
+  <img src="docs/assets/screens.jpg" alt="El cliente publicado de Arslan en cuatro pantallas — hilo de orquestación, registro de spawns, segundo cerebro, diagnóstico" width="100%">
 </div>
 
 ## Cómo fluye una solicitud

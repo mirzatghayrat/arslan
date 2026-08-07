@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://mirzatghayrat.github.io/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan — an orchestrator drawn like a machine, not a chat box" width="100%">
+  <img src="docs/assets/banner.jpg" alt="Arslan — one becomes many: a local-first personal AI orchestrator for macOS" width="100%">
 </a>
 
 <br/><br/>
@@ -32,10 +32,12 @@
 ## One request, end to end
 
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Arslan demo — one request routed, sandboxed, and answered in a single thread" width="90%">
+  <img src="docs/assets/demo.gif" alt="Four screens of the shipped Arslan client — orchestration thread, spawns ledger, second brain, diagnostics" width="90%">
 </div>
 
 <p align="center"><em>You ask once. The host agent picks the spawn, splits the job, runs generated code in a kernel sandbox, and answers — all in one thread.</em></p>
+
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ Watch the 60-second film</b></a> — the clay-animated film the <a href="https://mirzatghayrat.github.io/arslan/">project site</a> is cut from. <br><sub>The screens above are the shipped client, unretouched.</sub></p>
 
 **Arslan is a local-first personal AI orchestrator.** It runs on your own machine, against your own LLM keys, with a **safe-by-default kernel sandbox**, **honesty guardrails**, and a **visible second brain** you can browse and edit.
 
@@ -55,7 +57,7 @@
 ## Inside the actual client
 
 <div align="center">
-  <img src="docs/assets/screens.jpg" alt="Arslan client screens — spawns ledger, capability library, MCP servers, specialist channel" width="100%">
+  <img src="docs/assets/screens.jpg" alt="The shipped Arslan client in four screens — orchestration thread, spawns ledger, second brain, diagnostics" width="100%">
 </div>
 
 ## How a request flows

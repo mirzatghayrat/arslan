@@ -1,0 +1,39 @@
+<meta charset="utf-8">
+<style>
+@font-face{font-family:Inter;src:url(fonts/inter-variable.woff2) format('woff2');font-weight:100 900}
+@font-face{font-family:Plex;src:url(fonts/ibm-plex-mono-500.woff2) format('woff2');font-weight:500}
+@font-face{font-family:Plex;src:url(fonts/ibm-plex-mono-600.woff2) format('woff2');font-weight:600}
+:root{--night:#231710;--butter:#F3C34A;--cream:#F6EBD6;--ink:#241407}
+*{box-sizing:border-box;margin:0}
+body{width:2024px;height:860px;overflow:hidden;background:var(--night);font-family:Inter,sans-serif}
+.wrap{position:relative;width:2024px;height:860px;overflow:hidden}
+.wrap img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 34%}
+.wrap::after{content:"";position:absolute;inset:0;background:
+  linear-gradient(180deg,rgba(20,12,6,.30) 0%,rgba(20,12,6,.05) 26%,rgba(24,14,6,.80) 74%,rgba(35,23,16,.96) 100%),
+  linear-gradient(90deg,rgba(20,12,6,.78) 0%,rgba(20,12,6,.30) 46%,rgba(20,12,6,0) 72%)}
+.inner{position:absolute;z-index:2;left:104px;right:104px;bottom:76px}
+.kick{font-family:Plex;font-weight:600;font-size:23px;letter-spacing:.26em;text-transform:uppercase;color:var(--butter);opacity:.95}
+h1{font-size:136px;font-weight:800;letter-spacing:-.035em;line-height:.94;color:var(--cream);margin-top:20px;
+  text-shadow:0 12px 60px rgba(0,0,0,.6)}
+.sub{margin-top:26px;font-size:33px;line-height:1.42;font-weight:400;color:rgba(246,235,214,.93);max-width:24em}
+.sub b{font-weight:700;color:#fff}
+.row{display:flex;gap:20px;margin-top:40px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:14px;font-weight:700;font-size:29px;padding:22px 44px;border-radius:999px;
+  background:var(--butter);color:var(--ink);
+  box-shadow:inset 5px 6px 12px rgba(255,255,255,.38),inset -6px -8px 14px rgba(0,0,0,.22),12px 18px 36px rgba(0,0,0,.45)}
+.pill.ghost{background:transparent;color:var(--cream);box-shadow:inset 0 0 0 3px rgba(246,235,214,.55)}
+.meta{margin-top:30px;font-family:Plex;font-weight:500;font-size:21px;letter-spacing:.05em;color:rgba(246,235,214,.62)}
+</style>
+<div class="wrap">
+  <img class="bg" src="../../assets/site/aa544b6421a.jpg">
+  <div class="inner">
+    <div class="kick">Local-first · Open source · macOS</div>
+    <h1>One becomes many.</h1>
+    <p class="sub"><b>Arslan</b> is a local-first personal AI orchestrator — one host agent, a roster of persona spawns you raised yourself.</p>
+    <div class="row">
+      <span class="pill">↓&nbsp;&nbsp;Download for macOS</span>
+      <span class="pill ghost">View on GitHub</span>
+    </div>
+    <div class="meta">macOS 11+ · Apple Silicon · signed &amp; notarized · Apache-2.0 · pre-v1 · open source</div>
+  </div>
+</div>

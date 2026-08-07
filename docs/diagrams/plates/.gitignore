@@ -1,0 +1,9 @@
+# build.sh writes its results here; the shipped copies live in docs/assets/.
+banner.png
+screens.png
+banner.jpg
+screens.jpg
+demo.gif
+seq/
+f0*.html
+f0*.png

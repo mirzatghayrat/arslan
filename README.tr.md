@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://mirzatghayrat.github.io/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan — sohbet kutusu gibi değil, bir makine gibi çizilmiş bir orkestratör" width="100%">
+  <img src="docs/assets/banner.jpg" alt="Arslan — birden çok olur: macOS için yerel öncelikli bir yapay zekâ orkestratörü" width="100%">
 </a>
 
 <br/><br/>
@@ -32,10 +32,12 @@
 ## Tek istek, uçtan uca
 
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Arslan demosu — tek bir istek tek bir thread içinde yönlendirilir, sandbox'ta çalıştırılır ve yanıtlanır" width="90%">
+  <img src="docs/assets/demo.gif" alt="Yayınlanan Arslan istemcisinden dört ekran — orkestrasyon dizisi, spawn defteri, ikinci beyin, tanılama" width="90%">
 </div>
 
 <p align="center"><em>Bir kez sorarsın. Ana ajan (host agent) spawn'ı seçer, işi böler, üretilen kodu bir çekirdek sandbox'ında çalıştırır ve yanıtlar — hepsi tek bir thread'de.</em></p>
+
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 60 saniyelik filmi izleyin</b></a> — <a href="https://mirzatghayrat.github.io/arslan/">proje sitesinin</a> kesildiği kil animasyon filminin ta kendisi. <br><sub>Yukarıdaki ekranlar yayınlanan istemcinin kendisi, rötuşsuz.</sub></p>
 
 **Arslan, yerel öncelikli (local-first) kişisel bir yapay zeka orkestratörüdür.** Kendi makinende, kendi LLM anahtarlarınla çalışır; **varsayılan olarak güvenli bir çekirdek sandbox'ı**, **dürüstlük korkulukları** ve göz atıp düzenleyebileceğin **görünür bir ikinci beyin** ile birlikte gelir.
 
@@ -55,7 +57,7 @@
 ## Gerçek istemcinin içinden
 
 <div align="center">
-  <img src="docs/assets/screens.jpg" alt="Arslan istemci ekranları — spawn defteri, yetenek kütüphanesi, MCP sunucuları, uzman kanalı" width="100%">
+  <img src="docs/assets/screens.jpg" alt="Yayınlanan Arslan istemcisi dört ekranda — orkestrasyon dizisi, spawn defteri, ikinci beyin, tanılama" width="100%">
 </div>
 
 ## Bir istek nasıl akar
