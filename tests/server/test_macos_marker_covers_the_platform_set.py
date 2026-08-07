@@ -22,19 +22,24 @@ from __future__ import annotations
 import pathlib
 import re
 
-TESTS = pathlib.Path(__file__).parent
+# The WHOLE test tree, not this one directory. `parent` was tests/server/ and the
+# glob was non-recursive, so the drift check silently ignored the other seven test
+# directories — a macOS-gated test added under tests/llm/ or tests/tools/ would
+# have been exactly the invisible case this file exists to catch, and the file
+# would have reported no offenders while looking at almost nothing.
+TESTS = pathlib.Path(__file__).parents[1]
 
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
-    "test_code_sandbox.py": 8,
-    "test_ocr_vision.py": 5,
-    "test_command_sandbox_net.py": 3,
-    "test_skill_script_failclosed.py": 3,
-    "test_ocr_fallback.py": 3,
-    "test_skill_import.py": 1,
-    "test_chat_image_fallback.py": 1,
-    "test_extract_api.py": 1,
+    "server/test_code_sandbox.py": 8,
+    "server/test_ocr_vision.py": 5,
+    "server/test_command_sandbox_net.py": 3,
+    "server/test_skill_script_failclosed.py": 3,
+    "server/test_ocr_fallback.py": 3,
+    "server/test_skill_import.py": 1,
+    "server/test_chat_image_fallback.py": 1,
+    "server/test_extract_api.py": 1,
 }
 EXPECTED_TOTAL = 25
 
@@ -78,7 +83,19 @@ def _is_marked(src: str) -> bool:
 
 
 def _test_files() -> list[pathlib.Path]:
-    return sorted(p for p in TESTS.glob("test_*.py") if p.name != pathlib.Path(__file__).name)
+    """Every test module under tests/, recursively, minus this one."""
+    me = pathlib.Path(__file__).resolve()
+    return sorted(p for p in TESTS.glob("**/test_*.py") if p.resolve() != me)
+
+
+def _rel(p: pathlib.Path) -> str:
+    """Path relative to tests/, e.g. "server/test_code_sandbox.py".
+
+    Not the bare filename: with a recursive glob two directories may hold the
+    same name, and a per-file count keyed on a colliding name would silently
+    merge them.
+    """
+    return p.relative_to(TESTS).as_posix()
 
 
 def test_every_platform_gated_file_uses_the_marker():
@@ -92,7 +109,7 @@ def test_every_platform_gated_file_uses_the_marker():
     for p in _test_files():
         src = p.read_text()
         if _gates_on_macos(src) and not _is_marked(src):
-            offenders.append(p.name)
+            offenders.append(_rel(p))
     assert not offenders, (
         "these files gate on macOS but tag nothing for selection, so a macOS CI "
         f"job cannot find them: {offenders}. Add @pytest.mark.macos ALONGSIDE the "
@@ -122,7 +139,7 @@ def test_a_marking_file_still_contains_a_platform_gate():
         if not _MARKER_LINE.search(src) and not _HELPER_CALL.search(src):
             continue
         if not _gates_on_macos(src):
-            broken.append(p.name)
+            broken.append(_rel(p))
     assert not broken, (
         f"{broken} carry the macos marker but no platform skip — on Linux these "
         "would FAIL rather than skip. The marker is additive, not a replacement."
@@ -138,15 +155,15 @@ def test_the_marked_population_matches_the_measurement():
     number to match whatever is there.
     """
     actual = {
-        p.name: len(_MARKER_LINE.findall(p.read_text()))
+        _rel(p): len(_MARKER_LINE.findall(p.read_text()))
         for p in _test_files()
         if _MARKER_LINE.search(p.read_text())
     }
-    actual.pop("test_code_sandbox.py", None)  # linux_only line, counted below
+    actual.pop("server/test_code_sandbox.py", None)  # linux_only line, counted below
     # test_code_sandbox / test_ocr_vision mark via a composing helper applied at
     # each call site, so count those call sites instead of the decorator text.
-    for name, needle in (("test_code_sandbox.py", "@_NEEDS_REAL_SANDBOX"),
-                         ("test_ocr_vision.py", "@macos_only")):
+    for name, needle in (("server/test_code_sandbox.py", "@_NEEDS_REAL_SANDBOX"),
+                         ("server/test_ocr_vision.py", "@macos_only")):
         actual[name] = (TESTS / name).read_text().count(needle)
 
     assert actual == EXPECTED_FILES, (

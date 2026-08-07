@@ -137,7 +137,21 @@ jobs:
           # prefers a discovered system interpreter over downloading its own.
           # Same reason as the backend job and release.yml.
           UV_PYTHON_PREFERENCE: only-managed
-        run: uv sync --frozen --extra dev --extra server --extra ocr
+        # NO --extra ocr here, unlike the backend job, and the difference is the
+        # point. pyproject.toml says of that extra: "SUPERSEDED ON macOS (OCR
+        # fallback round, decision ④A). This extra is now for LINUX AND SOURCE
+        # INSTALLS ONLY" — the desktop build reads images and scanned PDFs with
+        # the system's own Vision framework and never reaches pytesseract. The
+        # shipped dmg does not contain it.
+        #
+        # So installing it here would test a configuration no macOS user has, and
+        # would let a test quietly depend on tesseract while the real product
+        # cannot. Checked before removing: of the 25 selected tests, none touch
+        # pytesseract — the two importorskip("pytesseract") tests in
+        # test_extract_api.py are test_a_host_without_vision_still_uses_the_tesseract_path
+        # and test_extract_image_upload_no_text_200, neither of which carries the
+        # macos marker. The Linux job keeps the extra and covers them.
+        run: uv sync --frozen --extra dev --extra server
 
       - name: Assert the macOS-native bindings are present
         # These are declared runtime dependencies (pyobjc-framework-Vision is
