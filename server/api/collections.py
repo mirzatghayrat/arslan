@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from sqlalchemy import text as sa_text
 
+from server.api.media_type import is_multipart_form
 from server.auth import require_auth
 from server.db import session as db_session
 from server.db.models import Collection, Spawn, SpawnCollection
@@ -90,8 +91,9 @@ async def ingest_collection(collection_id: int, request: Request) -> IngestOut:
     """Mirror of the per-spawn knowledge ingest: JSON {text}|{url} or multipart file."""
     async with db_session.AsyncSessionLocal() as db:
         await _get_or_404(db, collection_id)
-    content_type = request.headers.get("content-type", "")
-    if "multipart/form-data" in content_type:
+    # Ask the question the way Starlette's form parser answers it — a substring test
+    # on the raw header disagrees with it (see server/api/media_type.py).
+    if is_multipart_form(request.headers.get("content-type", "")):
         form = await request.form()
         file: UploadFile | None = form.get("file")  # type: ignore[assignment]
         if file is None:

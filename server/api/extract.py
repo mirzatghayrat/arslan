@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from server.api.media_type import is_multipart_form
 from server.auth import require_auth
 from server.services import extract
 
@@ -11,9 +12,10 @@ router = APIRouter(prefix="/api/v1", tags=["extract"], dependencies=[Depends(req
 
 @router.post("/extract")
 async def post_extract(request: Request) -> dict:
-    content_type = request.headers.get("content-type", "")
     try:
-        if "multipart/form-data" in content_type:
+        # Ask the question the way Starlette's form parser answers it — a substring
+        # test on the raw header disagrees with it (see server/api/media_type.py).
+        if is_multipart_form(request.headers.get("content-type", "")):
             form = await request.form()
             upload = form.get("file")
             if upload is None:
