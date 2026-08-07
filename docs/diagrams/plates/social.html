@@ -1,0 +1,32 @@
+<meta charset="utf-8">
+<!-- GitHub social preview card — 2560x1280, shown at 1280x640 and often much
+     smaller in a chat unfurl. Everything here is sized for the small end:
+     three lines, no paragraph, nothing under ~30px at half scale. -->
+<style>
+@font-face{font-family:Inter;src:url(fonts/inter-variable.woff2) format('woff2');font-weight:100 900}
+@font-face{font-family:Plex;src:url(fonts/ibm-plex-mono-500.woff2) format('woff2');font-weight:500}
+@font-face{font-family:Plex;src:url(fonts/ibm-plex-mono-600.woff2) format('woff2');font-weight:600}
+:root{--night:#231710;--butter:#F3C34A;--cream:#F6EBD6;--ink:#241407}
+*{box-sizing:border-box;margin:0}
+body{width:2560px;height:1280px;overflow:hidden;background:var(--night);font-family:Inter,sans-serif}
+.wrap{position:relative;width:2560px;height:1280px;overflow:hidden}
+.wrap img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 32%}
+.wrap::after{content:"";position:absolute;inset:0;background:
+  linear-gradient(180deg,rgba(20,12,6,.34) 0%,rgba(20,12,6,.06) 24%,rgba(24,14,6,.82) 72%,rgba(35,23,16,.97) 100%),
+  linear-gradient(90deg,rgba(20,12,6,.86) 0%,rgba(20,12,6,.42) 44%,rgba(20,12,6,0) 74%)}
+.inner{position:absolute;z-index:2;left:130px;right:130px;bottom:120px}
+.kick{font-family:Plex;font-weight:600;font-size:34px;letter-spacing:.26em;text-transform:uppercase;color:var(--butter)}
+h1{font-size:200px;font-weight:800;letter-spacing:-.038em;line-height:.92;color:var(--cream);margin-top:26px;
+  text-shadow:0 14px 70px rgba(0,0,0,.6)}
+.sub{margin-top:34px;font-size:52px;line-height:1.3;font-weight:500;color:rgba(246,235,214,.94);max-width:20em}
+.meta{margin-top:44px;font-family:Plex;font-weight:500;font-size:31px;letter-spacing:.06em;color:rgba(246,235,214,.66)}
+</style>
+<div class="wrap">
+  <img class="bg" src="../../assets/site/aa544b6421a.jpg">
+  <div class="inner">
+    <div class="kick">Arslan · local-first · open source</div>
+    <h1>One becomes many.</h1>
+    <p class="sub">A personal AI orchestrator that runs on your machine, on your keys.</p>
+    <div class="meta">macOS 11+ · Apple Silicon · signed &amp; notarized · Apache-2.0 · pre-v1</div>
+  </div>
+</div>

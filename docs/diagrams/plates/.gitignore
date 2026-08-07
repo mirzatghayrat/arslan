@@ -1,9 +1,12 @@
-# build.sh writes its results here; the shipped copies live in docs/assets/.
+# build.sh and buttons.py write their results here; the shipped copies live in
+# docs/assets/. Only the sources belong in git.
 banner.png
 screens.png
 banner.jpg
 screens.jpg
 demo.gif
+social-preview.png
 seq/
 f0*.html
 f0*.png
+_btn_*.html

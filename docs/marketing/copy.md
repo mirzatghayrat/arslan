@@ -6,7 +6,7 @@ must pass an exam** · **all local, your keys**. The tone matches the product's
 "honest by design" brand — pre-v1 and macOS-first are never hidden.
 
 **Suggested pairings:** main posts → demo GIF (`docs/assets/demo.gif`) or the
-social card (`docs/assets/social-preview.png`); safety angle → FIG. 01/02
+social card (`docs/assets/social-preview.jpg`); safety angle → FIG. 01/02
 blueprints; second-brain angle → the graph capture on the landing page.
 
 ---

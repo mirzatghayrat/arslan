@@ -25,6 +25,12 @@ shot screens.html screens.png 2024 1580
 "$FFMPEG" -loglevel error -y -i banner.png  -q:v 3 banner.jpg
 "$FFMPEG" -loglevel error -y -i screens.png -q:v 3 screens.jpg
 
+# ---- social card ------------------------------------------------------------
+# JPEG, not PNG: GitHub rejects a social preview over 1MB, and this one is a
+# photograph of clay under type — 1.6MB as a PNG, 158KB at q4.
+shot social.html social-preview.png 2560 1280
+"$FFMPEG" -loglevel error -y -i social-preview.png -q:v 4 social-preview.jpg
+
 # ---- demo.gif: four real screens, dissolving --------------------------------
 # The dissolve is rendered as discrete opacity steps in the browser because the
 # vendored ffmpeg is built with --disable-filters: no xfade, no fps, no overlay.
@@ -46,4 +52,9 @@ PY
   -loop 0 demo.gif
 rm -rf seq f0*.png f0*.html
 
-ls -la banner.jpg screens.jpg demo.gif
+# ---- README nav + language buttons -----------------------------------------
+# These write straight into ../../assets/btn/ — 48 small files, and picking
+# them out of this directory by hand would be its own error.
+CHROMIUM="$SHELL_BIN" python3 buttons.py
+
+ls -la banner.jpg screens.jpg demo.gif social-preview.jpg
