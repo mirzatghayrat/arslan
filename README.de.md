@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://mirzatghayrat.github.io/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan — ein Orchestrator, gezeichnet wie eine Maschine, nicht wie eine Chat-Box" width="100%">
+  <img src="docs/assets/banner.jpg" alt="Arslan — aus einem werden viele: ein local-first KI-Orchestrator für macOS" width="100%">
 </a>
 
 <br/><br/>
@@ -32,10 +32,12 @@
 ## Eine Anfrage, von Anfang bis Ende
 
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Arslan-Demo — eine Anfrage geroutet, gesandboxt und beantwortet, alles in einem einzigen Thread" width="90%">
+  <img src="docs/assets/demo.gif" alt="Vier Screens des ausgelieferten Arslan-Clients — Orchestrierungs-Thread, Spawn-Register, Second Brain, Diagnose" width="90%">
 </div>
 
 <p align="center"><em>Du fragst einmal. Der Host-Agent wählt den passenden Spawn, zerlegt den Job, führt generierten Code in einer Kernel-Sandbox aus und antwortet — alles in einem einzigen Thread.</em></p>
+
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ Den 60-Sekunden-Film ansehen</b></a> — derselbe Knetanimations-Film, aus dem die <a href="https://mirzatghayrat.github.io/arslan/">Projektseite</a> geschnitten ist. <br><sub>Die Screens oben sind der ausgelieferte Client, unretuschiert.</sub></p>
 
 **Arslan ist ein local-first Personal-AI-Orchestrator.** Er läuft auf deinem eigenen Rechner, mit deinen eigenen LLM-Keys, mit einer **standardmäßig sicheren Kernel-Sandbox**, **Ehrlichkeits-Guardrails** und einem **sichtbaren Second Brain**, das du durchstöbern und bearbeiten kannst.
 
@@ -55,7 +57,7 @@
 ## Ein Blick in den echten Client
 
 <div align="center">
-  <img src="docs/assets/screens.jpg" alt="Arslan-Client-Screens — Spawns-Register, Capability-Bibliothek, MCP-Server, Spezialisten-Channel" width="100%">
+  <img src="docs/assets/screens.jpg" alt="Der ausgelieferte Arslan-Client in vier Screens — Orchestrierungs-Thread, Spawn-Register, Second Brain, Diagnose" width="100%">
 </div>
 
 ## Der Weg einer Anfrage

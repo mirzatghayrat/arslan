@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://mirzatghayrat.github.io/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan — チャットボックスではなく、マシンとして描かれたオーケストレーター" width="100%">
+  <img src="docs/assets/banner.jpg" alt="Arslan — 一つが多になる：macOS 向けのローカルファースト AI オーケストレーター" width="100%">
 </a>
 
 <br/><br/>
@@ -32,10 +32,12 @@
 ## ひとつのリクエストを、エンドツーエンドで
 
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Arslan デモ — ひとつのリクエストがルーティングされ、サンドボックスで実行され、単一のスレッドで回答されるまで" width="90%">
+  <img src="docs/assets/demo.gif" alt="出荷版 Arslan クライアントの 4 画面 — オーケストレーションスレッド、スポーン台帳、セカンドブレイン、診断" width="90%">
 </div>
 
 <p align="center"><em>尋ねるのは一度だけ。ホストエージェントがスポーンを選び、ジョブを分割し、生成されたコードをカーネルサンドボックスで実行して回答します — すべてが、ひとつのスレッドの中で完結します。</em></p>
+
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 60 秒の映像を見る</b></a> — <a href="https://mirzatghayrat.github.io/arslan/">プロジェクトサイト</a>と同じクレイアニメーションの映像です。<br><sub>上の画面は出荷版クライアントそのもので、加工していません。</sub></p>
 
 **Arslan は、ローカルファーストのパーソナル AI オーケストレーターです。** あなた自身のマシン上で、あなた自身の LLM キーを使って動作し、**セーフ・バイ・デフォルトのカーネルサンドボックス**、**正直さを守るガードレール**、そして自由に閲覧・編集できる**可視化されたセカンドブレイン**を備えています。
 
@@ -55,7 +57,7 @@
 ## 実際のクライアントの中身
 
 <div align="center">
-  <img src="docs/assets/screens.jpg" alt="Arslan クライアントの画面 — スポーン台帳、ケイパビリティライブラリ、MCP サーバー、スペシャリストチャンネル" width="100%">
+  <img src="docs/assets/screens.jpg" alt="出荷版 Arslan クライアントの 4 画面 — オーケストレーションスレッド、スポーン台帳、セカンドブレイン、診断" width="100%">
 </div>
 
 ## リクエストはどう流れるか

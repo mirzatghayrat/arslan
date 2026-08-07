@@ -1,0 +1,42 @@
+<meta charset="utf-8">
+<style>
+@font-face{font-family:Inter;src:url(fonts/inter-variable.woff2) format('woff2');font-weight:100 900}
+@font-face{font-family:Plex;src:url(fonts/ibm-plex-mono-500.woff2) format('woff2');font-weight:500}
+@font-face{font-family:Plex;src:url(fonts/ibm-plex-mono-600.woff2) format('woff2');font-weight:600}
+:root{--cream:#F6EBD6;--ink:#241407;--cink:#3A2A16;--butter:#F3C34A;
+  --clay:inset 6px 8px 18px rgba(255,255,255,.32),inset -8px -10px 20px rgba(0,0,0,.16),16px 22px 44px rgba(20,10,4,.28)}
+*{box-sizing:border-box;margin:0}
+body{width:2024px;height:1580px;overflow:hidden;background:var(--cream);font-family:Inter,sans-serif;color:var(--cink)}
+.head{padding:60px 96px 0;display:flex;align-items:baseline;justify-content:space-between}
+.head .t{font-family:Plex;font-weight:600;font-size:23px;letter-spacing:.26em;text-transform:uppercase;color:#8A6B3A}
+.head .r{font-family:Plex;font-weight:500;font-size:21px;letter-spacing:.1em;color:#9A7B4A}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:64px 72px;padding:52px 96px 70px}
+.cell{position:relative}
+.mon{background:#E2DFD7;border-radius:26px;padding:14px;box-shadow:var(--clay)}
+.mon img{width:100%;display:block;border-radius:14px}
+.cell:nth-child(1) .mon{transform:rotate(-1.2deg)}
+.cell:nth-child(2) .mon{transform:rotate(1deg)}
+.cell:nth-child(3) .mon{transform:rotate(.9deg)}
+.cell:nth-child(4) .mon{transform:rotate(-1deg)}
+.lab{margin-top:26px;font-family:Plex;font-weight:600;font-size:22px;letter-spacing:.16em;text-transform:uppercase;color:#7A5C2E}
+.lab i{font-style:normal;color:var(--butter);-webkit-text-stroke:.6px #B98F2E;margin-right:12px}
+.sub{margin-top:7px;font-size:22px;color:#6B5535;font-weight:400}
+</style>
+<div class="head">
+  <div class="t">Inside the shipped client</div>
+  <div class="r">light theme · 6 palettes · 6 languages</div>
+</div>
+<div class="grid">
+  <div class="cell"><div class="mon"><img src="../../assets/site/adf2aaecbf0.jpg"></div>
+    <div class="lab"><i>01</i>Orchestration thread</div>
+    <div class="sub">One composer. You ask once; the host agent decides what to route.</div></div>
+  <div class="cell"><div class="mon"><img src="../../assets/site/a8231dc73ee.jpg"></div>
+    <div class="lab"><i>02</i>Spawns ledger</div>
+    <div class="sub">The roster you raised — tools, skill packs and MCP servers per spawn.</div></div>
+  <div class="cell"><div class="mon"><img src="../../assets/site/a01391bbd3d.jpg"></div>
+    <div class="lab"><i>03</i>Second brain</div>
+    <div class="sub">Notes and beliefs as a graph you can scrub back to any past instant.</div></div>
+  <div class="cell"><div class="mon"><img src="../../assets/site/ac17ffb11aa.jpg"></div>
+    <div class="lab"><i>04</i>Diagnostics</div>
+    <div class="sub">Runs, error rate, latency and spend — the loop's own instruments.</div></div>
+</div>
