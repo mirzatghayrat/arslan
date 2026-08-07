@@ -35,8 +35,11 @@ EXPECTED_FILES: dict[str, int] = {
     "test_skill_import.py": 1,
     "test_chat_image_fallback.py": 1,
     "test_extract_api.py": 1,
+    # PROBE BRANCH ONLY — never merged. Keeps this guard green so the ONLY red
+    # check is `macos`, isolating what actually blocks the merge.
+    "test_zz_probe_required_check_blocks.py": 1,
 }
-EXPECTED_TOTAL = 25
+EXPECTED_TOTAL = 26
 
 #: Text that means "this test only means something on macOS". Kept broad on
 #: purpose — a new gating phrase should trip the drift check and be added here
