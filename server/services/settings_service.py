@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server import crypto
 from server.db.models import Setting
 
+from server.services.secret_state import secret_state
+
 logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
@@ -25,6 +27,13 @@ _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
 # Secret keys stored encrypted, returned masked.
 _SECRET_KEYS = ("llm_api_key", "search_api_key", "github_token")
+#: Read-only companions emitted for each secret: "unset" | "set" | "undecryptable".
+#: DERIVED from _SECRET_KEYS, never hand-listed — a hand-written list is how
+#: github_token came to be missing from both pydantic schemas while the frontend was
+#: sending it (see tests/server/test_secret_three_state.py). They are not settings:
+#: nothing stores them, `SettingsIn` does not accept them, and a client echoing the
+#: GET body back cannot create rows for them.
+_SECRET_STATE_KEYS = tuple(f"{k}_status" for k in _SECRET_KEYS)
 
 # Matches the two mask shapes produced by mask_secret():
 #   "***"                    – short-key mask (len < 8)
@@ -139,6 +148,10 @@ async def get_settings(session: AsyncSession) -> dict[str, str]:
     for secret_key in _SECRET_KEYS:
         enc = await _get_raw(session, secret_key)
         out[secret_key] = mask_secret(_safe_decrypt(enc)) if enc else ""
+        # The honest state alongside the mask. Without it the response cannot tell
+        # "never entered" from "entered, and we can no longer open it" — and
+        # mask_secret("") is "", so the second one arrives looking like the first.
+        out[f"{secret_key}_status"] = secret_state(enc)
     # 🔴 The int keys are emitted from ONE registry, not hand-listed.
     #
     # This used to be three literal lines, which made get_settings a SIXTH touch point

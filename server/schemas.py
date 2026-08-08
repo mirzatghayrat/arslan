@@ -15,6 +15,13 @@ class SettingsIn(BaseModel):
     language: str | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
+    # 🔴 THIRD instance of the defect the comment below describes, and the only
+    # one that was dead on BOTH sides: github_token is in _SECRET_KEYS (so
+    # update_settings encrypts it and get_settings masks it) but was on neither
+    # schema, so the PUT dropped it going in and the GET dropped it coming out.
+    # The frontend sends it and has passing tests that say so — two sides tested
+    # in isolation with nothing testing the seam.
+    github_token: str | None = None
     llm_strategy: str | None = None
     distill_on_session_end: bool | None = None
     # Sleep-time curation sweep. Opt-in: it spends, and its output is only visible
@@ -50,6 +57,12 @@ class SettingsOut(BaseModel):
     language: str = "en"
     search_provider: str = "tavily"
     search_api_key: str = ""  # masked
+    github_token: str = ""  # masked — see SettingsIn
+    # Honest state per secret: "unset" | "set" | "undecryptable". Read-only;
+    # SettingsIn deliberately does not accept them.
+    llm_api_key_status: str = "unset"
+    search_api_key_status: str = "unset"
+    github_token_status: str = "unset"
     llm_strategy: str = "single"
     distill_on_session_end: bool = True
     curation_enabled: bool = False

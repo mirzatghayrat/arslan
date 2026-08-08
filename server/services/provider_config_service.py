@@ -8,6 +8,7 @@ from arslan.llm import routing
 from arslan.llm.catalog import capabilities_for
 from server import crypto
 from server.db.models import ProviderConfig
+from server.services.secret_state import secret_state
 from server.services.settings_service import _looks_masked, mask_secret
 
 
@@ -18,22 +19,10 @@ def _safe(enc: str) -> str:
         return ""
 
 
-def _key_status(enc: str | None) -> str:
-    """Distinguish a genuinely-absent key from one that is STORED but undecryptable.
-
-    An undecryptable key means the row was encrypted under a DIFFERENT
-    ``ARSLAN_SECRET_KEY`` than the one the server runs under now — so every BYOK
-    key silently reads as empty and the adapter has no credential. The UI needs to
-    tell these apart to show an honest reason (not a misleading "requires API key").
-    Returns 'unset' | 'set' | 'undecryptable'.
-    """
-    if not enc:
-        return "unset"
-    try:
-        dec = crypto.decrypt(enc)
-    except Exception:  # noqa: BLE001 — stored under a different ARSLAN_SECRET_KEY
-        return "undecryptable"
-    return "set" if dec else "unset"
+#: The shared three-state predicate. This module implemented it FIRST, for the BYOK
+#: provider rows; it now lives in server.services.secret_state so the settings-level
+#: secrets use the same vocabulary instead of a second copy that could drift.
+_key_status = secret_state
 
 
 def _require_custom_base_url(provider: str, base_url: str) -> None:
