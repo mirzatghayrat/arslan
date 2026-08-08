@@ -395,3 +395,80 @@ def recover_with_salt(connection, salt: bytes) -> int:
             "crypto: recovered %d value(s) using an operator-supplied salt and "
             "re-encrypted them under the current key.", moved)
     return moved
+
+
+# --------------------------------------------------------------------------- #
+# diagnose() — name WHY, without guessing and without leaking.
+# --------------------------------------------------------------------------- #
+
+# Verdicts are MACHINE KEYS the frontend localizes, not sentences. Their whole value
+# is that they are distinct and correctly assigned: the shipped en.json:463 copy said
+# "ARSLAN_SECRET_KEY changed" for what was a salt change, and a specific-but-wrong
+# cause sends someone to solve the wrong problem — worse than saying nothing.
+HEALTHY = "healthy"
+SECRET_MISSING = "secret-missing"          # no real secret set (public fallback active)
+RECOVERABLE = "recoverable"                # a candidate salt opens it — a way back exists
+SALT_LOST = "salt-lost"                    # boot regenerated the salt (durable marker)
+MISMATCH = "secret-does-not-match"         # real secret + adopted salt, still won't open
+
+VERDICTS = frozenset({HEALTHY, SECRET_MISSING, RECOVERABLE, SALT_LOST, MISMATCH})
+
+
+def _salt_was_regenerated(connection) -> bool:
+    """True when a past boot recorded regenerating the salt over existing ciphertext.
+
+    Durable, and that is why it — not this process's salt_provenance() — separates
+    salt-lost from mismatch: a LATER boot finds the (regenerated) salt row and reports
+    provenance "database", but the marker written by the first boot is still there and
+    still tells the truth about what happened.
+    """
+    return connection.exec_driver_sql(
+        "SELECT 1 FROM settings WHERE key = ?", (SALT_LOST_MARKER_KEY,)).fetchone() is not None
+
+
+def diagnose(connection) -> dict:
+    """Classify why stored secrets cannot be read. Read-only; carries no plaintext.
+
+    Returns a machine ``verdict`` (one of :data:`VERDICTS`) plus two counts. The
+    frontend turns the verdict into words; keeping the words out of here is what stops
+    a single hard-coded sentence from mis-stating the cause the way the old copy did.
+
+    Precedence — most actionable and most certain cause first:
+
+      1. nothing unreadable                         -> healthy
+      2. unreadable AND no real secret is set        -> secret-missing
+      3. unreadable AND a candidate salt opens some   -> recoverable
+      4. unreadable AND boot regenerated the salt      -> salt-lost
+      5. unreadable, real secret, adopted salt, none    -> secret-does-not-match
+
+    secret-missing precedes recoverable because there is no point offering recovery to
+    someone who has not set a secret; recoverable precedes salt-lost because a way back
+    is the more useful headline than the diagnosis of how it broke.
+    """
+    result = {"verdict": HEALTHY, "salt_provenance": crypto.salt_provenance(),
+              "undecryptable": 0, "recoverable": 0}
+    if "settings" not in _tables(connection):
+        return result
+
+    undecryptable = sum(
+        1 for _table, ident, value in _stored_ciphertext(connection)
+        if ident != SALT_SETTING_KEY and not _group_a_can_open(value))
+    result["undecryptable"] = undecryptable
+    if undecryptable == 0:
+        return result
+
+    if crypto.is_insecure_default():
+        # No real secret to derive with — nothing else is worth saying until one is
+        # set, and probing candidates under the fallback secret would just report 0.
+        result["verdict"] = SECRET_MISSING
+        return result
+
+    probe = probe_recovery_candidates(connection)
+    result["recoverable"] = probe["recoverable"]
+    if probe["recoverable"]:
+        result["verdict"] = RECOVERABLE
+    elif _salt_was_regenerated(connection):
+        result["verdict"] = SALT_LOST
+    else:
+        result["verdict"] = MISMATCH
+    return result

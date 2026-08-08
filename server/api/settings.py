@@ -149,6 +149,26 @@ async def search_providers() -> list[str]:
     return list_search_providers()
 
 
+@router.get("/settings/crypto-health", response_model=dict)
+async def crypto_health(session: AsyncSession = Depends(get_session)) -> dict:
+    """Why stored secrets cannot be read, as a machine verdict the UI localizes.
+
+    Read-only, and it carries no plaintext and no salt bytes — see
+    ``crypto_boot.diagnose``. Deliberately a verdict KEY rather than a sentence: the
+    one hard-coded sentence this replaces (``settings.keyUndecryptableReason``) named
+    ARSLAN_SECRET_KEY as the cause of what was actually a salt change, and a specific
+    wrong cause costs more than no cause at all.
+    """
+    from server.services import crypto_boot
+
+    # session.connection(), not session.run_sync(): the latter hands the callable a
+    # sync *Session*, and diagnose() speaks to a *Connection* (exec_driver_sql). Every
+    # unit test drives it with a connection already, so only an over-the-wire test
+    # could surface this — which is what caught it.
+    conn = await session.connection()
+    return await conn.run_sync(crypto_boot.diagnose)
+
+
 @router.get("/settings/ocr-languages", response_model=dict)
 async def ocr_languages() -> dict:
     """What THIS machine's text recognition can read, asked at request time.
