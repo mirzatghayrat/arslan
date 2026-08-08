@@ -130,15 +130,15 @@ This is the self-improving half of the product. It's **optional and slow** — o
 **Prep — use a plain Q&A spawn.** Only runs with no side-effecting tools are hermetically replayable and eligible for evolution. Keep the spawn to plain answering (or the replay-safe built-ins: web search / extract, chart, deck, `run_python`, `read_skill`).
 
 1. **Build a corpus.** Chat with that spawn ~8–10 times with real questions. Each answer records a run, and an LLM judge auto-scores it in the background.
-2. **Trigger it.** Go to **Diagnostics → evolution**, pick the spawn under **运行进化 (Run evolution)**, click **Estimate** (shows a lower-bound of judge calls + tokens), then **ENQUEUE**.
+2. **Trigger it.** Go to **Diagnostics → evolution**, pick the spawn under **运行进化 (Run evolution)**, click **Estimate** (shows projected judge calls + dispatches; see the caveat below on what the token number is worth), then **ENQUEUE**.
 3. **Wait 15–60 minutes.** A bounded-edit optimizer runs several epochs, then a final paired holdout gate decides whether a candidate actually beats the current prompt.
 4. **Review & promote.** When a proposal appears, open it: the promotion card shows real vs. synthetic win-rates (kept separate), a per-dimension win table, the prompt diff, and per-pair replay links. Click **Confirm** to adopt the generation-2 prompt — or **Reject**, or **Rollback** later.
 
 > **Honest caveats.**
 > - A dead or undecryptable BYOK key makes every attempt bail in seconds — verify your key in **Settings** first (this is the most common reason an attempt "does nothing").
 > - The inbox currently shows only a static *"Enqueued"* line while an attempt runs — no live progress bar yet. **Refresh the tab** to find the finished proposal.
-> - The cost estimate is a **lower bound** (it excludes the optimizer's own turns and synthetic minting). You can cap spend with the `evolution_max_est_tokens` setting.
-> - **Auto-evolution is on by default** and fires on its own once enough new scored runs accrue — so background attempts (and token spend) can happen without you clicking ENQUEUE. There's no UI toggle yet; disable it via the settings API if you want full manual control.
+> - **The cost estimate is not a bound in either direction.** The `est_tokens` field is labelled `lower_bound` and that label is wrong: it multiplies the whole corpus by the epoch budget, but the optimizer only replays a capped validation slice, so it reads close to a floor on a small corpus and increasingly over-states as the corpus grows (`server/services/evolution_estimate.py`). It also prices neither the optimizer's own per-epoch calls nor synthetic minting. What you *can* set is `evolution_max_dispatches` — a cap on projected replay dispatches, in **Settings → Automation**, unset by default. The retired `evolution_max_est_tokens` key no longer gates anything; if an install still has it set, diagnostics says so rather than silently ignoring it.
+> - **Auto-evolution ships off.** Nothing runs in the background — and spends tokens — until you turn it on in **Settings → Automation**. Once on, it fires by itself as new scored runs accrue, so attempts happen without you clicking ENQUEUE. Sleep-time curation is off by default for the same reason.
 > - With very few real comparison pairs, the card flags the result as "synthetic-driven" and suggests waiting for more evidence before promoting.
 
 ---
