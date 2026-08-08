@@ -164,6 +164,30 @@ def _build_multifernet(secret: str, salt: bytes) -> MultiFernet:
     return MultiFernet([Fernet(new_key), Fernet(legacy_key)])
 
 
+def primary_fernet() -> Fernet:
+    """The current key ALONE — PBKDF2 over the installed salt, no fallback.
+
+    Exposed because :class:`MultiFernet` reports only THAT some key worked, never
+    WHICH one, and "which one" is the line between a migration and a gamble
+    (server/services/crypto_boot.py). It is also the only honest way to verify a
+    re-encryption: reading it back through the full keyring would pass on a value
+    that is still legacy.
+    """
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=current_salt(),
+                     iterations=_PBKDF2_ITERATIONS)
+    return Fernet(base64.urlsafe_b64encode(kdf.derive(_active_secret().encode("utf-8"))))
+
+
+def legacy_fernet() -> Fernet:
+    """The pre-d6d8afa8 key ALONE — bare SHA256, no salt.
+
+    Needs no installed salt, which is what lets boot ask "can the current inputs open
+    this?" before the salt is resolved.
+    """
+    digest = hashlib.sha256(_active_secret().encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
 def _fernet() -> MultiFernet:
     return _build_multifernet(_active_secret(), current_salt())
 
