@@ -196,6 +196,44 @@ def boot(app: pathlib.Path, home: pathlib.Path) -> tuple[subprocess.Popen, int, 
     raise SystemExit(f"port {port} never served /api/v1/health")
 
 
+
+def _check_crypto_salt_location(conn, appsup: pathlib.Path, c: Checks) -> None:
+    """The PBKDF2 salt must live in the database, and nowhere else.
+
+    Both halves are asserted because either one alone can be satisfied by a broken
+    build. A salt row with a leftover FILE still present would mean the old
+    filesystem path is alive and the two can drift apart again — which is the entire
+    defect. A missing file with no row would mean derivation had nothing to use and
+    the app is running on something it invented.
+
+    This is a PACKAGED-build probe on purpose. The unit suites all run against
+    databases the tests built themselves; none of them can tell you what the shipped
+    binary does on a clean machine, and this project's own history is three separate
+    "fine in dev, dead when packaged" defects.
+    """
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'crypto_salt_b64'").fetchone()
+    stored = (row[0] if row else "") or ""
+    c.ok(bool(stored.strip()),
+         "the PBKDF2 salt is stored in the database",
+         "settings.crypto_salt_b64 is missing or empty on a clean install")
+
+    salt_file = appsup / "crypto_salt"
+    c.ok(not salt_file.exists(),
+         "no crypto_salt file was written to the data dir",
+         f"{salt_file} exists — the filesystem salt path is back, and it can drift "
+         f"away from the ciphertext again")
+
+    # A generated-over-ciphertext marker on a CLEAN install would mean boot thought
+    # it found secrets that cannot exist yet — a false data-loss alarm, which is its
+    # own kind of lie.
+    marker = conn.execute(
+        "SELECT value FROM settings WHERE key = 'crypto_salt_lost_at_boot'").fetchone()
+    c.ok(marker is None,
+         "a clean install is not flagged as having lost its salt",
+         f"crypto_salt_lost_at_boot = {marker[0] if marker else ''}")
+
+
 def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -> None:
     # ---- the UI is actually served ------------------------------------
     for path, label in (("/", "the UI is served at /"),
@@ -228,6 +266,7 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        _check_crypto_salt_location(conn, appsup, c)
 
         # ---- migrations ran to head -----------------------------------
         want = _latest_schema_version()
