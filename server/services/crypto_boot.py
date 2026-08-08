@@ -249,3 +249,149 @@ def migrate_legacy_ciphertext(connection) -> int:
             "crypto: re-encrypted %d legacy (unsalted) value(s) under the current key; "
             "the legacy key is no longer required to read them.", migrated)
     return migrated
+
+
+# --------------------------------------------------------------------------- #
+# Group B — candidate salts. TRIED and REPORTED here; rewriting needs a person.
+# --------------------------------------------------------------------------- #
+
+FALLBACK_CANDIDATE = "fallback-salt-constant"
+DATA_DIR_FILE_CANDIDATE = "data-dir-salt-file"
+
+
+def _data_dir_salt_file() -> bytes | None:
+    """The legacy ``<data_dir>/crypto_salt``, if it is still there and usable.
+
+    Inert for derivation since step 2, but a salt sitting next to a database whose
+    row says something different is exactly the thing worth trying.
+    """
+    try:
+        from server import config
+
+        path = config.data_dir() / "crypto_salt"
+        data = path.read_bytes() if path.exists() else None
+    except (OSError, ImportError):
+        return None
+    return data if data and len(data) >= _SALT_LEN else None
+
+
+def _candidates(connection, extra_salts) -> list[tuple[str, bytes]]:
+    """Candidate (label, salt) pairs, most deliberate first.
+
+    Operator-supplied salts lead because someone went and found them on purpose. The
+    fallback constant is last: it is the least likely and the least specific.
+    """
+    out: list[tuple[str, bytes]] = [(str(label), bytes(salt)) for label, salt in extra_salts]
+    installed = _read_salt_row(connection)
+    from_file = _data_dir_salt_file()
+    if from_file and from_file != installed:
+        out.append((DATA_DIR_FILE_CANDIDATE, from_file))
+    out.append((FALLBACK_CANDIDATE, crypto._FALLBACK_SALT))
+
+    seen: set[bytes] = set()
+    unique = []
+    for label, salt in out:
+        if salt in seen or salt == installed:
+            continue          # already covered by the primary key
+        seen.add(salt)
+        unique.append((label, salt))
+    return unique
+
+
+def _fernet_for_salt(salt: bytes):
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
+                     iterations=crypto._PBKDF2_ITERATIONS)
+    return Fernet(base64.urlsafe_b64encode(kdf.derive(crypto._active_secret().encode("utf-8"))))
+
+
+def _opens(fernet, value: str) -> str | None:
+    try:
+        return fernet.decrypt(value.encode("utf-8")).decode("utf-8")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _group_a_can_open(value: str) -> bool:
+    return (_opens(crypto.primary_fernet(), value) is not None
+            or _opens(crypto.legacy_fernet(), value) is not None)
+
+
+def probe_recovery_candidates(connection, *, extra_salts=()) -> dict:
+    """Which stored values could be recovered, and by which candidate salt.
+
+    🔴 STRICTLY READ-ONLY. This is the "gamble" half of the split: the salts tried
+    here were found rather than derived from the configured inputs, so even a
+    successful decryption does not authorise a rewrite. The user's boundary: not one
+    byte before we nod. :func:`recover_with_salt` is the gated counterpart.
+
+    🔴 NO PLAINTEXT IN THE RETURN VALUE. This report is logged and shown on screen. A
+    recovery report that carried the secrets it is reporting about would be a worse
+    leak than the fault it describes, so findings name a location and a candidate
+    label and nothing else.
+
+    Values group A can already open are omitted entirely — they need no recovery, and
+    listing them would bury the one line that matters under a healthy install's rows.
+    """
+    if "settings" not in _tables(connection):
+        return {"recoverable": 0, "unreachable": 0, "findings": [], "candidates_tried": []}
+
+    candidates = _candidates(connection, extra_salts)
+    findings, recoverable, unreachable = [], 0, 0
+
+    for table, ident, value in _stored_ciphertext(connection):
+        if ident == SALT_SETTING_KEY or _group_a_can_open(value):
+            continue
+        hit = next((label for label, salt in candidates
+                    if _opens(_fernet_for_salt(salt), value) is not None), None)
+        findings.append({"table": table, "ident": ident, "candidate": hit})
+        if hit:
+            recoverable += 1
+        else:
+            unreachable += 1
+
+    logger.info(
+        "crypto: recovery probe — %d recoverable, %d unreachable, candidates tried: %s",
+        recoverable, unreachable, ", ".join(label for label, _ in candidates) or "none")
+    return {"recoverable": recoverable, "unreachable": unreachable,
+            "findings": findings, "candidates_tried": [label for label, _ in candidates]}
+
+
+def recover_with_salt(connection, salt: bytes) -> int:
+    """Re-encrypt, under the current key, every value the GIVEN salt opens.
+
+    The gated counterpart to :func:`probe_recovery_candidates`. Deliberately not
+    called from boot — a caller has to name a salt, which is the human decision. Each
+    rewrite is verified by reading it back with the primary key alone, exactly as the
+    group-A sweep does; a failure raises and takes the transaction with it.
+    """
+    if "settings" not in _tables(connection):
+        return 0
+    fernet = _fernet_for_salt(bytes(salt))
+    primary = crypto.primary_fernet()
+    moved = 0
+
+    for table, ident, value in list(_stored_ciphertext(connection)):
+        if ident == SALT_SETTING_KEY or _opens(primary, value) is not None:
+            continue
+        plaintext = _opens(fernet, value)
+        if plaintext is None:
+            continue
+        replacement = crypto.encrypt(plaintext)
+        if _opens(primary, replacement) != plaintext:
+            raise MigrationVerificationError(
+                f"{table} row {ident!r} did not read back after recovery")
+        column = next(c for t, c, _ in _CIPHERTEXT_SITES if t == table)
+        id_col = "key" if table == "settings" else "id"
+        connection.exec_driver_sql(
+            f"UPDATE {table} SET {column} = ? WHERE {id_col} = ?", (replacement, ident))
+        moved += 1
+
+    if moved:
+        logger.warning(
+            "crypto: recovered %d value(s) using an operator-supplied salt and "
+            "re-encrypted them under the current key.", moved)
+    return moved
