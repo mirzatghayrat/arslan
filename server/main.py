@@ -143,6 +143,12 @@ async def lifespan(app: FastAPI):
         # than as keys derived from a guessed salt.
         from server.services import crypto_boot
         await conn.run_sync(crypto_boot.resolve_and_adopt_salt)
+        # Group A migration: values the CURRENT inputs can already open (legacy
+        # unsalted ciphertext) are re-encrypted under the primary key now. Not gated —
+        # d6d8afa8 shipped read-time fallback WITHOUT a rewrite, which is why the
+        # legacy key could never be retired. Same transaction, so a verification
+        # failure rolls the whole thing back rather than leaving a row we broke.
+        await conn.run_sync(crypto_boot.migrate_legacy_ciphertext)
 
     from server.registry.seeder import seed_registry
 
