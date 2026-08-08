@@ -25,6 +25,11 @@ import subprocess
 import sys
 
 SCALE = 3
+# Displayed sizes, in CSS pixels. The budget is the README column on the repo's
+# home page — about 854px, because the About sidebar takes the rest — and the
+# widest row is Japanese. At 44px tall English already wrapped to two lines.
+H = 28
+CH = 22
 HERE = pathlib.Path(__file__).resolve().parent
 OUT = HERE.parent.parent / "assets" / "btn"
 ICONS = HERE.parent.parent / "assets" / "icons"
@@ -40,7 +45,7 @@ NAV = {
     "en": ["Download for macOS", "Website", "Quickstart", "Architecture", "Security", "Contributing"],
     "zh": ["下载 macOS 版", "官网", "快速上手", "架构", "安全", "参与贡献"],
     "de": ["Für macOS laden", "Website", "Quickstart", "Architektur", "Security", "Mitmachen"],
-    "ja": ["macOS 版をダウンロード", "ウェブサイト", "クイックスタート", "アーキテクチャ", "セキュリティ", "コントリビューション"],
+    "ja": ["macOS 版をダウンロード", "ウェブサイト", "クイックスタート", "アーキテクチャ", "セキュリティ", "貢献"],
     "es": ["Descargar para macOS", "Sitio web", "Inicio rápido", "Arquitectura", "Seguridad", "Contribuir"],
     "tr": ["macOS için indir", "Web Sitesi", "Hızlı Başlangıç", "Mimari", "Güvenlik", "Katkıda Bulunma"],
 }
@@ -75,9 +80,9 @@ body{width:max-content;font-family:%(fonts)s}
 
 def css():
     return CSS % dict(
-        fonts=FONTS, gap=4 * SCALE, h=44 * SCALE, pad=21 * SCALE, fs=17 * SCALE,
-        ico=17 * SCALE, i1=2 * SCALE, i2=5 * SCALE, b=1 * SCALE,
-        ch=32 * SCALE, cpad=15 * SCALE, cfs=14 * SCALE,
+        fonts=FONTS, gap=3 * SCALE, h=H * SCALE, pad=12 * SCALE, fs=12 * SCALE,
+        ico=13 * SCALE, i1=2 * SCALE, i2=5 * SCALE, b=1 * SCALE,
+        ch=CH * SCALE, cpad=10 * SCALE, cfs=10 * SCALE,
     )
 
 
@@ -120,7 +125,7 @@ def render(name, inner):
     dst = OUT / f"{name}.png"
     run([CHROMIUM, "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
          "--default-background-color=00000000",
-         f"--screenshot={dst}", f"--window-size={width},{44 * SCALE}",
+         f"--screenshot={dst}", f"--window-size={width},{H * SCALE}",
          "--virtual-time-budget=4000", str(src)])
     src.unlink()
     if not dst.exists():

@@ -5,10 +5,10 @@ this directory rather than drawn by hand:
 
 | Output | Source | What it is |
 | --- | --- | --- |
-| `../../assets/banner.jpg` | `banner.html` | The masthead, over the same clay frame the project site opens on. |
+| `../../assets/banner.jpg` | `masthead.html` | The masthead at the top of every README, over the clay frame the project site opens on. |
+| `../../assets/social-preview.jpg` | `masthead.html` | The same picture, as the card GitHub shows when the repo is shared. Upload it by hand: **Settings → General → Social preview**. |
 | `../../assets/screens.jpg` | `screens.html` | Four screens of the shipped client in clay monitors. |
 | `../../assets/demo.gif` | `gifframes.py` | The same four screens, dissolving. |
-| `../../assets/social-preview.jpg` | `social.html` | The card GitHub shows when the repo is shared. Upload it by hand: **Settings → General → Social preview**. |
 | `../../assets/btn/*.png` | `buttons.py` | The nav and language rows, as buttons — 48 files, six languages. |
 
 The two `patch_*.py` scripts write the markup that points at all of this into
@@ -54,6 +54,12 @@ words it replaced.
 Every pill is filled — nothing transparent — because GitHub renders a README on
 a white page or a near-black one depending on the reader, and an outline button
 disappears against one of them.
+
+Their size is set by a width budget, not by taste: the README column on the
+repo's home page is about 854px — the About sidebar takes the rest — and all
+six rows have to fit it on one line. Japanese is the widest and decides the
+number. `H` and `CH` at the top of `buttons.py` are that number; raising them
+wraps the row in some language, so re-measure before touching them.
 
 ## The dissolve
 

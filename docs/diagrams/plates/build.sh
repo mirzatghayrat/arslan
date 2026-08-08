@@ -19,17 +19,17 @@ shot() { # shot <html> <png> <w> <h>
     --screenshot="$2" --window-size="$3,$4" --virtual-time-budget=5000 "$1" >/dev/null 2>&1
 }
 
-# ---- banner + screens plate -------------------------------------------------
-shot banner.html banner.png 2024 860
-shot screens.html screens.png 2024 1580
-"$FFMPEG" -loglevel error -y -i banner.png  -q:v 3 banner.jpg
-"$FFMPEG" -loglevel error -y -i screens.png -q:v 3 screens.jpg
+# ---- masthead: the README banner and the social card, one plate --------------
+# Both come out of masthead.html so they cannot drift apart. JPEG, not PNG:
+# GitHub rejects a social preview over 1MB, and this is a photograph of clay
+# under type — 1.6MB as a PNG, ~160KB as a JPEG.
+shot masthead.html masthead.png 2560 1280
+"$FFMPEG" -loglevel error -y -i masthead.png -q:v 3 banner.jpg
+"$FFMPEG" -loglevel error -y -i masthead.png -q:v 4 social-preview.jpg
 
-# ---- social card ------------------------------------------------------------
-# JPEG, not PNG: GitHub rejects a social preview over 1MB, and this one is a
-# photograph of clay under type — 1.6MB as a PNG, 158KB at q4.
-shot social.html social-preview.png 2560 1280
-"$FFMPEG" -loglevel error -y -i social-preview.png -q:v 4 social-preview.jpg
+# ---- screens plate ----------------------------------------------------------
+shot screens.html screens.png 2024 1580
+"$FFMPEG" -loglevel error -y -i screens.png -q:v 3 screens.jpg
 
 # ---- demo.gif: four real screens, dissolving --------------------------------
 # The dissolve is rendered as discrete opacity steps in the browser because the

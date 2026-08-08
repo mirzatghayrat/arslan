@@ -26,7 +26,7 @@ NAV_ALT = {
     "en": ["Download for macOS", "Website", "Quickstart", "Architecture", "Security", "Contributing"],
     "zh": ["下载 macOS 版", "官网", "快速上手", "架构", "安全", "参与贡献"],
     "de": ["Für macOS laden", "Website", "Quickstart", "Architektur", "Security", "Mitmachen"],
-    "ja": ["macOS 版をダウンロード", "ウェブサイト", "クイックスタート", "アーキテクチャ", "セキュリティ", "コントリビューション"],
+    "ja": ["macOS 版をダウンロード", "ウェブサイト", "クイックスタート", "アーキテクチャ", "セキュリティ", "貢献"],
     "es": ["Descargar para macOS", "Sitio web", "Inicio rápido", "Arquitectura", "Seguridad", "Contribuir"],
     "tr": ["macOS için indir", "Web Sitesi", "Hızlı Başlangıç", "Mimari", "Güvenlik", "Katkıda Bulunma"],
 }
@@ -42,13 +42,19 @@ NAV_LINE = re.compile(
     r'Arslan-macos-arm64\.dmg">.*$',
     re.M,
 )
-LANG_LINE = re.compile(r'^<sub><img src="docs/assets/icons/languages\.svg".*$', re.M)
+# Matches the row in either state: the original <sub> of text links, or a row
+# of button images from a previous run, so re-running is safe.
+LANG_LINE = re.compile(
+    r'^(?:<sub><img src="docs/assets/icons/languages\.svg"|'
+    r'(?:<a href="README[^"]*">)?<img src="docs/assets/btn/lang-).*$',
+    re.M,
+)
 
 
 def nav_row(code):
     parts = [
         f'<a href="{href}"><img src="docs/assets/btn/{code}-{slug}.png" '
-        f'alt="{alt}" height="44"></a>'
+        f'alt="{alt}" height="28"></a>'
         for (slug, href), alt in zip(NAV_LINKS, NAV_ALT[code])
     ]
     return "&nbsp;&nbsp;".join(parts)
@@ -58,11 +64,11 @@ def lang_row(current):
     parts = []
     for code, label, path in LANGS:
         if code == current:
-            parts.append(f'<img src="docs/assets/btn/lang-{code}-on.png" alt="{label}" height="32">')
+            parts.append(f'<img src="docs/assets/btn/lang-{code}-on.png" alt="{label}" height="22">')
         else:
             parts.append(
                 f'<a href="{path}"><img src="docs/assets/btn/lang-{code}.png" '
-                f'alt="{label}" height="32"></a>'
+                f'alt="{label}" height="22"></a>'
             )
     return "&nbsp;".join(parts)
 
