@@ -46,11 +46,11 @@
 | | |
 |---|---|
 | <img src="docs/assets/icons/users.svg" width="20"><br/>**A persona team you grow** | Arslan is the front door; behind it you build a roster of specialist spawns — equip them with tools, `SKILL.md` skill packs, and MCP servers, then let a two-tier evolution loop refine them over time. |
-| <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then must beat the incumbent on held-out past tasks, on *every* dimension. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
+| <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then replays against the incumbent on held-out past tasks, judged blind with the positions swapped. It has to win **at least 60% of a minimum of 10 held-out pairs**, with **no dimension** (fabrication, identity, completion) **scoring worse** than the incumbent. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
 | <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**Safe by default, not disclaimed** | Generated code runs network-denied under a kernel-enforced sandbox (macOS seatbelt). A credential-injecting proxy lets sandboxed git talk to the network while raw tokens never enter the sandbox. Where the kernel sandbox is unavailable, it **fails closed**. |
-| <img src="docs/assets/icons/brain.svg" width="20"><br/>**A second brain with a time axis** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Beliefs carry time: when each became true, what superseded it, and a filter that shows the graph as it stood at any past instant. |
-| <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. Memory deletes/overwrites the model proposes never apply directly — they land in an inbox you accept or dismiss. |
-| <img src="docs/assets/icons/key-round.svg" width="20"><br/>**Local-first, bring your own key** | Your machine, your API keys, quality-first routing across multiple providers — and **zero third-party servers** in the middle. Ships with 6-language i18n and 6 theme palettes (light + dark). |
+| <img src="docs/assets/icons/brain.svg" width="20"><br/>**A second brain you can browse and correct** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Entries record when they took effect and what superseded them, and the graph can be **filtered by start time** — a filter over entries that still exist, not a replay of the past. |
+| <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. A **delete** never applies on its own — it lands in an inbox you accept or dismiss. An **overwrite** by the host agent applies at once, but it writes a pointer rather than replacing text: the original entry stays and one click undoes it. Anything a spawn proposes against shared memory goes to the inbox too. |
+| <img src="docs/assets/icons/key-round.svg" width="20"><br/>**Local-first, bring your own key** | Your machine, your API keys, and **zero third-party servers** in the middle. Configure more than one provider and you can turn on routing across them (one model by default); the judge and router roles stay pinned to your primary, so evaluation never drifts to a cheaper model. Ships with 6-language i18n and 6 theme palettes (light + dark). |
 
 <sub>Backend: FastAPI + async SQLAlchemy/SQLite (`server/`) · Frontend: React 19 + TypeScript + Vite (`web/`) · Tracing, LLM-judge evals, and a Grafana-style diagnosis dashboard feed the evolution loop.</sub>
 
@@ -72,15 +72,15 @@
   <img src="docs/assets/fig02-promotion-gate.png" alt="FIG. 02 — Promotion gate: rewrite, held-out exam, proposal card, you promote; fail is discarded, reject keeps the incumbent" width="100%">
 </div>
 
-A spawn's prompt gets revised automatically — then it has to prove itself on held-out past tasks before you ever see it. No dimension is allowed to score worse than the incumbent. Fail → discarded, never surfaces. Pass → a proposal card with a readable diff; the change lands **only when you click Promote**.
+A spawn's prompt gets revised automatically — then it has to prove itself on held-out past tasks before you ever see it: at least 10 non-tie pairs, a 60% win rate across them, and no dimension scoring worse than the incumbent. Synthetic wins cannot carry a real-task regression, and a candidate cannot win by getting longer. Fail → discarded, never surfaces. Pass → a proposal card with a readable diff; the change lands **only when you click Promote**.
 
-## A second brain with a time axis
+## A second brain, filterable by start time
 
 <div align="center">
-  <img src="docs/assets/fig03-second-brain.png" alt="FIG. 03 — Second brain: memory forms automatically, spawns read it via hybrid retrieval, model edits pass through your inbox, and every belief carries time" width="100%">
+  <img src="docs/assets/fig03-second-brain.png" alt="FIG. 03 — Second brain: memory forms automatically, spawns read it via hybrid retrieval, model deletes pass through your inbox, and entries record when they took effect" width="100%">
 </div>
 
-Memory forms on its own — router-extracted facts and end-of-session distillation — and spawns read it back with hybrid FTS5 + embedding retrieval. Every belief records when it took effect and what superseded it, so you can scrub the Obsidian-style graph to any past instant. When the model wants to edit or delete a memory, the proposal lands in your inbox first — **nothing is overwritten silently**.
+Memory forms on its own — router-extracted facts and end-of-session distillation — and spawns read it back with hybrid FTS5 + embedding retrieval. Entries record when they took effect and what superseded them, and you can filter the Obsidian-style graph by start time. Be precise about what that is: a filter over entries that still exist, not a replay of the past — deletes and in-place edits leave no trace, and an entry's end is inferred from its successor rather than recorded. When the model wants to **delete** a memory, the proposal lands in your inbox first. An **overwrite** from the host agent applies immediately, but the superseded entry is kept and one click restores it.
 
 ## Install
 
