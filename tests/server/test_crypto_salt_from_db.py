@@ -241,3 +241,30 @@ class TestACorruptSaltRowIsNotAbsent:
         rows = _rows(eng)
         assert rows[SALT_SETTING_KEY] == stored, "the corrupt salt row was overwritten"
         assert crypto_boot.SALT_LOST_MARKER_KEY not in rows
+
+
+class TestNoSettingsTableAtAll:
+    """The remaining branch. Added because M5 caught one untested branch in this
+    file and the lesson generalises: an ``if`` nobody exercises is an assertion
+    about behaviour nobody has seen.
+
+    A database with no settings table has nowhere to read or write a salt. The
+    honest outcome is to install NOTHING — so a later decrypt raises — rather than
+    to guess, which is the same rule as everywhere else here.
+    """
+
+    def test_nothing_is_installed_and_nothing_raises_at_boot(self, fresh_crypto, tmp_path):
+        eng = sa.create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
+        with eng.begin() as c:
+            c.exec_driver_sql("CREATE TABLE unrelated (x INTEGER)")
+
+        with eng.begin() as c:
+            from server.services import crypto_boot
+
+            source = crypto_boot.resolve_and_adopt_salt(c)
+
+        assert source == "unavailable"
+        # Boot survived, but derivation must still refuse rather than improvise.
+        assert fresh_crypto.salt_provenance() is None
+        with pytest.raises(fresh_crypto.CryptoNotInitializedError):
+            fresh_crypto.encrypt("sk-nope")
