@@ -54,13 +54,16 @@ async def session(tmp_path):
 
 
 def test_fernet_roundtrip(monkeypatch):
+    # Only `config` is reloaded. crypto._active_secret() reads config.settings at CALL
+    # time, so that is enough to change the active secret — and reloading crypto would
+    # reset the process-wide PBKDF2 salt to None, which now raises rather than
+    # silently deriving from a guess.
     monkeypatch.setenv("ARSLAN_SECRET_KEY", "unit-test-secret")
     import server.config as config
 
     importlib.reload(config)
     import server.crypto as crypto
 
-    importlib.reload(crypto)
     token = crypto.encrypt("sk-abc123")
     assert token != "sk-abc123"
     assert crypto.decrypt(token) == "sk-abc123"
@@ -80,9 +83,7 @@ async def test_set_and_get_settings_masks_key(session, monkeypatch):
     import server.config as config
 
     importlib.reload(config)
-    import server.crypto as crypto
 
-    importlib.reload(crypto)
     from server.services import settings_service
 
     importlib.reload(settings_service)
@@ -113,9 +114,7 @@ async def test_masked_echo_not_persisted(session, monkeypatch):
     import server.config as config
 
     importlib.reload(config)
-    import server.crypto as crypto
 
-    importlib.reload(crypto)
     from server.services import settings_service
 
     importlib.reload(settings_service)
@@ -166,9 +165,7 @@ async def test_get_settings_survives_key_rotation(session, monkeypatch):
     import server.config as config
 
     importlib.reload(config)
-    import server.crypto as crypto
 
-    importlib.reload(crypto)
     from server.services import settings_service
 
     importlib.reload(settings_service)
@@ -177,7 +174,6 @@ async def test_get_settings_survives_key_rotation(session, monkeypatch):
     # ...then rotate the secret key. The old ciphertext can no longer be decrypted.
     monkeypatch.setenv("ARSLAN_SECRET_KEY", "new-secret")
     importlib.reload(config)
-    importlib.reload(crypto)
     importlib.reload(settings_service)
 
     out = await settings_service.get_settings(session)  # must NOT raise

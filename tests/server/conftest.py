@@ -48,6 +48,35 @@ def _heal_config_drift() -> bool:
     return drifted
 
 
+# Deterministic so ciphertext is byte-stable within a run and across runs — a random
+# per-test salt would make any assertion about a stored token unreproducible.
+_TEST_CRYPTO_SALT = bytes(range(16))
+
+
+@pytest.fixture(autouse=True)
+def _install_crypto_salt():
+    """Install the PBKDF2 salt every test derives keys from.
+
+    ``server.crypto`` no longer reads the filesystem for its salt and refuses to
+    invent one (:class:`~server.crypto.CryptoNotInitializedError`) — boot installs it
+    from the database via ``server.services.crypto_boot``. Tests almost never boot,
+    and the coupling is INDIRECT: measured on the first run of this change, 17 suites
+    and 78 outcomes broke, most of them through settings_service /
+    provider_config_service / mcp_service rather than through any visible crypto call.
+
+    So it is installed here, once, for everything. Function-scoped and not
+    session-scoped on purpose: a test that reloads ``server.crypto`` resets the module
+    state to None, and the next test must not inherit that.
+
+    A suite that is specifically ABOUT the un-installed state reloads the module
+    itself (see test_crypto_salt_from_db.py), which clears what this installed.
+    """
+    from server import crypto
+
+    crypto.adopt_salt(_TEST_CRYPTO_SALT, source="test-fixture")
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _restore_config_after_test():
     """Guard against cross-test ``server.config`` pollution.

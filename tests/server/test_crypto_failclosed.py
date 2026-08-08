@@ -126,12 +126,17 @@ def test_reads_still_work_under_public_key(reload_config, tmp_path):
 # --------------------------------------------------------------------------- #
 # hardened KDF (real key) + backward-compat decrypt
 # --------------------------------------------------------------------------- #
-def test_real_key_roundtrip_and_salt_persisted(reload_config, tmp_path):
+def test_real_key_roundtrip_and_no_salt_file_is_written(reload_config, tmp_path):
+    # RENAMED, and the last assertion INVERTED. This used to assert that a salt file
+    # appeared under <data_dir>. The salt now lives in the database next to the
+    # ciphertext it is half the key to, and the filesystem is no longer consulted or
+    # written — the separability of those two was the defect. Asserting the file is
+    # ABSENT is what would catch a quiet reintroduction of the old path; the salt this
+    # round-trip uses comes from the autouse conftest install.
     reload_config(secret_key="a-real-strong-random-key-0123456789", data_dir=tmp_path)
     token = crypto.encrypt("sk-live-abcdef")
     assert crypto.decrypt(token) == "sk-live-abcdef"
-    # A per-install salt is generated + persisted for the new PBKDF2 KDF.
-    assert (tmp_path / "crypto_salt").exists()
+    assert not (tmp_path / "crypto_salt").exists()
 
 
 def test_new_scheme_is_not_bare_sha256(reload_config, tmp_path):
