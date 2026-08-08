@@ -135,6 +135,14 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         from server.db.migrations import runner as migration_runner
         await conn.run_sync(migration_runner.apply_pending)
+        # Install the PBKDF2 salt BEFORE anything can decrypt. Ordered after the
+        # migration chain because 0039 is what adopts a pre-existing on-disk salt
+        # into the database, and inside the same transaction so a boot that fails
+        # here leaves no half-written salt row behind. crypto refuses to derive
+        # without this, so a silent misordering surfaces as a loud error rather
+        # than as keys derived from a guessed salt.
+        from server.services import crypto_boot
+        await conn.run_sync(crypto_boot.resolve_and_adopt_salt)
 
     from server.registry.seeder import seed_registry
 

@@ -5,9 +5,17 @@ Key derivation (S1 OSS-safety hardening)
 The Fernet key is derived from ``ARSLAN_SECRET_KEY``.
 
 * When a real key is set (including the dev/test flow's ``dev-secret-key``), the key
-  is stretched with **PBKDF2-HMAC-SHA256** over a per-install random salt generated
-  once and persisted to ``<data_dir>/crypto_salt``. This replaces the old, unsalted
-  ``SHA256(secret_key)`` derivation.
+  is stretched with **PBKDF2-HMAC-SHA256** over a per-install random salt that lives
+  in the DATABASE, alongside the ciphertext it is half the key to (migration 0039).
+  This replaces the old, unsalted ``SHA256(secret_key)`` derivation.
+
+  The salt is installed once at boot by :func:`adopt_salt`
+  (``server.services.crypto_boot`` resolves it). This module NEVER reads the
+  filesystem for it and NEVER invents one: deriving without an installed salt raises
+  :class:`CryptoNotInitializedError`. A fallback would be indistinguishable from
+  working — a *stable* wrong key opens nothing, and anything written under it becomes
+  unreadable the moment the real salt reappears. That is the original defect, not a
+  safety net for it.
 
 * When ``ARSLAN_SECRET_KEY`` is unset, the module falls back to the PUBLIC constant
   ``arslan-insecure-dev-key`` — a value that ships in the open-source repo. In that
@@ -29,7 +37,6 @@ import functools
 import hashlib
 import logging
 import os
-from pathlib import Path
 
 from cryptography.fernet import Fernet, MultiFernet
 from cryptography.hazmat.primitives import hashes
@@ -47,11 +54,18 @@ _DEV_FALLBACK_SECRET = "arslan-insecure-dev-key"
 # PBKDF2 work factor — the OWASP-2023 floor for PBKDF2-HMAC-SHA256. The derived key
 # is cached per (secret, salt), so this cost is paid once per process, not per call.
 _PBKDF2_ITERATIONS = 600_000
-_SALT_FILENAME = "crypto_salt"
 _SALT_LEN = 16
-# Deterministic fallback salt, used ONLY when <data_dir> cannot be read/written, so
-# derivation stays stable across restarts (weaker than a random per-install salt, but
-# it never breaks decrypt). A random persisted salt is preferred and used when possible.
+# 🔴 NO LONGER USED FOR DERIVATION, and deliberately still here.
+#
+# This constant was substituted, silently, whenever <data_dir> could not be read or
+# written — the third of the three routes by which the salt came apart from the
+# ciphertext. Its old docstring said derivation "remains stable across restarts either
+# way", which was true and beside the point: a stable WRONG key decrypts nothing, and
+# secrets written under it stop opening once the real salt returns.
+#
+# It is kept because some installs really did write ciphertext under it, and it is
+# their only way back. It belongs to the RECOVERY keyring (candidate keys, gated,
+# read-only) and must never be reachable from the write path again.
 _FALLBACK_SALT = hashlib.sha256(b"arslan-crypto-salt-v1").digest()[:_SALT_LEN]
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -90,35 +104,50 @@ def insecure_writes_allowed() -> bool:
     return os.environ.get("ARSLAN_ALLOW_INSECURE_SECRETS", "").strip().lower() in _TRUTHY
 
 
-def _salt_path() -> Path:
-    return Path(config.settings.data_dir) / _SALT_FILENAME
+class CryptoNotInitializedError(RuntimeError):
+    """Raised when a key is derived before boot installed the PBKDF2 salt.
 
-
-def _load_or_create_salt() -> bytes:
-    """Return the per-install PBKDF2 salt, generating + persisting it on first use.
-
-    Falls back to a fixed deterministic salt when ``<data_dir>`` is not readable or
-    writable, so key derivation remains stable across restarts either way.
+    Loud on purpose. The alternative — guess a salt — is the defect this module was
+    rewritten to remove: every guess produces a key that is stable and wrong, which
+    looks like a working install right up until the real salt comes back and the
+    secrets written in the meantime turn out to be unreadable.
     """
-    path = _salt_path()
-    try:
-        if path.exists():
-            data = path.read_bytes()
-            if len(data) >= _SALT_LEN:
-                return data
-    except OSError:
-        return _FALLBACK_SALT
-    salt = os.urandom(_SALT_LEN)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(salt)
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-        return salt
-    except OSError:
-        return _FALLBACK_SALT
+
+
+# Process-wide installed salt. Written once, at boot, by :func:`adopt_salt`; read on
+# every derivation. Module state rather than a config field because the value lives in
+# the database and ``config`` is built before any database exists.
+_salt: bytes | None = None
+_salt_source: str | None = None
+
+
+def adopt_salt(salt: bytes, *, source: str) -> None:
+    """Install the process-wide PBKDF2 salt. Called once per process, at boot.
+
+    ``source`` records WHERE the salt came from, so a derivation that used anything
+    other than the stored per-install value can be reported instead of shrugged at.
+    A short salt is rejected rather than padded: padding would accept a truncated or
+    poisoned value and pin the install to a key derived from garbage.
+    """
+    if not isinstance(salt, (bytes, bytearray)) or len(salt) < _SALT_LEN:
+        raise ValueError(f"PBKDF2 salt must be at least {_SALT_LEN} bytes")
+    global _salt, _salt_source
+    _salt, _salt_source = bytes(salt), source
+
+
+def current_salt() -> bytes:
+    """The installed salt, or raise. Never a default."""
+    if _salt is None:
+        raise CryptoNotInitializedError(
+            "the PBKDF2 salt has not been installed for this process; "
+            "server.services.crypto_boot.resolve_and_adopt_salt must run at boot"
+        )
+    return _salt
+
+
+def salt_provenance() -> str | None:
+    """Where the installed salt came from, or None if none is installed."""
+    return _salt_source
 
 
 @functools.lru_cache(maxsize=16)
@@ -136,7 +165,7 @@ def _build_multifernet(secret: str, salt: bytes) -> MultiFernet:
 
 
 def _fernet() -> MultiFernet:
-    return _build_multifernet(_active_secret(), _load_or_create_salt())
+    return _build_multifernet(_active_secret(), current_salt())
 
 
 def encrypt(plaintext: str) -> str:
