@@ -12,6 +12,7 @@ from server import crypto
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery
+from server.services.secret_state import secret_state
 from server.services.settings_service import mask_secret
 
 logger = logging.getLogger(__name__)
@@ -31,9 +32,16 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
             env = json.loads(crypto.decrypt(srv.env))
         except Exception:  # noqa: BLE001
             env = {}
+    # 🔴 env_status exists because the {} above is indistinguishable from "this server
+    # never had credentials". An undecryptable env means the server is started WITHOUT
+    # its API key and fails with whatever that remote service says about a missing
+    # token — a symptom that points at the wrong thing entirely. Same three-state
+    # vocabulary as the settings secrets and the provider rows; one word, not three
+    # dialects.
     return {"id": srv.id, "label": srv.label, "command": srv.command, "args": srv.args or [],
             "url": srv.url, "env": _mask_env(env) if mask else env, "status": srv.status,
-            "last_error": srv.last_error, "transport": srv.transport,
+            "env_status": secret_state(srv.env), "last_error": srv.last_error,
+            "transport": srv.transport,
             "health_status": srv.health_status,
             "last_checked_at": srv.last_checked_at.isoformat() if srv.last_checked_at else None}
 
