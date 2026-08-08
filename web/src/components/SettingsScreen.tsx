@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+
+import type { CryptoHealth } from '../lib/cryptoHealth';
 import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
+import { api } from '../api/client';
 import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import {
@@ -39,6 +42,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
+  // The crypto diagnosis. Starts null and STAYS null on failure: a notice is only
+  // shown when the backend actually said something is wrong. Guessing while the
+  // request is in flight would put a data-loss warning on every cold start.
+  const [cryptoHealth, setCryptoHealth] = useState<CryptoHealth | null>(null);
 
   // ── Persistence (Task 6) ───────────────────────────────────────────────────
   // Instant auto-save replaces the old top Save button + <form onSubmit>.
@@ -60,6 +67,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   // Sync local form when parent settings update (e.g. after initial backend fetch),
   // but never clobber a key field the user is actively editing — that would revert
   // an in-progress secret back to its mask when a background save resolves.
+  useEffect(() => {
+    let live = true;
+    // Optional-chained and caught: this endpoint is BEST EFFORT. A frontend newer
+    // than its backend gets a 404 here, and Settings must still render — a missing
+    // diagnosis shows no notice, which is exactly right, whereas a screen that
+    // cannot open without it turns a nice-to-have into a hard dependency.
+    void api.getCryptoHealth?.()
+      .then((h) => { if (live) setCryptoHealth(h); })
+      .catch(() => { /* stay null — no diagnosis is better than a guessed one */ });
+    return () => { live = false; };
+  }, []);
+
   useEffect(() => {
     setLocalSettings((prev) => {
       const next: AppSettings = { ...prev, ...settings };
@@ -99,6 +118,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     // Search & Tools — search provider + search key + GitHub token.
     search: (
       <SearchToolsSection
+        cryptoHealth={cryptoHealth}
         searchProvider={localSettings.searchProvider}
         searchProviders={searchProviders}
         onSearchProviderChange={(v) => saveField({ searchProvider: v })}

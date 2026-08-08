@@ -460,7 +460,7 @@
     "keyEnter": "Saisir la clé API",
     "keySavedReplace": "Clé enregistrée — saisir pour remplacer",
     "keyReenter": "Ressaisir la clé API",
-    "keyUndecryptableReason": "La clé enregistrée ne peut pas être déchiffrée car ARSLAN_SECRET_KEY a changé depuis son enregistrement. Ressaisissez-la pour rétablir l'accès.",
+    "keyUndecryptableReason": "La clé enregistrée ne peut pas être déchiffrée. Saisissez-la à nouveau pour rétablir l'accès — le diagnostic dans « Recherche et outils » indique ce qui manque.",
     "btnSuggestPrimary": "Suggérer le principal",
     "btnUseThis": "Utiliser ceci",
     "capabilityTable": "Tableau des capacités du fournisseur",
@@ -595,7 +595,15 @@
     "tool_transport_title": "Les outils ne fonctionneront pas avec ce fournisseur",
     "tool_transport_unsupported": "Arslan ne transmet pas encore les définitions d'outils à ce fournisseur : les outils équipés et les serveurs MCP connectés ne sont donc jamais proposés au modèle et ne seront pas appelés. Les compétences parviennent toujours au modèle sous forme d'instructions, mais toute étape d'une compétence qui repose sur un appel d'outil ne peut pas aboutir. Choisissez un fournisseur compatible OpenAI si vous avez besoin d'outils.",
     "tool_transport_unverified": "Ce fournisseur n'a pas été mesuré face au transport d'outils d'Arslan. Les outils seront peut-être appelés — personne ne l'a vérifié.",
-    "capabilityTableNote": "Notes de 0 à 10 servant à choisir un modèle pour une tâche. Elles décrivent les forces du modèle lui-même, et non la capacité d'Arslan à envoyer des outils à ce fournisseur dans votre configuration."
+    "capabilityTableNote": "Notes de 0 à 10 servant à choisir un modèle pour une tâche. Elles décrivent les forces du modèle lui-même, et non la capacité d'Arslan à envoyer des outils à ce fournisseur dans votre configuration.",
+    "cryptoHealthTitle": "Les secrets enregistrés sont illisibles",
+    "cryptoHealthHealthy": "Tous les secrets enregistrés sont lisibles.",
+    "cryptoHealthSecretMissing": "Aucun ARSLAN_SECRET_KEY n'est défini : cette installation utilise la clé publique de secours et ne peut rien ouvrir de ce qui a été enregistré. Définissez ARSLAN_SECRET_KEY avec la valeur utilisée lors de l'enregistrement.",
+    "cryptoHealthRecoverable": "Un ancien sel de chiffrement capable d'ouvrir ces valeurs a été trouvé. Rien n'a été modifié : la récupération doit être lancée délibérément.",
+    "cryptoHealthSaltLost": "Au démarrage, le sel de chiffrement de cette installation était absent et un nouveau a été généré ; les valeurs enregistrées auparavant ne peuvent donc plus être ouvertes. C'est le sel qui manque, pas votre clé secrète — la ressaisir ne les ramènera pas. Cela suit généralement un répertoire de données déplacé ou restauré à moitié.",
+    "cryptoHealthMismatch": "La clé secrète et le sel sont tous deux présents, mais aucun n'ouvre ces valeurs : elles ont été enregistrées sous un autre ARSLAN_SECRET_KEY.",
+    "cryptoHealthCount": "Concernés",
+    "cryptoHealthRecoverableCount": "Récupérables"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

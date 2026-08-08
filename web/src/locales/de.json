@@ -460,7 +460,7 @@
     "keyEnter": "API-Schlüssel eingeben",
     "keySavedReplace": "Schlüssel gespeichert – zum Ersetzen eingeben",
     "keyReenter": "API-Schlüssel erneut eingeben",
-    "keyUndecryptableReason": "Der gespeicherte Schlüssel kann nicht entschlüsselt werden, da sich ARSLAN_SECRET_KEY seit dem Speichern geändert hat. Zum Wiederherstellen des Zugriffs erneut eingeben.",
+    "keyUndecryptableReason": "Der gespeicherte Schlüssel kann nicht entschlüsselt werden. Geben Sie ihn erneut ein — was genau fehlt, zeigt die Diagnose unter „Suche & Werkzeuge“.",
     "btnSuggestPrimary": "Primäranbieter vorschlagen",
     "btnUseThis": "Verwenden",
     "capabilityTable": "Anbieterfähigkeiten",
@@ -595,7 +595,15 @@
     "tool_transport_title": "Werkzeuge laufen bei diesem Anbieter nicht",
     "tool_transport_unsupported": "Arslan übergibt diesem Anbieter noch keine Werkzeugdefinitionen. Ausgerüstete Werkzeuge und verbundene MCP-Server werden dem Modell daher nie angeboten und nicht aufgerufen. Skills erreichen das Modell weiterhin als Anweisungen, aber jeder Schritt eines Skills, der einen Werkzeugaufruf braucht, kann nicht abgeschlossen werden. Wähle einen OpenAI-kompatiblen Anbieter, wenn du Werkzeuge brauchst.",
     "tool_transport_unverified": "Dieser Anbieter wurde nicht gegen Arslans Werkzeugübertragung gemessen. Ob Werkzeuge aufgerufen werden, hat niemand geprüft.",
-    "capabilityTableNote": "0–10-Bewertungen zur Modellauswahl für eine Aufgabe. Sie beschreiben die Stärken des Modells selbst — nicht, ob Arslan in deiner Konfiguration Werkzeuge an diesen Anbieter senden kann."
+    "capabilityTableNote": "0–10-Bewertungen zur Modellauswahl für eine Aufgabe. Sie beschreiben die Stärken des Modells selbst — nicht, ob Arslan in deiner Konfiguration Werkzeuge an diesen Anbieter senden kann.",
+    "cryptoHealthTitle": "Gespeicherte Geheimnisse sind nicht lesbar",
+    "cryptoHealthHealthy": "Alle gespeicherten Geheimnisse sind lesbar.",
+    "cryptoHealthSecretMissing": "Es ist kein ARSLAN_SECRET_KEY gesetzt. Diese Installation läuft mit dem öffentlichen Ersatzschlüssel und kann zuvor Gespeichertes nicht öffnen. Setzen Sie ARSLAN_SECRET_KEY auf den beim Speichern verwendeten Wert.",
+    "cryptoHealthRecoverable": "Ein älterer Verschlüsselungs-Salt wurde gefunden, der diese Werte öffnet. Es wurde nichts verändert — die Wiederherstellung muss bewusst gestartet werden.",
+    "cryptoHealthSaltLost": "Beim Start fehlte der installationsspezifische Salt und es wurde ein neuer erzeugt. Zuvor gespeicherte Werte lassen sich daher nicht mehr öffnen. Es fehlt der Salt, nicht Ihr geheimer Schlüssel — ihn erneut einzugeben bringt sie nicht zurück. Das folgt meist auf ein verschobenes oder nur teilweise wiederhergestelltes Datenverzeichnis.",
+    "cryptoHealthMismatch": "Schlüssel und Salt sind beide vorhanden, öffnen diese Werte aber nicht: Sie wurden unter einem anderen ARSLAN_SECRET_KEY gespeichert.",
+    "cryptoHealthCount": "Betroffen",
+    "cryptoHealthRecoverableCount": "Wiederherstellbar"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

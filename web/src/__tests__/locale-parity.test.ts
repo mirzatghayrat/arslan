@@ -125,7 +125,13 @@ describe("locale parity", () => {
     // unsupported + unverified, warning that Anthropic/Gemini drop
     // tool definitions so equipped tools and MCP never fire.
     //              two-state toggle had no way to say it.
-    expect(enKeys).toHaveLength(1269);
+    // 1269 → 1277: the crypto diagnosis — title, five verdict paragraphs, and two
+    //              count labels. It replaces one hard-coded sentence that named
+    //              ARSLAN_SECRET_KEY as the cause of what was a SALT change; the
+    //              backend now computes a verdict and each one gets its own words,
+    //              because two verdicts sharing a paragraph is a diagnosis that
+    //              cannot distinguish the thing it exists to distinguish.
+    expect(enKeys).toHaveLength(1277);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
