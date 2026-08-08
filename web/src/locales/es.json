@@ -460,7 +460,7 @@
     "keyEnter": "Introduce la clave API",
     "keySavedReplace": "Clave guardada — escribe para reemplazar",
     "keyReenter": "Vuelve a introducir la clave API",
-    "keyUndecryptableReason": "La clave almacenada no se puede descifrar porque ARSLAN_SECRET_KEY cambió desde que se guardó. Vuelve a introducirla para restaurar el acceso.",
+    "keyUndecryptableReason": "La clave almacenada no se puede descifrar. Vuelve a introducirla para restaurar el acceso: consulta el diagnóstico en «Búsqueda y herramientas» para saber qué falta.",
     "btnSuggestPrimary": "Sugerir principal",
     "btnUseThis": "Usar este",
     "capabilityTable": "Tabla de capacidades del proveedor",
@@ -595,7 +595,15 @@
     "tool_transport_title": "Las herramientas no funcionarán con este proveedor",
     "tool_transport_unsupported": "Arslan todavía no pasa definiciones de herramientas a este proveedor, así que las herramientas equipadas y los servidores MCP conectados nunca se ofrecen al modelo y no se llamarán. Las habilidades siguen llegando al modelo como instrucciones, pero cualquier paso de una habilidad que dependa de llamar a una herramienta no puede completarse. Elige un proveedor compatible con OpenAI si necesitas herramientas.",
     "tool_transport_unverified": "Este proveedor no se ha medido contra el transporte de herramientas de Arslan. Puede que las herramientas se llamen o no — nadie lo ha comprobado.",
-    "capabilityTableNote": "Puntuaciones de 0 a 10 para elegir un modelo según la tarea. Describen los puntos fuertes del propio modelo, no si Arslan puede enviar herramientas a ese proveedor en tu configuración."
+    "capabilityTableNote": "Puntuaciones de 0 a 10 para elegir un modelo según la tarea. Describen los puntos fuertes del propio modelo, no si Arslan puede enviar herramientas a ese proveedor en tu configuración.",
+    "cryptoHealthTitle": "No se pueden leer los secretos almacenados",
+    "cryptoHealthHealthy": "Todos los secretos almacenados son legibles.",
+    "cryptoHealthSecretMissing": "No hay ningún ARSLAN_SECRET_KEY configurado, así que esta instalación usa la clave pública de reserva y no puede abrir nada guardado antes. Configura ARSLAN_SECRET_KEY con el valor usado al guardarlos.",
+    "cryptoHealthRecoverable": "Se encontró un salt de cifrado antiguo que abre estos valores. No se ha modificado nada: la recuperación debe iniciarse de forma deliberada.",
+    "cryptoHealthSaltLost": "Al arrancar faltaba el salt de cifrado de esta instalación y se generó uno nuevo, por lo que los valores guardados antes ya no se pueden abrir. La mitad que falta es el salt, no tu clave secreta: volver a introducirla no los recuperará. Suele ocurrir tras mover el directorio de datos o restaurarlo a medias.",
+    "cryptoHealthMismatch": "La clave secreta y el salt están presentes, pero ninguno abre estos valores: se guardaron con otro ARSLAN_SECRET_KEY.",
+    "cryptoHealthCount": "Afectados",
+    "cryptoHealthRecoverableCount": "Recuperables"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

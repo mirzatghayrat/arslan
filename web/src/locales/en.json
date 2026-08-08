@@ -460,7 +460,7 @@
     "keyEnter": "Enter API key",
     "keySavedReplace": "Key saved — type to replace",
     "keyReenter": "Re-enter API key",
-    "keyUndecryptableReason": "The stored key can't be decrypted because ARSLAN_SECRET_KEY changed since it was saved. Re-enter it to restore access.",
+    "keyUndecryptableReason": "The stored key can't be decrypted. Re-enter it to restore access — see the diagnosis in Search & Tools for what went missing.",
     "btnSuggestPrimary": "Suggest primary",
     "btnUseThis": "Use this",
     "capabilityTable": "Provider capability table",
@@ -595,7 +595,15 @@
     "tool_transport_title": "Tools will not run on this provider",
     "tool_transport_unsupported": "Arslan does not yet pass tool definitions to this provider, so equipped tools and connected MCP servers are never offered to the model and will not be called. Skills still reach the model as instructions, but any step of a skill that relies on calling a tool cannot complete. Choose an OpenAI-compatible provider if you need tools.",
     "tool_transport_unverified": "This provider has not been measured against Arslan's tool transport. Tools may or may not be called — nobody has checked yet.",
-    "capabilityTableNote": "0–10 ratings used to pick a model for a job. They describe the model's own strengths — not whether Arslan can send tools to that provider on your setup."
+    "capabilityTableNote": "0–10 ratings used to pick a model for a job. They describe the model's own strengths — not whether Arslan can send tools to that provider on your setup.",
+    "cryptoHealthTitle": "Stored secrets cannot be read",
+    "cryptoHealthHealthy": "All stored secrets are readable.",
+    "cryptoHealthSecretMissing": "No ARSLAN_SECRET_KEY is set, so this install is running on the public fallback key and cannot open anything saved earlier. Set ARSLAN_SECRET_KEY to the value used when they were saved.",
+    "cryptoHealthRecoverable": "An older encryption salt was found that opens these values. Nothing has been changed — recovery has to be started deliberately.",
+    "cryptoHealthSaltLost": "The per-install encryption salt was missing at startup and a new one was generated, so values saved earlier can no longer be opened. The missing half is the salt, not your secret key — re-entering the key will not bring them back. This usually follows a moved or partly restored data directory.",
+    "cryptoHealthMismatch": "The secret key and the salt are both present, but neither opens these values: they were saved under a different ARSLAN_SECRET_KEY.",
+    "cryptoHealthCount": "Affected",
+    "cryptoHealthRecoverableCount": "Recoverable"
   },
   "errors": {
     "load_failed": "Failed to load data.",

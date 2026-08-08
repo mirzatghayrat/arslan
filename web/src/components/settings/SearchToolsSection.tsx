@@ -16,8 +16,12 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Eye, EyeOff } from 'lucide-react';
 import Select from '../Select';
+import CryptoHealthNotice from './CryptoHealthNotice';
+import type { CryptoHealth } from '../../lib/cryptoHealth';
 
 export interface SearchToolsSectionProps {
+  /** Why stored secrets cannot be read, or null when unknown/healthy. */
+  cryptoHealth?: CryptoHealth | null;
   /** Current search provider key (e.g. "tavily"). */
   searchProvider: string;
   /** Available search provider keys for the Select options. */
@@ -49,6 +53,7 @@ export default function SearchToolsSection({
   githubToken,
   onGithubTokenChange,
   onGithubTokenBlur,
+  cryptoHealth = null,
 }: SearchToolsSectionProps) {
   const { t } = useTranslation();
   const [showSearchKey, setShowSearchKey] = useState(false);
@@ -60,6 +65,7 @@ export default function SearchToolsSection({
         <Search className="w-4.5 h-4.5 text-primary" />
         <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionSearch')}</h3>
       </div>
+      <CryptoHealthNotice health={cryptoHealth} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Search Provider select */}

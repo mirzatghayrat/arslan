@@ -460,7 +460,7 @@
     "keyEnter": "APIキーを入力",
     "keySavedReplace": "キーは保存済み — 入力して置き換え",
     "keyReenter": "APIキーを再入力",
-    "keyUndecryptableReason": "保存後に ARSLAN_SECRET_KEY が変更されたため、保存されたキーを復号できません。アクセスを回復するには再入力してください。",
+    "keyUndecryptableReason": "保存された鍵を復号できません。再入力してアクセスを回復してください — 何が欠けているかは「検索とツール」の診断を参照。",
     "btnSuggestPrimary": "プライマリを提案",
     "btnUseThis": "これを使用",
     "capabilityTable": "プロバイダー能力表",
@@ -595,7 +595,15 @@
     "tool_transport_title": "このプロバイダーではツールが動作しません",
     "tool_transport_unsupported": "Arslan は現在このプロバイダーにツール定義を渡していないため、装備済みのツールや接続済みの MCP サーバーはモデルに提示されず、呼び出されません。スキルは指示としてモデルに届きますが、ツール呼び出しに依存する手順は完了できません。ツールが必要な場合は OpenAI 互換のプロバイダーを選んでください。",
     "tool_transport_unverified": "このプロバイダーは Arslan のツール伝送について未計測です。ツールが呼ばれるかどうかは誰も確認していません。",
-    "capabilityTableNote": "タスクに合うモデルを選ぶための 0〜10 の評点です。モデル自身の得手不得手を示すもので、この環境で Arslan がそのプロバイダーにツールを送れるかどうかを表すものではありません。"
+    "capabilityTableNote": "タスクに合うモデルを選ぶための 0〜10 の評点です。モデル自身の得手不得手を示すもので、この環境で Arslan がそのプロバイダーにツールを送れるかどうかを表すものではありません。",
+    "cryptoHealthTitle": "保存された秘密情報を読み取れません",
+    "cryptoHealthHealthy": "保存されたすべての秘密情報は読み取り可能です。",
+    "cryptoHealthSecretMissing": "ARSLAN_SECRET_KEY が設定されていないため、公開フォールバック鍵で動作しており、以前保存した内容を開けません。保存時に使用した値を ARSLAN_SECRET_KEY に設定してください。",
+    "cryptoHealthRecoverable": "これらの値を開ける古い暗号化ソルトが見つかりました。まだ何も変更していません — 復元は明示的に開始する必要があります。",
+    "cryptoHealthSaltLost": "起動時にこのインストールの暗号化ソルトが見つからず、新しいものが生成されました。そのため以前保存した値は開けません。欠けているのはソルトであって秘密鍵ではありません — 鍵を入力し直しても元には戻りません。データディレクトリの移動や部分的な復元の後によく起こります。",
+    "cryptoHealthMismatch": "秘密鍵とソルトの両方がありますが、どちらもこれらの値を開けません。別の ARSLAN_SECRET_KEY で保存されたものです。",
+    "cryptoHealthCount": "影響あり",
+    "cryptoHealthRecoverableCount": "復元可能"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
