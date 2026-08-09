@@ -501,6 +501,20 @@ def create_app() -> FastAPI:
         index_file = static_dir / "index.html"
         static_root = static_dir.resolve()
 
+        # 🔴 The entry point must never be cached, and this was found on a real
+        # upgrade rather than here. Installing over an existing copy left the UI
+        # showing the PREVIOUS version's frontend while live API data was current —
+        # WebKit had cached index.html heuristically (FileResponse sends etag and
+        # last-modified and no Cache-Control), so it kept asking for the OLD hashed
+        # bundle, which was also in the cache. Content hashing protects the assets
+        # and does nothing for the file that names them. Quitting does not help: the
+        # cache is on disk.
+        #
+        # Worse than stale copy: the previous frontend has no CryptoHealthNotice at
+        # all, so an upgrading user whose keys had genuinely broken would see the
+        # same silence spec ⓪ exists to end.
+        _INDEX_HEADERS = {"Cache-Control": "no-store, must-revalidate"}
+
         @app.get("/{full_path:path}")
         async def _spa_fallback(full_path: str):  # noqa: ANN202
             # API and WS routes are matched earlier; anything else serves the SPA.
@@ -509,8 +523,15 @@ def create_app() -> FastAPI:
             if full_path:
                 candidate = (static_dir / full_path).resolve()
                 if candidate.is_file() and candidate.is_relative_to(static_root):
+                    # index.html can also be requested by name, and it is still an
+                    # entry point when it is.
+                    if candidate == index_file.resolve():
+                        return FileResponse(str(candidate), headers=_INDEX_HEADERS)
+                    # Everything else here is a hashed build artefact: leave it
+                    # cacheable. Blanket no-store would re-fetch a 2.5 MB bundle on
+                    # every launch and call that a fix.
                     return FileResponse(str(candidate))
-            return FileResponse(str(index_file))
+            return FileResponse(str(index_file), headers=_INDEX_HEADERS)
 
     return app
 
