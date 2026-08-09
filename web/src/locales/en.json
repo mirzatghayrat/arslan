@@ -81,6 +81,7 @@
     "undoing": "Undoing…",
     "undo_supersede": "Undo supersede",
     "sensitive_note": "Marked sensitive. This is a display hint, not isolation — the content is still returned to any view that reads it.",
+    "stale_note": "Marked stale — kept here, but not used in answers or recall. Marking it again brings it back.",
     "provenance": "Provenance record",
     "graph_aria": "Second-brain graph",
     "graph_hint": "Drag to arrange · double-click a ghost node to create a note · scroll to zoom",

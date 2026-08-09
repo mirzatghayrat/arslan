@@ -323,17 +323,32 @@ async def existing_norms_safe() -> set[str]:
         return set()
 
 
-async def list_facts(*, include_superseded: bool = False) -> list[UserFact]:
-    """Active-only by default (superseded_by IS NULL) — the P0 single throat: every
-    injection site renders facts via facts_text() -> list_facts(), so this default
-    makes all of them active-only for free. include_superseded=True is for the
-    Settings/Memory admin view (audit trail)."""
+async def list_facts(*, include_superseded: bool = False,
+                     include_stale: bool = False) -> list[UserFact]:
+    """Active-only by default (superseded_by IS NULL, and not marked stale) — the P0
+    single throat: every injection site renders facts via facts_text() -> list_facts(),
+    so this default makes all of them active-only for free. include_superseded=True /
+    include_stale=True are for the Settings/Memory admin view (audit trail).
+
+    `provenance["stale"]` is set by the remember tool's `mark_stale` action
+    (registry/memory_executors._mark_stale_tier1), which is advertised to the model in
+    the tool schema. It is filtered HERE rather than at each caller for the same reason
+    superseded_by is: this function is the only door, so a new injection site cannot
+    forget. Marking is a toggle — marking again clears the flag and the fact comes
+    back — so the row is left alone; nothing about the mark is destructive.
+    """
     async with db_session.AsyncSessionLocal() as db:
         stmt = select(UserFact).order_by(UserFact.id)
         if not include_superseded:
             stmt = stmt.where(UserFact.superseded_by.is_(None))
         rows = await db.execute(stmt)
-        return list(rows.scalars().all())
+        facts = list(rows.scalars().all())
+    if not include_stale:
+        # Filtered in Python, not SQL: `provenance` is a JSON column, and a
+        # json_extract() predicate would tie the single throat to SQLite's JSON1
+        # extension for a set small enough that the scan is free.
+        facts = [f for f in facts if not (f.provenance or {}).get("stale")]
+    return facts
 
 
 async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:

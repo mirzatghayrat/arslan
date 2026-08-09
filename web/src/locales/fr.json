@@ -81,6 +81,7 @@
     "undoing": "Annulation…",
     "undo_supersede": "Annuler le remplacement",
     "sensitive_note": "Marqué sensible — indication visuelle, pas une isolation.",
+    "stale_note": "Marquée comme obsolète — conservée ici, mais plus utilisée dans les réponses ni la recherche. La marquer à nouveau la restaure.",
     "provenance": "Registre de provenance",
     "graph_aria": "Graphe du second cerveau",
     "graph_hint": "Glisser · double-clic crée une note · molette pour zoomer",

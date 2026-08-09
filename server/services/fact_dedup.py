@@ -3,6 +3,7 @@ invoked explicitly via POST /facts/dedup, never on boot / write path / timer."""
 from __future__ import annotations
 
 import difflib
+import json
 import logging
 
 from sqlalchemy import select, text as sa_text
@@ -23,13 +24,37 @@ def norm(content: str) -> str:
 
 
 async def existing_norms() -> set[str]:
-    """Active-only (superseded_by IS NULL): a superseded row's content must never
-    block a new write from being inserted (it would look like a live duplicate
-    of a fact that's actually dead)."""
+    """Active-only (superseded_by IS NULL, and not marked stale): a superseded row's
+    content must never block a new write from being inserted (it would look like a live
+    duplicate of a fact that's actually dead).
+
+    A stale-marked row is the same case wearing a different flag. It is excluded from
+    injection and recall (memory.list_facts), so leaving it in here would make
+    re-asserting the fact a silent no-op: the write returns the stale row, and the fact
+    the user just restated still never reaches a prompt.
+
+    The stale test is done in Python for the reason given in memory.list_facts — the
+    JSON predicate is not worth an extension dependency at this size."""
     async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.execute(
-            sa_text("SELECT content FROM user_facts WHERE superseded_by IS NULL"))).all()
-    return {norm(r[0]) for r in rows}
+        rows = (await db.execute(sa_text(
+            "SELECT content, provenance FROM user_facts WHERE superseded_by IS NULL"))).all()
+    return {norm(r[0]) for r in rows if not is_stale(r[1])}
+
+
+def is_stale(provenance) -> bool:  # noqa: ANN001 — dict from the ORM, str from sa_text
+    """True when provenance carries stale=true — the flag mark_stale toggles.
+
+    Fail-OPEN (unparseable ⇒ not stale): the cost of a wrong False is one duplicate row
+    the user can merge; the cost of a wrong True is a fact that silently refuses to be
+    saved, which is the failure this whole flag exists to avoid."""
+    if not provenance:
+        return False
+    if isinstance(provenance, str):
+        try:
+            provenance = json.loads(provenance)
+        except (ValueError, TypeError):
+            return False
+    return bool(provenance.get("stale")) if isinstance(provenance, dict) else False
 
 
 def similar(a: str, b: str) -> bool:
@@ -78,14 +103,17 @@ def fuzzy_kind(new: str, old: str) -> str | None:
 async def exact_norm_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
     """Return an ACTIVE existing fact (superseded_by IS NULL) whose normalized
     content EXACTLY equals `content`'s. First phase of the two-phase write check
-    (exact→merge / fuzzy→coexist). Active-only: a superseded row must never be
-    treated as a live duplicate target. Fail-open: any error → None (the write
-    proceeds)."""
+    (exact→merge / fuzzy→coexist). Active-only: neither a superseded row nor one marked
+    stale may be treated as a live duplicate target — merging into either would raise a
+    row that no injection site reads, so the restated fact would never reach a prompt.
+    Fail-open: any error → None (the write proceeds)."""
     try:
         target = norm(content)
         rows = (await db.execute(
             select(UserFact).where(UserFact.superseded_by.is_(None)))).scalars().all()
         for row in rows:
+            if is_stale(row.provenance):
+                continue  # marked stale: excluded from injection, so not a live target
             if norm(row.content) == target:
                 return row
         return None
@@ -96,17 +124,20 @@ async def exact_norm_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
 
 async def find_near_dup(db, content: str) -> UserFact | None:  # noqa: ANN001
     """Return an ACTIVE existing fact that is a near-duplicate (exact OR fuzzy) of
-    `content`, else None. Active-only: a superseded row must never be treated as
-    a live near-dup target. Fail-open: any error → None (treated as no dup, so
-    the write proceeds). NOTE: this returns the FIRST similar row in scan order,
-    which may be a fuzzy sibling even when an exact-norm dup exists elsewhere in
-    the table — callers that need to distinguish exact-merge from fuzzy-coexist
-    must run `exact_norm_dup` as an independent first phase, not re-derive
+    `content`, else None. Active-only: neither a superseded row nor one marked stale may
+    be treated as a live near-dup target (same reason as exact_norm_dup). Fail-open: any
+    error → None (treated as no dup, so the write proceeds). NOTE: this returns the
+    FIRST similar row in scan order, which may be a fuzzy sibling even when an
+    exact-norm dup exists elsewhere in the table — callers that need to distinguish
+    exact-merge from fuzzy-coexist must run `exact_norm_dup` as a first phase, not
+    re-derive
     exactness from this call's result (see memory.save_facts / two-phase)."""
     try:
         rows = (await db.execute(
             select(UserFact).where(UserFact.superseded_by.is_(None)))).scalars().all()
         for row in rows:
+            if is_stale(row.provenance):
+                continue  # marked stale: excluded from injection, so not a live target
             if similar(content, row.content):
                 return row
         return None

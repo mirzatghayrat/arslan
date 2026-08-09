@@ -81,6 +81,7 @@
     "undoing": "Widerrufen…",
     "undo_supersede": "Ersetzung widerrufen",
     "sensitive_note": "Als sensibel markiert — nur ein Hinweis, keine Isolation.",
+    "stale_note": "Als veraltet markiert — bleibt hier, wird aber nicht mehr in Antworten oder beim Abruf verwendet. Erneutes Markieren hebt es auf.",
     "provenance": "Herkunftsnachweis",
     "graph_aria": "Zweitgehirn-Graph",
     "graph_hint": "Ziehen · Doppelklick für Notiz · Scrollen zoomt",

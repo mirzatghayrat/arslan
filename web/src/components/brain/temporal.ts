@@ -13,8 +13,11 @@
  *     instant renders TODAY's text under an old timestamp
  *   - accepting a delete_suspect nulls superseded_by (brain.py:727-740), erasing the
  *     record that a supersede ever happened
- *   - mark_stale writes provenance.marked_at (memory_executors.py:382-389) that
- *     nothing reads, here or anywhere
+ *   - mark_stale (memory_executors._mark_stale_tier1) sets provenance.stale, which now
+ *     takes the fact out of injection and recall (memory.list_facts) and is shown in the
+ *     entry panel — but it is a CURRENT-state flag, not a temporal one: `marked_at` is
+ *     recorded and still read by nothing, so a graph filtered to a past instant shows
+ *     today's mark, not the mark as it stood then
  *
  * The UI says so on the control itself, not only here — see BrainAsOfSlider.
  */

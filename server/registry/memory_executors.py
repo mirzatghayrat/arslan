@@ -363,6 +363,19 @@ class RememberExecutor:
         return {"ok": True, "id": new_id}
 
     async def _mark_stale_tier1(self, kind: str, target_id) -> dict:
+        """Toggle `provenance.stale` on a fact — the mark that takes it out of use.
+
+        What the flag DOES: `memory.list_facts` skips stale rows by default, and it is
+        the single throat every injection site and RecallExecutor read through, so a
+        marked fact stops reaching prompts and stops being recalled. The dedup scanners
+        skip it too (fact_dedup), so restating the fact writes a fresh active row
+        instead of silently merging into the dead one.
+
+        What it does NOT do: nothing is deleted, and nothing is hidden from the brain —
+        the row keeps its content and still appears in the graph and the entry panel,
+        which is where `stale` is shown. Marking again clears the flag and the fact
+        comes straight back.
+        """
         if kind != "fact":
             return {"ok": False, "error": "mark_stale unsupported for this kind"}
         if target_id is None:
