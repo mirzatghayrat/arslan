@@ -41,6 +41,49 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
                       base_url=base_url, report_provider=chosen["provider"])
 
 
+#: The per-task model slots. Each is a settings key holding a provider_config id.
+#:
+#: Registry, not four hand-written functions: the shape below is identical for every
+#: slot, and four copies would be four places for one of them to quietly diverge. The
+#: name list is also what the completeness tests derive their expectations from, so a
+#: fifth slot cannot be added to one place and forgotten in another — which is exactly
+#: how github_token ended up on neither pydantic schema while the frontend sent it.
+SLOT_KEYS = ("compaction_config_id", "title_config_id",
+             "router_config_id", "vision_config_id")
+
+
+async def build_slot_adapter(slot: str) -> LLMAdapter | None:
+    """The adapter for a per-task slot, or None when the user has not set one.
+
+    🔴 None is the contract, and it is the whole safety property. An unset slot must
+    leave its caller's behaviour byte-for-byte unchanged; anything else silently moves
+    that task — and its cost — onto a different model, and the only symptom would be
+    the bill. Same shape as :func:`build_synthesis_adapter`, deliberately: two ways of
+    saying "use a different model here" would drift apart.
+
+    A slot pointing at a DELETED config also returns None. A stale id is a settings
+    problem, and taking the compaction path down over it would be worse than using the
+    model that was working yesterday.
+    """
+    if slot not in SLOT_KEYS:
+        # Loud, because a typo that resolved to None would be indistinguishable from
+        # "the user has not configured this".
+        raise ValueError(f"unknown model slot: {slot!r} (known: {', '.join(SLOT_KEYS)})")
+    async with db_session.AsyncSessionLocal() as db:
+        cfg = await settings_service.get_settings(db)
+        sid = str(cfg.get(slot) or "").strip()
+        if not sid:
+            return None
+        for c in await provider_config_service.list_configs(db):
+            if str(c.get("id")) == sid:
+                key = await provider_config_service.get_decrypted_key(db, c["id"])
+                provider, model, base_url = expand_preset(
+                    c["provider"], c["model"], c.get("base_url") or "")
+                return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
+                                  base_url=base_url, report_provider=c["provider"])
+    return None
+
+
 async def build_synthesis_adapter() -> LLMAdapter | None:
     """Optional dedicated adapter for the tool-loop's forced-step SYNTHESIS call (turning gathered
     findings into the finished answer). Returns the stronger model ONLY when a dedicated synthesis

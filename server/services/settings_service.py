@@ -21,6 +21,11 @@ _PLAIN_KEYS = (
     "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
+               # Per-task model slots (spec ②). Registered here AND on both
+               # pydantic schemas — being on only one is how github_token became
+               # a settings field that looked saveable and was not.
+               "compaction_config_id", "title_config_id",
+               "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",

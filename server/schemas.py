@@ -41,6 +41,10 @@ class SettingsIn(BaseModel):
     # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
     synthesis_config_id: str | None = None
     embedding_config_id: str | None = None
+    compaction_config_id: str | None = None
+    title_config_id: str | None = None
+    router_config_id: str | None = None
+    vision_config_id: str | None = None
     evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool | None = None
     # Comma-separated BCP-47 tags for image text recognition. Empty string is a
@@ -74,6 +78,10 @@ class SettingsOut(BaseModel):
     evolution_auto: str = "off"
     synthesis_config_id: str = ""
     embedding_config_id: str = ""
+    compaction_config_id: str = ""
+    title_config_id: str = ""
+    router_config_id: str = ""
+    vision_config_id: str = ""
     evolution_max_dispatches: int | None = None
     mcp_server_enabled: bool = False
 
