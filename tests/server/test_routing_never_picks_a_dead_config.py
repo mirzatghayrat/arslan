@@ -23,7 +23,6 @@ is the standing rule; the honest report goes in the log.
 """
 from __future__ import annotations
 
-import pytest
 
 from arslan.llm import routing
 
