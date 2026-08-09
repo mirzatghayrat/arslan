@@ -141,7 +141,11 @@ describe("locale parity", () => {
     //              English, and search_api_key_hint (already in six languages)
     //              was rendered by nobody — so "there is a free key" was never
     //              seen, and now "you do not need one" would not have been either.
-    expect(enKeys).toHaveLength(1286);
+    // 1286 → 1287: brain.stale_note — mark_stale now takes a fact out of injection
+    //              and recall, so the entry panel has to say so; a fact that silently
+    //              stops being used while the graph still shows it in full reads as
+    //              the model forgetting rather than as a mark someone set.
+    expect(enKeys).toHaveLength(1287);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

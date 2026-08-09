@@ -76,6 +76,31 @@ describe("BrainEntryDetail", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("409");
   });
 
+  it("🔴 says a fact is stale, in BOTH directions", async () => {
+    // A stale fact is still here in full — the backend just stopped injecting it
+    // (memory.list_facts). Without this line the only visible effect of mark_stale is
+    // that answers quietly stop mentioning something the graph still shows, which reads
+    // as the model forgetting. The negative direction matters as much: a note on every
+    // entry would make the mark meaningless.
+    render(<BrainEntryDetail leaf={LEAF("profile", "fact:1")} onClose={() => {}} />);
+    await screen.findByText("住在北京");
+    expect(screen.queryByTestId("stale-note")).toBeNull();
+
+    m.getBrainEntry.mockResolvedValue(ENTRY({ provenance_record: { stale: true } }));
+    render(<BrainEntryDetail leaf={LEAF("profile", "fact:2")} onClose={() => {}} />);
+    expect(await screen.findByTestId("stale-note")).toBeTruthy();
+  });
+
+  it("🔴 does not read stale off a provenance record that has no such key", async () => {
+    // provenance_record is whatever JSON the row carries — a marked_at without stale, or
+    // a non-object, must not light the note up.
+    m.getBrainEntry.mockResolvedValue(
+      ENTRY({ provenance_record: { source_kind: "manual", marked_at: "2026-01-01" } }));
+    render(<BrainEntryDetail leaf={LEAF("profile", "fact:3")} onClose={() => {}} />);
+    await screen.findByText("住在北京");
+    expect(screen.queryByTestId("stale-note")).toBeNull();
+  });
+
   it("🔴 marks sensitive WITHOUT claiming the content is withheld", async () => {
     // D2 established this is a rendering hint: the excerpt is still returned in full.
     // Copy that implied isolation would be a lie the payload itself contradicts.

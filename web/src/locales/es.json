@@ -81,6 +81,7 @@
     "undoing": "Deshaciendo…",
     "undo_supersede": "Deshacer reemplazo",
     "sensitive_note": "Marcado sensible — es un aviso visual, no aislamiento.",
+    "stale_note": "Marcada como obsoleta: se conserva aquí, pero no se usa en respuestas ni en la recuperación. Márcala de nuevo para restaurarla.",
     "provenance": "Registro de procedencia",
     "graph_aria": "Grafo del segundo cerebro",
     "graph_hint": "Arrastra · doble clic crea nota · rueda para zoom",

@@ -11,6 +11,13 @@ import { useDismissable } from "../../hooks/useDismissable";
  * that NO brain component read until now: `sensitive`, `provenance_record` and
  * `superseded_by` (the last one gating the undo affordance).
  */
+/** `provenance.stale` — the flag the remember tool's mark_stale action toggles. Read
+ *  defensively: provenance_record is whatever JSON the row carries, so anything that is
+ *  not an object, or an object without the key, is simply "not stale". */
+function isStale(record: Record<string, unknown> | null | undefined): boolean {
+  return Boolean(record && typeof record === "object" && record.stale);
+}
+
 export default function BrainEntryDetail(
   { leaf, onClose, onChanged, children }: {
     leaf: BrainLeaf; onClose: () => void; onChanged?: () => void;
@@ -156,6 +163,18 @@ export default function BrainEntryDetail(
           {entry.sensitive && (
             <div className="mb-2 text-[10.5px] text-subtle-foreground" data-testid="sensitive-note">
               {t("brain.sensitive_note")}
+            </div>
+          )}
+
+          {/* 🔴 A stale fact is still HERE, in full — it just stopped being used. Without
+              this line the only visible effect of mark_stale is that answers quietly stop
+              mentioning something the brain still shows, which reads as the model
+              forgetting rather than as a mark the user (or the host agent) set and can
+              unset. The flag lives in provenance_record because that is the audit payload
+              the backend already emits; nothing new is fetched for it. */}
+          {isStale(entry.provenance_record) && (
+            <div className="mb-2 text-[10.5px] text-warning" data-testid="stale-note">
+              {t("brain.stale_note")}
             </div>
           )}
 
