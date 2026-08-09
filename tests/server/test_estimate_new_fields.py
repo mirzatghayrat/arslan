@@ -9,11 +9,10 @@ and this model's `lower_bound`), which is why the rule is a rule.
 """
 from __future__ import annotations
 
-import datetime as dt
 
 import pytest
 
-from server.db.models import EvolutionAttempt, Run, Spawn
+from server.db.models import EvolutionAttempt, Spawn
 from server.services import evolution_estimate
 
 AUTH: dict[str, str] = {}
@@ -40,52 +39,22 @@ async def _get(client, sid):
 # ── the frozen block ────────────────────────────────────────────────────────────────
 
 
-async def test_the_old_fields_still_reach_the_client(client, spawn_id):
-    """They are wrong, and they stay. evolution_watcher compares `est_tokens` against
-    evolution_max_est_tokens; dropping the key makes `int(None or 0)` = 0, which never
-    exceeds any cap — the spend gate would go quietly inert while still showing a value in
-    Settings. A switch that looks armed and is not is worse than a wrong number."""
+async def test_the_old_count_fields_still_reach_the_client(client, spawn_id):
+    """The COUNT block stays: the UI falls back to it (`dispatches_max ?? dispatches`) for
+    an attempt row stored before the derived fields existed, and those rows are real.
+
+    `est_tokens` / `lower_bound` do NOT stay. The reason they were held — that the spend
+    gate compared `est_tokens`, so dropping the key would make `int(None or 0)` = 0 and
+    leave the gate quietly inert — stopped being true when the gate moved to
+    `dispatches_max` vs `evolution_max_dispatches`
+    (evolution_watcher._perform_attempt_inner). After that nothing read either field, and
+    `lower_bound: True` was a claim this estimator contradicts in its own docstring."""
     body = await _get(client, spawn_id)
-    for key in ("pairs", "dispatches", "judge_calls", "optimizer_calls", "synth_calls",
-                "est_tokens"):
-        assert key in body, f"{key} disappeared — the budget gate reads it"
-    assert isinstance(body["est_tokens"], int), "est_tokens must never be null"
-    assert body["lower_bound"] is True, (
-        "the 409 spend-confirmation dialog reads est_is_lower_bound from this; flipping it "
-        "to False would assert the opposite of the truth")
+    for key in ("pairs", "dispatches", "judge_calls", "optimizer_calls", "synth_calls"):
+        assert key in body, f"{key} disappeared — the UI falls back to it"
+    assert "est_tokens" not in body
+    assert "lower_bound" not in body
 
-
-async def test_est_tokens_keeps_the_old_live_pricing(client, spawn_id, monkeypatch):
-    """🔴 Pins the NUMBER, not the shape. Repricing est_tokens with the replay population
-    (which is the correct population, and is what the new field uses) would drop it to
-    roughly 1/2.5 — no line of the gate changes, but the value it compares moves, so the
-    spend gate widens 2.5x silently. This test is the thing standing between a correct
-    refactor and a quietly loosened gate.
-
-    Seeded so the two populations give visibly different answers: live=1000, replay=100.
-    """
-    from server.db import session as db_session
-
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
-    async with client.db_maker() as s:
-        for _ in range(3):
-            s.add(Run(conversation_id="c", spawn_id=spawn_id, kind="live", epoch=1, task_tokens=1000,
-                      created_at=dt.datetime.utcnow()))
-            s.add(Run(conversation_id="c", spawn_id=spawn_id, kind="replay", epoch=1, task_tokens=100,
-                      created_at=dt.datetime.utcnow()))
-        await s.commit()
-
-    async with client.db_maker() as s:
-        est = await evolution_estimate.estimate(s, spawn_id)
-
-    expected = int(1000.0 * est["dispatches"]
-                   + evolution_estimate.AVG_JUDGE_TOKENS * est["judge_calls"])
-    assert est["est_tokens"] == expected, (
-        "est_tokens moved. If this is a deliberate repricing, the spend gate's threshold "
-        "must be revisited in the same change — see evolution_watcher.py:259")
-
-
-# ── the derived ceiling ─────────────────────────────────────────────────────────────
 
 
 async def test_new_fields_reach_the_client(client, spawn_id):

@@ -121,8 +121,11 @@ async def test_same_corpus_as_a_failed_attempt_is_refused_with_a_usable_body(evo
     assert body["last_outcome"] == "failed"
     assert body["last_reason"] == "holdout_winrate"
     assert body["new_runs_since"] == 0
-    assert body["est_tokens"] == 18400
     assert body["last_attempt_id"] is not None
+    # The dialog quotes dispatches, never tokens: the only token figure available
+    # over-stated 3.7-5.2x, and it was removed rather than shipped unrendered.
+    assert "est_dispatches_max" in body
+    assert "est_tokens" not in body and "est_is_lower_bound" not in body
 
 
 async def test_a_body_less_legacy_call_is_still_gated(evo):

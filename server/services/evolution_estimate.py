@@ -2,20 +2,26 @@
 
 🔴 TWO SETS OF NUMBERS LIVE HERE, AND THEY DISAGREE ON PURPOSE.
 
-The ORIGINAL fields (`dispatches`, `judge_calls`, `est_tokens`, `lower_bound: True`) are
-FROZEN. They are wrong — `dispatches` multiplies the WHOLE corpus by `epochs*lr_budget+1`,
-but the optimizer never replays the whole corpus: it replays the val slice, capped at
-`val_cap`, and the holdout never enters the optimizer at all. Only the final gate touches
-every pair. So the number is close to a floor on a small corpus and an increasingly large
-OVER-estimate as the corpus grows.
+The ORIGINAL COUNT fields (`dispatches`, `judge_calls`) are still here and still wrong in
+the same way: `dispatches` multiplies the WHOLE corpus by `epochs*lr_budget+1`, but the
+optimizer never replays the whole corpus — it replays the val slice, capped at `val_cap`,
+and the holdout never enters the optimizer at all. Only the final gate touches every pair.
+So the number is close to a floor on a small corpus and an increasingly large OVER-estimate
+as the corpus grows. They stay because the UI still falls back to them when the derived
+fields are absent (`dispatches_max ?? dispatches`) — an old attempt row read back by a new
+client has nothing else.
 
-They are frozen anyway, because `evolution_watcher` compares `est_tokens` against
-`evolution_max_dispatches` against `dispatches_max` (:259) — but `est_tokens` remains on
-the payload and on screen. Repricing it with the correct population would drop it
-to roughly 1/2.5 — no code change beside the gate, but the number the gate compares moves,
-which is silently loosening a spend gate by 2.5x. The executing side fails closed; a
-frozen wrong number that keeps today's behaviour beats a better number that quietly
-widens the gate. The gate's own fix is a separate project.
+`est_tokens` and `lower_bound: True` USED to sit beside them. They are gone. The reason
+they were kept — that `evolution_watcher` gated on `est_tokens`, so repricing would widen
+the spend gate ~2.5x — stopped being true when the gate moved to `dispatches_max`
+(evolution_watcher._perform_attempt_inner). After that they were read by nothing: not the
+gate, not the API, not the UI, which shows `tokens_projected`. What remained was a
+hardcoded `lower_bound: True` that this module's own text called wrong, sitting in an HTTP
+response. A number nobody reads cannot be defended by what it costs to change it.
+
+(There is a SECOND `est_tokens`, unrelated: `attempt.actual["est_tokens"]` is MEASURED
+usage, summed by the attempts endpoint and shown on the promotion card. It stays. The name
+collision is why this note exists.)
 
 The NEW fields (`dispatches_max`, `judge_calls_max`, `basis: "max"`) are DERIVED from the
 loop rather than restating it — that was the root cause: the old estimate paraphrased the
@@ -43,7 +49,7 @@ import inspect
 
 from sqlalchemy import select
 
-from server.db.models import EvolutionAttempt, Run
+from server.db.models import EvolutionAttempt
 from server.services import evolution_loop, replay_gate
 
 # A single compare-judge LLM call reads the task + persona + BOTH arms' outputs + the
@@ -66,29 +72,13 @@ def _loop_defaults() -> tuple[int, int, int]:
             int(sig.parameters["val_cap"].default))
 
 
-async def _avg_run_tokens(db, spawn_id: int) -> float:
-    """Mean task_tokens over this spawn's clean live turns that actually reported tokens
-    (`epoch>=1 AND kind='live' AND task_tokens>0`). Zero-token rows are EXCLUDED so a
-    fleet full of streaming-era 0s cannot deflate the estimate. No qualifying run → 0.0."""
-    rows = (await db.execute(
-        select(Run.task_tokens).where(
-            Run.spawn_id == spawn_id,
-            Run.kind == "live",
-            Run.epoch >= 1,
-            Run.task_tokens > 0,
-        )
-    )).scalars().all()
-    return (sum(rows) / len(rows)) if rows else 0.0
-
-
 
 async def _avg_replay_tokens(db) -> tuple[float | None, int]:
     """Mean tokens per SUCCESSFUL replay dispatch, from the `actual` ledger.
 
-    🔴 POOLED ACROSS ALL SPAWNS, deliberately — note the absent `spawn_id` parameter,
-    unlike `_avg_run_tokens(db, spawn_id)` right above. The ledger is nearly empty (zero
-    rows on every install today), so slicing it per spawn would return None for almost
-    everyone. The caller returns it inside a PER-SPAWN estimate, so the name alone reads
+    🔴 POOLED ACROSS ALL SPAWNS, deliberately — note the absent `spawn_id` parameter. The
+    ledger is nearly empty (zero rows on every install today), so slicing it per spawn would
+    return None for almost everyone. The caller returns it inside a PER-SPAWN estimate, so the name alone reads
     as "this spawn's average"; it is not, and every place it surfaces says so.
 
     🔴 Deliberately NOT `SELECT avg(task_tokens) FROM runs WHERE spawn_id=? AND
@@ -127,10 +117,13 @@ async def _avg_replay_tokens(db) -> tuple[float | None, int]:
     return tokens / successes, successes
 
 async def estimate(db, spawn_id: int) -> dict:
-    """A labelled lower-bound cost estimate for one evolution attempt on `spawn_id`.
+    """Cost estimate for one evolution attempt on `spawn_id` — counts, not a bound.
 
-    Returns {pairs, dispatches, judge_calls, optimizer_calls, synth_calls, est_tokens,
-    lower_bound: True}. `pairs` = the whole paired corpus (propose ∪ holdout)."""
+    Returns {pairs, dispatches, judge_calls, optimizer_calls, synth_calls} plus the derived
+    block {propose_pairs, val_pairs, dispatches_max, judge_calls_max, basis, tokens_projected,
+    avg_replay_tokens, avg_replay_n}. `pairs` = the whole paired corpus (propose ∪ holdout).
+    No field here claims to bound spend: `basis: "max"` covers the three COUNT fields and
+    nothing else, and `tokens_projected` is mean-priced."""
     epochs, lr_budget, val_cap = _loop_defaults()
 
     # READ-ONLY: mint=False so merely previewing a cost never mutates the corpus or spends
@@ -138,7 +131,8 @@ async def estimate(db, spawn_id: int) -> dict:
     # top-up the REAL run (mint=True) would do, WITHOUT minting: when the real holdout is below
     # the floor, the gate will top the holdout up to MIN_HOLDOUT_N, so add those projected pairs
     # to the pair/dispatch/judge counts (mirrors replay_gate.build_corpus's mint condition
-    # exactly). The generation LLM cost of minting is still excluded (surfaced via lower_bound).
+    # exactly). The generation LLM cost of minting is still excluded, and no longer wears a
+    # `lower_bound` label pretending that exclusion is accounted for.
     corpus = await replay_gate.build_corpus(db, spawn_id, baseline_started_at=None)
     real_holdout = sum(1 for p in corpus
                        if p["corpus_label"] == "real" and p["split_side"] == "holdout")
@@ -156,9 +150,6 @@ async def estimate(db, spawn_id: int) -> dict:
     judge_calls = comparisons * 2                   # position-swap = 2 LLM calls per compare
     optimizer_calls = epochs
     synth_calls = 0                                 # synthetic generation (E6) not costed here
-
-    avg_run = await _avg_run_tokens(db, spawn_id)
-    est_tokens = int(avg_run * dispatches + AVG_JUDGE_TOKENS * judge_calls)
 
     # ── derived ceiling (new fields; everything above is FROZEN, see the module note) ──
     # V = the val slice the optimizer actually replays. _subsplit_propose sends every third
@@ -193,8 +184,6 @@ async def estimate(db, spawn_id: int) -> dict:
         "judge_calls": judge_calls,
         "optimizer_calls": optimizer_calls,
         "synth_calls": synth_calls,
-        "est_tokens": est_tokens,
-        "lower_bound": True,
         # ── new, additive: a ceiling that is actually derived ──
         "propose_pairs": propose_pairs,
         "val_pairs": val_pairs,
