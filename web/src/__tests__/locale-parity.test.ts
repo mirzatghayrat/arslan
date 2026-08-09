@@ -136,7 +136,12 @@ describe("locale parity", () => {
     //              and without the best-effort marker. search_fail already existed
     //              and was reworded: it used to promise "retrying differently" on
     //              every failure, which the code never did.
-    expect(enKeys).toHaveLength(1282);
+    // 1282 → 1286: the search-key label, its placeholder and the GitHub-token
+    //              label finally come from locale files. All three were hardcoded
+    //              English, and search_api_key_hint (already in six languages)
+    //              was rendered by nobody — so "there is a free key" was never
+    //              seen, and now "you do not need one" would not have been either.
+    expect(enKeys).toHaveLength(1286);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

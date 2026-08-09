@@ -114,3 +114,35 @@ describe("locale coverage", () => {
     }
   });
 });
+
+
+describe("provenance reaches the activity line", () => {
+  /**
+   * 🔴 The `containment` shape, caught by me rather than by someone else this time:
+   * searchProvenance() existed, was tested, and NOTHING called it. A helper with tests
+   * and no caller is indistinguishable from a feature until someone looks at a screen.
+   *
+   * The backend now writes `provider=<name>` into the summary — the only part of a
+   * tool result the activity line receives — and these assert the round trip through
+   * the parser the card actually uses.
+   */
+  it("reads the provider out of a real summary", async () => {
+    const { provenanceFromSummary } = await import("../lib/toolHumanize");
+    expect(provenanceFromSummary("3 results · provider=tavily", t)).toContain("tavily");
+  });
+
+  it("carries the best-effort marker through", async () => {
+    const { provenanceFromSummary } = await import("../lib/toolHumanize");
+    const s = provenanceFromSummary("3 results · provider=duckduckgo · best_effort", t);
+    expect(s).toContain("duckduckgo");
+    expect(s).toMatch(/best effort/i);
+  });
+
+  it("renders nothing for a summary that predates provenance", async () => {
+    // Old activity rows say "3 results" and nothing else. An absent marker must
+    // render nothing rather than guess a provider.
+    const { provenanceFromSummary } = await import("../lib/toolHumanize");
+    expect(provenanceFromSummary("3 results", t)).toBe("");
+    expect(provenanceFromSummary(undefined, t)).toBe("");
+  });
+});

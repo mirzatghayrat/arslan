@@ -415,7 +415,7 @@
     "search_section": "Búsqueda web",
     "search_provider": "Proveedor de búsqueda",
     "search_api_key": "Clave API de búsqueda",
-    "search_api_key_hint": "Almacenada cifrada. Independiente de tu clave LLM. Clave gratis en tavily.com.",
+    "search_api_key_hint": "Opcional. La búsqueda funciona sin clave con el respaldo integrado; una clave de Tavily (nivel gratuito en tavily.com) da mejores resultados. Se guarda cifrada, aparte de tu clave de LLM.",
     "language": "Idioma",
     "theme": "Tema",
     "theme_dark": "Oscuro",
@@ -608,7 +608,11 @@
     "cryptoHealthSaltLost": "Al arrancar faltaba el salt de cifrado de esta instalación y se generó uno nuevo, por lo que los valores guardados antes ya no se pueden abrir. La mitad que falta es el salt, no tu clave secreta: volver a introducirla no los recuperará. Suele ocurrir tras mover el directorio de datos o restaurarlo a medias.",
     "cryptoHealthMismatch": "La clave secreta y el salt están presentes, pero ninguno abre estos valores: se guardaron con otro ARSLAN_SECRET_KEY.",
     "cryptoHealthCount": "Afectados",
-    "cryptoHealthRecoverableCount": "Recuperables"
+    "cryptoHealthRecoverableCount": "Recuperables",
+    "labelSearchKey": "Clave del proveedor de búsqueda (opcional)",
+    "placeholderSearchKey": "Pega una clave para mejorar la búsqueda integrada",
+    "labelGithubToken": "Token de GitHub (opcional: sube el límite de frecuencia)",
+    "placeholderGithubToken": "Pega un token de GitHub"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

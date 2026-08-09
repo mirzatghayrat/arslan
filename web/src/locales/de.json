@@ -415,7 +415,7 @@
     "search_section": "Websuche",
     "search_provider": "Suchanbieter",
     "search_api_key": "Such-API-Schlüssel",
-    "search_api_key_hint": "Verschlüsselt gespeichert. Getrennt vom LLM-Schlüssel. Kostenloser Schlüssel auf tavily.com.",
+    "search_api_key_hint": "Optional. Die Suche funktioniert auch ohne Schlüssel über den eingebauten Fallback; ein Tavily-Schlüssel (kostenloses Kontingent auf tavily.com) liefert bessere Ergebnisse. Verschlüsselt gespeichert, getrennt vom LLM-Schlüssel.",
     "language": "Sprache",
     "theme": "Design",
     "theme_dark": "Dunkel",
@@ -608,7 +608,11 @@
     "cryptoHealthSaltLost": "Beim Start fehlte der installationsspezifische Salt und es wurde ein neuer erzeugt. Zuvor gespeicherte Werte lassen sich daher nicht mehr öffnen. Es fehlt der Salt, nicht Ihr geheimer Schlüssel — ihn erneut einzugeben bringt sie nicht zurück. Das folgt meist auf ein verschobenes oder nur teilweise wiederhergestelltes Datenverzeichnis.",
     "cryptoHealthMismatch": "Schlüssel und Salt sind beide vorhanden, öffnen diese Werte aber nicht: Sie wurden unter einem anderen ARSLAN_SECRET_KEY gespeichert.",
     "cryptoHealthCount": "Betroffen",
-    "cryptoHealthRecoverableCount": "Wiederherstellbar"
+    "cryptoHealthRecoverableCount": "Wiederherstellbar",
+    "labelSearchKey": "Schlüssel des Suchanbieters (optional)",
+    "placeholderSearchKey": "Schlüssel einfügen, um die eingebaute Suche aufzuwerten",
+    "labelGithubToken": "GitHub-Token (optional — erhöht das Ratenlimit der Suche)",
+    "placeholderGithubToken": "GitHub-Token einfügen"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

@@ -95,7 +95,7 @@ export default function SearchToolsSection({
         {/* Search API Key input */}
         <div className="space-y-2">
           <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-            Tavily / Google Search API Private key
+            {t('settings.labelSearchKey')}
           </label>
           <div className="relative">
             <input
@@ -105,7 +105,7 @@ export default function SearchToolsSection({
               onChange={(e) => onSearchKeyChange(e.target.value)}
               onBlur={(e) => onSearchKeyBlur?.(e.target.value)}
               className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
-              placeholder="Enter search provider key..."
+              placeholder={t('settings.placeholderSearchKey')}
             />
             <button
               id="toggle-show-search-key"
@@ -117,7 +117,11 @@ export default function SearchToolsSection({
             </button>
           </div>
           <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-            Allocated to standard spawns carrying "Web Search" capability chips. Ensure live indices limits are sufficient.
+            {/* This paragraph was hardcoded English AND said the wrong thing. The
+                localized hint existed in six languages and nothing rendered it, so
+                nobody ever saw "there is a free key" — or, now, "you do not need
+                one at all". */}
+            {t('settings.search_api_key_hint')}
           </p>
         </div>
       </div>
@@ -125,7 +129,7 @@ export default function SearchToolsSection({
       {/* GitHub Token input — secret, raises Tool-Hub discovery rate limit */}
       <div className="space-y-2">
         <label className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-          GitHub Token (optional — raises rate limit)
+          {t('settings.labelGithubToken')}
         </label>
         <div className="relative">
           <input

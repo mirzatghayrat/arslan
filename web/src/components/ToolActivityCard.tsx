@@ -15,7 +15,7 @@ import { Check, X, ChevronRight, ChevronDown } from 'lucide-react';
 import MatrixSpinner from './MatrixSpinner';
 import { useTranslation } from 'react-i18next';
 import type { ToolActivity } from '../types';
-import { humanizeStep, humanizeOutcome } from '../lib/toolHumanize';
+import { humanizeStep, humanizeOutcome, provenanceFromSummary } from '../lib/toolHumanize';
 import EChart from './EChart';
 import DeckDownloadCard from './DeckDownloadCard';
 
@@ -28,6 +28,12 @@ export default function ToolActivityCard({ activity }: { activity: ToolActivity 
     { tool: activity.toolName, argsSummary: activity.action, resultSummary: activity.outputSummary, status },
     t,
   );
+  // Who served this. Empty for every tool but web_search, and for a search whose
+  // result predates provenance — an absent marker renders nothing rather than
+  // guessing.
+  const provenance = activity.toolName === 'web_search' && status === 'ok'
+    ? provenanceFromSummary(activity.outputSummary, t)
+    : '';
   const outcome = status === 'ok'
     ? humanizeOutcome(
         { tool: activity.toolName, resultSummary: activity.outputSummary, slides: activity.artifactPptx?.slides },
@@ -50,6 +56,14 @@ export default function ToolActivityCard({ activity }: { activity: ToolActivity 
         <span className={`truncate ${status === 'error' ? 'text-muted-foreground' : 'text-foreground'}`}>
           {headline}
         </span>
+        {provenance && (
+          <span
+            data-testid="search-provenance"
+            className="shrink-0 text-[10px] font-mono text-subtle-foreground"
+          >
+            {provenance}
+          </span>
+        )}
         {outcome && <span className="text-muted-foreground shrink-0">· {outcome}</span>}
       </div>
 

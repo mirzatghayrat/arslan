@@ -163,9 +163,17 @@ class WebSearchExecutor:
         # from a best-effort scraper that may be throttled" is something it can act on,
         # and a degraded answer nobody can distinguish from a good one is the silence
         # this whole line of work exists to remove.
-        return {"ok": True, "results": results,
-                "provider": getattr(provider, "name", "unknown"),
-                "best_effort": bool(getattr(provider, "best_effort", False))}
+        name = getattr(provider, "name", "unknown")
+        best_effort = bool(getattr(provider, "best_effort", False))
+        # The summary is the ONLY part of a tool result the activity line receives, so
+        # provenance has to ride in it — the same way the failure category already
+        # does. Machine-readable markers, not prose: the surrounding words are
+        # localized on the client, and only the provider's own name passes through.
+        summary = f"{len(results)} results · provider={name}"
+        if best_effort:
+            summary += " · best_effort"
+        return {"ok": True, "results": results, "provider": name,
+                "best_effort": best_effort, "summary": summary}
 
 
 class WebExtractExecutor:

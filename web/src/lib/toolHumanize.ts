@@ -70,6 +70,28 @@ export function searchProvenance(
     : t('activity.search_via', { provider });
 }
 
+/**
+ * Pull the provenance out of a web_search summary and localize it.
+ *
+ * The backend writes `provider=<name>` and an optional `best_effort` marker into the
+ * summary, because the summary is the only part of a tool result the activity line
+ * receives. Machine-readable markers rather than a sentence: the words around the
+ * name belong to the reader's language, and only the provider's own name — a proper
+ * noun — passes through untranslated.
+ *
+ * An ABSENT marker renders nothing. Activity rows written before this existed say
+ * "3 results" and no more; guessing a provider for them would put a confident,
+ * unfounded attribution on the screen.
+ */
+export function provenanceFromSummary(
+  summary: string | undefined,
+  t: TranslateFn,
+): string {
+  const m = /provider=([\w.-]+)/.exec(summary ?? '');
+  if (!m) return '';
+  return searchProvenance(m[1], (summary ?? '').includes('best_effort'), t);
+}
+
 export function humanizeStep(
   s: Pick<ToolStep, 'tool' | 'argsSummary' | 'resultSummary' | 'status'>,
   t: TranslateFn,

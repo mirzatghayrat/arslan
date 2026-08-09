@@ -415,7 +415,7 @@
     "search_section": "联网搜索",
     "search_provider": "搜索服务",
     "search_api_key": "搜索 API Key",
-    "search_api_key_hint": "加密存储,与 LLM key 分开。可在 tavily.com 免费获取 Tavily key。",
+    "search_api_key_hint": "可选。不填也能搜(用内置兜底);填 Tavily key(tavily.com 有免费额度)结果更好。加密存储,与 LLM 密钥分开。",
     "language": "语言",
     "theme": "主题",
     "theme_dark": "深色",
@@ -608,7 +608,11 @@
     "cryptoHealthSaltLost": "启动时找不到本机的加密盐,已生成一份新的,因此此前保存的值无法再打开。缺的那一半是盐,不是你的密钥 —— 重新输入密钥不会把它们找回来。这通常发生在数据目录被移动或只恢复了一半之后。",
     "cryptoHealthMismatch": "密钥和盐都在,但都打不开这些值:它们是用另一个 ARSLAN_SECRET_KEY 保存的。",
     "cryptoHealthCount": "受影响",
-    "cryptoHealthRecoverableCount": "可恢复"
+    "cryptoHealthRecoverableCount": "可恢复",
+    "labelSearchKey": "搜索服务密钥(可选)",
+    "placeholderSearchKey": "粘贴密钥以升级内置搜索",
+    "labelGithubToken": "GitHub 令牌(可选 —— 提高发现接口的速率上限)",
+    "placeholderGithubToken": "粘贴 GitHub 令牌"
   },
   "errors": {
     "load_failed": "加载数据失败。",

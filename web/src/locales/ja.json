@@ -415,7 +415,7 @@
     "search_section": "ウェブ検索",
     "search_provider": "検索プロバイダ",
     "search_api_key": "検索 API キー",
-    "search_api_key_hint": "暗号化して保存。LLM キーとは別です。tavily.com で無料キーを取得できます。",
+    "search_api_key_hint": "任意。キーなしでも内蔵のフォールバックで検索できます。Tavily キー（tavily.com に無料枠）でより良い結果に。暗号化して保存され、LLM キーとは別です。",
     "language": "言語",
     "theme": "テーマ",
     "theme_dark": "ダーク",
@@ -608,7 +608,11 @@
     "cryptoHealthSaltLost": "起動時にこのインストールの暗号化ソルトが見つからず、新しいものが生成されました。そのため以前保存した値は開けません。欠けているのはソルトであって秘密鍵ではありません — 鍵を入力し直しても元には戻りません。データディレクトリの移動や部分的な復元の後によく起こります。",
     "cryptoHealthMismatch": "秘密鍵とソルトの両方がありますが、どちらもこれらの値を開けません。別の ARSLAN_SECRET_KEY で保存されたものです。",
     "cryptoHealthCount": "影響あり",
-    "cryptoHealthRecoverableCount": "復元可能"
+    "cryptoHealthRecoverableCount": "復元可能",
+    "labelSearchKey": "検索サービスのキー（任意）",
+    "placeholderSearchKey": "キーを貼り付けて内蔵検索をアップグレード",
+    "labelGithubToken": "GitHub トークン（任意 — 探索のレート上限を引き上げます）",
+    "placeholderGithubToken": "GitHub トークンを貼り付け"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

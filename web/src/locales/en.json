@@ -415,7 +415,7 @@
     "search_section": "Web Search",
     "search_provider": "Search Provider",
     "search_api_key": "Search API Key",
-    "search_api_key_hint": "Stored encrypted. Separate from your LLM key. Get a free key at tavily.com.",
+    "search_api_key_hint": "Optional. Search works without a key using the built-in fallback; a Tavily key (free tier at tavily.com) gives better results. Stored encrypted, separate from your LLM key.",
     "language": "Language",
     "theme": "Theme",
     "theme_dark": "Dark",
@@ -608,7 +608,11 @@
     "cryptoHealthSaltLost": "The per-install encryption salt was missing at startup and a new one was generated, so values saved earlier can no longer be opened. The missing half is the salt, not your secret key — re-entering the key will not bring them back. This usually follows a moved or partly restored data directory.",
     "cryptoHealthMismatch": "The secret key and the salt are both present, but neither opens these values: they were saved under a different ARSLAN_SECRET_KEY.",
     "cryptoHealthCount": "Affected",
-    "cryptoHealthRecoverableCount": "Recoverable"
+    "cryptoHealthRecoverableCount": "Recoverable",
+    "labelSearchKey": "Search provider key (optional)",
+    "placeholderSearchKey": "Paste a key to upgrade from the built-in search",
+    "labelGithubToken": "GitHub token (optional — raises the discovery rate limit)",
+    "placeholderGithubToken": "Paste a GitHub token"
   },
   "errors": {
     "load_failed": "Failed to load data.",

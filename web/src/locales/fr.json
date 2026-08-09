@@ -415,7 +415,7 @@
     "search_section": "Recherche Web",
     "search_provider": "Fournisseur de recherche",
     "search_api_key": "Clé API de recherche",
-    "search_api_key_hint": "Stockée chiffrée. Distincte de votre clé LLM. Clé gratuite sur tavily.com.",
+    "search_api_key_hint": "Facultatif. La recherche fonctionne sans clé grâce au repli intégré ; une clé Tavily (offre gratuite sur tavily.com) donne de meilleurs résultats. Stockée chiffrée, séparée de votre clé LLM.",
     "language": "Langue",
     "theme": "Thème",
     "theme_dark": "Sombre",
@@ -608,7 +608,11 @@
     "cryptoHealthSaltLost": "Au démarrage, le sel de chiffrement de cette installation était absent et un nouveau a été généré ; les valeurs enregistrées auparavant ne peuvent donc plus être ouvertes. C'est le sel qui manque, pas votre clé secrète — la ressaisir ne les ramènera pas. Cela suit généralement un répertoire de données déplacé ou restauré à moitié.",
     "cryptoHealthMismatch": "La clé secrète et le sel sont tous deux présents, mais aucun n'ouvre ces valeurs : elles ont été enregistrées sous un autre ARSLAN_SECRET_KEY.",
     "cryptoHealthCount": "Concernés",
-    "cryptoHealthRecoverableCount": "Récupérables"
+    "cryptoHealthRecoverableCount": "Récupérables",
+    "labelSearchKey": "Clé du fournisseur de recherche (facultative)",
+    "placeholderSearchKey": "Collez une clé pour améliorer la recherche intégrée",
+    "labelGithubToken": "Jeton GitHub (facultatif — relève la limite de débit)",
+    "placeholderGithubToken": "Collez un jeton GitHub"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
