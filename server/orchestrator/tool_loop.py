@@ -52,6 +52,36 @@ def _get_adapter():
     return build_adapter(role="execute")
 
 
+async def _adapter_for_turn(*, has_images: bool):
+    """The adapter for this turn, honouring the vision slot ONLY when it carries an image.
+
+    🔴 THE `has_images` CONDITION IS THE WHOLE POINT, not an optimization. Ruling ②B
+    chose an explicit vision slot over gating on a capability flag, because that flag is
+    hardcoded True for every Anthropic model, never set for Gemini or any
+    OpenAI-compatible provider, and toggleable in localStorage where nothing
+    server-side reads it — gating on it would block Gemini entirely while waving through
+    models that cannot see. Explicit beats guessing.
+
+    But "explicit" only holds if it applies where the user meant it. Without this
+    condition, setting a vision model would silently move EVERY turn onto it — the
+    silent model swap this spec exists to remove, arriving through the feature meant to
+    prevent it. Image on this turn, the slot applies; no image, the ordinary execute
+    adapter, unchanged.
+
+    This does NOT gate on whether the chosen model can actually see. That decision stays
+    where server/orchestrator/vision_errors.py left it: send, and make the failure
+    legible.
+    """
+    if has_images:
+        from server.services.llm_factory import build_slot_adapter
+
+        slotted = await build_slot_adapter("vision_config_id")
+        if slotted is not None:
+            return slotted
+    adapter = _get_adapter()
+    return await adapter if hasattr(adapter, "__await__") else adapter
+
+
 def _summarize_result(result: dict) -> str:
     if not result.get("ok"):
         return str(result.get("error") or "failed")
@@ -1119,6 +1149,7 @@ async def run_native(
     conversation_id: str | None = None,
     log_events: bool = True,
     caller: ToolCaller | None = None,
+    has_images: bool = False,
 ) -> dict:
     """Native tool-calling twin of run(). Same signature, same return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -1131,8 +1162,10 @@ async def run_native(
       - forced step (step == max_tool_calls) → call with tools=None so the model MUST answer in
         prose from accumulated tool results — guaranteeing a non-empty synthesized answer.
     """
-    adapter = _get_adapter()
-    a = await adapter if hasattr(adapter, "__await__") else adapter
+    # The vision slot needs to know whether this turn carries an image, and this
+    # signature is the only place that fact is available — hence a parameter rather
+    # than something guessed further down.
+    a = await _adapter_for_turn(has_images=has_images)
 
     wired = await resolve_tools()
     wired_keys = {t["key"] for t in wired}

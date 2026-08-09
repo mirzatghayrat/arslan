@@ -1063,6 +1063,11 @@ async def _handle_answer_body(
             confirm_command=confirm_command,
             conversation_id=conversation_id,
             caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
+            # Whether THIS turn carries an image is known only here — build_user_blocks
+            # has already folded the images into the content by the time run_native sees
+            # it. The vision slot applies on image turns and nowhere else, so the fact
+            # has to be passed rather than inferred.
+            has_images=bool(images),
         )
 
     try:

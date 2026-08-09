@@ -94,9 +94,20 @@ _SYSTEM = (
 )
 
 
-def _get_adapter():
-    """Indirection so tests can stub adapter construction."""
-    return build_adapter(role="router")
+async def _get_adapter():
+    """The adapter for this task, honouring its per-task slot if one is set.
+
+    🔴 The slot is consulted FIRST and only overrides when the user set one — an unset
+    slot returns None from build_slot_adapter, and this falls through to exactly the
+    call that happened before. A hook that rerouted unconditionally would move this
+    task, and its cost, onto another model with no symptom but the bill.
+    """
+    from server.services.llm_factory import build_slot_adapter
+
+    slotted = await build_slot_adapter("router_config_id")
+    if slotted is not None:
+        return slotted
+    return await build_adapter(role="router")
 
 
 async def _spawn_registry() -> str:

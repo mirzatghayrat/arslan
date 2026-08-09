@@ -203,7 +203,7 @@ async def test_answer_path_writes_answer_row(memdb, monkeypatch):
 
     async def fake_run_native(*, system, user_content, history, emit, on_chunk,
                               resolve_tools, allow_escalation, confirm_command=None,
-                              conversation_id=None, caller=None):
+                              conversation_id=None, caller=None, **kw):   # **kw: the stub should not break on every new parameter
         usage_sink.report_detail(tokens_in=100, tokens_out=40,
                                  model="claude-x", provider="anthropic")
         usage_sink.report(140)

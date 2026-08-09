@@ -136,7 +136,11 @@ async def maybe_compact(conversation_id: str) -> None:
         new_cutoff = to_fold[-1].id
         prior = summ.summary if summ else ""
         body = "\n".join(f"{m.role}: {m.content}" for m in to_fold)
+        # Sync-or-awaitable, the same shape router.py uses. This seam has always
+        # accepted a plain object from a test stub; making it await-only would have been
+        # the code demanding that six existing tests change to suit it.
         adapter = _get_adapter()
+        adapter = await adapter if hasattr(adapter, "__await__") else adapter
         # S3-M3 usage ledger: compaction runs at orchestration level (after the turn,
         # never inside a dispatch's collecting region) — ledger its 1-2 summarize calls
         # under scope="memory".
@@ -167,9 +171,20 @@ async def maybe_compact(conversation_id: str) -> None:
         return
 
 
-def _get_adapter():
-    """Indirection so tests can stub adapter construction."""
-    return build_adapter(role="summarize")
+async def _get_adapter():
+    """The adapter for this task, honouring its per-task slot if one is set.
+
+    🔴 The slot is consulted FIRST and only overrides when the user set one — an unset
+    slot returns None from build_slot_adapter, and this falls through to exactly the
+    call that happened before. A hook that rerouted unconditionally would move this
+    task, and its cost, onto another model with no symptom but the bill.
+    """
+    from server.services.llm_factory import build_slot_adapter
+
+    slotted = await build_slot_adapter("compaction_config_id")
+    if slotted is not None:
+        return slotted
+    return await build_adapter(role="summarize")
 
 
 async def _summarize(adapter, text: str) -> str:  # noqa: ANN001

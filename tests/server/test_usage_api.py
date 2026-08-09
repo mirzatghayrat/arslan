@@ -323,7 +323,7 @@ async def test_answer_stream_end_carries_usage(memdb, monkeypatch):
 
     async def fake_run_native(*, system, user_content, history, emit, on_chunk,
                               resolve_tools, allow_escalation, confirm_command=None,
-                              conversation_id=None, caller=None):
+                              conversation_id=None, caller=None, **kw):   # **kw: the stub should not break on every new parameter
         usage_sink.report_detail(tokens_in=1000, tokens_out=500,
                                  model=SONNET, provider="anthropic")
         usage_sink.report(1500)
@@ -404,7 +404,7 @@ async def test_answer_stream_end_usage_estimated_no_usd(memdb, monkeypatch):
 
     async def fake_run_native(*, system, user_content, history, emit, on_chunk,
                               resolve_tools, allow_escalation, confirm_command=None,
-                              conversation_id=None, caller=None):
+                              conversation_id=None, caller=None, **kw):   # **kw: the stub should not break on every new parameter
         usage_sink.report(800)   # estimate path: total only, both-None detail
         usage_sink.report_detail(tokens_in=None, tokens_out=None,
                                  model=SONNET, provider="anthropic")

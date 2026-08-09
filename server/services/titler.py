@@ -44,6 +44,23 @@ def _fallback(first_message: str) -> str:
     return clean or "New Conversation"
 
 
+
+async def _adapter():
+    """The adapter for this task, honouring its per-task slot if one is set.
+
+    🔴 The slot is consulted FIRST and only overrides when the user set one — an unset
+    slot returns None from build_slot_adapter, and this falls through to exactly the
+    call that happened before. A hook that rerouted unconditionally would move this
+    task, and its cost, onto another model with no symptom but the bill.
+    """
+    from server.services.llm_factory import build_slot_adapter
+
+    slotted = await build_slot_adapter("title_config_id")
+    if slotted is not None:
+        return slotted
+    return await _llm_factory.build_adapter(role="summarize")
+
+
 async def generate_title(
     first_message: str,
     first_reply: str | None = None,
@@ -66,7 +83,7 @@ async def generate_title(
         from server.services import usage_ledger
 
         async with usage_ledger.scope("titler", conversation_id):
-            adapter = await _llm_factory.build_adapter(role="summarize")
+            adapter = await _adapter()
             response = await adapter.chat(_SYSTEM, user_prompt)
         content = response.content
         if not content or not content.strip():
