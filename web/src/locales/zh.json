@@ -353,7 +353,7 @@
     "result": "结果",
     "error": "失败",
     "search": "搜索 {{q}}",
-    "search_fail": "有次搜索没成功,换个说法再试",
+    "search_fail": "有次搜索没成功",
     "read": "读取 {{host}}",
     "read_fail": "有个网页没打开,换个来源",
     "deck": "生成 PPT",
@@ -369,7 +369,12 @@
     "n_chars": "读取 {{count}} 字符",
     "deck_done": "已生成 PPTX · {{slides}} 页",
     "chart_done": "已生成图表",
-    "search_q": "搜索 「{{q}}」"
+    "search_q": "搜索 「{{q}}」",
+    "search_fail_rate": "搜索被限流 —— 稍等再试",
+    "search_fail_quota": "搜索服务的额度已用完",
+    "search_fail_key": "搜索服务拒绝了这个 API 密钥",
+    "search_via": "来自 {{provider}}",
+    "search_via_best_effort": "来自 {{provider}}(兜底 —— 无需密钥,可能被限流)"
   },
   "escalation": {
     "needs": "{{name}} 需要一些东西：",

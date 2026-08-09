@@ -196,15 +196,43 @@ def _pinned_request_args(url: str) -> tuple[str, dict, dict]:
     return pinned_url, {"Host": host_header}, {"sni_hostname": ascii_host}
 
 
-def _categorize_exc(exc: Exception) -> str:
-    """Map httpx/other exceptions to coarse error category strings."""
+#: HTTP statuses whose REMEDIES differ. Named rather than numbered because the number
+#: is a fact and the name is the fact plus what to do about it: wait, top up, or
+#: replace the key. Codes we have no advice for keep their number — inventing a
+#: category for them would read as understanding we do not have.
+_STATUS_MEANING = {
+    401: "key-rejected",
+    403: "key-rejected",
+    402: "quota-exhausted",
+    429: "rate-limited",
+}
+
+#: The one category worth trying again. A rejected key retried is a rejected key,
+#: more slowly.
+RETRYABLE = frozenset({"rate-limited"})
+
+
+def categorize(exc: Exception) -> str:
+    """Name the failure in terms a caller can act on.
+
+    🔴 BRANCH ORDER IS LOAD-BEARING. ``HTTPStatusError`` and ``TimeoutException`` are
+    BOTH subclasses of ``httpx.HTTPError``, so moving the HTTPError arm above them
+    collapses every rate limit into "network error" — and the user gets told to check
+    their connection when the real answer is "wait a minute". Two tests pin this.
+    """
     if isinstance(exc, httpx.TimeoutException):
         return "timeout"
     if isinstance(exc, httpx.HTTPStatusError):
-        return f"http {exc.response.status_code}"
+        code = exc.response.status_code
+        return _STATUS_MEANING.get(code, f"http {code}")
     if isinstance(exc, httpx.HTTPError):
         return "network error"
     return "unexpected error"
+
+
+def _categorize_exc(exc: Exception) -> str:
+    """Back-compat alias. web_extract's callers and their tests speak in these terms."""
+    return categorize(exc)
 
 
 _MAX_REDIRECTS = 5

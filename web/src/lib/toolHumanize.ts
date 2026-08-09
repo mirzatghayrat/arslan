@@ -31,6 +31,45 @@ function hostOf(url: string): string {
  * phrase carrying the one argument a human cares about (the query / the site), and failures
  * get a calm one-liner instead of the backend's internal error text.
  */
+/**
+ * Which search failure, in words the reader can act on.
+ *
+ * 🔴 THIS FUNCTION IS THE LAST MILE, and without it the backend's work is invisible.
+ * `_categorize_exc` had kept the HTTP status all along — 429 arrived here as
+ * "http 429" — and this switch replaced every web_search error with one generic
+ * sentence. Semantics on one end and a shrug on the other is the same as no
+ * semantics; the two halves are one requirement.
+ *
+ * Unrecognised failures fall back to the generic line ON PURPOSE. Guessing a remedy
+ * for a code we have no advice about would be worse than saying little: the whole
+ * point of naming these four is that each has a DIFFERENT thing to do about it.
+ */
+function searchFailure(summary: string | undefined, t: TranslateFn): string {
+  const text = summary ?? '';
+  if (text.includes('rate-limited')) return t('activity.search_fail_rate');
+  if (text.includes('quota-exhausted')) return t('activity.search_fail_quota');
+  if (text.includes('key-rejected')) return t('activity.search_fail_key');
+  return t('activity.search_fail');
+}
+
+/**
+ * Who served these results — and whether they came from the best-effort fallback.
+ *
+ * A degraded answer nobody can tell apart from a good one is the same silence this
+ * whole line of work exists to remove, so the fallback says so rather than passing
+ * itself off as the real thing.
+ */
+export function searchProvenance(
+  provider: string | undefined,
+  bestEffort: boolean | undefined,
+  t: TranslateFn,
+): string {
+  if (!provider) return '';
+  return bestEffort
+    ? t('activity.search_via_best_effort', { provider })
+    : t('activity.search_via', { provider });
+}
+
 export function humanizeStep(
   s: Pick<ToolStep, 'tool' | 'argsSummary' | 'resultSummary' | 'status'>,
   t: TranslateFn,
@@ -40,7 +79,7 @@ export function humanizeStep(
   switch (s.tool) {
     case 'web_search':
       return s.status === 'error'
-        ? t('activity.search_fail')
+        ? searchFailure(s.resultSummary, t)
         // Quotes live in the locale template (zh 「…」, en "…"), so the raw
         // truncated query is passed through; the no-query variant has no quotes.
         : q ? t('activity.search_q', { q: q.slice(0, 40) }) : t('activity.search', { q: '' });

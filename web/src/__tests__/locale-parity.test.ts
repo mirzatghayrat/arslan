@@ -131,7 +131,12 @@ describe("locale parity", () => {
     //              backend now computes a verdict and each one gets its own words,
     //              because two verdicts sharing a paragraph is a diagnosis that
     //              cannot distinguish the thing it exists to distinguish.
-    expect(enKeys).toHaveLength(1277);
+    // 1277 → 1282: search failures that name WHICH failure (rate limit, quota,
+    //              rejected key — three different remedies) plus provenance, with
+    //              and without the best-effort marker. search_fail already existed
+    //              and was reworded: it used to promise "retrying differently" on
+    //              every failure, which the code never did.
+    expect(enKeys).toHaveLength(1282);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

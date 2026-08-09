@@ -7,6 +7,7 @@ Server executors return {ok, ...} dicts — distinct from the CLI package's Arsl
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import NamedTuple
 import logging
@@ -111,6 +112,28 @@ _SEARCH_UNAVAILABLE = {
 
 
 
+#: Seam so tests assert the retry COUNT without paying the clock.
+async def _RETRY_SLEEP(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
+async def _search_with_one_retry(provider, query: str, num_results: int):
+    """Run the search; retry ONCE, and only for a failure that a retry can fix.
+
+    One, not a loop: an unbounded backoff on a throttle turns a rate limit into a hang,
+    and the tool budget this runs inside is small. Only `rate-limited` qualifies —
+    retrying a rejected key just gets it rejected again, slower.
+    """
+    try:
+        return await provider.search(query, num_results=num_results)
+    except Exception as exc:  # noqa: BLE001
+        if net_pin.categorize(exc) not in net_pin.RETRYABLE:
+            raise
+        logger.info("web_search rate-limited; one retry after a short pause")
+        await _RETRY_SLEEP(1.5)
+        return await provider.search(query, num_results=num_results)
+
+
 class WebSearchExecutor:
     key = "web_search"
 
@@ -127,9 +150,9 @@ class WebSearchExecutor:
             return {"ok": False, "error": _SEARCH_UNAVAILABLE[resolved.reason]}
         provider = resolved.provider
         try:
-            results = await provider.search(query, num_results=num_results)
+            results = await _search_with_one_retry(provider, query, num_results)
         except Exception as exc:  # noqa: BLE001
-            category = net_pin._categorize_exc(exc)
+            category = net_pin.categorize(exc)
             name = getattr(provider, "name", "unknown")
             # getattr, not provider.name: a crash while REPORTING a failure
             # replaces a legible error with an opaque one.

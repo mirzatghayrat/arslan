@@ -353,7 +353,7 @@
     "result": "Result",
     "error": "failed",
     "search": "Searching {{q}}",
-    "search_fail": "A search didn't go through — retrying differently",
+    "search_fail": "A search didn't go through",
     "read": "Reading {{host}}",
     "read_fail": "A page wouldn't open — trying another source",
     "deck": "Building the PPT",
@@ -369,7 +369,12 @@
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
     "chart_done": "Chart generated",
-    "search_q": "Searching “{{q}}”"
+    "search_q": "Searching “{{q}}”",
+    "search_fail_rate": "Search is rate-limited — waiting before trying again",
+    "search_fail_quota": "The search provider's quota is used up",
+    "search_fail_key": "The search provider rejected the API key",
+    "search_via": "via {{provider}}",
+    "search_via_best_effort": "via {{provider}} (best effort — no API key needed, may be throttled)"
   },
   "escalation": {
     "needs": "{{name}} needs something:",

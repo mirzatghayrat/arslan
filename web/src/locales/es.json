@@ -353,7 +353,7 @@
     "result": "Resultado",
     "error": "falló",
     "search": "Searching {{q}}",
-    "search_fail": "A search didn't go through — retrying differently",
+    "search_fail": "Una búsqueda no salió",
     "read": "Reading {{host}}",
     "read_fail": "A page wouldn't open — trying another source",
     "deck": "Building the PPT",
@@ -369,7 +369,12 @@
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
     "chart_done": "Chart generated",
-    "search_q": "Buscando «{{q}}»"
+    "search_q": "Buscando «{{q}}»",
+    "search_fail_rate": "La búsqueda está limitada por frecuencia: esperando antes de reintentar",
+    "search_fail_quota": "Se agotó la cuota del proveedor de búsqueda",
+    "search_fail_key": "El proveedor de búsqueda rechazó la clave de API",
+    "search_via": "vía {{provider}}",
+    "search_via_best_effort": "vía {{provider}} (mejor esfuerzo: sin clave, puede limitarse)"
   },
   "escalation": {
     "needs": "{{name}} necesita algo:",

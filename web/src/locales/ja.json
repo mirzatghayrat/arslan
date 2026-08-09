@@ -353,7 +353,7 @@
     "result": "結果",
     "error": "失敗",
     "search": "Searching {{q}}",
-    "search_fail": "A search didn't go through — retrying differently",
+    "search_fail": "検索が通りませんでした",
     "read": "Reading {{host}}",
     "read_fail": "A page wouldn't open — trying another source",
     "deck": "Building the PPT",
@@ -369,7 +369,12 @@
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
     "chart_done": "Chart generated",
-    "search_q": "「{{q}}」を検索中"
+    "search_q": "「{{q}}」を検索中",
+    "search_fail_rate": "検索がレート制限中です — 少し待って再試行します",
+    "search_fail_quota": "検索サービスの利用枠を使い切りました",
+    "search_fail_key": "検索サービスが API キーを拒否しました",
+    "search_via": "{{provider}} より",
+    "search_via_best_effort": "{{provider}} より(ベストエフォート — キー不要、制限される場合あり)"
   },
   "escalation": {
     "needs": "{{name}}が何かを必要としています：",
