@@ -65,8 +65,27 @@ async def list_configs(session: AsyncSession) -> list[dict]:
 
 async def list_for_routing(session: AsyncSession) -> list[dict]:
     rows = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.id))).scalars().all()
+    # 🔴 healthy + key_state are here because routing cannot filter on what it cannot
+    # see. Without them arslan.llm.routing.usable() is a no-op that looks like a
+    # feature: a config whose key will not decrypt scores exactly as well as one that
+    # works, gets chosen, and fails at the provider with a 401 that blames the
+    # provider.
     return [{"id": r.id, "provider": r.provider, "model": r.model,
-             "base_url": r.base_url or "", "is_primary": bool(r.is_primary)} for r in rows]
+             "base_url": r.base_url or "", "is_primary": bool(r.is_primary),
+             "healthy": _last_health_ok(r),
+             "key_state": _key_status(r.api_key)} for r in rows]
+
+
+def _last_health_ok(row) -> bool | None:
+    """Tri-state: True/False from the last probe, None when none has run.
+
+    None is NOT False. "Never checked" and "checked and down" call for different
+    behaviour, and collapsing them would make a fresh install look broken.
+    """
+    value = getattr(row, "last_health", None)
+    if value is None or value == "":
+        return None
+    return str(value).lower() in ("ok", "healthy", "true", "1")
 
 
 async def add_config(session: AsyncSession, *, label: str, provider: str, model: str,
