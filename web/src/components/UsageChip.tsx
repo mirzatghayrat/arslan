@@ -17,6 +17,19 @@ export default function UsageChip({ usage }: { usage: StreamUsage }) {
       {usage.estimated ? "≈ " : ""}
       {fmtTok(usage.tokens_total)} tok
       {usage.usd != null ? ` · ${fmtUsd(usage.usd)}` : ""}
+      {/* 🔴 Who answered. Absent for turns recorded before this shipped, so the
+          optional chain is load-bearing rather than defensive: an old frame renders
+          the chip exactly as it always did.
+
+          Every model, not just the busiest. A turn that quietly used two must not
+          look like a turn that used one — that is the whole reason this is on screen
+          now that per-task slots can route work to a different model. */}
+      {usage.models?.length ? (
+        <span data-testid="usage-models">
+          {" · "}
+          {usage.models.map((m) => m.model).join(" + ")}
+        </span>
+      ) : null}
     </div>
   );
 }

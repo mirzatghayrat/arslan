@@ -72,6 +72,13 @@ export interface StreamUsage {
   tokens_total: number;
   estimated: boolean;
   usd: number | null;
+  /** Which model(s) answered this turn, busiest first. Empty when none ran.
+   *  More than one entry means the turn used more than one model — the event that
+   *  must not be silent now that per-task slots can route work elsewhere. */
+  /** OPTIONAL on purpose: a frame recorded before this shipped genuinely does not
+   *  carry it, and declaring it required would be the type asserting something
+   *  about the wire that is not true. */
+  models?: { model: string; provider: string | null }[];
 }
 
 /** One scope's slice of a conversation's cumulative usage (spawn/answer/router/…). */

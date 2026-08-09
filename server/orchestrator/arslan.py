@@ -942,6 +942,19 @@ def _frame_usd(buckets: list[dict]) -> float | None:
     return total
 
 
+def _frame_models(buckets: list[dict]) -> list[dict]:
+    """Every (model, provider) that ran this turn, busiest first.
+
+    A bucket with no model name is DROPPED rather than rendered: usage_sink allows
+    model=None, and printing "None" as a model would be a confident-looking lie on the
+    one line meant to be trustworthy.
+    """
+    named = [b for b in buckets if b.get("model")]
+    named.sort(key=lambda b: (b.get("tokens_in") or 0) + (b.get("tokens_out") or 0),
+               reverse=True)
+    return [{"model": b["model"], "provider": b.get("provider")} for b in named]
+
+
 def _usage_frame(detail: dict) -> dict:
     """S3-M3 Task 5: per-turn usage payload for a terminal stream_end frame.
 
@@ -959,6 +972,16 @@ def _usage_frame(detail: dict) -> dict:
         "tokens_total": usage_sink.total(),
         "estimated": detail["tokens_in"] is None,
         "usd": _frame_usd(detail["buckets"]),
+        # 🔴 Who answered. detail() has computed this every turn and _usage_frame threw
+        # it away — Run rows carry model/provider, but the chat answer path writes no
+        # Run row, so the surface a person actually watches has never said. Spec ② can
+        # now route a task to a different model on purpose, and "no silently swapping
+        # models and spending the user's money" is unenforceable if nothing reports it.
+        #
+        # ALL of them, biggest first — not usage_sink.primary(). primary() is the right
+        # default for one label, and using it here would hide precisely the multi-model
+        # turn this exists to reveal.
+        "models": _frame_models(detail["buckets"]),
     }
 
 

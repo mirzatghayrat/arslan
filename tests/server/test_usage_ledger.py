@@ -333,8 +333,13 @@ async def test_judge_scope_does_not_diminish_dispatch_run_usage(memdb, monkeypat
     # (built inside the collecting scope). "claude-x" has no price → usd present, None.
     ends = [e for e in events if e["type"] == "stream_end"]
     assert len(ends) == 1
+    # Exact comparison kept deliberately: it also pins "no field appears by accident",
+    # so an intentional addition is a lockstep edit here. `models` is the new one — the
+    # frame now says WHICH model answered, and the judge scope must not add itself to
+    # that list either.
     assert ends[0]["usage"] == {"tokens_in": 120, "tokens_out": 80, "tokens_total": 200,
-                                "estimated": False, "usd": None}
+                                "estimated": False, "usd": None,
+                                "models": [{"model": "claude-x", "provider": "anthropic"}]}
     judge_rows = [r for r in await _rows(memdb) if r.scope == "judge"]
     assert len(judge_rows) == 1
     # Judge row = judge's own tokens ONLY (a leaked inherited bucket would show 127/83).
