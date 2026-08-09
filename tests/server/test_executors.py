@@ -24,7 +24,9 @@ async def test_web_search_executor_uses_provider(monkeypatch):
             return [{"title": "T", "url": "https://a", "snippet": "s"}]
 
     async def _fake_provider():
-        return _P()
+        # _search_provider now returns a REASON alongside the provider, so "no key
+        # entered" and "the stored key cannot be opened" stop being one sentence.
+        return executors.ResolvedProvider(_P(), None)
 
     monkeypatch.setattr(executors, "_search_provider", _fake_provider)
     out = await executors.EXECUTORS["web_search"].execute({"query": "硬防晒 趋势"})
@@ -37,7 +39,7 @@ async def test_web_search_unavailable_without_key(monkeypatch):
     from server.registry import executors
 
     async def _no_provider():
-        return None
+        return executors.ResolvedProvider(None, "no-key")
 
     monkeypatch.setattr(executors, "_search_provider", _no_provider)
     out = await executors.EXECUTORS["web_search"].execute({"query": "x"})
@@ -160,7 +162,9 @@ async def test_web_search_rejects_invalid_num_results(monkeypatch):
             return []
 
     async def _fake_provider():
-        return _P()
+        # _search_provider now returns a REASON alongside the provider, so "no key
+        # entered" and "the stored key cannot be opened" stop being one sentence.
+        return executors.ResolvedProvider(_P(), None)
 
     monkeypatch.setattr(executors, "_search_provider", _fake_provider)
     out = await executors.EXECUTORS["web_search"].execute(
@@ -189,11 +193,15 @@ async def test_web_search_provider_raises_timeout(monkeypatch):
     from server.registry import executors
 
     class _P:
+        name = "tavily"
+
         async def search(self, query, num_results=5):
             raise httpx.TimeoutException("timed out")
 
     async def _fake_provider():
-        return _P()
+        # _search_provider now returns a REASON alongside the provider, so "no key
+        # entered" and "the stored key cannot be opened" stop being one sentence.
+        return executors.ResolvedProvider(_P(), None)
 
     monkeypatch.setattr(executors, "_search_provider", _fake_provider)
     out = await executors.EXECUTORS["web_search"].execute({"query": "test"})

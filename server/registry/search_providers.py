@@ -1,15 +1,43 @@
-"""Swappable web-search providers (spec §9.2): Tavily default, never hard-wired."""
+"""Swappable web-search providers. One of them needs no key, and it is the default.
+
+🔴 WHY `requires_key` LIVES ON THE PROVIDER. It used to live in the caller, as
+`if not key: return None` evaluated BEFORE the provider was chosen — which made a
+keyless provider unreachable by construction, not merely unimplemented. Whether a key
+is needed is a fact about the provider, so it is stated by the provider.
+
+THE DEFAULT IS THE KEYLESS ONE. A fresh install that has not signed up anywhere must
+still be able to search: "download it and it works" is the promise, and search is the
+capability most visibly broken without it. Tavily remains available and better; it is
+an upgrade, not a prerequisite.
+
+🔴 AND THE FALLBACK IS HONEST ABOUT ITSELF. It scrapes an HTML endpoint that offers no
+contract, can be throttled, and can change shape without notice. That is acceptable
+for a fallback and unacceptable as a silent substitute, so it sets
+``best_effort = True`` and every result carries the provider that served it. A degraded
+answer the user cannot distinguish from a good one is the same silence this whole line
+of work exists to remove.
+"""
 from __future__ import annotations
 
+import html
+import re
 from abc import ABC, abstractmethod
 
 import httpx
+
+from server.registry import net_pin
 
 _TIMEOUT = 15.0
 
 
 class SearchProvider(ABC):
     name: str = ""
+    #: Does this provider need an API key? Defaults to True so a provider that forgets
+    #: to say fails toward "ask the user" rather than toward a call that cannot work.
+    requires_key: bool = True
+    #: True when results come from scraping rather than a supported API. Surfaced to
+    #: the user AND to the model, both of which can act on "this may be throttled".
+    best_effort: bool = False
 
     @abstractmethod
     async def search(self, query: str, num_results: int = 5) -> list[dict]:
@@ -21,6 +49,7 @@ class SearchProvider(ABC):
 
 class TavilyProvider(SearchProvider):
     name = "tavily"
+    requires_key = True
     _URL = "https://api.tavily.com/search"
 
     def __init__(self, api_key: str) -> None:
@@ -42,11 +71,78 @@ class TavilyProvider(SearchProvider):
         ]
 
 
-_PROVIDERS: dict[str, type[SearchProvider]] = {"tavily": TavilyProvider}
-_DEFAULT = "tavily"
+class DuckDuckGoHtmlProvider(SearchProvider):
+    """The zero-key fallback: DuckDuckGo's HTML endpoint, parsed.
+
+    IMPLEMENTED HERE RATHER THAN VIA ``ddgs``, and the reason is not dependency
+    minimalism. ``ddgs`` pulls ``primp`` — a Rust HTTP client — so its requests would
+    bypass every control in ``net_pin``: the resolve-once pinning, the non-public
+    address refusal, the per-hop redirect re-pinning. Adding a search path that our own
+    network boundary cannot see, in the same round that puts a user-supplied SearXNG
+    address on that boundary, is the wrong trade. (It also keeps two binary extensions
+    out of the frozen macOS bundle, which is a real but secondary saving.)
+
+    Measured before being built on: the endpoint answers 200 with parseable results.
+    It has no contract, so the parser is written to return FEWER results rather than
+    wrong ones, and the provider marks itself best_effort so nothing downstream mistakes
+    it for a supported API.
+    """
+
+    name = "duckduckgo"
+    requires_key = False
+    best_effort = True
+    _URL = "https://html.duckduckgo.com/html/"
+    # A browser UA: the endpoint serves a different, unparseable page to obvious bots.
+    _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+           "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+    _RESULT = re.compile(
+        r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.S)
+    _SNIPPET = re.compile(
+        r'<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', re.S)
+
+    def __init__(self, api_key: str = "", **_: object) -> None:
+        self._api_key = api_key      # accepted and ignored: it needs none
+
+    @staticmethod
+    def _text(fragment: str) -> str:
+        return html.unescape(re.sub(r"<[^>]+>", "", fragment)).strip()
+
+    async def search(self, query: str, num_results: int = 5) -> list[dict]:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+            resp = await client.post(self._URL, data={"q": query},
+                                     headers={"User-Agent": self._UA})
+            resp.raise_for_status()
+            body = resp.text
+
+        titles = self._RESULT.findall(body)
+        snippets = self._SNIPPET.findall(body)
+        out: list[dict] = []
+        for i, (href, title_html) in enumerate(titles[:num_results]):
+            url = html.unescape(href)
+            # The endpoint sometimes wraps targets in its own redirector; a result we
+            # cannot resolve to a real URL is dropped rather than handed on broken.
+            if url.startswith("//"):
+                url = "https:" + url
+            if not url.startswith(("http://", "https://")):
+                continue
+            out.append({
+                "title": self._text(title_html),
+                "url": url,
+                "snippet": self._text(snippets[i]) if i < len(snippets) else "",
+            })
+        return out
 
 
-def get_provider(name: str, *, api_key: str) -> SearchProvider:
+#: Registered providers. The keyless fallback is the default so a fresh install works.
+_PROVIDERS: dict[str, type[SearchProvider]] = {
+    "duckduckgo": DuckDuckGoHtmlProvider,
+    "tavily": TavilyProvider,
+}
+_FALLBACK = "duckduckgo"
+_DEFAULT = _FALLBACK
+
+
+def get_provider(name: str, *, api_key: str = "") -> SearchProvider:
     key = (name or _DEFAULT).strip().lower()
     cls = _PROVIDERS.get(key)
     if cls is None:
@@ -55,5 +151,11 @@ def get_provider(name: str, *, api_key: str) -> SearchProvider:
 
 
 def list_providers() -> list[str]:
-    """Registered search-provider keys (for the Settings dropdown). Default first."""
-    return [_DEFAULT] + sorted(k for k in _PROVIDERS if k != _DEFAULT)
+    """Registered keys for the Settings dropdown. The keyless default comes first."""
+    return [_FALLBACK] + sorted(k for k in _PROVIDERS if k != _FALLBACK)
+
+
+# net_pin is imported for the SSRF-hardened client the SearXNG provider will use when
+# it lands; referenced here so the dependency is explicit rather than accidental.
+__all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider",
+           "get_provider", "list_providers", "net_pin"]

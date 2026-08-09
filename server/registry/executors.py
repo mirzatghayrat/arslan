@@ -8,6 +8,7 @@ Server executors return {ok, ...} dicts — distinct from the CLI package's Arsl
 from __future__ import annotations
 
 import base64
+from typing import NamedTuple
 import logging
 from pathlib import Path
 
@@ -45,14 +46,68 @@ class _NotUtf8(Exception):
 
 
 
-async def _search_provider():
-    """Build the configured provider, or None when no key is set."""
+class SearchConfig(NamedTuple):
+    """What Settings says about search: which provider, and the state of its key."""
+
+    name: str
+    key: str
+    key_state: str          # "unset" | "set" | "undecryptable" (spec ⓪ vocabulary)
+
+
+class ResolvedProvider(NamedTuple):
+    """A provider, or a REASON there is none. Never a bare None.
+
+    The bare None is what let "no key entered" and "the stored key cannot be opened"
+    collapse into one sentence — and being told to enter a key that is already there is
+    how a month went missing. The reason travels so the caller can say which it was.
+    """
+
+    provider: object | None
+    reason: str | None      # None | "no-key" | "key-undecryptable" | "unknown-provider"
+
+
+async def _read_search_config() -> SearchConfig:
+    """Settings' view of search. Split out so tests can stub it without a database."""
     async with AsyncSessionLocal() as db:
         key = await settings_service.get_decrypted(db, "search_api_key")
-        name = (await settings_service.get_settings(db)).get("search_provider", "")
-    if not key:
-        return None
-    return get_provider(name, api_key=key)
+        cfg = await settings_service.get_settings(db)
+    return SearchConfig(
+        name=cfg.get("search_provider", ""),
+        key=key,
+        key_state=cfg.get("search_api_key_status", "unset"),
+    )
+
+
+async def _search_provider() -> ResolvedProvider:
+    """Build the configured provider, or say why not.
+
+    🔴 ORDER MATTERS AND IT USED TO BE WRONG. The old version asked `if not key` BEFORE
+    choosing a provider, so a provider needing no key was unreachable at any setting —
+    not unimplemented, unreachable. The provider is chosen first; whether it needs a key
+    is then ITS answer to give.
+    """
+    cfg = await _read_search_config()
+    try:
+        provider = get_provider(cfg.name, api_key=cfg.key)
+    except ValueError:
+        return ResolvedProvider(None, "unknown-provider")
+    if provider.requires_key and not cfg.key:
+        # Two different facts, kept apart: nothing was ever entered, versus something
+        # IS stored and this process cannot open it (spec ⓪ made that knowable).
+        return ResolvedProvider(
+            None, "key-undecryptable" if cfg.key_state == "undecryptable" else "no-key")
+    return ResolvedProvider(provider, None)
+
+
+#: Why there is no provider -> what the model and the user are told. Distinct strings on
+#: purpose: identical wording for different causes is the defect, not a tidiness issue.
+_SEARCH_UNAVAILABLE = {
+    "no-key": "web search is not configured (no API key set)",
+    "key-undecryptable": ("web search has a stored API key that cannot be decrypted — "
+                          "it is present but unreadable, so re-entering it is what fixes "
+                          "this, not adding one. See Settings for which half is missing."),
+    "unknown-provider": "web search is set to a provider this build does not know",
+}
 
 
 
@@ -67,17 +122,27 @@ class WebSearchExecutor:
             num_results = int(args.get("num_results") or 5)
         except (TypeError, ValueError):
             return {"ok": False, "error": "invalid 'num_results'"}
-        provider = await _search_provider()
-        if provider is None:
-            return {"ok": False,
-                    "error": "web search is not configured (no API key set)"}
+        resolved = await _search_provider()
+        if resolved.provider is None:
+            return {"ok": False, "error": _SEARCH_UNAVAILABLE[resolved.reason]}
+        provider = resolved.provider
         try:
             results = await provider.search(query, num_results=num_results)
         except Exception as exc:  # noqa: BLE001
             category = net_pin._categorize_exc(exc)
-            logger.warning("web_search failed: %s", exc, exc_info=True)
-            return {"ok": False, "error": f"search failed: {category}"}
-        return {"ok": True, "results": results}
+            name = getattr(provider, "name", "unknown")
+            # getattr, not provider.name: a crash while REPORTING a failure
+            # replaces a legible error with an opaque one.
+            logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
+            return {"ok": False, "error": f"search failed: {category}",
+                    "provider": name}
+        # Provenance travels with the results. The model sees this too: "these came
+        # from a best-effort scraper that may be throttled" is something it can act on,
+        # and a degraded answer nobody can distinguish from a good one is the silence
+        # this whole line of work exists to remove.
+        return {"ok": True, "results": results,
+                "provider": getattr(provider, "name", "unknown"),
+                "best_effort": bool(getattr(provider, "best_effort", False))}
 
 
 class WebExtractExecutor:

@@ -27,7 +27,10 @@ async def test_list_search_providers_endpoint(client):
     resp = await client.get("/api/v1/settings/search-providers")
     assert resp.status_code == 200
     providers = resp.json()
-    assert providers[0] == "tavily"  # default listed first
+    # The keyless default leads the dropdown: it is the one that works on a machine
+    # that has not signed up anywhere, so burying it under options that need a key
+    # would put the only usable choice last.
+    assert providers[0] == "duckduckgo"
     assert "tavily" in providers
 
 

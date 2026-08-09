@@ -7,7 +7,10 @@ def test_provider_registry_default_and_swap():
 
     p = get_provider("tavily", api_key="k")
     assert type(p).__name__ == "TavilyProvider"
-    assert get_provider("", api_key="k").name == "tavily"      # default
+    # 🔴 The default MOVED, deliberately: it is now the keyless fallback, so a fresh
+    # install can search before signing up anywhere. Tavily is an upgrade, not a
+    # prerequisite. This line is the product decision, not an implementation detail.
+    assert get_provider("", api_key="").name == "duckduckgo"
     with pytest.raises(ValueError):
         get_provider("no-such-provider", api_key="k")
 
