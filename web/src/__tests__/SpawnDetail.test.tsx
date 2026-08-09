@@ -57,7 +57,7 @@ describe("SpawnDetail", () => {
   it("shows the cost estimate before enqueuing evolution", async () => {
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
     await screen.findByText("policy.txt");
@@ -70,7 +70,7 @@ describe("SpawnDetail", () => {
   it("enqueues a background evolution attempt", async () => {
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     m.runEvolve.mockResolvedValue({ attempt_id: 99 });
     render(<SpawnDetail spawnId={7} spawnName="小美" onClose={() => {}} />);
@@ -89,7 +89,7 @@ describe("SpawnDetail", () => {
     // unrecoverable dead end: a raw error code in the error slot and no way forward.
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     const { ApiError } = await import("../api/client");
     m.runEvolve

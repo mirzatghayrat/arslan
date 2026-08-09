@@ -525,11 +525,17 @@ class EstimateOut(BaseModel):
     """Cost estimate for one evolution attempt (GET /spawns/{id}/evolve/estimate).
 
     🔴 Two sets of numbers, disagreeing on purpose — see evolution_estimate.py's module
-    docstring for why. The first block is FROZEN and wrong: `dispatches` applies the
-    optimizer's per-pair multiplier to the whole corpus, and `lower_bound: True` is a
-    hardcoded claim the estimator itself contradicts. They stay because
-    evolution_watcher compares `est_tokens` against evolution_max_dispatches; repricing it
-    correctly would silently widen that spend gate ~2.5x. UI copy must not call it a floor.
+    docstring for why. The first block is the FROZEN count block, still wrong in the same
+    way: `dispatches` applies the optimizer's per-pair multiplier to the whole corpus. It
+    stays because the UI falls back to it (`dispatches_max ?? dispatches`) for an old
+    attempt row read by a new client. UI copy must not call it a floor.
+
+    `est_tokens` and `lower_bound` are GONE from this payload. They were kept because the
+    spend gate read `est_tokens`; it reads `dispatches_max` now, after which nothing read
+    either field and `lower_bound: True` was a hardcoded claim the estimator itself
+    contradicts. Do not re-add them: the honest token number is `tokens_projected`.
+    (`attempt.actual["est_tokens"]` is a DIFFERENT field — measured usage — and is not
+    affected.)
 
     The second block is derived from the loop. `basis` describes the three COUNT fields and
     NOTHING else — `tokens_projected` is mean-priced, not a bound.
@@ -546,8 +552,6 @@ class EstimateOut(BaseModel):
     judge_calls: int
     optimizer_calls: int
     synth_calls: int
-    est_tokens: int
-    lower_bound: bool = True
     # ── derived ceiling ──
     propose_pairs: int
     val_pairs: int

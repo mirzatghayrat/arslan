@@ -94,10 +94,9 @@ async def evolve_estimate(
 ) -> EstimateOut:
     """Cost estimate for ONE evolution attempt on this spawn.
 
-    NOT a reliable lower bound despite the `lower_bound` field — see
-    evolution_estimate.py's docstring. I corrected that module and the schema in the
-    previous commit and left this one saying "honest lower-bound", which is the same
-    half-fix pattern as shipping an ISO separator without the UTC designator.
+    Counts, not a bound. `dispatches_max` / `judge_calls_max` are derived from the loop;
+    `tokens_projected` is mean-priced and bounds nothing. The `est_tokens` / `lower_bound`
+    pair this docstring used to apologise for is gone — see evolution_estimate.py.
     """
     est = await evolution_estimate.estimate(session, spawn_id)
     return EstimateOut(**est)
@@ -182,15 +181,12 @@ async def _repeat_spend_refusal(session, spawn_id: int) -> dict | None:
         "last_outcome": last.outcome,
         "last_reason": last.reason or "",
         "new_runs_since": new_runs,
-        "est_tokens": est.get("est_tokens"),
-        # The dialog shows dispatches now: the token figure over-states 3.7-5.2x, so
-        # quoting it before a spend decision misinforms in the expensive direction.
+        # The dialog shows dispatches, not tokens: the token figure over-stated 3.7-5.2x,
+        # so quoting it before a spend decision misinformed in the expensive direction.
+        # `est_tokens` / `est_is_lower_bound` used to ride along here unrendered; they are
+        # gone with the estimate fields behind them, rather than left to report null and a
+        # bool derived from a key that no longer exists.
         "est_dispatches_max": est.get("dispatches_max"),
-        # 🔴 NOT a ceiling and NOT a reliable floor either — the estimator applies the
-        # optimizer's per-pair multiplier to the WHOLE corpus while the optimizer only
-        # ever sees <=8 val pairs, so it overshoots more the bigger the corpus gets.
-        # Registered as its own project; do not present this number as a forecast.
-        "est_is_lower_bound": bool(est.get("lower_bound")),
     }
 
 

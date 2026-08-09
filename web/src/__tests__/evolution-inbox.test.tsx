@@ -94,7 +94,7 @@ describe("EvolutionInbox", () => {
   it("shows the estimate before enqueuing a run", async () => {
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     m.runEvolve.mockResolvedValue({ attempt_id: 42 });
     render(<EvolutionInbox onOpenRun={() => {}} />);
@@ -168,7 +168,7 @@ describe("EvolutionInbox", () => {
   it("P9: a 409 from the spend gate becomes a confirmation built from the SERVER's facts", async () => {
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     const { ApiError } = await import("../api/client");
     m.runEvolve.mockRejectedValueOnce(
@@ -193,7 +193,7 @@ describe("EvolutionInbox", () => {
   it("P9: confirming re-sends with force, cancelling sends nothing", async () => {
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     const { ApiError } = await import("../api/client");
     m.runEvolve
@@ -220,7 +220,7 @@ describe("EvolutionInbox", () => {
     // someone else's outcome as the result of this click.
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     m.runEvolve.mockResolvedValue({ attempt_id: 99 });
     m.getEvolutionDiagnosis
@@ -253,7 +253,7 @@ describe("EvolutionInbox", () => {
     m.listSpawns.mockResolvedValue([{ id: 7, name: "小美" }, { id: 9, name: "小强" }]);
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     const { ApiError } = await import("../api/client");
     m.runEvolve.mockRejectedValue(
@@ -282,7 +282,7 @@ describe("EvolutionInbox", () => {
     m.listSpawns.mockResolvedValue([{ id: 7, name: "小美" }, { id: 9, name: "小强" }]);
     m.getEvolveEstimate.mockResolvedValue({
       pairs: 12, dispatches: 156, judge_calls: 24, optimizer_calls: 3,
-      synth_calls: 0, est_tokens: 48000, lower_bound: true,
+      synth_calls: 0,
     });
     m.runEvolve.mockResolvedValue({ attempt_id: 99 });
     m.getEvolutionDiagnosis.mockResolvedValue({ ...DIAG, last_attempts: [] });

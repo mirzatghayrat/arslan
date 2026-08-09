@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from server.db.models import Base, Run, Spawn
 from server.services import evolution_estimate
-from server.services.evolution_estimate import AVG_JUDGE_TOKENS, _loop_defaults
+from server.services.evolution_estimate import _loop_defaults
 
 
 @pytest.fixture
@@ -43,19 +43,6 @@ async def _run(db, spawn_id, *, tokens, msg, epoch=1, kind="live", status="score
     return r.id
 
 
-async def test_avg_run_tokens_excludes_zero_and_prebaseline(db):
-    sid = await _spawn(db)
-    await _run(db, sid, tokens=100, msg="t1")
-    await _run(db, sid, tokens=200, msg="t2")
-    await _run(db, sid, tokens=300, msg="t3")
-    await _run(db, sid, tokens=0, msg="z1")            # zero-token: EXCLUDED
-    await _run(db, sid, tokens=0, msg="z2")            # zero-token: EXCLUDED
-    await _run(db, sid, tokens=999, msg="old", epoch=0)   # pre-baseline: EXCLUDED
-    await _run(db, sid, tokens=999, msg="rep", kind="replay")  # replay arm: EXCLUDED
-
-    avg = await evolution_estimate._avg_run_tokens(db, sid)
-    assert avg == 200.0   # mean(100, 200, 300) — the 0s and epoch=0/replay never counted
-
 
 async def test_estimate_formula_matches(db):
     from server.services import replay_gate
@@ -85,10 +72,10 @@ async def test_estimate_formula_matches(db):
     assert est["judge_calls"] == expected_pairs * per_pair * 2  # position-swap = 2 judge / compare
     assert est["optimizer_calls"] == epochs
     assert est["synth_calls"] == 0
-    assert est["lower_bound"] is True
-
-    avg = 100.0
-    assert est["est_tokens"] == int(avg * est["dispatches"] + AVG_JUDGE_TOKENS * est["judge_calls"])
+    # est_tokens / lower_bound were REMOVED — nothing read them and the label was false.
+    # Asserted absent, not just unasserted: re-adding them is the regression to catch.
+    assert "est_tokens" not in est
+    assert "lower_bound" not in est
 
 
 async def test_estimate_projects_cold_start_topup_when_no_real(db):
@@ -103,8 +90,7 @@ async def test_estimate_projects_cold_start_topup_when_no_real(db):
     assert est["pairs"] == replay_gate.MIN_HOLDOUT_N
     assert est["dispatches"] == replay_gate.MIN_HOLDOUT_N * 2 * per_pair
     assert est["judge_calls"] == replay_gate.MIN_HOLDOUT_N * per_pair * 2
-    assert est["est_tokens"] == AVG_JUDGE_TOKENS * est["judge_calls"]   # avg_run=0 → judge-only
-    assert est["lower_bound"] is True
+    assert "est_tokens" not in est and "lower_bound" not in est
 
 
 async def test_estimate_does_not_mint_but_projects_topup(db, monkeypatch):

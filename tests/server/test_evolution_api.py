@@ -28,15 +28,14 @@ async def test_estimate_endpoint_shape(client):
     r = await client.get(f"/api/v1/spawns/{sid}/evolve/estimate")
     assert r.status_code == 200
     body = r.json()
-    for key in ("pairs", "dispatches", "judge_calls", "optimizer_calls",
-                "synth_calls", "est_tokens", "lower_bound"):
+    for key in ("pairs", "dispatches", "judge_calls", "optimizer_calls", "synth_calls"):
         assert key in body
-    assert body["lower_bound"] is True
+    assert "est_tokens" not in body and "lower_bound" not in body
     # E9-b: thin corpus (3 real) → the estimate PROJECTS the synthetic holdout top-up the real
     # run would mint (up to MIN_HOLDOUT_N), without minting — so the previewed pair count reaches
     # the floor rather than staying at 3.
     assert body["pairs"] >= 10
-    assert body["est_tokens"] > 0
+    assert body["dispatches"] > 0
 
 
 async def test_evolve_returns_202_and_does_not_block(client, monkeypatch):

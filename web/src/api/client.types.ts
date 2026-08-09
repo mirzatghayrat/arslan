@@ -773,6 +773,11 @@ export interface ProposalDetail {
  *
  * The `*_max` block is optional so a STORED estimate from before this schema still
  * typechecks — those rows exist and PromotionCard renders them.
+ *
+ * `est_tokens` / `lower_bound` are deliberately absent: the API stopped emitting them
+ * once nothing read them, and `lower_bound: true` was false anyway. Stored rows may still
+ * carry the keys; nothing may start reading them. The honest token number here is
+ * `tokens_projected`. (`ActualUsage.est_tokens` is a different, MEASURED field.)
  */
 export interface EvolveEstimate {
   pairs: number;
@@ -780,8 +785,6 @@ export interface EvolveEstimate {
   judge_calls: number;
   optimizer_calls: number;
   synth_calls: number;
-  est_tokens: number;
-  lower_bound: boolean;
   propose_pairs?: number;
   val_pairs?: number;
   dispatches_max?: number;

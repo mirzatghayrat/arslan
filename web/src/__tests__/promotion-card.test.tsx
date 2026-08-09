@@ -188,7 +188,7 @@ describe("PromotionCard", () => {
 
   const withActual = (actual: Record<string, unknown>) => proposal({
     estimate: { pairs: 4, dispatches: 56, judge_calls: 56, optimizer_calls: 3,
-                synth_calls: 0, est_tokens: 40000, lower_bound: true },
+                synth_calls: 0 },
     actual,
   } as Partial<ProposalDetail>);
 
