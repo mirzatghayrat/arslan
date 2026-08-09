@@ -17,7 +17,7 @@ import socket
 import httpx
 import pytest
 
-from server.registry import executors
+from server.registry import net_pin
 
 PUBLIC_A = "93.184.216.34"
 PUBLIC_B = "93.184.216.35"
@@ -32,7 +32,7 @@ def _addrinfo(ip: str):
 def no_env_proxy(monkeypatch):
     """See test_ssrf_dns_rebinding: a real developer machine here exports HTTPS_PROXY,
     and https+proxy legitimately disables pinning."""
-    monkeypatch.setattr(executors, "getproxies", lambda: {})
+    monkeypatch.setattr(net_pin, "getproxies", lambda: {})
 
 
 def _client_with(handler):
@@ -57,10 +57,10 @@ async def test_fetch_text_blocks_redirect_to_private_host(monkeypatch):
             return httpx.Response(200, text="SECRET CLOUD METADATA")
         return httpx.Response(302, headers={"location": f"http://{METADATA}/latest/meta-data"})
 
-    monkeypatch.setattr(executors, "_build_client", lambda: _client_with(handler))
+    monkeypatch.setattr(net_pin, "_build_client", lambda: _client_with(handler))
 
-    with pytest.raises(executors._BlockedHost):
-        await executors._fetch_text("http://public.example/page")
+    with pytest.raises(net_pin._BlockedHost):
+        await net_pin._fetch_text("http://public.example/page")
 
 
 async def test_fetch_text_follows_legit_public_redirect(monkeypatch):
@@ -79,9 +79,9 @@ async def test_fetch_text_follows_legit_public_redirect(monkeypatch):
             "</article></body></html>",
         )
 
-    monkeypatch.setattr(executors, "_build_client", lambda: _client_with(handler))
+    monkeypatch.setattr(net_pin, "_build_client", lambda: _client_with(handler))
 
-    await executors._fetch_text("http://a.example/start")
+    await net_pin._fetch_text("http://a.example/start")
     # the hostname now lives in the Host header; the URL carries the pinned address
     assert any(r.headers["Host"].startswith("b.example") for r in seen), (
         "legit public redirect must still be followed")

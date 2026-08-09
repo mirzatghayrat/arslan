@@ -285,10 +285,11 @@ async def test_web_extract_failure_steers_to_search_snippets(monkeypatch):
     import httpx
 
     from server.registry import executors
-    monkeypatch.setattr(executors, "_is_private_host", lambda url: False)
+    from server.registry import net_pin
+    monkeypatch.setattr(net_pin, "_is_private_host", lambda url: False)
 
     async def _timeout(url): raise httpx.TimeoutException("slow")
-    monkeypatch.setattr(executors, "_fetch_text", _timeout)
+    monkeypatch.setattr(net_pin, "_fetch_text", _timeout)
     out = await executors.WebExtractExecutor().execute({"url": "https://example.com/x"})
     assert out["ok"] is False
     assert "timeout" in out["error"]

@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 from server.registry import executors
+from server.registry import net_pin
 
 PUBLIC = "93.184.216.34"
 PRIVATE = "127.0.0.1"
@@ -39,7 +40,7 @@ def no_env_proxy(monkeypatch):
     for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
                 "http_proxy", "https_proxy", "all_proxy", "no_proxy"):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(executors, "getproxies", lambda: {})
+    monkeypatch.setattr(net_pin, "getproxies", lambda: {})
 
 
 @pytest.fixture
@@ -71,7 +72,7 @@ def capture(monkeypatch):
     # private-attribute trick silently sends a REAL request. trust_env=False keeps the
     # test hermetic for the same reason.
     monkeypatch.setattr(
-        executors, "_build_client",
+        net_pin, "_build_client",
         lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler),
                                   follow_redirects=False, trust_env=False))
     return seen
@@ -127,7 +128,7 @@ async def test_a_redirect_hop_is_pinned_too(monkeypatch, capture):
         return httpx.Response(200, text="<html><body>" + "landed here. " * 20 + "</body></html>")
 
     monkeypatch.setattr(
-        executors, "_build_client",
+        net_pin, "_build_client",
         lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler),
                                   follow_redirects=False, trust_env=False))
 
@@ -184,7 +185,7 @@ async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
         return httpx.Response(302, headers={"location": "http://intranet.test/secret"})
 
     monkeypatch.setattr(
-        executors, "_build_client",
+        net_pin, "_build_client",
         lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler),
                                   follow_redirects=False, trust_env=False))
 
@@ -238,7 +239,7 @@ async def test_public_addresses_still_work(monkeypatch, capture, addr):
 async def test_https_through_a_proxy_degrades_LOUDLY_not_silently(monkeypatch, capture, caplog):
     """The one cell where pinning cannot work. It must still validate, must not mangle
     the URL (that is what breaks TLS through a CONNECT tunnel), and must SAY so."""
-    monkeypatch.setattr(executors, "getproxies",
+    monkeypatch.setattr(net_pin, "getproxies",
                         lambda: {"https": "http://127.0.0.1:7899"})
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PUBLIC))
 
@@ -252,7 +253,7 @@ async def test_https_through_a_proxy_degrades_LOUDLY_not_silently(monkeypatch, c
 
 
 async def test_a_proxy_does_not_disable_the_address_check(monkeypatch, capture):
-    monkeypatch.setattr(executors, "getproxies",
+    monkeypatch.setattr(net_pin, "getproxies",
                         lambda: {"https": "http://127.0.0.1:7899"})
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo("127.0.0.1"))
     res = await executors.EXECUTORS["web_extract"].execute({"url": "https://evil.test/x"})
@@ -263,7 +264,7 @@ async def test_a_proxy_does_not_disable_the_address_check(monkeypatch, capture):
 async def test_plain_http_through_a_proxy_still_pins(monkeypatch, capture):
     """Only https+proxy degrades. HTTP has no SNI, and a proxy honours the address in an
     absolute-form request line, so the pin survives."""
-    monkeypatch.setattr(executors, "getproxies",
+    monkeypatch.setattr(net_pin, "getproxies",
                         lambda: {"http": "http://127.0.0.1:7899"})
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PUBLIC))
     res = await executors.EXECUTORS["web_extract"].execute({"url": "http://ok.test/x"})
