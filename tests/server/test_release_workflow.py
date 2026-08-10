@@ -16,6 +16,7 @@ here rather than passing a string match.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -136,3 +137,32 @@ def test_releases_are_drafts_not_published_automatically():
     — the same fail-closed-on-the-executing-side rule as the rest of the repo.
     """
     assert re.search(r"^\s*draft:\s*true\s*$", _RELEASE.read_text(), re.M)
+
+
+# The updater public key that every shipped binary is built with. Changing it
+# is not a config edit — it is a decision to strand every existing install,
+# because the updater verifies each artefact against the key COMPILED INTO the
+# running app and nothing teaches an old binary a new key (we register the
+# plugin without the runtime-pubkey override that exists for that purpose).
+_PINNED_PUBKEY_SHA256 = "6ef633c5da1cce154e5f49c155e4b1cdf7549cc0af8b9c2a6d4d52efb470df62"
+
+
+def test_the_updater_pubkey_has_not_changed():
+    """A well-formed WRONG key is the failure this pins.
+
+    build_dmg.sh already refuses a pubkey that is not the base64 content of a
+    .pub file — but that checks SHAPE. Any other valid key passes it, builds,
+    signs, notarizes, and ships; the damage only becomes visible when installs
+    that will never update again fail to update, silently, by design.
+
+    Rotating on purpose means editing this hash too, and docs/RELEASE_KEYS.md
+    says what that costs. The point is that it cannot happen by accident.
+    """
+    pubkey = json.loads(_CONF.read_text())["plugins"]["updater"]["pubkey"].strip()
+    actual = hashlib.sha256(pubkey.encode()).hexdigest()
+    assert actual == _PINNED_PUBKEY_SHA256, (
+        "the updater public key changed. If this was deliberate, every copy "
+        "installed before the next release is stranded on its current version "
+        "and must be reinstalled by hand — see docs/RELEASE_KEYS.md — and this "
+        f"pin becomes {actual}. If it was not deliberate, do not ship."
+    )
