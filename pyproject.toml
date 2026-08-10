@@ -71,7 +71,13 @@ dependencies = [
     # library that replaced AGPL pymupdf.
     "pypdfium2>=4.30",
     "trafilatura>=1.12",
-    "pypdf>=4.0",
+    # FLOOR IS A SECURITY FLOOR, not a preference. 6.15.0 (2026-08-06) limits
+    # ToUnicode token length (#3944) and CID font width ranges (#3946); both are
+    # reached by ingest.py's PdfReader over caller-supplied bytes, so a crafted
+    # attachment could exhaust memory/CPU on anything older. Licence re-verified
+    # at source for this bump: the 6.15.0 LICENSE is byte-identical to 6.14.2's.
+    # Guarded by tests/server/test_pypdf_is_at_the_patched_version.py.
+    "pypdf>=6.15.0",
     "python-docx>=1.1",
     "python-pptx>=0.6.23",
     "python-multipart>=0.0.18",
