@@ -22,6 +22,7 @@ function looksMasked(value: string): boolean {
  *
  * Field mapping:
  *   search_provider → searchProvider
+ *   search_base_url → searchBaseUrl (plain; unlike the key it is never masked)
  *   search_api_key  → apiKeySearch (may be "" or masked)
  *   language       → language
  *
@@ -40,6 +41,7 @@ function looksMasked(value: string): boolean {
 export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode"> {
   return {
     searchProvider: backend.search_provider ?? "",
+  searchBaseUrl: backend.search_base_url ?? "",
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
@@ -70,6 +72,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
 export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> {
   const body: Partial<BackendAppSettings> = {
     search_provider: ui.searchProvider,
+    search_base_url: ui.searchBaseUrl ?? "",
     language: ui.language,
     llm_strategy: ui.llmStrategy,
     distill_on_session_end: ui.distillOnSessionEnd,

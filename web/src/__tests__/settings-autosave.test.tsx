@@ -58,6 +58,7 @@ import type { ProviderOption } from "../api/client.types";
 
 const defaultSettings: AppSettings = {
   searchProvider: "tavily",
+  searchBaseUrl: '',
   apiKeySearch: "",
   githubToken: "",
   language: "en",

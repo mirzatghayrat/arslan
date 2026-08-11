@@ -252,6 +252,7 @@ export interface AppSettings {
   llm_api_key: string; // masked on read
   language: string;
   search_provider: string;
+  search_base_url: string;
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   llm_strategy?: string;

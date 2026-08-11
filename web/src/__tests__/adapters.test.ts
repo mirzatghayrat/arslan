@@ -45,6 +45,7 @@ describe("toUiSettings", () => {
     llm_api_key: "sk-ant-••••••••",
     language: "en",
     search_provider: "tavily",
+    search_base_url: '',
     search_api_key: "tvly-••••••••",
     github_token: "",
   };
@@ -98,6 +99,7 @@ describe("toUiSettings", () => {
 describe("toBackendSettings", () => {
   const baseUi: AppSettings = {
     searchProvider: "tavily",
+    searchBaseUrl: '',
     apiKeySearch: "",
     githubToken: "",
     language: "en",
@@ -178,6 +180,7 @@ describe("toBackendSettings", () => {
       llm_provider: "anthropic",
       language: "en",
       search_provider: "tavily",
+      search_base_url: '',
       search_api_key: "tvly-••••••••",
       github_token: "",
       llm_strategy: "balanced",

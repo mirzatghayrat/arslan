@@ -735,6 +735,25 @@ export const testProviderConfig = (id: number) =>
     method: "POST",
   });
 
+// ── Self-hosted SearXNG connection test ───────────────────────────────────────
+
+/** One of four verdicts, never a bare boolean.
+ *
+ * A boolean would collapse "wrong address", "not running", and "json not enabled"
+ * back into one message, and those three have three different fixes. */
+export interface SearchProbeResult {
+  verdict: "unreachable" | "not_searxng" | "json_disabled" | "ok";
+  detail?: string;
+  result_count?: number | null;
+}
+
+/** Test a self-hosted SearXNG address without saving it. */
+export const testSearchInstance = (body: { base_url: string }) =>
+  request<SearchProbeResult>("/settings/test-search-instance", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 // ── Provider connectivity probe (Provider-P4) ─────────────────────────────────
 
 /** Tri-state connectivity probe result. `reachable_no_list` means HTTP answered

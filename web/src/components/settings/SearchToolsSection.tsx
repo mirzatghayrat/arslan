@@ -15,6 +15,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Eye, EyeOff } from 'lucide-react';
+import { testSearchInstance, type SearchProbeResult } from '../../api/client';
 import Select from '../Select';
 import CryptoHealthNotice from './CryptoHealthNotice';
 import type { CryptoHealth } from '../../lib/cryptoHealth';
@@ -41,6 +42,10 @@ export interface SearchToolsSectionProps {
   onGithubTokenChange: (value: string) => void;
   /** Blur-save for the GitHub token (key-type field — blur only). */
   onGithubTokenBlur?: (value: string) => void;
+  /** Address of a self-hosted SearXNG instance. Plain text, not a secret. */
+  searchBaseUrl?: string;
+  onSearchBaseUrlChange?: (value: string) => void;
+  onSearchBaseUrlBlur?: (value: string) => void;
 }
 
 export default function SearchToolsSection({
@@ -53,11 +58,50 @@ export default function SearchToolsSection({
   githubToken,
   onGithubTokenChange,
   onGithubTokenBlur,
+  searchBaseUrl = '',
+  onSearchBaseUrlChange,
+  onSearchBaseUrlBlur,
   cryptoHealth = null,
 }: SearchToolsSectionProps) {
   const { t } = useTranslation();
   const [showSearchKey, setShowSearchKey] = useState(false);
   const [showGithubToken, setShowGithubToken] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probe, setProbe] = useState<SearchProbeResult | null>(null);
+
+  // The address field belongs to exactly one provider. Showing it for the others
+  // would put a live-looking control on screen that nothing reads.
+  const needsBaseUrl = searchProvider === 'searxng';
+
+  const runProbe = async () => {
+    if (!searchBaseUrl.trim()) {
+      setProbe({ verdict: 'unreachable' });
+      return;
+    }
+    setProbing(true);
+    try {
+      setProbe(await testSearchInstance({ base_url: searchBaseUrl.trim() }));
+    } catch {
+      // A rejected request must still say something. Leaving the box empty is the
+      // silent-failure shape this whole feature exists to remove.
+      setProbe({ verdict: 'unreachable' });
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  const verdictText = (r: SearchProbeResult): string => {
+    switch (r.verdict) {
+      case 'ok':
+        return `${t('settings.searxngVerdictOk')} (${r.result_count ?? 0})`;
+      case 'json_disabled':
+        return t('settings.searxngVerdictJsonDisabled');
+      case 'not_searxng':
+        return t('settings.searxngVerdictNotSearxng');
+      default:
+        return t('settings.searxngVerdictUnreachable');
+    }
+  };
 
   return (
     <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
@@ -125,6 +169,48 @@ export default function SearchToolsSection({
           </p>
         </div>
       </div>
+
+      {needsBaseUrl && (
+        <div className="space-y-2">
+          <label
+            htmlFor="settings-search-base-url"
+            className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+          >
+            {t('settings.labelSearchBaseUrl')}
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="settings-search-base-url"
+              data-testid="searxng-base-url"
+              type="text"
+              value={searchBaseUrl}
+              onChange={(e) => onSearchBaseUrlChange?.(e.target.value)}
+              onBlur={(e) => onSearchBaseUrlBlur?.(e.target.value)}
+              className="flex-1 bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono"
+              placeholder="http://192.168.1.10:8080"
+            />
+            <button
+              type="button"
+              data-testid="searxng-test-button"
+              onClick={runProbe}
+              disabled={probing}
+              className="shrink-0 px-4 py-3 rounded-xl border border-border-strong text-xs font-mono text-foreground hover:border-primary disabled:opacity-50 transition-all"
+            >
+              {t('settings.searxngTestButton')}
+            </button>
+          </div>
+          {probe && (
+            <p
+              data-testid="searxng-test-result"
+              role="status"
+              data-verdict={probe.verdict}
+              className="text-[10px] text-subtle-foreground font-sans leading-relaxed"
+            >
+              {verdictText(probe)}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* GitHub Token input — secret, raises Tool-Hub discovery rate limit */}
       <div className="space-y-2">
