@@ -41,9 +41,16 @@ import {
 } from "../lib/toolTransport";
 
 describe("toolTransportState", () => {
-  it("reports the two measured-broken providers as unsupported", () => {
-    expect(toolTransportState("anthropic")).toBe("unsupported");
+  it("reports the measured-broken provider as unsupported", () => {
+    // Anthropic was here until G1 put tool schemas on its wire. Gemini still
+    // builds no `tools`, so it is what this notice is now for.
     expect(toolTransportState("gemini")).toBe("unsupported");
+  });
+
+  it("reports Anthropic as supported now that G1 landed", () => {
+    // The user-visible consequence of G1, asserted rather than assumed: the
+    // provider that was the headline case for this warning must no longer be one.
+    expect(toolTransportState("anthropic")).toBe("supported");
   });
 
   it("reports the OpenAI-compatible family as supported", () => {
@@ -62,20 +69,22 @@ describe("toolTransportState", () => {
   });
 
   it("is not fooled by casing or stray whitespace from a stored config", () => {
-    expect(toolTransportState("  Anthropic ")).toBe("unsupported");
+    expect(toolTransportState("  Gemini ")).toBe("unsupported");
     expect(toolTransportState("GEMINI")).toBe("unsupported");
+    expect(toolTransportState(" Anthropic ")).toBe("supported");
   });
 
   it("asks for a notice on everything except a measured-good provider", () => {
-    expect(needsToolTransportNotice("anthropic")).toBe(true);
+    expect(needsToolTransportNotice("gemini")).toBe(true);
     expect(needsToolTransportNotice("whatever")).toBe(true);
     expect(needsToolTransportNotice("openai")).toBe(false);
+    expect(needsToolTransportNotice("anthropic")).toBe(false);
   });
 });
 
 describe("<ToolTransportWarning>", () => {
-  it("warns, in words, when Anthropic is selected", () => {
-    render(<ToolTransportWarning provider="anthropic" />);
+  it("warns, in words, when Gemini is selected", () => {
+    render(<ToolTransportWarning provider="gemini" />);
     const el = screen.getByTestId("tool-transport-warning");
 
     expect(el.dataset.state).toBe("unsupported");
@@ -85,9 +94,12 @@ describe("<ToolTransportWarning>", () => {
     expect(el.textContent).toMatch(/MCP/);
   });
 
-  it("warns when Gemini is selected", () => {
-    render(<ToolTransportWarning provider="gemini" />);
-    expect(screen.getByTestId("tool-transport-warning").dataset.state).toBe("unsupported");
+  it("renders NOTHING for Anthropic now that G1 landed", () => {
+    // This is what G1 looks like from the user's chair. The warning was correct
+    // when it shipped and would be a lie now; a notice that outlives its defect
+    // is the same failure as one that never appeared, pointed the other way.
+    render(<ToolTransportWarning provider="anthropic" />);
+    expect(screen.queryByTestId("tool-transport-warning")).toBeNull();
   });
 
   it("renders NOTHING for a provider whose tools work", () => {
@@ -111,7 +123,7 @@ describe("<ToolTransportWarning>", () => {
     // Skills never enter _native_tool_schemas, so the broken transport does not
     // carry them. Saying "skills will not run" would be untrue — and untrue in
     // the cautious direction is still untrue.
-    render(<ToolTransportWarning provider="anthropic" />);
+    render(<ToolTransportWarning provider="gemini" />);
     const text = screen.getByTestId("tool-transport-warning").textContent ?? "";
 
     expect(text).toMatch(/skill/i);
@@ -122,7 +134,7 @@ describe("<ToolTransportWarning>", () => {
   it("announces as status rather than interrupting as an alert", () => {
     // The notice describes a standing property of the selection, not an event;
     // role="alert" would cut a screen reader off on every change of the select.
-    render(<ToolTransportWarning provider="anthropic" />);
+    render(<ToolTransportWarning provider="gemini" />);
     expect(screen.getByTestId("tool-transport-warning").getAttribute("role")).toBe("status");
   });
 

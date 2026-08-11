@@ -44,10 +44,24 @@ def test_a_preset_verdict_matches_the_provider_it_expands_to():
     assert not mismatched, f"key verdict != expanded-provider verdict: {mismatched}"
 
 
-def test_the_two_broken_providers_are_still_reported_broken():
-    """Guards the other direction: this must not be satisfied by blanket approval."""
-    assert cf.tool_calling_state("anthropic") == cf.UNSUPPORTED
+def test_a_provider_that_still_drops_tools_is_still_reported_broken():
+    """Guards the other direction: this must not be satisfied by blanket approval.
+
+    This test used to name anthropic here too. G1 gave the Anthropic adapter a real
+    `tools` payload, so that half moved to SUPPORTED — and the assertion was UPDATED
+    rather than deleted, because what it exists to catch is a table that says yes to
+    everything. Gemini still builds no `tools`, so it holds the other direction on
+    its own; the day Gemini is fixed, this test needs a provider that genuinely drops
+    them or it stops guarding anything.
+
+    The flip is not taken on faith: tests/llm/test_tool_transport.py captures the real
+    Anthropic request body, so the table's claim is re-measured rather than asserted.
+    """
     assert cf.tool_calling_state("gemini") == cf.UNSUPPORTED
+    assert cf.tool_calling_state("anthropic") == cf.SUPPORTED, (
+        "G1 put tool schemas on the Anthropic wire — if this is UNSUPPORTED again, "
+        "either the transport regressed or the table drifted from it"
+    )
 
 
 def test_an_unknown_provider_is_still_unverified():

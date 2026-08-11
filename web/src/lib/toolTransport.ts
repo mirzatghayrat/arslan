@@ -5,10 +5,16 @@
  * — Arslan's answer path (server/orchestrator/arslan.py) and the spawn path
  * (server/orchestrator/spawn_loop.py) — go through `tool_loop.run_native`,
  * which passes tool schemas to the adapter. `openai_provider` serializes them
- * (`if tools: payload["tools"] = tools`). The Anthropic and Gemini adapters
- * accept the argument and never put it on the wire. So on those two, every
- * equipped tool and every MCP tool is inert, the model is never told the tool
- * exists, and nothing anywhere says so.
+ * (`if tools: payload["tools"] = tools`), and since G1 the Anthropic adapter
+ * does too (`_translate_tools` -> tools[].input_schema, `tool_use` parsed back).
+ * The GEMINI adapter still accepts the argument and never puts it on the wire.
+ * So on that one, every equipped tool and every MCP tool is inert, the model is
+ * never told the tool exists, and nothing anywhere says so.
+ *
+ * This comment said "the Anthropic and Gemini adapters" until G1 landed. It is
+ * updated here in the same change as the verdict, because a stale explanation
+ * outlives the table it explains: someone debugging a live Anthropic tool call
+ * would read this and go looking for a bug that was fixed.
  *
  * WHY THIS TABLE IS DUPLICATED IN THE FRONTEND rather than fetched:
  * server/services/capability_fitness.py already publishes the same verdict on
@@ -43,7 +49,11 @@ export const TOOL_TRANSPORT: Readonly<Record<string, ToolTransport>> = {
   custom: "supported", // OpenAI-compatible endpoints use the same payload
   ollama: "supported", // ditto
   deepseek: "supported", // ditto
-  anthropic: "unsupported", // arslan/llm/providers/anthropic_provider.py builds no `tools`
+  // G1 (2026-08-01): the Anthropic adapter now builds a real `tools` payload —
+  // `_translate_tools` emits tools[].input_schema and `tool_use` blocks are parsed
+  // back. Flipped here in the same change as the Python table, because these two
+  // disagreeing is a warning that contradicts the app it is warning about.
+  anthropic: "supported",
   gemini: "unsupported", // arslan/llm/providers/gemini_provider.py builds no `tools`
   // Tier-0 presets: the dropdown stores the PRESET KEY, and expand_preset maps
   // every one of these to provider "openai", so tools are sent. Omitting them
