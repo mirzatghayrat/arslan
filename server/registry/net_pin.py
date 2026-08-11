@@ -75,7 +75,7 @@ class _BlockedHost(Exception):
     """The host may not be fetched — unresolvable, or resolves to a non-public address."""
 
 
-def _resolve_pinned(url: str) -> tuple[str, str, int]:
+def _resolve_pinned(url: str, *, allow_host: str | None = None) -> tuple[str, str, int]:
     """Resolve ONCE, validate EVERY answer, and return the address we will connect to.
 
     FU-1 (DNS rebinding). The old code checked `getaddrinfo(host)` and then handed the
@@ -102,6 +102,26 @@ def _resolve_pinned(url: str) -> tuple[str, str, int]:
     parts = urlparse(url)
     host = parts.hostname or ""
     port = parts.port or (443 if parts.scheme == "https" else 80)
+
+    # `allow_host` WIDENS and NARROWS in the same breath, and the two halves are why
+    # it is safe. A self-hosted search instance most plausibly lives on 192.168.x or
+    # 100.64.x, so refusing every non-public address would refuse the feature — but
+    # the address is only trusted because a HUMAN typed it into Settings. The model
+    # supplies the query and never the destination. So the moment we relax the
+    # address class, we pin the destination to that single host, and every hop
+    # (redirects included, since this runs per hop) must still be it.
+    #
+    # 🔴 EQUALITY, not a prefix or a substring: `startswith` would let 192.168.1.10
+    # admit 192.168.1.100. And it is a PARAMETER — never module state, no flag and no
+    # contextvar — because web_extract and the DuckDuckGo fallback are paths where the
+    # model does influence the destination, and they must not be able to inherit this.
+    exempt = False
+    if allow_host is not None:
+        if _ascii_host(host) != _ascii_host(allow_host):
+            raise _BlockedHost(
+                f"{host} is not the configured host ({allow_host})")
+        exempt = True
+
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
@@ -112,7 +132,7 @@ def _resolve_pinned(url: str) -> tuple[str, str, int]:
     pinned = None
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
-        if _is_non_public(ip):
+        if not exempt and _is_non_public(ip):
             raise _BlockedHost(f"{host} resolves to a private or internal address")
         if pinned is None:
             pinned = str(ip)
@@ -167,7 +187,7 @@ def _pinning_disabled_by_proxy(url: str) -> bool:
     return "https" in proxies or "all" in proxies
 
 
-def _pinned_request_args(url: str) -> tuple[str, dict, dict]:
+def _pinned_request_args(url: str, *, allow_host: str | None = None) -> tuple[str, dict, dict]:
     """Rewrite `url` to point at its pinned address, preserving everything else about
     the request.
 
@@ -181,7 +201,7 @@ def _pinned_request_args(url: str) -> tuple[str, dict, dict]:
     dropping it would fetch a credentialed URL anonymously and return whatever the server
     shows an anonymous visitor — as `ok: True`, with no sign anything was lost.
     """
-    ip, host, port = _resolve_pinned(url)
+    ip, host, port = _resolve_pinned(url, allow_host=allow_host)
     parts = urlparse(url)
     ascii_host = _ascii_host(host)
     literal = f"[{ip}]" if ":" in ip else ip
@@ -263,6 +283,7 @@ async def pinned_get(
     *,
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
+    allow_host: str | None = None,
     max_redirects: int = _MAX_REDIRECTS,
 ) -> httpx.Response:
     """A GET whose every hop is resolved once, validated, and PINNED.
@@ -287,14 +308,15 @@ async def pinned_get(
                 # Still validate — it blocks the obvious cases — but say plainly that the
                 # guarantee is the proxy's here, so a delegated install is discoverable
                 # instead of quietly believing it is protected.
-                _resolve_pinned(current)
+                _resolve_pinned(current, allow_host=allow_host)
                 logger.warning(
                     "pinned_get: https via a configured proxy — address pinning is "
                     "disabled for %s and SSRF protection is delegated to the proxy",
                     urlparse(current).hostname)
                 resp = await client.get(current, headers=headers, params=params)
             else:
-                pinned_url, pin_headers, extensions = _pinned_request_args(current)
+                pinned_url, pin_headers, extensions = _pinned_request_args(
+                    current, allow_host=allow_host)
                 # Pinning's own headers go first: a caller must not be able to
                 # overwrite `Host`, which is what preserves virtual hosting and keeps
                 # the request pointed where it was validated.
