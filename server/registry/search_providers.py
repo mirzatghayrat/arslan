@@ -22,6 +22,7 @@ from __future__ import annotations
 import html
 import re
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 
 
 from server.registry import net_pin
@@ -34,6 +35,11 @@ class SearchProvider(ABC):
     #: Does this provider need an API key? Defaults to True so a provider that forgets
     #: to say fails toward "ask the user" rather than toward a call that cannot work.
     requires_key: bool = True
+    #: True when this provider's destination comes from Settings rather than a
+    #: constant here. Kept separate from requires_key because "you have not entered
+    #: an address" and "you have not entered a key" need different sentences — one
+    #: of them would send the user shopping for a key they never needed.
+    requires_base_url: bool = False
     #: True when results come from scraping rather than a supported API. Surfaced to
     #: the user AND to the model, both of which can act on "this may be throttled".
     best_effort: bool = False
@@ -51,7 +57,10 @@ class TavilyProvider(SearchProvider):
     requires_key = True
     _URL = "https://api.tavily.com/search"
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, **_: object) -> None:
+        # **_ absorbs base_url: the factory hands the same arguments to every provider
+        # so that "which provider takes an address" is written once, on the provider,
+        # rather than a second time as a branch in get_provider.
         self._api_key = api_key
 
     async def search(self, query: str, num_results: int = 5) -> list[dict]:
@@ -136,21 +145,83 @@ class DuckDuckGoHtmlProvider(SearchProvider):
         return out
 
 
+class SearXNGProvider(SearchProvider):
+    """A self-hosted SearXNG instance, at whatever address the user typed.
+
+    JSON ONLY. A SearXNG whose ``search.formats`` omits ``json`` answers with HTML,
+    and parsing that would yield a perfectly plausible zero results — which reads as
+    "nothing matched" when the truth is "this instance never answered the question".
+    The quieter untruth is the worse one here, so a non-JSON answer raises and the
+    message names the line of settings.yml to change.
+
+    NO FALLBACK, deliberately. People self-host SearXNG so their queries do not leave
+    their network. Quietly switching to DuckDuckGo would send the query they hid to a
+    third party, and provenance labelling only says so afterwards — by which time it
+    has gone. Availability loses to the reason the feature exists.
+
+    NO AUTHENTICATION in this round: LAN instances typically have none. An instance
+    behind basic auth or a token cannot be used yet, and that is written in the docs
+    rather than left to be discovered as a confusing failure.
+    """
+
+    name = "searxng"
+    requires_key = False
+    requires_base_url = True
+
+    def __init__(self, base_url: str = "", api_key: str = "", **_: object) -> None:
+        self.base_url = (base_url or "").rstrip("/")
+        # The exemption names THIS host and nothing else. Parsed once here so the
+        # per-request call cannot be handed something the user did not configure.
+        self._host = urlparse(self.base_url).hostname or ""
+
+    async def search(self, query: str, num_results: int = 5) -> list[dict]:
+        resp = await net_pin.pinned_request(
+            "GET", f"{self.base_url}/search",
+            params={"q": query, "format": "json"},
+            headers={"Accept": "application/json"},
+            # 🔴 The one call in this file that passes it, and it passes the host the
+            # user typed — never a value derived from anything the model produced.
+            allow_host=self._host,
+        )
+        resp.raise_for_status()
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            raise ValueError(
+                "the instance answered, but not with JSON — add `json` to "
+                "`search.formats` in its settings.yml"
+            ) from exc
+        if not isinstance(payload, dict) or "results" not in payload:
+            raise ValueError(
+                "the instance answered with JSON that has no `results` — check that "
+                "`search.formats` in its settings.yml includes `json`"
+            )
+        return [
+            {"title": r.get("title", ""), "url": r.get("url", ""),
+             "snippet": r.get("content", "")}
+            for r in (payload.get("results") or [])[:num_results]
+        ]
+
+
 #: Registered providers. The keyless fallback is the default so a fresh install works.
 _PROVIDERS: dict[str, type[SearchProvider]] = {
     "duckduckgo": DuckDuckGoHtmlProvider,
     "tavily": TavilyProvider,
+    "searxng": SearXNGProvider,
 }
 _FALLBACK = "duckduckgo"
 _DEFAULT = _FALLBACK
 
 
-def get_provider(name: str, *, api_key: str = "") -> SearchProvider:
+def get_provider(name: str, *, api_key: str = "", base_url: str = "") -> SearchProvider:
     key = (name or _DEFAULT).strip().lower()
     cls = _PROVIDERS.get(key)
     if cls is None:
         raise ValueError(f"unknown search provider: {name}")
-    return cls(api_key=api_key)
+    # base_url is passed to every provider and ignored by the ones with a constant
+    # destination (their **_ swallows it). Making it conditional on the provider name
+    # would put a second copy of "which provider uses an address" in the factory.
+    return cls(api_key=api_key, base_url=base_url)
 
 
 def list_providers() -> list[str]:
@@ -161,4 +232,4 @@ def list_providers() -> list[str]:
 # net_pin carries every outbound request in this file. It was imported as a placeholder
 # for a while, which meant the module said it was hardened and the code was not.
 __all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider",
-           "get_provider", "list_providers", "net_pin"]
+           "SearXNGProvider", "get_provider", "list_providers", "net_pin"]
