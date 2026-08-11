@@ -124,10 +124,22 @@ class DuckDuckGoHtmlProvider(SearchProvider):
         resp = await net_pin.pinned_request("POST", self._URL, data={"q": query},
                                             headers={"User-Agent": self._UA})
         resp.raise_for_status()
-        body = resp.text
+        return self.parse(resp.text, num_results)
 
-        titles = self._RESULT.findall(body)
-        snippets = self._SNIPPET.findall(body)
+    @classmethod
+    def parse(cls, body: str, num_results: int = 5) -> list[dict]:
+        """HTML in, results out — a PURE function, deliberately.
+
+        Extracted from `search` so its behaviour when the page changes shape can be
+        tested directly. While it lived inside the request, the only way to observe
+        it was through a mocked response, which tests the mock as much as the parser;
+        and the thing worth pinning here is not "today's HTML parses" — that stays
+        green on the day the parser dies, because the fixture was written the same
+        day as the parser. What matters is that an unrecognised shape yields NOTHING
+        rather than something plausible and wrong.
+        """
+        titles = cls._RESULT.findall(body)
+        snippets = cls._SNIPPET.findall(body)
         out: list[dict] = []
         for i, (href, title_html) in enumerate(titles[:num_results]):
             url = html.unescape(href)
@@ -138,9 +150,9 @@ class DuckDuckGoHtmlProvider(SearchProvider):
             if not url.startswith(("http://", "https://")):
                 continue
             out.append({
-                "title": self._text(title_html),
+                "title": cls._text(title_html),
                 "url": url,
-                "snippet": self._text(snippets[i]) if i < len(snippets) else "",
+                "snippet": cls._text(snippets[i]) if i < len(snippets) else "",
             })
         return out
 
