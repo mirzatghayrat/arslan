@@ -122,8 +122,11 @@ describe("locale parity", () => {
     // 0-10 model ratings, and "Tool aptitude" reads as the same thing as the
     // transport notice next to it. The caption says which is which.
     // 1265 → 1268: tool-transport notice in Settings — title +
-    // unsupported + unverified, warning that Anthropic/Gemini drop
-    // tool definitions so equipped tools and MCP never fire.
+    // unsupported + unverified, warning that a provider drops tool
+    // definitions so equipped tools and MCP never fire. (Named
+    // Anthropic/Gemini when written; G1 fixed Anthropic, and the strings
+    // themselves never named a provider — which is why the copy did not
+    // have to change with it.)
     //              two-state toggle had no way to say it.
     // 1269 → 1277: the crypto diagnosis — title, five verdict paragraphs, and two
     //              count labels. It replaces one hard-coded sentence that named

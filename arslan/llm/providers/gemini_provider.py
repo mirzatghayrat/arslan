@@ -5,6 +5,22 @@ the assistant), the system prompt is ``systemInstruction`` (top-level), auth is
 the ``x-goog-api-key`` header, ``temperature`` lives under ``generationConfig``,
 and streaming uses ``:streamGenerateContent?alt=sse``. Tools are driven by
 Arslan's own prompt/JSON protocol, so native tool mapping is omitted.
+
+🔴 TOOLS ARE ACCEPTED AND DROPPED — deliberately, and only until G1 round 2.
+
+`chat`/`chat_stream` take a `tools` argument and this provider does not
+serialise it. Gemini wants `functionDeclarations` with an OpenAPI-SUBSET schema
+(not full JSON Schema), which is real translation work, and ruling ①A put
+Anthropic first.
+
+This note exists because the absence of it was the worse half of the bug. The
+word `tools` appeared in this file exactly twice, both times in a signature,
+with nothing saying it went nowhere — so a reader wiring up an MCP server here
+had every reason to think it worked, and the failure is silent: the model never
+learns a tool exists, `tool_calls` comes back empty, and run_native treats the
+first reply as the final answer. Anthropic at least documented its own version
+of this. Until the translation lands, the capability matrix must show this cell
+RED, not merely untested.
 """
 from __future__ import annotations
 
@@ -99,6 +115,9 @@ class GeminiProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> LLMResponse:
+        # G1 / ①A: `tools` is accepted and NOT serialised — Gemini needs
+        # functionDeclarations with an OpenAPI-subset schema, which lands in
+        # round 2. See the module docstring; the capability matrix shows RED.
         url = f"{self.base_url}/models/{self.model}:generateContent"
         # Use a generous read timeout — Gemini thinking models (e.g. 2.5 Pro) can
         # hold the connection for 120 s+ before returning the first token.
@@ -125,6 +144,15 @@ class GeminiProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
+        if tools:
+            # Ruling ④B. `run_native` only ever calls `chat`, so nothing passes
+            # tools here — and a signature that accepts them and drops them on the
+            # floor is precisely the bug G1 exists to fix. Refusing keeps the
+            # parameter honest until someone actually implements streaming
+            # tool-use, rather than leaving a feature that looks usable.
+            raise NotImplementedError(
+                f"{type(self).__name__}.chat_stream does not support tools; "
+                "use chat() for tool-calling turns")
         url = f"{self.base_url}/models/{self.model}:streamGenerateContent?alt=sse"
         # For streaming, the connect timeout is short but the read timeout must be
         # long enough for thinking models.  Each individual chunk arrives within a

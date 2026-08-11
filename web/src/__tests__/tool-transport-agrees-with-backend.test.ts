@@ -60,10 +60,16 @@ describe("tool-transport table", () => {
     expect(TOOL_TRANSPORT).toEqual(backendTable());
   });
 
-  it("still names the two providers this notice exists for", () => {
+  it("still names a provider this notice exists for", () => {
     // A guard on equality alone would stay green if BOTH sides were emptied.
+    //
+    // This asserted anthropic too until G1 put tool schemas on the Anthropic wire.
+    // The fact was updated and the guard kept: what it defends against is the two
+    // tables being blanked or blanket-approved in lockstep, which equality alone
+    // cannot see. Gemini carries that on its own now — when Gemini is fixed, this
+    // needs a provider that genuinely drops tools, or it stops guarding anything.
     const backend = backendTable();
-    expect(backend.anthropic).toBe("unsupported");
     expect(backend.gemini).toBe("unsupported");
+    expect(backend.anthropic).toBe("supported");
   });
 });

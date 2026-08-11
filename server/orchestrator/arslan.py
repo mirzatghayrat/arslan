@@ -1776,6 +1776,13 @@ async def _arslan_tools() -> list[dict]:
         rows = (await db.execute(
             select(Tool).where(Tool.toolset_key.like("mcp_%"),
                                Tool.status == "wired", Tool.host_enabled.is_(True))
+            # G1 §3. ORDER BY is load-bearing, not tidiness: these rows become
+            # the `tools` array, Anthropic renders tools BEFORE the system prefix
+            # that carries the cache breakpoint, so any reordering invalidates
+            # the entire cached prefix. An unordered SELECT is not random, it is
+            # unspecified — which is worse, because it will look stable in
+            # testing and drift on a real database.
+            .order_by(Tool.key)
         )).scalars().all()
     # Carry input_schema through so `_native_tool_schemas` (in run_native) hands the model the
     # real JSON Schema captured at MCP discovery — instead of a permissive {} it must guess against.
