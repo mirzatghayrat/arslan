@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = (
-    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "search_provider",
+    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "search_provider", "search_base_url",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both

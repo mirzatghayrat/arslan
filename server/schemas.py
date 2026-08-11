@@ -15,6 +15,10 @@ class SettingsIn(BaseModel):
     language: str | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
+    #: Base URL of a self-hosted SearXNG instance. Plain, not secret: it is a
+    #: network address, and encrypting it would make the connection test and
+    #: every support question harder for no confidentiality anyone wanted.
+    search_base_url: str | None = None
     # 🔴 THIRD instance of the defect the comment below describes, and the only
     # one that was dead on BOTH sides: github_token is in _SECRET_KEYS (so
     # update_settings encrypts it and get_settings masks it) but was on neither
@@ -60,6 +64,7 @@ class SettingsOut(BaseModel):
     llm_api_key: str = ""  # masked
     language: str = "en"
     search_provider: str = "tavily"
+    search_base_url: str = ""
     search_api_key: str = ""  # masked
     github_token: str = ""  # masked — see SettingsIn
     # Honest state per secret: "unset" | "set" | "undecryptable". Read-only;
