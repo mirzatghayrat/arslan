@@ -17,31 +17,30 @@ def test_provider_registry_default_and_swap():
 
 @pytest.mark.asyncio
 async def test_tavily_parses_results(monkeypatch):
-    from server.registry import search_providers
+    """Parsing is this test's subject, so it stubs the TRANSPORT SEAM, not httpx.
 
-    class _Resp:
-        status_code = 200
+    It used to replace `search_providers.httpx.AsyncClient` with a fake exposing only
+    `.post` — reaching two layers down to a client the provider no longer builds.
+    Every outbound request now goes through `net_pin.pinned_request`, which is where a
+    parsing test should stop.
+    """
+    import httpx
 
-        def json(self):
-            return {"results": [
+    from server.registry import net_pin, search_providers
+
+    async def fake(method, url, **kw):
+        assert method == "POST"
+        assert kw["json"]["query"] == "q"
+        return httpx.Response(
+            200,
+            json={"results": [
                 {"title": "T1", "url": "https://a", "content": "snippet one"},
                 {"title": "T2", "url": "https://b", "content": "snippet two"},
-            ]}
+            ]},
+            request=httpx.Request(method, url),
+        )
 
-        def raise_for_status(self):
-            return None
-
-    class _Client:
-        def __init__(self, *a, **kw): ...
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *a):
-            return False
-        async def post(self, url, json=None, headers=None):
-            assert json["query"] == "q"
-            return _Resp()
-
-    monkeypatch.setattr(search_providers.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(net_pin, "pinned_request", fake)
     p = search_providers.get_provider("tavily", api_key="k")
     out = await p.search("q", num_results=2)
     assert [r["title"] for r in out] == ["T1", "T2"]

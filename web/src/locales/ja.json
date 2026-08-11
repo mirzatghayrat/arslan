@@ -613,7 +613,13 @@
     "labelSearchKey": "検索サービスのキー（任意）",
     "placeholderSearchKey": "キーを貼り付けて内蔵検索をアップグレード",
     "labelGithubToken": "GitHub トークン（任意 — 探索のレート上限を引き上げます）",
-    "placeholderGithubToken": "GitHub トークンを貼り付け"
+    "placeholderGithubToken": "GitHub トークンを貼り付け",
+    "labelSearchBaseUrl": "SearXNG インスタンスのアドレス",
+    "searxngTestButton": "テスト",
+    "searxngVerdictUnreachable": "そのアドレスからは応答がありませんでした。URL と、インスタンスが起動していてこの端末から到達できるかを確認してください。",
+    "searxngVerdictNotSearxng": "応答はありましたが SearXNG ではありません。ポートを確認してください。別のサービスが動いている可能性があります。",
+    "searxngVerdictJsonDisabled": "SearXNG ですが JSON を返しません。settings.yml の `search.formats` に `json` を追加して再起動してください。",
+    "searxngVerdictOk": "利用できます。返された結果数"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

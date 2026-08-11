@@ -32,7 +32,12 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1240 keys (baseline guard)", () => {
+  it("en locale has 1293 keys (baseline guard)", () => {
+    // 1240 → 1246: the self-hosted SearXNG address field — its label, the test
+    // button, and one sentence per verdict. Four sentences rather than one
+    // because the four failures have four different fixes, and the most common
+    // of them (json missing from search.formats) is the one most easily misread
+    // as a mistyped address.
     // 780 → 781: S3-M1 added chat.stopRun (the run-cancelled marker reuses the
     // existing working.stalled key instead of adding a duplicate).
     // 781 → 793: S3-M3 added the usage.* section (Diagnostics usage card —
@@ -148,7 +153,7 @@ describe("locale parity", () => {
     //              and recall, so the entry panel has to say so; a fact that silently
     //              stops being used while the graph still shows it in full reads as
     //              the model forgetting rather than as a mark someone set.
-    expect(enKeys).toHaveLength(1287);
+    expect(enKeys).toHaveLength(1293);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

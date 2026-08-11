@@ -187,6 +187,8 @@ export interface UiRun {
 
 export interface AppSettings {
   searchProvider: string;
+  /** Self-hosted SearXNG address. Plain text — an address, not a credential. */
+  searchBaseUrl: string;
   apiKeySearch: string;
   githubToken: string;
   language: string;

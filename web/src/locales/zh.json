@@ -613,7 +613,13 @@
     "labelSearchKey": "搜索服务密钥(可选)",
     "placeholderSearchKey": "粘贴密钥以升级内置搜索",
     "labelGithubToken": "GitHub 令牌(可选 —— 提高发现接口的速率上限)",
-    "placeholderGithubToken": "粘贴 GitHub 令牌"
+    "placeholderGithubToken": "粘贴 GitHub 令牌",
+    "labelSearchBaseUrl": "SearXNG 实例地址",
+    "searxngTestButton": "测试",
+    "searxngVerdictUnreachable": "该地址没有任何响应。请检查网址，以及实例是否在运行、本机能否访问到它。",
+    "searxngVerdictNotSearxng": "有东西响应了，但它不是 SearXNG。请检查端口，那上面可能是别的服务。",
+    "searxngVerdictJsonDisabled": "这是一个 SearXNG，但它不返回 JSON。请在它的 settings.yml 里给 `search.formats` 加上 `json` 并重启。",
+    "searxngVerdictOk": "可用。返回结果数"
   },
   "errors": {
     "load_failed": "加载数据失败。",

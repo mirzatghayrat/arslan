@@ -75,7 +75,7 @@ class _BlockedHost(Exception):
     """The host may not be fetched — unresolvable, or resolves to a non-public address."""
 
 
-def _resolve_pinned(url: str) -> tuple[str, str, int]:
+def _resolve_pinned(url: str, *, allow_host: str | None = None) -> tuple[str, str, int]:
     """Resolve ONCE, validate EVERY answer, and return the address we will connect to.
 
     FU-1 (DNS rebinding). The old code checked `getaddrinfo(host)` and then handed the
@@ -102,6 +102,26 @@ def _resolve_pinned(url: str) -> tuple[str, str, int]:
     parts = urlparse(url)
     host = parts.hostname or ""
     port = parts.port or (443 if parts.scheme == "https" else 80)
+
+    # `allow_host` WIDENS and NARROWS in the same breath, and the two halves are why
+    # it is safe. A self-hosted search instance most plausibly lives on 192.168.x or
+    # 100.64.x, so refusing every non-public address would refuse the feature — but
+    # the address is only trusted because a HUMAN typed it into Settings. The model
+    # supplies the query and never the destination. So the moment we relax the
+    # address class, we pin the destination to that single host, and every hop
+    # (redirects included, since this runs per hop) must still be it.
+    #
+    # 🔴 EQUALITY, not a prefix or a substring: `startswith` would let 192.168.1.10
+    # admit 192.168.1.100. And it is a PARAMETER — never module state, no flag and no
+    # contextvar — because web_extract and the DuckDuckGo fallback are paths where the
+    # model does influence the destination, and they must not be able to inherit this.
+    exempt = False
+    if allow_host is not None:
+        if _ascii_host(host) != _ascii_host(allow_host):
+            raise _BlockedHost(
+                f"{host} is not the configured host ({allow_host})")
+        exempt = True
+
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
@@ -112,7 +132,7 @@ def _resolve_pinned(url: str) -> tuple[str, str, int]:
     pinned = None
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
-        if _is_non_public(ip):
+        if not exempt and _is_non_public(ip):
             raise _BlockedHost(f"{host} resolves to a private or internal address")
         if pinned is None:
             pinned = str(ip)
@@ -167,7 +187,7 @@ def _pinning_disabled_by_proxy(url: str) -> bool:
     return "https" in proxies or "all" in proxies
 
 
-def _pinned_request_args(url: str) -> tuple[str, dict, dict]:
+def _pinned_request_args(url: str, *, allow_host: str | None = None) -> tuple[str, dict, dict]:
     """Rewrite `url` to point at its pinned address, preserving everything else about
     the request.
 
@@ -181,7 +201,7 @@ def _pinned_request_args(url: str) -> tuple[str, dict, dict]:
     dropping it would fetch a credentialed URL anonymously and return whatever the server
     shows an anonymous visitor — as `ok: True`, with no sign anything was lost.
     """
-    ip, host, port = _resolve_pinned(url)
+    ip, host, port = _resolve_pinned(url, allow_host=allow_host)
     parts = urlparse(url)
     ascii_host = _ascii_host(host)
     literal = f"[{ip}]" if ":" in ip else ip
@@ -258,11 +278,44 @@ def _build_client() -> httpx.AsyncClient:
                              limits=httpx.Limits(max_keepalive_connections=0))
 
 
-async def _fetch_text(url: str) -> str:
+#: Redirect statuses that turn the follow-up request into a bodyless GET. 307 and 308
+#: are deliberately absent: they exist to say "the same request, at a new address".
+#: httpx applies these rules inside `follow_redirects`, which this module cannot use
+#: (every hop has to be re-pinned), so they are restated here rather than inherited.
+_METHOD_CHANGING_REDIRECTS = frozenset({301, 302, 303})
+
+
+async def pinned_request(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+    json: object | None = None,
+    data: dict[str, str] | None = None,
+    allow_host: str | None = None,
+    max_redirects: int = _MAX_REDIRECTS,
+) -> httpx.Response:
+    """A request whose every hop is resolved once, validated, and PINNED.
+
+    This is the path `web_extract` has always used, given a name and a method so the
+    search providers can share it instead of growing a second copy. Two copies of SSRF
+    logic do not stay identical, and the copy nobody is looking at is the one that gets
+    weaker — which is why this is an extraction rather than a new module.
+
+    🔴 The body is dropped when a redirect changes the method (see
+    _METHOD_CHANGING_REDIRECTS). Carrying a POST body onto a GET would replay a
+    submission at a destination that only asked us to look elsewhere.
+
+    Returns the final response WITHOUT `raise_for_status()`. The caller decides: a
+    connection test needs to read the status itself, and a helper that raised would
+    force it to catch its own subject.
+    """
     async with _build_client() as client:
         current = url
-        html = ""
-        for _ in range(_MAX_REDIRECTS):
+        cur_method = method.upper()
+        cur_json, cur_data = json, data
+        for _ in range(max_redirects):
             # Resolve-and-pin EVERY hop, including the first. Sending the hostname and
             # letting httpx resolve it is precisely the rebinding hole (see
             # _resolve_pinned); a redirect target is no more trustworthy than the
@@ -271,28 +324,60 @@ async def _fetch_text(url: str) -> str:
                 # Still validate — it blocks the obvious cases — but say plainly that the
                 # guarantee is the proxy's here, so a delegated install is discoverable
                 # instead of quietly believing it is protected.
-                _resolve_pinned(current)
+                _resolve_pinned(current, allow_host=allow_host)
                 logger.warning(
-                    "web_extract: https via a configured proxy — address pinning is "
+                    "pinned_request: https via a configured proxy — address pinning is "
                     "disabled for %s and SSRF protection is delegated to the proxy",
                     urlparse(current).hostname)
-                resp = await client.get(current)
+                resp = await client.request(cur_method, current, headers=headers,
+                                            params=params, json=cur_json, data=cur_data)
             else:
-                pinned_url, headers, extensions = _pinned_request_args(current)
-                resp = await client.get(pinned_url, headers=headers, extensions=extensions)
+                pinned_url, pin_headers, extensions = _pinned_request_args(
+                    current, allow_host=allow_host)
+                # Pinning's own headers go last: a caller must not be able to overwrite
+                # `Host`, which is what preserves virtual hosting and keeps the request
+                # pointed at the address that was validated.
+                merged = {**(headers or {}), **pin_headers}
+                resp = await client.request(cur_method, pinned_url, headers=merged,
+                                            params=params, json=cur_json, data=cur_data,
+                                            extensions=extensions)
             if resp.is_redirect:
                 location = resp.headers.get("location", "")
                 if not location:
                     raise httpx.HTTPError("redirect without a Location header")
+                if resp.status_code in _METHOD_CHANGING_REDIRECTS and cur_method != "GET":
+                    cur_method, cur_json, cur_data = "GET", None, None
                 # resolve against the ORIGINAL url, not the pinned one — a relative
                 # Location must not inherit the IP literal as its base.
                 current = urljoin(current, location)
                 continue
-            resp.raise_for_status()
-            html = resp.text
-            break
-        else:
-            raise httpx.HTTPError("too many redirects")
-    extracted = trafilatura.extract(html)
+            return resp
+        raise httpx.HTTPError("too many redirects")
+
+
+async def pinned_get(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+    allow_host: str | None = None,
+    max_redirects: int = _MAX_REDIRECTS,
+) -> httpx.Response:
+    """The readable spelling of `pinned_request("GET", ...)`.
+
+    A wrapper, never a second implementation — the whole point of this module is that
+    there is exactly one place where an outbound address is decided.
+
+    Returns the final response WITHOUT `raise_for_status()`, exactly as
+    `pinned_request` does.
+    """
+    return await pinned_request("GET", url, headers=headers, params=params,
+                                allow_host=allow_host, max_redirects=max_redirects)
+
+
+async def _fetch_text(url: str) -> str:
+    resp = await pinned_get(url)
+    resp.raise_for_status()
+    extracted = trafilatura.extract(resp.text)
     return extracted or ""
 

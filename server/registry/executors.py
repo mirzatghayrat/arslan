@@ -53,6 +53,10 @@ class SearchConfig(NamedTuple):
     name: str
     key: str
     key_state: str          # "unset" | "set" | "undecryptable" (spec ⓪ vocabulary)
+    # Defaulted so every existing construction site keeps working: a provider with a
+    # constant destination genuinely has no base_url, so "" is the honest value rather
+    # than a placeholder.
+    base_url: str = ""      # only meaningful for a provider with a user-set address
 
 
 class ResolvedProvider(NamedTuple):
@@ -76,6 +80,7 @@ async def _read_search_config() -> SearchConfig:
         name=cfg.get("search_provider", ""),
         key=key,
         key_state=cfg.get("search_api_key_status", "unset"),
+        base_url=cfg.get("search_base_url", ""),
     )
 
 
@@ -89,9 +94,14 @@ async def _search_provider() -> ResolvedProvider:
     """
     cfg = await _read_search_config()
     try:
-        provider = get_provider(cfg.name, api_key=cfg.key)
+        provider = get_provider(cfg.name, api_key=cfg.key, base_url=cfg.base_url)
     except ValueError:
         return ResolvedProvider(None, "unknown-provider")
+    # A provider that needs an address and has none is its OWN reason. Folding it into
+    # "no-key" would tell someone to enter a key for a provider that never wanted one —
+    # the same shape of wrong advice this NamedTuple was introduced to end.
+    if getattr(provider, "requires_base_url", False) and not cfg.base_url.strip():
+        return ResolvedProvider(None, "no-base-url")
     if provider.requires_key and not cfg.key:
         # Two different facts, kept apart: nothing was ever entered, versus something
         # IS stored and this process cannot open it (spec ⓪ made that knowable).
@@ -108,6 +118,9 @@ _SEARCH_UNAVAILABLE = {
                           "it is present but unreadable, so re-entering it is what fixes "
                           "this, not adding one. See Settings for which half is missing."),
     "unknown-provider": "web search is set to a provider this build does not know",
+    "no-base-url": ("web search is set to a self-hosted SearXNG instance but no address "
+                    "has been entered for it — add the instance URL in Settings. No key "
+                    "is needed for this provider."),
 }
 
 

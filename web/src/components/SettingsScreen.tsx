@@ -131,6 +131,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         githubToken={localSettings.githubToken}
         onGithubTokenChange={(v) => editKeyField('githubToken', v)}
         onGithubTokenBlur={(v) => flushField({ githubToken: v })}
+        searchBaseUrl={localSettings.searchBaseUrl}
+        onSearchBaseUrlChange={(v) => saveField({ searchBaseUrl: v })}
       />
     ),
 

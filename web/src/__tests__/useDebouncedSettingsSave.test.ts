@@ -27,6 +27,7 @@ import type { AppSettings } from "../types";
 
 const base: AppSettings = {
   searchProvider: "tavily",
+  searchBaseUrl: '',
   apiKeySearch: "tvly-••••",
   githubToken: "",
   language: "en",

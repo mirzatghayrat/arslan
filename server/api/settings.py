@@ -13,11 +13,11 @@ from server import auth, config, token_bootstrap
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, McpTokenOut, ModelListOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, McpTokenOut, ModelListOut, SearchProbeIn, SearchProbeOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
 # model_catalog + provider_health are Settings-only: this module is their ONLY
 # allowed import site outside their own tests (Provider-round iron rule —
 # never from the chat path).
-from server.services import model_catalog, provider_config_service, provider_health, settings_service
+from server.services import model_catalog, provider_config_service, provider_health, searxng_probe, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
 
@@ -290,6 +290,20 @@ async def test_llm_raw(body: TestLLMIn) -> TestLLMOut:
         api_key=body.api_key,
     )
     return TestLLMOut(**result)
+
+
+@router.post("/settings/test-search-instance", response_model=SearchProbeOut)
+async def test_search_instance(body: SearchProbeIn) -> SearchProbeOut:
+    """Test a self-hosted SearXNG address without saving it.
+
+    Never raises: every failure is one of the four verdicts, because a 500 here would
+    tell the user "something went wrong" — which is the sentence this endpoint exists
+    to replace.
+    """
+    if not body.base_url.strip():
+        return SearchProbeOut(verdict="unreachable",
+                              detail="enter the instance address first")
+    return SearchProbeOut(**await searxng_probe.probe(body.base_url.strip()))
 
 
 @router.post("/settings/provider-configs/{config_id}/test", response_model=TestLLMOut)

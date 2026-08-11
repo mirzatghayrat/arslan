@@ -613,7 +613,13 @@
     "labelSearchKey": "Schlüssel des Suchanbieters (optional)",
     "placeholderSearchKey": "Schlüssel einfügen, um die eingebaute Suche aufzuwerten",
     "labelGithubToken": "GitHub-Token (optional — erhöht das Ratenlimit der Suche)",
-    "placeholderGithubToken": "GitHub-Token einfügen"
+    "placeholderGithubToken": "GitHub-Token einfügen",
+    "labelSearchBaseUrl": "Adresse der SearXNG-Instanz",
+    "searxngTestButton": "Testen",
+    "searxngVerdictUnreachable": "Unter dieser Adresse hat nichts geantwortet. Prüfen Sie die URL und ob die Instanz läuft und von diesem Rechner erreichbar ist.",
+    "searxngVerdictNotSearxng": "Etwas hat geantwortet, aber es ist kein SearXNG. Prüfen Sie den Port — dort läuft möglicherweise ein anderer Dienst.",
+    "searxngVerdictJsonDisabled": "Das ist ein SearXNG, aber es liefert kein JSON. Fügen Sie `json` zu `search.formats` in seiner settings.yml hinzu und starten Sie es neu.",
+    "searxngVerdictOk": "Funktioniert. Zurückgegebene Ergebnisse"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

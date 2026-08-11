@@ -613,7 +613,13 @@
     "labelSearchKey": "Clave del proveedor de búsqueda (opcional)",
     "placeholderSearchKey": "Pega una clave para mejorar la búsqueda integrada",
     "labelGithubToken": "Token de GitHub (opcional: sube el límite de frecuencia)",
-    "placeholderGithubToken": "Pega un token de GitHub"
+    "placeholderGithubToken": "Pega un token de GitHub",
+    "labelSearchBaseUrl": "Dirección de la instancia SearXNG",
+    "searxngTestButton": "Probar",
+    "searxngVerdictUnreachable": "Nada respondió en esa dirección. Comprueba la URL y que la instancia esté funcionando y sea accesible desde este equipo.",
+    "searxngVerdictNotSearxng": "Algo respondió, pero no es un SearXNG. Comprueba el puerto — puede haber otro servicio en él.",
+    "searxngVerdictJsonDisabled": "Es un SearXNG, pero no devuelve JSON. Añade `json` a `search.formats` en su settings.yml y reinícialo.",
+    "searxngVerdictOk": "Funciona. Resultados devueltos"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

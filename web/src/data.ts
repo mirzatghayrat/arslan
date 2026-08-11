@@ -7,6 +7,7 @@ import { AppSettings } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   searchProvider: 'tavily',
+  searchBaseUrl: '',
   apiKeySearch: '••••••••••••••••••••••••',
   githubToken: '',
   language: 'en',
