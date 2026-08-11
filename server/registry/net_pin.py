@@ -278,20 +278,34 @@ def _build_client() -> httpx.AsyncClient:
                              limits=httpx.Limits(max_keepalive_connections=0))
 
 
-async def pinned_get(
+#: Redirect statuses that turn the follow-up request into a bodyless GET. 307 and 308
+#: are deliberately absent: they exist to say "the same request, at a new address".
+#: httpx applies these rules inside `follow_redirects`, which this module cannot use
+#: (every hop has to be re-pinned), so they are restated here rather than inherited.
+_METHOD_CHANGING_REDIRECTS = frozenset({301, 302, 303})
+
+
+async def pinned_request(
+    method: str,
     url: str,
     *,
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
+    json: object | None = None,
+    data: dict[str, str] | None = None,
     allow_host: str | None = None,
     max_redirects: int = _MAX_REDIRECTS,
 ) -> httpx.Response:
-    """A GET whose every hop is resolved once, validated, and PINNED.
+    """A request whose every hop is resolved once, validated, and PINNED.
 
-    This is the path `web_extract` has always used, given a name so the search
-    providers can share it instead of growing a second copy. Two copies of SSRF logic
-    do not stay identical, and the copy nobody is looking at is the one that gets
-    weaker — which is the whole reason this is an extraction rather than a new module.
+    This is the path `web_extract` has always used, given a name and a method so the
+    search providers can share it instead of growing a second copy. Two copies of SSRF
+    logic do not stay identical, and the copy nobody is looking at is the one that gets
+    weaker — which is why this is an extraction rather than a new module.
+
+    🔴 The body is dropped when a redirect changes the method (see
+    _METHOD_CHANGING_REDIRECTS). Carrying a POST body onto a GET would replay a
+    submission at a destination that only asked us to look elsewhere.
 
     Returns the final response WITHOUT `raise_for_status()`. The caller decides: a
     connection test needs to read the status itself, and a helper that raised would
@@ -299,6 +313,8 @@ async def pinned_get(
     """
     async with _build_client() as client:
         current = url
+        cur_method = method.upper()
+        cur_json, cur_data = json, data
         for _ in range(max_redirects):
             # Resolve-and-pin EVERY hop, including the first. Sending the hostname and
             # letting httpx resolve it is precisely the rebinding hole (see
@@ -310,29 +326,53 @@ async def pinned_get(
                 # instead of quietly believing it is protected.
                 _resolve_pinned(current, allow_host=allow_host)
                 logger.warning(
-                    "pinned_get: https via a configured proxy — address pinning is "
+                    "pinned_request: https via a configured proxy — address pinning is "
                     "disabled for %s and SSRF protection is delegated to the proxy",
                     urlparse(current).hostname)
-                resp = await client.get(current, headers=headers, params=params)
+                resp = await client.request(cur_method, current, headers=headers,
+                                            params=params, json=cur_json, data=cur_data)
             else:
                 pinned_url, pin_headers, extensions = _pinned_request_args(
                     current, allow_host=allow_host)
-                # Pinning's own headers go first: a caller must not be able to
-                # overwrite `Host`, which is what preserves virtual hosting and keeps
-                # the request pointed where it was validated.
+                # Pinning's own headers go last: a caller must not be able to overwrite
+                # `Host`, which is what preserves virtual hosting and keeps the request
+                # pointed at the address that was validated.
                 merged = {**(headers or {}), **pin_headers}
-                resp = await client.get(pinned_url, headers=merged, params=params,
-                                        extensions=extensions)
+                resp = await client.request(cur_method, pinned_url, headers=merged,
+                                            params=params, json=cur_json, data=cur_data,
+                                            extensions=extensions)
             if resp.is_redirect:
                 location = resp.headers.get("location", "")
                 if not location:
                     raise httpx.HTTPError("redirect without a Location header")
+                if resp.status_code in _METHOD_CHANGING_REDIRECTS and cur_method != "GET":
+                    cur_method, cur_json, cur_data = "GET", None, None
                 # resolve against the ORIGINAL url, not the pinned one — a relative
                 # Location must not inherit the IP literal as its base.
                 current = urljoin(current, location)
                 continue
             return resp
         raise httpx.HTTPError("too many redirects")
+
+
+async def pinned_get(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+    allow_host: str | None = None,
+    max_redirects: int = _MAX_REDIRECTS,
+) -> httpx.Response:
+    """The readable spelling of `pinned_request("GET", ...)`.
+
+    A wrapper, never a second implementation — the whole point of this module is that
+    there is exactly one place where an outbound address is decided.
+
+    Returns the final response WITHOUT `raise_for_status()`, exactly as
+    `pinned_request` does.
+    """
+    return await pinned_request("GET", url, headers=headers, params=params,
+                                allow_host=allow_host, max_redirects=max_redirects)
 
 
 async def _fetch_text(url: str) -> str:

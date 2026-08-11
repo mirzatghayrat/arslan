@@ -23,7 +23,6 @@ import html
 import re
 from abc import ABC, abstractmethod
 
-import httpx
 
 from server.registry import net_pin
 
@@ -56,14 +55,16 @@ class TavilyProvider(SearchProvider):
         self._api_key = api_key
 
     async def search(self, query: str, num_results: int = 5) -> list[dict]:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(
-                self._URL,
-                json={"api_key": self._api_key, "query": query,
-                      "max_results": num_results},
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        # allow_host is NOT passed: this destination is a constant in this file, so it
+        # has no business carrying the private-network exemption that belongs to an
+        # address the user typed.
+        resp = await net_pin.pinned_request(
+            "POST", self._URL,
+            json={"api_key": self._api_key, "query": query,
+                  "max_results": num_results},
+        )
+        resp.raise_for_status()
+        data = resp.json()
         return [
             {"title": r.get("title", ""), "url": r.get("url", ""),
              "snippet": r.get("content", "")}
@@ -108,11 +109,13 @@ class DuckDuckGoHtmlProvider(SearchProvider):
         return html.unescape(re.sub(r"<[^>]+>", "", fragment)).strip()
 
     async def search(self, query: str, num_results: int = 5) -> list[dict]:
-        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-            resp = await client.post(self._URL, data={"q": query},
-                                     headers={"User-Agent": self._UA})
-            resp.raise_for_status()
-            body = resp.text
+        # Redirects are still followed, but now one hop at a time and re-pinned at
+        # each — stricter than the follow_redirects=True this replaces, not looser.
+        # allow_host stays None for the same reason as Tavily: constant destination.
+        resp = await net_pin.pinned_request("POST", self._URL, data={"q": query},
+                                            headers={"User-Agent": self._UA})
+        resp.raise_for_status()
+        body = resp.text
 
         titles = self._RESULT.findall(body)
         snippets = self._SNIPPET.findall(body)
@@ -155,7 +158,7 @@ def list_providers() -> list[str]:
     return [_FALLBACK] + sorted(k for k in _PROVIDERS if k != _FALLBACK)
 
 
-# net_pin is imported for the SSRF-hardened client the SearXNG provider will use when
-# it lands; referenced here so the dependency is explicit rather than accidental.
+# net_pin carries every outbound request in this file. It was imported as a placeholder
+# for a while, which meant the module said it was hardened and the code was not.
 __all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider",
            "get_provider", "list_providers", "net_pin"]
