@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from arslan.llm.providers.anthropic_provider import AnthropicProvider  # noqa: E402
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
 
 TOOLS = [{
     "type": "function",
@@ -69,7 +70,13 @@ async def main() -> int:
         print("ANTHROPIC_API_KEY is not set — nothing was sent.", file=sys.stderr)
         return 2
 
-    p = AnthropicProvider(model=MODEL, api_key=key)
+    # A third-party gateway that speaks the NATIVE Anthropic Messages API exercises
+    # this same code path, because the defect G1 fixes is on our side of the wire: we
+    # accepted `tools` and dropped them. Point BASE_URL at one and the run is still
+    # meaningful — with one asymmetry worth stating: a PASS is strong evidence, while a
+    # FAIL is not conclusive, since a proxy can drop `tools` on its own and the failure
+    # would look identical to ours.
+    p = AnthropicProvider(model=MODEL, api_key=key, base_url=BASE_URL)
     failures = 0
 
     # ⓪ ------------------------------------------------------------------
