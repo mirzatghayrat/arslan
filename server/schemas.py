@@ -372,6 +372,25 @@ class TestLLMOut(BaseModel):
     latency_ms: int | None = None
 
 
+class SearchProbeIn(BaseModel):
+    """Body for POST /settings/test-search-instance."""
+
+    base_url: str = ""
+
+
+class SearchProbeOut(BaseModel):
+    """One of four verdicts, never a bare success flag.
+
+    A boolean would collapse the three failures back into one, and the whole point of
+    the probe is that their fixes differ — edit the address, start the instance, or
+    add `json` to search.formats.
+    """
+
+    verdict: str
+    detail: str = ""
+    result_count: int | None = None
+
+
 class CatalogCapabilities(BaseModel):
     cost: int
     speed: int
