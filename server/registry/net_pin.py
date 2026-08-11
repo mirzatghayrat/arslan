@@ -258,11 +258,27 @@ def _build_client() -> httpx.AsyncClient:
                              limits=httpx.Limits(max_keepalive_connections=0))
 
 
-async def _fetch_text(url: str) -> str:
+async def pinned_get(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+    max_redirects: int = _MAX_REDIRECTS,
+) -> httpx.Response:
+    """A GET whose every hop is resolved once, validated, and PINNED.
+
+    This is the path `web_extract` has always used, given a name so the search
+    providers can share it instead of growing a second copy. Two copies of SSRF logic
+    do not stay identical, and the copy nobody is looking at is the one that gets
+    weaker — which is the whole reason this is an extraction rather than a new module.
+
+    Returns the final response WITHOUT `raise_for_status()`. The caller decides: a
+    connection test needs to read the status itself, and a helper that raised would
+    force it to catch its own subject.
+    """
     async with _build_client() as client:
         current = url
-        html = ""
-        for _ in range(_MAX_REDIRECTS):
+        for _ in range(max_redirects):
             # Resolve-and-pin EVERY hop, including the first. Sending the hostname and
             # letting httpx resolve it is precisely the rebinding hole (see
             # _resolve_pinned); a redirect target is no more trustworthy than the
@@ -273,13 +289,18 @@ async def _fetch_text(url: str) -> str:
                 # instead of quietly believing it is protected.
                 _resolve_pinned(current)
                 logger.warning(
-                    "web_extract: https via a configured proxy — address pinning is "
+                    "pinned_get: https via a configured proxy — address pinning is "
                     "disabled for %s and SSRF protection is delegated to the proxy",
                     urlparse(current).hostname)
-                resp = await client.get(current)
+                resp = await client.get(current, headers=headers, params=params)
             else:
-                pinned_url, headers, extensions = _pinned_request_args(current)
-                resp = await client.get(pinned_url, headers=headers, extensions=extensions)
+                pinned_url, pin_headers, extensions = _pinned_request_args(current)
+                # Pinning's own headers go first: a caller must not be able to
+                # overwrite `Host`, which is what preserves virtual hosting and keeps
+                # the request pointed where it was validated.
+                merged = {**(headers or {}), **pin_headers}
+                resp = await client.get(pinned_url, headers=merged, params=params,
+                                        extensions=extensions)
             if resp.is_redirect:
                 location = resp.headers.get("location", "")
                 if not location:
@@ -288,11 +309,13 @@ async def _fetch_text(url: str) -> str:
                 # Location must not inherit the IP literal as its base.
                 current = urljoin(current, location)
                 continue
-            resp.raise_for_status()
-            html = resp.text
-            break
-        else:
-            raise httpx.HTTPError("too many redirects")
-    extracted = trafilatura.extract(html)
+            return resp
+        raise httpx.HTTPError("too many redirects")
+
+
+async def _fetch_text(url: str) -> str:
+    resp = await pinned_get(url)
+    resp.raise_for_status()
+    extracted = trafilatura.extract(resp.text)
     return extracted or ""
 
