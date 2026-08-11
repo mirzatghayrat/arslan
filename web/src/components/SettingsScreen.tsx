@@ -14,6 +14,7 @@ import ProviderConfigList from './ProviderConfigList';
 import AccessTokenSettings from './AccessTokenSettings';
 import SettingsShell from './settings/SettingsShell';
 import SearchToolsSection from './settings/SearchToolsSection';
+import ModelRolesSection from './settings/ModelRolesSection';
 import AppearanceSection from './settings/AppearanceSection';
 import MemoryDataSection from './settings/MemoryDataSection';
 import AdvancedSection from './settings/AdvancedSection';
@@ -113,6 +114,23 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           }
         />
       </div>
+    ),
+
+    // Model roles — which task uses which model. Its own section rather than part
+    // of Automation: these slots do not spend on their own.
+    modelroles: (
+      <ModelRolesSection
+        values={{
+          synthesisConfigId: localSettings.synthesisConfigId ?? '',
+          compactionConfigId: localSettings.compactionConfigId ?? '',
+          titleConfigId: localSettings.titleConfigId ?? '',
+          routerConfigId: localSettings.routerConfigId ?? '',
+          visionConfigId: localSettings.visionConfigId ?? '',
+        }}
+        onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
+        providerConfigs={providerConfigs ?? []}
+        strategy={localSettings.llmStrategy ?? 'single'}
+      />
     ),
 
     // Search & Tools — search provider + search key + GitHub token.

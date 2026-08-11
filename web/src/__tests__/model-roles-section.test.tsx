@@ -192,3 +192,32 @@ describe("locale coverage", () => {
     }
   });
 });
+
+
+describe("the section is wired into Settings", () => {
+  it("registers a nav entry", async () => {
+    const { SETTINGS_SECTIONS } = await import("../components/settings/sectionRegistry");
+    expect(SETTINGS_SECTIONS.some((s) => s.id === "modelroles")).toBe(true);
+  });
+
+  it("gives every slot a home in FIELD_HOMES", async () => {
+    // A section with no fields behind it is exactly what the deleted `scheduled`
+    // and `usage` placeholder tabs were, and the existing field-homes guard fails
+    // on one. Five entries, one per slot.
+    const { FIELD_HOMES } = await import("../components/settings/sectionRegistry");
+    const homed = Object.entries(FIELD_HOMES).filter(([, v]) => v === "modelroles");
+    expect(homed).toHaveLength(5);
+  });
+
+  it("is rendered by SettingsScreen with values, a handler, configs and the strategy", async () => {
+    // Reading the call site is the only way to see an omitted prop: with optional
+    // props a missing one is not a type error, and nothing looks wrong until a user
+    // changes a dropdown that saves nowhere.
+    const src = await import("../components/SettingsScreen?raw");
+    const block = (src.default as string).split("<ModelRolesSection")[1]?.split("/>")[0] ?? "";
+    expect(block).toMatch(/values=/);
+    expect(block).toMatch(/onChange=/);
+    expect(block).toMatch(/providerConfigs=/);
+    expect(block).toMatch(/strategy=/);
+  });
+});
