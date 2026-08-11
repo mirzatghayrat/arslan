@@ -32,7 +32,13 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1293 keys (baseline guard)", () => {
+  it("en locale has 1313 keys (baseline guard)", () => {
+    // 1293 → 1313: the model-roles section — nav label, lede, five slot labels,
+    // five purpose lines, five fallback sentences, the unset option, the
+    // add-a-model link and the embedding pointer. Five purposes rather than one
+    // shared sentence because five unexplained dropdowns are five controls
+    // nobody dares touch, and five fallback sentences because an empty slot
+    // means three different things depending on which slot it is.
     // 1240 → 1246: the self-hosted SearXNG address field — its label, the test
     // button, and one sentence per verdict. Four sentences rather than one
     // because the four failures have four different fixes, and the most common
@@ -153,7 +159,7 @@ describe("locale parity", () => {
     //              and recall, so the entry panel has to say so; a fact that silently
     //              stops being used while the graph still shows it in full reads as
     //              the model forgetting rather than as a mark someone set.
-    expect(enKeys).toHaveLength(1293);
+    expect(enKeys).toHaveLength(1313);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

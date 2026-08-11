@@ -261,6 +261,11 @@ export interface AppSettings {
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
+  synthesis_config_id?: string;
+  compaction_config_id?: string;
+  title_config_id?: string;
+  router_config_id?: string;
+  vision_config_id?: string;
   /** Sleep-time curation sweep. Wire type is a real bool here (unlike
    *  evolution_auto's "on"/"off" string), matching SettingsOut.curation_enabled. */
   curation_enabled?: boolean;

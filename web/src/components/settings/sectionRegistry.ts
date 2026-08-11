@@ -16,7 +16,7 @@
  */
 
 export type SettingsSectionId =
-  | 'models' | 'search'                       // Connection
+  | 'models' | 'modelroles' | 'search'        // Connection
   | 'appearance' | 'memory'                   // Personal
   | 'automation' | 'access' | 'advanced';     // System
 
@@ -44,6 +44,10 @@ export const SETTINGS_GROUPS: SettingsGroupMeta[] = [
 
 export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
   { id: 'models',     group: 'connection', labelKey: 'settings.navModels',     icon: 'Cpu' },
+  // Which task uses which model. NOT in `automation`: that section's narrative is a
+  // spend warning, and these slots do not spend on their own — they change which
+  // model handles a call that was going to happen anyway.
+  { id: 'modelroles', group: 'connection', labelKey: 'settings.navModelRoles', icon: 'Cpu' },
   { id: 'search',     group: 'connection', labelKey: 'settings.navSearch',     icon: 'Search' },
   { id: 'appearance', group: 'personal',   labelKey: 'settings.navAppearance', icon: 'Palette' },
   { id: 'memory',     group: 'personal',   labelKey: 'settings.navMemory',     icon: 'Database' },
@@ -84,6 +88,16 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'provider.connection_test': 'models',
   'provider.capabilities': 'models',
   'llm.strategy': 'models',
+
+  // ── model roles (per-task slots) ──────────────────────────────────────────
+  //: Shipped on the backend in v0.1.20 with no surface at all — the same class as
+  //: curation.enabled below, found the same way: by sweeping the server schema
+  //: rather than the components.
+  'slot.compaction': 'modelroles',
+  'slot.title': 'modelroles',
+  'slot.synthesis': 'modelroles',
+  'slot.vision': 'modelroles',
+  'slot.router': 'modelroles',
 
   // ── search ────────────────────────────────────────────────────────────────
   'search.tools': 'search',

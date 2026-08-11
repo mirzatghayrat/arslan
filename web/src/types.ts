@@ -203,6 +203,14 @@ export interface AppSettings {
   shellConfirmPolicy: 'ask_all' | 'ask_risky';
   /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
   embeddingConfigId?: string;
+  /** Per-task model slots. Empty or absent = unset, and that task keeps the exact
+   *  behaviour it has today (server/services/llm_factory.py build_slot_adapter
+   *  returns None, and every consumer falls through unchanged). */
+  synthesisConfigId?: string;
+  compactionConfigId?: string;
+  titleConfigId?: string;
+  routerConfigId?: string;
+  visionConfigId?: string;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
   runDebugRetentionDays?: number;
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
