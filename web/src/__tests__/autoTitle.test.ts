@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { shouldAutoTitle, maybeAutoTitle } from "../lib/autoTitle";
+import { shouldAutoTitle, maybeAutoTitle, seedTitledThreadIds } from "../lib/autoTitle";
 import type { Message } from "../types";
 
 // ── Minimal message factories ────────────────────────────────────────────────
@@ -171,5 +171,71 @@ describe("maybeAutoTitle", () => {
 
     expect(generate).not.toHaveBeenCalled();
     expect(onTitle).not.toHaveBeenCalled();
+  });
+});
+
+
+// ── seedTitledThreadIds ──────────────────────────────────────────────────────
+//
+// 🔴 THE BUG THIS PINS. App.tsx seeded the "already titled" set with EVERY
+// restored thread id, on the stated assumption that "restored threads already
+// have real titles". That is false for a thread still called "New Session" —
+// and sessionPersistence hands back exactly that after a wipe and on a fresh
+// install. The id went into the set, so when the first exchange completed the
+// auto-title never fired, and the FIRST conversation of every new user kept the
+// truncated user text as its name.
+//
+// The discriminating case is a restored thread WITH a placeholder title: seeding
+// everything and seeding nothing both pass a test that only uses custom titles.
+
+describe("seedTitledThreadIds", () => {
+  it("seeds a thread that already has a real title", () => {
+    const seeded = seedTitledThreadIds([{ id: "a", title: "Deploy pipeline notes" }]);
+    expect(seeded.has("a")).toBe(true);
+  });
+
+  it("does NOT seed a thread still called New Session", () => {
+    // The fresh-install case. Seeding it is what made the first conversation
+    // permanently untitleable.
+    const seeded = seedTitledThreadIds([{ id: "a", title: "New Session" }]);
+    expect(seeded.has("a")).toBe(false);
+  });
+
+  it("does NOT seed an untouched orchestration thread", () => {
+    const seeded = seedTitledThreadIds([{ id: "a", title: "Orchestration thread #3" }]);
+    expect(seeded.has("a")).toBe(false);
+  });
+
+  it("keeps the two apart in one restore", () => {
+    const seeded = seedTitledThreadIds([
+      { id: "real", title: "Quarterly review" },
+      { id: "fresh", title: "New Session" },
+    ]);
+    expect(seeded.has("real")).toBe(true);
+    expect(seeded.has("fresh")).toBe(false);
+  });
+
+  it("seeds a thread whose title is the truncated first message", () => {
+    // Deliberate: after the dumb rename we cannot tell a truncation from a title
+    // the user typed, and overwriting someone's own name for a thread is worse
+    // than leaving a plain one.
+    const seeded = seedTitledThreadIds([{ id: "a", title: "how do I reset the…" }]);
+    expect(seeded.has("a")).toBe(true);
+  });
+
+  it("treats a blank title as not yet titled", () => {
+    const seeded = seedTitledThreadIds([{ id: "a", title: "   " }]);
+    expect(seeded.has("a")).toBe(false);
+  });
+});
+
+describe("App.tsx actually uses the seed helper", () => {
+  it("does not seed the set from every restored id", async () => {
+    // A pure helper nobody calls is a bug still shipping. The old line —
+    // new Set(restoredInit.threads.map((t) => t.id)) — is what this forbids.
+    const src = await import("../App?raw");
+    const text = src.default as string;
+    expect(text).toMatch(/seedTitledThreadIds\(restoredInit\.threads\)/);
+    expect(text).not.toMatch(/new Set\(restoredInit\.threads\.map/);
   });
 });
