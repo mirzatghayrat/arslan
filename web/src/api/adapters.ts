@@ -74,40 +74,86 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
  * matches the masked sentinel pattern), we omit that field from the PUT body so the
  * backend keeps the existing stored value.
  */
+/**
+ * ONE mapping table, camelCase UI name -> how that field goes on the wire.
+ *
+ * 🔴 A single table because the defect family this guards against is exactly two
+ * descriptions of the same field drifting apart. Adding a setting means adding one
+ * row here; the patch adapter and the full-body adapter both read it.
+ */
+const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: unknown) => unknown }> = {
+  searchProvider: { key: "search_provider" },
+  searchBaseUrl: { key: "search_base_url", to: (v) => (v as string) ?? "" },
+  language: { key: "language" },
+  llmStrategy: { key: "llm_strategy" },
+  distillOnSessionEnd: { key: "distill_on_session_end" },
+  orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
+  shellConfirmPolicy: { key: "shell_confirm_policy" },
+  embeddingConfigId: { key: "embedding_config_id", to: (v) => (v as string) ?? "" },
+  synthesisConfigId: { key: "synthesis_config_id", to: (v) => (v as string) ?? "" },
+  compactionConfigId: { key: "compaction_config_id", to: (v) => (v as string) ?? "" },
+  titleConfigId: { key: "title_config_id", to: (v) => (v as string) ?? "" },
+  routerConfigId: { key: "router_config_id", to: (v) => (v as string) ?? "" },
+  visionConfigId: { key: "vision_config_id", to: (v) => (v as string) ?? "" },
+  curationEnabled: { key: "curation_enabled", to: (v) => (v as boolean) ?? false },
+  evolutionAuto: { key: "evolution_auto", to: (v) => (v ? "on" : "off") },
+  evolutionMaxDispatches: { key: "evolution_max_dispatches", to: (v) => (v as number) ?? null },
+  ocrLanguages: { key: "ocr_languages", to: (v) => (v as string) ?? "" },
+  runDebugRetentionDays: { key: "run_debug_retention_days", to: (v) => (v as number) ?? 30 },
+  mcpServerEnabled: { key: "mcp_server_enabled" },
+};
+
+/** The two secrets. Sent only when the value is real — never a mask echoed back. */
+const SECRET_WIRE: Record<string, keyof BackendAppSettings> = {
+  apiKeySearch: "search_api_key",
+  githubToken: "github_token",
+};
+
+/**
+ * The body for a save that touched exactly these fields.
+ *
+ * 🔴 THE POINT: a PUT must not write back a field the user never edited. Three
+ * separate bugs came from doing so, each fixed per field:
+ *   ① a masked key round-tripped as the real secret;
+ *   ② llm_strategy clobbered by a client default that was never hydrated;
+ *   ③ search_provider="tavily" on a fresh install, which broke keyless search
+ *      the moment the user changed anything at all.
+ * Per-field fixes kill the instance and leave the family. Sending only what was
+ * touched removes the shape. The backend does `model_dump(exclude_none=True)`, so
+ * an omitted field is simply not written.
+ */
+export function toBackendSettingsPatch(patch: Partial<AppSettings>): Partial<BackendAppSettings> {
+  const body: Record<string, unknown> = {};
+  for (const [uiName, value] of Object.entries(patch)) {
+    const wire = SETTINGS_WIRE[uiName];
+    if (wire) {
+      body[wire.key as string] = wire.to ? wire.to(value) : value;
+      continue;
+    }
+    const secret = SECRET_WIRE[uiName];
+    // A key field can be in the patch because the user focused and blurred it
+    // without typing, and what it holds then is the mask it was shown.
+    if (secret && typeof value === "string" && value && !looksMasked(value)) {
+      body[secret as string] = value;
+    }
+  }
+  return body as Partial<BackendAppSettings>;
+}
+
+/**
+ * The whole-settings body. Built from the same table as the patch adapter so the
+ * two cannot describe a field differently.
+ *
+ * Prefer `toBackendSettingsPatch` for saves: this one writes back every field,
+ * including ones the user never touched, which is the defect family described
+ * above. Kept for the paths that genuinely mean "persist all of it".
+ */
 export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> {
-  const body: Partial<BackendAppSettings> = {
-    search_provider: ui.searchProvider,
-    search_base_url: ui.searchBaseUrl ?? "",
-    language: ui.language,
-    llm_strategy: ui.llmStrategy,
-    distill_on_session_end: ui.distillOnSessionEnd,
-    orchestrator_shell_enabled: ui.orchestratorShellEnabled ? "true" : "false",
-    shell_confirm_policy: ui.shellConfirmPolicy,
-    embedding_config_id: ui.embeddingConfigId ?? "",
-    synthesis_config_id: ui.synthesisConfigId ?? "",
-    compaction_config_id: ui.compactionConfigId ?? "",
-    title_config_id: ui.titleConfigId ?? "",
-    router_config_id: ui.routerConfigId ?? "",
-    vision_config_id: ui.visionConfigId ?? "",
-    curation_enabled: ui.curationEnabled ?? false,
-    evolution_auto: ui.evolutionAuto ? "on" : "off",
-    evolution_max_dispatches: ui.evolutionMaxDispatches ?? null,
-    ocr_languages: ui.ocrLanguages ?? '',
-    run_debug_retention_days: ui.runDebugRetentionDays ?? 30,
-    mcp_server_enabled: ui.mcpServerEnabled,
-  };
-
-  // Only send the search key if the user entered something new (non-empty, non-masked).
-  if (ui.apiKeySearch && !looksMasked(ui.apiKeySearch)) {
-    body.search_api_key = ui.apiKeySearch;
+  const everything: Partial<AppSettings> = {};
+  for (const uiName of [...Object.keys(SETTINGS_WIRE), ...Object.keys(SECRET_WIRE)]) {
+    (everything as Record<string, unknown>)[uiName] = (ui as unknown as Record<string, unknown>)[uiName];
   }
-
-  // Same mask-aware round-trip for the GitHub token secret.
-  if (ui.githubToken && !looksMasked(ui.githubToken)) {
-    body.github_token = ui.githubToken;
-  }
-
-  return body;
+  return toBackendSettingsPatch(everything);
 }
 
 // ── Spawn adapters ────────────────────────────────────────────────────────────

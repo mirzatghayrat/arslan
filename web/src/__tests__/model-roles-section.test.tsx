@@ -236,12 +236,23 @@ describe("the section is wired into Settings", () => {
     // changes a dropdown that saves nowhere.
     const src = await import("../components/SettingsScreen?raw");
     const block = (src.default as string).split("<ModelRolesSection")[1]?.split("/>")[0] ?? "";
-    expect(block).toMatch(/values=/);
-    expect(block).toMatch(/onChange=/);
-    expect(block).toMatch(/providerConfigs=/);
-    expect(block).toMatch(/strategy=/);
-    // Added after the running app showed the dead end: this prop was the one
-    // omission the list did not cover, so the "no models" state had no exit.
-    expect(block).toMatch(/onGoToProviders=/);
+
+    // 🔴 DERIVED, NOT ENUMERATED. The hand-written version listed four props and
+    // the fifth — onGoToProviders — was the one nobody passed, so the "no models
+    // configured" state had no way out and this test said nothing. A hand list is
+    // the thing that rots: the same lesson as the macOS marker round, where a
+    // hand-maintained file list quietly stopped covering new files.
+    //
+    // The required set comes from the component's own prop type, so a prop added
+    // there and not passed here fails without anyone remembering to edit a list.
+    const propsSrc = await import("../components/settings/ModelRolesSection?raw");
+    const iface = (propsSrc.default as string)
+      .split("export interface ModelRolesSectionProps")[1]
+      .split("}")[0];
+    const required = [...iface.matchAll(/^\s*(\w+)\??:/gm)].map((m) => m[1]);
+    expect(required.length, "the prop interface could not be parsed").toBeGreaterThanOrEqual(5);
+
+    const missing = required.filter((prop) => !new RegExp(`\\b${prop}=`).test(block));
+    expect(missing, `SettingsScreen never passes: ${missing.join(", ")}`).toEqual([]);
   });
 });

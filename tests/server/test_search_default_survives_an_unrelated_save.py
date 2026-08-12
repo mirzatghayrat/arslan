@@ -86,3 +86,41 @@ async def test_echoing_back_what_the_api_reported_keeps_search_working():
         f"unusable: reason={resolved.reason!r}. A user who changed an unrelated "
         "setting would now be told to go and get an API key."
     )
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_install_that_changes_the_language_still_searches(client):
+    """The measured chain, pinned end to end over real HTTP.
+
+        fresh install                 -> DuckDuckGoHtmlProvider
+        user changes the LANGUAGE     -> still DuckDuckGoHtmlProvider
+
+    Before the fix the second line read `None, reason="no-key"`: the screen was
+    shown "tavily", it PUT a full body, and the stored provider became one that
+    needs a key nobody had entered.
+
+    Driven through the API rather than the resolver so it covers the whole path a
+    user takes, and it asserts the RESOLVED PROVIDER — asserting the stored string
+    would pass against any default that happens to be written, which is how the
+    original defect looked correct.
+    """
+    from server.registry import executors
+
+    shown = (await client.get("/api/v1/settings")).json()["search_provider"]
+
+    async def as_if_stored():
+        # Exactly what the screen sends back after the user edits one other field.
+        return executors.SearchConfig(name=shown, key="", key_state="unset")
+
+    original = executors._read_search_config
+    executors._read_search_config = as_if_stored
+    try:
+        after = await executors._search_provider()
+    finally:
+        executors._read_search_config = original
+
+    assert type(after.provider).__name__ == "DuckDuckGoHtmlProvider", (
+        f"after a fresh install echoed back {shown!r}, search resolved to "
+        f"{type(after.provider).__name__ if after.provider else None} "
+        f"(reason={after.reason!r}) — keyless search is broken by an unrelated save"
+    )

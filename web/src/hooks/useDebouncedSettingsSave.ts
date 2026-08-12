@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
 import { api } from "../api/client";
-import { toBackendSettings } from "../api/adapters";
+import { toBackendSettingsPatch } from "../api/adapters";
 import type { AppSettings } from "../types";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
@@ -147,23 +147,24 @@ export function useDebouncedSettingsSave({
     pendingRef.current = {};
     revertRef.current = {};
 
-    // Full body from live settings + this batch's patch. Key fields NOT part of
-    // this flush are blanked so toBackendSettings omits them (backend keeps the
-    // stored secret) — this is what makes a non-key PUT unable to carry a key.
-    const source: AppSettings = { ...settingsRef.current, ...pending };
-    const mutableSource = source as unknown as Record<string, unknown>;
-    for (const kf of KEY_FIELDS) {
-      if (!(kf in pending)) {
-        mutableSource[kf as string] = "";
-      }
-    }
+    // 🔴 ONLY what this batch actually touched. The body used to be the whole of
+    // live settings merged with the patch, and blanking the key fields kept the
+    // secrets out — but every OTHER field still rode along, carrying a client-side
+    // value that could disagree with what the server holds. Three bugs came out of
+    // that shape (a masked key written back as real; llm_strategy clobbered by an
+    // unhydrated default; search_provider="tavily" on a fresh install, which broke
+    // keyless search as soon as the user changed anything). Each was fixed per
+    // field, which kills the instance and leaves the shape. Sending the patch
+    // removes the shape: the backend does model_dump(exclude_none=True), so a
+    // field that is not sent is not written.
+    const source = pending;
 
     const seq = requestSeqRef.current + 1;
     requestSeqRef.current = seq;
     setStatus("saving");
     setError(null);
     try {
-      await api.updateSettings(toBackendSettings(source));
+      await api.updateSettings(toBackendSettingsPatch(source));
       if (seq !== requestSeqRef.current) return; // superseded by a newer PUT → ignore
       // Committed successfully → those key fields are no longer dirty.
       for (const kf of KEY_FIELDS) {
