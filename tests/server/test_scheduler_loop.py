@@ -122,6 +122,24 @@ def _ok_dispatch(calls: list, output: str = "今日早报内容"):
 # tick → _fire ok path
 # ---------------------------------------------------------------------------
 
+
+async def _wait_until(predicate, why: str, *, timeout: float = 5.0) -> None:
+    """Poll until `predicate()` holds, or fail saying what never happened.
+
+    Deliberately not `asyncio.sleep(<a guess>)`: a fixed wait encodes an
+    assumption about how fast the machine is, passes on a quiet laptop, and goes
+    red on a busy CI runner while the code under test is fine. The timeout is
+    generous because it only bounds the FAILURE case — a healthy run leaves as
+    soon as the condition is true.
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(why)
+
+
 async def test_tick_fires_due_task_end_to_end_ok(memdb, monkeypatch):
     spawn_id = await _seed_spawn(memdb)
     task_id = await _seed_task(memdb, spawn_id=spawn_id, conversation_id=None)
@@ -536,8 +554,11 @@ async def test_watch_loop_sweeps_orphans_ticks_and_stop_interrupts_sleep(memdb, 
 
     stop = asyncio.Event()
     loop_task = asyncio.create_task(scheduler.watch_loop(interval=60, stop_event=stop))
-    await asyncio.sleep(0.05)
-    assert ticks                              # first tick ran immediately
+    # 🔴 Wait for the condition, not for a duration. A fixed 50ms sleep asserts
+    # "the loop got scheduled within 50ms", which is a statement about the machine
+    # rather than about the code — and a loaded CI runner failed it (assert []).
+    # The bound still fails fast if the first tick genuinely never runs.
+    await _wait_until(lambda: bool(ticks), "the first tick never ran")
     rows = await _task_runs(memdb, task_id)   # I2: sweep ran BEFORE the first tick
     assert rows[0].outcome == "error"
     assert rows[0].reason == "orphaned by restart"
