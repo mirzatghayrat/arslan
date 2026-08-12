@@ -80,6 +80,19 @@ export default function ModelRolesSection({
         {t('settings.modelRolesLede')}
       </p>
 
+      {/* One way out, not five. Rendering it per slot stacked five identical
+          links — noise, and noise is how a real prompt stops being read. */}
+      {providerConfigs.length === 0 && onGoToProviders && (
+        <button
+          type="button"
+          data-testid="slot-goto-providers"
+          onClick={onGoToProviders}
+          className="text-[11px] underline text-primary hover:text-foreground self-start"
+        >
+          {t('settings.slotGoToProviders')}
+        </button>
+      )}
+
       {MODEL_SLOTS.map((slot) => {
         const f = slotFallback(slot.id, { strategy, configs: providerConfigs });
         return (
@@ -115,15 +128,6 @@ export default function ModelRolesSection({
               className="text-[10px] text-subtle-foreground font-sans leading-relaxed"
             >
               {fallbackText(f)}
-              {f.kind === 'no-configs' && onGoToProviders && (
-                <button
-                  type="button"
-                  onClick={onGoToProviders}
-                  className="ml-1 underline hover:text-foreground"
-                >
-                  {t('settings.slotGoToProviders')}
-                </button>
-              )}
             </p>
           </div>
         );

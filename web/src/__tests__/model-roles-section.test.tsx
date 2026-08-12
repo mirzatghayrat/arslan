@@ -130,6 +130,27 @@ describe("nothing configured yet", () => {
     expect(el.dataset.kind).toBe("no-configs");
     expect(el.textContent).not.toMatch(/\(\s*\)/);
   });
+
+  it("offers a way OUT of the dead end, and it works", () => {
+    // 🔴 Found by running the app, not by these tests. The link is rendered only
+    // when a handler is supplied, and SettingsScreen supplied none — so the
+    // section said "no models configured yet" and gave the user nowhere to go.
+    // The earlier version of this describe asserted the sentence and stopped
+    // there, which is why half a feature shipped.
+    const go = vi.fn();
+    render(<ModelRolesSection {...base} providerConfigs={[]} onGoToProviders={go} />);
+    const link = screen.getByTestId("slot-goto-providers");
+    expect((link.textContent ?? "").trim().length).toBeGreaterThan(0);
+    link.click();
+    expect(go).toHaveBeenCalled();
+  });
+
+  it("does not offer the link once models exist", () => {
+    // The other side: a permanent "add a model" link beside a configured slot is
+    // noise, and noise is how a real prompt stops being read.
+    render(<ModelRolesSection {...base} onGoToProviders={() => {}} />);
+    expect(screen.queryByTestId("slot-goto-providers")).toBeNull();
+  });
 });
 
 describe("the embedding pointer", () => {
@@ -219,5 +240,8 @@ describe("the section is wired into Settings", () => {
     expect(block).toMatch(/onChange=/);
     expect(block).toMatch(/providerConfigs=/);
     expect(block).toMatch(/strategy=/);
+    // Added after the running app showed the dead end: this prop was the one
+    // omission the list did not cover, so the "no models" state had no exit.
+    expect(block).toMatch(/onGoToProviders=/);
   });
 });
