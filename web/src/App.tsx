@@ -7,7 +7,7 @@ import { useArslanStore } from './stores/arslanStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
 import { api } from './api/client';
-import { shouldAutoTitle, maybeAutoTitle } from './lib/autoTitle';
+import { shouldAutoTitle, maybeAutoTitle, seedTitledThreadIds } from "./lib/autoTitle";
 import { restoreThreads, persistThreads, consumeFreshSessionFlag, mergeServerConversations } from './lib/sessionPersistence';
 import { planBoot, pruneEmptyThreads } from './lib/bootSession';
 import { firstLiveThread } from './lib/threadLifecycle';
@@ -125,11 +125,15 @@ export default function App() {
   const rosterResetSent = useRef(false);
 
   // ── Auto-title: track which threads have already received a generated title
-  // so we never regenerate on re-renders or subsequent messages. Restored
-  // threads already have real titles → seed them so the auto-title effect
-  // doesn't re-title them.
+  // so we never regenerate on re-renders or subsequent messages.
+  //
+  // 🔴 This used to seed EVERY restored id, on the assumption that a restored
+  // thread already has a real title. Not true for one still called "New
+  // Session", which is exactly what restoreThreads hands back on a fresh
+  // install — so the first conversation of every new user was marked titled
+  // before it had ever been titled, and kept the truncated user text for good.
   const titledThreadIds = useRef<Set<string>>(
-    new Set(restoredInit.threads.map((t) => t.id)),
+    seedTitledThreadIds(restoredInit.threads),
   );
 
   // Gate item ⑦ — recover conversations from the SERVER on boot.

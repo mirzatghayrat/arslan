@@ -7,6 +7,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, field_validator
 
 
+# The keyless search default lives in the registry; this schema must report the
+# same one it will actually use.
+from server.registry.search_providers import _FALLBACK as _SEARCH_DEFAULT  # noqa: E402
+
+
 class SettingsIn(BaseModel):
     llm_provider: str | None = None
     llm_model: str | None = None
@@ -63,7 +68,13 @@ class SettingsOut(BaseModel):
     llm_base_url: str = ""
     llm_api_key: str = ""  # masked
     language: str = "en"
-    search_provider: str = "tavily"
+    # 🔴 The KEYLESS fallback, and it must stay equal to the registry's own default.
+    # It said "tavily" while the registry defaulted to DuckDuckGo, and the Settings
+    # screen PUTs a FULL body built from what it was shown — so a fresh install that
+    # changed the theme stored "tavily", which needs a key nobody had entered, and
+    # keyless search stopped working with a message telling the user to go get a key.
+    # Imported rather than repeated: the bug was two literals disagreeing.
+    search_provider: str = _SEARCH_DEFAULT
     search_base_url: str = ""
     search_api_key: str = ""  # masked
     github_token: str = ""  # masked — see SettingsIn

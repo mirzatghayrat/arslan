@@ -130,6 +130,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
         providerConfigs={providerConfigs ?? []}
         strategy={localSettings.llmStrategy ?? 'single'}
+        // Without this the "no models configured yet" line is a dead end: it
+        // names the problem and offers nothing to do about it.
+        onGoToProviders={() => setActiveSection('models')}
       />
     ),
 

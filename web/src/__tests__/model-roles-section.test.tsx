@@ -130,6 +130,27 @@ describe("nothing configured yet", () => {
     expect(el.dataset.kind).toBe("no-configs");
     expect(el.textContent).not.toMatch(/\(\s*\)/);
   });
+
+  it("offers a way OUT of the dead end, and it works", () => {
+    // 🔴 Found by running the app, not by these tests. The link is rendered only
+    // when a handler is supplied, and SettingsScreen supplied none — so the
+    // section said "no models configured yet" and gave the user nowhere to go.
+    // The earlier version of this describe asserted the sentence and stopped
+    // there, which is why half a feature shipped.
+    const go = vi.fn();
+    render(<ModelRolesSection {...base} providerConfigs={[]} onGoToProviders={go} />);
+    const link = screen.getByTestId("slot-goto-providers");
+    expect((link.textContent ?? "").trim().length).toBeGreaterThan(0);
+    link.click();
+    expect(go).toHaveBeenCalled();
+  });
+
+  it("does not offer the link once models exist", () => {
+    // The other side: a permanent "add a model" link beside a configured slot is
+    // noise, and noise is how a real prompt stops being read.
+    render(<ModelRolesSection {...base} onGoToProviders={() => {}} />);
+    expect(screen.queryByTestId("slot-goto-providers")).toBeNull();
+  });
 });
 
 describe("the embedding pointer", () => {
@@ -215,9 +236,23 @@ describe("the section is wired into Settings", () => {
     // changes a dropdown that saves nowhere.
     const src = await import("../components/SettingsScreen?raw");
     const block = (src.default as string).split("<ModelRolesSection")[1]?.split("/>")[0] ?? "";
-    expect(block).toMatch(/values=/);
-    expect(block).toMatch(/onChange=/);
-    expect(block).toMatch(/providerConfigs=/);
-    expect(block).toMatch(/strategy=/);
+
+    // 🔴 DERIVED, NOT ENUMERATED. The hand-written version listed four props and
+    // the fifth — onGoToProviders — was the one nobody passed, so the "no models
+    // configured" state had no way out and this test said nothing. A hand list is
+    // the thing that rots: the same lesson as the macOS marker round, where a
+    // hand-maintained file list quietly stopped covering new files.
+    //
+    // The required set comes from the component's own prop type, so a prop added
+    // there and not passed here fails without anyone remembering to edit a list.
+    const propsSrc = await import("../components/settings/ModelRolesSection?raw");
+    const iface = (propsSrc.default as string)
+      .split("export interface ModelRolesSectionProps")[1]
+      .split("}")[0];
+    const required = [...iface.matchAll(/^\s*(\w+)\??:/gm)].map((m) => m[1]);
+    expect(required.length, "the prop interface could not be parsed").toBeGreaterThanOrEqual(5);
+
+    const missing = required.filter((prop) => !new RegExp(`\\b${prop}=`).test(block));
+    expect(missing, `SettingsScreen never passes: ${missing.join(", ")}`).toEqual([]);
   });
 });

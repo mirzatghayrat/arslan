@@ -20,6 +20,35 @@ function isPlaceholderTitle(title: string): boolean {
 }
 
 /**
+ * Which restored threads count as "already titled" and must not be re-titled.
+ *
+ * 🔴 App.tsx used to seed EVERY restored id, on the stated assumption that
+ * restored threads already have real titles. That assumption is false for a
+ * thread still called "New Session" — and `sessionPersistence.restoreThreads`
+ * hands back exactly one of those on a fresh install and after a storage wipe.
+ * Its id went into the set before it had ever been titled, so when the first
+ * exchange completed the auto-title was skipped, and the FIRST conversation of
+ * every new user kept the truncated user text as its name for good.
+ *
+ * A thread whose title is the dumb truncation IS seeded, deliberately: after
+ * the rename we cannot tell a truncation from a name the user typed, and
+ * overwriting someone's own name for a thread is a worse failure than leaving a
+ * plain one.
+ */
+export function seedTitledThreadIds(
+  threads: { id: string; title?: string }[],
+): Set<string> {
+  return new Set(
+    threads
+      .filter((t) => {
+        const title = (t.title ?? "").trim();
+        return title.length > 0 && !isPlaceholderTitle(title);
+      })
+      .map((t) => t.id),
+  );
+}
+
+/**
  * A thread should receive an auto-generated title when:
  *   1. Its title is still a placeholder (either the raw default or the raw
  *      first-message truncation — we treat any title that looks like a
