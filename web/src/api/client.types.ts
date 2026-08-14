@@ -1090,6 +1090,10 @@ export interface McpConnectorEnvVar {
  * path (appended to `args` by the caller) before they can actually connect. */
 export interface McpConnector {
   key: string;
+  /** Explicit auth category — replaces deriving it from `env`. "oauth" entries
+   *  render as an honest "not supported yet" card, never a Connect that can
+   *  only fail or a form collecting a key no service will issue. */
+  auth: 'none' | 'static_key' | 'oauth';
   label: string;
   transport: string;
   command: string;

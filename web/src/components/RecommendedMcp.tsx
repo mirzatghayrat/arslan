@@ -91,11 +91,35 @@ export default function RecommendedMcp({
     }
   };
 
+  // The explicit field wins; the derivation stays only as a fallback for a stale
+  // backend payload from before the field existed.
+  const authOf = (c: McpConnector): 'none' | 'static_key' | 'oauth' =>
+    c.auth ?? (c.one_click ? 'none' : 'static_key');
+
   const card = (c: McpConnector) => {
     const st = status[c.key] ?? { state: 'idle' as const };
     const already = installed(c);
+    const auth = authOf(c);
+
+    if (auth === 'oauth') {
+      // Honest and inert, deliberately: no Connect (it could only fail), no
+      // prefill form (it would collect a key no service will ever issue).
+      return (
+        <div key={c.key} data-auth="oauth" className="bg-background border border-border-strong rounded-xl p-3.5 flex flex-col gap-2 opacity-80">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[12px] font-bold text-foreground">{c.label}</span>
+            <span className="inline-flex items-center gap-0.5 text-[8.5px] font-mono uppercase tracking-wider bg-surface text-subtle-foreground px-1.5 py-0.5 rounded"><KeyRound className="w-2.5 h-2.5" />OAuth</span>
+          </div>
+          <p className="text-[11px] text-subtle-foreground font-sans leading-snug">{c.description}</p>
+          <p className="text-[10.5px] text-subtle-foreground font-sans">
+            This server needs an OAuth sign-in flow — not supported yet.
+          </p>
+        </div>
+      );
+    }
+
     return (
-      <div key={c.key} className="bg-background border border-border-strong rounded-xl p-3.5 flex flex-col gap-2">
+      <div key={c.key} data-auth={auth} className="bg-background border border-border-strong rounded-xl p-3.5 flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -160,8 +184,9 @@ export default function RecommendedMcp({
     );
   };
 
-  const oneClickConnectors = connectors.filter(c => c.one_click);
-  const authConnectors = connectors.filter(c => !c.one_click);
+  const oneClickConnectors = connectors.filter(c => authOf(c) === 'none');
+  const authConnectors = connectors.filter(c => authOf(c) === 'static_key');
+  const oauthConnectors = connectors.filter(c => authOf(c) === 'oauth');
 
   return (
     <div className="space-y-3">
@@ -177,6 +202,18 @@ export default function RecommendedMcp({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">{authConnectors.map(card)}</div>
       </div>
+      {/* Rendered only when an oauth entry actually exists: an empty section
+          with a heading is a placeholder, and this app deleted its placeholder
+          tabs for a reason. Today's catalog has zero such entries — by ruling,
+          the mechanism ships before the first real one. */}
+      {oauthConnectors.length > 0 && (
+        <div data-testid="mcp-oauth-section">
+          <div className="flex items-center gap-1.5 text-[10px] font-mono text-subtle-foreground uppercase tracking-widest mb-2">
+            <KeyRound className="w-3 h-3" /> Needs OAuth — not supported yet
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">{oauthConnectors.map(card)}</div>
+        </div>
+      )}
     </div>
   );
 }

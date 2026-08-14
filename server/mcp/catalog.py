@@ -13,37 +13,43 @@ from __future__ import annotations
 
 # Each connector: env is a list of REQUIRED credentials; empty env == one_click.
 # requires_path/path_placeholder gate a local-path prompt independent of env.
+#: `auth` is EXPLICIT on every entry — "none" | "static_key" | "oauth" — because the
+#: derived two-way split (`_one_click` = "has no env") has no way to say "needs an
+#: OAuth flow we do not support yet". The first oauth-shaped entry added under the
+#: old shape would have rendered as a needs-key card with a prefill form collecting
+#: a key no service will ever issue. The field ships before any oauth entry does,
+#: deliberately (ruling ②, 2026-08-08): the mechanism first, never a decoy entry.
 CONNECTORS: list[dict] = [
-    {"key": "fetch", "label": "Fetch", "transport": "stdio", "command": "uvx",
+    {"key": "fetch", "auth": "none", "label": "Fetch", "transport": "stdio", "command": "uvx",
      "args": ["mcp-server-fetch"], "url": None, "runtime": "python", "env": [],
      "requires_path": False, "path_placeholder": None,
      "description": "Fetch a URL and convert it to clean markdown."},
-    {"key": "memory", "label": "Memory", "transport": "stdio", "command": "npx",
+    {"key": "memory", "auth": "none", "label": "Memory", "transport": "stdio", "command": "npx",
      "args": ["-y", "@modelcontextprotocol/server-memory"], "url": None, "runtime": "node",
      "env": [], "requires_path": False, "path_placeholder": None,
      "description": "Persistent knowledge-graph memory (stored locally)."},
-    {"key": "sequential-thinking", "label": "Sequential Thinking", "transport": "stdio",
+    {"key": "sequential-thinking", "auth": "none", "label": "Sequential Thinking", "transport": "stdio",
      "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
      "url": None, "runtime": "node", "env": [],
      "requires_path": False, "path_placeholder": None,
      "description": "A structured step-by-step reasoning scaffold."},
-    {"key": "time", "label": "Time", "transport": "stdio", "command": "uvx",
+    {"key": "time", "auth": "none", "label": "Time", "transport": "stdio", "command": "uvx",
      "args": ["mcp-server-time"], "url": None, "runtime": "python", "env": [],
      "requires_path": False, "path_placeholder": None,
      "description": "Current time and timezone conversion."},
-    {"key": "filesystem", "label": "Filesystem", "transport": "stdio", "command": "npx",
+    {"key": "filesystem", "auth": "none", "label": "Filesystem", "transport": "stdio", "command": "npx",
      "args": ["-y", "@modelcontextprotocol/server-filesystem"], "url": None, "runtime": "node",
      "env": [], "requires_path": True, "path_placeholder": "/absolute/path/to/expose",
      "description": "Read and write files under a directory you choose. Takes a local path."},
-    {"key": "git", "label": "Git", "transport": "stdio", "command": "uvx",
+    {"key": "git", "auth": "none", "label": "Git", "transport": "stdio", "command": "uvx",
      "args": ["mcp-server-git", "--repository"], "url": None, "runtime": "python", "env": [],
      "requires_path": True, "path_placeholder": "/absolute/path/to/git/repo",
      "description": "Read, search, and commit a local git repository. Takes a repo path."},
-    {"key": "everything", "label": "Everything", "transport": "stdio", "command": "npx",
+    {"key": "everything", "auth": "none", "label": "Everything", "transport": "stdio", "command": "npx",
      "args": ["-y", "@modelcontextprotocol/server-everything"], "url": None, "runtime": "node",
      "env": [], "requires_path": False, "path_placeholder": None,
      "description": "Reference server with sample tools — for testing MCP plumbing."},
-    {"key": "brave-search", "label": "Brave Search", "transport": "stdio", "command": "npx",
+    {"key": "brave-search", "auth": "static_key", "label": "Brave Search", "transport": "stdio", "command": "npx",
      "args": ["-y", "@modelcontextprotocol/server-brave-search"], "url": None, "runtime": "node",
      "requires_path": False, "path_placeholder": None,
      "description": "Web search via the Brave Search API.",
@@ -51,7 +57,7 @@ CONNECTORS: list[dict] = [
               "description": "A Brave Search API key.",
               "get_it_url": "https://brave.com/search/api/",
               "paid": False}]},
-    {"key": "github", "label": "GitHub", "transport": "stdio", "command": "npx",
+    {"key": "github", "auth": "static_key", "label": "GitHub", "transport": "stdio", "command": "npx",
      "args": ["-y", "@modelcontextprotocol/server-github"], "url": None, "runtime": "node",
      "requires_path": False, "path_placeholder": None,
      "description": "GitHub repo / issue / PR access.",
@@ -65,7 +71,7 @@ CONNECTORS: list[dict] = [
     # user's own to lose. A connector that could drive a signed-in browser is a
     # different and much larger thing than one that cannot, and which of the two
     # this is must not depend on anybody remembering a flag.
-    {"key": "playwright", "label": "Playwright", "transport": "stdio", "command": "npx",
+    {"key": "playwright", "auth": "none", "label": "Playwright", "transport": "stdio", "command": "npx",
      "args": ["-y", "@playwright/mcp@latest", "--isolated"], "url": None,
      "runtime": "node", "env": [], "requires_path": False, "path_placeholder": None,
      "description": ("Drive a web page through its accessibility tree — read what is on "
