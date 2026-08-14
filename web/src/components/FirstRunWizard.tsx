@@ -15,7 +15,8 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Sparkles, ChevronLeft, ChevronRight, X, KeyRound, Languages, Check } from "lucide-react";
 import type { ProviderOption, ProviderConfig } from "../api/client.types";
-import { addProviderConfig, api } from "../api/client";
+import { addProviderConfig, api, getOpenRouterOauthStatus, listProviderConfigs, startOpenRouterOauth } from "../api/client";
+import { openExternal } from "../lib/shell";
 import { LANGUAGE_OPTIONS } from "../lib/languages";
 import { setFirstRunSeen } from "../lib/firstRun";
 
@@ -32,6 +33,47 @@ const TOTAL_STEPS = 3;
 export default function FirstRunWizard({ llmProviders, onAdded, onClose }: FirstRunWizardProps) {
   const { t, i18n } = useTranslation();
   const [step, setStep] = useState(0);
+  const [orState, setOrState] = useState<"idle" | "waiting" | "error" | "paid-fallback">("idle");
+  const [orError, setOrError] = useState("");
+
+  async function signInWithOpenRouter() {
+    setOrState("waiting");
+    setOrError("");
+    try {
+      const { auth_url } = await startOpenRouterOauth();
+      // The URL's one legal path: backend → response → the shell doorway.
+      await openExternal(auth_url);
+      for (let i = 0; i < 90; i++) {
+        const st = await getOpenRouterOauthStatus();
+        if (st.state === "done") {
+          const configs = await listProviderConfigs();
+          const created = configs.find((c) => c.id === st.config_id);
+          if (created) onAdded(created);
+          if (st.free_model === false) {
+            // The fallback is STATED: the default model may need credit, and the
+            // zero-card user this button exists for must hear that from us, not
+            // from a 402.
+            setOrState("paid-fallback");
+            return;
+          }
+          onClose();
+          return;
+        }
+        if (st.state === "error") {
+          setOrState("error");
+          setOrError(st.error || "authorization failed");
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      setOrState("error");
+      setOrError("authorization timed out — the browser tab may still be waiting");
+    } catch (e) {
+      setOrState("error");
+      setOrError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   const [language, setLanguage] = useState<string>(i18n.language || "en");
   const [provider, setProvider] = useState<string>(llmProviders[0]?.key ?? "");
   const [apiKey, setApiKey] = useState("");
@@ -154,6 +196,26 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
               <div className="flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-primary" />
                 <h2 className="text-sm font-bold text-foreground font-sans">{t("firstRun.stepKey")}</h2>
+              </div>
+              <button
+                type="button"
+                data-testid="openrouter-signin"
+                disabled={orState === "waiting"}
+                onClick={signInWithOpenRouter}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-bold font-mono uppercase tracking-wide transition-all disabled:opacity-60"
+              >
+                {orState === "waiting" ? t("firstRun.openrouterWaiting") : t("firstRun.openrouterSignIn")}
+              </button>
+              {orState === "error" && (
+                <p className="text-[10px] text-danger font-mono break-words">{orError}</p>
+              )}
+              {orState === "paid-fallback" && (
+                <p className="text-[10px] text-warning font-sans">{t("firstRun.openrouterPaidFallback")}</p>
+              )}
+              <div className="flex items-center gap-2 text-[9px] font-mono uppercase tracking-widest text-subtle-foreground">
+                <span className="flex-1 border-t border-border" />
+                {t("firstRun.orDivider")}
+                <span className="flex-1 border-t border-border" />
               </div>
               <div className="space-y-3">
                 <div className="space-y-1.5">

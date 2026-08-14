@@ -292,6 +292,57 @@ async def test_llm_raw(body: TestLLMIn) -> TestLLMOut:
     return TestLLMOut(**result)
 
 
+#: One interactive OpenRouter sign-in at a time; in-memory for the same reason as
+#: the MCP oauth flows — "waiting" is bound to a live loopback listener in this
+#: process, and must not survive a restart pretending the port still answers.
+_openrouter_flow: dict = {"state": "idle", "error": ""}
+
+
+@router.post("/settings/openrouter/oauth/start")
+async def openrouter_oauth_start():
+    """Begin the one-click sign-in; answer with the URL the shell must open.
+
+    Provenance (spec ③ ruling ③A, inherited): the URL travels backend → this
+    response → open_external. The flow finishes in the background — poll
+    /settings/openrouter/oauth/status. Money stays on OpenRouter's side.
+    """
+    import asyncio
+
+    from server.services import openrouter_oauth
+
+    url_ready: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+    _openrouter_flow.update({"state": "waiting", "error": ""})
+
+    async def on_auth_url(url: str) -> None:
+        if not url_ready.done():
+            url_ready.set_result(url)
+
+    async def run() -> None:
+        try:
+            result = await openrouter_oauth.run_flow(on_auth_url=on_auth_url)
+            _openrouter_flow.update({"state": "done", "error": "", **result})
+        except Exception as exc:  # noqa: BLE001 — the outcome IS the payload
+            _openrouter_flow.update(
+                {"state": "error", "error": str(exc)[:500] or type(exc).__name__}
+            )
+            if not url_ready.done():
+                url_ready.set_exception(exc)
+
+    asyncio.create_task(run())
+    try:
+        auth_url = await asyncio.wait_for(asyncio.shield(url_ready), timeout=15.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="no authorization URL was produced")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)[:500] or type(exc).__name__)
+    return {"auth_url": auth_url}
+
+
+@router.get("/settings/openrouter/oauth/status")
+async def openrouter_oauth_status():
+    return {k: v for k, v in _openrouter_flow.items() if k != "task"}
+
+
 @router.post("/settings/test-search-instance", response_model=SearchProbeOut)
 async def test_search_instance(body: SearchProbeIn) -> SearchProbeOut:
     """Test a self-hosted SearXNG address without saving it.

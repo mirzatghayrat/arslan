@@ -1163,7 +1163,11 @@
     "stepKeyHint": "Arslan 使用你自己的 API 密钥。粘贴至少一个供应商的密钥即可开始。",
     "providerLabel": "供应商",
     "keyPlaceholder": "粘贴 API 密钥…",
-    "stepOf": "第 {{current}} / {{total}} 步"
+    "stepOf": "第 {{current}} / {{total}} 步",
+    "openrouterSignIn": "用 OpenRouter 登录",
+    "openrouterWaiting": "等待浏览器中的授权…",
+    "openrouterPaidFallback": "已连接——但当前找不到免费模型,默认模型可能需要在 OpenRouter 充值。",
+    "orDivider": "或"
   },
   "evolution": {
     "card": {

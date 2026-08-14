@@ -1163,7 +1163,11 @@
     "stepKeyHint": "Arslan utilise vos propres clés API. Collez une clé pour au moins un fournisseur pour démarrer.",
     "providerLabel": "Fournisseur",
     "keyPlaceholder": "Collez la clé API…",
-    "stepOf": "Étape {{current}} sur {{total}}"
+    "stepOf": "Étape {{current}} sur {{total}}",
+    "openrouterSignIn": "Se connecter avec OpenRouter",
+    "openrouterWaiting": "En attente de l'autorisation dans votre navigateur…",
+    "openrouterPaidFallback": "Connecté — mais aucun modèle gratuit n'a pu être trouvé pour l'instant ; le modèle par défaut peut nécessiter du crédit sur OpenRouter.",
+    "orDivider": "ou"
   },
   "evolution": {
     "card": {

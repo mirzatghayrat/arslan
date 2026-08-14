@@ -1163,7 +1163,11 @@
     "stepKeyHint": "Arslan はご自身の API キーを使用します。少なくとも 1 つのプロバイダーのキーを貼り付けて開始してください。",
     "providerLabel": "プロバイダー",
     "keyPlaceholder": "API キーを貼り付け…",
-    "stepOf": "ステップ {{current}} / {{total}}"
+    "stepOf": "ステップ {{current}} / {{total}}",
+    "openrouterSignIn": "OpenRouter でサインイン",
+    "openrouterWaiting": "ブラウザでの承認を待っています…",
+    "openrouterPaidFallback": "接続しました——ただし現在無料モデルが見つからないため、デフォルトのモデルには OpenRouter でのクレジットが必要な場合があります。",
+    "orDivider": "または"
   },
   "evolution": {
     "card": {
