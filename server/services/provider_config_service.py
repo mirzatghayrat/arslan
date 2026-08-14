@@ -76,16 +76,46 @@ async def list_for_routing(session: AsyncSession) -> list[dict]:
              "key_state": _key_status(r.api_key)} for r in rows]
 
 
+#: The producer's vocabulary, mapped to the routing predicate. The ONLY writer of
+#: ProviderConfig.last_health is POST /settings/provider-configs/{id}/health, which
+#: persists provider_health.probe()'s "state" verbatim — so these keys are not a
+#: convention, they are that function's return values.
+#:
+#: 🔴 This used to test the column against ("ok", "healthy", "true", "1"). No probe
+#: has ever written any of those, so every probed config read as healthy=False and
+#: routing.usable() filtered it out — a config the user had TESTED was the one
+#: routing refused, while never-probed rows (NULL → None) stayed usable. `or primary`
+#: in select() hid it: the primary kept answering, and only non-"single" strategies
+#: lost their candidates. tests/server/test_health_vocabulary_reaches_routing.py
+#: pins each key to the producer and fails if the two ever diverge again.
+_HEALTH_OK: dict[str, bool] = {
+    # Answered with a usable model list.
+    "reachable_models": True,
+    # HTTP answered but no usable list — an empty list, or a status like 401/404/405.
+    # Reachable, NOT broken: many gateways gate /models harder than /chat, and some
+    # providers expose no list endpoint at all. A key that is missing or won't decrypt
+    # is already caught by key_state; a genuinely dead one fails at the provider with
+    # a real error. Fail-open on the propose side is the standing rule.
+    "reachable_no_list": True,
+    # Connection-level failure: refused / DNS / timeout. Nothing answered.
+    "unreachable": False,
+}
+
+
 def _last_health_ok(row) -> bool | None:
     """Tri-state: True/False from the last probe, None when none has run.
 
     None is NOT False. "Never checked" and "checked and down" call for different
     behaviour, and collapsing them would make a fresh install look broken.
+
+    An unrecognised state also reads None rather than False — if a fourth state ever
+    reaches a build whose mapping predates it, "unknown" is the honest answer and the
+    fail-open one. The drift guard makes that a red test, not a silent demotion.
     """
     value = getattr(row, "last_health", None)
     if value is None or value == "":
         return None
-    return str(value).lower() in ("ok", "healthy", "true", "1")
+    return _HEALTH_OK.get(str(value))
 
 
 async def add_config(session: AsyncSession, *, label: str, provider: str, model: str,
