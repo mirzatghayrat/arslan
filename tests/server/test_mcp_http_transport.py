@@ -24,11 +24,24 @@ def stub_sdk(monkeypatch):
     def fake_stdio(params):
         calls["stdio"] = params
         return _ACM(("r", "w"))
-    def fake_http(url, headers=None):
+    def fake_http(url, headers=None, auth=None):
         calls["http"] = (url, headers)
+        calls["auth"] = auth
         return _ACM(("r", "w", "sid"))
     monkeypatch.setattr(sstdio, "stdio_client", fake_stdio)
+    # Patch the seam SESSION holds, not the SDK module: session.py imports the
+    # symbol at module level now (so the oauth wiring could be tested the same
+    # way), and a patch on the SDK module no longer reaches the copied binding.
     monkeypatch.setattr(shttp, "streamablehttp_client", fake_http)
+    monkeypatch.setattr(sess, "streamablehttp_client", fake_http)
+
+    # No stored tokens in this stub world — and no database either, so the real
+    # has_tokens (a DB query) must not run.
+    from server.mcp import oauth_flow
+
+    async def no_tokens(server_id):
+        return False
+    monkeypatch.setattr(oauth_flow, "has_tokens", no_tokens)
     monkeypatch.setattr(mcp, "ClientSession", _Sess)
     return calls
 
@@ -45,6 +58,7 @@ async def test_open_session_http_branch(stub_sdk):
     await mgr._open_session({"id": 2, "transport": "http", "url": "https://x/mcp",
                              "env": {"Authorization": "Bearer t"}})
     assert stub_sdk["http"] == ("https://x/mcp", {"Authorization": "Bearer t"})   # url + headers (env)
+    assert stub_sdk["auth"] is None          # tokenless server: today's request, byte for byte
     assert "stdio" not in stub_sdk
 
 

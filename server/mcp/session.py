@@ -6,6 +6,8 @@ import asyncio
 import logging
 import os
 
+from mcp.client.streamable_http import streamablehttp_client
+
 from server.mcp import proxy_resolve
 
 logger = logging.getLogger(__name__)
@@ -33,9 +35,23 @@ class MCPSessionManager:
         try:
             transport = server.get("transport") or "stdio"
             if transport == "http":
-                from mcp.client.streamable_http import streamablehttp_client
+                # Tokens stored for this server (a completed Authorize flow) turn
+                # into the SDK's auth provider — the one argument spec ③'s recon
+                # found missing. SILENT provider on purpose: a background connect
+                # may refresh with stored tokens but must never open a browser;
+                # the interactive flow lives in oauth_flow.authorize, behind the
+                # button. No tokens ⇒ auth=None ⇒ byte-for-byte today's request.
+                from server.mcp import oauth_flow
+
+                auth = (
+                    oauth_flow.silent_provider(server)
+                    if await oauth_flow.has_tokens(server["id"])
+                    else None
+                )
                 streams = await stack.enter_async_context(
-                    streamablehttp_client(server["url"], headers=server.get("env") or {})
+                    streamablehttp_client(
+                        server["url"], headers=server.get("env") or {}, auth=auth
+                    )
                 )
                 read, write = streams[0], streams[1]          # http yields (read, write, get_session_id)
             else:
@@ -60,6 +76,30 @@ class MCPSessionManager:
             # stack so a half-started subprocess/connection doesn't leak on repeated timeouts.
             await stack.aclose()
             raise
+
+    async def probe_with_auth(self, server: dict, provider) -> None:
+        """One authed connect, uncached — drives the SDK's interactive flow.
+
+        Deliberately NOT get_session: the flow's provider carries live loopback
+        handlers, and caching a session built on them would pin a dead callback
+        server into the cache. Open, initialize (the 401 challenge happens here
+        and the SDK walks the whole flow), then close.
+        """
+        from contextlib import AsyncExitStack
+
+        from mcp import ClientSession
+
+        stack = AsyncExitStack()
+        try:
+            streams = await stack.enter_async_context(
+                streamablehttp_client(
+                    server["url"], headers=server.get("env") or {}, auth=provider
+                )
+            )
+            client = await stack.enter_async_context(ClientSession(streams[0], streams[1]))
+            await client.initialize()
+        finally:
+            await stack.aclose()
 
     async def get_session(self, server: dict):
         sid = server["id"]

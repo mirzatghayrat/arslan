@@ -54,6 +54,71 @@ async def get_catalog():
     return catalog.list_connectors()
 
 
+#: In-memory flow states — one interactive authorization at a time per server.
+#: In-memory ON PURPOSE: a flow is bound to a live loopback listener in this
+#: process; persisting "waiting" across a restart would advertise a callback
+#: port nobody is listening on.
+_oauth_flows: dict[int, dict] = {}
+
+
+@router.post("/servers/{server_id}/oauth/authorize")
+async def start_oauth(server_id: int):
+    """Kick the interactive flow; answer with the URL the browser must open.
+
+    The URL travels backend → this response → the shell's open_external and
+    nowhere else (ruling ③A's provenance half: nothing between the SDK and the
+    doorway may invent one). The flow itself finishes in the background; poll
+    /oauth/status for the outcome.
+    """
+    import asyncio
+
+    from server.mcp import oauth_flow
+
+    from server.db import session as db_session
+    from server.db.models import MCPServer
+    from server.mcp.discovery import runtime_dict
+
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+        if srv is None:
+            raise HTTPException(status_code=404, detail=f"mcp server {server_id} not found")
+        # runtime_dict, not the masked API shape: the flow needs the real URL
+        # and (decrypted) headers, same as every other connect path.
+        server = runtime_dict(srv)
+
+    url_ready: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+    _oauth_flows[server_id] = {"state": "waiting", "error": ""}
+
+    async def on_auth_url(url: str) -> None:
+        if not url_ready.done():
+            url_ready.set_result(url)
+
+    async def run() -> None:
+        try:
+            await oauth_flow.authorize(server, on_auth_url=on_auth_url)
+            _oauth_flows[server_id] = {"state": "done", "error": ""}
+        except Exception as exc:  # noqa: BLE001 — the outcome IS the payload here
+            _oauth_flows[server_id] = {"state": "error", "error": str(exc)[:500] or type(exc).__name__}
+            if not url_ready.done():
+                url_ready.set_exception(exc)
+
+    task = asyncio.create_task(run())
+    _oauth_flows[server_id]["task"] = task
+    try:
+        auth_url = await asyncio.wait_for(asyncio.shield(url_ready), timeout=15.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="the provider never produced an authorization URL")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)[:500] or type(exc).__name__)
+    return {"auth_url": auth_url}
+
+
+@router.get("/servers/{server_id}/oauth/status")
+async def oauth_status(server_id: int):
+    st = _oauth_flows.get(server_id) or {"state": "idle", "error": ""}
+    return {"state": st["state"], "error": st.get("error", "")}
+
+
 @router.post("/servers/{server_id}/connect")
 async def connect(server_id: int):
     return await mcp_service.connect(server_id)

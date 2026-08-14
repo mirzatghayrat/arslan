@@ -11,7 +11,10 @@ import {
   reconnectMcpServer,
   setMcpToolHost,
   wireMcpTool,
+  authorizeMcpOauth,
+  getMcpOauthStatus,
 } from "../api/mcp";
+import { openExternal } from "../lib/shell";
 
 interface EnvRow {
   k: string;
@@ -144,6 +147,34 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
     }
   }
 
+  const [oauthError, setOauthError] = useState<string>("");
+  async function authorizeOauth(id: number) {
+    setOauthError("");
+    try {
+      const { auth_url } = await authorizeMcpOauth(id);
+      // The one legal path for this URL (ruling ③A): backend → this response →
+      // the shell doorway. Nothing else may mint or open one.
+      await openExternal(auth_url);
+      // Poll the background flow, then run a REAL connect so the row's status
+      // comes from the normal path rather than a special case.
+      for (let i = 0; i < 90; i++) {
+        const st = await getMcpOauthStatus(id);
+        if (st.state === "done") {
+          await connect(id);
+          return;
+        }
+        if (st.state === "error") {
+          setOauthError(st.error || "authorization failed");
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      setOauthError("authorization timed out — the browser tab may still be waiting");
+    } catch (e) {
+      setOauthError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function connect(id: number) {
     setBusy(true);
     setError(null);
@@ -273,6 +304,9 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                         ? `http · ${s.url ?? ""}`
                         : `${s.command} ${s.args.join(" ")}`}
                     </p>
+                    {oauthError && (
+                      <p className="text-[10px] text-danger font-mono mt-1 break-words">{oauthError}</p>
+                    )}
                     {s.last_error && (
                       <p className="text-[10px] text-danger font-mono mt-1 break-words">
                         {s.last_error}
@@ -280,6 +314,21 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {s.transport === "http" && /authorization/i.test(s.last_error ?? "") && (
+                      /* Step 1's classifier decides when this shows: only a
+                         failure NAMED as authorization. An unreachable host gets
+                         no button — a browser round-trip cannot fix a network
+                         path. */
+                      <button
+                        type="button"
+                        data-testid={`mcp-authorize-${s.id}`}
+                        disabled={busy}
+                        onClick={() => authorizeOauth(s.id)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-warning/20 hover:bg-warning/30 text-warning transition-all disabled:opacity-50"
+                      >
+                        Authorize
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={busy}
