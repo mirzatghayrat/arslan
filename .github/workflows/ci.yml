@@ -126,6 +126,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Rust: the desktop shell, checked at last ─────────────────────────────
+      # lib.rs owns the window, the updater, and the sidecar lifecycle — the
+      # exact layer every packaged-only defect has lived in — and until this
+      # step nothing compiled it outside a tag push. fmt/clippy live in THIS
+      # job because macos is already a required check on main, so a warning
+      # blocks a merge without touching the ruleset; and macOS is the platform
+      # the shell actually ships on.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Rust format
+        run: cargo fmt --check --manifest-path desktop/src-tauri/Cargo.toml
+      - name: Rust clippy
+        # tauri-build refuses to run when the bundled sidecar resource path is
+        # absent; it is a PyInstaller artefact that only exists on a release
+        # build. An empty directory satisfies the existence check — clippy
+        # compiles the shell, it does not bundle it.
+        run: |
+          mkdir -p desktop/src-tauri/binaries/sidecar
+          cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
