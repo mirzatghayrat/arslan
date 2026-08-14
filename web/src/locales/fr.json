@@ -1481,7 +1481,8 @@
     "install": "Mettre à jour",
     "later": "Plus tard",
     "installing": "Mise à jour vers {{version}}…",
-    "failed": "La mise à jour n'a pas pu être installée"
+    "failed": "La mise à jour n'a pas pu être installée",
+    "checking": "Recherche de mises à jour…"
   },
   "anomaly": {
     "error_rate": {

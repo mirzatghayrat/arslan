@@ -16,7 +16,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -235,7 +235,7 @@ struct UpdateShared {
 
 #[derive(Clone, serde::Serialize)]
 struct UpdateStatus {
-    /// "none" | "available" | "downloading" | "error"
+    /// "none" | "checking" | "available" | "downloading" | "error"
     state: String,
     version: String,
     error: String,
@@ -255,12 +255,20 @@ impl Default for UpdateStatus {
 }
 
 impl UpdateShared {
-    fn set(&self, state: &str, version: &str, error: &str) {
-        *self.status.lock().unwrap() = UpdateStatus {
+    fn set(&self, app: &tauri::AppHandle, state: &str, version: &str, error: &str) {
+        let status = UpdateStatus {
             state: state.into(),
             version: version.into(),
             error: error.into(),
         };
+        *self.status.lock().unwrap() = status.clone();
+        // Announce every transition. The SPA polls every 60s while a check lasts
+        // 1-3s, so the "checking" state exists on screen only because of this
+        // push; emitting inside set() keeps the stored state and the announced
+        // one from ever disagreeing. Failure is ignored: during the startup
+        // check no window exists to hear it, and the poll still covers every
+        // durable state.
+        let _ = app.emit("update-status", status);
     }
 }
 
@@ -279,7 +287,7 @@ async fn install_update(app: tauri::AppHandle) {
     let Some(update) = shared.pending.lock().unwrap().take() else {
         return; // double-click race or stale pill — nothing staged
     };
-    shared.set("downloading", &update.version, "");
+    shared.set(&app, "downloading", &update.version, "");
     match update.download_and_install(|_, _| {}, || {}).await {
         Ok(()) => {
             // The user's click WAS the restart consent ("点安装就直接安装重启").
@@ -289,7 +297,7 @@ async fn install_update(app: tauri::AppHandle) {
             // The ONE failure worth surfacing: the user said "install" and it
             // did not happen. The pill shows it; no modal needed.
             eprintln!("update install failed: {e}");
-            shared.set("error", &update.version, &e.to_string());
+            shared.set(&app, "error", &update.version, &e.to_string());
         }
     }
 }
@@ -309,6 +317,12 @@ async fn install_update(app: tauri::AppHandle) {
 /// can act on. README's Status section discloses that silence.
 fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
     tauri::async_runtime::spawn(async move {
+        // Menu-triggered only: the pill shows a "checking" sweep so the click is
+        // visibly alive. The startup check stays byte-for-byte silent — its
+        // whole failure model (offline is a normal morning) depends on that.
+        if interactive {
+            app.state::<UpdateShared>().set(&app, "checking", "", "");
+        }
         let updater = match app.updater() {
             Ok(u) => u,
             Err(e) => {
@@ -319,13 +333,17 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
         match updater.check().await {
             Ok(Some(update)) => {
                 let shared = app.state::<UpdateShared>();
-                shared.set("available", &update.version, "");
+                shared.set(&app, "available", &update.version, "");
                 shared.pending.lock().unwrap().replace(update);
                 // No dialog even when interactive: the pill in the corner is
                 // the one consistent surface for "there is an update".
             }
             Ok(None) => {
                 if interactive {
+                    // Leave "checking" BEFORE the blocking dialog, or the sweep
+                    // keeps spinning behind the modal for as long as it is open.
+                    // A stuck progress indicator is worse than none.
+                    app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
                         .message("You're on the latest version. / 已是最新版。")
                         .title("Arslan")
@@ -336,6 +354,11 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
             Err(e) => {
                 eprintln!("update check failed (offline is normal): {e}");
                 if interactive {
+                    // Back to "none", NOT "error": the pill's error state means
+                    // an install failed and offers no way out, while a failed
+                    // CHECK already gets its own dialog right here — a red
+                    // corner pill on top would say the same thing twice.
+                    app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
                         .message(format!(
                             "Could not reach the update feed — are you online?\n\
