@@ -32,13 +32,13 @@ import RecommendedMcp from '../components/RecommendedMcp';
 const MEMORY: McpConnector = {
   key: 'memory', label: 'Memory', transport: 'stdio', command: 'npx',
   args: ['-y', '@modelcontextprotocol/server-memory'], url: null, runtime: 'node',
-  description: 'Persistent knowledge-graph memory (stored locally).', one_click: true, env: [],
+  description: 'Persistent knowledge-graph memory (stored locally).', one_click: true, auth: 'none', env: [],
   requires_path: false, path_placeholder: null,
 };
 const GITHUB: McpConnector = {
   key: 'github', label: 'GitHub', transport: 'stdio', command: 'npx',
   args: ['-y', '@modelcontextprotocol/server-github'], url: null, runtime: 'node',
-  description: 'GitHub repo / issue / PR access.', one_click: false,
+  description: 'GitHub repo / issue / PR access.', one_click: false, auth: 'static_key',
   env: [{
     name: 'GITHUB_PERSONAL_ACCESS_TOKEN',
     description: 'A GitHub personal access token (classic or fine-grained).',
@@ -51,7 +51,7 @@ const FILESYSTEM: McpConnector = {
   key: 'filesystem', label: 'Filesystem', transport: 'stdio', command: 'npx',
   args: ['-y', '@modelcontextprotocol/server-filesystem'], url: null, runtime: 'node',
   description: 'Read and write files under a directory you choose. Takes a local path.',
-  one_click: true, env: [],
+  one_click: true, auth: 'none', env: [],
   requires_path: true, path_placeholder: '/absolute/path/to/expose',
 };
 

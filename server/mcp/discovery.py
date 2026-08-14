@@ -2,6 +2,7 @@
 (locked: tier=orchestrator/status=registered). suggest_tier is a derived UI hint only."""
 from __future__ import annotations
 
+import httpx
 import hashlib
 import json
 
@@ -64,6 +65,46 @@ def runtime_dict(srv) -> dict:
             "command": srv.command, "args": srv.args or [], "url": srv.url, "env": env}
 
 
+def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:
+    """last_error for a failed connect — classified, and never empty.
+
+    Two shapes this replaces. A 401 used to become `str(exc)[:500]`: whatever
+    prose httpx chose, with no hint that the fix is credentials rather than the
+    server. And `str(InvalidToken())` is the EMPTY STRING (measured, spec ⓪
+    §2.3), so the same line could write a blank last_error — an error slot that
+    reads as unset.
+
+    The status error may arrive wrapped (anyio task groups), so the walk looks
+    inside groups and causes, depth-limited rather than recursion-trusting.
+    """
+    # An index walk, not `for e in seen[:32]`: that slice is snapshotted before
+    # the loop body ever appends, so wrapped exceptions would never be visited —
+    # the exact case the walk exists for. (Caught by the wrapped-401 test.)
+    seen: list[BaseException] = [exc]
+    i = 0
+    while i < len(seen) and i < 32:
+        e = seen[i]
+        i += 1
+        if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (401, 403):
+            code = e.response.status_code
+            if has_headers:
+                return (
+                    f"authorization failed (HTTP {code}): the server rejected the "
+                    "configured headers — re-check the token/key on this server"
+                )
+            return (
+                f"authorization failed (HTTP {code}): no credentials are configured "
+                "for this server — it requires authentication"
+            )
+        seen.extend(getattr(e, "exceptions", ()) or ())
+        for link in (e.__cause__, e.__context__):
+            if link is not None and link not in seen:
+                seen.append(link)
+    text = str(exc).strip()
+    # An exception whose str() is empty must still leave a trace a human can read.
+    return text[:500] if text else f"{type(exc).__name__} (no message)"
+
+
 async def connect_and_discover(server_id: int) -> list[dict]:
     """Returns [{key,name,description,suggested_tier}, ...]. Marks server connected/error."""
     async with db_session.AsyncSessionLocal() as db:
@@ -77,7 +118,7 @@ async def connect_and_discover(server_id: int) -> list[dict]:
         async with db_session.AsyncSessionLocal() as db:
             srv = await db.get(MCPServer, server_id)
             srv.status = "error"
-            srv.last_error = str(exc)[:500]
+            srv.last_error = _describe_failure(exc, has_headers=bool(server.get("env")))
             await db.commit()
         raise
     discovered: list[dict] = []
