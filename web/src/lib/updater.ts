@@ -40,3 +40,19 @@ export async function requestInstall(): Promise<void> {
     // surfaced via the next update_status poll ("error" state)
   }
 }
+
+/** Push-path for status changes. The check takes 1-3s and the poll runs every
+ * 60s, so without this the "checking" state would end between two polls and the
+ * menu item would still feel dead — the event is the feature, not a speedup.
+ * Returns an unsubscribe; resolves to a no-op in a plain browser, same switch
+ * as everything above. */
+export function subscribeUpdateStatus(cb: (s: UpdateStatus) => void): () => void {
+  if (!updaterAvailable()) return () => {};
+  let dead = false;
+  let unlisten: (() => void) | null = null;
+  import("@tauri-apps/api/event")
+    .then(({ listen }) => listen<UpdateStatus>("update-status", (e) => cb(e.payload)))
+    .then((un) => { if (dead) un(); else unlisten = un; })
+    .catch(() => { /* capability missing — the poll still covers everything else */ });
+  return () => { dead = true; unlisten?.(); };
+}

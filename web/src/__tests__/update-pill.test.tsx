@@ -4,6 +4,16 @@ import UpdatePill from "../components/UpdatePill";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
+// Captures the event subscriber the component registers, so tests can push a
+// status the way the Rust shell does. null until the component subscribes.
+let pushStatus: ((s: { state: string; version: string; error: string }) => void) | null = null;
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (_name: string, cb: (e: { payload: unknown }) => void) => {
+    pushStatus = (s) => cb({ payload: s });
+    return () => { pushStatus = null; };
+  }),
+}));
+
 type W = Window & { __TAURI_INTERNALS__?: { invoke: ReturnType<typeof vi.fn> } };
 const win = window as unknown as W;
 
@@ -77,5 +87,47 @@ describe("UpdatePill (v0.1.5 corner update UX)", () => {
     render(<UpdatePill />);
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByTestId("update-pill")).toBeNull();
+  });
+});
+
+
+describe("checking state (menu-triggered feedback)", () => {
+  // 🔴 Why these exist: the check takes 1-3s and the pill polls every 60s, so
+  // without the event push the state would end between two polls and the
+  // feature would be invisible. The event path is therefore not an
+  // optimisation — it is the feature.
+
+  it("renders the matrix and the checking line, with no actions", async () => {
+    mockShell({ state: "checking" });
+    render(<UpdatePill />);
+    await waitFor(() => expect(screen.getByTestId("update-pill")).toBeTruthy());
+    expect(screen.getByTestId("checking-matrix")).toBeTruthy();
+    expect(screen.getByText("updater.checking")).toBeTruthy();
+    // A transient state, not a todo: nothing to click, nothing to dismiss.
+    expect(screen.queryByText("updater.install")).toBeNull();
+    expect(screen.queryByText("updater.later")).toBeNull();
+    expect(screen.queryByLabelText("updater.dismiss")).toBeNull();
+  });
+
+  it("updates from a pushed event without waiting for the poll", async () => {
+    mockShell({ state: "none" });
+    render(<UpdatePill />);
+    // The mock module below captured the subscriber; fire it like the shell would.
+    await waitFor(() => expect(pushStatus).not.toBeNull());
+    pushStatus!({ state: "checking", version: "", error: "" });
+    await waitFor(() => expect(screen.getByTestId("checking-matrix")).toBeTruthy());
+    pushStatus!({ state: "none", version: "", error: "" });
+    await waitFor(() => expect(screen.queryByTestId("update-pill")).toBeNull());
+  });
+
+  it("keeps the reduced-motion escape hatch in the sweep styles", async () => {
+    mockShell({ state: "checking" });
+    render(<UpdatePill />);
+    await waitFor(() => expect(screen.getByTestId("checking-matrix")).toBeTruthy());
+    // jsdom applies no media queries, so assert the sheet itself carries the
+    // escape hatch — the mutation that deletes it must go red here.
+    const css = Array.from(document.querySelectorAll("style"))
+      .map((e) => e.textContent ?? "").join("");
+    expect(css).toMatch(/prefers-reduced-motion/);
   });
 });

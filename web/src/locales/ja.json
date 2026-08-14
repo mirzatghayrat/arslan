@@ -1481,7 +1481,8 @@
     "install": "アップデート",
     "later": "後で",
     "installing": "{{version}} に更新中…",
-    "failed": "アップデートをインストールできませんでした"
+    "failed": "アップデートをインストールできませんでした",
+    "checking": "アップデートを確認しています…"
   },
   "anomaly": {
     "error_rate": {

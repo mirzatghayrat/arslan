@@ -1481,7 +1481,8 @@
     "install": "Update",
     "later": "Later",
     "installing": "Updating to {{version}}…",
-    "failed": "The update could not be installed"
+    "failed": "The update could not be installed",
+    "checking": "Checking for updates…"
   },
   "anomaly": {
     "error_rate": {

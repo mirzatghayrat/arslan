@@ -1481,7 +1481,8 @@
     "install": "更新",
     "later": "稍后",
     "installing": "正在更新到 {{version}}…",
-    "failed": "更新安装失败"
+    "failed": "更新安装失败",
+    "checking": "正在检查更新…"
   },
   "anomaly": {
     "error_rate": {
