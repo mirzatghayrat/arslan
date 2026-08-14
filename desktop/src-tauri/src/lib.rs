@@ -687,6 +687,10 @@ pub fn run() {
                 .inner_size(WINDOW_W, WINDOW_H)
                 .resizable(false)
                 .decorations(false)
+                // The page paints its own rounded frame; the window behind it
+                // must not paint a square one. Needs macOSPrivateApi in
+                // tauri.conf.json or this flag silently does nothing.
+                .transparent(true)
                 .center()
                 .build()?;
 

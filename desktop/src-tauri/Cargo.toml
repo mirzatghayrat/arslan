@@ -15,7 +15,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# macos-private-api pairs with macOSPrivateApi in tauri.conf.json — tauri-build
+# refuses to compile when the two disagree, which is how this line got here.
+tauri = { version = "2", features = ["macos-private-api"] }
 # generate_context! expands to code that names serde_json in the crate root, so
 # it must be a direct dependency even though none of our own code uses it.
 serde = { version = "1", features = ["derive"] }
