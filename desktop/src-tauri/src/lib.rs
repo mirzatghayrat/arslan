@@ -272,6 +272,35 @@ impl UpdateShared {
     }
 }
 
+/// Ruling ③A (spec ③, 2026-08-08): the shell opens EXACTLY ONE kind of URL for
+/// the web side — https. Everything else is refused here, in the shell, because
+/// the page content is the least trusted thing in the room: a prompt-injected
+/// model or a hostile MCP description must not be able to launch file://,
+/// custom schemes, or plain http through us. "Only backend-returned
+/// authorization URLs" — the other half of the ruling — is enforced where the
+/// URL originates (step 3's flow hands it straight from the SDK to this
+/// command); the shell cannot know provenance, so it enforces what it can see.
+fn https_only(url: &str) -> Result<(), String> {
+    let lower = url.trim().to_ascii_lowercase();
+    if lower.starts_with("https://") && !lower.starts_with("https:///") {
+        Ok(())
+    } else {
+        Err(format!("refusing to open non-https url: {url}"))
+    }
+}
+
+/// Open a URL in the user's default browser. macOS-only by the same argument as
+/// the rest of this file: darwin-aarch64 is the one platform this shell ships on.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    https_only(&url)?;
+    std::process::Command::new("open")
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("could not open the browser: {e}"))
+}
+
 /// Poll target for the SPA's corner pill (web/src/components/UpdatePill.tsx).
 #[tauri::command]
 fn update_status(shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
@@ -653,7 +682,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
         .manage(UpdateShared::default())
-        .invoke_handler(tauri::generate_handler![update_status, install_update])
+        .invoke_handler(tauri::generate_handler![
+            update_status,
+            install_update,
+            open_external
+        ])
         .on_menu_event(|app, event| {
             if event.id() == "check-for-updates" {
                 check_for_updates(app.clone(), true);
@@ -740,6 +773,32 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 🔴 These were the first tests CI ever ran for this crate: the module
+    /// below predates the `cargo test` step and sat here unexecuted — a test
+    /// that never runs and a test that passes look identical from the outside.
+    #[test]
+    fn https_is_allowed() {
+        assert!(https_only("https://accounts.example.com/authorize?x=1").is_ok());
+    }
+
+    #[test]
+    fn everything_else_is_refused() {
+        for url in [
+            "http://accounts.example.com/authorize", // downgrade, not a typo
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "https:///missing-host",
+            "",
+        ] {
+            assert!(https_only(url).is_err(), "should refuse {url:?}");
+        }
+    }
+
+    #[test]
+    fn scheme_check_is_case_insensitive() {
+        assert!(https_only("HTTPS://ok.example.com/a").is_ok());
+    }
 
     #[test]
     fn dmg_and_translocation_paths_are_ephemeral() {

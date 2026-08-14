@@ -141,6 +141,15 @@ jobs:
           workspaces: desktop/src-tauri
       - name: Rust format
         run: cargo fmt --check --manifest-path desktop/src-tauri/Cargo.toml
+      - name: Rust tests
+        # 🔴 The crate had tests BEFORE it had a test step — the DMG-detection
+        # module sat here unexecuted, and a test that never runs looks exactly
+        # like a test that passes. (PR #23 claimed "the crate has no tests yet";
+        # that was wrong, and this step is the correction.)
+        run: |
+          mkdir -p desktop/src-tauri/binaries/sidecar
+          cargo test --manifest-path desktop/src-tauri/Cargo.toml
+
       - name: Rust clippy
         # tauri-build refuses to run when the bundled sidecar resource path is
         # absent; it is a PyInstaller artefact that only exists on a release

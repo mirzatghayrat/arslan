@@ -183,6 +183,12 @@
           "markdownDescription": "Enables the install_update command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_external command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-external",
+          "markdownDescription": "Enables the open_external command without any pre-configured scope."
+        },
+        {
           "description": "Enables the update_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-update-status",
@@ -193,6 +199,12 @@
           "type": "string",
           "const": "deny-install-update",
           "markdownDescription": "Denies the install_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_external command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-external",
+          "markdownDescription": "Denies the open_external command without any pre-configured scope."
         },
         {
           "description": "Denies the update_status command without any pre-configured scope.",
