@@ -24,9 +24,16 @@
 -->
 <style>
   :root { --arslan-boot-bg: #17150F; }
-  html, body {
-    margin: 0; height: 100%; overflow: hidden;
+  /* The WINDOW is transparent (lib.rs passes .transparent(true)) and the body
+     is the visible frame: rounded to match what macOS gives the decorated main
+     window, so the splash and the app read as the same object. 10px is a
+     matched value, not a read one — macOS exposes no API for its radius. */
+  html { background: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    position: relative;
     background: var(--arslan-boot-bg);
+    border-radius: 10px;
     /* Not `color-scheme: light dark`: this window must be this colour in both
        OS appearances, because it is matched against a fixed video frame. */
     color-scheme: dark;
@@ -36,7 +43,9 @@
     cursor: default;
   }
   #clip {
-    position: fixed; inset: 0;
+    /* absolute, not fixed: fixed-position boxes ignore the body's overflow
+       clip, and an unclipped video would paint square corners over the frame */
+    position: absolute; inset: 0;
     width: 100%; height: 100%;
     object-fit: cover;
     /* Kept in lockstep with FADE_OUT in desktop/src-tauri/src/lib.rs, which
@@ -48,9 +57,14 @@
   /* The fallback layer sits UNDER the clip, so it costs nothing when the video
      plays and is already composited when it does not. */
   #fallback {
-    position: fixed; inset: 0;
+    position: absolute; inset: 0;
     display: grid; place-items: center;
+    /* Same clock as the clip: the fade-out retires BOTH layers. Without this
+       the clip dimmed away and this layer — which sits underneath it all along
+       — showed "Starting Arslan…" for the 400ms hand-off, every launch. */
+    transition: opacity 400ms ease-out;
   }
+  #fallback.gone { opacity: 0; }
   .row { display: flex; gap: 10px; align-items: center; }
   .dot {
     width: 9px; height: 9px; border-radius: 50%; background: #d97706;
@@ -61,7 +75,7 @@
     50%      { opacity: 1;   transform: scale(1);   }
   }
   #slow, #failed {
-    position: fixed; left: 0; right: 0; bottom: 44px;
+    position: absolute; left: 0; right: 0; bottom: 44px;
     font-size: 13px; opacity: 0; text-align: center;
     padding: 0 32px;
     transition: opacity 400ms ease-in;
@@ -153,6 +167,9 @@
     window.__arslanFadeOut = function () {
       slow.classList.remove('shown');
       clip.classList.add('gone');
+      // The fix this file exists for: the fallback sits under the clip the
+      // whole time, so retiring only the clip UNMASKED it during the hand-off.
+      document.getElementById('fallback').classList.add('gone');
     };
 
     // Called from Rust when the sidecar never became healthy. The old code
