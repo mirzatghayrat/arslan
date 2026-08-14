@@ -1163,7 +1163,11 @@
     "stepKeyHint": "Arslan uses your own API keys. Paste a key for at least one provider to get started.",
     "providerLabel": "Provider",
     "keyPlaceholder": "Paste API key…",
-    "stepOf": "Step {{current}} of {{total}}"
+    "stepOf": "Step {{current}} of {{total}}",
+    "openrouterSignIn": "Sign in with OpenRouter",
+    "openrouterWaiting": "Waiting for authorization in your browser…",
+    "openrouterPaidFallback": "Connected — but no free model could be found right now, so the default model may need credit on OpenRouter.",
+    "orDivider": "or"
   },
   "evolution": {
     "card": {

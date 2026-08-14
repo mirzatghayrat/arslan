@@ -772,3 +772,16 @@ export const probeProviderHealth = (id: number) =>
   request<HealthResult>(`/settings/provider-configs/${id}/health`, {
     method: "POST",
   });
+
+// ── OpenRouter one-click sign-in ──────────────────────────────────────────────
+
+/** Begin the OAuth PKCE sign-in. The returned URL's ONE legal path is
+ * backend → this response → the shell's open_external (spec ③ ruling ③A). */
+export const startOpenRouterOauth = () =>
+  request<{ auth_url: string }>("/settings/openrouter/oauth/start", { method: "POST" });
+
+export const getOpenRouterOauthStatus = () =>
+  request<{ state: "idle" | "waiting" | "done" | "error"; error?: string;
+            config_id?: number; model?: string; free_model?: boolean }>(
+    "/settings/openrouter/oauth/status",
+  );

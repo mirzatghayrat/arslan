@@ -1163,7 +1163,11 @@
     "stepKeyHint": "Arslan nutzt deine eigenen API-Schlüssel. Füge einen Schlüssel für mindestens einen Anbieter ein, um zu starten.",
     "providerLabel": "Anbieter",
     "keyPlaceholder": "API-Schlüssel einfügen…",
-    "stepOf": "Schritt {{current}} von {{total}}"
+    "stepOf": "Schritt {{current}} von {{total}}",
+    "openrouterSignIn": "Mit OpenRouter anmelden",
+    "openrouterWaiting": "Warte auf die Autorisierung im Browser…",
+    "openrouterPaidFallback": "Verbunden — aber derzeit ist kein kostenloses Modell auffindbar; das Standardmodell benötigt eventuell Guthaben bei OpenRouter.",
+    "orDivider": "oder"
   },
   "evolution": {
     "card": {

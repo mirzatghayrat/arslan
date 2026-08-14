@@ -32,7 +32,10 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1314 keys (baseline guard)", () => {
+  it("en locale has 1318 keys (baseline guard)", () => {
+    // 1314 → 1318: the OpenRouter sign-in on the first-run wizard — button,
+    // waiting line, the stated paid-fallback (a silent one would 402 on the
+    // exact zero-card user the button exists for), and the "or" divider.
     // 1313 → 1314: updater.checking — the line beside the dot-matrix sweep while
     // a menu-triggered update check is in flight. One key: the state is transient
     // and offers no actions, so it has no button copy.
@@ -162,7 +165,7 @@ describe("locale parity", () => {
     //              and recall, so the entry panel has to say so; a fact that silently
     //              stops being used while the graph still shows it in full reads as
     //              the model forgetting rather than as a mark someone set.
-    expect(enKeys).toHaveLength(1314);
+    expect(enKeys).toHaveLength(1318);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

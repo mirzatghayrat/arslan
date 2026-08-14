@@ -1163,7 +1163,11 @@
     "stepKeyHint": "Arslan usa tus propias claves de API. Pega una clave de al menos un proveedor para empezar.",
     "providerLabel": "Proveedor",
     "keyPlaceholder": "Pega la clave de API…",
-    "stepOf": "Paso {{current}} de {{total}}"
+    "stepOf": "Paso {{current}} de {{total}}",
+    "openrouterSignIn": "Iniciar sesión con OpenRouter",
+    "openrouterWaiting": "Esperando la autorización en tu navegador…",
+    "openrouterPaidFallback": "Conectado — pero ahora mismo no se encontró ningún modelo gratuito; el modelo predeterminado puede requerir crédito en OpenRouter.",
+    "orDivider": "o"
   },
   "evolution": {
     "card": {
