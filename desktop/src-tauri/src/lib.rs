@@ -67,7 +67,10 @@ struct Sidecar(Mutex<Option<Child>>);
 fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
     let exe = app
         .path()
-        .resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
+        .resolve(
+            "sidecar/arslan-server",
+            tauri::path::BaseDirectory::Resource,
+        )
         .map_err(|e| format!("cannot locate the bundled sidecar: {e}"))?;
 
     if !exe.exists() {
@@ -100,7 +103,10 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
     // Deliberately NOT taken: dropping the ChildStdin would close the pipe
     // immediately and kill the sidecar on startup. It must live exactly as
     // long as this process, which is what storing the Child in state does.
-    debug_assert!(child.stdin.is_some(), "stdin pipe is the sidecar's lifeline");
+    debug_assert!(
+        child.stdin.is_some(),
+        "stdin pipe is the sidecar's lifeline"
+    );
 
     let stdout = child
         .stdout
@@ -199,8 +205,7 @@ fn wait_for_health(port: u16) -> Result<(), String> {
 /// is not [A-Za-z0-9_-] is not our token, and refusing it beats quoting it.
 fn read_api_token() -> Option<String> {
     let home = std::env::var_os("HOME")?;
-    let path = std::path::Path::new(&home)
-        .join("Library/Application Support/Arslan/api_token");
+    let path = std::path::Path::new(&home).join("Library/Application Support/Arslan/api_token");
     let token = std::fs::read_to_string(path).ok()?.trim().to_string();
     if !token.is_empty()
         && token
@@ -241,7 +246,11 @@ struct UpdateStatus {
 // IPC probe before v0.1.5 shipped.
 impl Default for UpdateStatus {
     fn default() -> Self {
-        Self { state: "none".into(), version: String::new(), error: String::new() }
+        Self {
+            state: "none".into(),
+            version: String::new(),
+            error: String::new(),
+        }
     }
 }
 
@@ -414,7 +423,9 @@ fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
             .blocking_show();
         return;
     }
-    let _ = std::process::Command::new("/usr/bin/open").arg(dest).spawn();
+    let _ = std::process::Command::new("/usr/bin/open")
+        .arg(dest)
+        .spawn();
     // The sidecar has not started yet, so exiting here cannot orphan it or
     // hold the database lock against the relaunched copy.
     std::process::exit(0);
@@ -481,7 +492,7 @@ fn report_boot_failure(app: &tauri::AppHandle, message: &str) {
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', "\\n");
-        let _ = splash.eval(&format!(
+        let _ = splash.eval(format!(
             "window.__arslanBootError && window.__arslanBootError(\
              \"Arslan could not start.\\n\\n{escaped}\")"
         ));
