@@ -196,6 +196,35 @@ footer{background:var(--night);padding:clamp(44px,6vw,72px) 0 60px}
   .figure,.figure.alt,.blobframe{transform:none}
   .gate-bg img,.gate-bg video{opacity:.14}
 }
+/* ============ phones ============ */
+/* Everything below 640px is design, not arithmetic: the clamp() scale above keeps a
+   phone from breaking, but it was only ever composed for wide frames. Nothing in this
+   block can touch a desktop render — that is verified by pixel-comparing a 1440px
+   screenshot before and after any edit here. */
+@media (max-width:640px){
+  /* The film frame is landscape; a portrait crop of its center misses the character
+     entirely and spends the top half of the screen on empty room. Shift the focal
+     point to where he sits and give the text back some of the height. */
+  .hero{min-height:88svh}
+  .hero video,.hero .fallback{object-position:68% 30%}
+  .hero-inner{padding-bottom:clamp(40px,7vh,64px)}
+  .hero h1{font-size:clamp(44px,13vw,56px)}
+  /* Stacked full-width buttons: at this width the pair wraps anyway, ragged.
+     Full-width is the phone idiom and doubles as a bigger tap target. */
+  .cta-row{flex-direction:column;align-items:stretch}
+  .cta-row .pill{justify-content:center}
+  /* 17vw clamps to the 150px floor here, which turns the product screenshots into
+     postage stamps. Taller cells keep them recognisable; the strip stays one row. */
+  .strip .cell{height:190px}
+  /* Ragged flex leaves the third card hanging; a two-up grid reads as designed. */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .stat{min-width:0;padding:16px 18px}
+  .band{padding:56px 0}
+  /* The desktop ellipsis assumed a >=320px column. Here it truncated every third-party
+     attribution line — the one list on the page that must not lose its tail. */
+  .fattr ul{grid-template-columns:1fr}
+  .fattr li{white-space:normal;overflow:visible;text-overflow:clip}
+}
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
   .rv,.hero h1 .w,.bub,.stamp,.spawn{opacity:1!important;transform:none!important}
