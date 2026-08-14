@@ -15,6 +15,7 @@
     "allow-update-status",
     "allow-install-update",
     "core:event:allow-listen",
-    "core:event:allow-unlisten"
+    "core:event:allow-unlisten",
+    "allow-open-external"
   ]
 }
