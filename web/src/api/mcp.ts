@@ -48,3 +48,14 @@ export const reconnectMcpServer = (id: number) =>
 
 export const deleteMcpServer = (id: number) =>
   request<{ ok: boolean }>(`/mcp/servers/${id}`, { method: "DELETE" });
+
+/** Kick the interactive OAuth flow; the shell must open the returned URL.
+ * Provenance rule (③A): this URL travels backend → here → open_external and
+ * nothing else may mint one. */
+export const authorizeMcpOauth = (id: number) =>
+  request<{ auth_url: string }>(`/mcp/servers/${id}/oauth/authorize`, { method: "POST" });
+
+export const getMcpOauthStatus = (id: number) =>
+  request<{ state: "idle" | "waiting" | "done" | "error"; error: string }>(
+    `/mcp/servers/${id}/oauth/status`,
+  );
