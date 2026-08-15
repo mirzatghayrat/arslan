@@ -1,0 +1,392 @@
+/*
+ * FirstRunWizard — the one screen that does NOT follow the app theme.
+ *
+ * The wizard is a frosted-glass panel over a filmed (clay-character) background
+ * video, and its palette is pinned to that footage: warm paper neutrals, an
+ * ink-black primary, and the product orange #D9741A as the single accent. Theme
+ * tokens would repaint it in dark mode and break the glass against the video,
+ * so the colors live HERE, in a stylesheet scoped by .fr-* class names, and the
+ * component file stays free of color literals (no-raw-colors guard).
+ *
+ * Glass recipe (approved mock "full5", layout B: panel left, character right):
+ * blur(46px) saturate(1.7) brightness(1.04) over a white 62→44% gradient with
+ * an inset hairline + top highlight. backdrop-filter needs real content behind
+ * it to read as frosted — hence the video (or the poster fallback) always
+ * paints underneath, and the crop tucks the desk in behind the panel's edge.
+ */
+
+.fr-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  background: #efe9e2;
+  user-select: none;
+}
+
+.fr-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* character sits center-left in the source frame; this crop keeps it in the
+     clear right half AND slides the desk's corner in behind the panel — the
+     frosted glass needs something real to blur to read as glass */
+  object-position: 27% 50%;
+}
+
+/* When the video can't play (asset absent, or a browser without h264) this
+   stands in: the poster frame if it loads — same composition, just still —
+   over a warm gradient for when even the poster is missing. */
+.fr-bg-fallback {
+  background:
+    url("/first-run/poster.jpg") 27% 50% / cover no-repeat,
+    radial-gradient(120% 90% at 72% 42%, #f7f2ea 0%, #ece4d8 46%, #ddd2c2 100%);
+}
+
+/* Soft vignette so panel text keeps contrast over bright video moments. */
+.fr-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(35, 28, 20, 0.10), rgba(35, 28, 20, 0) 40%);
+  pointer-events: none;
+}
+
+.fr-glass {
+  position: absolute;
+  left: 60px;
+  top: 54px;
+  bottom: 54px;
+  width: 404px;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 32px 26px;
+  border-radius: 26px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.44));
+  -webkit-backdrop-filter: blur(46px) saturate(1.7) brightness(1.04);
+  backdrop-filter: blur(46px) saturate(1.7) brightness(1.04);
+  box-shadow:
+    0 24px 70px rgba(35, 28, 20, 0.16),
+    0 2px 8px rgba(35, 28, 20, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+  color: #1d1d1f;
+}
+
+@media (max-width: 860px) {
+  .fr-glass {
+    left: 16px;
+    right: 16px;
+    top: 24px;
+    bottom: 24px;
+    width: auto;
+  }
+}
+
+/* ── dismiss ── */
+
+.fr-x {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: #a49e95;
+  transition: color 0.15s;
+}
+.fr-x:hover {
+  color: #1d1d1f;
+}
+
+/* ── step body: 220ms crossfade on step change (wrapper keyed by step) ── */
+
+.fr-step {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: fr-fade 220ms ease-out;
+}
+
+@keyframes fr-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.fr-h1 {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+  padding-right: 28px;
+}
+
+.fr-sub {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6e6a64;
+  margin-bottom: 18px;
+}
+
+.fr-hint {
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #8a847b;
+}
+
+/* ── step 1: language grid ── */
+
+.fr-langs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fr-lang {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(29, 29, 31, 0.14);
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 12.5px;
+  color: #3c3934;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.fr-lang:hover {
+  border-color: rgba(29, 29, 31, 0.32);
+}
+.fr-lang.on {
+  border-color: #d9741a;
+  background: rgba(217, 116, 26, 0.09);
+  color: #b35f14;
+  font-weight: 600;
+}
+
+/* ── step 2: how it works ── */
+
+.fr-typed {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d9741a;
+  border-right: 2px solid #d9741a;
+  padding-right: 3px;
+  margin-bottom: 16px;
+  animation:
+    fr-typein 900ms steps(24, end) 150ms backwards,
+    fr-caret 900ms step-end 1.05s 3,
+    fr-caret-off 1ms linear 3.75s forwards;
+}
+
+@keyframes fr-typein {
+  from { max-width: 0; }
+  to   { max-width: 100%; }
+}
+@keyframes fr-caret {
+  0%, 100% { border-right-color: #d9741a; }
+  50%      { border-right-color: transparent; }
+}
+@keyframes fr-caret-off {
+  to { border-right-color: transparent; }
+}
+
+.fr-row {
+  display: flex;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid rgba(29, 29, 31, 0.08);
+  animation: fr-fade 320ms ease-out backwards;
+}
+.fr-row:nth-child(1) { animation-delay: 0.35s; }
+.fr-row:nth-child(2) { animation-delay: 0.55s; }
+.fr-row:nth-child(3) { animation-delay: 0.75s; }
+.fr-row:nth-child(4) { animation-delay: 0.95s; }
+
+.fr-row-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: #d9741a;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-row-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 1px;
+}
+
+.fr-row-body {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6e6a64;
+}
+
+/* ── step 3: connect a model ── */
+
+.fr-or-btn {
+  width: 100%;
+  padding: 11px 16px;
+  border-radius: 999px;
+  background: #1d1d1f;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.fr-or-btn:hover:not(:disabled) { opacity: 0.86; }
+.fr-or-btn:disabled { opacity: 0.55; }
+
+.fr-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #a49e95;
+}
+.fr-divider::before,
+.fr-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid rgba(29, 29, 31, 0.12);
+}
+
+.fr-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8a847b;
+  margin-bottom: 5px;
+}
+
+.fr-field {
+  width: 100%;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(29, 29, 31, 0.16);
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12.5px;
+  color: #1d1d1f;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.fr-field:focus { border-color: #d9741a; }
+.fr-field::placeholder { color: #a49e95; }
+
+.fr-cap {
+  font-size: 10.5px;
+  color: #8a847b;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-test-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 16px;
+  border-radius: 999px;
+  background: #d9741a;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.fr-test-btn:hover:not(:disabled) { opacity: 0.88; }
+.fr-test-btn:disabled { opacity: 0.55; }
+
+.fr-ok    { font-size: 11px; font-weight: 600; color: #35773f; margin-top: 9px; }
+.fr-err   { font-size: 11px; color: #b3402e; margin-top: 9px; word-break: break-word; }
+.fr-warn  { font-size: 11px; color: #9a6b14; margin-top: 9px; }
+
+.fr-shake { animation: fr-shake 300ms ease-in-out; }
+@keyframes fr-shake {
+  0%, 100% { transform: none; }
+  25%      { transform: translateX(-5px); }
+  75%      { transform: translateX(5px); }
+}
+
+/* three-dot "testing" pulse — text stays, dots animate after it */
+.fr-dotload::after {
+  content: "···";
+  display: inline-block;
+  margin-left: 4px;
+  letter-spacing: 2px;
+  animation: fr-dotpulse 900ms ease-in-out infinite;
+}
+@keyframes fr-dotpulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+
+.fr-linklike {
+  font-size: 11px;
+  color: #6e6a64;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fr-linklike:hover { color: #1d1d1f; }
+
+/* ── footer: dots + nav ── */
+
+.fr-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(29, 29, 31, 0.08);
+}
+
+.fr-dots {
+  display: flex;
+  gap: 6px;
+  margin-right: auto;
+}
+.fr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(29, 29, 31, 0.18);
+  transition: width 0.25s, background 0.25s;
+}
+.fr-dot.on {
+  width: 16px;
+  background: #d9741a;
+}
+
+.fr-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fr-ghost {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #6e6a64;
+  padding: 8px 10px;
+  transition: color 0.15s;
+}
+.fr-ghost:hover { color: #1d1d1f; }
+
+.fr-pri {
+  padding: 9px 20px;
+  border-radius: 999px;
+  background: #1d1d1f;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.fr-pri:hover:not(:disabled) { opacity: 0.86; }
+.fr-pri:disabled { opacity: 0.55; }
