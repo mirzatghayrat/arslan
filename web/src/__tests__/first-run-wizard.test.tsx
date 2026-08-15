@@ -177,7 +177,7 @@ describe("FirstRunWizard", () => {
     expect(screen.getByTestId("first-run-name")).toBeInTheDocument();
   });
 
-  it("finishing hello with a name stores it in the profileStore", async () => {
+  it("finishing hello with a name stores it, then plays the outro before closing", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={onClose} />);
@@ -187,7 +187,14 @@ describe("FirstRunWizard", () => {
     await user.type(screen.getByTestId("first-run-name"), "  Mirzat  ");
     fireEvent.click(screen.getByTestId("first-run-finish"));
 
+    // The name is stored immediately; the wizard stays open for the outro clip.
     expect(useProfileStore.getState().displayName).toBe("Mirzat");
+    expect(onClose).not.toHaveBeenCalled();
+    const outro = screen.getByTestId("first-run-outro");
+    expect(outro.getAttribute("src")).toMatch(/^\/first-run\/outro-[123]\.mp4$/);
+
+    // A clip that can't load must never trap the user — error closes.
+    fireEvent.error(outro);
     expect(getFirstRunSeen()).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -201,7 +208,42 @@ describe("FirstRunWizard", () => {
 
     expect(useProfileStore.getState().displayName).toBe("");
     expect(mockAddProviderConfig).not.toHaveBeenCalled();
+    fireEvent.error(screen.getByTestId("first-run-outro"));
     expect(getFirstRunSeen()).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("the outro clip is picked at random from the three shipped variants", () => {
+    const rand = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={vi.fn()} />);
+    toKeyStep();
+    fireEvent.click(screen.getByTestId("first-run-add-later"));
+    fireEvent.click(screen.getByTestId("first-run-finish"));
+    expect(screen.getByTestId("first-run-outro").getAttribute("src")).toBe("/first-run/outro-3.mp4");
+    rand.mockRestore();
+  });
+
+  it("when the outro ends it fades, then the wizard closes", async () => {
+    const onClose = vi.fn();
+    render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={onClose} />);
+    toKeyStep();
+    fireEvent.click(screen.getByTestId("first-run-add-later"));
+    fireEvent.click(screen.getByTestId("first-run-finish"));
+
+    fireEvent.ended(screen.getByTestId("first-run-outro"));
+    // Not synchronous — the CSS fade (OUTRO_FADE_MS) runs first.
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("clicking the outro skips it immediately", () => {
+    const onClose = vi.fn();
+    render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={onClose} />);
+    toKeyStep();
+    fireEvent.click(screen.getByTestId("first-run-add-later"));
+    fireEvent.click(screen.getByTestId("first-run-finish"));
+
+    fireEvent.click(screen.getByTestId("first-run-outro"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
