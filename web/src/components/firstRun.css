@@ -31,9 +31,9 @@
   height: 100%;
   object-fit: cover;
   /* character sits center-left in the source frame; this crop keeps it in the
-     clear right half AND slides the desk's corner in behind the panel — the
-     frosted glass needs something real to blur to read as glass */
-  object-position: 27% 50%;
+     clear right half, beside the panel (approved composition — do not shift
+     the scene to meet the glass; the glass is WIDENED to reach the desk) */
+  object-position: 16% 50%;
 }
 
 /* When the video can't play (asset absent, or a browser without h264) this
@@ -41,7 +41,7 @@
    over a warm gradient for when even the poster is missing. */
 .fr-bg-fallback {
   background:
-    url("/first-run/poster.jpg") 27% 50% / cover no-repeat,
+    url("/first-run/poster.jpg") 16% 50% / cover no-repeat,
     radial-gradient(120% 90% at 72% 42%, #f7f2ea 0%, #ece4d8 46%, #ddd2c2 100%);
 }
 
@@ -58,7 +58,10 @@
   left: 60px;
   top: 54px;
   bottom: 54px;
-  width: 404px;
+  /* wide enough that the right edge rides over the desk's corner — the
+     frosted blur needs real scenery under it to read as glass. Fixed across
+     all four steps; only the content changes. */
+  width: 460px;
   display: flex;
   flex-direction: column;
   padding: 30px 32px 26px;
