@@ -340,6 +340,32 @@
 }
 .fr-linklike:hover { color: #1d1d1f; }
 
+/* ── outro overlay: wizard → opening-animation hand-off ──
+   Fades in over the live wizard once actually playing (masks the drift
+   between the real panel and the clip's redrawn one), fades out into the app
+   on end. Keep .leaving's duration in sync with OUTRO_FADE_MS. */
+
+.fr-outro {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+  cursor: pointer;
+}
+.fr-outro.playing,
+.fr-outro.leaving { opacity: 1; }
+
+/* the whole overlay (clip + glass + backdrop) crossfades out into the app;
+   keep the duration in sync with OUTRO_FADE_MS */
+.fr-root.fr-leaving {
+  opacity: 0;
+  transition: opacity 480ms ease-out;
+  pointer-events: none;
+}
+
 /* ── footer: dots + nav ── */
 
 .fr-foot {

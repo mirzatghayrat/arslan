@@ -17,7 +17,7 @@
  * flag so it never nags again.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, Check } from "lucide-react";
 import type { CatalogEntry, ProviderOption, ProviderConfig } from "../api/client.types";
@@ -49,6 +49,12 @@ const STEP_LANG = 0;
 const STEP_HOW = 1;
 const STEP_KEY = 2;
 const STEP_HELLO = 3;
+
+/** Shipped outro clips (web/public/first-run/outro-N.mp4), one picked at random
+ * per finish — three variants so the send-off stays fun across installs. */
+const OUTRO_COUNT = 3;
+/** Matches the .fr-outro.leaving CSS fade — finish() fires when it completes. */
+const OUTRO_FADE_MS = 480;
 
 export default function FirstRunWizard({ llmProviders, onAdded, onClose }: FirstRunWizardProps) {
   const { t, i18n } = useTranslation();
@@ -87,6 +93,17 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
   const setDisplayName = useProfileStore((s) => s.setDisplayName);
   const [name, setName] = useState("");
 
+  // ── outro: the wizard → opening-animation hand-off ──
+  // null = not started; otherwise which of the three clips is playing. The clip
+  // fades IN over the live wizard (masking the pixel drift between the real
+  // panel and the video's redrawn one) and fades OUT into the app when it ends
+  // — both boundaries are crossfades, so neither cut lands on a hard frame
+  // jump. Click skips; a load error skips; a 15s net catches a stalled load.
+  const [outro, setOutro] = useState<number | null>(null);
+  const [outroPhase, setOutroPhase] = useState<"loading" | "playing" | "leaving">("loading");
+  const outroTimers = useRef<number[]>([]);
+  useEffect(() => () => { outroTimers.current.forEach(clearTimeout); }, []);
+
   const finish = () => {
     setFirstRunSeen();
     onClose();
@@ -100,7 +117,18 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
   const finishHello = () => {
     const trimmed = name.trim();
     if (trimmed) setDisplayName(trimmed);
-    finish();
+    // Reduced-motion users get no ceremony — straight into the app.
+    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finish();
+      return;
+    }
+    setOutro(1 + Math.floor(Math.random() * OUTRO_COUNT));
+    outroTimers.current.push(window.setTimeout(finish, 15000));
+  };
+
+  const endOutro = () => {
+    setOutroPhase("leaving");
+    outroTimers.current.push(window.setTimeout(finish, OUTRO_FADE_MS));
   };
 
   /** Persist the key config (shared by the tested and the save-anyway paths). */
@@ -194,7 +222,10 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
   const busy = keyState === "testing" || keyState === "saving";
 
   return (
-    <div className="fr-root animate-fade-in">
+    // On "leaving" the WHOLE overlay fades — outro clip, glass and backdrop
+    // together — revealing the live app beneath: the tail boundary is a real
+    // crossfade into the product, never a fade back to the wizard + hard cut.
+    <div className={`fr-root animate-fade-in${outroPhase === "leaving" ? " fr-leaving" : ""}`}>
       {/* The video is the aesthetic — the frosted panel only reads as glass with
           content moving behind it. On error (asset missing, or a webview without
           h264) the poster-frame fallback stands in so the wizard still works. */}
@@ -427,6 +458,23 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
           </div>
         </div>
       </div>
+
+      {/* outro overlay — painted above the glass; click to skip */}
+      {outro != null && (
+        <video
+          data-testid="first-run-outro"
+          className={`fr-outro ${outroPhase}`}
+          src={`/first-run/outro-${outro}.mp4`}
+          autoPlay
+          muted
+          playsInline
+          title={t("firstRun.skip")}
+          onPlaying={() => setOutroPhase((p) => (p === "loading" ? "playing" : p))}
+          onEnded={endOutro}
+          onError={finish}
+          onClick={finish}
+        />
+      )}
     </div>
   );
 }
