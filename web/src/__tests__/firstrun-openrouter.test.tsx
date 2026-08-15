@@ -19,6 +19,8 @@ const status = vi.fn();
 vi.mock("../api/client", () => ({
   addProviderConfig: vi.fn(),
   api: { updateSettings: vi.fn(async () => ({})) },
+  getCatalog: vi.fn(async () => []),
+  testLlm: vi.fn(),
   listProviderConfigs: vi.fn(async () => [
     { id: 1, label: "OpenRouter", provider: "openrouter", model: "deepseek/x:free" },
   ]),
@@ -41,8 +43,9 @@ const props = {
 
 async function toKeyStep() {
   render(<FirstRunWizard {...(props as unknown as Parameters<typeof FirstRunWizard>[0])} />);
-  fireEvent.click(screen.getByText("firstRun.getStarted"));
-  fireEvent.click(screen.getByText("firstRun.next"));
+  // language → how it works → connect
+  fireEvent.click(screen.getByTestId("first-run-next"));
+  fireEvent.click(screen.getByTestId("first-run-next"));
   await waitFor(() => expect(screen.getByTestId("openrouter-signin")).toBeTruthy());
 }
 
@@ -56,6 +59,9 @@ describe("the OpenRouter button", () => {
     fireEvent.click(screen.getByTestId("openrouter-signin"));
     await waitFor(() => expect(openExternal).toHaveBeenCalledWith("https://openrouter.ai/auth?x"));
     await waitFor(() => expect(props.onAdded).toHaveBeenCalled());
+    // Success advances to the hello step — the wizard does NOT close yet.
+    await waitFor(() => expect(screen.getByTestId("first-run-name")).toBeTruthy());
+    expect(props.onClose).not.toHaveBeenCalled();
   });
 
   it("a refused authorization shows the error and keeps the wizard open", async () => {

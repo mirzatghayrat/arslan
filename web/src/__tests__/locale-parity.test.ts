@@ -32,7 +32,14 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1318 keys (baseline guard)", () => {
+  it("en locale has 1335 keys (baseline guard)", () => {
+    // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
+    // works" tour (title + typed line + 4×title/body), the catalog capability
+    // caption, the test-before-save states (test & save / testing / ok /
+    // generic failure / save anyway), and the hello step's name prompt,
+    // placeholder, hint and enter button. getStarted, stepOf and finish left
+    // with the steps that used them (welcome step dropped, dots replaced the
+    // step counter, "enter" replaced "finish").
     // 1314 → 1318: the OpenRouter sign-in on the first-run wizard — button,
     // waiting line, the stated paid-fallback (a silent one would 402 on the
     // exact zero-card user the button exists for), and the "or" divider.
@@ -165,7 +172,7 @@ describe("locale parity", () => {
     //              and recall, so the entry panel has to say so; a fact that silently
     //              stops being used while the graph still shows it in full reads as
     //              the model forgetting rather than as a mark someone set.
-    expect(enKeys).toHaveLength(1318);
+    expect(enKeys).toHaveLength(1335);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
