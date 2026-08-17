@@ -25,6 +25,7 @@ from server.services import (
     settings_service,
     spawn_service,
     storage_intent,
+    turn_journal,
 )
 from server.ws import protocol
 
@@ -295,6 +296,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # journaled before) or delivered live to the freshly attached sink
         # (after) — never both, never neither.
         snapshots = run_registry.journal_snapshots(conversation_id)
+        turn_events = turn_journal.snapshot(conversation_id)
         run_registry.attach_sink(conversation_id, sink)
 
         # Replay: announce each in-flight run, then its journaled frames. Live
@@ -307,6 +309,15 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(_to_frame(ev))
                 except Exception:  # noqa: BLE001 — client gone mid-replay; receive loop sees it
                     break
+
+        # Same replay for Arslan's own in-flight answer turn: the journaled
+        # stream_start is the preamble without which the store discards every
+        # live frame the freshly attached sink is about to deliver.
+        for ev in turn_events:
+            try:
+                await ws.send_json(_to_frame(ev))
+            except Exception:  # noqa: BLE001 — client gone mid-replay; receive loop sees it
+                break
 
         drainer = asyncio.create_task(_drain())
 
@@ -588,6 +599,17 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
             if msg_type == "session_ended":
                 old_cid = data.get("conversation_id")
+                if old_cid and (run_registry.active_for(str(old_cid))
+                                or turn_journal.active(str(old_cid))):
+                    # The conversation the user LEFT is still mid-run/mid-turn
+                    # (a thread switch fires session_ended immediately).
+                    # Distilling now would capture a half-written session and
+                    # roster-clear would yank membership from under the live
+                    # run — skip both; the next session_ended after the work
+                    # completes distills. Ack regardless: the client is waiting.
+                    logger.info("session_ended for %s deferred: run/turn in flight", old_cid)
+                    await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
+                    continue
                 if old_cid:
                     # Best-effort: an optional feature must never suppress the ack or close the socket.
                     try:

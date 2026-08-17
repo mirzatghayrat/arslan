@@ -23,7 +23,7 @@ import server.orchestrator.arslan as arslan_mod
 import server.ws.arslan as ws_arslan_mod
 from server.db.models import Spawn
 from server.orchestrator import memory
-from server.services import run_registry
+from server.services import run_registry, turn_journal
 from tests.server.conftest import build_ws_client
 
 
@@ -33,10 +33,12 @@ def _clean_registry():
     for d in (run_registry._tasks, run_registry._by_conversation,
               run_registry._sinks, run_registry._recorders):
         d.clear()
+    turn_journal._active.clear()
     yield
     for d in (run_registry._tasks, run_registry._by_conversation,
               run_registry._sinks, run_registry._recorders):
         d.clear()
+    turn_journal._active.clear()
 
 
 @pytest.fixture
@@ -197,3 +199,105 @@ def test_server_heartbeat_pings(app_client, monkeypatch):
         else:
             raise AssertionError(f"no ping within 6 frames, saw {seen}")
         assert {"history", "roster_update"} <= set(seen) | {"history", "roster_update"}
+
+
+# --------------------------------------------------------------------------- #
+# (d) orchestrator-turn reattach: an in-flight ANSWER turn replays its journal
+# --------------------------------------------------------------------------- #
+
+def test_reattach_replays_in_flight_answer_turn(app_client):
+    """A thread switch closes the socket while Arslan's own answer/tool turn keeps
+    running. The reconnecting socket must receive the journaled preamble —
+    stream_start, streamed chunks, tool frames — so the store reopens the stream
+    instead of discarding every live frame that follows (the blank-pane bug)."""
+    conv = "turn-reattach-conv"
+
+    def _seed_turn():
+        j = turn_journal.begin(conv)
+        tee = j.tee(lambda ev: None)
+        tee({"type": "stream_start", "source": "arslan"})
+        tee({"type": "stream_chunk", "content": "searching "})
+        tee({"type": "tool_call", "tool": "web_search", "args_summary": "weather"})
+        return j
+
+    app_client.portal.call(_seed_turn)
+
+    with app_client.websocket_connect(f"/ws/arslan/{conv}") as ws:
+        assert ws.receive_json()["type"] == "history"
+        assert ws.receive_json()["type"] == "roster_update"
+        replay = [ws.receive_json() for _ in range(3)]
+        assert replay[0]["type"] == "stream_start"          # the missing preamble
+        assert replay[1] == {"type": "stream_chunk", "content": "searching "}
+        assert replay[2]["type"] == "tool_call" and replay[2]["tool"] == "web_search"
+
+
+def test_no_active_turn_no_replay(app_client, monkeypatch):
+    _stub_fake_handle(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/turn-idle-conv") as ws:
+        assert ws.receive_json()["type"] == "history"
+        assert ws.receive_json()["type"] == "roster_update"
+        ws.send_json({"type": "user_message", "content": "hi"})
+        nxt = ws.receive_json()
+        assert nxt["type"] == "stream_start", f"unexpected pre-turn frame: {nxt}"
+
+
+# --------------------------------------------------------------------------- #
+# (e) session_ended must not distill / roster-clear under a live turn or run
+# --------------------------------------------------------------------------- #
+
+def test_session_ended_skips_distill_and_clear_while_turn_active(app_client, monkeypatch):
+    """Switching threads fires session_ended for the conversation the user LEFT —
+    which may still be mid-turn. Distilling a half-written session and yanking
+    the roster from under a live run is the hazard; both must be skipped, and
+    the ack must still arrive."""
+    conv = "busy-conv"
+    calls = {"distill": 0, "clear": 0}
+
+    async def spy_distill(cid):  # noqa: ANN001
+        calls["distill"] += 1
+
+    async def spy_clear(cid):  # noqa: ANN001
+        calls["clear"] += 1
+
+    async def enabled(_s):  # noqa: ANN001
+        return True
+
+    monkeypatch.setattr(ws_arslan_mod.distill_service, "distill_session", spy_distill)
+    monkeypatch.setattr(ws_arslan_mod.roster_service, "clear", spy_clear)
+    monkeypatch.setattr(ws_arslan_mod.settings_service, "distill_enabled", enabled)
+
+    app_client.portal.call(lambda: turn_journal.begin(conv))
+
+    with app_client.websocket_connect("/ws/arslan/other-conv") as ws:
+        assert ws.receive_json()["type"] == "history"
+        assert ws.receive_json()["type"] == "roster_update"
+        ws.send_json({"type": "session_ended", "conversation_id": conv})
+        ack = ws.receive_json()
+        assert ack["type"] == "session_ended_ack" and ack["conversation_id"] == conv
+    assert calls == {"distill": 0, "clear": 0}
+
+
+def test_session_ended_distills_when_idle(app_client, monkeypatch):
+    """Control: without a live turn/run the existing behaviour stands."""
+    conv = "idle-ended-conv"
+    calls = {"distill": 0, "clear": 0}
+
+    async def spy_distill(cid):  # noqa: ANN001
+        calls["distill"] += 1
+
+    async def spy_clear(cid):  # noqa: ANN001
+        calls["clear"] += 1
+
+    async def enabled(_s):  # noqa: ANN001
+        return True
+
+    monkeypatch.setattr(ws_arslan_mod.distill_service, "distill_session", spy_distill)
+    monkeypatch.setattr(ws_arslan_mod.roster_service, "clear", spy_clear)
+    monkeypatch.setattr(ws_arslan_mod.settings_service, "distill_enabled", enabled)
+
+    with app_client.websocket_connect("/ws/arslan/other-conv-2") as ws:
+        assert ws.receive_json()["type"] == "history"
+        assert ws.receive_json()["type"] == "roster_update"
+        ws.send_json({"type": "session_ended", "conversation_id": conv})
+        assert ws.receive_json()["type"] == "session_ended_ack"
+    assert calls["clear"] == 1                              # distill is a create_task; clear is awaited inline

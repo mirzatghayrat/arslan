@@ -1033,12 +1033,25 @@ async def _handle_answer(
     # every _handle_answer call sits at orchestration level, OUTSIDE any run's collecting
     # region. Even under accidental nesting collecting() is set/reset, so an outer
     # bucket would resume untouched.
-    async with usage_ledger.scope("answer", conversation_id):
-        return await _handle_answer_body(
-            conversation_id, user_message, emit, extra_system=extra_system,
-            attached_context=attached_context, images=images,
-            confirm_command=confirm_command,
-            intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
+    #
+    # Turn journal (thread-switch reattach): the answer path produces no Run row,
+    # so — unlike spawn dispatch — nothing journaled its frames and a reconnecting
+    # socket got no stream_start preamble. Scope note: this covers the ANSWER
+    # turn only; the short conversational streams elsewhere in this file (store
+    # question, invite ask) are one-sentence and stay unjournaled.
+    from server.services import turn_journal
+
+    journal = turn_journal.begin(conversation_id)
+    emit = journal.tee(emit)
+    try:
+        async with usage_ledger.scope("answer", conversation_id):
+            return await _handle_answer_body(
+                conversation_id, user_message, emit, extra_system=extra_system,
+                attached_context=attached_context, images=images,
+                confirm_command=confirm_command,
+                intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
+    finally:
+        turn_journal.end(conversation_id, journal)
 
 
 async def _handle_answer_body(
