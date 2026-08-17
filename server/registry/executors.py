@@ -220,24 +220,51 @@ class WebExtractExecutor:
 class ListMyCapabilitiesExecutor:
     """Report Arslan's OWN directly-usable capabilities: built-in tools + installed MCP
     servers. Read-only — lets Arslan answer 'what can you do / which MCPs do you have'
-    from real data instead of guessing."""
+    from real data instead of guessing.
+
+    `builtin` DERIVES from the live host tool list (_arslan_tools) — the previous
+    hand-copied list had already drifted (recall/remember missing). Each MCP server
+    reports its tools split into usable-by-me vs not-yet-equipped: connected-but-
+    unequipped was indistinguishable from broken here, and Arslan guessed wrong at
+    the user for three turns in the v0.1.23 field report. The equip switches
+    (wire + host, both default OFF) are the execute-closed ruling, not a defect —
+    the note tells the user exactly where they live."""
     key = "list_my_capabilities"
 
+    _LIST_CAP = 40   # keep the payload model-sized; counts stay exact either way
+
     async def execute(self, args: dict) -> dict:
-        from server.db import session as db_session
-        from server.services import mcp_service, settings_service
-        builtin = [
-            {"key": "web_search", "desc": "联网搜索(标题/链接/摘要)"},
-            {"key": "web_extract", "desc": "抓取网页正文(SSRF 防护)"},
-            {"key": "render_chart", "desc": "把结构化数据画成图,用户能看到"},
-        ]
-        async with db_session.AsyncSessionLocal() as db:
-            if await settings_service.shell_enabled(db):
-                builtin.append({"key": "run_command",
-                                "desc": "白名单 shell(git/gh/ffmpeg/pandoc,逐条需确认)"})
-        servers = await mcp_service.list_servers()
-        mcp = [{"label": s.get("label"), "status": s.get("status")} for s in servers]
-        return {"ok": True, "builtin": builtin, "mcp": mcp}
+        # Function-level import: orchestrator.arslan imports EXECUTORS from this
+        # module (inside _arslan_tools), so a module-level import here would cycle.
+        from server.orchestrator.arslan import _arslan_tools
+        from server.services import mcp_service
+
+        host = await _arslan_tools()
+        builtin = [{"key": t["key"], "desc": t["description"]}
+                   for t in host if not t["key"].startswith("mcp_")]
+
+        mcp = []
+        for s in await mcp_service.list_servers():
+            rows = await mcp_service.list_tools(s["id"])
+            usable = sorted(t["name"] for t in rows
+                            if t["status"] == "wired" and t["host_enabled"])
+            pending = sorted(t["name"] for t in rows
+                             if not (t["status"] == "wired" and t["host_enabled"]))
+            mcp.append({"label": s.get("label"), "status": s.get("status"),
+                        "tool_count": len(rows),
+                        "usable_by_me": usable[: self._LIST_CAP],
+                        "not_yet_equipped": pending[: self._LIST_CAP]})
+
+        out = {"ok": True, "builtin": builtin, "mcp": mcp}
+        # Only for CONNECTED servers: an errored server's problem is the
+        # connection, and pointing the user at the switches would mislead.
+        if any(s["status"] == "connected" and s["tool_count"] and not s["usable_by_me"]
+               for s in mcp):
+            out["note"] = (
+                "有 MCP 已连接但工具尚未装备给我:在 Capabilities → MCPS 的该服务器工具列表里,"
+                "为具体工具同时打开「wire」和「host」两个开关,我下一轮对话就能直接调用它们。"
+            )
+        return out
 
 
 _CHART_MAX_POINTS = 50
