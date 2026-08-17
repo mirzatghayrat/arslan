@@ -121,7 +121,20 @@ async def oauth_status(server_id: int):
 
 @router.post("/servers/{server_id}/connect")
 async def connect(server_id: int):
-    return await mcp_service.connect(server_id)
+    try:
+        return await mcp_service.connect(server_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — surface the classified text, not a bare 500
+        # connect_and_discover has just written the classified message into
+        # last_error; that text is strictly better than str(exc) (which can be
+        # empty — spec ⓪ measured str(InvalidToken()) == "").
+        detail = (
+            await mcp_service.last_error_text(server_id)
+            or str(exc).strip()[:500]
+            or type(exc).__name__
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
 
 
 @router.get("/servers/{server_id}/tools")

@@ -63,9 +63,16 @@ class MCPSessionManager:
                 logger.info(
                     "MCP stdio %s proxy source: %s", server.get("label") or server["id"], source
                 )
+                from server.mcp import spawn_env
+                env = {**os.environ, **additions, **server_env}      # explicit server env wins
+                # Packaged .app PATH is LaunchServices-minimal: resolve the command
+                # against the merged (login-shell) PATH and hand the child that PATH
+                # too — npx itself needs to find node. A user-configured PATH wins.
+                env["PATH"] = server_env.get("PATH") or spawn_env.merged_path()
                 params = StdioServerParameters(
-                    command=server["command"], args=list(server.get("args") or []),
-                    env={**os.environ, **additions, **server_env},   # explicit server env wins
+                    command=spawn_env.resolve_command(server["command"]),
+                    args=list(server.get("args") or []),
+                    env=env,
                 )
                 read, write = await stack.enter_async_context(stdio_client(params))
             client = await stack.enter_async_context(ClientSession(read, write))
