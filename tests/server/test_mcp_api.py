@@ -172,3 +172,51 @@ async def test_add_server_different_args_not_deduped(client):
         first = await mcp_service.add_server("tool", "npx", ["-y", "toolA"], {}, transport="stdio")
         second = await mcp_service.add_server("tool", "npx", ["-y", "toolB"], {}, transport="stdio")
     assert first["id"] != second["id"], "different args must produce separate server entries"
+
+
+async def test_connect_failure_returns_classified_502_not_500(client, monkeypatch):
+    """The spawn/connect failure is already classified into last_error — the route
+    must surface THAT text as a structured 502, not re-raise into a bare 500
+    (the packaged app showed 'Error: HTTP 500' above a perfectly good per-server
+    explanation)."""
+    c, m = client
+    from server.mcp import session
+
+    async def fail(server):
+        raise FileNotFoundError("command 'npx' was not found on PATH")
+    monkeypatch.setattr(session.manager, "list_tools", fail)
+    async with c:
+        sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "npx",
+                                                          "args": [], "env": {}})).json()["id"]
+        r = await c.post(f"/api/v1/mcp/servers/{sid}/connect")
+    assert r.status_code == 502
+    assert "npx" in r.json()["detail"]            # the classified text, not a generic banner
+
+
+async def test_connect_failure_with_empty_str_exc_uses_stored_classification(client, monkeypatch):
+    """str(InvalidToken()) is the EMPTY string (spec ⓪ measured) — the route must
+    fall back to the classified last_error, which _describe_failure guarantees is
+    never blank. Discriminates the last_error_text lookup from a str(exc) echo."""
+    c, m = client
+    from server.mcp import session
+
+    class _Mute(RuntimeError):
+        def __str__(self):
+            return ""
+
+    async def fail(server):
+        raise _Mute()
+    monkeypatch.setattr(session.manager, "list_tools", fail)
+    async with c:
+        sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "npx",
+                                                          "args": [], "env": {}})).json()["id"]
+        r = await c.post(f"/api/v1/mcp/servers/{sid}/connect")
+    assert r.status_code == 502
+    assert r.json()["detail"] == "_Mute (no message)"   # the stored classification, verbatim
+
+
+async def test_connect_unknown_server_is_404(client):
+    c, m = client
+    async with c:
+        r = await c.post("/api/v1/mcp/servers/99999/connect")
+    assert r.status_code == 404

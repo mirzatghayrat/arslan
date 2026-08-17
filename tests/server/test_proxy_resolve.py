@@ -180,7 +180,9 @@ async def test_stdio_server_env_stays_highest_precedence(monkeypatch):
     monkeypatch.setattr("mcp.ClientSession", _FakeClient)
 
     mgr = sess.MCPSessionManager()
-    server = {"id": 8, "command": "x", "args": [], "env": {"HTTPS_PROXY": "http://127.0.0.1:5555"}}
+    monkeypatch.setattr("server.mcp.spawn_env.login_shell_path", lambda: "")
+    # An explicit path skips PATH resolution (spawn_env passthrough contract).
+    server = {"id": 8, "command": "/opt/fake/x", "args": [], "env": {"HTTPS_PROXY": "http://127.0.0.1:5555"}}
     await mgr.get_session(server)
     assert captured["env"]["HTTPS_PROXY"] == "http://127.0.0.1:5555"   # explicit config wins
     assert mgr.proxy_source(8) == "server_env"

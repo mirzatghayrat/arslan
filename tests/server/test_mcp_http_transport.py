@@ -46,7 +46,12 @@ def stub_sdk(monkeypatch):
     return calls
 
 
-async def test_open_session_stdio_branch(stub_sdk):
+async def test_open_session_stdio_branch(stub_sdk, monkeypatch):
+    # Resolution has its own contract tests (test_mcp_spawn_env); this test pins
+    # the BRANCH wiring, so resolution is stubbed to identity.
+    from server.mcp import spawn_env
+    monkeypatch.setattr(spawn_env, "resolve_command", lambda c: c)
+    monkeypatch.setattr(spawn_env, "merged_path", lambda: "/usr/bin")
     mgr = sess.MCPSessionManager()
     await mgr._open_session({"id": 1, "transport": "stdio", "command": "npx", "args": ["-y", "x"], "env": {}})
     assert stub_sdk["stdio"].command == "npx"        # StdioServerParameters built for stdio

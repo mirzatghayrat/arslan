@@ -225,6 +225,13 @@ async def check_health_all() -> None:
             logger.warning("mcp boot health probe failed for server %s: %s", sid, exc)
 
 
+async def last_error_text(server_id: int) -> str | None:
+    """The classified last_error for a server, for API error shaping."""
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+        return srv.last_error if srv is not None else None
+
+
 async def reconnect(server_id: int) -> None:
     from server.mcp.session import manager
     await manager._drop(server_id)
