@@ -1,0 +1,4 @@
+# Render outputs and dependencies stay local — sources and the assets they
+# compose from are tracked, finished renders are delivered, not versioned.
+node_modules/
+out/
