@@ -947,6 +947,15 @@
         "ingest_ok": "已存入 {{name}} 的知识库。",
         "create_skill": "注册为技能",
         "create_ok": "已加入技能库（safe）。"
+      },
+      "manifest": {
+        "title": "作者自带配置",
+        "add": "添加此服务器",
+        "added": "已添加——去 MCPS 里连接它",
+        "import_skill": "导入技能",
+        "imported": "技能已导入",
+        "expose_hint": "作者建议为该服务器开启「Allow for spawns」(MCPS 页)——由你决定。",
+        "error": "插件清单无效"
       }
     },
     "equip": {

@@ -23,10 +23,35 @@ export type EvalSuggestion = {
   reason: string;
 };
 
+// ── arslan.plugin.json (spec 2026-08-18 Part B): author-shipped config ────────
+export type ManifestEnvSlot = { secret: boolean; description: string };
+export type ManifestServer = {
+  label: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, ManifestEnvSlot>;
+};
+export type PluginManifest = {
+  schema_version: 1;
+  name: string;
+  version: string;
+  description: string;
+  min_app_version: string | null;
+  mcp_servers: ManifestServer[];
+  skills: string[];
+  suggest_spawn_expose: boolean;
+};
+
 export type EvalResult = {
   repo: EvalRepo;
   trust: { tier: "high" | "medium" | "low"; license_note: string };
   suggestion: EvalSuggestion;
+  /** Author-shipped truth — present only when the repo carries a VALID manifest. */
+  manifest?: PluginManifest;
+  /** Present only when a manifest exists but is broken; the guess path still runs. */
+  manifest_error?: string;
 };
 
 export const evaluateRepo = (ref: string) =>
