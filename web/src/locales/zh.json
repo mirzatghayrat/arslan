@@ -904,7 +904,15 @@
       "hint": "仓库链接会生成完整档案（许可证、类型、价值）；其他内容会搜索 GitHub。",
       "results": "搜索结果",
       "evaluate": "评估",
-      "save": "收藏"
+      "save": "收藏",
+      "researching": "研究中…",
+      "kind": {
+        "all": "全部",
+        "mcp": "MCP",
+        "skill": "技能",
+        "agent": "智能体",
+        "other": "其他"
+      }
     },
     "sections": {
       "recommended_mcp": "推荐 · 一键接入",
@@ -956,7 +964,8 @@
         "imported": "技能已导入",
         "expose_hint": "作者建议为该服务器开启「Allow for spawns」(MCPS 页)——由你决定。",
         "error": "插件清单无效"
-      }
+      },
+      "overview_label": "这是什么"
     },
     "equip": {
       "action": "装备给分身…",

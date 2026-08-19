@@ -44,10 +44,14 @@ export type PluginManifest = {
   suggest_spawn_expose: boolean;
 };
 
+export type RepoOverview = { what: string; use_cases: string[] };
+
 export type EvalResult = {
   repo: EvalRepo;
   trust: { tier: "high" | "medium" | "low"; license_note: string };
   suggestion: EvalSuggestion;
+  /** Plain-language intro for non-programmers; empty {what:"",use_cases:[]} → hide. */
+  overview?: RepoOverview;
   /** Author-shipped truth — present only when the repo carries a VALID manifest. */
   manifest?: PluginManifest;
   /** Present only when a manifest exists but is broken; the guess path still runs. */
@@ -69,6 +73,7 @@ export type SearchItem = {
   license: string | null;
   pushed_days: number | null;
   description: string;
+  topics: string[];
   trust: { tier: "high" | "medium" | "low"; license_note: string };
 };
 

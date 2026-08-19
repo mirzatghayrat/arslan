@@ -904,7 +904,15 @@
       "hint": "A repo link gets a full dossier (license, type, value); anything else searches GitHub.",
       "results": "Search results",
       "evaluate": "Evaluate",
-      "save": "Save"
+      "save": "Save",
+      "researching": "Researching…",
+      "kind": {
+        "all": "All",
+        "mcp": "MCP",
+        "skill": "Skill",
+        "agent": "Agent",
+        "other": "Other"
+      }
     },
     "sections": {
       "recommended_mcp": "Recommended · one-click connect",
@@ -956,7 +964,8 @@
         "imported": "Skill imported",
         "expose_hint": "The author suggests enabling “Allow for spawns” for this server (MCPS tab) — your call.",
         "error": "Plugin manifest invalid"
-      }
+      },
+      "overview_label": "What this is"
     },
     "equip": {
       "action": "Equip to spawn…",

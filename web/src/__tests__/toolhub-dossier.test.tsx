@@ -45,6 +45,7 @@ const EVAL: EvalResult = {
     topics: ['mcp', 'ai'],
   },
   trust: { tier: 'high', license_note: 'MIT — permissive.' },
+  overview: { what: 'A handy MCP server.', use_cases: ['do a thing', 'do another'] },
   suggestion: {
     is_mcp: true,
     transport: 'stdio',
@@ -126,7 +127,7 @@ describe('RepoDossier', () => {
     expect(screen.getByText('A test MCP server for things.')).toBeInTheDocument();
     expect(screen.getByText('capabilities.dossier.license_ok')).toBeInTheDocument();
     expect(screen.getByText('capabilities.dossier.type.mcp')).toBeInTheDocument();
-    expect(screen.getByText('Adds a useful capability for Arslan.')).toBeInTheDocument();
+    expect(screen.getByText('A handy MCP server.')).toBeInTheDocument(); // plain-language overview
     expect(screen.getByText('mcp')).toBeInTheDocument(); // topic chip
   });
 

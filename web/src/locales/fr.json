@@ -904,7 +904,15 @@
       "hint": "A repo link gets a full dossier (license, type, value); anything else searches GitHub.",
       "results": "Search results",
       "evaluate": "Evaluate",
-      "save": "Save"
+      "save": "Save",
+      "researching": "Recherche…",
+      "kind": {
+        "all": "Tous",
+        "mcp": "MCP",
+        "skill": "Skill",
+        "agent": "Agent",
+        "other": "Autres"
+      }
     },
     "sections": {
       "recommended_mcp": "Recommended · one-click connect",
@@ -956,7 +964,8 @@
         "imported": "Skill importé",
         "expose_hint": "L'auteur suggère d'activer « Allow for spawns » pour ce serveur (onglet MCPS) — à vous de voir.",
         "error": "Manifeste du plugin invalide"
-      }
+      },
+      "overview_label": "Ce que c’est"
     },
     "equip": {
       "action": "Équiper un spawn…",
