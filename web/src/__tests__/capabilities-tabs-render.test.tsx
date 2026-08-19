@@ -43,7 +43,7 @@ vi.mock("../api/mcp", () => ({
   exposeMcpServer: vi.fn(),
   reconnectMcpServer: vi.fn(),
   listMcpTools: vi.fn(),
-  setMcpToolHost: vi.fn(),
+  setMcpServerHost: vi.fn(),
   wireMcpTool: vi.fn(),
 }));
 

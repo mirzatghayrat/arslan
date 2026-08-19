@@ -60,6 +60,7 @@ from .versions._0036_evolution_attempt_source import upgrade_sync as _m0036
 from .versions._0037_fact_category_stable_keys import upgrade_sync as _m0037
 from .versions._0038_run_has_images import upgrade_sync as _m0038
 from .versions._0039_crypto_salt_into_db import upgrade_sync as _m0039
+from .versions._0040_mcp_host_allowed import upgrade_sync as _m0040
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -97,6 +98,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0037", _m0037),
     ("0038", _m0038),
     ("0039", _m0039),
+    ("0040", _m0040),
 ]
 
 

@@ -297,6 +297,9 @@ class MCPServer(Base):
     env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
     url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
     status = Column(String(20), nullable=False, default="registered")  # registered|connected|error
+    # Server-level host consent (user ruling 2026-08-18): connect is the human
+    # act; every discovered tool of an allowed server reaches Arslan's loop.
+    host_allowed = Column(Boolean, nullable=False, default=True, server_default="1")
     last_error = Column(Text, nullable=True)
     last_checked_at = Column(DateTime, nullable=True)    # PB-4: last on-demand health probe
     health_status = Column(String(20), nullable=True)    # PB-4: ok|failing|NULL=never checked

@@ -29,9 +29,10 @@ async def maker(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def _seed_server(m, *, status="connected", tools=()):
+async def _seed_server(m, *, status="connected", host_allowed=True, tools=()):
     async with m() as s:
-        s.add(MCPServer(id=1, label="playwright", command="npx", status=status))
+        s.add(MCPServer(id=1, label="playwright", command="npx", status=status,
+                        host_allowed=host_allowed))
         s.add(Toolset(key="mcp_1", name="playwright", description="MCP server: playwright",
                       tier="orchestrator", status="registered"))
         for name, wired, host in tools:
@@ -57,33 +58,35 @@ async def test_equipped_mcp_tool_is_not_misfiled_into_builtin(maker):
     assert not any(b["key"].startswith("mcp_") for b in out["builtin"])
 
 
-async def test_server_reports_usable_vs_not_yet_equipped_split(maker):
+async def test_host_allowed_server_reports_every_tool_usable(maker):
+    """Server-level ruling (2026-08-18): connect = usable by Arslan. Per-tool
+    wire/host states no longer split the host dimension."""
     await _seed_server(maker, tools=[
-        ("browser_click", True, True),     # wired + host_enabled → usable
-        ("browser_navigate", True, False),  # wired but not host-enabled
-        ("browser_snapshot", False, False),  # discovered only
+        ("browser_click", True, True),
+        ("browser_navigate", True, False),
+        ("browser_snapshot", False, False),
     ])
     out = await ListMyCapabilitiesExecutor().execute({})
     (srv,) = out["mcp"]
     assert srv["label"] == "playwright" and srv["status"] == "connected"
     assert srv["tool_count"] == 3
-    assert srv["usable_by_me"] == ["browser_click"]
-    assert srv["not_yet_equipped"] == ["browser_navigate", "browser_snapshot"]
+    assert srv["usable_by_me"] == ["browser_click", "browser_navigate", "browser_snapshot"]
+    assert srv["host_allowed"] is True
 
 
-async def test_connected_but_fully_unequipped_server_yields_actionable_note(maker):
+async def test_host_disallowed_server_yields_actionable_note(maker):
+    await _seed_server(maker, host_allowed=False, tools=[("browser_click", False, False)])
+    out = await ListMyCapabilitiesExecutor().execute({})
+    (srv,) = out["mcp"]
+    assert srv["usable_by_me"] == [] and srv["host_allowed"] is False
+    assert "note" in out
+    assert "MCPS" in out["note"]                        # points at the server-level switch
+
+
+async def test_no_note_for_default_allowed_server(maker):
     await _seed_server(maker, tools=[("browser_click", False, False)])
     out = await ListMyCapabilitiesExecutor().execute({})
-    assert "note" in out
-    assert "MCPS" in out["note"]                        # points at the actual switch surface
-    assert "host" in out["note"]
-
-
-async def test_no_note_once_something_is_usable(maker):
-    await _seed_server(maker, tools=[("browser_click", True, True),
-                                     ("browser_navigate", False, False)])
-    out = await ListMyCapabilitiesExecutor().execute({})
-    assert "note" not in out
+    assert "note" not in out                            # connect already granted host use
 
 
 async def test_error_server_gets_no_equip_note(maker):
