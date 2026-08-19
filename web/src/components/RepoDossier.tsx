@@ -28,17 +28,28 @@ export const isLicensePermissive = (license: string | null): boolean =>
 
 export type RepoKind = 'mcp' | 'skill' | 'agent' | 'other';
 
-/** Classify the repo from real eval fields (backend is_mcp verdict, then name/desc/topics). */
-export function detectRepoKind(result: EvalResult): RepoKind {
-  if (result.suggestion.is_mcp) return 'mcp';
-  const hay = [
-    result.repo.full_name,
-    result.repo.description ?? '',
-    ...(result.repo.topics ?? []),
-  ].join(' ').toLowerCase();
+/** Classify from raw fields — works on a search row that has no LLM verdict.
+ *  is_mcp (when known) wins; otherwise name/description/topics heuristics, with
+ *  an mcp regex so search rows can still be badged mcp without an LLM call. */
+export function detectKindFromFields(f: {
+  full_name: string; description?: string; topics?: string[]; is_mcp?: boolean;
+}): RepoKind {
+  if (f.is_mcp) return 'mcp';
+  const hay = [f.full_name, f.description ?? '', ...(f.topics ?? [])].join(' ').toLowerCase();
+  if (/\bmcp\b|model[- ]context[- ]protocol/.test(hay)) return 'mcp';
   if (/skill/.test(hay)) return 'skill';
   if (/agent/.test(hay)) return 'agent';
   return 'other';
+}
+
+/** Classify the repo from real eval fields (backend is_mcp verdict, then name/desc/topics). */
+export function detectRepoKind(result: EvalResult): RepoKind {
+  return detectKindFromFields({
+    full_name: result.repo.full_name,
+    description: result.repo.description ?? '',
+    topics: result.repo.topics ?? [],
+    is_mcp: result.suggestion.is_mcp,
+  });
 }
 
 /** Grounded fallback note: markdown composed ONLY from real eval-response fields. */
@@ -348,15 +359,25 @@ export default function RepoDossier({ result, onMcpAdded }: {
         </div>
       )}
 
-      {/* Value assessment — backend analysis (suggestion.reason) + license note, verbatim */}
-      {(suggestion.reason || result.trust.license_note) && (
-        <div className="border-t border-border/40 pt-3 space-y-1">
-          <span className={sectionLabel}>{t('capabilities.dossier.value_label')}</span>
-          {suggestion.reason && (
-            <p className="text-[11.5px] text-muted-foreground font-sans leading-relaxed">{suggestion.reason}</p>
+      {/* Plain-language overview for non-programmers (what + everyday use cases).
+          Replaces the old "value for Arslan" line, which was "无法确定" for every
+          non-MCP repo. License caveat drops to a small footnote. */}
+      {result.overview && result.overview.what && (
+        <div data-testid="overview-card" className="border-t border-border/40 pt-3 space-y-2">
+          <span className={sectionLabel}>{t('capabilities.dossier.overview_label')}</span>
+          <p className="text-[12px] text-foreground font-sans leading-relaxed">{result.overview.what}</p>
+          {result.overview.use_cases.length > 0 && (
+            <ul className="space-y-1">
+              {result.overview.use_cases.map((uc) => (
+                <li key={uc} className="text-[11px] text-muted-foreground font-sans flex gap-1.5">
+                  <span className="text-primary shrink-0">·</span>
+                  <span>{uc}</span>
+                </li>
+              ))}
+            </ul>
           )}
           {result.trust.license_note && (
-            <p className="text-[10.5px] text-subtle-foreground font-mono">{result.trust.license_note}</p>
+            <p className="text-[9.5px] text-subtle-foreground font-mono pt-1">{result.trust.license_note}</p>
           )}
         </div>
       )}

@@ -110,6 +110,37 @@ async def test_evaluate_ref_broken_manifest_does_not_block(monkeypatch):
     assert out["suggestion"]["is_mcp"] is True          # the guess path still delivered
 
 
+async def test_evaluate_ref_attaches_overview(monkeypatch):
+    """evaluate_ref must actually call repo_overview and surface its result —
+    the dossier's plain-language card depends on it (user ask 2026-08-20)."""
+    from server.services import discovery_service, github_eval, mcp_suggest, repo_overview
+
+    async def fake_repo(o, r):
+        return {"full_name": "o/r", "html_url": "u", "stars": 1, "forks": 0,
+                "license": None, "pushed_days": 1, "description": "", "topics": []}
+
+    async def fake_readme(o, r):
+        return ""
+
+    async def fake_suggest(meta, readme):
+        return {"is_mcp": False}
+
+    async def fake_file(o, r, path):
+        return ""
+
+    async def fake_explain(meta, readme):
+        return {"what": "A plain sentence.", "use_cases": ["do x"]}
+
+    monkeypatch.setattr(github_eval, "fetch_repo", fake_repo)
+    monkeypatch.setattr(github_eval, "fetch_readme", fake_readme)
+    monkeypatch.setattr(github_eval, "fetch_file", fake_file)
+    monkeypatch.setattr(mcp_suggest, "classify_and_suggest", fake_suggest)
+    monkeypatch.setattr(repo_overview, "explain", fake_explain)
+
+    out = await discovery_service.evaluate_ref("o", "r")
+    assert out["overview"] == {"what": "A plain sentence.", "use_cases": ["do x"]}
+
+
 async def test_evaluate_ref_no_manifest_no_fields(monkeypatch):
     from server.services import discovery_service, github_eval, mcp_suggest
 

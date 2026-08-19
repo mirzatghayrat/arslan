@@ -56,3 +56,27 @@ async def test_search_rate_limited(monkeypatch):
     _stub_search(monkeypatch, status=403, text="API rate limit exceeded")
     with pytest.raises(ValueError, match="GITHUB_TOKEN"):
         await ge.search_repos("mcp")
+
+
+async def test_search_rows_keep_topics(monkeypatch):
+    """GitHub search returns topics per repo; the row must keep them so the
+    frontend can badge type and show tags without a second call (user ask
+    2026-08-20). fetch_repo already kept topics; search dropped them."""
+    monkeypatch.setattr(ge, "_token", lambda: _noop_token())
+    _stub_search(monkeypatch, status=200, json_body={"items": [
+        {"full_name": "acme/mcp-thing", "html_url": "u", "stargazers_count": 500,
+         "forks_count": 3, "license": {"spdx_id": "MIT"}, "pushed_at": "2026-08-01T00:00:00Z",
+         "description": "an mcp server", "topics": ["mcp", "ai", "tools"]},
+    ]})
+    rows = await ge.search_repos("mcp")
+    assert rows[0]["topics"] == ["mcp", "ai", "tools"]
+
+
+async def test_search_rows_topics_default_empty(monkeypatch):
+    monkeypatch.setattr(ge, "_token", lambda: _noop_token())
+    _stub_search(monkeypatch, status=200, json_body={"items": [
+        {"full_name": "a/b", "html_url": "u", "stargazers_count": 1, "forks_count": 0,
+         "license": None, "pushed_at": None, "description": ""},
+    ]})
+    rows = await ge.search_repos("x")
+    assert rows[0]["topics"] == []

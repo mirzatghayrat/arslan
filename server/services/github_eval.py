@@ -131,6 +131,7 @@ async def search_repos(query: str) -> list[dict]:
             "license": spdx,
             "pushed_days": pdays,
             "description": d.get("description") or "",
+            "topics": d.get("topics") or [],
             "trust": {"tier": trust_tier(stars, pdays), "license_note": license_note(spdx)},
         })
     return out

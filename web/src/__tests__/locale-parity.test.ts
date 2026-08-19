@@ -176,7 +176,11 @@ describe("locale parity", () => {
     //              card (author-shipped config, secret-slot inputs, skill import,
     //              the expose SUGGESTION rendered as advice not action, and the
     //              honest invalid-manifest line that never hides the guess path).
-    expect(enKeys).toHaveLength(1342);
+    // 1342 → 1349: Discover UX round — hero.researching (busy label),
+    //              hero.kind.{all,mcp,skill,agent,other} (search filter chips /
+    //              row type badges), dossier.overview_label (the plain-language
+    //              "what this is" card that replaced the useless value line).
+    expect(enKeys).toHaveLength(1349);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

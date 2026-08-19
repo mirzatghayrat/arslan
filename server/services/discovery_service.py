@@ -9,13 +9,14 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import DiscoveryCandidate, SkillPack
-from server.services import github_eval, mcp_suggest, skill_suggest
+from server.services import github_eval, mcp_suggest, repo_overview, skill_suggest
 
 
 async def evaluate_ref(owner: str, repo: str) -> dict:
     meta = await github_eval.fetch_repo(owner, repo)
     readme = await github_eval.fetch_readme(owner, repo)
     suggestion = await mcp_suggest.classify_and_suggest(meta, readme)
+    overview = await repo_overview.explain(meta, readme)
     out = {
         "repo": meta,
         "trust": {
@@ -23,6 +24,7 @@ async def evaluate_ref(owner: str, repo: str) -> dict:
             "license_note": github_eval.license_note(meta["license"]),
         },
         "suggestion": suggestion,
+        "overview": overview,
     }
     # Third-party packaging contract (spec 2026-08-18 Part B): an author-shipped
     # arslan.plugin.json replaces the LLM guess with declarative config. Broken

@@ -904,7 +904,15 @@
       "hint": "A repo link gets a full dossier (license, type, value); anything else searches GitHub.",
       "results": "Search results",
       "evaluate": "Evaluate",
-      "save": "Save"
+      "save": "Save",
+      "researching": "Recherchiere…",
+      "kind": {
+        "all": "Alle",
+        "mcp": "MCP",
+        "skill": "Skill",
+        "agent": "Agent",
+        "other": "Andere"
+      }
     },
     "sections": {
       "recommended_mcp": "Recommended · one-click connect",
@@ -956,7 +964,8 @@
         "imported": "Skill importiert",
         "expose_hint": "Der Autor empfiehlt, „Allow for spawns“ für diesen Server zu aktivieren (MCPS-Tab) — deine Entscheidung.",
         "error": "Plugin-Manifest ungültig"
-      }
+      },
+      "overview_label": "Was das ist"
     },
     "equip": {
       "action": "Spawn ausrüsten…",

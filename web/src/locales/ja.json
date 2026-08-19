@@ -904,7 +904,15 @@
       "hint": "A repo link gets a full dossier (license, type, value); anything else searches GitHub.",
       "results": "Search results",
       "evaluate": "Evaluate",
-      "save": "Save"
+      "save": "Save",
+      "researching": "調査中…",
+      "kind": {
+        "all": "すべて",
+        "mcp": "MCP",
+        "skill": "スキル",
+        "agent": "エージェント",
+        "other": "その他"
+      }
     },
     "sections": {
       "recommended_mcp": "Recommended · one-click connect",
@@ -956,7 +964,8 @@
         "imported": "スキルを取り込みました",
         "expose_hint": "作者はこのサーバーの「Allow for spawns」を有効にすることを推奨しています(MCPS タブ)。判断はあなた次第です。",
         "error": "プラグインマニフェストが無効です"
-      }
+      },
+      "overview_label": "これは何か"
     },
     "equip": {
       "action": "分身に装備…",
