@@ -16,7 +16,7 @@ async def evaluate_ref(owner: str, repo: str) -> dict:
     meta = await github_eval.fetch_repo(owner, repo)
     readme = await github_eval.fetch_readme(owner, repo)
     suggestion = await mcp_suggest.classify_and_suggest(meta, readme)
-    return {
+    out = {
         "repo": meta,
         "trust": {
             "tier": github_eval.trust_tier(meta["stars"], meta["pushed_days"]),
@@ -24,6 +24,18 @@ async def evaluate_ref(owner: str, repo: str) -> dict:
         },
         "suggestion": suggestion,
     }
+    # Third-party packaging contract (spec 2026-08-18 Part B): an author-shipped
+    # arslan.plugin.json replaces the LLM guess with declarative config. Broken
+    # manifests report but never block — the guess path stays the fallback.
+    raw = await github_eval.fetch_file(owner, repo, github_eval.MANIFEST_PATH)
+    if raw:
+        from server.services import plugin_manifest
+        manifest, err = plugin_manifest.validate(raw)
+        if manifest is not None:
+            out["manifest"] = manifest
+        elif err:
+            out["manifest_error"] = err
+    return out
 
 
 def _to_dict(row: DiscoveryCandidate) -> dict:
