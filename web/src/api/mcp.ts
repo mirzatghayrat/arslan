@@ -37,10 +37,10 @@ export const wireMcpTool = (key: string, tier: string, wired: boolean) =>
     body: JSON.stringify({ tier, wired }),
   });
 
-export const setMcpToolHost = (key: string, enabled: boolean) =>
-  request<{ ok: boolean }>(`/mcp/tools/${encodeURIComponent(key)}/host`, {
+export const setMcpServerHost = (id: number, allowed: boolean) =>
+  request<{ ok: boolean }>(`/mcp/servers/${id}/host`, {
     method: "PATCH",
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ allowed }),
   });
 
 export const reconnectMcpServer = (id: number) =>

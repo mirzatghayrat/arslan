@@ -42,6 +42,7 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
             "url": srv.url, "env": _mask_env(env) if mask else env, "status": srv.status,
             "env_status": secret_state(srv.env), "last_error": srv.last_error,
             "transport": srv.transport,
+            "host_allowed": bool(srv.host_allowed),
             "health_status": srv.health_status,
             "last_checked_at": srv.last_checked_at.isoformat() if srv.last_checked_at else None}
 
@@ -84,7 +85,20 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
 async def list_servers() -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(MCPServer).order_by(MCPServer.id))).scalars().all()
-        return [_to_dict(s) for s in rows]
+        # Real expose state, batch-derived from the toolset tier — the frontend
+        # checkbox used to hardcode false because nothing served the truth.
+        exposed: dict[str, bool] = {}
+        if rows:
+            ts_rows = (await db.execute(
+                select(Toolset).where(Toolset.key.in_([f"mcp_{r.id}" for r in rows]))
+            )).scalars().all()
+            exposed = {ts.key: ts.tier == "safe" for ts in ts_rows}
+        out = []
+        for r in rows:
+            d = _to_dict(r)
+            d["exposed"] = exposed.get(f"mcp_{r.id}", False)
+            out.append(d)
+        return out
 
 
 async def connect(server_id: int) -> list[dict]:
@@ -125,12 +139,34 @@ async def tier_counts(server_id: int) -> dict:
 
 
 async def set_exposed(server_id: int, exposed: bool) -> None:
+    """Expose ("Allow for spawns") at SERVER granularity (user ruling 2026-08-18).
+
+    The checkbox used to be half-fake: it lifted the Toolset to safe, but the
+    spawn choke point needs TOOL-level tier=safe ∧ status=wired, so a checked
+    box still handed spawns nothing. Exposing now wires every tool whose
+    suggested tier is safe — suggested_tier_for, so a hand-graded table
+    (Playwright) beats the verb heuristic — and write-graded tools stay
+    unwired: spawns never get write verbs without an explicit per-tool action.
+    Un-exposing un-wires the server's tools wholesale (approved default: no
+    carve-out for manually wired ones — simple and honest).
+    """
+    from server.mcp.discovery import suggested_tier_for
+
     async with db_session.AsyncSessionLocal() as db:
         ts = await db.get(Toolset, f"mcp_{server_id}")
         if ts is None:
             return
         ts.tier = "safe" if exposed else "orchestrator"
         ts.status = "registered"
+        srv = await db.get(MCPServer, server_id)
+        rows = (await db.execute(
+            select(Tool).where(Tool.toolset_key == f"mcp_{server_id}")
+        )).scalars().all()
+        for tool in rows:
+            if exposed and suggested_tier_for(srv, tool.external_name or "") == "safe":
+                tool.tier, tool.status = "safe", "wired"
+            elif not exposed:
+                tool.tier, tool.status = "orchestrator", "registered"
         await db.commit()
 
 
@@ -146,12 +182,13 @@ async def wire_tool(tool_key: str, tier: str, wired: bool) -> None:
         await db.commit()
 
 
-async def set_host_enabled(tool_key: str, enabled: bool) -> None:
+async def set_host_allowed(server_id: int, allowed: bool) -> None:
+    """The revocable face of the server-level host consent."""
     async with db_session.AsyncSessionLocal() as db:
-        tool = await db.get(Tool, tool_key)
-        if tool is None or not (tool.toolset_key or "").startswith("mcp_"):
-            raise ValueError("not an MCP tool")
-        tool.host_enabled = enabled
+        srv = await db.get(MCPServer, server_id)
+        if srv is None:
+            raise ValueError(f"mcp server {server_id} not found")
+        srv.host_allowed = allowed
         await db.commit()
 
 

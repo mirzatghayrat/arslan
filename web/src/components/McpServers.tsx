@@ -9,7 +9,7 @@ import {
   listMcpServers,
   listMcpTools,
   reconnectMcpServer,
-  setMcpToolHost,
+  setMcpServerHost,
   wireMcpTool,
   authorizeMcpOauth,
   getMcpOauthStatus,
@@ -134,12 +134,12 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
     }
   }
 
-  async function toggleHost(id: number, tool: McpTool) {
+  async function toggleServerHost(id: number, allowed: boolean) {
     setBusy(true);
     setError(null);
     try {
-      await setMcpToolHost(tool.key, !tool.host_enabled);
-      await refreshTools(id);
+      await setMcpServerHost(id, allowed);
+      await loadServers();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -275,7 +275,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
       ) : (
         <ul className="space-y-4">
           {servers.map((s) => {
-            const exposed = false; // expose state lives in the toolset; toggle reflects intent
+            const exposed = s.exposed ?? false;   // toolset-derived truth from the list
             return (
               <li
                 key={s.id}
@@ -357,17 +357,32 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                   </div>
                 </div>
 
-                {/* Allow-for-spawns (expose) toggle */}
-                <label className="flex items-center gap-2 text-[11px] text-muted-foreground font-sans select-none">
-                  <input
-                    type="checkbox"
-                    defaultChecked={exposed}
-                    disabled={busy}
-                    onChange={(e) => expose(s.id, e.target.checked)}
-                    className="w-3.5 h-3.5 accent-primary"
-                  />
-                  Allow for spawns (expose toolset)
-                </label>
+                {/* Server-level equipment (user ruling 2026-08-18): connect = usable
+                    by Arslan; both dimensions confirm at SERVER granularity. */}
+                <div className="flex items-center gap-4 flex-wrap">
+                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground font-sans select-none">
+                    <input
+                      type="checkbox"
+                      data-testid={`mcp-host-${s.id}`}
+                      checked={s.host_allowed ?? true}
+                      disabled={busy}
+                      onChange={(e) => toggleServerHost(s.id, e.target.checked)}
+                      className="w-3.5 h-3.5 accent-primary"
+                    />
+                    Allow Arslan (all tools)
+                  </label>
+                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground font-sans select-none">
+                    <input
+                      type="checkbox"
+                      data-testid={`mcp-expose-${s.id}`}
+                      checked={exposed}
+                      disabled={busy}
+                      onChange={(e) => expose(s.id, e.target.checked)}
+                      className="w-3.5 h-3.5 accent-primary"
+                    />
+                    Allow for spawns (auto-wires read-only tools)
+                  </label>
+                </div>
 
                 {/* Discovered tools */}
                 {tools[s.id] && tools[s.id].length > 0 && (
@@ -412,16 +427,6 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                               className="w-3.5 h-3.5 accent-primary"
                             />
                             wire
-                          </label>
-                          <label className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono select-none">
-                            <input
-                              type="checkbox"
-                              checked={t.host_enabled}
-                              disabled={busy}
-                              onChange={() => toggleHost(s.id, t)}
-                              className="w-3.5 h-3.5 accent-primary"
-                            />
-                            allow Arslan
                           </label>
                         </div>
                       </li>

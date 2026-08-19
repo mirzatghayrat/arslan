@@ -1784,11 +1784,20 @@ async def _arslan_tools() -> list[dict]:
                           "description": "Run a whitelisted shell command (git/gh/ffmpeg/pandoc). "
                                          "Each command requires the user's per-command confirmation. "
                                          "argv is a list; no pipes/redirects/shell operators."})
-    # Host-allowed MCP tools: human-wired AND explicitly host_enabled (default off).
+    # Host-allowed MCP tools: SERVER-level consent (user ruling 2026-08-18).
+    # connect is the human act — every discovered tool of a host_allowed server
+    # rides along; per-tool wire/host_enabled stay the SPAWN dimension's
+    # vocabulary and no longer gate the host.
+    from server.db.models import MCPServer
     async with db_session.AsyncSessionLocal() as db:
+        allowed_ids = (await db.execute(
+            select(MCPServer.id).where(MCPServer.host_allowed.is_(True))
+        )).scalars().all()
+        keys = [f"mcp_{sid}" for sid in allowed_ids]
+        if not keys:
+            return tools
         rows = (await db.execute(
-            select(Tool).where(Tool.toolset_key.like("mcp_%"),
-                               Tool.status == "wired", Tool.host_enabled.is_(True))
+            select(Tool).where(Tool.toolset_key.in_(keys))
             # G1 §3. ORDER BY is load-bearing, not tidiness: these rows become
             # the `tools` array, Anthropic renders tools BEFORE the system prefix
             # that carries the cache breakpoint, so any reordering invalidates

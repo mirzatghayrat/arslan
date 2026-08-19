@@ -246,23 +246,22 @@ class ListMyCapabilitiesExecutor:
         mcp = []
         for s in await mcp_service.list_servers():
             rows = await mcp_service.list_tools(s["id"])
-            usable = sorted(t["name"] for t in rows
-                            if t["status"] == "wired" and t["host_enabled"])
-            pending = sorted(t["name"] for t in rows
-                             if not (t["status"] == "wired" and t["host_enabled"]))
+            # Server-level ruling (2026-08-18): connect = usable by Arslan.
+            allowed = bool(s.get("host_allowed", True))
+            names = sorted(t["name"] for t in rows)
             mcp.append({"label": s.get("label"), "status": s.get("status"),
+                        "host_allowed": allowed,
                         "tool_count": len(rows),
-                        "usable_by_me": usable[: self._LIST_CAP],
-                        "not_yet_equipped": pending[: self._LIST_CAP]})
+                        "usable_by_me": names[: self._LIST_CAP] if allowed else []})
 
         out = {"ok": True, "builtin": builtin, "mcp": mcp}
         # Only for CONNECTED servers: an errored server's problem is the
-        # connection, and pointing the user at the switches would mislead.
-        if any(s["status"] == "connected" and s["tool_count"] and not s["usable_by_me"]
+        # connection, and pointing the user at the switch would mislead.
+        if any(s["status"] == "connected" and s["tool_count"] and not s["host_allowed"]
                for s in mcp):
             out["note"] = (
-                "有 MCP 已连接但工具尚未装备给我:在 Capabilities → MCPS 的该服务器工具列表里,"
-                "为具体工具同时打开「wire」和「host」两个开关,我下一轮对话就能直接调用它们。"
+                "有 MCP 已连接但对我的授权被关掉了:在 Capabilities → MCPS 的服务器卡上"
+                "打开「Allow Arslan」开关,我下一轮对话就能调用它的全部工具。"
             )
         return out
 

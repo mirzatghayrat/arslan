@@ -33,8 +33,8 @@ class WireBody(BaseModel):
     wired: bool
 
 
-class HostBody(BaseModel):
-    enabled: bool
+class ServerHostBody(BaseModel):
+    allowed: bool
 
 
 @router.post("/servers")
@@ -154,9 +154,12 @@ async def wire(tool_key: str, body: WireBody):
     return {"ok": True}
 
 
-@router.patch("/tools/{tool_key}/host")
-async def set_host(tool_key: str, body: HostBody):
-    await mcp_service.set_host_enabled(tool_key, body.enabled)
+@router.patch("/servers/{server_id}/host")
+async def set_host(server_id: int, body: ServerHostBody):
+    try:
+        await mcp_service.set_host_allowed(server_id, body.allowed)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
 
 

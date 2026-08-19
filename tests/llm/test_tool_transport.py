@@ -264,13 +264,15 @@ def test_the_mcp_tool_query_is_ordered():
     from server.orchestrator import arslan as arslan_mod
 
     src = inspect.getsource(arslan_mod._arslan_tools)
-    assert 'Tool.toolset_key.like("mcp_%")' in src, "the MCP query moved — retarget this test"
+    # Retargeted 2026-08-18: the host gate went server-level (host_allowed),
+    # the query keys on the allowed servers' toolset keys now.
+    assert "Tool.toolset_key.in_(keys)" in src, "the MCP query moved — retarget this test"
     # Comments are stripped before the locality check: the first version of this
     # test measured a fixed character window and the explanatory comment ABOVE
     # the order_by pushed it out of range — a test that fails on prose length
     # tells you nothing about the query.
     code = "\n".join(ln for ln in src.splitlines() if not ln.strip().startswith("#"))
-    where_at = code.index('Tool.toolset_key.like("mcp_%")')
+    where_at = code.index("Tool.toolset_key.in_(keys)")
     assert "order_by" in code[where_at:where_at + 300], (
         "the MCP tool select has no ORDER BY; tool order is unspecified and every "
         "reorder costs a full Anthropic prompt-cache prefix"

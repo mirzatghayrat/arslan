@@ -7,7 +7,7 @@ import {
   listMcpServers,
   listMcpTools,
   reconnectMcpServer,
-  setMcpToolHost,
+  setMcpServerHost,
   wireMcpTool,
 } from "../api/mcp";
 
@@ -99,13 +99,13 @@ describe("mcp client", () => {
     expect(JSON.parse(init.body as string)).toEqual(body);
   });
 
-  it("setMcpToolHost PATCHes /mcp/tools/:key/host with { enabled }", async () => {
+  it("setMcpServerHost PATCHes /mcp/servers/:id/host with { allowed }", async () => {
     const f = mockFetch({ ok: true });
-    await setMcpToolHost("mcp_1__t", true);
+    await setMcpServerHost(3, false);
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/mcp/tools/mcp_1__t/host");
+    expect(url).toContain("/mcp/servers/3/host");
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body as string)).toEqual({ enabled: true });
+    expect(JSON.parse(init.body as string)).toEqual({ allowed: false });
   });
 
   it("reconnectMcpServer POSTs /mcp/servers/:id/reconnect", async () => {

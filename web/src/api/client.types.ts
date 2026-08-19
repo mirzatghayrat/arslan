@@ -1009,6 +1009,10 @@ export interface RunTimelineDto { range: string; buckets: string[]; spawns: Time
 
 export interface McpServer {
   id: number;
+  /** Server-level host consent (user ruling 2026-08-18): connect = usable by Arslan. */
+  host_allowed?: boolean;
+  /** Real expose ("Allow for spawns") state, toolset-derived — no longer write-only. */
+  exposed?: boolean;
   label: string;
   command: string;
   args: string[];

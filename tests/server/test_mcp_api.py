@@ -86,10 +86,18 @@ async def test_host_toggle_endpoint(client, monkeypatch):
     async with c:
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]
         await c.post(f"/api/v1/mcp/servers/{sid}/connect")
-        r = await c.patch(f"/api/v1/mcp/tools/mcp_{sid}__read/host", json={"enabled": True})
+        # Server-level host consent (user ruling 2026-08-18): the switch moved
+        # from PATCH /tools/{key}/host to PATCH /servers/{id}/host.
+        r = await c.patch(f"/api/v1/mcp/servers/{sid}/host", json={"allowed": False})
         assert r.status_code == 200
+        row = next(x for x in (await c.get("/api/v1/mcp/servers")).json() if x["id"] == sid)
+        assert row["host_allowed"] is False
+        r404 = await c.patch("/api/v1/mcp/servers/99999/host", json={"allowed": True})
+        assert r404.status_code == 404
         tools = (await c.get(f"/api/v1/mcp/servers/{sid}/tools")).json()
-    assert next(t for t in tools if t["name"] == "read")["host_enabled"] is True
+    # per-tool host_enabled no longer gates the host dimension; the list keeps
+    # serving it as data, defaulted False, untouched by the server-level switch.
+    assert next(t for t in tools if t["name"] == "read")["host_enabled"] is False
 
 
 async def test_add_http_server_stores_url_transport(client):
