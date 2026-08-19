@@ -109,6 +109,13 @@ export default function RepoDossier({ result, onMcpAdded }: {
   const [ingesting, setIngesting] = useState(false);
   const [creatingSkill, setCreatingSkill] = useState(false);
 
+  // ── Manifest card (spec 2026-08-18 Part B): author-shipped config ──────────
+  const [manifestEnv, setManifestEnv] = useState<Record<number, Record<string, string>>>({});
+  const [manifestBusy, setManifestBusy] = useState<number | null>(null);
+  const [manifestNotice, setManifestNotice] = useState<Record<number, Notice>>({});
+  const [skillBusy, setSkillBusy] = useState<number | null>(null);
+  const [skillNotice, setSkillNotice] = useState<Record<number, Notice>>({});
+
   const handleSave = async () => {
     setSaving(true);
     setSaveNotice(null);
@@ -167,6 +174,47 @@ export default function RepoDossier({ result, onMcpAdded }: {
       setMcpNotice({ kind: 'err', text: String(e instanceof Error ? e.message : e) });
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleManifestAdd = async (i: number) => {
+    const srv = result.manifest?.mcp_servers[i];
+    if (!srv) return;
+    setManifestBusy(i);
+    setManifestNotice((prev) => ({ ...prev, [i]: null }));
+    try {
+      const typed = manifestEnv[i] ?? {};
+      const env: Record<string, string> = {};
+      for (const key of Object.keys(srv.env ?? {})) {
+        if ((typed[key] ?? '').trim()) env[key] = typed[key];
+      }
+      await addMcpServer({
+        label: srv.label,
+        transport: srv.transport,
+        command: srv.command ?? '',
+        args: srv.args ?? [],
+        url: srv.url ?? null,
+        env,
+      });
+      setManifestNotice((prev) => ({ ...prev, [i]: { kind: 'ok', text: t('capabilities.dossier.manifest.added') } }));
+      onMcpAdded?.();
+    } catch (e) {
+      setManifestNotice((prev) => ({ ...prev, [i]: { kind: 'err', text: String(e) } }));
+    } finally {
+      setManifestBusy(null);
+    }
+  };
+
+  const handleManifestSkill = async (path: string, i: number) => {
+    setSkillBusy(i);
+    setSkillNotice((prev) => ({ ...prev, [i]: null }));
+    try {
+      await importSkill(repo.full_name, path);
+      setSkillNotice((prev) => ({ ...prev, [i]: { kind: 'ok', text: t('capabilities.dossier.manifest.imported') } }));
+    } catch (e) {
+      setSkillNotice((prev) => ({ ...prev, [i]: { kind: 'err', text: String(e) } }));
+    } finally {
+      setSkillBusy(null);
     }
   };
 
@@ -354,6 +402,77 @@ export default function RepoDossier({ result, onMcpAdded }: {
         </button>
         {noticeRow(saveNotice)}
       </div>
+
+      {/* ── Manifest card: author-shipped config beats the LLM guess ────────── */}
+      {result.manifest && (
+        <div data-testid="manifest-card" className="border-t border-border/40 pt-3 space-y-3">
+          <span className={sectionLabel}>
+            {t('capabilities.dossier.manifest.title')} · {result.manifest.name} v{result.manifest.version}
+          </span>
+          {result.manifest.mcp_servers.map((srv, i) => (
+            <div key={`${srv.label}-${i}`} className="bg-surface/50 border border-border/40 rounded-lg px-3 py-2 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-foreground">{srv.label}</span>
+                <span className="text-[10px] font-mono text-muted-foreground truncate max-w-full">
+                  {srv.transport === 'http' ? srv.url : `${srv.command ?? ''} ${(srv.args ?? []).join(' ')}`}
+                </span>
+              </div>
+              {Object.entries(srv.env ?? {}).map(([key, slot]) => (
+                <input
+                  key={key}
+                  data-testid={`manifest-env-${key}`}
+                  type={slot.secret ? 'password' : 'text'}
+                  value={manifestEnv[i]?.[key] ?? ''}
+                  onChange={(e) =>
+                    setManifestEnv((prev) => ({ ...prev, [i]: { ...(prev[i] ?? {}), [key]: e.target.value } }))
+                  }
+                  placeholder={slot.description ? `${key} — ${slot.description}` : key}
+                  className={inputCls}
+                />
+              ))}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  data-testid={`manifest-add-${i}`}
+                  onClick={() => handleManifestAdd(i)}
+                  disabled={manifestBusy !== null}
+                  className={`${actionBtn} bg-primary hover:bg-primary-hover text-primary-foreground`}
+                >
+                  {manifestBusy === i ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
+                  <span>{t('capabilities.dossier.manifest.add')}</span>
+                </button>
+                {noticeRow(manifestNotice[i] ?? null)}
+              </div>
+            </div>
+          ))}
+          {result.manifest.skills.map((path, i) => (
+            <div key={path} className="flex items-center gap-3 flex-wrap">
+              <span className="text-[10px] font-mono text-muted-foreground">{path}</span>
+              <button
+                type="button"
+                data-testid={`manifest-skill-${i}`}
+                onClick={() => handleManifestSkill(path, i)}
+                disabled={skillBusy !== null}
+                className={`${actionBtn} bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary`}
+              >
+                {skillBusy === i ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                <span>{t('capabilities.dossier.manifest.import_skill')}</span>
+              </button>
+              {noticeRow(skillNotice[i] ?? null)}
+            </div>
+          ))}
+          {result.manifest.suggest_spawn_expose && (
+            <p data-testid="manifest-expose-hint" className="text-[10px] text-muted-foreground font-sans">
+              {t('capabilities.dossier.manifest.expose_hint')}
+            </p>
+          )}
+        </div>
+      )}
+      {result.manifest_error && (
+        <p data-testid="manifest-error" className="text-[10px] text-warning font-sans">
+          {t('capabilities.dossier.manifest.error')}: {result.manifest_error}
+        </p>
+      )}
 
       {/* ── Panel: Register as Skill (scan → verbatim import) ───────────────── */}
       {panel === 'scan' && (

@@ -947,6 +947,15 @@
         "ingest_ok": "Ingested into {{name}}'s knowledge base.",
         "create_skill": "Register as skill",
         "create_ok": "Added to the Skills library (safe)."
+      },
+      "manifest": {
+        "title": "作者同梱の設定",
+        "add": "このサーバーを追加",
+        "added": "追加しました — MCPS で接続してください",
+        "import_skill": "スキルを取り込む",
+        "imported": "スキルを取り込みました",
+        "expose_hint": "作者はこのサーバーの「Allow for spawns」を有効にすることを推奨しています(MCPS タブ)。判断はあなた次第です。",
+        "error": "プラグインマニフェストが無効です"
       }
     },
     "equip": {

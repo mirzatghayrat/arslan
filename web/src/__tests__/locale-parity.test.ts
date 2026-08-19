@@ -172,7 +172,11 @@ describe("locale parity", () => {
     //              and recall, so the entry panel has to say so; a fact that silently
     //              stops being used while the graph still shows it in full reads as
     //              the model forgetting rather than as a mark someone set.
-    expect(enKeys).toHaveLength(1335);
+    // 1335 → 1342: capabilities.dossier.manifest.* — the arslan.plugin.json
+    //              card (author-shipped config, secret-slot inputs, skill import,
+    //              the expose SUGGESTION rendered as advice not action, and the
+    //              honest invalid-manifest line that never hides the guess path).
+    expect(enKeys).toHaveLength(1342);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

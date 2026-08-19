@@ -947,6 +947,15 @@
         "ingest_ok": "Ingested into {{name}}'s knowledge base.",
         "create_skill": "Register as skill",
         "create_ok": "Added to the Skills library (safe)."
+      },
+      "manifest": {
+        "title": "Vom Autor mitgelieferte Konfiguration",
+        "add": "Diesen Server hinzufügen",
+        "added": "Hinzugefügt — in MCPS verbinden",
+        "import_skill": "Skill importieren",
+        "imported": "Skill importiert",
+        "expose_hint": "Der Autor empfiehlt, „Allow for spawns“ für diesen Server zu aktivieren (MCPS-Tab) — deine Entscheidung.",
+        "error": "Plugin-Manifest ungültig"
       }
     },
     "equip": {
