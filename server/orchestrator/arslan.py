@@ -1776,8 +1776,27 @@ async def _arslan_tools() -> list[dict]:
     from server.db import session as db_session
     from server.db.models import Tool
 
-    # Orchestrator-only shell: exposed to Arslan ONLY when the user opted in (default off).
+    # Workspace file tools (P1): offered ONLY when a workspace is configured.
+    # Not-registered rather than registered-and-erroring — a tool the model can
+    # see is a tool it will try, and P1a ships the read-only trio only: the
+    # writers wait for their session-grant gate (execute-closed).
     from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        ws_root = await settings_service.workspace_dir(db)
+    if ws_root is not None:
+        tools += [
+            {"key": "read_file",
+             "description": "Read a text file from the user's workspace. args: {path} "
+                            "(workspace-relative). Long files come back truncated."},
+            {"key": "list_dir",
+             "description": "List one level of a workspace directory. args: {path} "
+                            "(optional, defaults to the workspace root)."},
+            {"key": "search_files",
+             "description": "Find a literal string across the workspace's text files. "
+                            "args: {query, glob?}. Returns path + line + the matching line."},
+        ]
+
+    # Orchestrator-only shell: exposed to Arslan ONLY when the user opted in (default off).
     async with db_session.AsyncSessionLocal() as db:
         if await settings_service.shell_enabled(db):
             tools.append({"key": "run_command",

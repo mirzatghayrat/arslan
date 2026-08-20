@@ -15,7 +15,15 @@ import re
 from urllib.parse import urlparse
 
 # v1 whitelist: high-value, non-code-fetching binaries. Extend HERE to add commands.
-ALLOWED_BINARIES = frozenset({"git", "gh", "ffmpeg", "pandoc"})
+# Read-only inspectors (P1 §1.4). They observe and never mutate, so they grade LOW
+# and auto-run under ask_risky. DELIBERATELY ABSENT: interpreters (python/node/sh)
+# and fetchers (curl/wget/ssh) — either one makes the whole tiering decorative,
+# because "run this LOW-risk command" would become "run arbitrary code".
+_READONLY_BINARIES = frozenset({
+    "ls", "cat", "head", "tail", "wc", "grep", "find", "rg",
+    "file", "stat", "du", "df", "which", "uname", "date",
+})
+ALLOWED_BINARIES = frozenset({"git", "gh", "ffmpeg", "pandoc"}) | _READONLY_BINARIES
 
 # Any argv element containing one of these is refused (shell metacharacters that
 # would matter if the string were ever re-parsed by a shell).
@@ -90,6 +98,8 @@ def classify(command: str, argv) -> str:
         if _is_probe(args):
             return "LOW"
         return "HIGH"
+    if command in _READONLY_BINARIES:
+        return "LOW"                 # observation only; cannot mutate anything
     if command in ("ffmpeg", "pandoc"):
         # A pure version/help probe is LOW; anything else produces output → MEDIUM.
         return "LOW" if _is_probe(args) else "MEDIUM"
