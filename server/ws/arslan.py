@@ -249,6 +249,37 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             workspace_write_granted["yes"] = True     # session-wide, per the ruling
         return decision
 
+    # Scheduling grant (P2 裁决①): one per connection, like the workspace write.
+    schedule_granted = {"yes": False}
+
+    async def confirm_schedule(name: str, when: str) -> bool:
+        if schedule_granted["yes"]:
+            return True
+        call_id = uuid.uuid4().hex
+        # Private and un-journaled, for the same reasons as the other two cards.
+        await ws.send_json(protocol.propose_schedule(call_id, name, when))
+        decision = False
+        try:
+            while True:
+                try:
+                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                except TimeoutError:
+                    break
+                t = data.get("type")
+                if t in ("ping", "pong"):
+                    continue
+                if (t in ("confirm_schedule", "cancel_schedule")
+                        and data.get("call_id") == call_id):
+                    decision = t == "confirm_schedule"
+                    break
+                await ws.send_json(protocol.error(
+                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+        except WebSocketDisconnect:
+            raise
+        if decision:
+            schedule_granted["yes"] = True
+        return decision
+
     async def confirm_command(command: str, argv: list) -> bool:
         from server.services import command_policy, settings_service
         sig = _cmd_sig(command, argv)
@@ -745,7 +776,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                            attached_context=attached or None,
                                            images=images or None,
                                            confirm_command=confirm_command,
-                                           confirm_workspace_write=confirm_workspace_write)
+                                           confirm_workspace_write=confirm_workspace_write,
+                                           confirm_schedule=confirm_schedule)
             )
     except WebSocketDisconnect:
         return
