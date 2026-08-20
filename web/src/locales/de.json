@@ -642,7 +642,11 @@
     "modelRolesEmbeddingPointer": "Das Embedding-Modell wird unter „Speicher & Daten“ eingestellt.",
     "labelWorkspaceDir": "Workspace-Verzeichnis",
     "workspaceDirPlaceholder": "z. B. /Users/du/Documents/Arslan Workspace",
-    "workspaceDirHint": "Das einzige Verzeichnis, das Arslan lesen und — mit deiner Erlaubnis — beschreiben darf. Bleibt es leer, werden die Datei-Tools gar nicht angeboten. Dateien, die nach Zugangsdaten aussehen (.env, Schlüssel, Zertifikate), werden nie gelesen."
+    "workspaceDirHint": "Das einzige Verzeichnis, das Arslan lesen und — mit deiner Erlaubnis — beschreiben darf. Bleibt es leer, werden die Datei-Tools gar nicht angeboten. Dateien, die nach Zugangsdaten aussehen (.env, Schlüssel, Zertifikate), werden nie gelesen.",
+    "labelHeartbeat": "Regelmäßige Checkliste",
+    "heartbeatDesc": "Eine Liste, die du schreibst; Arslan liest sie alle paar Stunden erneut und meldet sich, wenn etwas davon zu tun ist. Es kann nur nachsehen und berichten — ein Hintergrundlauf kann weder Dateien schreiben noch Befehle ausführen.",
+    "heartbeatSpendNote": "Jede Prüfung kostet Tokens auf deinem Key. Standardmäßig aus; eine leere Liste bedeutet keine Prüfungen.",
+    "heartbeatPlaceholder": "- auf CI-Fehler auf main achten\n- erinnere mich an Rechnungen, die länger als 30 Tage offen sind"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

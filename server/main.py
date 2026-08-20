@@ -254,6 +254,12 @@ async def lifespan(app: FastAPI):
         from server.services import scheduler
 
         scheduler.start()
+        # Reconcile the heartbeat's task with its settings at boot: a build that
+        # shipped while it was enabled, or a hand-edited settings row, would
+        # otherwise leave the task and the switch disagreeing.
+        from server.services import heartbeat
+
+        await heartbeat.sync_task()
     except Exception as exc:  # noqa: BLE001 — scheduler start must never block boot
         logger.warning("scheduler start failed (non-fatal): %s", exc)
 

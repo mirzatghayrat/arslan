@@ -28,6 +28,10 @@ export default function AutomationSection({
   onEvolutionMaxDispatchesChange,
   curationEnabled,
   onCurationEnabledChange,
+  heartbeatEnabled,
+  onHeartbeatEnabledChange,
+  heartbeatChecklist,
+  onHeartbeatChecklistChange,
   onOpenDiagnostics,
 }: {
   evolutionAuto: boolean;
@@ -36,6 +40,10 @@ export default function AutomationSection({
   onEvolutionMaxDispatchesChange?: (v: number | null) => void;
   curationEnabled: boolean;
   onCurationEnabledChange?: (v: boolean) => void;
+  heartbeatEnabled: boolean;
+  onHeartbeatEnabledChange?: (v: boolean) => void;
+  heartbeatChecklist: string;
+  onHeartbeatChecklistChange?: (v: string) => void;
   onOpenDiagnostics?: () => void;
 }) {
   const { t } = useTranslation();
@@ -138,6 +146,46 @@ export default function AutomationSection({
             onChange={(e) => onCurationEnabledChange?.(e.target.checked)}
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
+        </div>
+
+        <div className="h-[1px] bg-border/40" />
+
+        {/* ── heartbeat: a checklist Arslan re-reads on a cadence (P2 §1.3) ─ */}
+        <div className="space-y-2" data-testid="settings-heartbeat">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h4 className="text-xs font-bold text-foreground font-sans">
+                {t('settings.labelHeartbeat')}
+              </h4>
+              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+                {t('settings.heartbeatDesc')}
+              </p>
+              <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
+                 data-testid="heartbeat-spend-note">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
+                <span>{t('settings.heartbeatSpendNote')}</span>
+              </p>
+            </div>
+            <input
+              id="settings-heartbeat-toggle"
+              data-testid="heartbeat-toggle"
+              type="checkbox"
+              checked={heartbeatEnabled}
+              onChange={(e) => onHeartbeatEnabledChange?.(e.target.checked)}
+              className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            />
+          </div>
+          {heartbeatEnabled && (
+            <textarea
+              id="settings-heartbeat-checklist"
+              data-testid="heartbeat-checklist"
+              rows={5}
+              value={heartbeatChecklist}
+              onChange={(e) => onHeartbeatChecklistChange?.(e.target.value)}
+              placeholder={t('settings.heartbeatPlaceholder')}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[11px] text-foreground font-sans focus:border-primary focus:outline-none"
+            />
+          )}
         </div>
 
         <div className="h-[1px] bg-border/40" />

@@ -642,7 +642,11 @@
     "modelRolesEmbeddingPointer": "El modelo de embeddings se configura en «Memoria y datos».",
     "labelWorkspaceDir": "Directorio del espacio de trabajo",
     "workspaceDirPlaceholder": "p. ej. /Users/tu/Documents/Arslan Workspace",
-    "workspaceDirHint": "El único directorio que Arslan puede leer y —con tu permiso— escribir. Si lo dejas vacío, las herramientas de archivos no se ofrecen. Los archivos con forma de credencial (.env, claves, certificados) nunca se leen."
+    "workspaceDirHint": "El único directorio que Arslan puede leer y —con tu permiso— escribir. Si lo dejas vacío, las herramientas de archivos no se ofrecen. Los archivos con forma de credencial (.env, claves, certificados) nunca se leen.",
+    "labelHeartbeat": "Lista de comprobación periódica",
+    "heartbeatDesc": "Una lista que escribes; Arslan la relee cada pocas horas y te avisa si algo requiere acción. Solo puede mirar e informar: una ejecución en segundo plano no puede escribir archivos ni ejecutar comandos.",
+    "heartbeatSpendNote": "Cada comprobación gasta tokens de tu clave. Desactivado por defecto; una lista vacía no ejecuta nada.",
+    "heartbeatPlaceholder": "- vigilar fallos de CI en main\n- avísame si una factura lleva más de 30 días sin pagar"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from arslan.llm.catalog import CATALOG
 from arslan.llm.presets import expand_preset, provider_options
 from server import auth, config, token_bootstrap
+import logging
+
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
@@ -20,6 +22,8 @@ from server.schemas import AccessTokenOut, CatalogEntryOut, HealthOut, McpTokenO
 from server.services import model_catalog, provider_config_service, provider_health, searxng_probe, settings_service
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -206,6 +210,15 @@ async def write_settings(
     body: SettingsIn, session: AsyncSession = Depends(get_session)
 ) -> SettingsOut:
     await settings_service.update_settings(session, body.model_dump(exclude_none=True))
+    # Keep the heartbeat's scheduled task in step with its settings. Best-effort:
+    # a settings write must still succeed if the sync fails, and sync_task is
+    # idempotent, so the next write (or boot) repairs it.
+    try:
+        from server.services import heartbeat
+
+        await heartbeat.sync_task()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("heartbeat sync failed (non-fatal): %s", exc)
     data = await settings_service.get_settings(session)
     return SettingsOut(**data)
 

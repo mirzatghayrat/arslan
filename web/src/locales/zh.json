@@ -642,7 +642,11 @@
     "modelRolesEmbeddingPointer": "嵌入模型在「记忆与数据」分区设置。",
     "labelWorkspaceDir": "工作区目录",
     "workspaceDirPlaceholder": "例如 /Users/你/Documents/Arslan Workspace",
-    "workspaceDirHint": "Arslan 唯一可读、并在你授权后可写的目录。留空则文件工具根本不会出现。密钥类文件(.env、私钥、证书)一律不读。"
+    "workspaceDirHint": "Arslan 唯一可读、并在你授权后可写的目录。留空则文件工具根本不会出现。密钥类文件(.env、私钥、证书)一律不读。",
+    "labelHeartbeat": "定期检查清单",
+    "heartbeatDesc": "你写一份清单,Arslan 每隔几小时读一遍,有该办的事就告诉你。它只能查看和汇报——后台运行时写不了文件、跑不了命令。",
+    "heartbeatSpendNote": "每次检查都会消耗你 key 上的 token。默认关闭;清单为空则不会运行。",
+    "heartbeatPlaceholder": "- 盯 main 分支的 CI 有没有挂\n- 有账单超过 30 天没付就提醒我"
   },
   "errors": {
     "load_failed": "加载数据失败。",

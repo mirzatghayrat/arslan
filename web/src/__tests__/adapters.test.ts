@@ -109,7 +109,7 @@ describe("toBackendSettings", () => {
     llmStrategy: "single",
     distillOnSessionEnd: true,
     orchestratorShellEnabled: false,
-    shellConfirmPolicy: "ask_all", workspaceDir: "",
+    shellConfirmPolicy: "ask_all", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "",
     mcpServerEnabled: false,
   };
 

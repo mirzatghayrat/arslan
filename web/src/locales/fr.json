@@ -642,7 +642,11 @@
     "modelRolesEmbeddingPointer": "Le modèle d'embedding se règle dans « Mémoire et données ».",
     "labelWorkspaceDir": "Dossier de l'espace de travail",
     "workspaceDirPlaceholder": "ex. /Users/vous/Documents/Arslan Workspace",
-    "workspaceDirHint": "Le seul dossier qu'Arslan peut lire et — avec votre accord — écrire. Laissé vide, les outils de fichiers ne sont pas proposés. Les fichiers ressemblant à des identifiants (.env, clés, certificats) ne sont jamais lus."
+    "workspaceDirHint": "Le seul dossier qu'Arslan peut lire et — avec votre accord — écrire. Laissé vide, les outils de fichiers ne sont pas proposés. Les fichiers ressemblant à des identifiants (.env, clés, certificats) ne sont jamais lus.",
+    "labelHeartbeat": "Liste de contrôle périodique",
+    "heartbeatDesc": "Une liste que vous écrivez ; Arslan la relit toutes les quelques heures et vous prévient si quelque chose demande une action. Il peut seulement regarder et rapporter — une exécution en arrière-plan ne peut ni écrire de fichiers ni lancer de commandes.",
+    "heartbeatSpendNote": "Chaque vérification consomme des tokens sur votre clé. Désactivé par défaut ; une liste vide ne lance rien.",
+    "heartbeatPlaceholder": "- surveiller les échecs CI sur main\n- me rappeler les factures impayées depuis plus de 30 jours"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

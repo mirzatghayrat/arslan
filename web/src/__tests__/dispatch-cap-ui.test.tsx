@@ -32,6 +32,8 @@ const base = {
   evolutionAuto: false,
   onEvolutionAutoChange: vi.fn(),
   curationEnabled: false,
+  heartbeatEnabled: false,
+  heartbeatChecklist: '',
   onCurationEnabledChange: vi.fn(),
 };
 

@@ -203,6 +203,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onEvolutionMaxDispatchesChange={(v) => saveField({ evolutionMaxDispatches: v })}
         curationEnabled={localSettings.curationEnabled ?? false}
         onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
+        heartbeatEnabled={localSettings.heartbeatEnabled ?? false}
+        onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
+        heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
+        onHeartbeatChecklistChange={(v) => saveField({ heartbeatChecklist: v })}
         onOpenDiagnostics={onOpenDiagnostics}
       />
     ),
