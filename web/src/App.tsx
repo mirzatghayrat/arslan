@@ -37,6 +37,7 @@ import GapFillModal, { type GapFillKind, type GapFillResult } from './components
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RunCommandCard from './components/RunCommandCard';
 import WorkspaceWriteCard from './components/WorkspaceWriteCard';
+import ScheduleGrantCard from './components/ScheduleGrantCard';
 import ConnectMcpCard from './components/ConnectMcpCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
@@ -199,6 +200,8 @@ export default function App() {
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
   const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
   const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
+  const pendingSchedule = useArslanStore((s) => s.pendingSchedule);
+  const clearPendingSchedule = useArslanStore((s) => s.clearPendingSchedule);
   // propose_connect_mcp state — in-chat MCP connect card (security-load-bearing:
   // secrets never leave this card except over REST; see ConnectMcpCard.tsx)
   const pendingConnectMcp = useArslanStore((s) => s.pendingConnectMcp);
@@ -1031,6 +1034,24 @@ export default function App() {
                   onCancel={(callId) => {
                     wsSend({ type: 'cancel_workspace_write', call_id: callId });
                     clearPendingWorkspaceWrite();
+                  }}
+                />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingSchedule && (
+              <div className="suggest-create-card-overlay">
+                <ScheduleGrantCard
+                  callId={pendingSchedule.callId}
+                  name={pendingSchedule.name}
+                  when={pendingSchedule.when}
+                  onConfirm={(callId) => {
+                    wsSend({ type: 'confirm_schedule', call_id: callId });
+                    clearPendingSchedule();
+                  }}
+                  onCancel={(callId) => {
+                    wsSend({ type: 'cancel_schedule', call_id: callId });
+                    clearPendingSchedule();
                   }}
                 />
               </div>

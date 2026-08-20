@@ -1569,5 +1569,12 @@
       "write": "anlegen oder überschreiben",
       "edit": "bearbeiten"
     }
+  },
+  "schedgrant": {
+    "label": "Zeitplanung",
+    "body": "Arslan möchte eine wiederkehrende Aufgabe einplanen:",
+    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe finden unbeaufsichtigt statt — sie können nachschlagen und berichten, aber keine Dateien schreiben und keine Befehle ausführen.",
+    "allow": "Erlauben",
+    "deny": "Jetzt nicht"
   }
 }
