@@ -131,6 +131,8 @@ describe("every settings field the UI can edit is mappable", () => {
       run_debug_retention_days: { runDebugRetentionDays: 30 },
       mcp_server_enabled: { mcpServerEnabled: true },
       workspace_dir: { workspaceDir: "/tmp/ws" },
+      heartbeat_enabled: { heartbeatEnabled: true },
+      heartbeat_checklist: { heartbeatChecklist: "- x" },
     };
 
     const unmappable: string[] = [];

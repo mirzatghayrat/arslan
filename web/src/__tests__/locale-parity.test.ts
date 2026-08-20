@@ -186,7 +186,12 @@ describe("locale parity", () => {
     //              says the grant lasts the session. settings.workspaceDir* is
     //              the picker plus the hint that an empty value means the file
     //              tools are not offered at all.
-    expect(enKeys).toHaveLength(1359);
+    // 1359 → 1363: settings.heartbeat* — the periodic checklist (P2 §1.3). The
+    //              description says what a background run CANNOT do, because
+    //              the whole safety argument is that it only looks and reports;
+    //              the spend note says each check costs tokens, and that an
+    //              empty list runs nothing.
+    expect(enKeys).toHaveLength(1363);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

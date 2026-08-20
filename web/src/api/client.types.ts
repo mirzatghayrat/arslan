@@ -260,6 +260,9 @@ export interface AppSettings {
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   workspace_dir?: string;   // "" = unset = file tools not offered
+  heartbeat_enabled?: string;     // "true" | "false"
+  heartbeat_checklist?: string;
+  heartbeat_interval_s?: string;
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;

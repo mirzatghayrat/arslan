@@ -62,6 +62,9 @@ class SettingsIn(BaseModel):
     ocr_languages: str | None = None
     # Workspace for the file tools (P1). Empty string = unset = tools not offered.
     workspace_dir: str | None = None
+    heartbeat_enabled: str | None = None
+    heartbeat_checklist: str | None = None
+    heartbeat_interval_s: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -108,6 +111,9 @@ class SettingsOut(BaseModel):
     # express "no explicit choice" without the client guessing.
     ocr_languages: str = ""
     workspace_dir: str = ""
+    heartbeat_enabled: str = ""
+    heartbeat_checklist: str = ""
+    heartbeat_interval_s: str = ""
 
 
 class AccessTokenOut(BaseModel):

@@ -203,6 +203,9 @@ export interface AppSettings {
   shellConfirmPolicy: 'ask_all' | 'ask_risky';
   /** Directory Arslan's file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
+  /** Periodic checklist turn. Default OFF; an empty checklist means no task. */
+  heartbeatEnabled: boolean;
+  heartbeatChecklist: string;
   /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
   embeddingConfigId?: string;
   /** Per-task model slots. Empty or absent = unset, and that task keeps the exact

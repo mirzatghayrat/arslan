@@ -27,7 +27,8 @@ _PLAIN_KEYS = (
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
-               "workspace_dir")
+               "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
+               "heartbeat_interval_s")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -219,6 +220,29 @@ async def curation_enabled(session: AsyncSession) -> bool:
     """
     raw = await _get_raw(session, "curation_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def heartbeat_enabled(session: AsyncSession) -> bool:
+    """Whether the periodic checklist turn runs. Default OFF (裁决③)."""
+    raw = await _get_raw(session, "heartbeat_enabled")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def heartbeat_checklist(session: AsyncSession) -> str:
+    """The user's checklist text. Empty means there is nothing to check."""
+    raw = await _get_raw(session, "heartbeat_checklist")
+    return str(raw) if raw is not None else ""
+
+
+async def heartbeat_interval_s(session: AsyncSession) -> int:
+    """Seconds between checks. The scheduler's floor still applies on top."""
+    from server.services.heartbeat import DEFAULT_INTERVAL_S
+
+    raw = await _get_raw(session, "heartbeat_interval_s")
+    try:
+        return int(str(raw).strip()) if raw is not None else DEFAULT_INTERVAL_S
+    except ValueError:
+        return DEFAULT_INTERVAL_S
 
 
 async def workspace_dir(session: AsyncSession):

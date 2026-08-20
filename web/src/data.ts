@@ -11,6 +11,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   apiKeySearch: '••••••••••••••••••••••••',
   githubToken: '',
   workspaceDir: '',          // zero default, by user ruling: pick it explicitly
+  heartbeatEnabled: false,   // default OFF
+  heartbeatChecklist: '',
   language: 'en',
   theme: 'dark',
   telemetry: false,

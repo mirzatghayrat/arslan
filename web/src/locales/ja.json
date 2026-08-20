@@ -642,7 +642,11 @@
     "modelRolesEmbeddingPointer": "埋め込みモデルは「メモリとデータ」で設定します。",
     "labelWorkspaceDir": "ワークスペースディレクトリ",
     "workspaceDirPlaceholder": "例: /Users/you/Documents/Arslan Workspace",
-    "workspaceDirHint": "Arslan が読み取り、許可があれば書き込みできる唯一のディレクトリ。空のままならファイルツールは提供されません。認証情報らしきファイル(.env、鍵、証明書)は決して読みません。"
+    "workspaceDirHint": "Arslan が読み取り、許可があれば書き込みできる唯一のディレクトリ。空のままならファイルツールは提供されません。認証情報らしきファイル(.env、鍵、証明書)は決して読みません。",
+    "labelHeartbeat": "定期チェックリスト",
+    "heartbeatDesc": "あなたが書いたリストを Arslan が数時間ごとに読み返し、対応が必要なものがあれば知らせます。確認と報告のみ——バックグラウンド実行ではファイルの書き込みもコマンドの実行もできません。",
+    "heartbeatSpendNote": "チェックのたびにあなたのキーのトークンを消費します。既定はオフ。リストが空なら実行されません。",
+    "heartbeatPlaceholder": "- main の CI が落ちていないか見る\n- 30 日以上未払いの請求書があれば知らせる"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
