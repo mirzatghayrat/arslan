@@ -61,7 +61,7 @@ const defaultSettings: AppSettings = {
   llmStrategy: "single",
   distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
-  shellConfirmPolicy: "ask_all",
+  shellConfirmPolicy: "ask_all", workspaceDir: "",
   mcpServerEnabled: false,
 };
 

@@ -259,6 +259,7 @@ export interface AppSettings {
   distill_on_session_end?: boolean;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
+  workspace_dir?: string;   // "" = unset = file tools not offered
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;
@@ -525,6 +526,7 @@ export type ArslanServerMessage =
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
   | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string }
+  | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
   // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a

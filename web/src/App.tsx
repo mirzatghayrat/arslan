@@ -36,6 +36,7 @@ import SuggestUpdateCard from './components/SuggestUpdateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RunCommandCard from './components/RunCommandCard';
+import WorkspaceWriteCard from './components/WorkspaceWriteCard';
 import ConnectMcpCard from './components/ConnectMcpCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
@@ -196,6 +197,8 @@ export default function App() {
   // propose_run_command state — per-command confirmation card
   const pendingCommand = useArslanStore((s) => s.pendingCommand);
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
+  const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
+  const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
   // propose_connect_mcp state — in-chat MCP connect card (security-load-bearing:
   // secrets never leave this card except over REST; see ConnectMcpCard.tsx)
   const pendingConnectMcp = useArslanStore((s) => s.pendingConnectMcp);
@@ -1009,6 +1012,25 @@ export default function App() {
                   onCancel={(callId) => {
                     wsSend({ type: 'cancel_run_command', call_id: callId });
                     clearPendingCommand();
+                  }}
+                />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingWorkspaceWrite && (
+              <div className="suggest-create-card-overlay">
+                <WorkspaceWriteCard
+                  callId={pendingWorkspaceWrite.callId}
+                  workspace={pendingWorkspaceWrite.workspace}
+                  action={pendingWorkspaceWrite.action}
+                  path={pendingWorkspaceWrite.path}
+                  onConfirm={(callId) => {
+                    wsSend({ type: 'confirm_workspace_write', call_id: callId });
+                    clearPendingWorkspaceWrite();
+                  }}
+                  onCancel={(callId) => {
+                    wsSend({ type: 'cancel_workspace_write', call_id: callId });
+                    clearPendingWorkspaceWrite();
                   }}
                 />
               </div>

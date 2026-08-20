@@ -52,6 +52,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // both default OFF / most-cautious when absent.
     orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
+    // Workspace for the file tools (P1). Empty = unset = tools not offered.
+    workspaceDir: backend.workspace_dir ?? "",
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
@@ -89,6 +91,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   distillOnSessionEnd: { key: "distill_on_session_end" },
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
   shellConfirmPolicy: { key: "shell_confirm_policy" },
+  workspaceDir: { key: "workspace_dir", to: (v) => (v as string) ?? "" },
   embeddingConfigId: { key: "embedding_config_id", to: (v) => (v as string) ?? "" },
   synthesisConfigId: { key: "synthesis_config_id", to: (v) => (v as string) ?? "" },
   compactionConfigId: { key: "compaction_config_id", to: (v) => (v as string) ?? "" },

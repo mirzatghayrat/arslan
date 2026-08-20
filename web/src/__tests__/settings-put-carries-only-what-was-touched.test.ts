@@ -130,6 +130,7 @@ describe("every settings field the UI can edit is mappable", () => {
       ocr_languages: { ocrLanguages: "eng" },
       run_debug_retention_days: { runDebugRetentionDays: 30 },
       mcp_server_enabled: { mcpServerEnabled: true },
+      workspace_dir: { workspaceDir: "/tmp/ws" },
     };
 
     const unmappable: string[] = [];

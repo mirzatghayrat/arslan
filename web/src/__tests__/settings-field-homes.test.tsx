@@ -124,6 +124,7 @@ describe("no control was lost in the redesign", () => {
         telemetry={false} onTelemetryChange={() => {}}
         orchestratorShellEnabled={false} onOrchestratorShellChange={() => {}}
         shellConfirmPolicy="ask_all" onShellConfirmPolicyChange={() => {}}
+        workspaceDir="" onWorkspaceDirChange={() => {}}
         spawnMode="auto" onSpawnModeChange={() => {}}
       />,
     );
