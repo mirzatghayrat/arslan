@@ -11,7 +11,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from server.orchestrator import vision_errors
+from server.orchestrator import llm_errors, vision_errors
 from server.services import ocr_fallback
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
@@ -553,7 +553,8 @@ async def handle_user_message(
             kind = await _classify_followup(user_message, pending["direction"])
         except Exception as exc:  # noqa: BLE001
             logger.warning("_classify_followup raised (surfacing as error): %s", exc)
-            emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+            emit({"type": "error", "code": "LLM_ERROR",
+                  "message": llm_errors.explain(str(exc)) or str(exc), "recoverable": True})
             return
         if kind == "confirm":
             await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
@@ -596,7 +597,8 @@ async def handle_user_message(
         route_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
     except Exception as exc:  # noqa: BLE001
         logger.warning("router.route raised (surfacing as error): %s", exc)
-        emit({"type": "error", "code": "LLM_ERROR", "message": str(exc), "recoverable": True})
+        emit({"type": "error", "code": "LLM_ERROR",
+              "message": llm_errors.explain(str(exc)) or str(exc), "recoverable": True})
         return
 
     # 3. persist + announce extracted facts (transparency note)
@@ -1128,12 +1130,18 @@ async def _handle_answer_body(
                     f"{user_message}\n\n{recovered}", attached_context, None))
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
                 emit({"type": "error", "code": "LLM_ERROR",
-                      "message": str(retry_exc), "recoverable": True})
+                      "message": llm_errors.explain(str(retry_exc)) or str(retry_exc),
+                      "recoverable": True})
                 return
         else:
+            # Order is the point: vision_errors is the NARROWEST reading (it only
+            # fires on image-specific refusals), llm_errors covers the
+            # billing/auth/rate family, and the raw text is what survives when
+            # neither recognises the fault — never an invented diagnosis.
             emit({"type": "error", "code": "LLM_ERROR",
-                  "message": vision_errors.explain(
-                      str(exc), had_images=bool(images)) or str(exc),
+                  "message": (vision_errors.explain(str(exc), had_images=bool(images))
+                              or llm_errors.explain(str(exc))
+                              or str(exc)),
                   "recoverable": True})
             return
     # PA-3: the model asked for a structured user choice — ask_user_choice is a

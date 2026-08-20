@@ -18,9 +18,19 @@ class OpenAIProvider(BaseLLMProvider):
 
     DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
-    def __init__(self, model: str, api_key: str = "", base_url: str = "") -> None:
+    #: Output budget declared on every request. NOT sending one is what caused
+    #: the v0.1.25 field report: an aggregator (OpenRouter) reserves the MODEL's
+    #: ceiling when the body is silent — 65536 for Claude — and refuses a key
+    #: that could still afford 64381. Saying what we intend to use costs nothing
+    #: and lets a nearly-spent budget keep working. Generous enough for long
+    #: answers, far below any modern model's ceiling.
+    DEFAULT_MAX_TOKENS = 8192
+
+    def __init__(self, model: str, api_key: str = "", base_url: str = "",
+                 max_tokens: int | None = None) -> None:
         effective_base_url = base_url or self.DEFAULT_BASE_URL
         super().__init__(model=model, api_key=api_key, base_url=effective_base_url)
+        self.max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
 
     # ------------------------------------------------------------------
     # BaseLLMProvider interface
@@ -68,6 +78,7 @@ class OpenAIProvider(BaseLLMProvider):
                 {**m, "content": self._translate(m.get("content"))} for m in messages
             ],
             "temperature": temperature,
+            "max_tokens": self.max_tokens,
         }
         if tools:
             payload["tools"] = tools

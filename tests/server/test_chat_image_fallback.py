@@ -237,7 +237,16 @@ async def test_an_unrelated_failure_neither_recovers_nor_relabels(db, monkeypatc
     assert ocr_ran == [], "a rate limit started an OCR pass"
     errors = [e for e in events if e.get("type") == "error"]
     assert errors, events
-    assert "Rate limit" in errors[0]["message"], errors[0]["message"]
+    # This used to assert the raw "Rate limit" text appeared. That was a proxy
+    # for "the error was not relabelled", and it stopped being a valid proxy the
+    # moment llm_errors began translating rate limits into a plain-language
+    # sentence (a legitimate improvement, not the relabelling this guards).
+    # The INTENT is pinned directly instead: a rate limit is reported as a rate
+    # limit, and never as an image/vision problem.
+    msg = errors[0]["message"]
+    assert "限流" in msg or "rate" in msg.lower(), msg
+    for wrong in ("图", "image", "vision", "OCR", "看不", "识别"):
+        assert wrong not in msg, f"a rate limit was relabelled as an image problem: {msg}"
 
 
 @pytest.mark.asyncio
