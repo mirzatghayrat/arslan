@@ -639,7 +639,10 @@
     "slotFallbackRouted": "Nicht gesetzt: wird von Ihrer Routing-Strategie zugewiesen.",
     "slotFallbackFollowsConversation": "Nicht gesetzt: nutzt das Modell, auf dem das Gespräch bereits läuft.",
     "slotFallbackNoConfigs": "Noch keine Modelle konfiguriert.",
-    "modelRolesEmbeddingPointer": "Das Embedding-Modell wird unter „Speicher & Daten“ eingestellt."
+    "modelRolesEmbeddingPointer": "Das Embedding-Modell wird unter „Speicher & Daten“ eingestellt.",
+    "labelWorkspaceDir": "Workspace-Verzeichnis",
+    "workspaceDirPlaceholder": "z. B. /Users/du/Documents/Arslan Workspace",
+    "workspaceDirHint": "Das einzige Verzeichnis, das Arslan lesen und — mit deiner Erlaubnis — beschreiben darf. Bleibt es leer, werden die Datei-Tools gar nicht angeboten. Dateien, die nach Zugangsdaten aussehen (.env, Schlüssel, Zertifikate), werden nie gelesen."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -1550,6 +1553,17 @@
     "distill": {
       "manual": "{{distilled}} Spawns manuell destilliert",
       "manual_with_failures": "{{distilled}} Spawns manuell destilliert ({{failed}} fehlgeschlagen)"
+    }
+  },
+  "wswrite": {
+    "label": "Workspace-Zugriff",
+    "body": "Arslan möchte in deinen Workspace schreiben:",
+    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung überall in diesem Verzeichnis Dateien anlegen und ändern.",
+    "allow": "Erlauben",
+    "deny": "Jetzt nicht",
+    "action": {
+      "write": "anlegen oder überschreiben",
+      "edit": "bearbeiten"
     }
   }
 }

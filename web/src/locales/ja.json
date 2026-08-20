@@ -639,7 +639,10 @@
     "slotFallbackRouted": "未設定：ルーティング戦略が割り当てます。",
     "slotFallbackFollowsConversation": "未設定：その会話がすでに使っているモデルを使います。",
     "slotFallbackNoConfigs": "モデルがまだ設定されていません。",
-    "modelRolesEmbeddingPointer": "埋め込みモデルは「メモリとデータ」で設定します。"
+    "modelRolesEmbeddingPointer": "埋め込みモデルは「メモリとデータ」で設定します。",
+    "labelWorkspaceDir": "ワークスペースディレクトリ",
+    "workspaceDirPlaceholder": "例: /Users/you/Documents/Arslan Workspace",
+    "workspaceDirHint": "Arslan が読み取り、許可があれば書き込みできる唯一のディレクトリ。空のままならファイルツールは提供されません。認証情報らしきファイル(.env、鍵、証明書)は決して読みません。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -1550,6 +1553,17 @@
     "distill": {
       "manual": "{{distilled}} 体を手動で蒸留",
       "manual_with_failures": "{{distilled}} 体を手動で蒸留（{{failed}} 件失敗）"
+    }
+  },
+  "wswrite": {
+    "label": "ワークスペースへのアクセス",
+    "body": "Arslan がワークスペースへの書き込みを求めています:",
+    "scope": "許可すると、このセッション中はこのディレクトリ内でファイルの作成・編集ができます。",
+    "allow": "許可",
+    "deny": "今はしない",
+    "action": {
+      "write": "作成・上書き",
+      "edit": "編集"
     }
   }
 }

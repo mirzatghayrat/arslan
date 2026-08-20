@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   searchBaseUrl: '',
   apiKeySearch: '••••••••••••••••••••••••',
   githubToken: '',
+  workspaceDir: '',          // zero default, by user ruling: pick it explicitly
   language: 'en',
   theme: 'dark',
   telemetry: false,

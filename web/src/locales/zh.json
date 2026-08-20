@@ -639,7 +639,10 @@
     "slotFallbackRouted": "未设置：由你的路由策略分配。",
     "slotFallbackFollowsConversation": "未设置：使用本次对话正在运行的那个模型。",
     "slotFallbackNoConfigs": "还没有配置任何模型。",
-    "modelRolesEmbeddingPointer": "嵌入模型在「记忆与数据」分区设置。"
+    "modelRolesEmbeddingPointer": "嵌入模型在「记忆与数据」分区设置。",
+    "labelWorkspaceDir": "工作区目录",
+    "workspaceDirPlaceholder": "例如 /Users/你/Documents/Arslan Workspace",
+    "workspaceDirHint": "Arslan 唯一可读、并在你授权后可写的目录。留空则文件工具根本不会出现。密钥类文件(.env、私钥、证书)一律不读。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -1550,6 +1553,17 @@
     "distill": {
       "manual": "手动蒸馏 {{distilled}} 个分身",
       "manual_with_failures": "手动蒸馏 {{distilled}} 个分身（失败 {{failed}} 个）"
+    }
+  },
+  "wswrite": {
+    "label": "工作区访问",
+    "body": "Arslan 想在你的工作区里写入:",
+    "scope": "同意后,本次会话内它可以在这个目录里创建和修改文件。",
+    "allow": "允许",
+    "deny": "暂不",
+    "action": {
+      "write": "创建或覆盖",
+      "edit": "修改"
     }
   }
 }

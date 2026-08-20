@@ -35,6 +35,9 @@ export interface AdvancedSectionProps {
   /** Confirm policy for shell commands (only meaningful when shell is enabled). */
   shellConfirmPolicy: ShellConfirmPolicy;
   onShellConfirmPolicyChange: (value: ShellConfirmPolicy) => void;
+  /** Directory the file tools may work in. Empty = unset = tools not offered. */
+  workspaceDir: string;
+  onWorkspaceDirChange: (value: string) => void;
   /** How sub-agents are created. */
   spawnMode: SpawnMode;
   onSpawnModeChange: (value: SpawnMode) => void;
@@ -52,6 +55,8 @@ export default function AdvancedSection({
   onOrchestratorShellChange,
   shellConfirmPolicy,
   onShellConfirmPolicyChange,
+  workspaceDir,
+  onWorkspaceDirChange,
   spawnMode,
   onSpawnModeChange,
 }: AdvancedSectionProps) {
@@ -80,6 +85,26 @@ export default function AdvancedSection({
             onChange={(e) => onTelemetryChange(e.target.checked)}
             className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
+        </div>
+
+        {/* Workspace for the file tools (P1). Empty by design: with no directory
+            picked the tools are not offered at all. */}
+        <div className="space-y-1.5">
+          <label htmlFor="workspace-dir" className="text-[11px] font-mono text-muted-foreground">
+            {t('settings.labelWorkspaceDir')}
+          </label>
+          <input
+            id="workspace-dir"
+            type="text"
+            data-testid="settings-workspace-dir"
+            value={workspaceDir}
+            onChange={(e) => onWorkspaceDirChange(e.target.value)}
+            placeholder={t('settings.workspaceDirPlaceholder')}
+            className="w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[12px] text-foreground font-mono"
+          />
+          <p className="text-[10.5px] text-subtle-foreground font-sans">
+            {t('settings.workspaceDirHint')}
+          </p>
         </div>
 
         {/* Separation divider */}

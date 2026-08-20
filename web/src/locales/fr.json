@@ -639,7 +639,10 @@
     "slotFallbackRouted": "Non défini : attribué par votre stratégie de routage.",
     "slotFallbackFollowsConversation": "Non défini : utilise le modèle sur lequel la conversation tourne déjà.",
     "slotFallbackNoConfigs": "Aucun modèle configuré pour l'instant.",
-    "modelRolesEmbeddingPointer": "Le modèle d'embedding se règle dans « Mémoire et données »."
+    "modelRolesEmbeddingPointer": "Le modèle d'embedding se règle dans « Mémoire et données ».",
+    "labelWorkspaceDir": "Dossier de l'espace de travail",
+    "workspaceDirPlaceholder": "ex. /Users/vous/Documents/Arslan Workspace",
+    "workspaceDirHint": "Le seul dossier qu'Arslan peut lire et — avec votre accord — écrire. Laissé vide, les outils de fichiers ne sont pas proposés. Les fichiers ressemblant à des identifiants (.env, clés, certificats) ne sont jamais lus."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1550,6 +1553,17 @@
     "distill": {
       "manual": "{{distilled}} spawns distillés à la main",
       "manual_with_failures": "{{distilled}} spawns distillés à la main ({{failed}} en échec)"
+    }
+  },
+  "wswrite": {
+    "label": "Accès à l'espace de travail",
+    "body": "Arslan souhaite écrire dans votre espace de travail :",
+    "scope": "En acceptant, il pourra créer et modifier des fichiers partout dans ce dossier pour le reste de cette session.",
+    "allow": "Autoriser",
+    "deny": "Pas maintenant",
+    "action": {
+      "write": "créer ou écraser",
+      "edit": "modifier"
     }
   }
 }
