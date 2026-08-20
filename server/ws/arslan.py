@@ -209,6 +209,46 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     session_cmd_allow: set[str] = set()  # command signatures auto-approved this session
 
+    # T1 workspace-write grant (P1b): ONE per connection, not per file — the
+    # user ruling is "first use asks, the rest of the session does not".
+    workspace_write_granted = {"yes": False}
+
+    async def confirm_workspace_write(action: str, path: str) -> bool:
+        from server.services import settings_service
+        if workspace_write_granted["yes"]:
+            return True
+        async with db_session.AsyncSessionLocal() as db:
+            ws_root = await settings_service.workspace_dir(db)
+        if ws_root is None:
+            return False                     # nothing to grant access to
+        call_id = uuid.uuid4().hex
+        # Private card to THIS socket and deliberately un-journaled, for the same
+        # reasons as the run_command card: only this connection can answer it, and
+        # a reattaching socket must not replay a dead interactive card.
+        await ws.send_json(protocol.propose_workspace_write(
+            call_id, str(ws_root), action, path))
+        decision = False
+        try:
+            while True:
+                try:
+                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                except TimeoutError:
+                    break
+                t = data.get("type")
+                if t in ("ping", "pong"):
+                    continue
+                if (t in ("confirm_workspace_write", "cancel_workspace_write")
+                        and data.get("call_id") == call_id):
+                    decision = t == "confirm_workspace_write"
+                    break
+                await ws.send_json(protocol.error(
+                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+        except WebSocketDisconnect:
+            raise
+        if decision:
+            workspace_write_granted["yes"] = True     # session-wide, per the ruling
+        return decision
+
     async def confirm_command(command: str, argv: list) -> bool:
         from server.services import command_policy, settings_service
         sig = _cmd_sig(command, argv)
@@ -704,7 +744,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 arslan.handle_user_message(conversation_id, content, emit,
                                            attached_context=attached or None,
                                            images=images or None,
-                                           confirm_command=confirm_command)
+                                           confirm_command=confirm_command,
+                                           confirm_workspace_write=confirm_workspace_write)
             )
     except WebSocketDisconnect:
         return

@@ -28,6 +28,8 @@ function setup(overrides: Partial<Props> = {}) {
     onTelemetryChange: vi.fn(),
     orchestratorShellEnabled: false,
     onOrchestratorShellChange: vi.fn(),
+    workspaceDir: "",
+    onWorkspaceDirChange: vi.fn(),
     shellConfirmPolicy: "ask_all",
     onShellConfirmPolicyChange: vi.fn(),
     spawnMode: "auto",

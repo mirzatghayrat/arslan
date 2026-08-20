@@ -180,7 +180,13 @@ describe("locale parity", () => {
     //              hero.kind.{all,mcp,skill,agent,other} (search filter chips /
     //              row type badges), dossier.overview_label (the plain-language
     //              "what this is" card that replaced the useless value line).
-    expect(enKeys).toHaveLength(1349);
+    // 1349 → 1359: the workspace file tools (P1). wswrite.* is the write-grant
+    //              card — it names the DIRECTORY being granted, not the file,
+    //              because that is what the user is actually agreeing to, and
+    //              says the grant lasts the session. settings.workspaceDir* is
+    //              the picker plus the hint that an empty value means the file
+    //              tools are not offered at all.
+    expect(enKeys).toHaveLength(1359);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

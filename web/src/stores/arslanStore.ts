@@ -35,6 +35,7 @@ interface ArslanState {
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
   pendingCommand: { callId: string; pretty: string; reason: string } | null;
+  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -93,6 +94,7 @@ interface ArslanState {
   markClarifyAnswered: (itemId: number) => void;
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
+  clearPendingWorkspaceWrite: () => void;
   clearPendingConnectMcp: () => void;
   clearPendingStaffing: () => void;
   clearError: () => void;
@@ -156,6 +158,7 @@ function initialData() {
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
     pendingCommand: null as { callId: string; pretty: string; reason: string } | null,
+    pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string } | null,
     pendingConnectMcp: null as {
       callId: string;
       key: string;
@@ -239,6 +242,7 @@ function makeActions(set: SetState, get: GetState) {
       }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingCommand: () => set({ pendingCommand: null }),
+    clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null }),
@@ -278,7 +282,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_connect_mcp", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_workspace_write", "propose_connect_mcp", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -770,6 +774,11 @@ function makeActions(set: SetState, get: GetState) {
         case "propose_run_command":
           set({ pendingCommand: { callId: frame.call_id, pretty: frame.pretty,
                                   reason: frame.reason || "" } });
+          break;
+        case "propose_workspace_write":
+          set({ pendingWorkspaceWrite: {
+            callId: frame.call_id, workspace: frame.workspace,
+            action: frame.action, path: frame.path } });
           break;
         case "propose_connect_mcp":
           // NEXT BUILD (conversation-driven MCP, Task 5): env_keys carries credential

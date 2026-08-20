@@ -216,6 +216,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
         shellConfirmPolicy={localSettings.shellConfirmPolicy}
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
+        workspaceDir={localSettings.workspaceDir ?? ''}
+        onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}
         spawnMode={localSettings.spawnMode}
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />

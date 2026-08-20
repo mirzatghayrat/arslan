@@ -5,9 +5,10 @@ present-and-erroring: a tool the model can see is a tool it will try, and a
 capability that advertises itself then refuses is the self-knowledge defect
 this project already paid for once.
 
-P1a scope: only the T0 read-only trio is offered. The T1 writers exist as
-executors but stay out of the tool list until their session-grant gate ships
-(execute-closed: no gate, no execution surface).
+P1b scope: the T0 trio plus the T1 writers, the latter gated by the session
+grant. What is OFFERED still depends on a configured workspace; what is GATED
+is tool_loop._WORKSPACE_WRITE_TOOLS. Both lists are pinned here so a writer
+cannot quietly become ungated by leaving one of them.
 """
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -80,9 +81,11 @@ async def test_workspace_offers_the_readonly_trio(keys_with_workspace):
     assert T0 <= keys_with_workspace
 
 
-async def test_writers_stay_out_until_their_gate_ships(keys_with_workspace):
-    """P1a boundary, stated as a test so P1b has to change it deliberately."""
-    assert not T1 & keys_with_workspace
+async def test_writers_are_offered_now_that_the_gate_exists(keys_with_workspace):
+    """P1a withheld these until a gate existed; P1b ships the session grant
+    (tool_loop._WORKSPACE_WRITE_TOOLS + the WS card), so they come out — the
+    deliberate flip that P1a's version of this test demanded."""
+    assert T1 <= keys_with_workspace
 
 
 async def test_offered_file_tools_have_descriptions(keys_with_workspace):
@@ -137,3 +140,13 @@ def test_readonly_additions_still_pass_the_hard_deny_scan():
     # …and the metacharacter scan still bites on the new binaries
     bad = command_policy.validate("grep", ["needle", ";", "rm -rf /"])
     assert bad["ok"] is False
+
+
+async def test_every_offered_writer_is_gated(keys_with_workspace):
+    """The two lists must agree: a tool offered as a writer but missing from
+    the gate set would execute unconfirmed — the failure mode this pairing
+    exists to make impossible."""
+    from server.orchestrator.tool_loop import _WORKSPACE_WRITE_TOOLS
+    offered_writers = T1 & keys_with_workspace
+    assert offered_writers <= _WORKSPACE_WRITE_TOOLS
+    assert _WORKSPACE_WRITE_TOOLS == T1

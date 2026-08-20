@@ -30,6 +30,12 @@ if TYPE_CHECKING:
 MAX_TOOL_CALLS = 8
 TOOL_TIMEOUT_S = 20.0
 
+# The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
+# list in _arslan_tools decides what is OFFERED, this decides what is GATED, and
+# a tool that slips out of this set would be a silently ungated writer.
+_WORKSPACE_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+
+
 _PROTOCOL = (
     "\n\nTOOL PROTOCOL: To use a tool, reply with ONLY this JSON and nothing else — NO text "
     "before or after it, not even '好的' / 'let me search'; the JSON object must be the ENTIRE "
@@ -473,6 +479,7 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
 
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
+                        confirm_workspace_write=None,
                          mcp_fail_counts: dict | None = None,
                          mcp_hint_logged: set | None = None,
                          conversation_id: str | None = None,
@@ -497,6 +504,26 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             emit({"type": "tool_result", "tool": tool_key, "ok": False,
                   "summary": refusal["error"]})
             return refusal
+
+    # T1 workspace writes (P1b): ONE grant per session, not per file. The unit
+    # differs from run_command deliberately — a user approving "Arslan may write
+    # in my workspace" is answering a question about a capability, not about a
+    # filename, and asking again per file would train them to click through.
+    # The remembering lives on the WS connection; here we only ask.
+    if tool_key in _WORKSPACE_WRITE_TOOLS:
+        if confirm_workspace_write is None:
+            result = {"ok": False,
+                      "error": "writing to the workspace needs your permission, which "
+                               "is not available on this channel"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        granted = await confirm_workspace_write(tool_key, str(args.get("path") or ""))
+        if not granted:
+            result = {"ok": False, "error": "user declined workspace write access"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
 
     if tool_key == "run_command":
         command = str(args.get("command") or "")
@@ -592,6 +619,7 @@ async def run(
     tool_timeout_s: float = TOOL_TIMEOUT_S,
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
+    confirm_workspace_write=None,
 ) -> dict:
     """Run the loop. Returns {"final": str|None, "escalation": dict|None, "tool_trace": list}.
     Exactly one of final/escalation is non-None. resolve_tools() returns the currently
@@ -676,7 +704,8 @@ async def run(
             await _dispatch_tool(tool_key, args, content, resolve_tools=resolve_tools,
                                  emit=emit, tool_timeout_s=tool_timeout_s,
                                  tool_trace=tool_trace, convo=convo,
-                                 confirm_command=confirm_command)
+                                 confirm_command=confirm_command,
+                        confirm_workspace_write=confirm_workspace_write)
             fired.add(tool_key)
             continue
 
@@ -1146,6 +1175,7 @@ async def run_native(
     tool_timeout_s: float = TOOL_TIMEOUT_S,
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
+    confirm_workspace_write=None,
     conversation_id: str | None = None,
     log_events: bool = True,
     caller: ToolCaller | None = None,
@@ -1208,6 +1238,7 @@ async def run_native(
                 json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
+            confirm_workspace_write=confirm_workspace_write,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
                 conversation_id=conversation_id, log_events=log_events,
                 fetch_budget=fetch_budget, caller=caller)

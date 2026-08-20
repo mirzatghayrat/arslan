@@ -227,6 +227,16 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
             "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
 
 
+def propose_workspace_write(call_id: str, workspace: str, action: str, path: str) -> dict[str, Any]:
+    """Arslan asks for write access to the workspace — ONCE per session, not per
+    file. Emitting this frame writes NOTHING; only the user's
+    `confirm_workspace_write {call_id}` grants it (or `cancel_workspace_write`).
+    The card names the directory, because that — not this one filename — is what
+    is being agreed to."""
+    return {"type": "propose_workspace_write", "call_id": call_id,
+            "workspace": workspace, "action": action, "path": path}
+
+
 def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
                         command: str, argv: list[str], url: str | None,
                         env_keys: list[dict], prerequisites: str = "",
