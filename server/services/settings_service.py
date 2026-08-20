@@ -26,7 +26,8 @@ _PLAIN_KEYS = (
                # a settings field that looked saveable and was not.
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
-               "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages")
+               "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
+               "workspace_dir")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -218,6 +219,26 @@ async def curation_enabled(session: AsyncSession) -> bool:
     """
     raw = await _get_raw(session, "curation_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def workspace_dir(session: AsyncSession):
+    """The directory Arslan's file tools may work in, or None when unset.
+
+    Default UNSET (opt-in, zero default by user ruling 2026-08-20): with no
+    workspace the file tools are not registered at all — not registered and
+    erroring, which would advertise a capability that cannot work. A stored
+    path that no longer resolves to a directory reads as unset for the same
+    reason."""
+    from pathlib import Path
+
+    raw = await _get_raw(session, "workspace_dir")
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        path = Path(str(raw).strip()).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    return path if path.is_dir() else None
 
 
 async def shell_enabled(session: AsyncSession) -> bool:

@@ -711,10 +711,22 @@ class ReadSkillExecutor:
                 "summary": f"技能 {skey}(前半+目录)"}
 
 
+from server.registry.file_tools import (  # noqa: E402 — registry assembly
+    EditFileExecutor,
+    ListDirExecutor,
+    ReadFileExecutor,
+    SearchFilesExecutor,
+    WriteFileExecutor,
+)
+
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(),
+    # Workspace file tools (P1). Registered here; whether Arslan is OFFERED them
+    # depends on a configured workspace — see _arslan_tools.
+    ReadFileExecutor(), ListDirExecutor(), SearchFilesExecutor(),
+    WriteFileExecutor(), EditFileExecutor(),
 )}
 
 

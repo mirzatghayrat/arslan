@@ -60,6 +60,8 @@ class SettingsIn(BaseModel):
     # MEANINGFUL value, not "unset": it restores "follow the interface language
     # plus English", which is how someone clears an explicit choice.
     ocr_languages: str | None = None
+    # Workspace for the file tools (P1). Empty string = unset = tools not offered.
+    workspace_dir: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -105,6 +107,7 @@ class SettingsOut(BaseModel):
     # which is why the default here is "" and not None: the GET must be able to
     # express "no explicit choice" without the client guessing.
     ocr_languages: str = ""
+    workspace_dir: str = ""
 
 
 class AccessTokenOut(BaseModel):
