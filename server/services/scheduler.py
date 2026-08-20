@@ -461,6 +461,29 @@ async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> 
     return out
 
 
+async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
+    """One Arslan turn with no socket behind it (P2 §1.1).
+
+    Frames go to run_registry's fan-out: a tab open on this conversation sees
+    it live, no tab means they simply drop (the recorder journal is not
+    involved — an answer turn has no Run row). Never an exception for want of
+    a listener.
+
+    🔴 BOTH confirm callbacks are deliberately omitted, and that omission IS
+    the safety property: P1 made "no callback" mean "refuse", so an unattended
+    fire structurally cannot write a file or run a command — it is not a policy
+    someone could forget to apply. Unattended execution is exactly the surface
+    the two arXiv analyses of OpenClaw are about; here it is closed by
+    construction, leaving the read-only tools available.
+    """
+    # Function-level import: arslan imports scheduling surfaces, so a module-level
+    # import here would cycle.
+    from server.orchestrator import arslan as arslan_mod
+
+    emit = run_registry.make_emit(conversation_id)
+    await arslan_mod._handle_answer(conversation_id, prompt, emit)
+
+
 async def _fire(task: ScheduledTask) -> None:
     """One scheduled fire. Deliberately NOT arslan._dispatch_spawn — its roster-join /
     routing-announcement side effects are wrong for a headless fire; the plan pins
@@ -477,6 +500,7 @@ async def _fire(task: ScheduledTask) -> None:
     count."""
     task_id, name = task.id, task.name
     spawn_id, prompt = task.spawn_id, task.prompt
+    target = task.target or "spawn"
     cid = task.conversation_id or f"scheduled-{task_id}"
     now = datetime.utcnow()
     async with db_session.AsyncSessionLocal() as db:
@@ -494,7 +518,19 @@ async def _fire(task: ScheduledTask) -> None:
 
     run_id: int | None = None
     try:
-        spawn_name = None if spawn_id is None else await dispatcher.get_spawn_name(spawn_id)
+        # P2 §1.1: target says WHO runs this. Deliberately NOT `spawn_id is
+        # None` — that is also what a DELETED spawn looks like (ondelete SET
+        # NULL), and those two need opposite outcomes. Branching on the absent
+        # value would have turned "your worker is gone" into a silent success.
+        if target == "arslan":
+            await run_arslan_turn(cid, prompt)
+            await record_outcome(task_id, True, row_id=row_id, run_id=None)
+            await recap_service.log_event(
+                cid, "scheduled_fire", {"task_id": task_id, "run_id": None},
+                f"定时任务「{name}」已执行")
+            return
+
+        spawn_name = await dispatcher.get_spawn_name(spawn_id)
         if spawn_name is None:
             # S8: ondelete SET NULL (spawn deleted) or a dangling id — a clean error
             # outcome that self-heals via the 3-fail auto-pause, never a supervisor

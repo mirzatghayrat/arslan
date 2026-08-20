@@ -480,6 +480,7 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                         confirm_workspace_write=None,
+                        confirm_schedule=None,
                          mcp_fail_counts: dict | None = None,
                          mcp_hint_logged: set | None = None,
                          conversation_id: str | None = None,
@@ -521,6 +522,26 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         granted = await confirm_workspace_write(tool_key, str(args.get("path") or ""))
         if not granted:
             result = {"ok": False, "error": "user declined workspace write access"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+
+    # Creating a scheduled task spends future money on the user's key, so it
+    # asks once per session — same shape as a workspace write (裁决① 2026-08-20).
+    # Listing and cancelling are deliberately NOT gated: refusing to let someone
+    # see or undo what was created is the worse failure.
+    if tool_key == "schedule_task":
+        if confirm_schedule is None:
+            result = {"ok": False,
+                      "error": "scheduling needs your permission, which is not "
+                               "available on this channel"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        granted = await confirm_schedule(str(args.get("name") or ""),
+                                         str(args.get("when") or ""))
+        if not granted:
+            result = {"ok": False, "error": "user declined to schedule this task"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -620,6 +641,7 @@ async def run(
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
     confirm_workspace_write=None,
+    confirm_schedule=None,
 ) -> dict:
     """Run the loop. Returns {"final": str|None, "escalation": dict|None, "tool_trace": list}.
     Exactly one of final/escalation is non-None. resolve_tools() returns the currently
@@ -705,7 +727,8 @@ async def run(
                                  emit=emit, tool_timeout_s=tool_timeout_s,
                                  tool_trace=tool_trace, convo=convo,
                                  confirm_command=confirm_command,
-                        confirm_workspace_write=confirm_workspace_write)
+                        confirm_workspace_write=confirm_workspace_write,
+                        confirm_schedule=confirm_schedule)
             fired.add(tool_key)
             continue
 
@@ -1176,6 +1199,7 @@ async def run_native(
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
     confirm_workspace_write=None,
+    confirm_schedule=None,
     conversation_id: str | None = None,
     log_events: bool = True,
     caller: ToolCaller | None = None,
@@ -1239,6 +1263,7 @@ async def run_native(
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
             confirm_workspace_write=confirm_workspace_write,
+            confirm_schedule=confirm_schedule,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
                 conversation_id=conversation_id, log_events=log_events,
                 fetch_budget=fetch_budget, caller=caller)

@@ -710,6 +710,12 @@ class ScheduledTask(Base):
     prompt = Column(Text, nullable=False)
     spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="SET NULL"), nullable=True)
     conversation_id = Column(String(50), nullable=True)  # None -> dedicated "scheduled-{id}"
+    # P2: WHO runs this. spawn_id NULL is ambiguous on its own — it means both
+    # "no spawn was ever chosen" and "the spawn was deleted" (ondelete SET NULL),
+    # and those need opposite outcomes: run it as Arslan, versus fail cleanly so
+    # the 3-fail auto-pause retires a task whose worker is gone. The intent has
+    # to be recorded, not inferred.
+    target = Column(String(10), nullable=False, default="spawn", server_default="spawn")
     schedule_kind = Column(String(10), nullable=False)   # "interval" | "cron"
     interval_s = Column(Integer, nullable=True)          # interval kind; >= MIN_INTERVAL_S
     cron = Column(String(40), nullable=True)             # cron kind; 5-field expression

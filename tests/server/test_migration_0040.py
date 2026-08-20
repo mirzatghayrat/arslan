@@ -40,5 +40,8 @@ async def test_migration_0040_noop_without_table(tmp_path):
 
 
 async def test_registered_in_runner_chain():
+    """Pins 0040's PRESENCE in the chain, not its position — asserting it was
+    last made the next migration look like a regression. The ordered-chain
+    guarantee itself lives in test_migration_runner, which pins the whole list."""
     from server.db.migrations.runner import MIGRATIONS
-    assert MIGRATIONS[-1][0] == "0040"              # three-place lockstep: the list is one of them
+    assert "0040" in [v for v, _ in MIGRATIONS]

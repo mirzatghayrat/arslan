@@ -711,6 +711,11 @@ class ReadSkillExecutor:
                 "summary": f"技能 {skey}(前半+目录)"}
 
 
+from server.registry.schedule_tools import (  # noqa: E402 — registry assembly
+    CancelTaskExecutor,
+    ListTasksExecutor,
+    ScheduleTaskExecutor,
+)
 from server.registry.file_tools import (  # noqa: E402 — registry assembly
     EditFileExecutor,
     ListDirExecutor,
@@ -727,6 +732,9 @@ EXECUTORS = {e.key: e for e in (
     # depends on a configured workspace — see _arslan_tools.
     ReadFileExecutor(), ListDirExecutor(), SearchFilesExecutor(),
     WriteFileExecutor(), EditFileExecutor(),
+    # Self-scheduling (P2). Registered here; whether Arslan is OFFERED them, and
+    # behind which grant, is decided in _arslan_tools + the tool loop.
+    ScheduleTaskExecutor(), ListTasksExecutor(), CancelTaskExecutor(),
 )}
 
 

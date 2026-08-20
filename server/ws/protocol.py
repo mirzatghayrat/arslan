@@ -227,6 +227,13 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
             "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
 
 
+def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:
+    """Arslan asks to create a recurring task — once per session (裁决①).
+    Emitting this schedules NOTHING; only `confirm_schedule {call_id}` does.
+    The card shows the CADENCE, because that is what the cost depends on."""
+    return {"type": "propose_schedule", "call_id": call_id, "name": name, "when": when}
+
+
 def propose_workspace_write(call_id: str, workspace: str, action: str, path: str) -> dict[str, Any]:
     """Arslan asks for write access to the workspace — ONCE per session, not per
     file. Emitting this frame writes NOTHING; only the user's
