@@ -1569,5 +1569,12 @@
       "write": "créer ou écraser",
       "edit": "modifier"
     }
+  },
+  "schedgrant": {
+    "label": "Planification",
+    "body": "Arslan souhaite planifier une tâche récurrente :",
+    "scope": "En acceptant, il pourra créer des tâches planifiées pour le reste de cette session. Les exécutions planifiées ont lieu sans surveillance : elles peuvent consulter et rendre compte, mais ne peuvent ni écrire de fichiers ni lancer de commandes.",
+    "allow": "Autoriser",
+    "deny": "Pas maintenant"
   }
 }

@@ -1569,5 +1569,12 @@
       "write": "crear o sobrescribir",
       "edit": "editar"
     }
+  },
+  "schedgrant": {
+    "label": "Programación",
+    "body": "Arslan quiere programar una tarea periódica:",
+    "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas ocurren sin supervisión: pueden consultar e informar, pero no escribir archivos ni ejecutar comandos.",
+    "allow": "Permitir",
+    "deny": "Ahora no"
   }
 }

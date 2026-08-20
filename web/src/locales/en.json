@@ -1569,5 +1569,12 @@
       "write": "create or overwrite",
       "edit": "edit"
     }
+  },
+  "schedgrant": {
+    "label": "Scheduling",
+    "body": "Arslan wants to schedule a recurring task:",
+    "scope": "Approving lets it create scheduled tasks for the rest of this session. Scheduled runs happen unattended — they can look things up and report back, but cannot write files or run commands.",
+    "allow": "Allow",
+    "deny": "Not now"
   }
 }

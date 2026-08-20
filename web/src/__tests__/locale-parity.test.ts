@@ -191,7 +191,11 @@ describe("locale parity", () => {
     //              the whole safety argument is that it only looks and reports;
     //              the spend note says each check costs tokens, and that an
     //              empty list runs nothing.
-    expect(enKeys).toHaveLength(1363);
+    // 1363 → 1368: schedgrant.* — the scheduling grant card (P2 §1.2). Its
+    //              scope line says what a scheduled run CANNOT do, because the
+    //              user is approving unattended runs and that limit is what
+    //              makes the approval safe to give.
+    expect(enKeys).toHaveLength(1368);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

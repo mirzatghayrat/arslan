@@ -530,6 +530,7 @@ export type ArslanServerMessage =
   | { type: "propose_invite"; spawn_id: number; reason: string }
   | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string }
   | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string }
+  | { type: "propose_schedule"; call_id: string; name: string; when: string }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
   // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
