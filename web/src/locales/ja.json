@@ -648,7 +648,18 @@
     "heartbeatSpendNote": "チェックのたびにあなたのキーのトークンを消費します。既定はオフ。リストが空なら実行されません。",
     "heartbeatPlaceholder": "- main の CI が落ちていないか見る\n- 30 日以上未払いの請求書があれば知らせる",
     "labelLanDiscovery": "ローカルネットワークを見る",
-    "lanDiscoveryDesc": "自分のネットワーク上の機器(アドレス、応答するポート、ハードウェアのベンダー)を Arslan が一覧できるようにします。読み取り専用で、接続もログインも実行も行いません。既定はオフ。"
+    "lanDiscoveryDesc": "自分のネットワーク上の機器(アドレス、応答するポート、ハードウェアのベンダー)を Arslan が一覧できるようにします。読み取り専用で、接続もログインも実行も行いません。既定はオフ。",
+    "labelSsh": "別のマシンに接続(SSH)",
+    "sshDesc": "ネットワーク上の別のマシンに Arslan がログインし、そこでコマンドを 1 つ実行できるようにします。読み取り専用のものも含め、すべてのコマンドで毎回確認され、カードにはそのマシンのフィンガープリントが表示されます。定時タスクからは決して使えません。既定はオフで、ネットワーク検出とは別のスイッチです。",
+    "sshKeyTitle": "Arslan の SSH 鍵",
+    "sshKeyHowto": "接続したいマシンの ~/.ssh/authorized_keys にこの行を追加してください。Arslan はこの鍵だけでサインインします。パスワードを尋ねることも保存することもありません。",
+    "sshKeyNone": "まだ鍵がありません。作成すると、パスワードを渡さずに Arslan を承認できます。",
+    "sshKeyCreate": "鍵を作成",
+    "sshKeyCopy": "コピー",
+    "sshKeyCopied": "コピーしました",
+    "sshKeyForget": "この鍵を削除",
+    "sshKeyForgetHint": "ここで鍵を削除すると Arslan は使わなくなりますが、相手のマシンに貼った行までは消せません。そちらはご自身で削除してください。",
+    "sshKeyError": "鍵を作成できませんでした。安全な保存用キーが設定されているか確認してください。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -1168,7 +1179,11 @@
     "remember": "Don't ask again this session",
     "run": "Run",
     "cancel": "Cancel",
-    "pillLabel": "Shell"
+    "pillLabel": "Shell",
+    "remoteLabel": "{{host}} で実行",
+    "remoteWarning": "これはこのマシンではなく、別のマシンで実行されます。",
+    "fingerprint": "そのマシンのフィンガープリント",
+    "runRemote": "向こうで実行"
   },
   "errorBoundary": {
     "title": "問題が発生しました",

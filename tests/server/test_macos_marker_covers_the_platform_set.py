@@ -40,8 +40,19 @@ EXPECTED_FILES: dict[str, int] = {
     "server/test_skill_import.py": 1,
     "server/test_chat_image_fallback.py": 1,
     "server/test_extract_api.py": 1,
+    # 2026-08-21, P3b: the ssh transport's two kernel facts. Same platform
+    # boundary as test_command_sandbox_net.py — they drive /usr/bin/sandbox-exec
+    # directly, which exists on macOS and nowhere else. One asserts the profile
+    # we ship is accepted, one asserts a per-host profile is REJECTED (the
+    # measurement the design rests on), one asserts the port confinement
+    # actually enforces.
+    "server/test_ssh_exec.py": 3,
 }
-EXPECTED_TOTAL = 25
+#: 🔴 MIRRORED in .github/workflows/ci.yml ("Assert they RAN, and did not skip").
+#: That step re-derives this number from the junit XML, so changing one without
+#: the other turns a green local run into a red CI run, or worse, hides drift
+#: from the guard meant to catch it. Both, same commit, or neither.
+EXPECTED_TOTAL = 28
 
 #: Text that means "this test only means something on macOS". Kept broad on
 #: purpose — a new gating phrase should trip the drift check and be added here

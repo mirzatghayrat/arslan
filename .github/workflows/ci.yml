@@ -205,8 +205,8 @@ jobs:
           PY
 
       - name: Pytest (macOS-only set)
-        # -m macos selects the 25. The marker is additive: each of those tests
-        # still carries its own skip, which is why they stay green on Linux.
+        # -m macos selects the marked set. The marker is additive: each of those
+        # tests still carries its own skip, which is why they stay green on Linux.
         run: .venv/bin/pytest tests/ -m macos -q -rfEs --junitxml=macos-results.xml
 
       - name: Assert they RAN, and did not skip
@@ -215,14 +215,22 @@ jobs:
         # Vision or refuses seatbelt — reproducing, on the new platform, the
         # exact "a skip reads as a pass" failure that motivated the whole job.
         #
-        # The expected count is 25, established by measurement rather than
-        # preference (see tests/server/test_macos_marker_covers_the_platform_set.py).
+        # The expected count is established by measurement rather than preference
+        # (see tests/server/test_macos_marker_covers_the_platform_set.py).
         # If it legitimately changes, re-run the two-platform comparison and move
         # this number with the evidence — do not tune it to whatever CI reports.
+        #
+        # 🔴 THE NUMBER LIVES IN TWO PLACES: here, and EXPECTED_TOTAL in that test
+        # file. Updating only the test makes the suite green locally and fails
+        # here; updating only this one hides drift from the guard that exists to
+        # catch it. Change both, in the same commit, or neither.
+        #    25 → 28 (2026-08-21, P3b): three seatbelt facts for the ssh
+        #    transport — the shipped profile is accepted, a per-host profile is
+        #    rejected, and the port confinement actually enforces.
         run: |
           .venv/bin/python - <<'PY'
           import sys, xml.etree.ElementTree as ET
-          EXPECTED = 25
+          EXPECTED = 28
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

@@ -648,7 +648,18 @@
     "heartbeatSpendNote": "Jede Prüfung kostet Tokens auf deinem Key. Standardmäßig aus; eine leere Liste bedeutet keine Prüfungen.",
     "heartbeatPlaceholder": "- auf CI-Fehler auf main achten\n- erinnere mich an Rechnungen, die länger als 30 Tage offen sind",
     "labelLanDiscovery": "Lokales Netzwerk ansehen",
-    "lanDiscoveryDesc": "Erlaubt Arslan, die Geräte in deinem eigenen Netzwerk aufzulisten — Adressen, antwortende Ports und Hardware-Hersteller. Nur lesend: es verbindet sich nie, meldet sich nirgends an und führt nichts aus. Standardmäßig aus."
+    "lanDiscoveryDesc": "Erlaubt Arslan, die Geräte in deinem eigenen Netzwerk aufzulisten — Adressen, antwortende Ports und Hardware-Hersteller. Nur lesend: es verbindet sich nie, meldet sich nirgends an und führt nichts aus. Standardmäßig aus.",
+    "labelSsh": "Andere Maschine erreichen (SSH)",
+    "sshDesc": "Erlaubt Arslan, sich auf einer anderen Maschine in deinem Netzwerk anzumelden und dort einen Befehl auszuführen. Jeder einzelne Befehl fragt vorher nach — auch rein lesende — und die Karte zeigt den Fingerabdruck dieser Maschine. Geplante Aufgaben können das nie nutzen. Standardmäßig aus, getrennt von der Netzwerkerkennung.",
+    "sshKeyTitle": "Arslans SSH-Schlüssel",
+    "sshKeyHowto": "Füge diese Zeile auf der Zielmaschine in ~/.ssh/authorized_keys ein. Arslan meldet sich ausschließlich mit diesem Schlüssel an — es fragt nie nach einem Passwort und speichert auch keins.",
+    "sshKeyNone": "Noch kein Schlüssel. Mit einem kannst du Arslan auf einer Maschine autorisieren, ohne ein Passwort herauszugeben.",
+    "sshKeyCreate": "Schlüssel erstellen",
+    "sshKeyCopy": "Kopieren",
+    "sshKeyCopied": "Kopiert",
+    "sshKeyForget": "Schlüssel entfernen",
+    "sshKeyForgetHint": "Hier entfernt bedeutet: Arslan nutzt ihn nicht mehr. Die Zeile auf der anderen Maschine kann es nicht löschen — das musst du selbst tun.",
+    "sshKeyError": "Schlüssel konnte nicht erstellt werden. Prüfe, ob ein sicherer Speicherschlüssel konfiguriert ist."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -1168,7 +1179,11 @@
     "remember": "Don't ask again this session",
     "run": "Run",
     "cancel": "Cancel",
-    "pillLabel": "Shell"
+    "pillLabel": "Shell",
+    "remoteLabel": "Auf {{host}} ausführen",
+    "remoteWarning": "Das läuft auf einer ANDEREN Maschine, nicht auf dieser.",
+    "fingerprint": "Fingerabdruck dieser Maschine",
+    "runRemote": "Dort ausführen"
   },
   "errorBoundary": {
     "title": "Etwas ist schiefgelaufen",

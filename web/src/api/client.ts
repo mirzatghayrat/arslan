@@ -375,6 +375,16 @@ export const api = {
   /** Generate/rotate the dedicated MCP-server token (localhost-gated). Returns it once. */
   generateMcpToken: () =>
     request<{ token: string }>("/settings/mcp-token/generate", { method: "POST" }),
+  /** Arslan's SSH public key. Unlike the MCP token this is NOT show-once — a
+   * public key exists to be read again every time another machine is set up. */
+  getSshIdentity: () =>
+    request<{ public_key: string; enabled: boolean }>("/settings/ssh-identity"),
+  /** Create the SSH identity if absent. Idempotent — never rotates an existing key. */
+  createSshIdentity: () =>
+    request<{ public_key: string; enabled: boolean }>("/settings/ssh-identity", { method: "POST" }),
+  /** Forget the SSH identity. Does NOT remove the pasted line on the far side. */
+  deleteSshIdentity: () =>
+    request<{ public_key: string; enabled: boolean }>("/settings/ssh-identity", { method: "DELETE" }),
   listProviders: () => request<ProviderOption[]>("/settings/providers"),
   listSearchProviders: () => request<string[]>("/settings/search-providers"),
   /** What THIS machine's text recognition can read, asked at request time.

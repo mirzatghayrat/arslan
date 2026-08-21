@@ -1836,6 +1836,25 @@ async def _arslan_tools() -> list[dict]:
                                "not connect to, log into, or run anything on them. "
                                "args: {} — the network is derived from this machine."})
 
+    # SSH reach (P3b): offered only when the user turned it on. ssh_probe looks;
+    # ssh_run asks every time — the description says so, because a model that
+    # believes a tool is silent will plan around a dialog that is going to appear.
+    async with db_session.AsyncSessionLocal() as db:
+        if await settings_service.ssh_enabled(db):
+            tools += [
+                {"key": "ssh_probe",
+                 "description": "Check whether a machine on the local network accepts SSH "
+                                "and report its host key fingerprint. READ-ONLY: it logs "
+                                "into nothing and runs nothing. args: {host} — an IPv4 "
+                                "address, e.g. 192.168.1.8 (names cannot be resolved)."},
+                {"key": "ssh_run",
+                 "description": "Run ONE whitelisted command on another machine over SSH. "
+                                "args: {host, user, command, argv}. The user is asked to "
+                                "approve EVERY call, including read-only ones, and the card "
+                                "shows the host key fingerprint. Scheduled runs cannot use "
+                                "this at all."},
+            ]
+
     # Self-scheduling (P2). Independent of the workspace — a recurring task
     # needs no directory. Creating one is gated by a session grant in the tool
     # loop; listing and cancelling are not, because a user must always be able
