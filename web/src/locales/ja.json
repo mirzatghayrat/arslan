@@ -7,7 +7,13 @@
     "dashboard": "ダッシュボード",
     "spawns": "スポーン",
     "settings": "設定",
-    "secondBrain": "Second Brain"
+    "secondBrain": "Second Brain",
+    "arslan": "オーケストレーター",
+    "spawn": "エージェント",
+    "ledger": "エージェント台帳",
+    "capabilities": "ケイパビリティ",
+    "brain": "セカンドブレイン",
+    "diagnosis": "診断"
   },
   "brain": {
     "loading": "Assembling your second brain…",

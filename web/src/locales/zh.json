@@ -7,7 +7,13 @@
     "dashboard": "仪表盘",
     "spawns": "分身",
     "settings": "设置",
-    "secondBrain": "第二大脑"
+    "secondBrain": "第二大脑",
+    "arslan": "编排器",
+    "spawn": "分身",
+    "ledger": "分身账本",
+    "capabilities": "能力库",
+    "brain": "第二大脑",
+    "diagnosis": "诊断台"
   },
   "brain": {
     "loading": "正在组装你的第二大脑…",

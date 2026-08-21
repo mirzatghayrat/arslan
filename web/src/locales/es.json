@@ -7,7 +7,13 @@
     "dashboard": "Panel",
     "spawns": "Spawns",
     "settings": "Ajustes",
-    "secondBrain": "Second Brain"
+    "secondBrain": "Second Brain",
+    "arslan": "Orquestador",
+    "spawn": "Agente",
+    "ledger": "Registro de agentes",
+    "capabilities": "Capacidades",
+    "brain": "Segundo cerebro",
+    "diagnosis": "Diagnóstico"
   },
   "brain": {
     "loading": "Assembling your second brain…",

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import type { Section } from "../lib/sections";
 import {
   MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
   Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
@@ -29,8 +30,8 @@ interface SidebarProps {
   onSelectSpawnChat: (id: string) => void;
 
   // Outer global view states
-  activeSection: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings';
-  onChangeSection: (section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings') => void;
+  activeSection: Section;
+  onChangeSection: (section: Section) => void;
 
   /** Called when the user completes (完结) a direct chat with a spawn */
   onCompleteChat: (id: string) => void;

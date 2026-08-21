@@ -7,7 +7,13 @@
     "dashboard": "Dashboard",
     "spawns": "Spawns",
     "settings": "Settings",
-    "secondBrain": "Second Brain"
+    "secondBrain": "Second Brain",
+    "arslan": "Orchestrator",
+    "spawn": "Spawn",
+    "ledger": "Spawns Ledger",
+    "capabilities": "Capabilities",
+    "brain": "Second Brain",
+    "diagnosis": "Diagnostics"
   },
   "brain": {
     "loading": "Assembling your second brain…",
