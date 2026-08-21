@@ -51,6 +51,8 @@ import type {
   TemplateInfo,
   UsageSummary,
   UserFact,
+  SshAuditEntry,
+  SshNode,
 } from "./client.types";
 
 export type { CollectionOut, EmbeddingStatus };
@@ -385,6 +387,18 @@ export const api = {
   /** Forget the SSH identity. Does NOT remove the pasted line on the far side. */
   deleteSshIdentity: () =>
     request<{ public_key: string; enabled: boolean }>("/settings/ssh-identity", { method: "DELETE" }),
+  /** Machines the user has enrolled for SSH (P3c). */
+  listSshNodes: () =>
+    request<{ nodes: SshNode[]; enabled: boolean }>("/ssh-nodes"),
+  /** Enrol a machine. `fingerprints` is what the user was shown — the server
+   * refuses if the machine now presents something else. */
+  enrollSshNode: (body: { name: string; host: string; user: string; fingerprints: string[] }) =>
+    request<SshNode>("/ssh-nodes", { method: "POST", body: JSON.stringify(body) }),
+  revokeSshNode: (id: number) =>
+    request<{ ok: boolean }>(`/ssh-nodes/${id}`, { method: "DELETE" }),
+  /** What Arslan has run on other machines. */
+  listSshAudit: (limit = 100) =>
+    request<{ entries: SshAuditEntry[] }>(`/ssh-audit?limit=${limit}`),
   listProviders: () => request<ProviderOption[]>("/settings/providers"),
   listSearchProviders: () => request<string[]>("/settings/search-providers"),
   /** What THIS machine's text recognition can read, asked at request time.

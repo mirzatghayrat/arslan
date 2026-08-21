@@ -742,3 +742,64 @@ class ScheduledTaskRun(Base):
     outcome = Column(String(20), nullable=True)  # "ok" | "error" | "skipped_overlap"
     run_id = Column(Integer, nullable=True)      # runs.id produced by the dispatch
     reason = Column(Text, nullable=True)
+
+
+class SshNode(Base):
+    """P3c: a machine the user has explicitly enrolled.
+
+    Enrolment removes ONE thing and one thing only: having to re-verify a host
+    key you already verified. It does NOT remove the execution gate — every
+    `ssh_run` on an enrolled node still asks, per the user's C4 ruling. An
+    enrolled node that could execute unattended is the arXiv botnet shape
+    (persistence + no human), and that is the switch this product declines to
+    build.
+
+    `host_keys` is the pinned known_hosts text, and pinning is the point: on the
+    next run the live key must still match, so a swapped machine is refused by
+    ssh itself rather than trusted on first use a second time.
+
+    Nothing here is a credential. The host key is public, and the identity Arslan
+    signs with is a single global keypair (see ssh_keys) — so deleting a node
+    must NOT delete that keypair, or revoking one machine would silently break
+    every other one.
+    """
+
+    __tablename__ = "ssh_nodes"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(60), nullable=False, unique=True)
+    host = Column(String(45), nullable=False)            # IPv4 literal (see ssh_exec)
+    username = Column(String(32), nullable=False)
+    host_keys = Column(Text, nullable=False)             # known_hosts lines, pinned
+    fingerprints = Column(Text, nullable=False, default="")   # for display/comparison
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class SshAudit(Base):
+    """P3c: one row per command Arslan ran on another machine.
+
+    This exists because the trace does NOT already cover it. `ssh_run` is an
+    Arslan-level tool, and the answer path produces no Run row (the orchestrator
+    says so in two places), so its tool trace lives in the in-memory turn journal
+    and is discarded when the turn ends. "It is in the trace" would have been a
+    comfortable thing to say and it would have been false.
+
+    `node_id` is nullable and NOT a foreign key on purpose: revoking a node must
+    not erase the history of what was done to it. The host and username are
+    copied in for the same reason.
+    """
+
+    __tablename__ = "ssh_audit"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    node_id = Column(Integer, nullable=True)
+    node_name = Column(String(60), nullable=True)
+    host = Column(String(45), nullable=False)
+    username = Column(String(32), nullable=False)
+    command = Column(Text, nullable=False)               # the full remote command line
+    exit_code = Column(Integer, nullable=True)           # None = never ran / timed out
+    ok = Column(Boolean, nullable=False, default=False)
+    error = Column(Text, nullable=True)
+    conversation_id = Column(String(50), nullable=True)

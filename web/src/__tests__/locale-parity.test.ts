@@ -207,7 +207,12 @@ describe("locale parity", () => {
     //              confirm card gets its own label/warning/fingerprint strings
     //              because "this runs somewhere else" must not arrive as a
     //              footnote on a card that otherwise looks local.
-    expect(enKeys).toHaveLength(1385);
+    // 1385 → 1396: settings.sshNode* + enroll.* (P3c). Two ideas needed saying
+    //               in words rather than being left to inference, and each costs
+    //               a string: enrolling a machine does NOT stop commands asking
+    //               (the ruling), and forgetting one here cannot delete the key
+    //               line pasted on that machine (only its owner can).
+    expect(enKeys).toHaveLength(1396);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

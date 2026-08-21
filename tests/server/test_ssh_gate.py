@@ -11,7 +11,11 @@ Three things are being pinned, and only the first is shared with run_command:
      ask_risky's LOW exemption, not "remember this one".
 """
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import server.db.session as db_session
+from server.db.models import Base
 from server.orchestrator import tool_loop
 from server.ws import arslan as ws_arslan
 from server.ws import protocol
@@ -46,6 +50,20 @@ def _clean_staging():
     ssh_exec.clear_staged()
     yield
     ssh_exec.clear_staged()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _db(tmp_path, monkeypatch):
+    """An empty database. The gate consults the enrolled-machine list (P3c) to
+    decide whether a fingerprint still needs checking, so these tests need a
+    place for that lookup to find nothing."""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'gate.db'}")
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+    yield maker
+    await engine.dispose()
 
 
 @pytest.fixture

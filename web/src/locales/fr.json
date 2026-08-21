@@ -659,7 +659,12 @@
     "sshKeyCopied": "Copié",
     "sshKeyForget": "Oublier cette clé",
     "sshKeyForgetHint": "L'oublier ici empêche Arslan de s'en servir, mais ne supprime pas la ligne collée sur l'autre machine — à vous de l'effacer.",
-    "sshKeyError": "Impossible de créer la clé. Vérifiez qu'une clé de stockage sécurisé est configurée."
+    "sshKeyError": "Impossible de créer la clé. Vérifiez qu'une clé de stockage sécurisé est configurée.",
+    "sshNodesTitle": "Machines enregistrées",
+    "sshNodesEmpty": "Aucune pour l'instant. Arslan peut vous proposer d'en mémoriser une au fil de la conversation.",
+    "sshNodeRevoke": "Oublier",
+    "sshNodesGateNote": "L'enregistrement évite de revérifier une empreinte. Il ne fait pas s'exécuter les commandes sans confirmation : elles requièrent toujours votre accord, à chaque fois.",
+    "sshNodeRevokeHint": "L'oublier ici empêche Arslan de l'atteindre, mais ne supprime pas la ligne de clé collée sur cette machine — effacez-la là-bas."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1593,5 +1598,13 @@
     "scope": "En acceptant, il pourra créer des tâches planifiées pour le reste de cette session. Les exécutions planifiées ont lieu sans surveillance : elles peuvent consulter et rendre compte, mais ne peuvent ni écrire de fichiers ni lancer de commandes.",
     "allow": "Autoriser",
     "deny": "Pas maintenant"
+  },
+  "enroll": {
+    "label": "Mémoriser {{name}} ({{host}}) ?",
+    "stillAsks": "Cela évite seulement de revérifier l'empreinte. Les commandes sur cette machine vous seront toujours soumises à chaque fois.",
+    "checkFingerprint": "Comparez ceci avec la machine elle-même",
+    "confirm": "Mémoriser",
+    "cancel": "Pas maintenant",
+    "failed": "Impossible d'enregistrer cette machine."
   }
 }

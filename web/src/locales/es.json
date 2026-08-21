@@ -659,7 +659,12 @@
     "sshKeyCopied": "Copiado",
     "sshKeyForget": "Olvidar esta clave",
     "sshKeyForgetHint": "Olvidarla aquí hace que Arslan deje de usarla, pero no puede borrar la línea que pegaste en la otra máquina: eso hazlo tú.",
-    "sshKeyError": "No se pudo crear la clave. Comprueba que haya una clave de almacenamiento seguro configurada."
+    "sshKeyError": "No se pudo crear la clave. Comprueba que haya una clave de almacenamiento seguro configurada.",
+    "sshNodesTitle": "Máquinas registradas",
+    "sshNodesEmpty": "Ninguna todavía. Arslan puede pedirte recordar una máquina mientras conversáis.",
+    "sshNodeRevoke": "Olvidar",
+    "sshNodesGateNote": "Registrar evita volver a comprobar una huella. No hace que los comandos se ejecuten sin preguntar: siguen necesitando tu aprobación cada vez.",
+    "sshNodeRevokeHint": "Olvidarla aquí impide que Arslan la alcance, pero no borra la línea de clave que pegaste en esa máquina: bórrala allí."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -1593,5 +1598,13 @@
     "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas ocurren sin supervisión: pueden consultar e informar, pero no escribir archivos ni ejecutar comandos.",
     "allow": "Permitir",
     "deny": "Ahora no"
+  },
+  "enroll": {
+    "label": "¿Recordar {{name}} ({{host}})?",
+    "stillAsks": "Esto solo evita volver a comprobar la huella. Los comandos en esta máquina te seguirán preguntando cada vez.",
+    "checkFingerprint": "Compara esto con la máquina misma",
+    "confirm": "Recordarla",
+    "cancel": "Ahora no",
+    "failed": "No se pudo registrar esa máquina."
   }
 }

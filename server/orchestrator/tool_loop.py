@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import re
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
@@ -587,9 +588,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
+        # An enrolled machine is named on the card. "studio" is what the user
+        # calls it; the address alone makes them re-derive which machine that is
+        # every single time, and a decision people have to re-derive is one they
+        # start making by reflex.
+        label = (f"{prep['user']}@{prep['host']}" if not prep.get("node_name")
+                 else f"{prep['node_name']} ({prep['user']}@{prep['host']})")
         approved = await confirm_command(
             prep["command"], prep["argv"],
-            remote_host=f"{prep['user']}@{prep['host']}",
+            remote_host=label,
             fingerprints=prep["fingerprints"])
         if not approved:
             # Un-stage: a declined command must not leave an approved host key
@@ -599,6 +606,43 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
+
+    # Enrolling a machine (P3c). This tool never writes: it reaches the machine,
+    # reads its host key, and paints a card whose button does the enrolment over
+    # REST — the propose_connect_mcp shape. So the safety here is not a callback
+    # but the absence of any write on this path at all.
+    #
+    # It is still refused with no confirm callback, which is a proxy for "no
+    # socket". An unattended turn painting a proposal card nobody asked for is
+    # not dangerous, but this is the highest-consequence surface in the feature
+    # and a card that appears while the user is asleep is a card they meet out of
+    # context.
+    if tool_key == "enroll_node":
+        if confirm_command is None:
+            result = {"ok": False,
+                      "error": "enrolling a machine has to be proposed to you directly, "
+                               "and there is nobody on this channel to propose it to"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        from server.registry.ssh_tools import prepare_enrollment
+        from server.ws import protocol as _protocol
+        prep = await prepare_enrollment(args)
+        if not prep.get("ok"):
+            result = {"ok": False, "error": prep.get("error") or "cannot enrol that machine"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        emit(_protocol.propose_enroll_node(
+            call_id=uuid.uuid4().hex, name=prep["name"], host=prep["host"],
+            user=prep["user"], fingerprints=prep["fingerprints"]))
+        result = {"ok": True, "proposed": True,
+                  "summary": f"asked the user to enrol {prep['host']} as '{prep['name']}'",
+                  "note": "Nothing is enrolled yet. The user has to confirm it on the "
+                          "card, after checking the fingerprint against the machine."}
+        return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                    assistant_content, convo,
+                                    mcp_fail_counts=mcp_fail_counts)
 
     # Fail-closed hermetic backstop (eval sealing): in an evolution eval/replay context,
     # refuse ANY tool that isn't read-only-safe, independent of resolve_tools() and the

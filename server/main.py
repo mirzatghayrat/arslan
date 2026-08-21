@@ -358,6 +358,9 @@ def create_app() -> FastAPI:
     # S4.1-C: MCP-token generate/view/disable — NO require_auth, localhost-gated in handlers.
     app.include_router(settings_api.mcp_token_router, prefix="/api/v1")
 
+    from server.api import ssh_nodes as ssh_nodes_api
+    app.include_router(ssh_nodes_api.router, prefix="/api/v1")
+
     from server.api import spawns as spawns_api
 
     app.include_router(spawns_api.router, prefix="/api/v1")

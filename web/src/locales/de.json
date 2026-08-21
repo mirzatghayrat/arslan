@@ -659,7 +659,12 @@
     "sshKeyCopied": "Kopiert",
     "sshKeyForget": "Schlüssel entfernen",
     "sshKeyForgetHint": "Hier entfernt bedeutet: Arslan nutzt ihn nicht mehr. Die Zeile auf der anderen Maschine kann es nicht löschen — das musst du selbst tun.",
-    "sshKeyError": "Schlüssel konnte nicht erstellt werden. Prüfe, ob ein sicherer Speicherschlüssel konfiguriert ist."
+    "sshKeyError": "Schlüssel konnte nicht erstellt werden. Prüfe, ob ein sicherer Speicherschlüssel konfiguriert ist.",
+    "sshNodesTitle": "Aufgenommene Maschinen",
+    "sshNodesEmpty": "Noch keine. Arslan kann dich im Gespräch fragen, ob es sich eine Maschine merken soll.",
+    "sshNodeRevoke": "Vergessen",
+    "sshNodesGateNote": "Aufnehmen spart das erneute Prüfen eines Fingerabdrucks. Befehle laufen dadurch nicht ohne Nachfrage — die brauchen weiterhin jedes Mal deine Zustimmung.",
+    "sshNodeRevokeHint": "Hier vergessen heißt: Arslan erreicht sie nicht mehr. Die Schlüsselzeile auf jener Maschine kann es nicht entfernen — lösche sie dort."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -1593,5 +1598,13 @@
     "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe finden unbeaufsichtigt statt — sie können nachschlagen und berichten, aber keine Dateien schreiben und keine Befehle ausführen.",
     "allow": "Erlauben",
     "deny": "Jetzt nicht"
+  },
+  "enroll": {
+    "label": "{{name}} ({{host}}) merken?",
+    "stillAsks": "Das spart nur das erneute Prüfen des Fingerabdrucks. Befehle auf dieser Maschine fragen dich weiterhin jedes Mal.",
+    "checkFingerprint": "Vergleiche das mit der Maschine selbst",
+    "confirm": "Merken",
+    "cancel": "Jetzt nicht",
+    "failed": "Die Maschine konnte nicht aufgenommen werden."
   }
 }
