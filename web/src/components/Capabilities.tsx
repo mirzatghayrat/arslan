@@ -10,6 +10,7 @@ import SkillForge from "./SkillForge";
 import RecommendedMcp from "./RecommendedMcp";
 import SkillImportPanel from "./SkillImportPanel";
 import FilterChips from "./FilterChips";
+import ToolTransportWarning from "./settings/ToolTransportWarning";
 import { getMcpCatalog } from "../api/catalog";
 import { listMcpServers } from "../api/mcp";
 
@@ -21,7 +22,11 @@ type McpChip = "all" | "recommended" | "registered";
 // default tab and holds the Google-style centered Tool-Hub hero (search →
 // project dossier). Curated MCP presets live inside the MCPS tab (behind a
 // filter-chip row); the SKILL.md importer inside SKILLS.
-export default function Capabilities() {
+/** The provider whose transport decides whether ANY of this page's equipping
+ *  will have an effect. Passed in rather than fetched here: App already holds
+ *  the configs, and a second fetch would give this page its own opinion of which
+ *  provider is primary. */
+export default function Capabilities({ provider }: { provider?: string | null } = {}) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<CapTab>("discover");
   const [mcpPrefill, setMcpPrefill] = useState<McpPrefill | null>(null);
@@ -57,6 +62,23 @@ export default function Capabilities() {
   return (
     <div className="w-full h-full overflow-y-auto">
       <div className="px-6 lg:px-10 pt-6 pb-10 max-w-[1400px] mx-auto w-full">
+        {/* ABOVE the tab bar, deliberately — one insertion covers all six tabs.
+            The failure it describes has no symptom anywhere: equip a toolset,
+            connect an MCP server, tick "Allow Arslan", and every surface reads
+            as installed while the model is never told any of it exists. The
+            warning belongs where the equipping happens, not only in Settings,
+            because the person who chose a provider three months ago is not
+            going to open Settings before ticking a box here.
+
+            `provider` absent (no provider configured yet) renders nothing:
+            first-run has its own path, and telling someone their unset provider
+            is unmeasured would be noise dressed as a safety notice. */}
+        {provider ? (
+          <div className="mb-4">
+            <ToolTransportWarning provider={provider} showProviderName />
+          </div>
+        ) : null}
+
         <CapabilityTabs
           active={tab}
           onChange={(id) => setTab(id as CapTab)}
