@@ -7,7 +7,10 @@ the skip lists from both platforms and found 25 tests that skip on Linux and had
 therefore never executed anywhere, including three that prove the seatbelt
 sandbox denies a chmod-then-write/unlink escape.
 
-Those 25 now carry `@pytest.mark.macos` so a macOS job can select them.
+Those 25 were given `@pytest.mark.macos` so a macOS job can select them. The
+set has grown since as new macOS-only ground was covered — EXPECTED_FILES below
+is the current population and its per-file comments carry the reasons. The 25 is
+the founding measurement, not a ceiling.
 
 WHAT THIS FILE CAN AND CANNOT DO. It cannot prove the marker set is COMPLETE —
 completeness was established by running the suite on both platforms and
