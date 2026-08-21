@@ -36,6 +36,7 @@ import SuggestUpdateCard from './components/SuggestUpdateCard';
 import GapFillModal, { type GapFillKind, type GapFillResult } from './components/GapFillModal';
 import StaffingPickerCard from './components/StaffingPickerCard';
 import RunCommandCard from './components/RunCommandCard';
+import EnrollNodeCard from './components/EnrollNodeCard';
 import WorkspaceWriteCard from './components/WorkspaceWriteCard';
 import ScheduleGrantCard from './components/ScheduleGrantCard';
 import ConnectMcpCard from './components/ConnectMcpCard';
@@ -197,7 +198,9 @@ export default function App() {
   const clearPendingStaffing = useArslanStore((s) => s.clearPendingStaffing);
   // propose_run_command state — per-command confirmation card
   const pendingCommand = useArslanStore((s) => s.pendingCommand);
+  const pendingEnrollNode = useArslanStore((s) => s.pendingEnrollNode);
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
+  const clearPendingEnrollNode = useArslanStore((s) => s.clearPendingEnrollNode);
   const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
   const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
   const pendingSchedule = useArslanStore((s) => s.pendingSchedule);
@@ -1018,6 +1021,19 @@ export default function App() {
                     wsSend({ type: 'cancel_run_command', call_id: callId });
                     clearPendingCommand();
                   }}
+                />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingEnrollNode && (
+              <div className="suggest-create-card-overlay">
+                <EnrollNodeCard
+                  callId={pendingEnrollNode.callId}
+                  name={pendingEnrollNode.name}
+                  host={pendingEnrollNode.host}
+                  user={pendingEnrollNode.user}
+                  fingerprints={pendingEnrollNode.fingerprints}
+                  onDone={() => clearPendingEnrollNode()}
                 />
               </div>
             )}

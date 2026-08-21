@@ -22,6 +22,7 @@ import { AlertTriangle, Sliders } from 'lucide-react';
 import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
+import SshNodesPanel from './SshNodesPanel';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
 export type SpawnMode = 'auto' | 'interactive' | 'strict';
@@ -159,6 +160,7 @@ export default function AdvancedSection({
           />
         </div>
         {sshEnabled ? <SshIdentityPanel /> : null}
+        {sshEnabled ? <SshNodesPanel /> : null}
 
         {/* Separation divider */}
         <div className="h-[1px] bg-border/40"></div>

@@ -659,7 +659,12 @@
     "sshKeyCopied": "已复制",
     "sshKeyForget": "删除这把密钥",
     "sshKeyForgetHint": "在这里删除密钥会让 Arslan 不再使用它,但删不掉你粘在另一台机器上的那一行——那行要你自己去删。",
-    "sshKeyError": "创建失败。请确认已配置安全存储密钥。"
+    "sshKeyError": "创建失败。请确认已配置安全存储密钥。",
+    "sshNodesTitle": "已登记的机器",
+    "sshNodesEmpty": "还没有。聊天时 Arslan 可以问你要不要记住某台机器。",
+    "sshNodeRevoke": "删除",
+    "sshNodesGateNote": "登记只是省掉重复核对指纹。它不会让命令免确认执行——那些仍然每次都要你批准。",
+    "sshNodeRevokeHint": "在这里删除会让 Arslan 不再触达它,但删不掉你粘在那台机器上的那行密钥——那行要在那边删。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -1593,5 +1598,13 @@
     "scope": "同意后,本次会话内它可以创建定时任务。定时运行是无人值守的——它可以查资料并汇报,但写不了文件、跑不了命令。",
     "allow": "允许",
     "deny": "暂不"
+  },
+  "enroll": {
+    "label": "记住 {{name}}({{host}})?",
+    "stillAsks": "这只是省掉重复核对指纹。在这台机器上执行命令,仍然每次都会问你。",
+    "checkFingerprint": "拿这串去跟那台机器本身核对",
+    "confirm": "记住它",
+    "cancel": "先不要",
+    "failed": "登记失败。"
   }
 }

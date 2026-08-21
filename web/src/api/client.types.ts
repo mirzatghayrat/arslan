@@ -531,6 +531,7 @@ export type ArslanServerMessage =
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
   | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[] }
+  | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string }
   | { type: "propose_schedule"; call_id: string; name: string; when: string }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
@@ -1144,4 +1145,31 @@ export interface DeleteResult { ok: boolean; deleted: Record<string, number> }
 export interface NoteSuggestDto {
   suggestions: { target: string; kind: string; reason: string }[];
   tags: string[];
+}
+
+/** A machine enrolled for SSH (P3c). Nothing here is secret: a host key is
+ *  public, and the key Arslan signs with never leaves the backend. */
+export interface SshNode {
+  id: number;
+  name: string;
+  host: string;
+  user: string;
+  fingerprints: string[];
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+/** One command Arslan ran on another machine. Kept even after the machine is
+ *  revoked — forgetting a machine must not erase what was done to it. */
+export interface SshAuditEntry {
+  id: number;
+  at: string | null;
+  node_name: string | null;
+  host: string;
+  user: string;
+  command: string;
+  exit_code: number | null;
+  ok: boolean;
+  error: string | null;
+  conversation_id: string | null;
 }

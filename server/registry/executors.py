@@ -713,6 +713,8 @@ class ReadSkillExecutor:
 
 from server.registry.lan_tools import ScanLocalNetworkExecutor  # noqa: E402
 from server.registry.ssh_tools import (  # noqa: E402 — registry assembly
+    EnrollNodeExecutor,
+    ListNodesExecutor,
     SshProbeExecutor,
     SshRunExecutor,
 )
@@ -745,6 +747,10 @@ EXECUTORS = {e.key: e for e in (
     # SSH reach (P3b). Offered only when the user opted in; ssh_run additionally
     # asks on EVERY call — see ssh_tools for why remote is never graded LOW.
     SshProbeExecutor(), SshRunExecutor(),
+    # Node enrolment (P3c). ListNodes reads; EnrollNode refuses here on purpose —
+    # the proposal is painted by the tool loop and the write is a REST call the
+    # user's click makes, so no code path lets this executor enrol anything.
+    ListNodesExecutor(), EnrollNodeExecutor(),
 )}
 
 

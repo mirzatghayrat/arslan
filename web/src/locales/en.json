@@ -659,7 +659,12 @@
     "sshKeyCopied": "Copied",
     "sshKeyForget": "Forget this key",
     "sshKeyForgetHint": "Forgetting the key here stops Arslan using it, but it cannot remove the line you pasted on the other machine — delete that yourself.",
-    "sshKeyError": "Could not create the key. Check that a secure storage key is configured."
+    "sshKeyError": "Could not create the key. Check that a secure storage key is configured.",
+    "sshNodesTitle": "Enrolled machines",
+    "sshNodesEmpty": "None yet. Arslan can ask you to remember a machine while you are talking to it.",
+    "sshNodeRevoke": "Forget",
+    "sshNodesGateNote": "Enrolling saves re-checking a fingerprint. It does not let commands run without asking — those still need your approval every time.",
+    "sshNodeRevokeHint": "Forgetting a machine here stops Arslan reaching it, but it cannot remove the key line you pasted on that machine — delete that there."
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -1593,5 +1598,13 @@
     "scope": "Approving lets it create scheduled tasks for the rest of this session. Scheduled runs happen unattended — they can look things up and report back, but cannot write files or run commands.",
     "allow": "Allow",
     "deny": "Not now"
+  },
+  "enroll": {
+    "label": "Remember {{name}} ({{host}})?",
+    "stillAsks": "This only saves re-checking the fingerprint. Commands on this machine will still ask you every time.",
+    "checkFingerprint": "Check this against the machine itself",
+    "confirm": "Remember it",
+    "cancel": "Not now",
+    "failed": "Could not enrol that machine."
   }
 }

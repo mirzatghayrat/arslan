@@ -1850,9 +1850,19 @@ async def _arslan_tools() -> list[dict]:
                 {"key": "ssh_run",
                  "description": "Run ONE whitelisted command on another machine over SSH. "
                                 "args: {host, user, command, argv}. The user is asked to "
-                                "approve EVERY call, including read-only ones, and the card "
-                                "shows the host key fingerprint. Scheduled runs cannot use "
-                                "this at all."},
+                                "approve EVERY call, including read-only ones — enrolling "
+                                "a machine does NOT change that — and the card shows the "
+                                "host key fingerprint. Scheduled runs cannot use this."},
+                {"key": "list_nodes",
+                 "description": "List the machines the user has enrolled (name, address, "
+                                "username). READ-ONLY. args: {}."},
+                {"key": "enroll_node",
+                 "description": "ASK the user to enrol a machine so its host key is "
+                                "remembered. args: {host, user, name}. This enrols "
+                                "NOTHING by itself: it shows the user a card with the "
+                                "machine's fingerprint, which they confirm. Enrolling "
+                                "only saves re-checking the fingerprint — commands on an "
+                                "enrolled machine still need approval every time."},
             ]
 
     # Self-scheduling (P2). Independent of the workspace — a recurring task

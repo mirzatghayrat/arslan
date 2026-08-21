@@ -35,6 +35,9 @@ interface ArslanState {
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
   pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[] } | null;
+  // P3c: Arslan asks to enrol a machine. The card WRITES NOTHING over the socket —
+  // its button calls the REST endpoint, which is what makes enrolment a human act.
+  pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null;
   pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string } | null;
   pendingSchedule: { callId: string; name: string; when: string } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
@@ -95,6 +98,7 @@ interface ArslanState {
   markClarifyAnswered: (itemId: number) => void;
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
+  clearPendingEnrollNode: () => void;
   clearPendingWorkspaceWrite: () => void;
   clearPendingSchedule: () => void;
   clearPendingConnectMcp: () => void;
@@ -160,6 +164,7 @@ function initialData() {
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
     pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[] } | null,
+    pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
     pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string } | null,
     pendingSchedule: null as { callId: string; name: string; when: string } | null,
     pendingConnectMcp: null as {
@@ -245,6 +250,7 @@ function makeActions(set: SetState, get: GetState) {
       }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingCommand: () => set({ pendingCommand: null }),
+    clearPendingEnrollNode: () => set({ pendingEnrollNode: null }),
     clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
     clearPendingSchedule: () => set({ pendingSchedule: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
@@ -286,7 +292,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_workspace_write", "propose_schedule", "propose_connect_mcp", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_connect_mcp", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -782,6 +788,11 @@ function makeActions(set: SetState, get: GetState) {
                                   // machine, and the card has to lead with that.
                                   remoteHost: frame.remote_host || "",
                                   fingerprints: frame.fingerprints || [] } });
+          break;
+        case "propose_enroll_node":
+          set({ pendingEnrollNode: { callId: frame.call_id, name: frame.name,
+                                     host: frame.host, user: frame.user,
+                                     fingerprints: frame.fingerprints || [] } });
           break;
         case "propose_schedule":
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,

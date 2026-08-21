@@ -256,6 +256,22 @@ def propose_workspace_write(call_id: str, workspace: str, action: str, path: str
             "workspace": workspace, "action": action, "path": path}
 
 
+def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
+                        fingerprints: list[str]) -> dict[str, Any]:
+    """Arslan proposes enrolling a machine (P3c). Emitting this enrolls NOTHING.
+
+    Same shape as propose_connect_mcp and for the same reason: the card is where
+    the person acts, and the write goes over REST from their click. Enrolment is
+    the highest-consequence thing in this feature, so it must never be reachable
+    as a side effect of Arslan having looked at a machine.
+
+    The fingerprint is on the card because that is the one thing only the user
+    can check — against the machine itself, not against anything we can show
+    them a second time."""
+    return {"type": "propose_enroll_node", "call_id": call_id, "name": name,
+            "host": host, "user": user, "fingerprints": list(fingerprints)}
+
+
 def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
                         command: str, argv: list[str], url: str | None,
                         env_keys: list[dict], prerequisites: str = "",
