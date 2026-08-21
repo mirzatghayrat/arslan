@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { SECTIONS, type Section } from "./lib/sections";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, MessageAttachment, AppSettings } from './types';
@@ -71,7 +72,7 @@ export default function App() {
   const backendStatus = useBackendStatus();
 
 // Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'
-  const [activeSection, setActiveSection] = useState<'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'>('arslan');
+  const [activeSection, setActiveSection] = useState<Section>('arslan');
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)

@@ -212,7 +212,13 @@ describe("locale parity", () => {
     //               a string: enrolling a machine does NOT stop commands asking
     //               (the ruling), and forgetting one here cannot delete the key
     //               line pasted on that machine (only its owner can).
-    expect(enKeys).toHaveLength(1396);
+    // 1396 → 1402: nav.* for the six page headers that were rendering their own
+    //               i18n key on screen. `t(`nav.${activeSection}`)` needed a key
+    //               per SECTION and `nav` had four unrelated ones; only
+    //               `settings` happened to match. Found by looking at the running
+    //               app, not by any of the 1514 tests that were green while it
+    //               was on screen — see nav-titles.test.ts.
+    expect(enKeys).toHaveLength(1402);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
