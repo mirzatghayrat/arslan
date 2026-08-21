@@ -28,7 +28,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
-               "heartbeat_interval_s")
+               "heartbeat_interval_s", "lan_discovery_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -220,6 +220,14 @@ async def curation_enabled(session: AsyncSession) -> bool:
     """
     raw = await _get_raw(session, "curation_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def lan_discovery_enabled(session: AsyncSession) -> bool:
+    """Whether Arslan may look at what is on the local network. Default OFF:
+    scanning a network is something a person should choose, not discover
+    having happened."""
+    raw = await _get_raw(session, "lan_discovery_enabled")
+    return str(raw).strip().lower() == "true" if raw is not None else False
 
 
 async def heartbeat_enabled(session: AsyncSession) -> bool:

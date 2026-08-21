@@ -1825,6 +1825,17 @@ async def _arslan_tools() -> list[dict]:
                             "its match count — give a longer snippet instead."},
         ]
 
+    # LAN discovery (P3a): offered only when the user turned it on. Read-only —
+    # it looks at the network, it does not reach anything on it.
+    async with db_session.AsyncSessionLocal() as db:
+        if await settings_service.lan_discovery_enabled(db):
+            tools.append({
+                "key": "scan_local_network",
+                "description": "See which machines are on the user's own local network "
+                               "(IP, open ports, hardware vendor). READ-ONLY: it does "
+                               "not connect to, log into, or run anything on them. "
+                               "args: {} — the network is derived from this machine."})
+
     # Self-scheduling (P2). Independent of the workspace — a recurring task
     # needs no directory. Creating one is gated by a session grant in the tool
     # loop; listing and cancelling are not, because a user must always be able

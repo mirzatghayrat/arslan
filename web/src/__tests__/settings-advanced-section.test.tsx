@@ -30,6 +30,8 @@ function setup(overrides: Partial<Props> = {}) {
     onOrchestratorShellChange: vi.fn(),
     workspaceDir: "",
     onWorkspaceDirChange: vi.fn(),
+    lanDiscoveryEnabled: false,
+    onLanDiscoveryChange: vi.fn(),
     shellConfirmPolicy: "ask_all",
     onShellConfirmPolicyChange: vi.fn(),
     spawnMode: "auto",

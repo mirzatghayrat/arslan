@@ -646,7 +646,9 @@
     "labelHeartbeat": "Periodic checklist",
     "heartbeatDesc": "A list you write; Arslan re-reads it every few hours and tells you if anything on it needs doing. It can only look and report — a background run cannot write files or run commands.",
     "heartbeatSpendNote": "Each check costs tokens on your key. Off by default; an empty list means no checks run.",
-    "heartbeatPlaceholder": "- watch for CI failures on main\n- remind me if an invoice is unpaid past 30 days"
+    "heartbeatPlaceholder": "- watch for CI failures on main\n- remind me if an invoice is unpaid past 30 days",
+    "labelLanDiscovery": "See the local network",
+    "lanDiscoveryDesc": "Lets Arslan list the machines on your own network — their addresses, which ports answer, and the hardware vendor. Read-only: it never connects to them, logs in, or runs anything. Off by default."
   },
   "errors": {
     "load_failed": "Failed to load data.",

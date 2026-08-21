@@ -38,6 +38,9 @@ export interface AdvancedSectionProps {
   /** Directory the file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   onWorkspaceDirChange: (value: string) => void;
+  /** May Arslan look at what is on the local network? Default OFF. */
+  lanDiscoveryEnabled: boolean;
+  onLanDiscoveryChange: (value: boolean) => void;
   /** How sub-agents are created. */
   spawnMode: SpawnMode;
   onSpawnModeChange: (value: SpawnMode) => void;
@@ -57,6 +60,8 @@ export default function AdvancedSection({
   onShellConfirmPolicyChange,
   workspaceDir,
   onWorkspaceDirChange,
+  lanDiscoveryEnabled,
+  onLanDiscoveryChange,
   spawnMode,
   onSpawnModeChange,
 }: AdvancedSectionProps) {
@@ -105,6 +110,26 @@ export default function AdvancedSection({
           <p className="text-[10.5px] text-subtle-foreground font-sans">
             {t('settings.workspaceDirHint')}
           </p>
+        </div>
+
+        {/* Local network discovery (P3a). Read-only, and off until chosen. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelLanDiscovery')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.lanDiscoveryDesc')}
+            </p>
+          </div>
+          <input
+            id="settings-lan-discovery"
+            data-testid="lan-discovery-toggle"
+            type="checkbox"
+            checked={lanDiscoveryEnabled}
+            onChange={(e) => onLanDiscoveryChange(e.target.checked)}
+            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
         </div>
 
         {/* Separation divider */}

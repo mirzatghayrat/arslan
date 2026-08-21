@@ -646,7 +646,9 @@
     "labelHeartbeat": "定期检查清单",
     "heartbeatDesc": "你写一份清单,Arslan 每隔几小时读一遍,有该办的事就告诉你。它只能查看和汇报——后台运行时写不了文件、跑不了命令。",
     "heartbeatSpendNote": "每次检查都会消耗你 key 上的 token。默认关闭;清单为空则不会运行。",
-    "heartbeatPlaceholder": "- 盯 main 分支的 CI 有没有挂\n- 有账单超过 30 天没付就提醒我"
+    "heartbeatPlaceholder": "- 盯 main 分支的 CI 有没有挂\n- 有账单超过 30 天没付就提醒我",
+    "labelLanDiscovery": "查看局域网",
+    "lanDiscoveryDesc": "让 Arslan 列出你自己网络里的设备——地址、哪些端口有响应、硬件厂商。只读:它不会连接、不会登录、不会在上面运行任何东西。默认关闭。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

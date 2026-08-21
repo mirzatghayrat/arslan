@@ -57,6 +57,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // Heartbeat: default OFF, and an empty checklist means no task at all.
     heartbeatEnabled: backend.heartbeat_enabled === "true",
     heartbeatChecklist: backend.heartbeat_checklist ?? "",
+    lanDiscoveryEnabled: backend.lan_discovery_enabled === "true",
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
@@ -97,6 +98,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   workspaceDir: { key: "workspace_dir", to: (v) => (v as string) ?? "" },
   heartbeatEnabled: { key: "heartbeat_enabled", to: (v) => (v ? "true" : "false") },
   heartbeatChecklist: { key: "heartbeat_checklist", to: (v) => (v as string) ?? "" },
+  lanDiscoveryEnabled: { key: "lan_discovery_enabled", to: (v) => (v ? "true" : "false") },
   embeddingConfigId: { key: "embedding_config_id", to: (v) => (v as string) ?? "" },
   synthesisConfigId: { key: "synthesis_config_id", to: (v) => (v as string) ?? "" },
   compactionConfigId: { key: "compaction_config_id", to: (v) => (v as string) ?? "" },

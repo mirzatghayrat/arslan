@@ -646,7 +646,9 @@
     "labelHeartbeat": "Liste de contrôle périodique",
     "heartbeatDesc": "Une liste que vous écrivez ; Arslan la relit toutes les quelques heures et vous prévient si quelque chose demande une action. Il peut seulement regarder et rapporter — une exécution en arrière-plan ne peut ni écrire de fichiers ni lancer de commandes.",
     "heartbeatSpendNote": "Chaque vérification consomme des tokens sur votre clé. Désactivé par défaut ; une liste vide ne lance rien.",
-    "heartbeatPlaceholder": "- surveiller les échecs CI sur main\n- me rappeler les factures impayées depuis plus de 30 jours"
+    "heartbeatPlaceholder": "- surveiller les échecs CI sur main\n- me rappeler les factures impayées depuis plus de 30 jours",
+    "labelLanDiscovery": "Voir le réseau local",
+    "lanDiscoveryDesc": "Permet à Arslan de lister les machines de votre propre réseau : adresses, ports qui répondent et fabricant du matériel. En lecture seule : il ne s'y connecte jamais, ne s'identifie pas et n'y exécute rien. Désactivé par défaut."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

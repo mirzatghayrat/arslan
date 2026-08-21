@@ -195,7 +195,11 @@ describe("locale parity", () => {
     //              scope line says what a scheduled run CANNOT do, because the
     //              user is approving unattended runs and that limit is what
     //              makes the approval safe to give.
-    expect(enKeys).toHaveLength(1368);
+    // 1368 → 1370: settings.lanDiscovery* — seeing the local network (P3a).
+    //              The description leads with what it does NOT do (connect, log
+    //              in, run anything), because a network scan is the kind of
+    //              capability a person should be able to judge from the label.
+    expect(enKeys).toHaveLength(1370);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

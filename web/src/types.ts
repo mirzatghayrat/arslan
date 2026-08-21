@@ -206,6 +206,8 @@ export interface AppSettings {
   /** Periodic checklist turn. Default OFF; an empty checklist means no task. */
   heartbeatEnabled: boolean;
   heartbeatChecklist: string;
+  /** May Arslan look at what is on the local network? Default OFF. */
+  lanDiscoveryEnabled: boolean;
   /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
   embeddingConfigId?: string;
   /** Per-task model slots. Empty or absent = unset, and that task keeps the exact

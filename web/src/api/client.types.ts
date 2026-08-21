@@ -263,6 +263,7 @@ export interface AppSettings {
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
   heartbeat_interval_s?: string;
+  lan_discovery_enabled?: string; // "true" | "false"
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;

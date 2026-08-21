@@ -646,7 +646,9 @@
     "labelHeartbeat": "Regelmäßige Checkliste",
     "heartbeatDesc": "Eine Liste, die du schreibst; Arslan liest sie alle paar Stunden erneut und meldet sich, wenn etwas davon zu tun ist. Es kann nur nachsehen und berichten — ein Hintergrundlauf kann weder Dateien schreiben noch Befehle ausführen.",
     "heartbeatSpendNote": "Jede Prüfung kostet Tokens auf deinem Key. Standardmäßig aus; eine leere Liste bedeutet keine Prüfungen.",
-    "heartbeatPlaceholder": "- auf CI-Fehler auf main achten\n- erinnere mich an Rechnungen, die länger als 30 Tage offen sind"
+    "heartbeatPlaceholder": "- auf CI-Fehler auf main achten\n- erinnere mich an Rechnungen, die länger als 30 Tage offen sind",
+    "labelLanDiscovery": "Lokales Netzwerk ansehen",
+    "lanDiscoveryDesc": "Erlaubt Arslan, die Geräte in deinem eigenen Netzwerk aufzulisten — Adressen, antwortende Ports und Hardware-Hersteller. Nur lesend: es verbindet sich nie, meldet sich nirgends an und führt nichts aus. Standardmäßig aus."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
