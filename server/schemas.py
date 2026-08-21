@@ -65,6 +65,7 @@ class SettingsIn(BaseModel):
     heartbeat_enabled: str | None = None
     heartbeat_checklist: str | None = None
     heartbeat_interval_s: str | None = None
+    lan_discovery_enabled: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -114,6 +115,7 @@ class SettingsOut(BaseModel):
     heartbeat_enabled: str = ""
     heartbeat_checklist: str = ""
     heartbeat_interval_s: str = ""
+    lan_discovery_enabled: str = ""
 
 
 class AccessTokenOut(BaseModel):

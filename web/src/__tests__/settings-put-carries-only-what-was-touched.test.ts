@@ -133,6 +133,7 @@ describe("every settings field the UI can edit is mappable", () => {
       workspace_dir: { workspaceDir: "/tmp/ws" },
       heartbeat_enabled: { heartbeatEnabled: true },
       heartbeat_checklist: { heartbeatChecklist: "- x" },
+      lan_discovery_enabled: { lanDiscoveryEnabled: true },
     };
 
     const unmappable: string[] = [];

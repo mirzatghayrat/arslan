@@ -711,6 +711,7 @@ class ReadSkillExecutor:
                 "summary": f"技能 {skey}(前半+目录)"}
 
 
+from server.registry.lan_tools import ScanLocalNetworkExecutor  # noqa: E402
 from server.registry.schedule_tools import (  # noqa: E402 — registry assembly
     CancelTaskExecutor,
     ListTasksExecutor,
@@ -735,6 +736,8 @@ EXECUTORS = {e.key: e for e in (
     # Self-scheduling (P2). Registered here; whether Arslan is OFFERED them, and
     # behind which grant, is decided in _arslan_tools + the tool loop.
     ScheduleTaskExecutor(), ListTasksExecutor(), CancelTaskExecutor(),
+    # LAN discovery (P3a). Read-only; offered only when the user opted in.
+    ScanLocalNetworkExecutor(),
 )}
 
 

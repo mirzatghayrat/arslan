@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workspaceDir: '',          // zero default, by user ruling: pick it explicitly
   heartbeatEnabled: false,   // default OFF
   heartbeatChecklist: '',
+  lanDiscoveryEnabled: false,  // default OFF
   language: 'en',
   theme: 'dark',
   telemetry: false,

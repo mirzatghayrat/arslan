@@ -222,6 +222,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
         onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}
+        lanDiscoveryEnabled={localSettings.lanDiscoveryEnabled ?? false}
+        onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
         spawnMode={localSettings.spawnMode}
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />
