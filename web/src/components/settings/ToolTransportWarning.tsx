@@ -16,7 +16,20 @@ import { useTranslation } from "react-i18next";
 
 import { toolTransportState } from "../../lib/toolTransport";
 
-export default function ToolTransportWarning({ provider }: { provider: string | null | undefined }) {
+export default function ToolTransportWarning(
+  { provider, showProviderName = false }: {
+    provider: string | null | undefined;
+    /** Print the provider id beside the notice.
+     *
+     * Off in Settings, where the provider select sits directly above and the
+     * antecedent of "this provider" is on screen. On by default nowhere — the
+     * Capability Library turns it on because there the phrase has no antecedent
+     * at all, and a warning whose subject the reader has to go and look up is a
+     * warning they will read as being about something else. The id is DATA, not
+     * copy, so this costs no new string in six languages. */
+    showProviderName?: boolean;
+  },
+) {
   const { t } = useTranslation();
   const state = toolTransportState(provider);
 
@@ -48,6 +61,12 @@ export default function ToolTransportWarning({ provider }: { provider: string | 
           {t("settings.tool_transport_title")}
         </div>
       )}
+      {showProviderName && provider ? (
+        <code data-testid="tool-transport-provider"
+              className="inline-block mb-1 font-mono text-[10px] opacity-80">
+          {provider}
+        </code>
+      ) : null}
       <div>
         {t(unsupported ? "settings.tool_transport_unsupported" : "settings.tool_transport_unverified")}
       </div>

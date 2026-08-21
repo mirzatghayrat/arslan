@@ -1187,7 +1187,14 @@ export default function App() {
             )}
 
             {activeSection === 'capabilities' && (
-              <Capabilities />
+              // The primary config is the one that answers; falling back to the
+              // first is for the window before a primary is assigned, not a
+              // guess about which one runs.
+              <Capabilities
+                provider={
+                  (providerConfigs.find((c) => c.is_primary) ?? providerConfigs[0])?.provider
+                }
+              />
             )}
 
             {activeSection === 'brain' && <BrainSection />}
