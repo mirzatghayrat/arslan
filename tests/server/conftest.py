@@ -53,6 +53,23 @@ def _heal_config_drift() -> bool:
 _TEST_CRYPTO_SALT = bytes(range(16))
 
 
+# The aiosqlite teardown guard is installed at import time rather than in a
+# fixture: the race it addresses happens BETWEEN tests, when no fixture is
+# active. It counts what it catches; see the terminal summary hook below.
+from tests.server import aiosqlite_guard  # noqa: E402
+
+aiosqlite_guard.install()
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Say it out loud if the guard fired. A suppressed error nobody hears
+    about is the thing this project calls a lie."""
+    line = aiosqlite_guard.report()
+    if line:
+        terminalreporter.write_sep("-", "aiosqlite")
+        terminalreporter.write_line(line)
+
+
 @pytest.fixture(autouse=True)
 def _install_crypto_salt():
     """Install the PBKDF2 salt every test derives keys from.
