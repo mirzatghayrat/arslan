@@ -219,12 +219,24 @@ def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, An
     return {"type": "propose_staffing", "candidates": candidates, "create_draft": create_draft}
 
 
-def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "") -> dict[str, Any]:
+def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "",
+                        remote_host: str | None = None,
+                        fingerprints: list[str] | None = None) -> dict[str, Any]:
     """Arslan proposes running ONE whitelisted command. Emitting this frame runs
     NOTHING — the frontend renders a confirm card showing the full command; only the
-    user's `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`)."""
-    return {"type": "propose_run_command", "call_id": call_id, "command": command,
-            "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+    user's `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
+
+    `remote_host` non-empty means the command runs on ANOTHER machine (P3b), and the
+    card must say so: the difference between "this runs here" and "this runs on the
+    machine in the other room" is the whole decision the user is being asked to make.
+    `fingerprints` are that machine's host keys, shown so a person can compare them
+    against the machine itself."""
+    frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
+             "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+    if remote_host:
+        frame["remote_host"] = remote_host
+        frame["fingerprints"] = list(fingerprints or [])
+    return frame
 
 
 def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:

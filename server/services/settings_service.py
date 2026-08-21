@@ -28,7 +28,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
-               "heartbeat_interval_s", "lan_discovery_enabled")
+               "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -227,6 +227,14 @@ async def lan_discovery_enabled(session: AsyncSession) -> bool:
     scanning a network is something a person should choose, not discover
     having happened."""
     raw = await _get_raw(session, "lan_discovery_enabled")
+    return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def ssh_enabled(session: AsyncSession) -> bool:
+    """Whether Arslan may reach another machine over SSH. Default OFF, and it stays
+    OFF on its own: this is the switch for the highest-risk surface in the product,
+    so it is opt-in even for a user who already turned on shell and LAN discovery."""
+    raw = await _get_raw(session, "ssh_enabled")
     return str(raw).strip().lower() == "true" if raw is not None else False
 
 

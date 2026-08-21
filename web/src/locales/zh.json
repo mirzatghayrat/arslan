@@ -648,7 +648,18 @@
     "heartbeatSpendNote": "每次检查都会消耗你 key 上的 token。默认关闭;清单为空则不会运行。",
     "heartbeatPlaceholder": "- 盯 main 分支的 CI 有没有挂\n- 有账单超过 30 天没付就提醒我",
     "labelLanDiscovery": "查看局域网",
-    "lanDiscoveryDesc": "让 Arslan 列出你自己网络里的设备——地址、哪些端口有响应、硬件厂商。只读:它不会连接、不会登录、不会在上面运行任何东西。默认关闭。"
+    "lanDiscoveryDesc": "让 Arslan 列出你自己网络里的设备——地址、哪些端口有响应、硬件厂商。只读:它不会连接、不会登录、不会在上面运行任何东西。默认关闭。",
+    "labelSsh": "触达另一台机器(SSH)",
+    "sshDesc": "让 Arslan 登录你网络里的另一台机器并在上面跑一条命令。每一条命令都会先问你——只读的也一样——卡片上会显示那台机器的指纹。定时任务永远用不了这个功能。默认关闭,与网络发现是两个独立的开关。",
+    "sshKeyTitle": "Arslan 的 SSH 密钥",
+    "sshKeyHowto": "把这一行加到目标机器的 ~/.ssh/authorized_keys 里。Arslan 只用这把密钥登录——它不会问你要密码,也不会保存密码。",
+    "sshKeyNone": "还没有密钥。创建一把,就能在不给密码的情况下授权 Arslan 登录某台机器。",
+    "sshKeyCreate": "创建密钥",
+    "sshKeyCopy": "复制",
+    "sshKeyCopied": "已复制",
+    "sshKeyForget": "删除这把密钥",
+    "sshKeyForgetHint": "在这里删除密钥会让 Arslan 不再使用它,但删不掉你粘在另一台机器上的那一行——那行要你自己去删。",
+    "sshKeyError": "创建失败。请确认已配置安全存储密钥。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -1168,7 +1179,11 @@
     "remember": "本会话不再询问此命令",
     "run": "运行",
     "cancel": "取消",
-    "pillLabel": "命令行"
+    "pillLabel": "命令行",
+    "remoteLabel": "在 {{host}} 上执行",
+    "remoteWarning": "这条命令在另一台机器上执行,不是这一台。",
+    "fingerprint": "那台机器的指纹",
+    "runRemote": "在那台机器上执行"
   },
   "errorBoundary": {
     "title": "出了点问题",

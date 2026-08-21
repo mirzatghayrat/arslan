@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Sliders } from 'lucide-react';
 import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
+import SshIdentityPanel from './SshIdentityPanel';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
 export type SpawnMode = 'auto' | 'interactive' | 'strict';
@@ -41,6 +42,9 @@ export interface AdvancedSectionProps {
   /** May Arslan look at what is on the local network? Default OFF. */
   lanDiscoveryEnabled: boolean;
   onLanDiscoveryChange: (value: boolean) => void;
+  /** May Arslan log into another machine over SSH? Default OFF, separately. */
+  sshEnabled: boolean;
+  onSshChange: (value: boolean) => void;
   /** How sub-agents are created. */
   spawnMode: SpawnMode;
   onSpawnModeChange: (value: SpawnMode) => void;
@@ -62,6 +66,8 @@ export default function AdvancedSection({
   onWorkspaceDirChange,
   lanDiscoveryEnabled,
   onLanDiscoveryChange,
+  sshEnabled,
+  onSshChange,
   spawnMode,
   onSpawnModeChange,
 }: AdvancedSectionProps) {
@@ -131,6 +137,28 @@ export default function AdvancedSection({
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
         </div>
+
+        {/* Reaching another machine (P3b). A separate consent from discovery:
+            seeing a machine and logging into it are different decisions. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelSsh')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.sshDesc')}
+            </p>
+          </div>
+          <input
+            id="settings-ssh"
+            data-testid="ssh-toggle"
+            type="checkbox"
+            checked={sshEnabled}
+            onChange={(e) => onSshChange(e.target.checked)}
+            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
+        </div>
+        {sshEnabled ? <SshIdentityPanel /> : null}
 
         {/* Separation divider */}
         <div className="h-[1px] bg-border/40"></div>

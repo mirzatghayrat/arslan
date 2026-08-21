@@ -712,6 +712,10 @@ class ReadSkillExecutor:
 
 
 from server.registry.lan_tools import ScanLocalNetworkExecutor  # noqa: E402
+from server.registry.ssh_tools import (  # noqa: E402 — registry assembly
+    SshProbeExecutor,
+    SshRunExecutor,
+)
 from server.registry.schedule_tools import (  # noqa: E402 — registry assembly
     CancelTaskExecutor,
     ListTasksExecutor,
@@ -738,6 +742,9 @@ EXECUTORS = {e.key: e for e in (
     ScheduleTaskExecutor(), ListTasksExecutor(), CancelTaskExecutor(),
     # LAN discovery (P3a). Read-only; offered only when the user opted in.
     ScanLocalNetworkExecutor(),
+    # SSH reach (P3b). Offered only when the user opted in; ssh_run additionally
+    # asks on EVERY call — see ssh_tools for why remote is never graded LOW.
+    SshProbeExecutor(), SshRunExecutor(),
 )}
 
 

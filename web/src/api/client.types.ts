@@ -264,6 +264,7 @@ export interface AppSettings {
   heartbeat_checklist?: string;
   heartbeat_interval_s?: string;
   lan_discovery_enabled?: string; // "true" | "false"
+  ssh_enabled?: string; // "true" | "false"
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;
@@ -529,7 +530,7 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string }
+  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[] }
   | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string }
   | { type: "propose_schedule"; call_id: string; name: string; when: string }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset

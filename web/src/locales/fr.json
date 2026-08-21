@@ -648,7 +648,18 @@
     "heartbeatSpendNote": "Chaque vérification consomme des tokens sur votre clé. Désactivé par défaut ; une liste vide ne lance rien.",
     "heartbeatPlaceholder": "- surveiller les échecs CI sur main\n- me rappeler les factures impayées depuis plus de 30 jours",
     "labelLanDiscovery": "Voir le réseau local",
-    "lanDiscoveryDesc": "Permet à Arslan de lister les machines de votre propre réseau : adresses, ports qui répondent et fabricant du matériel. En lecture seule : il ne s'y connecte jamais, ne s'identifie pas et n'y exécute rien. Désactivé par défaut."
+    "lanDiscoveryDesc": "Permet à Arslan de lister les machines de votre propre réseau : adresses, ports qui répondent et fabricant du matériel. En lecture seule : il ne s'y connecte jamais, ne s'identifie pas et n'y exécute rien. Désactivé par défaut.",
+    "labelSsh": "Atteindre une autre machine (SSH)",
+    "sshDesc": "Permet à Arslan de se connecter à une autre machine de votre réseau et d'y exécuter une commande. Chaque commande vous est soumise au préalable — y compris celles en lecture seule — et la carte affiche l'empreinte de cette machine. Les tâches planifiées ne peuvent jamais s'en servir. Désactivé par défaut, indépendamment de la découverte réseau.",
+    "sshKeyTitle": "Clé SSH d'Arslan",
+    "sshKeyHowto": "Ajoutez cette ligne dans ~/.ssh/authorized_keys sur la machine visée. Arslan se connecte uniquement avec cette clé : il ne demande ni ne conserve de mot de passe.",
+    "sshKeyNone": "Aucune clé pour l'instant. En créer une permet d'autoriser Arslan sur une machine sans lui confier de mot de passe.",
+    "sshKeyCreate": "Créer une clé",
+    "sshKeyCopy": "Copier",
+    "sshKeyCopied": "Copié",
+    "sshKeyForget": "Oublier cette clé",
+    "sshKeyForgetHint": "L'oublier ici empêche Arslan de s'en servir, mais ne supprime pas la ligne collée sur l'autre machine — à vous de l'effacer.",
+    "sshKeyError": "Impossible de créer la clé. Vérifiez qu'une clé de stockage sécurisé est configurée."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1168,7 +1179,11 @@
     "remember": "Don't ask again this session",
     "run": "Run",
     "cancel": "Cancel",
-    "pillLabel": "Shell"
+    "pillLabel": "Shell",
+    "remoteLabel": "Exécuter sur {{host}}",
+    "remoteWarning": "Ceci s'exécute sur une AUTRE machine, pas celle-ci.",
+    "fingerprint": "Empreinte de cette machine",
+    "runRemote": "Exécuter là-bas"
   },
   "errorBoundary": {
     "title": "Une erreur est survenue",

@@ -35,6 +35,40 @@ logger = logging.getLogger(__name__)
 _HEARTBEAT_INTERVAL_S = 30
 
 
+def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
+    """The grade a confirmation is decided on.
+
+    Remote is HIGH unconditionally (P3b 裁决③). The local classifier answers a
+    question about a binary on THIS machine — `git` at the other end of an ssh
+    connection is a different program on a different filesystem, and possibly a
+    different `git`. Grading it by our own whitelist would be inferring safety
+    from the wrong evidence."""
+    from server.services import command_policy
+    return "HIGH" if remote_host else command_policy.classify(command, argv)
+
+
+def may_skip_card(remote_host: str | None, *, in_session_allow: bool,
+                  policy: str, risk: str) -> bool:
+    """Whether a confirmation may be answered without showing a card.
+
+    Both shortcuts — the session allow-list and ask_risky's LOW exemption — are
+    local-only. A remote command always gets a card, because the thing the user
+    is being asked about (which machine) is not carried by the command text that
+    the shortcuts key on."""
+    if remote_host:
+        return False
+    if in_session_allow:
+        return True
+    return policy == "ask_risky" and risk == "LOW"
+
+
+def may_remember(remote_host: str | None, *, risk: str, remember: bool) -> bool:
+    """Whether "don't ask again" may be honoured. Never for HIGH, and never for
+    remote — a remembered remote command would be a trusted node with no gate,
+    which is precisely the thing the C4 ruling refused to build."""
+    return bool(remember) and risk != "HIGH" and not remote_host
+
+
 def _cmd_sig(command: str, argv: list) -> str:
     # signature = binary + subcommand (kept literal) + arg SHAPE of the rest
     # (flags kept, free values blanked). Keeping the FIRST non-flag token — the
@@ -280,16 +314,24 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             schedule_granted["yes"] = True
         return decision
 
-    async def confirm_command(command: str, argv: list) -> bool:
-        from server.services import command_policy, settings_service
+    async def confirm_command(command: str, argv: list, *,
+                              remote_host: str | None = None,
+                              fingerprints: list | None = None) -> bool:
+        from server.services import settings_service
+        # A remote command takes NONE of the shortcuts below. Not the session
+        # allow-list, not ask_risky, not "remember this one" — because the local
+        # risk grade describes a binary on THIS machine, and `git` over there is
+        # not the same program (P3b 裁决③). Remote is HIGH, always, and HIGH is
+        # already the grade this function refuses to remember.
         sig = _cmd_sig(command, argv)
-        if sig in session_cmd_allow:
-            return True
-        # Confirmation policy: 'ask_risky' auto-runs LOW-risk (read-only) commands.
-        risk = command_policy.classify(command, argv)
-        async with db_session.AsyncSessionLocal() as db:
-            policy = await settings_service.shell_confirm_policy(db)
-        if policy == "ask_risky" and risk == "LOW":
+        risk = effective_risk(remote_host, command, argv)
+        policy = ""
+        if not remote_host:
+            # Confirmation policy: 'ask_risky' auto-runs LOW-risk (read-only) commands.
+            async with db_session.AsyncSessionLocal() as db:
+                policy = await settings_service.shell_confirm_policy(db)
+        if may_skip_card(remote_host, in_session_allow=sig in session_cmd_allow,
+                         policy=policy, risk=risk):
             return True
         call_id = uuid.uuid4().hex
         # Private card, sent directly to THIS socket — deliberately NOT emit():
@@ -300,7 +342,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # card rides raw ws.send_json, never a recorder tee, so a reattaching
         # socket cannot replay a dead interactive card.
         await ws.send_json(
-            protocol.propose_run_command(call_id, command, argv, reason=f"risk: {risk}")
+            protocol.propose_run_command(call_id, command, argv, reason=f"risk: {risk}",
+                                         remote_host=remote_host,
+                                         fingerprints=list(fingerprints or []))
         )
         # Own ws.receive HERE, only while this one command is pending. The plain-message
         # orchestration coro that led here is blocked awaiting this call, so the outer
@@ -334,7 +378,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             raise
         # Never permanently auto-approve a HIGH-risk (e.g. network) command, even if
         # the user checked "remember" — those always require a fresh card.
-        if decision.get("remember") and risk != "HIGH":
+        if may_remember(remote_host, risk=risk, remember=bool(decision.get("remember"))):
             session_cmd_allow.add(sig)
         return bool(decision.get("approved"))
 

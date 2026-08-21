@@ -648,7 +648,18 @@
     "heartbeatSpendNote": "Cada comprobación gasta tokens de tu clave. Desactivado por defecto; una lista vacía no ejecuta nada.",
     "heartbeatPlaceholder": "- vigilar fallos de CI en main\n- avísame si una factura lleva más de 30 días sin pagar",
     "labelLanDiscovery": "Ver la red local",
-    "lanDiscoveryDesc": "Permite que Arslan liste los equipos de tu propia red: direcciones, qué puertos responden y el fabricante del hardware. Solo lectura: nunca se conecta, ni inicia sesión, ni ejecuta nada. Desactivado por defecto."
+    "lanDiscoveryDesc": "Permite que Arslan liste los equipos de tu propia red: direcciones, qué puertos responden y el fabricante del hardware. Solo lectura: nunca se conecta, ni inicia sesión, ni ejecuta nada. Desactivado por defecto.",
+    "labelSsh": "Alcanzar otra máquina (SSH)",
+    "sshDesc": "Permite que Arslan inicie sesión en otra máquina de tu red y ejecute un comando allí. Cada comando te pregunta antes — incluidos los de solo lectura — y la tarjeta muestra la huella de esa máquina. Las tareas programadas nunca pueden usarlo. Desactivado por defecto, aparte del descubrimiento de red.",
+    "sshKeyTitle": "Clave SSH de Arslan",
+    "sshKeyHowto": "Añade esta línea a ~/.ssh/authorized_keys en la máquina a la que quieras que llegue Arslan. Arslan entra solo con esta clave: nunca pide ni guarda una contraseña.",
+    "sshKeyNone": "Todavía no hay clave. Crear una te permite autorizar a Arslan en una máquina sin darle una contraseña.",
+    "sshKeyCreate": "Crear una clave",
+    "sshKeyCopy": "Copiar",
+    "sshKeyCopied": "Copiado",
+    "sshKeyForget": "Olvidar esta clave",
+    "sshKeyForgetHint": "Olvidarla aquí hace que Arslan deje de usarla, pero no puede borrar la línea que pegaste en la otra máquina: eso hazlo tú.",
+    "sshKeyError": "No se pudo crear la clave. Comprueba que haya una clave de almacenamiento seguro configurada."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -1168,7 +1179,11 @@
     "remember": "Don't ask again this session",
     "run": "Run",
     "cancel": "Cancel",
-    "pillLabel": "Shell"
+    "pillLabel": "Shell",
+    "remoteLabel": "Ejecutar en {{host}}",
+    "remoteWarning": "Esto se ejecuta en OTRA máquina, no en esta.",
+    "fingerprint": "Huella de esa máquina",
+    "runRemote": "Ejecutar allí"
   },
   "errorBoundary": {
     "title": "Algo salió mal",

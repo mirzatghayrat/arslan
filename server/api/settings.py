@@ -141,6 +141,38 @@ async def disable_mcp_token(request: Request, db: AsyncSession = Depends(get_ses
     return McpTokenOut(enabled=enabled, token_set=False, token=None)
 
 
+@router.get("/settings/ssh-identity", response_model=dict)
+async def get_ssh_identity(db: AsyncSession = Depends(get_session)) -> dict:
+    """Report Arslan's SSH public key. Unlike the MCP token this is NOT show-once —
+    a public key is meant to be read repeatedly and pasted onto every machine the
+    user wants reachable."""
+    from server.services import ssh_keys
+    return {"public_key": await ssh_keys.public_key(db),
+            "enabled": await settings_service.ssh_enabled(db)}
+
+
+@router.post("/settings/ssh-identity", response_model=dict)
+async def create_ssh_identity(db: AsyncSession = Depends(get_session)) -> dict:
+    """Create the identity if it does not exist. Idempotent: re-posting returns the
+    same key rather than rotating it, because rotating would quietly kill every
+    authorized_keys line the user has already pasted."""
+    from server.services import ssh_keys
+    try:
+        public = await ssh_keys.ensure_keypair(db)
+    except (RuntimeError, TimeoutError) as exc:
+        raise HTTPException(status_code=500, detail=f"could not create an SSH key: {exc}") from exc
+    return {"public_key": public, "enabled": await settings_service.ssh_enabled(db)}
+
+
+@router.delete("/settings/ssh-identity", response_model=dict)
+async def delete_ssh_identity(db: AsyncSession = Depends(get_session)) -> dict:
+    """Forget the identity. The user should also remove the pasted line on the far
+    side — we cannot reach in and do that for them, and the UI says so."""
+    from server.services import ssh_keys
+    await ssh_keys.forget(db)
+    return {"public_key": "", "enabled": await settings_service.ssh_enabled(db)}
+
+
 @router.get("/settings/providers", response_model=list[ProviderOption])
 async def list_providers() -> list[ProviderOption]:
     """Available LLM providers for the Settings dropdown (Tier-0 presets + native)."""

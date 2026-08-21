@@ -199,7 +199,15 @@ describe("locale parity", () => {
     //              The description leads with what it does NOT do (connect, log
     //              in, run anything), because a network scan is the kind of
     //              capability a person should be able to judge from the label.
-    expect(enKeys).toHaveLength(1370);
+    // 1370 → 1385: settings.ssh* + settings.sshKey* + runcmd.remote* (P3b).
+    //              Reaching another machine needed more copy than any switch so
+    //              far, and deliberately so: the toggle names what a scheduled
+    //              task can NEVER do with it, the key panel says removal here
+    //              cannot delete the line pasted on the far machine, and the
+    //              confirm card gets its own label/warning/fingerprint strings
+    //              because "this runs somewhere else" must not arrive as a
+    //              footnote on a card that otherwise looks local.
+    expect(enKeys).toHaveLength(1385);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -32,6 +32,8 @@ function setup(overrides: Partial<Props> = {}) {
     onWorkspaceDirChange: vi.fn(),
     lanDiscoveryEnabled: false,
     onLanDiscoveryChange: vi.fn(),
+    sshEnabled: false,
+    onSshChange: vi.fn(),
     shellConfirmPolicy: "ask_all",
     onShellConfirmPolicyChange: vi.fn(),
     spawnMode: "auto",

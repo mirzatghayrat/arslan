@@ -648,7 +648,18 @@
     "heartbeatSpendNote": "Each check costs tokens on your key. Off by default; an empty list means no checks run.",
     "heartbeatPlaceholder": "- watch for CI failures on main\n- remind me if an invoice is unpaid past 30 days",
     "labelLanDiscovery": "See the local network",
-    "lanDiscoveryDesc": "Lets Arslan list the machines on your own network — their addresses, which ports answer, and the hardware vendor. Read-only: it never connects to them, logs in, or runs anything. Off by default."
+    "lanDiscoveryDesc": "Lets Arslan list the machines on your own network — their addresses, which ports answer, and the hardware vendor. Read-only: it never connects to them, logs in, or runs anything. Off by default.",
+    "labelSsh": "Reach another machine (SSH)",
+    "sshDesc": "Lets Arslan log into another machine on your network and run one command there. Every single command asks you first — including read-only ones — and the card shows that machine's fingerprint. Scheduled tasks can never use this. Off by default, separately from network discovery.",
+    "sshKeyTitle": "Arslan's SSH key",
+    "sshKeyHowto": "Add this line to ~/.ssh/authorized_keys on the machine you want Arslan to reach. Arslan signs in with this key only — it never asks for or stores a password.",
+    "sshKeyNone": "No key yet. Creating one lets you authorise Arslan on a machine without giving it a password.",
+    "sshKeyCreate": "Create a key",
+    "sshKeyCopy": "Copy",
+    "sshKeyCopied": "Copied",
+    "sshKeyForget": "Forget this key",
+    "sshKeyForgetHint": "Forgetting the key here stops Arslan using it, but it cannot remove the line you pasted on the other machine — delete that yourself.",
+    "sshKeyError": "Could not create the key. Check that a secure storage key is configured."
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -1168,7 +1179,11 @@
     "remember": "Don't ask again this session",
     "run": "Run",
     "cancel": "Cancel",
-    "pillLabel": "Shell"
+    "pillLabel": "Shell",
+    "remoteLabel": "Run on {{host}}",
+    "remoteWarning": "This runs on ANOTHER machine, not this one.",
+    "fingerprint": "That machine's fingerprint",
+    "runRemote": "Run there"
   },
   "errorBoundary": {
     "title": "Something went wrong",

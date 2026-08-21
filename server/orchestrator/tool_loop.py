@@ -563,6 +563,43 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
 
+    # Reaching another machine (P3b). Every call asks, with no session memory and
+    # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
+    # when the same command is LOW locally.
+    #
+    # The no-callback refusal comes FIRST, deliberately: an unattended turn has no
+    # socket and therefore no confirm callback, so it must not so much as probe the
+    # network before being told no. That ordering is what makes "a scheduled task
+    # cannot SSH" structural rather than a rule someone has to remember.
+    if tool_key == "ssh_run":
+        if confirm_command is None:
+            result = {"ok": False,
+                      "error": "running a command on another machine requires your "
+                               "confirmation, which is not available in this context"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        from server.registry.ssh_tools import prepare_confirmation
+        from server.services import ssh_exec
+        prep = await prepare_confirmation(args)
+        if not prep.get("ok"):
+            result = {"ok": False, "error": prep.get("error") or "cannot reach that machine"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        approved = await confirm_command(
+            prep["command"], prep["argv"],
+            remote_host=f"{prep['user']}@{prep['host']}",
+            fingerprints=prep["fingerprints"])
+        if not approved:
+            # Un-stage: a declined command must not leave an approved host key
+            # sitting where the next call would silently consume it.
+            ssh_exec.take(prep["host"])
+            result = {"ok": False, "error": "user declined this remote command"}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+
     # Fail-closed hermetic backstop (eval sealing): in an evolution eval/replay context,
     # refuse ANY tool that isn't read-only-safe, independent of resolve_tools() and the
     # replay flag. This is the throat every tool call passes through (model-driven AND the

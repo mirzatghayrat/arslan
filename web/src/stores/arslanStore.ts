@@ -34,7 +34,7 @@ interface ArslanState {
   pendingInvite: { spawnId: number; reason: string } | null;
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: { callId: string; pretty: string; reason: string } | null;
+  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[] } | null;
   pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string } | null;
   pendingSchedule: { callId: string; name: string; when: string } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
@@ -159,7 +159,7 @@ function initialData() {
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
-    pendingCommand: null as { callId: string; pretty: string; reason: string } | null,
+    pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[] } | null,
     pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string } | null,
     pendingSchedule: null as { callId: string; name: string; when: string } | null,
     pendingConnectMcp: null as {
@@ -777,7 +777,11 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_run_command":
           set({ pendingCommand: { callId: frame.call_id, pretty: frame.pretty,
-                                  reason: frame.reason || "" } });
+                                  reason: frame.reason || "",
+                                  // Present only for P3b: this command runs on ANOTHER
+                                  // machine, and the card has to lead with that.
+                                  remoteHost: frame.remote_host || "",
+                                  fingerprints: frame.fingerprints || [] } });
           break;
         case "propose_schedule":
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
