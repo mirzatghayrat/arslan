@@ -443,6 +443,7 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
     # skipping is how a check quietly stops checking.
     if token:
         _check_ocr(port, token, c)
+        _check_ssh_identity(port, token, appsup, c)
 
     # ---- a clean boot says nothing alarming ---------------------------
     text = log.read_text(errors="replace")
@@ -487,6 +488,65 @@ def _text_png() -> bytes:
 
 OCR_PROBE_EN = "packaged build reads this"
 OCR_PROBE_ZH = "打包版读到这一行"
+
+
+def _check_ssh_identity(port: int, token: str, appsup: pathlib.Path, c: Checks) -> None:
+    """Generate Arslan's SSH identity inside the PACKAGED app and check where it landed.
+
+    This exists because the dev tree cannot answer the question. Key generation
+    shells out to /usr/bin/ssh-keygen and the private half is encrypted with the
+    key material first-run just created — a chain that has three chances to
+    behave differently under the bundle (a minimal PATH, a sandboxed subprocess,
+    a crypto store that is not initialised yet) and whose failure mode is a
+    feature that silently does not work. The packaged-only defect family has
+    produced three shipped outages here; each one was found by a person, not by
+    this file.
+
+    Two claims, and the second is the one worth having: an identity can be
+    created at all, and what lands in the database is NOT the private key in
+    the clear.
+    """
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/v1/settings/ssh-identity", data=b"",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=45) as r:
+            body = json.loads(r.read().decode())
+    except Exception as exc:  # noqa: BLE001 — a probe that cannot run is a failure
+        c.ok(False, "an SSH identity can be created in the packaged app",
+             f"{type(exc).__name__}: {exc}")
+        return
+
+    public = str(body.get("public_key") or "")
+    if not c.ok(public.startswith("ssh-ed25519 "),
+                "an SSH identity can be created in the packaged app",
+                f"public key was {public[:40]!r}"):
+        return
+
+    # The private half: read the row the app just wrote, from disk, rather than
+    # trusting that an encrypt() call was made. A PEM header sitting in the
+    # table is what "encrypted at rest" failing looks like.
+    db = appsup / "arslan.db"
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = '_ssh_identity_private'").fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        c.ok(False, "the stored SSH private key could be inspected",
+             f"{type(exc).__name__}: {exc}")
+        return
+
+    if not c.ok(row is not None and bool(str(row[0]).strip()),
+                "the SSH private key was stored"):
+        return
+    stored = str(row[0])
+    c.ok("PRIVATE KEY" not in stored and "\n" not in stored,
+         "the stored SSH private key is not in the clear",
+         f"row begins {stored[:24]!r}")
 
 
 def _check_ocr(port: int, token: str, c: Checks) -> None:
