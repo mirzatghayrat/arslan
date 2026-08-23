@@ -48,12 +48,13 @@ dependencies = [
     # recalled). tests/route_introspection.py flattens both shapes now, and
     # tests/server/test_routes_are_registered.py asserts the surface itself.
     #
-    # TO LIFT: run the full suite against the newer pair. That is the only step
-    # left — the compatibility question is now about our test code, and that
-    # part is fixed. Not lifted here, because "it should work" is not a verified
-    # suite and a dependency comment is the wrong place to find out.
-    "fastapi>=0.110,<0.137",
-    "starlette<1.3",
+    # LIFTED 2026-08-23, on the evidence the note above asked for: the full
+    # suite was run against the newer pair and the route-surface assertion
+    # passes there, which is the check the cap existed to protect. The floors
+    # stay — they are the versions this code is written against, and a lower
+    # bound is not the thing that was in question.
+    "fastapi>=0.110",
+    "starlette>=0.37",
     "uvicorn>=0.29",
     # RUNTIME, not a test tool: uvicorn has no WebSocket implementation of
     # its own and imports one lazily BY NAME. Without it every /ws/ upgrade

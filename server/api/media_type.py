@@ -19,10 +19,13 @@ Both halves of that disagreement hurt. ``form.get("file")`` hands back a plain `
 instead of an ``UploadFile``, so ``await upload.read()`` raises ``AttributeError`` and
 the caller gets a 500 they chose. And the request lands in Starlette's urlencoded
 ``FormParser``, which is the parser whose ``max_fields`` / ``max_part_size`` limits
-CVE-2026-54283 reports as silently ignored — the fix for which is Starlette 1.3.1, a
-version ``pyproject.toml`` deliberately forbids (``starlette<1.3``, because
-``include_router`` breaks there). Asking the question correctly on our side closes the
-reachable path without touching that cap.
+CVE-2026-54283 reports as silently ignored.
+
+The version cap that made this module urgent is GONE (lifted 2026-08-23; Starlette is
+now >= 1.3.1, so the CVE is fixed upstream). This check stays anyway, and not out of
+sentiment: it is what keeps a non-multipart request from entering the multipart branch
+at all, which is a bug of ours — ``form.get("file")`` returning a ``str`` produces an
+unhandled 500 no matter which Starlette is installed.
 
 🔴 DELIBERATELY NO EXTRA NORMALIZATION. It is tempting to lower-case and strip before
 comparing, since RFC 9110 media types are case-insensitive. Do not. The property this

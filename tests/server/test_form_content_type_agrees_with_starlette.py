@@ -21,9 +21,9 @@ one:
    choosing a header value.
 2. It reaches Starlette's urlencoded ``FormParser``, which is the parser whose
    ``max_fields`` / ``max_part_size`` limits CVE-2026-54283 says are silently ignored.
-   The fix for that CVE is Starlette 1.3.1, which ``pyproject.toml`` deliberately
-   forbids (``starlette<1.3``, because ``include_router`` breaks there). Tightening
-   OUR check closes the reachable path without touching that cap.
+   That CVE is now fixed upstream — the cap was lifted 2026-08-23 and Starlette is
+   >= 1.3.1. Point 1 is untouched by that: entering the multipart branch on a
+   non-multipart request is our bug on any Starlette, which is why this stayed.
 
 WHY THESE ASSERT STATUS CODES AND NOT SOURCE TEXT. A grep for the substring check
 would pass the moment someone rewrote it in a different but equally loose way, and

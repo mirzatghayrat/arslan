@@ -1,17 +1,19 @@
 """The API surface must actually be REGISTERED, not merely written.
 
-WHY THIS EXISTS: starlette 1.3 changed router/route handling such that
-create_app()'s include_router() calls register nothing. Nothing raises. The app
-boots, /api/v1/health is simply absent, and the SPA catch-all answers 200 for
-every API path — so a completely hollow server looks healthy from the outside.
+WHY THIS EXISTS: a version cap on starlette/fastapi used to sit in pyproject,
+and its stated reason was that include_router() registered nothing past
+starlette 1.3 — that the whole API surface silently vanished. That reason was
+WRONG, and the correction is the reason this file matters. Measured on the newer
+pair: the routes register and SERVE. What changed is INTROSPECTION —
+include_router() stopped flattening a router into app.routes and now appends a
+wrapper, so code walking app.routes for `.path` finds nothing and concludes the
+API is gone. Our TESTS were doing that. The application never was.
 
-That is why pyproject caps starlette below 1.3. A cap is a decision, though,
-and a decision with no assertion behind it rots: the next person to lift it
-would be relying on one recap-route test happening to notice. So this file
-asserts the surface itself, and it does so by COUNTING the include_router calls
-in server/main.py rather than hardcoding a number — a literal would go stale on
-the next router and would then be wrong in the direction that reads as "the
-router is broken".
+The cap was lifted on 2026-08-23 once this file passed on the newer pair. That
+is exactly what it is for: a cap is a decision, and a decision with no assertion
+behind it rots. It counts the include_router calls in server/main.py rather than
+hardcoding a number — a literal would go stale on the next router and would then
+be wrong in the direction that reads as "the router is broken".
 """
 from __future__ import annotations
 
