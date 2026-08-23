@@ -11,6 +11,8 @@ import { Stethoscope, Boxes } from "lucide-react";
 import { api } from "../api/client";
 import type { RegistryCatalog, RegistrySkill, RegistryToolset, SkillHealth } from "../api/client.types";
 import FilterChips from "./FilterChips";
+import CapabilityFilter from "./CapabilityFilter";
+import { filterItems, matchedChildren } from "../lib/capabilitySearch";
 import EquipPopover from "./EquipPopover";
 import EmptyState, { EmptyStateAction } from "./EmptyState";
 
@@ -91,8 +93,13 @@ function OrchestratorNote() {
 function ToolsView({ toolsets }: { toolsets: RegistryToolset[] }) {
   const { t } = useTranslation();
   const [chip, setChip] = useState<AvailChip>("usable");
+  const [query, setQuery] = useState("");
   const groups = groupByClass(toolsets);
-  const shown = chip === "all" ? toolsets : groups[chip];
+  const inChip = chip === "all" ? toolsets : groups[chip];
+  // Text narrows WITHIN the availability chip, the same way the category chips
+  // do on the skills side — two filters that fought each other would make the
+  // result depend on which one you touched last.
+  const shown = filterItems(inChip, query);
 
   return (
     <div>
@@ -101,12 +108,19 @@ function ToolsView({ toolsets }: { toolsets: RegistryToolset[] }) {
         active={chip}
         onSelect={(id) => setChip(id as AvailChip)}
       />
+      <CapabilityFilter
+        testId="tools-filter"
+        value={query}
+        onChange={setQuery}
+        shown={shown.length}
+        total={inChip.length}
+      />
       {chip === "orchestrator" && <OrchestratorNote />}
       {shown.length === 0 ? (
         <EmptyState size="inline" testId="empty-capabilities-filtered"
           title={t("capabilities.catalog.filtered_empty")}
           action={
-            <EmptyStateAction onClick={() => setChip("all")}>
+            <EmptyStateAction onClick={() => { setChip("all"); setQuery(""); }}>
               {t("capabilities.catalog.filtered_clear")}
             </EmptyStateAction>
           }
@@ -114,7 +128,7 @@ function ToolsView({ toolsets }: { toolsets: RegistryToolset[] }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {shown.map((ts) => (
-            <ToolCard key={ts.key} ts={ts} />
+            <ToolCard key={ts.key} ts={ts} matchedTools={matchedChildren(ts, query)} />
           ))}
         </div>
       )}
@@ -122,7 +136,13 @@ function ToolsView({ toolsets }: { toolsets: RegistryToolset[] }) {
   );
 }
 
-function ToolCard({ ts }: { ts: RegistryToolset }) {
+function ToolCard({ ts, matchedTools = [] }: {
+  ts: RegistryToolset;
+  /** Tools inside this set that the query matched, when the set itself did not.
+   *  Shown so a card never appears without a visible reason — a filter whose
+   *  results look arbitrary is one people stop using. */
+  matchedTools?: string[];
+}) {
   const { t } = useTranslation();
   const avail = classify(ts);
   return (
@@ -153,6 +173,12 @@ function ToolCard({ ts }: { ts: RegistryToolset }) {
         )}
       </div>
       <p className="text-[11px] text-subtle-foreground mt-0.5">{ts.description}</p>
+      {matchedTools.length > 0 && (
+        <p data-testid={`toolset-matched-${ts.key}`}
+           className="text-[10px] text-primary font-mono mt-1">
+          {t("capabilities.filter.matched_tools", { tools: matchedTools.join(", ") })}
+        </p>
+      )}
       {ts.degraded && ts.warning && (
         <p className="text-[10px] text-danger font-mono mt-1">{ts.warning}</p>
       )}
@@ -171,11 +197,14 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
   const { t } = useTranslation();
   const [chip, setChip] = useState<AvailChip>("usable");
   const [catChip, setCatChip] = useState<string>("all");
+  const [query, setQuery] = useState("");
   const subHeader = "text-[10px] font-mono uppercase tracking-wider text-muted-foreground mt-4 mb-2";
 
   const groups = groupByClass(skills);
-  // Category chips filter WITHIN the active availability set.
-  const pool = chip === "all" ? skills : groups[chip];
+  // Category chips filter WITHIN the active availability set; text narrows
+  // inside that again, so the three controls compose instead of competing.
+  const inChip = chip === "all" ? skills : groups[chip];
+  const pool = filterItems(inChip, query);
   const byCategory = new Map<string, RegistrySkill[]>();
   for (const s of pool) {
     const cat = s.category ?? "";
@@ -194,6 +223,13 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
         active={chip}
         onSelect={(id) => { setChip(id as AvailChip); setCatChip("all"); }}
       />
+      <CapabilityFilter
+        testId="skills-filter"
+        value={query}
+        onChange={setQuery}
+        shown={pool.length}
+        total={inChip.length}
+      />
       {chip === "orchestrator" && <OrchestratorNote />}
       {pool.length > 0 && (
         <FilterChips
@@ -209,7 +245,7 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
         <EmptyState size="inline" testId="empty-skills-filtered"
           title={t("capabilities.catalog.filtered_empty")}
           action={
-            <EmptyStateAction onClick={() => { setChip("all"); setCatChip("all"); }}>
+            <EmptyStateAction onClick={() => { setChip("all"); setCatChip("all"); setQuery(""); }}>
               {t("capabilities.catalog.filtered_clear")}
             </EmptyStateAction>
           }

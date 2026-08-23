@@ -1035,6 +1035,13 @@
       "no_license": "SIN LICENCIA",
       "none_found": "No se encontraron archivos SKILL.md.",
       "scripts_n": "{{n}} scripts"
+    },
+    "filter": {
+      "placeholder": "Filtrar lo que ya tienes…",
+      "clear": "Borrar filtro",
+      "count": "{{shown}} de {{total}}",
+      "no_match": "Aquí no coincide nada. Borra el filtro para verlo todo de nuevo.",
+      "matched_tools": "contiene {{tools}}"
     }
   },
   "forge": {

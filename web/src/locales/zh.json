@@ -1035,6 +1035,13 @@
       "no_license": "无许可证",
       "none_found": "没有找到 SKILL.md 文件。",
       "scripts_n": "{{n}} 个脚本"
+    },
+    "filter": {
+      "placeholder": "在已有的里面找…",
+      "clear": "清除筛选",
+      "count": "{{shown}} / {{total}}",
+      "no_match": "这里没有匹配的。清除筛选可以看到全部。",
+      "matched_tools": "包含 {{tools}}"
     }
   },
   "forge": {
