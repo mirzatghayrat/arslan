@@ -141,12 +141,30 @@ describe("RunReplay", () => {
   });
 
   it("shows 评分中 while not scored, then refreshes", async () => {
+    // The scored answer is held until this test asks for it.
+    //
+    // 🔴 WHY, because the obvious version is a race and the obvious version is
+    // what was here: the unscored state is TRANSIENT, and with the poll set to
+    // 10ms the second response can land before the first query ever runs — the
+    // text is then gone forever and findByText times out. Proven rather than
+    // assumed: inserting a 60ms pause before the first query reproduces exactly
+    // that failure ("Unable to find replay.scoring"), which is the symptom this
+    // test has been flaking with. It does not fire on a fast machine, which is
+    // why it survived; a loaded CI box is not a fast machine.
+    //
+    // Holding the promise makes the ORDER a property of the test rather than of
+    // how busy the host is. Nothing about what is asserted changes.
+    let release!: () => void;
+    const scoredLater = new Promise<RunDetailDto>((resolve) => {
+      release = () => resolve(scored);
+    });
     (api.getRun as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(recording)
-      .mockResolvedValue(scored);
+      .mockReturnValue(scoredLater);
     render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
 
     await screen.findByText("replay.scoring");
+    release();
     await waitFor(() => expect(screen.getByText(/replay\.dim_routing/)).toBeTruthy());
   });
 
