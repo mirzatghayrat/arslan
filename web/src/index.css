@@ -3570,6 +3570,21 @@ button:disabled {
   border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex;
   flex-direction: column; gap: 6px;
 }
+/* Keyboard triage (F2). The cursor has to be visible without motion: the house
+   rule is that keyboard-triggered feedback carries zero animation, because a
+   200ms transition between every J is latency the user feels as lag. */
+.brain-inbox:focus { outline: none; }
+.brain-inbox:focus-visible { outline: 1px solid var(--color-primary); outline-offset: 2px; }
+.brain-inbox__row.is-cursor {
+  border-color: var(--color-primary);
+  box-shadow: inset 2px 0 0 var(--color-primary);
+}
+.brain-inbox__keyhint {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--color-subtle-foreground);
+  margin: 0 0 2px;
+}
 .brain-inbox__row[data-destructive] { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 .brain-inbox__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
 .brain-inbox__kind { font-weight: 600; color: var(--foreground); }

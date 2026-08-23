@@ -34,7 +34,9 @@
         "delete_suspect": "Löschen",
         "edit_high_conf_suspect": "Bearbeiten",
         "preference_overwrite_suspect": "Präferenzen neu schreiben"
-      }
+      },
+      "keyhint": "J / K bewegen · 1 annehmen · 3 verwerfen · Esc abbrechen",
+      "aria_list": "Gedächtnis-Vorschläge"
     },
     "temporal": {
       "asOfLabel": "Nach Startzeit filtern",
