@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import CapabilityFilter from "./CapabilityFilter";
+import { matches } from "../lib/capabilitySearch";
 import { Plug, Plus, Trash2, X, AlertCircle, Zap, RefreshCw } from "lucide-react";
 import type { McpServer, McpTool } from "../api/client.types";
 import {
@@ -39,7 +42,13 @@ interface McpServersProps {
  * Tools are locked by default. Renders ONLY plain text — never server-supplied HTML.
  */
 export default function McpServers({ prefill }: McpServersProps = {}) {
+  // 🔴 This panel is otherwise ENGLISH-ONLY — every string below is a literal,
+  // which is why its empty state reads the same in all six languages. Not fixed
+  // here (it would swamp this change); `t` is wired so the strings this round
+  // ADDS do not join the pile.
+  const { t } = useTranslation();
   const [servers, setServers] = useState<McpServer[]>([]);
+  const [query, setQuery] = useState("");
   const [tools, setTools] = useState<Record<number, McpTool[]>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,6 +257,20 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
   const inputCls =
     "w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-lg px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono";
 
+  // Search across what identifies a server to a person: its label, and how it
+  // is reached. `command`/`url` are in the haystack because "the one I pointed
+  // at notion" is how people remember these, not by the label they typed once.
+  const shownServers = servers.filter((srv) =>
+    matches(
+      {
+        key: srv.label,
+        name: srv.label,
+        description: [srv.command, ...(srv.args ?? []), srv.url ?? "", srv.transport ?? ""].join(" "),
+      },
+      query,
+    ),
+  );
+
   return (
     <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
       <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
@@ -273,8 +296,24 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
           No MCP servers registered. Add one below to discover and wire external tools.
         </p>
       ) : (
+        <>
+        <CapabilityFilter
+          testId="mcp-filter"
+          value={query}
+          onChange={setQuery}
+          shown={shownServers.length}
+          total={servers.length}
+        />
+        {shownServers.length === 0 ? (
+          // A distinct message from "none registered": a query that hides
+          // everything must not look like an empty library.
+          <p className="text-[11px] text-subtle-foreground font-sans"
+             data-testid="mcp-filter-empty">
+            {t("capabilities.filter.no_match")}
+          </p>
+        ) : (
         <ul className="space-y-4">
-          {servers.map((s) => {
+          {shownServers.map((s) => {
             const exposed = s.exposed ?? false;   // toolset-derived truth from the list
             return (
               <li
@@ -437,6 +476,8 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
             );
           })}
         </ul>
+        )}
+        </>
       )}
 
       {/* Add-server form */}

@@ -218,7 +218,12 @@ describe("locale parity", () => {
     //               `settings` happened to match. Found by looking at the running
     //               app, not by any of the 1514 tests that were green while it
     //               was on screen — see nav-titles.test.ts.
-    expect(enKeys).toHaveLength(1402);
+    // 1402 → 1407: capabilities.filter.* — searching what you ALREADY have.
+    //               The Discover box searches GitHub for things you do not have;
+    //               nothing looked inward. The count string is not decoration:
+    //               without it a query that hides everything is indistinguishable
+    //               from an empty library.
+    expect(enKeys).toHaveLength(1407);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

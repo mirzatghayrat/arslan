@@ -1035,6 +1035,13 @@
       "no_license": "ライセンスなし",
       "none_found": "SKILL.md ファイルが見つかりません。",
       "scripts_n": "{{n}} 件のスクリプト"
+    },
+    "filter": {
+      "placeholder": "手元のものを絞り込む…",
+      "clear": "フィルターを解除",
+      "count": "{{shown}} / {{total}}",
+      "no_match": "一致するものはありません。フィルターを解除すると全部表示されます。",
+      "matched_tools": "{{tools}} を含む"
     }
   },
   "forge": {
