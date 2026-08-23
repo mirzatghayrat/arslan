@@ -34,7 +34,9 @@
         "delete_suspect": "删除",
         "edit_high_conf_suspect": "修改",
         "preference_overwrite_suspect": "重写偏好"
-      }
+      },
+      "keyhint": "J / K 移动 · 1 批准 · 3 拒绝 · Esc 退出确认",
+      "aria_list": "记忆提案"
     },
     "temporal": {
       "asOfLabel": "按生效时刻筛选",

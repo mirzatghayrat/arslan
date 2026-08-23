@@ -34,7 +34,9 @@
         "delete_suspect": "Delete",
         "edit_high_conf_suspect": "Edit",
         "preference_overwrite_suspect": "Rewrite preferences"
-      }
+      },
+      "keyhint": "J / K to move · 1 accept · 3 dismiss · Esc to back out",
+      "aria_list": "Memory proposals"
     },
     "temporal": {
       "asOfLabel": "Filter by start time",

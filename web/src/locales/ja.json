@@ -34,7 +34,9 @@
         "delete_suspect": "削除",
         "edit_high_conf_suspect": "編集",
         "preference_overwrite_suspect": "設定の書き換え"
-      }
+      },
+      "keyhint": "J / K で移動 · 1 承認 · 3 却下 · Esc で取り消し",
+      "aria_list": "記憶の提案"
     },
     "temporal": {
       "asOfLabel": "発効時刻で絞り込み",

@@ -34,7 +34,9 @@
         "delete_suspect": "Borrar",
         "edit_high_conf_suspect": "Editar",
         "preference_overwrite_suspect": "Reescribir preferencias"
-      }
+      },
+      "keyhint": "J / K para moverte · 1 aceptar · 3 descartar · Esc para cancelar",
+      "aria_list": "Propuestas de memoria"
     },
     "temporal": {
       "asOfLabel": "Filtrar por fecha de inicio",

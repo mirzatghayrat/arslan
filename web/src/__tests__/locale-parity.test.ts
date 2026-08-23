@@ -223,7 +223,10 @@ describe("locale parity", () => {
     //               nothing looked inward. The count string is not decoration:
     //               without it a query that hides everything is indistinguishable
     //               from an empty library.
-    expect(enKeys).toHaveLength(1407);
+    // 1407 → 1409: brain.inbox.keyhint + aria_list — keyboard triage over the
+    //               memory proposals (F2). The hint is shown rather than left to
+    //               be discovered: an unadvertised shortcut is one nobody uses.
+    expect(enKeys).toHaveLength(1409);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
