@@ -57,9 +57,17 @@ def test_429_is_rate_limiting_and_says_wait():
 
 
 def test_unrecognised_errors_pass_through_untouched():
-    """The narrowness guarantee: no invented diagnosis."""
-    for raw in ("Connection refused", "some novel provider failure",
-                "Client error '418 I am a teapot'"):
+    """The narrowness guarantee: no invented diagnosis.
+
+    "Connection refused" USED to be one of these examples and was moved out on
+    2026-08-24, not because the guarantee weakened but because that string
+    stopped being unrecognised: transport failures are now a named class, and
+    "the request never left" is a real diagnosis rather than an invented one.
+    The examples below are still genuinely unclassified.
+    """
+    for raw in ("some novel provider failure",
+                "Client error '418 I am a teapot'",
+                "the model returned an empty choices array"):
         assert llm_errors.explain(raw) is None
 
 
@@ -73,3 +81,91 @@ def test_context_length_is_explained_as_length_never_as_money():
     assert out is not None, "a context overflow must be explained, not passed through"
     assert "上下文" in out or "context" in out.lower()
     assert "余额" not in out and "credit" not in out.lower()
+
+
+# ── the three faults that shipped unexplained, all measured on 2026-08-24 ──────
+#
+# Every `raw` below is a VERBATIM string captured from a live probe against a
+# real key, not a plausible-looking invention. That matters here more than usual:
+# this module matches on provider prose, and prose I made up would produce a
+# matcher that fits nothing real.
+
+KEY_LIMIT_403 = (
+    "Client error '403 Forbidden' for url "
+    "'https://openrouter.ai/api/v1/chat/completions'\n"
+    '{"error":{"message":"Key limit exceeded (total limit). Manage it using '
+    'https://openrouter.ai/workspaces/default","code":403}}'
+)
+REGION_403 = (
+    "Client error '403 Forbidden' for url "
+    "'https://openrouter.ai/api/v1/chat/completions'\n"
+    '{"error":{"message":"This model is not available in your region.","code":403}}'
+)
+TLS_FAILURE = (
+    "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in "
+    "violation of protocol (_ssl.c:1016)>"
+)
+
+
+def test_a_key_cap_is_recognised_when_the_provider_says_it_with_403():
+    """The sentence for this already existed and was UNREACHABLE.
+
+    It was nested inside the 402 branch, and OpenRouter reports the same fault
+    as 403 — so a user whose key had hit its cap got the raw JSON, and the one
+    answer written for them could never be shown.
+    """
+    out = llm_errors.explain(KEY_LIMIT_403)
+    assert out is not None
+    assert "上限" in out
+    # The distinction the sentence exists to draw: capped key ≠ empty account.
+    assert "余额" in out
+
+
+def test_a_region_block_is_not_reported_as_a_key_or_money_problem():
+    out = llm_errors.explain(REGION_403)
+    assert out is not None
+    assert "地区" in out
+    # The wrong remedies, named so a rewrite cannot quietly reintroduce them.
+    assert "充值" not in out
+    assert "换一把" not in out
+
+
+def test_a_region_block_and_a_key_cap_do_not_collapse_into_one_message():
+    # Same status code, same provider, same shape of JSON — and different
+    # remedies. If these two ever return the same sentence, one of them is lying.
+    assert llm_errors.explain(REGION_403) != llm_errors.explain(KEY_LIMIT_403)
+
+
+def test_a_transport_failure_says_it_never_reached_the_provider():
+    out = llm_errors.explain(TLS_FAILURE)
+    assert out is not None
+    assert "没能连上" in out
+    # The whole point: this must not read as a key fault. That misreading cost
+    # a real debugging session — three rounds spent testing a healthy key.
+    assert "key 的问题" in out or "不是 key" in out
+
+
+def test_a_transport_failure_is_not_mistaken_for_auth_when_it_mentions_401():
+    # A proxy error page can carry a stray status number. Transport is checked
+    # first precisely so a number inside an unrelated body cannot outrank the
+    # fact that nothing was ever sent.
+    raw = "ConnectError: proxy returned 401 while establishing tunnel to api.openai.com:443"
+    out = llm_errors.explain(raw)
+    assert out is not None and "没能连上" in out
+
+
+def test_a_real_auth_refusal_is_still_an_auth_refusal():
+    # The regression guard for the ordering above: a genuine 401 FROM the
+    # provider must keep its own message.
+    raw = ("Client error '401 Unauthorized' for url "
+           "'https://openrouter.ai/api/v1/chat/completions'\n"
+           '{"error":{"message":"User not found.","code":401}}')
+    out = llm_errors.explain(raw)
+    assert out is not None and "API key" in out and "没能连上" not in out
+
+
+def test_a_plain_402_is_still_a_balance_message_not_a_key_cap():
+    raw = ('{"error":{"message":"Insufficient Balance","type":"unknown_error",'
+           '"code":"invalid_request_error"}}')
+    out = llm_errors.explain(raw)
+    assert out is not None and "余额不足" in out
