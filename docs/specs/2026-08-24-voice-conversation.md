@@ -61,7 +61,8 @@
 ## 6. 尚无证据、未声称已验
 
 - 本 spec 零代码。§1 现状为 2026-08-24 亲核 main `1b2af7c2`。
-- 🔴 `SFSpeechRecognizer` / `AVSpeechSynthesizer` 在**打包 .app 的沙盒 + entitlements** 下能否取得授权:**未验**。当前 `entitlements.plist` 只有 `disable-library-validation`,**没有**麦克风/语音的 usage 声明——这是打包版专属缺陷家族的高发区,开工第一件事是拿打包环境实证,不是假设。
+- 🟢 **文件夹 TCC 已实证(2026-08-31,[[arslan-tcc-packaged-probe]])**:非沙箱 GUI app 读 Desktop/Documents/Downloads 零弹框直接放行——所以"看看我桌面"这条不卡在 TCC 上(卡在「默认可读」spec 的环模型上)。
+- 🔴 **但麦克风/语音识别是另一码事,仍未验**:文件夹不门控 ≠ 麦克风不门控。`SFSpeechRecognizer` 首用**会**弹系统授权框,且**缺 usage 串会直接崩**(不像文件夹可省)。当前 `entitlements.plist` 无 `NSMicrophoneUsageDescription`/`NSSpeechRecognitionUsageDescription`。**V2 开工第一件事:单独打包实测麦克风授权**——这次的文件夹实证不覆盖它。
 - 强制 on-device ASR 的 API 存在性(`requiresOnDeviceRecognition`)对当前 macOS 版本未逐一核。
 
 关联:[[cairn-project]](iOS 端 ASR 经验的边界)、[[arslan-capability-fitness-audit-brief]]、`2026-08-24-default-read-surface.md`(依赖它)。
