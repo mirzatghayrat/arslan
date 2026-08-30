@@ -210,6 +210,7 @@ export interface AppSettings {
   lanDiscoveryEnabled: boolean;
   sshEnabled: boolean;
   defaultReadEnabled: boolean;
+  voiceOutputEnabled: boolean;
   /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
   embeddingConfigId?: string;
   /** Per-task model slots. Empty or absent = unset, and that task keeps the exact

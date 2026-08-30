@@ -127,6 +127,7 @@ describe("no control was lost in the redesign", () => {
         workspaceDir="" onWorkspaceDirChange={() => {}}
         lanDiscoveryEnabled={false} onLanDiscoveryChange={() => {}}
         defaultReadEnabled={true} onDefaultReadChange={() => {}}
+        voiceOutputEnabled={false} onVoiceOutputChange={() => {}}
         sshEnabled={false} onSshChange={() => {}}
         spawnMode="auto" onSpawnModeChange={() => {}}
       />,

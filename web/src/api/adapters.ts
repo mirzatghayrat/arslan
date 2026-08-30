@@ -62,6 +62,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // Default-ON, unlike its neighbours: absent OR anything-but-"false" is on,
     // matching the backend accessor. Only an explicit "false" turns reading off.
     defaultReadEnabled: backend.default_read_enabled !== "false",
+    // Voice output — default OFF (opt-in; not everyone wants their machine talking).
+    voiceOutputEnabled: backend.voice_output_enabled === "true",
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
@@ -105,6 +107,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   lanDiscoveryEnabled: { key: "lan_discovery_enabled", to: (v) => (v ? "true" : "false") },
   sshEnabled: { key: "ssh_enabled", to: (v) => (v ? "true" : "false") },
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
+  voiceOutputEnabled: { key: "voice_output_enabled", to: (v) => (v ? "true" : "false") },
   embeddingConfigId: { key: "embedding_config_id", to: (v) => (v as string) ?? "" },
   synthesisConfigId: { key: "synthesis_config_id", to: (v) => (v as string) ?? "" },
   compactionConfigId: { key: "compaction_config_id", to: (v) => (v as string) ?? "" },

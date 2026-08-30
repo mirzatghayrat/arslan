@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lanDiscoveryEnabled: false,  // default OFF
   sshEnabled: false,           // default OFF — the highest-risk surface here
   defaultReadEnabled: true,    // default ON — reads of Desktop/Documents/Downloads
+  voiceOutputEnabled: false,   // default OFF — read replies aloud (opt-in)
   language: 'en',
   theme: 'dark',
   telemetry: false,

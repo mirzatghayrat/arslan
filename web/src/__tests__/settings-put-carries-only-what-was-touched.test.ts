@@ -136,6 +136,7 @@ describe("every settings field the UI can edit is mappable", () => {
       lan_discovery_enabled: { lanDiscoveryEnabled: true },
       ssh_enabled: { sshEnabled: true },
       default_read_enabled: { defaultReadEnabled: true },
+      voice_output_enabled: { voiceOutputEnabled: true },
     };
 
     const unmappable: string[] = [];

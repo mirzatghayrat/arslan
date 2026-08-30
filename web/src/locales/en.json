@@ -674,7 +674,9 @@
     "sshNodesGateNote": "Enrolling saves re-checking a fingerprint. It does not let commands run without asking — those still need your approval every time.",
     "sshNodeRevokeHint": "Forgetting a machine here stops Arslan reaching it, but it cannot remove the key line you pasted on that machine — delete that there.",
     "labelDefaultRead": "Read my files by default",
-    "defaultReadDesc": "Let Arslan read your Desktop, Documents, and Downloads to help you find and summarize things. It never changes or deletes anything without asking you each time. Turn this off to limit reading to a workspace you choose."
+    "defaultReadDesc": "Let Arslan read your Desktop, Documents, and Downloads to help you find and summarize things. It never changes or deletes anything without asking you each time. Turn this off to limit reading to a workspace you choose.",
+    "labelVoiceOutput": "Read replies aloud",
+    "voiceOutputDesc": "Speak Arslan's replies out loud as they arrive, using your Mac's built-in voice. Off by default."
   },
   "errors": {
     "load_failed": "Failed to load data.",

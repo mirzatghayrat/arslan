@@ -22,6 +22,7 @@ function props(over: Partial<Props> = {}): Props {
     lanDiscoveryEnabled: false, onLanDiscoveryChange: vi.fn(),
     sshEnabled: false, onSshChange: vi.fn(),
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
+    voiceOutputEnabled: false, onVoiceOutputChange: vi.fn(),
     spawnMode: "auto", onSpawnModeChange: vi.fn(),
     ...over,
   };

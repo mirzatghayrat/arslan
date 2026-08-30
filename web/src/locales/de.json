@@ -674,7 +674,9 @@
     "sshNodesGateNote": "Aufnehmen spart das erneute Prüfen eines Fingerabdrucks. Befehle laufen dadurch nicht ohne Nachfrage — die brauchen weiterhin jedes Mal deine Zustimmung.",
     "sshNodeRevokeHint": "Hier vergessen heißt: Arslan erreicht sie nicht mehr. Die Schlüsselzeile auf jener Maschine kann es nicht entfernen — lösche sie dort.",
     "labelDefaultRead": "Meine Dateien standardmäßig lesen",
-    "defaultReadDesc": "Arslan darf deinen Schreibtisch, Dokumente und Downloads lesen, um beim Finden und Zusammenfassen zu helfen. Es ändert oder löscht nie etwas ohne jedes Mal zu fragen. Ausschalten, um das Lesen auf einen gewählten Arbeitsordner zu beschränken."
+    "defaultReadDesc": "Arslan darf deinen Schreibtisch, Dokumente und Downloads lesen, um beim Finden und Zusammenfassen zu helfen. Es ändert oder löscht nie etwas ohne jedes Mal zu fragen. Ausschalten, um das Lesen auf einen gewählten Arbeitsordner zu beschränken.",
+    "labelVoiceOutput": "Antworten vorlesen",
+    "voiceOutputDesc": "Arslans Antworten mit der eingebauten Stimme deines Macs vorlesen. Standardmäßig aus."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

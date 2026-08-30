@@ -45,6 +45,8 @@ export interface AdvancedSectionProps {
   onLanDiscoveryChange: (value: boolean) => void;
   defaultReadEnabled: boolean;
   onDefaultReadChange: (value: boolean) => void;
+  voiceOutputEnabled: boolean;
+  onVoiceOutputChange: (value: boolean) => void;
   /** May Arslan log into another machine over SSH? Default OFF, separately. */
   sshEnabled: boolean;
   onSshChange: (value: boolean) => void;
@@ -71,6 +73,8 @@ export default function AdvancedSection({
   onLanDiscoveryChange,
   defaultReadEnabled,
   onDefaultReadChange,
+  voiceOutputEnabled,
+  onVoiceOutputChange,
   sshEnabled,
   onSshChange,
   spawnMode,
@@ -142,6 +146,27 @@ export default function AdvancedSection({
             type="checkbox"
             checked={defaultReadEnabled}
             onChange={(e) => onDefaultReadChange(e.target.checked)}
+            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
+        </div>
+
+        {/* Voice output (V1). Reads replies aloud via the webview's speech
+            synthesizer — off by default, since a talking machine is a choice. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelVoiceOutput')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.voiceOutputDesc')}
+            </p>
+          </div>
+          <input
+            id="settings-voice-output"
+            data-testid="voice-output-toggle"
+            type="checkbox"
+            checked={voiceOutputEnabled}
+            onChange={(e) => onVoiceOutputChange(e.target.checked)}
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
         </div>
