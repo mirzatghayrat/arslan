@@ -12,6 +12,8 @@ unbounded read is a context bomb rather than a capability.
 """
 from __future__ import annotations
 
+import os
+
 import logging
 from pathlib import Path
 
@@ -21,6 +23,8 @@ from server.services.workspace_paths import (
     PathEscape,
     SecretFile,
     is_secret_name,
+    read_roots,
+    resolve_for_read,
     resolve_in_workspace,
 )
 
@@ -30,12 +34,42 @@ MAX_READ_CHARS = 40_000        # one file into context, tail-truncated
 MAX_ENTRIES = 400              # directory listing
 MAX_MATCHES = 60               # search hits
 MAX_SEARCH_FILE_BYTES = 2_000_000
+# The green ring spans real user folders — Documents can be gigabytes. Unlike the
+# old single-workspace search (small dir), this MUST be bounded or it hangs. A file
+# budget caps the walk; the skip-list prunes traversal bombs that are never what a
+# person means by "search my documents".
+MAX_SEARCH_FILES = 4000
+_SKIP_DIRS = frozenset({
+    "node_modules", ".git", ".hg", ".svn", "__pycache__", ".venv", "venv",
+    "site-packages", "Library", ".Trash", ".cache", "DerivedData", ".npm",
+    ".gradle", ".cargo", "Pods", ".next", "dist", "build", ".terraform",
+})
 _SNIPPET_CHARS = 240
 
 
 async def _workspace_root() -> Path | None:
     async with db_session.AsyncSessionLocal() as db:
         return await settings_service.workspace_dir(db)
+
+
+async def _read_ctx() -> tuple[list[Path], Path | None]:
+    """(read roots, workspace) — reads span the green ring; the workspace is the
+    base for backward-compatible relative paths. Reads and writes keep DIFFERENT
+    boundaries: a widened read surface must never silently widen writes."""
+    async with db_session.AsyncSessionLocal() as db:
+        ws = await settings_service.workspace_dir(db)
+        default_read = await settings_service.default_read_enabled(db)
+    return read_roots(ws, default_read=default_read), (ws.resolve() if ws else None)
+
+
+def _home_rel(path: Path) -> str:
+    """Display a path as ~/… when under home, else absolute. With multiple read
+    roots there is no single base to make it relative to, and ~ is what the user
+    typed and will recognise."""
+    try:
+        return "~/" + str(path.relative_to(Path.home()))
+    except ValueError:
+        return str(path)
 
 
 def _refusal(exc: Exception) -> dict:
@@ -63,34 +97,56 @@ def _rel(path: Path, root: Path) -> str:
 
 
 class ReadFileExecutor:
-    """Read a text file from the workspace."""
+    """Read a text file from any readable folder (green ring + workspace)."""
     key = "read_file"
 
     async def execute(self, args: dict) -> dict:
-        root, path, err = await _resolved(args)
-        if err:
-            return err
+        roots, ws = await _read_ctx()
+        try:
+            path = resolve_for_read(args.get("path", ""), roots, base=ws)
+        except (PathEscape, SecretFile) as exc:
+            return _refusal(exc)
         if not path.is_file():
-            return {"ok": False, "error": f"file not found: {_rel(path, root)}"}
+            return {"ok": False, "error": f"file not found: {_home_rel(path)}"}
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            return {"ok": False, "error": f"cannot read {_rel(path, root)}: {exc}"}
+            return {"ok": False, "error": f"cannot read {_home_rel(path)}: {exc}"}
         truncated = len(text) > MAX_READ_CHARS
-        return {"ok": True, "path": _rel(path, root),
+        return {"ok": True, "path": _home_rel(path),
                 "content": text[:MAX_READ_CHARS], "truncated": truncated}
 
 
 class ListDirExecutor:
-    """List a workspace directory (one level). Secret-shaped names are omitted."""
+    """List one level of a readable folder. Secret-shaped names are omitted.
+
+    With no path and more than one readable root, returns the ROOTS themselves —
+    "here is what I can see" — which is the honest answer to a bare `list_dir()`
+    when there is no single workspace to default into."""
     key = "list_dir"
 
     async def execute(self, args: dict) -> dict:
-        root, path, err = await _resolved(args)
-        if err:
-            return err
+        roots, ws = await _read_ctx()
+        raw = (args.get("path") or "").strip()
+        if not raw:
+            if not roots:
+                return {"ok": False,
+                        "error": "nothing is readable — default read is off and no "
+                                 "workspace is set"}
+            if len(roots) == 1:
+                path = roots[0]
+            else:
+                return {"ok": True, "path": "~",
+                        "entries": [{"name": _home_rel(r), "type": "dir", "size": None}
+                                    for r in roots],
+                        "truncated": False}
+        else:
+            try:
+                path = resolve_for_read(raw, roots, base=ws)
+            except (PathEscape, SecretFile) as exc:
+                return _refusal(exc)
         if not path.is_dir():
-            return {"ok": False, "error": f"not a directory: {_rel(path, root)}"}
+            return {"ok": False, "error": f"not a directory: {_home_rel(path)}"}
         entries = []
         for child in sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
             if is_secret_name(child.name):
@@ -104,50 +160,64 @@ class ListDirExecutor:
                             "size": size})
             if len(entries) >= MAX_ENTRIES:
                 break
-        return {"ok": True, "path": _rel(path, root), "entries": entries,
+        return {"ok": True, "path": _home_rel(path), "entries": entries,
                 "truncated": len(entries) >= MAX_ENTRIES}
 
 
 class SearchFilesExecutor:
-    """Plain-substring search across the workspace's text files."""
+    """Plain-substring search across every readable folder's text files."""
     key = "search_files"
 
     async def execute(self, args: dict) -> dict:
         query = (args.get("query") or "").strip()
         if not query:
             return {"ok": False, "error": "query is required"}
-        root = await _workspace_root()
-        if root is None:
+        roots, _ws = await _read_ctx()
+        if not roots:
             return {"ok": False,
-                    "error": "no workspace is configured — set one in Settings first"}
-        glob = args.get("glob") or "**/*"
+                    "error": "nothing is readable — default read is off and no "
+                             "workspace is set"}
         matches: list[dict] = []
         truncated = False
-        for path in sorted(root.glob(glob)):
-            if not path.is_file() or is_secret_name(path.name):
-                continue
-            try:
-                if path.stat().st_size > MAX_SEARCH_FILE_BYTES:
-                    continue
-                # Containment + secret re-check. DELIBERATELY REDUNDANT with the
-                # name test above: a glob can traverse a symlinked directory out of
-                # the workspace, and this call is the one that proves containment.
-                # Either layer alone keeps the behaviour correct (measured: a
-                # mutation of one stays green, of both goes red) — the name test is
-                # the cheap skip, this is the boundary.
-                resolve_in_workspace(str(path), root)
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except (OSError, PathEscape, SecretFile, UnicodeDecodeError):
-                continue
-            for i, line in enumerate(text.splitlines(), start=1):
-                if query in line:
-                    matches.append({"path": _rel(path, root), "line": i,
-                                    "text": line.strip()[:_SNIPPET_CHARS]})
-                    if len(matches) >= MAX_MATCHES:
-                        truncated = True
-                        break
+        scanned = 0
+        for root in roots:
             if truncated:
                 break
+            for dirpath, dirnames, filenames in os.walk(root):
+                # Prune in place: traversal bombs and dot-dirs never get walked,
+                # and a symlinked subdir out of the ring is not followed (os.walk
+                # does not follow symlinks by default — kept that way).
+                dirnames[:] = [d for d in dirnames
+                               if d not in _SKIP_DIRS and not d.startswith(".")]
+                for name in sorted(filenames):
+                    if scanned >= MAX_SEARCH_FILES:
+                        truncated = True
+                        break
+                    if is_secret_name(name):
+                        continue
+                    path = Path(dirpath) / name
+                    scanned += 1
+                    try:
+                        if not path.is_file() or path.stat().st_size > MAX_SEARCH_FILE_BYTES:
+                            continue
+                        # The boundary re-check: a file reached through a symlink
+                        # still has to resolve inside a read root. Redundant with the
+                        # name skip on purpose (each has its own mutation).
+                        resolve_for_read(str(path), roots)
+                        text = path.read_text(encoding="utf-8", errors="replace")
+                    except (OSError, PathEscape, SecretFile, UnicodeDecodeError):
+                        continue
+                    for i, line in enumerate(text.splitlines(), start=1):
+                        if query in line:
+                            matches.append({"path": _home_rel(path), "line": i,
+                                            "text": line.strip()[:_SNIPPET_CHARS]})
+                            if len(matches) >= MAX_MATCHES:
+                                truncated = True
+                                break
+                    if truncated:
+                        break
+                if truncated:
+                    break
         return {"ok": True, "query": query, "matches": matches, "truncated": truncated}
 
 

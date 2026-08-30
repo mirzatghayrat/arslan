@@ -43,6 +43,8 @@ export interface AdvancedSectionProps {
   /** May Arslan look at what is on the local network? Default OFF. */
   lanDiscoveryEnabled: boolean;
   onLanDiscoveryChange: (value: boolean) => void;
+  defaultReadEnabled: boolean;
+  onDefaultReadChange: (value: boolean) => void;
   /** May Arslan log into another machine over SSH? Default OFF, separately. */
   sshEnabled: boolean;
   onSshChange: (value: boolean) => void;
@@ -67,6 +69,8 @@ export default function AdvancedSection({
   onWorkspaceDirChange,
   lanDiscoveryEnabled,
   onLanDiscoveryChange,
+  defaultReadEnabled,
+  onDefaultReadChange,
   sshEnabled,
   onSshChange,
   spawnMode,
@@ -117,6 +121,29 @@ export default function AdvancedSection({
           <p className="text-[10.5px] text-subtle-foreground font-sans">
             {t('settings.workspaceDirHint')}
           </p>
+        </div>
+
+        {/* Default read (spec 2026-08-24). ON by default — the one switch here
+            that ships enabled, because reading is the low-risk half and it is
+            what makes a fresh install useful. Turning it off reverts to
+            "workspace only". */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelDefaultRead')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.defaultReadDesc')}
+            </p>
+          </div>
+          <input
+            id="settings-default-read"
+            data-testid="default-read-toggle"
+            type="checkbox"
+            checked={defaultReadEnabled}
+            onChange={(e) => onDefaultReadChange(e.target.checked)}
+            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
         </div>
 
         {/* Local network discovery (P3a). Read-only, and off until chosen. */}

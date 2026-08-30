@@ -34,6 +34,8 @@ function setup(overrides: Partial<Props> = {}) {
     onLanDiscoveryChange: vi.fn(),
     sshEnabled: false,
     onSshChange: vi.fn(),
+    defaultReadEnabled: true,
+    onDefaultReadChange: vi.fn(),
     shellConfirmPolicy: "ask_all",
     onShellConfirmPolicyChange: vi.fn(),
     spawnMode: "auto",

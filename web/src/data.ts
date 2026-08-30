@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   heartbeatChecklist: '',
   lanDiscoveryEnabled: false,  // default OFF
   sshEnabled: false,           // default OFF — the highest-risk surface here
+  defaultReadEnabled: true,    // default ON — reads of Desktop/Documents/Downloads
   language: 'en',
   theme: 'dark',
   telemetry: false,

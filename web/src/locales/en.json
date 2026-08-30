@@ -672,7 +672,9 @@
     "sshNodesEmpty": "None yet. Arslan can ask you to remember a machine while you are talking to it.",
     "sshNodeRevoke": "Forget",
     "sshNodesGateNote": "Enrolling saves re-checking a fingerprint. It does not let commands run without asking — those still need your approval every time.",
-    "sshNodeRevokeHint": "Forgetting a machine here stops Arslan reaching it, but it cannot remove the key line you pasted on that machine — delete that there."
+    "sshNodeRevokeHint": "Forgetting a machine here stops Arslan reaching it, but it cannot remove the key line you pasted on that machine — delete that there.",
+    "labelDefaultRead": "Read my files by default",
+    "defaultReadDesc": "Let Arslan read your Desktop, Documents, and Downloads to help you find and summarize things. It never changes or deletes anything without asking you each time. Turn this off to limit reading to a workspace you choose."
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -1246,7 +1248,8 @@
     "namePrompt": "What should Arslan call you?",
     "namePlaceholder": "Your name, or a one-line intro",
     "nameHint": "Optional — used in greetings. You can change it anytime in Settings.",
-    "enter": "Enter Arslan"
+    "enter": "Enter Arslan",
+    "readNotice": "Once set up, Arslan can read your Desktop, Documents, and Downloads to help you find and summarize things — it never changes or deletes anything without asking. You can turn this off in Settings."
   },
   "evolution": {
     "card": {

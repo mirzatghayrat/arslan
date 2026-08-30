@@ -672,7 +672,9 @@
     "sshNodesEmpty": "Aucune pour l'instant. Arslan peut vous proposer d'en mémoriser une au fil de la conversation.",
     "sshNodeRevoke": "Oublier",
     "sshNodesGateNote": "L'enregistrement évite de revérifier une empreinte. Il ne fait pas s'exécuter les commandes sans confirmation : elles requièrent toujours votre accord, à chaque fois.",
-    "sshNodeRevokeHint": "L'oublier ici empêche Arslan de l'atteindre, mais ne supprime pas la ligne de clé collée sur cette machine — effacez-la là-bas."
+    "sshNodeRevokeHint": "L'oublier ici empêche Arslan de l'atteindre, mais ne supprime pas la ligne de clé collée sur cette machine — effacez-la là-bas.",
+    "labelDefaultRead": "Lire mes fichiers par défaut",
+    "defaultReadDesc": "Autorise Arslan à lire votre Bureau, vos Documents et vos Téléchargements pour vous aider à retrouver et résumer. Il ne modifie ni ne supprime jamais rien sans vous demander à chaque fois. Désactivez pour limiter la lecture à un dossier de travail choisi."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1246,7 +1248,8 @@
     "namePrompt": "Comment Arslan doit-il vous appeler ?",
     "namePlaceholder": "Votre nom, ou une présentation en une ligne",
     "nameHint": "Facultatif — utilisé dans les salutations. Modifiable à tout moment dans les Paramètres.",
-    "enter": "Entrer dans Arslan"
+    "enter": "Entrer dans Arslan",
+    "readNotice": "Une fois configuré, Arslan peut lire votre Bureau, vos Documents et vos Téléchargements pour vous aider — il ne modifie ni ne supprime jamais rien sans demander. Désactivable dans les Réglages."
   },
   "evolution": {
     "card": {

@@ -226,7 +226,10 @@ describe("locale parity", () => {
     // 1407 → 1409: brain.inbox.keyhint + aria_list — keyboard triage over the
     //               memory proposals (F2). The hint is shown rather than left to
     //               be discovered: an unadvertised shortcut is one nobody uses.
-    expect(enKeys).toHaveLength(1409);
+    // 1409 → 1412: settings.labelDefaultRead + settings.defaultReadDesc +
+    //               firstRun.readNotice — the default-read toggle and its
+    //               first-run consent line (spec 2026-08-24).
+    expect(enKeys).toHaveLength(1412);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -28,7 +28,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
-               "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled")
+               "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -228,6 +228,18 @@ async def lan_discovery_enabled(session: AsyncSession) -> bool:
     having happened."""
     raw = await _get_raw(session, "lan_discovery_enabled")
     return str(raw).strip().lower() == "true" if raw is not None else False
+
+
+async def default_read_enabled(session: AsyncSession) -> bool:
+    """Whether Arslan may READ ~/Desktop, ~/Documents, ~/Downloads without a
+    configured workspace. Default **ON** (spec 2026-08-24, user ruling): the whole
+    point is that a novice can 'look at my desktop' the moment they install. Only
+    an explicit 'false' turns it off — the exit for a privacy-sensitive user, not
+    a gate for everyone. Mirrors distill_on_session_end's default-on shape.
+
+    This governs READS only. Writes stay workspace-bound and gated regardless."""
+    raw = await _get_raw(session, "default_read_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
 
 
 async def ssh_enabled(session: AsyncSession) -> bool:

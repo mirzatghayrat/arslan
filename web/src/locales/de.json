@@ -672,7 +672,9 @@
     "sshNodesEmpty": "Noch keine. Arslan kann dich im Gespräch fragen, ob es sich eine Maschine merken soll.",
     "sshNodeRevoke": "Vergessen",
     "sshNodesGateNote": "Aufnehmen spart das erneute Prüfen eines Fingerabdrucks. Befehle laufen dadurch nicht ohne Nachfrage — die brauchen weiterhin jedes Mal deine Zustimmung.",
-    "sshNodeRevokeHint": "Hier vergessen heißt: Arslan erreicht sie nicht mehr. Die Schlüsselzeile auf jener Maschine kann es nicht entfernen — lösche sie dort."
+    "sshNodeRevokeHint": "Hier vergessen heißt: Arslan erreicht sie nicht mehr. Die Schlüsselzeile auf jener Maschine kann es nicht entfernen — lösche sie dort.",
+    "labelDefaultRead": "Meine Dateien standardmäßig lesen",
+    "defaultReadDesc": "Arslan darf deinen Schreibtisch, Dokumente und Downloads lesen, um beim Finden und Zusammenfassen zu helfen. Es ändert oder löscht nie etwas ohne jedes Mal zu fragen. Ausschalten, um das Lesen auf einen gewählten Arbeitsordner zu beschränken."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -1246,7 +1248,8 @@
     "namePrompt": "Wie soll Arslan dich nennen?",
     "namePlaceholder": "Dein Name oder eine kurze Vorstellung",
     "nameHint": "Optional – wird in Begrüßungen verwendet. Jederzeit in den Einstellungen änderbar.",
-    "enter": "Arslan betreten"
+    "enter": "Arslan betreten",
+    "readNotice": "Nach der Einrichtung kann Arslan deinen Schreibtisch, Dokumente und Downloads lesen, um zu helfen — es ändert oder löscht nie etwas ohne zu fragen. In den Einstellungen abschaltbar."
   },
   "evolution": {
     "card": {
