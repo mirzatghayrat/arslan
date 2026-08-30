@@ -25,6 +25,12 @@ async def ws(tmp_path, monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    # These tests are about the WORKSPACE surface, so the green ring is turned off
+    # and home is redirected to an empty tmp — a workspace test must never scan the
+    # real Desktop (that is both a leak and, on a full home, minutes of walk).
+    (tmp_path / "home").mkdir()
+    monkeypatch.setattr("server.registry.file_tools.Path.home", lambda: tmp_path / "home")
+    monkeypatch.setattr("server.services.workspace_paths._home", lambda: tmp_path / "home")
 
     root = tmp_path / "ws"
     root.mkdir()
@@ -35,6 +41,7 @@ async def ws(tmp_path, monkeypatch):
 
     async with m() as s:
         s.add(Setting(key="workspace_dir", value=str(root)))
+        s.add(Setting(key="default_read_enabled", value="false"))
         await s.commit()
     yield root.resolve()
     await engine.dispose()
@@ -60,7 +67,7 @@ async def test_read_file_truncates_and_says_so(ws):
 async def test_read_file_outside_workspace_is_a_readable_refusal(ws):
     out = await file_tools.ReadFileExecutor().execute({"path": "../../etc/passwd"})
     assert out["ok"] is False
-    assert "workspace" in out["error"]
+    assert "outside" in out["error"]      # escaped every readable root
 
 
 async def test_read_file_refuses_secrets_with_its_own_reason(ws):
@@ -100,7 +107,9 @@ async def test_search_finds_matches_with_location(ws):
     assert out["ok"] is True
     assert out["matches"], out
     hit = out["matches"][0]
-    assert hit["path"] == "sub/code.py" and hit["line"] == 2
+    # Path is now displayed absolute/~ (multi-root reads have no single base),
+    # so assert the tail and the line rather than a workspace-relative string.
+    assert hit["path"].endswith("sub/code.py") and hit["line"] == 2
 
 
 async def test_search_never_reads_secret_files(ws):
@@ -175,14 +184,21 @@ async def test_edit_requires_a_nonempty_old(ws):
 
 
 # ── no workspace configured ────────────────────────────────────────────────
-async def test_tools_refuse_when_no_workspace_is_set(tmp_path, monkeypatch):
+async def test_reads_refuse_when_nothing_is_readable(tmp_path, monkeypatch):
+    # default_read OFF and no workspace ⇒ the read surface is genuinely empty.
+    # (With default_read ON — the shipped default — reads span the green ring and
+    #  this refusal does NOT happen; that is the whole point of the feature and is
+    #  asserted in test_read_roots.py / the registration gate test.)
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'empty.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    out = await file_tools.ReadFileExecutor().execute({"path": "x.md"})
-    assert out["ok"] is False and "workspace" in out["error"]
+    async with m() as sess:
+        sess.add(Setting(key="default_read_enabled", value="false"))
+        await sess.commit()
+    out = await file_tools.ReadFileExecutor().execute({"path": "~/Desktop/x.md"})
+    assert out["ok"] is False and "nothing is readable" in out["error"]
     await engine.dispose()
 
 

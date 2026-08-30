@@ -1797,30 +1797,45 @@ async def _arslan_tools() -> list[dict]:
     from server.db import session as db_session
     from server.db.models import Tool
 
-    # Workspace file tools (P1): offered ONLY when a workspace is configured.
-    # Not-registered rather than registered-and-erroring — a tool the model can
-    # see is a tool it will try, and P1a ships the read-only trio only: the
-    # writers wait for their session-grant gate (execute-closed).
+    # File tools. READS and WRITES now have different gates (spec 2026-08-24):
+    #
+    #   reads (read_file/list_dir/search_files) are offered when default-read is ON
+    #     (default) OR a workspace is set — so a novice can "look at my desktop" the
+    #     moment they install, bounded to the green ring (~/Desktop, ~/Documents,
+    #     ~/Downloads) plus any workspace. macOS does NOT gate those folders for this
+    #     app class (measured), so the boundary is our resolver, not the OS.
+    #   writes (write_file/edit_file) stay workspace-only and session-gated — the
+    #     green ring is READ-open, not write-open. No workspace ⇒ no writers offered,
+    #     unchanged from P1.
     from server.services import settings_service
     async with db_session.AsyncSessionLocal() as db:
         ws_root = await settings_service.workspace_dir(db)
-    if ws_root is not None:
+        default_read = await settings_service.default_read_enabled(db)
+    if default_read or ws_root is not None:
         tools += [
             {"key": "read_file",
-             "description": "Read a text file from the user's workspace. args: {path} "
-                            "(workspace-relative). Long files come back truncated."},
+             "description": "Read a text file. args: {path} — an absolute or ~/ path in "
+                            "the user's Desktop, Documents, Downloads, or workspace. Long "
+                            "files come back truncated."},
             {"key": "list_dir",
-             "description": "List one level of a workspace directory. args: {path} "
-                            "(optional, defaults to the workspace root)."},
+             "description": "List one level of a folder. args: {path} (optional; with no "
+                            "path, lists the folders you can see). Absolute or ~/ path in "
+                            "Desktop, Documents, Downloads, or the workspace."},
             {"key": "search_files",
-             "description": "Find a literal string across the workspace's text files. "
-                            "args: {query, glob?}. Returns path + line + the matching line."},
-            # T1 writers: offered now that the session grant gates them (P1b).
+             "description": "Find a literal string across the readable folders' text "
+                            "files (Desktop, Documents, Downloads, workspace). args: "
+                            "{query}. Returns path + line + the matching line; bounded, "
+                            "so a huge folder returns truncated=true rather than hanging."},
+        ]
+    if ws_root is not None:
+        tools += [
+            # Writers stay workspace-only and gated by the session grant (P1b).
             {"key": "write_file",
-             "description": "Create or overwrite a workspace file. args: {path, content}. "
-                            "The user is asked for workspace write permission once per session."},
+             "description": "Create or overwrite a WORKSPACE file. args: {path, content}. "
+                            "Only the configured workspace, not Desktop/Documents. The user "
+                            "is asked for write permission once per session."},
             {"key": "edit_file",
-             "description": "Replace a UNIQUE occurrence of `old` with `new` in a workspace "
+             "description": "Replace a UNIQUE occurrence of `old` with `new` in a WORKSPACE "
                             "file. args: {path, old, new}. An ambiguous `old` is refused with "
                             "its match count — give a longer snippet instead."},
         ]

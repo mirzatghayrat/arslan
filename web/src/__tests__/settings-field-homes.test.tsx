@@ -126,6 +126,7 @@ describe("no control was lost in the redesign", () => {
         shellConfirmPolicy="ask_all" onShellConfirmPolicyChange={() => {}}
         workspaceDir="" onWorkspaceDirChange={() => {}}
         lanDiscoveryEnabled={false} onLanDiscoveryChange={() => {}}
+        defaultReadEnabled={true} onDefaultReadChange={() => {}}
         sshEnabled={false} onSshChange={() => {}}
         spawnMode="auto" onSpawnModeChange={() => {}}
       />,

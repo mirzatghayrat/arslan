@@ -672,7 +672,9 @@
     "sshNodesEmpty": "还没有。聊天时 Arslan 可以问你要不要记住某台机器。",
     "sshNodeRevoke": "删除",
     "sshNodesGateNote": "登记只是省掉重复核对指纹。它不会让命令免确认执行——那些仍然每次都要你批准。",
-    "sshNodeRevokeHint": "在这里删除会让 Arslan 不再触达它,但删不掉你粘在那台机器上的那行密钥——那行要在那边删。"
+    "sshNodeRevokeHint": "在这里删除会让 Arslan 不再触达它,但删不掉你粘在那台机器上的那行密钥——那行要在那边删。",
+    "labelDefaultRead": "默认可以读我的文件",
+    "defaultReadDesc": "让 Arslan 读取你的桌面、文档、下载,帮你查找和总结。它不会改动或删除任何东西,除非每次都先问你。关掉后,只读你指定的工作目录。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -1246,7 +1248,8 @@
     "namePrompt": "让 Arslan 怎么称呼你?",
     "namePlaceholder": "你的名字,或一句话介绍",
     "nameHint": "选填——用于问候语。随时可在设置中更改。",
-    "enter": "进入 Arslan"
+    "enter": "进入 Arslan",
+    "readNotice": "设置完成后,Arslan 可以读取你的桌面、文档、下载,帮你查找和总结——它不会改动或删除任何东西,都会先问你。可在设置里关闭。"
   },
   "evolution": {
     "card": {

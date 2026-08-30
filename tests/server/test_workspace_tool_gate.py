@@ -1,9 +1,9 @@
 """Which file tools Arslan is OFFERED (spec 2026-08-20 P1 §1.3, §3 判据 1).
 
-No workspace → the file tools are not in the tool list AT ALL, rather than
-present-and-erroring: a tool the model can see is a tool it will try, and a
-capability that advertises itself then refuses is the self-knowledge defect
-this project already paid for once.
+Two drivers now (spec 2026-08-24 default-read): the READ trio is offered when
+default_read is ON (the shipped default) OR a workspace is set; the WRITERS are
+offered only when a workspace is set. "Not offered" still means absent from the
+list, never present-and-erroring — a tool the model can see is one it will try.
 
 P1b scope: the T0 trio plus the T1 writers, the latter gated by the session
 grant. What is OFFERED still depends on a configured workspace; what is GATED
@@ -20,22 +20,39 @@ T0 = {"read_file", "list_dir", "search_files"}
 T1 = {"write_file", "edit_file"}
 
 
-async def _wire(tmp_path, monkeypatch, *, workspace: str | None):
+async def _wire(tmp_path, monkeypatch, *, workspace: str | None,
+                default_read: bool | None = None):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'gate.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
-    if workspace is not None:
-        async with m() as s:
+    # Redirect home so a default-read registration probe never scans the real
+    # Desktop (green_roots uses Path.home()).
+    (tmp_path / "home").mkdir(exist_ok=True)
+    monkeypatch.setattr("server.services.workspace_paths._home",
+                        lambda: tmp_path / "home")
+    async with m() as s:
+        if workspace is not None:
             s.add(Setting(key="workspace_dir", value=workspace))
-            await s.commit()
+        if default_read is not None:
+            s.add(Setting(key="default_read_enabled",
+                          value="true" if default_read else "false"))
+        await s.commit()
     return engine
 
 
 @pytest_asyncio.fixture
-async def keys_without_workspace(tmp_path, monkeypatch):
-    engine = await _wire(tmp_path, monkeypatch, workspace=None)
+async def keys_no_ws_read_off(tmp_path, monkeypatch):
+    engine = await _wire(tmp_path, monkeypatch, workspace=None, default_read=False)
+    from server.orchestrator.arslan import _arslan_tools
+    yield {t["key"] for t in await _arslan_tools()}
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def keys_no_ws_read_on(tmp_path, monkeypatch):
+    engine = await _wire(tmp_path, monkeypatch, workspace=None, default_read=True)
     from server.orchestrator.arslan import _arslan_tools
     yield {t["key"] for t in await _arslan_tools()}
     await engine.dispose()
@@ -51,9 +68,16 @@ async def keys_with_workspace(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def test_no_workspace_no_file_tools(keys_without_workspace):
-    assert not (T0 | T1) & keys_without_workspace
-    assert "web_search" in keys_without_workspace          # unrelated tools unaffected
+async def test_no_workspace_read_off_offers_no_file_tools(keys_no_ws_read_off):
+    assert not (T0 | T1) & keys_no_ws_read_off
+    assert "web_search" in keys_no_ws_read_off             # unrelated tools unaffected
+
+
+async def test_no_workspace_read_on_offers_the_read_trio_but_no_writers(keys_no_ws_read_on):
+    # The whole feature: a novice with no workspace can still read (green ring),
+    # but cannot write until they configure one.
+    assert T0 <= keys_no_ws_read_on
+    assert not T1 & keys_no_ws_read_on
 
 
 async def test_a_workspace_pointing_nowhere_reads_as_unset(tmp_path, monkeypatch):
@@ -63,7 +87,10 @@ async def test_a_workspace_pointing_nowhere_reads_as_unset(tmp_path, monkeypatch
     engine = await _wire(tmp_path, monkeypatch, workspace=str(tmp_path / "does-not-exist"))
     from server.orchestrator.arslan import _arslan_tools
     keys = {t["key"] for t in await _arslan_tools()}
-    assert not (T0 | T1) & keys
+    # An invalid workspace withholds the WRITERS; reads still come from the green
+    # ring (default on), which is the correct split — a broken write target must
+    # not be writable, but it does not disable reading.
+    assert not T1 & keys
     await engine.dispose()
 
 
@@ -73,7 +100,7 @@ async def test_a_workspace_pointing_at_a_file_reads_as_unset(tmp_path, monkeypat
     engine = await _wire(tmp_path, monkeypatch, workspace=str(f))
     from server.orchestrator.arslan import _arslan_tools
     keys = {t["key"] for t in await _arslan_tools()}
-    assert not (T0 | T1) & keys
+    assert not T1 & keys
     await engine.dispose()
 
 

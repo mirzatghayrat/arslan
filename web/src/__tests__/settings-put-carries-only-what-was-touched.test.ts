@@ -135,6 +135,7 @@ describe("every settings field the UI can edit is mappable", () => {
       heartbeat_checklist: { heartbeatChecklist: "- x" },
       lan_discovery_enabled: { lanDiscoveryEnabled: true },
       ssh_enabled: { sshEnabled: true },
+      default_read_enabled: { defaultReadEnabled: true },
     };
 
     const unmappable: string[] = [];

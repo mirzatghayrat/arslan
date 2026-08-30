@@ -67,6 +67,7 @@ class SettingsIn(BaseModel):
     heartbeat_interval_s: str | None = None
     lan_discovery_enabled: str | None = None
     ssh_enabled: str | None = None
+    default_read_enabled: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -118,6 +119,7 @@ class SettingsOut(BaseModel):
     heartbeat_interval_s: str = ""
     lan_discovery_enabled: str = ""
     ssh_enabled: str = ""
+    default_read_enabled: str = ""
 
 
 class AccessTokenOut(BaseModel):

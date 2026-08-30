@@ -83,3 +83,85 @@ def _contained(path: Path, root: Path) -> bool:
     """True when `path` is `root` or below it. is_relative_to — NOT startswith,
     which would let /ws-evil pass a /ws root."""
     return path == root or path.is_relative_to(root)
+
+
+# ── Green ring: the folders read tools may see by default (spec 2026-08-24) ──────
+#
+# READS are multi-root; WRITES stay single-workspace (resolve_in_workspace above).
+# The three user folders are read-default-open because macOS does NOT gate them for
+# this app class (measured: arslan-tcc-packaged-probe) — so the boundary is THIS
+# code, not the OS. is_secret_name pierces every root, exactly as it does for the
+# single-workspace path.
+
+GREEN_SUBDIRS = ("Desktop", "Documents", "Downloads")
+
+
+def _home() -> Path:
+    return Path.home()
+
+
+def green_roots() -> list[Path]:
+    """The default-readable folders that actually exist, symlink-resolved.
+
+    A missing folder is simply absent from the list rather than an error — a Mac
+    with no ~/Downloads is not a misconfiguration. Resolved here so containment
+    is judged on realpaths, the same rule resolve_in_workspace uses."""
+    out: list[Path] = []
+    home = _home()
+    for name in GREEN_SUBDIRS:
+        p = (home / name)
+        try:
+            if p.is_dir():
+                out.append(p.resolve())
+        except OSError:            # pragma: no cover - filesystem-dependent
+            continue
+    return out
+
+
+def read_roots(ws_root: Path | None, *, default_read: bool) -> list[Path]:
+    """Every root a READ may land in: the green folders (when default-read is on)
+    plus the configured workspace (always, when set).
+
+    Deduplicated on realpath so a workspace that IS ~/Documents does not double it.
+    Order is stable (green first, then workspace) so a listing of "everything I can
+    see" reads the same each time."""
+    roots: list[Path] = list(green_roots()) if default_read else []
+    if ws_root is not None:
+        wr = Path(ws_root).resolve()
+        if wr not in roots:
+            roots.append(wr)
+    return roots
+
+
+def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = None) -> Path:
+    """Absolute, symlink-resolved path contained in ONE of `roots`, or raise.
+
+    Path forms:
+      - absolute (``/Users/...``) or ``~/...`` → expanded and checked directly.
+        This is how the model phrases "look at my desktop" (``~/Desktop/x``).
+      - relative (``notes.md``) → resolved against ``base`` when given (the
+        configured workspace, for backward-compatible workspace-relative reads).
+        With no base a relative path is ambiguous across multiple roots and is
+        refused rather than guessed.
+
+    A path inside none of the roots is a PathEscape (this is the whole boundary);
+    a credential-shaped name is a SecretFile even inside a root."""
+    if not roots:
+        raise PathEscape("nothing is readable — default read is off and no workspace is set")
+    if not isinstance(user_path, str) or not user_path.strip():
+        raise PathEscape("path is required")
+    raw = user_path.strip()
+    p = Path(raw)
+    if raw.startswith("~") or p.is_absolute():
+        resolved = p.expanduser().resolve()
+    elif base is not None:
+        resolved = (base / p).resolve()
+    else:
+        raise PathEscape(
+            f"give an absolute or ~/ path (e.g. ~/Desktop/{raw}) — a bare name is "
+            "ambiguous across your folders")
+    if not any(_contained(resolved, r) for r in roots):
+        raise PathEscape(f"path is outside the readable folders: {user_path}")
+    if is_secret_name(resolved.name):
+        raise SecretFile(f"refusing to read a credential-shaped file: {resolved.name}")
+    return resolved

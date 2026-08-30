@@ -407,6 +407,13 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
                 className="fr-field"
               />
               <p className="fr-hint mt-2">{t("firstRun.nameHint")}</p>
+              {/* Consent moment (spec 2026-08-24): macOS shows no dialog for
+                  Desktop/Documents/Downloads to this app class, so default-read
+                  would otherwise be silent. Stated here, in the open, non-modal —
+                  not a gate. The switch to turn it off lives in Settings. */}
+              <p className="fr-hint mt-3" data-testid="first-run-read-notice">
+                {t("firstRun.readNotice")}
+              </p>
             </>
           )}
         </div>
