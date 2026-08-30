@@ -226,6 +226,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
         defaultReadEnabled={localSettings.defaultReadEnabled ?? true}
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
+        voiceOutputEnabled={localSettings.voiceOutputEnabled ?? false}
+        onVoiceOutputChange={(v) => saveField({ voiceOutputEnabled: v })}
         sshEnabled={localSettings.sshEnabled ?? false}
         onSshChange={(v) => saveField({ sshEnabled: v })}
         spawnMode={localSettings.spawnMode}

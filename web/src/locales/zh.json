@@ -674,7 +674,9 @@
     "sshNodesGateNote": "登记只是省掉重复核对指纹。它不会让命令免确认执行——那些仍然每次都要你批准。",
     "sshNodeRevokeHint": "在这里删除会让 Arslan 不再触达它,但删不掉你粘在那台机器上的那行密钥——那行要在那边删。",
     "labelDefaultRead": "默认可以读我的文件",
-    "defaultReadDesc": "让 Arslan 读取你的桌面、文档、下载,帮你查找和总结。它不会改动或删除任何东西,除非每次都先问你。关掉后,只读你指定的工作目录。"
+    "defaultReadDesc": "让 Arslan 读取你的桌面、文档、下载,帮你查找和总结。它不会改动或删除任何东西,除非每次都先问你。关掉后,只读你指定的工作目录。",
+    "labelVoiceOutput": "朗读回复",
+    "voiceOutputDesc": "回复到达时用你 Mac 自带的语音朗读出来。默认关闭。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

@@ -674,7 +674,9 @@
     "sshNodesGateNote": "Registrar evita volver a comprobar una huella. No hace que los comandos se ejecuten sin preguntar: siguen necesitando tu aprobación cada vez.",
     "sshNodeRevokeHint": "Olvidarla aquí impide que Arslan la alcance, pero no borra la línea de clave que pegaste en esa máquina: bórrala allí.",
     "labelDefaultRead": "Leer mis archivos por defecto",
-    "defaultReadDesc": "Permite que Arslan lea tu Escritorio, Documentos y Descargas para ayudarte a buscar y resumir. Nunca cambia ni borra nada sin preguntarte cada vez. Desactívalo para limitar la lectura a una carpeta de trabajo que elijas."
+    "defaultReadDesc": "Permite que Arslan lea tu Escritorio, Documentos y Descargas para ayudarte a buscar y resumir. Nunca cambia ni borra nada sin preguntarte cada vez. Desactívalo para limitar la lectura a una carpeta de trabajo que elijas.",
+    "labelVoiceOutput": "Leer las respuestas en voz alta",
+    "voiceOutputDesc": "Lee en voz alta las respuestas de Arslan con la voz integrada de tu Mac. Desactivado por defecto."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

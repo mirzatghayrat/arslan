@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, MessageAttachment, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
+import { voiceLangFor } from './lib/speech';
 import { useSettingsStore } from './stores/settingsStore';
 import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
 import { api } from './api/client';
@@ -189,6 +190,7 @@ export default function App() {
   const suggestionTaskBrief = useArslanStore((s) => s.suggestionTaskBrief);
   const suggestionOverlaps = useArslanStore((s) => s.suggestionOverlaps);
   const dismissSuggestion = useArslanStore((s) => s.dismissSuggestion);
+  const setVoice = useArslanStore((s) => s.setVoice);
   const pendingUpdate = useArslanStore((s) => s.pendingUpdate);
   const dismissUpdate = useArslanStore((s) => s.dismissUpdate);
   // propose_invite state — confirmation card before joining a spawn
@@ -381,6 +383,16 @@ export default function App() {
   // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
   const [spawns, setSpawns] = useState<Spawn[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  // Push voice-output preference + language into the arslan store so the reply
+  // stream can be spoken (V1). Kept here because App owns settings; the store
+  // holds only the device singleton.
+  useEffect(() => {
+    setVoice({
+      enabled: settings.voiceOutputEnabled ?? false,
+      lang: voiceLangFor(settings.language),
+    });
+  }, [settings.voiceOutputEnabled, settings.language, setVoice]);
 
   // Stage B: provider/search-provider catalogs for Settings dropdowns (live from backend)
   const [llmProviders, setLlmProviders] = useState<ProviderOption[]>([]);

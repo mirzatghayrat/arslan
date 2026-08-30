@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createSpeaker } from "../lib/speech";
 import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
@@ -98,6 +99,7 @@ interface ArslanState {
   markClarifyAnswered: (itemId: number) => void;
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
+  setVoice: (v: { enabled: boolean; lang: string }) => void;
   clearPendingEnrollNode: () => void;
   clearPendingWorkspaceWrite: () => void;
   clearPendingSchedule: () => void;
@@ -142,6 +144,22 @@ function _mcpConnectFollowupText(frame: {
 // Data-only initial state. Actions are attached separately and merged in so a
 // `setState(initialArslanState(), true)` full-replace (used by tests) keeps the
 // action methods intact.
+// Voice output (V1). A single module-level speaker: the reply streams, and we
+// speak it sentence by sentence. Module-level rather than store state because a
+// speech synthesizer is a singleton device, not serializable UI state.
+let _speaker: ReturnType<typeof createSpeaker> | null = null;
+let _voiceEnabled = false;
+let _voiceLang = "en-US";
+
+function _voiceStart() {
+  if (_speaker) _speaker.cancel();
+  _speaker = _voiceEnabled ? createSpeaker(_voiceLang) : null;
+}
+function _voiceFeed(text: string) { _speaker?.feed(text); }
+function _voiceEnd() { _speaker?.end(); }
+function _voiceStop() { _speaker?.cancel(); _speaker = null; }
+
+
 function initialData() {
   return {
     items: [] as ArslanThreadItem[],
@@ -250,6 +268,11 @@ function makeActions(set: SetState, get: GetState) {
       }),
     clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingCommand: () => set({ pendingCommand: null }),
+    setVoice: ({ enabled, lang }) => {
+      _voiceEnabled = enabled;
+      _voiceLang = lang;
+      if (!enabled) _voiceStop();     // turning it off mid-reply stops at once
+    },
     clearPendingEnrollNode: () => set({ pendingEnrollNode: null }),
     clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
     clearPendingSchedule: () => set({ pendingSchedule: null }),
@@ -259,7 +282,7 @@ function makeActions(set: SetState, get: GetState) {
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
-    resetForNewConversation: () => set({ ...initialData() }),
+    resetForNewConversation: () => { _voiceStop(); set({ ...initialData() }); },
 
     checkStall: () => {
       const s = get();
@@ -395,6 +418,7 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "stream_start":
+          _voiceStart();
           set({
             pending: false,
             streaming: true,
@@ -413,10 +437,12 @@ function makeActions(set: SetState, get: GetState) {
           if (!state.streaming) break;
           // First real content arrived — clear thinking so the indicator hands
           // off seamlessly to the streaming bubble (no blank gap).
+          _voiceFeed(frame.content);
           set({ thinking: false, streamingText: state.streamingText + frame.content });
           break;
         case "stream_end": {
           if (!state.streaming) break;
+          _voiceEnd();
           // A refused escalation ends the stream without persisting a message:
           // the server sends message_id: null and no reply text. With nothing
           // to show, just reset the streaming state — appending an item would

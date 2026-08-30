@@ -229,7 +229,9 @@ describe("locale parity", () => {
     // 1409 → 1412: settings.labelDefaultRead + settings.defaultReadDesc +
     //               firstRun.readNotice — the default-read toggle and its
     //               first-run consent line (spec 2026-08-24).
-    expect(enKeys).toHaveLength(1412);
+    // 1412 → 1414: settings.labelVoiceOutput + settings.voiceOutputDesc — the
+    //               read-replies-aloud toggle (voice V1). Default off.
+    expect(enKeys).toHaveLength(1414);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
