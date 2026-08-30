@@ -28,10 +28,12 @@
 
 ## 2. 交付物(分两阶,各自能单独发)
 
-### V1 — 声(TTS),先做,零风险
-- **`AVSpeechSynthesizer`**:系统自带,任何 mac 都有,离线,零下载。
-- 前端一个"念出来"开关;开着时每条 `stream_chunk` 攒成句子边界就送去合成(不是等整段完)。
-- 🔴 **工具停顿要有声**:`tool_call` 帧到达时念一句过场("我查一下…"),这正是 §1 说的金矿。默认关(有人只想看字)。
+### V1 — 声(TTS)🟢 **已实现(2026-08-31,#71)**
+🔴 **架构更正(实现时亲核推翻本 spec 原方案)**:不是 sidecar 里的 `AVSpeechSynthesizer`,是**前端 Web Speech `window.speechSynthesis`**。理由:webview 本来就有、**零 entitlement**、缺了就静默降级——比走 sidecar/原生桥简单一个量级。`lib/speech.ts` 一个纯分句器(可测) + 一层能力守卫的合成 wrapper;`voiceOutputEnabled` 默认关。
+- 回复流**逐句念**(攒到句子边界才合成),语言跟随 app 语言设置。
+- 🔴 **mutation 逼出两件事**:①off-by-one 边界不是失败是**挂死**(零步进在 UI 线程无限循环)⇒ 加进度守卫;②`say()` 的 enabled 检查是**死代码**(feed/end 已拦)⇒ 删。
+- 🔴 **工具停顿念过场("我查一下…")= 未做**,列为 follow-up(§1 说的金矿,但 V1 先只念答案)。
+- 🔴 **未验**:打包 WKWebView 是否暴露 `speechSynthesis`(Chromium in-app 浏览器有,但那不是出货 webview——和 TCC 实证要 `open` 真启动同理);真实端到端流(provider 当时是坏的)。
 
 ### V2 — 耳(ASR),骑现有聊天框
 - **`SFSpeechRecognizer`**(macOS 原生):按住说话 / 说完静默即停 → 转写成一条 user message → **后面整条工具链原封不动**。
