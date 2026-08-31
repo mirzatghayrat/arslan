@@ -6,6 +6,7 @@ import { Spawn, Message, MessageAttachment, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
 import { voiceLangFor } from './lib/speech';
+import { runLaunchTests } from './lib/launchTest';
 import { useSettingsStore } from './stores/settingsStore';
 import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
 import { api } from './api/client';
@@ -17,7 +18,7 @@ import { cardAcceptInvite, ledgerInvite } from './lib/rosterInvite';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSpawn, toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
-import { listProviderConfigs, distillConversation, deleteConversation } from './api/client';
+import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, distillConversation, deleteConversation } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import { useDispatchedSpawns } from './hooks/useDispatchedSpawns';
@@ -402,6 +403,9 @@ export default function App() {
   // (avoids a wizard flash before the backend responds) and the wizard hasn't
   // been seen/dismissed before.
   const [providerConfigsReady, setProviderConfigsReady] = useState(false);
+  /** Configs with a launch-time test still in flight — the only status that
+   *  cannot come from the persisted rows. */
+  const [providerTestingIds, setProviderTestingIds] = useState<Set<number>>(new Set());
   const [firstRunSeen, setFirstRunSeenState] = useState<boolean>(getFirstRunSeen());
 
   // Stage B: wire Spawns Ledger and Settings to live backend on mount
@@ -435,9 +439,30 @@ export default function App() {
     // Load multi-model provider configs. Mark "ready" only on success so the
     // first-run wizard never shows while the backend is unreachable.
     listProviderConfigs()
-      .then((cfgs) => {
+      .then(async (cfgs) => {
         setProviderConfigs(cfgs);
         setProviderConfigsReady(true);
+
+        // Launch-time verification. Every configured model is asked, once, the
+        // only question worth asking: can it answer a message? The backend
+        // persists each verdict, so we re-read the rows afterwards rather than
+        // holding a parallel copy — one source of truth, and it survives a
+        // remount. Only the in-flight spinner lives in memory.
+        if (cfgs.length === 0) return;
+        setProviderTestingIds(new Set(cfgs.map((c) => c.id)));
+        await runLaunchTests(cfgs, {
+          test: (id) => testProviderConfig(id),
+          onStart: () => {},
+          onResult: (id) => {
+            setProviderTestingIds((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+          },
+        });
+        // Re-read the persisted verdicts (including each failure's reason).
+        listProviderConfigs().then(setProviderConfigs).catch(() => {});
       })
       .catch(() => {});
   }, []);
@@ -1130,6 +1155,13 @@ export default function App() {
                 setCurrentStyle={setCurrentChatStyle}
                 activeThread={activeThread}
                 hasModel={providerConfigs.length > 0}
+                providerConfigs={providerConfigs}
+                llmProviders={llmProviders}
+                providerTestingIds={providerTestingIds}
+                onSelectModel={async (id) => {
+                  await setPrimaryProviderConfig(id);
+                  listProviderConfigs().then(setProviderConfigs).catch(() => {});
+                }}
                 onOpenSettings={() => {
                   setActiveSection('settings');
                   setPanelView('default');

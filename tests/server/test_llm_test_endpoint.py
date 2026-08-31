@@ -228,3 +228,90 @@ async def test_test_connection_other_http_status_keeps_generic_error(monkeypatch
     assert result["ok"] is False
     assert "API key" not in result["error"]
     assert "500" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# The test button must give the SAME diagnosis as a real turn
+#
+# test_connection() had its own crude 401/403 branch that answered "该服务器要求
+# API key" for every refusal in those statuses. For an OpenRouter key whose CAP
+# is exhausted (403 "key limit exceeded") that sentence is not merely vague, it
+# points the wrong way: it sends someone to replace a key that is perfectly
+# valid. llm_errors.explain() already draws that distinction for the chat path
+# (#67) — these tests pin the test button to the same explanation, so the two
+# surfaces can never disagree about the same failure again.
+# ---------------------------------------------------------------------------
+
+def _http_error(status: int, body: str):
+    """An HTTPStatusError shaped like the one providers/openai_provider raises:
+    the provider's own body text carried into the message, which is what
+    str(exc) — and therefore explain() — actually sees."""
+    import httpx
+    request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+    response = httpx.Response(status, request=request, text=body)
+    return httpx.HTTPStatusError(f"{status} error: {body}", request=request, response=response)
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expect_fragment", "must_not_contain"),
+    [
+        # The case that sent the user hunting for a new key: the key is valid,
+        # its CAP is spent. 403 — the status the old branch swallowed.
+        (403, '{"error":{"message":"Key limit exceeded","code":403}}',
+         "额度上限", "要求 API key"),
+        # Same fault, the other status providers use for it.
+        (402, '{"error":{"message":"key limit exceeded"}}',
+         "额度上限", "要求 API key"),
+        # A region block is not an auth problem either — 403 again.
+        (403, '{"error":{"message":"Model not available in your region"}}',
+         "地区", "要求 API key"),
+        # A genuinely invalid key still reads as a key problem.
+        (401, '{"error":{"message":"Invalid API key provided"}}',
+         "key", None),
+    ],
+)
+@pytest.mark.asyncio
+async def test_the_reason_matches_the_real_fault(
+    client, monkeypatch, status, body, expect_fragment, must_not_contain
+):
+    async def _fail(self, system, user, **kwargs):  # noqa: ARG001
+        raise _http_error(status, body)
+
+    monkeypatch.setattr("arslan.llm.adapter.LLMAdapter.chat", _fail)
+
+    r = await client.post("/api/v1/settings/test-llm", json={
+        "provider": "custom", "model": "x",
+        "base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-abc123",
+    })
+    assert r.status_code == 200
+    error = r.json()["error"] or ""
+    assert r.json()["ok"] is False
+    assert expect_fragment in error, f"got: {error}"
+    if must_not_contain:
+        # The load-bearing half: a wrong-direction answer is worse than a vague
+        # one, because acting on it costs the user a key rotation for nothing.
+        assert must_not_contain not in error, f"misdiagnosed as an auth fault: {error}"
+
+
+@pytest.mark.asyncio
+async def test_a_request_that_never_left_is_not_blamed_on_the_key(client, monkeypatch):
+    """A proxy/VPN failure must not read as a key refusal — the same ordering
+    rule llm_errors applies for the chat path."""
+    import httpx
+
+    async def _fail(self, system, user, **kwargs):  # noqa: ARG001
+        raise httpx.ConnectError("[SSL] record layer failure (_ssl.c:1010)")
+
+    monkeypatch.setattr("arslan.llm.adapter.LLMAdapter.chat", _fail)
+
+    r = await client.post("/api/v1/settings/test-llm", json={
+        "provider": "custom", "model": "x",
+        "base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-abc123",
+    })
+    error = r.json()["error"] or ""
+    assert "没能连上" in error, f"got: {error}"
+    # NB: the correct message mentions the key in order to RULE IT OUT ("不是 key
+    # 的问题"), so absence-of-"key" would be the wrong assertion. What must not
+    # appear is the auth verdict — the one that sends someone to replace a key.
+    assert "拒绝了 API key" not in error, f"blamed the key for a transport fault: {error}"
+    assert "要求 API key" not in error, f"blamed the key for a transport fault: {error}"

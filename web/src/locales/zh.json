@@ -513,10 +513,6 @@
     "customQuickFill": "快速填入:",
     "customChipOllamaRemote": "Ollama(远程)",
     "customCompatNote": "工具调用取决于服务器启动参数(vLLM --enable-auto-tool-choice、llama.cpp --jinja);流式 token 统计可能缺失(显示为 ≈);llama.cpp 仅提供单个模型。",
-    "healthDotModels": "已连接——模型列表可用",
-    "healthDotNoList": "已连接但未提供模型列表——不代表不可用，聊天可能正常",
-    "healthDotUnreachable": "无法连接——连接失败",
-    "healthDotUnknown": "尚未检测连通性——点击检测",
     "timeJustNow": "刚刚",
     "timeMinutesAgo": "{{n}} 分钟前",
     "timeHoursAgo": "{{n}} 小时前",
@@ -526,8 +522,6 @@
     "modelCapReasoning": "推理",
     "capabilitiesLabel": "能力",
     "testConnection": "测试连接",
-    "deepTest": "深度测试",
-    "deepTestOk": "对话正常",
     "reachableNoListNote": "已连接但未提供模型列表——不代表不可用，聊天可能正常",
     "sectionSearch": "搜索",
     "sectionAppearance": "主题配色",
@@ -676,7 +670,16 @@
     "labelDefaultRead": "默认可以读我的文件",
     "defaultReadDesc": "让 Arslan 读取你的桌面、文档、下载,帮你查找和总结。它不会改动或删除任何东西,除非每次都先问你。关掉后,只读你指定的工作目录。",
     "labelVoiceOutput": "朗读回复",
-    "voiceOutputDesc": "回复到达时用你 Mac 自带的语音朗读出来。默认关闭。"
+    "voiceOutputDesc": "回复到达时用你 Mac 自带的语音朗读出来。默认关闭。",
+    "statusOk": "可用",
+    "statusFailed": "不可用",
+    "statusUntested": "未测",
+    "statusTesting": "测试中…",
+    "keyTypeToReplace": "输入可替换",
+    "primary": "主力",
+    "modelSwitcherManage": "管理模型…",
+    "modelSwitcherNone": "还没配置模型",
+    "deletePrimaryBlocked": "主力模型不能删——先把别的设成主力。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -705,7 +708,8 @@
     "discard_title": "有未保存的改动",
     "discard_body": "你有未保存的改动。仍要关闭吗？",
     "keep_editing": "继续编辑",
-    "discard_ok": "放弃改动"
+    "discard_ok": "放弃改动",
+    "more": "更多"
   },
   "sidebar": {
     "new_session": "新建编排会话",

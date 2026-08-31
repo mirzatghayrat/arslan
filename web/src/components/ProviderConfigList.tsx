@@ -11,16 +11,16 @@ import {
   fetchProviderModels,
   testLlm,
   testProviderConfig,
-  probeProviderHealth,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Loader2, FlaskConical, ChevronDown } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronDown, Plus } from 'lucide-react';
 import type { SelectOption } from './Select';
-import ProviderMasterList from './settings/ProviderMasterList';
+import ProviderCard from './settings/ProviderCard';
 import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
 import RoutingStrategyCard from './settings/RoutingStrategyCard';
 import { purgeCapabilityOverrides } from './settings/CapabilityBadges';
-import { parseUtcMs, formatRelativeTime } from './settings/relativeTime';
+import { formatRelativeTime } from './settings/relativeTime';
+import { providerStatus, type LiveTest } from '../lib/providerStatus';
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -55,16 +55,6 @@ type TestStatusMap = Record<
 /** Dynamic model list state per saved config id (lazy, fetched on first focus). */
 type RowModelsMap = Record<number, { loading: boolean; result: ModelListResult | null }>;
 
-/** P4: connectivity tri-state per saved config id. A LOCAL overlay over the
- *  persisted last_health/last_health_at props — concurrent auto-probes would
- *  race each other through onConfigsChange's full-array snapshot. */
-type HealthMap = Record<number, { state: string | null; at: string | null; probing: boolean }>;
-
-/** Auto-probe staleness cutoff: probe on settings-open only when the last
- *  probe is older than this (or never happened). Client-side check only —
- *  spec D4: no background polling, no intervals. */
-const HEALTH_STALE_MS = 5 * 60_000;
-
 export default function ProviderConfigList({
   llmProviders,
   providerConfigs,
@@ -94,7 +84,6 @@ export default function ProviderConfigList({
   const [testAllBusy, setTestAllBusy] = useState(false);
   const [rowModels, setRowModels] = useState<RowModelsMap>({});
   // P4: connectivity dot state (overlay; falls back to the persisted columns).
-  const [health, setHealth] = useState<HealthMap>({});
   // P4: settings-open auto-probe fires ONCE per mount (StrictMode double-invokes
   // effects on the same instance — the ref survives and guards the second pass).
   const healthAutoProbedRef = useRef(false);
@@ -210,47 +199,13 @@ export default function ProviderConfigList({
     return !!result && result.models.length === 0 && result.error != null;
   };
 
-  // --- P4: connectivity dot (level-1 health; the test button stays level-2 chat) ---
+  // --- one status per config: "can this LLM answer a message?" ---
 
-  const healthFor = (config: ProviderConfig): { state: string | null; at: string | null; probing: boolean } =>
-    health[config.id] ?? {
-      state: config.last_health ?? null,
-      at: config.last_health_at ?? null,
-      probing: false,
-    };
-
-  const handleProbeHealth = async (config: ProviderConfig) => {
-    const base = healthFor(config);
-    if (base.probing) return;
-    setHealth((prev) => ({ ...prev, [config.id]: { ...base, probing: true } }));
-    try {
-      const result = await probeProviderHealth(config.id);
-      setHealth((prev) => ({
-        ...prev,
-        [config.id]: { state: result.state, at: result.last_health_at, probing: false },
-      }));
-    } catch {
-      // Probe endpoint itself unreachable (backend down) — keep the last known
-      // state; the dot simply stops pulsing.
-      setHealth((prev) => {
-        const cur = prev[config.id];
-        return cur ? { ...prev, [config.id]: { ...cur, probing: false } } : prev;
-      });
-    }
-  };
-
-  useEffect(() => {
-    // Settings-open auto-probe: once per mount, ONLY rows never probed or
-    // probed more than HEALTH_STALE_MS ago (spec D4 — no polling/intervals).
-    if (healthAutoProbedRef.current || providerConfigs.length === 0) return;
-    healthAutoProbedRef.current = true;
-    const now = Date.now();
-    for (const c of providerConfigs) {
-      const then = c.last_health_at ? parseUtcMs(c.last_health_at) : Number.NaN;
-      const fresh = !Number.isNaN(then) && now - then < HEALTH_STALE_MS;
-      if (!fresh) void handleProbeHealth(c);
-    }
-  }, [providerConfigs]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Merge the persisted verdict with any test running in THIS session. The
+   *  container owns this so every surface — card, pill, composer chip — reads
+   *  the same answer from the same place. */
+  const statusFor = (config: ProviderConfig) =>
+    providerStatus(config, testStatus[config.id] as LiveTest | undefined);
 
   // --- mutations ---
 
@@ -309,11 +264,6 @@ export default function ProviderConfigList({
         delete next[id];
         return next;
       });
-      setHealth((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
     } finally {
       setBusy(null);
     }
@@ -343,14 +293,11 @@ export default function ProviderConfigList({
         delete next[config.id];
         return next;
       });
-      // The connectivity dot reflected the OLD provider's reachability — clear
-      // the overlay so it falls back to unknown/hollow until the new provider
-      // is probed (same pattern as the testStatus→idle reset below).
-      setHealth((prev) => {
-        const next = { ...prev };
-        delete next[config.id];
-        return next;
-      });
+      // NB: the stored verdict was about the OLD provider and is now
+      // meaningless. It is cleared server-side on any change to
+      // provider/model/base_url/key (provider_config_service.update_config), so
+      // the card falls back to "not tested" rather than vouching for a
+      // configuration nobody has tried.
       // FIX 2: switching to custom leaves base_url blank (no preset) — a PUT
       // would deterministically 422 and the revert would look like a dead
       // click. Apply the switch locally, let the required-base_url hint guide
@@ -368,8 +315,18 @@ export default function ProviderConfigList({
       // moment a new key is committed (a failed PUT reverts via the catch below).
       patch.key_status = value.trim() ? 'set' : 'unset';
     }
+    // The stored verdict describes the configuration that was tested. Changing
+    // what gets called invalidates it — the backend clears it in update_config,
+    // and the optimistic row has to agree or the card keeps showing the OLD
+    // provider's green until something happens to refetch. (Same reasoning as
+    // the server side; the two must not drift.) A label edit is not in this set.
+    const invalidates =
+      field === 'provider' || field === 'model' || field === 'api_key' || 'base_url' in patch;
+    const cleared = invalidates
+      ? { last_health: null, last_health_at: null, last_health_detail: null }
+      : {};
     const optimistic = providerConfigs.map((c) =>
-      c.id === config.id ? { ...c, ...patch } : c,
+      c.id === config.id ? { ...c, ...patch, ...cleared } : c,
     );
     onConfigsChange(optimistic);
     // Clear test status since config changed
@@ -601,10 +558,10 @@ export default function ProviderConfigList({
       // Key just saved — fetch the live model list once (doubles as key check).
       modelsFetchedRef.current.add(newConfig.id);
       void loadModels(newConfig.id, true);
-      // The settings-open auto-probe already latched (healthAutoProbedRef) — a
-      // config added mid-session would otherwise never get its connectivity dot
-      // filled until a manual click. Probe it now (reuses the health overlay).
-      void handleProbeHealth(newConfig);
+      // The launch-time sweep already ran; a config added mid-session would
+      // otherwise sit at "not tested" until someone pressed Test. Test it now,
+      // which is also the fastest way to tell the user they typed a bad key.
+      void handleTestSaved(newConfig.id);
     } catch (err) {
       // A rejected add MUST surface (never silent) — a validation 422 / network
       // failure otherwise looked like a dead "Add" button. Show the reason on
@@ -687,50 +644,6 @@ export default function ProviderConfigList({
     </div>
   );
 
-  /** P4: per-row connectivity dot + last-probe relative time. Click = manual
-   *  probe. Visually level-1 (connectivity only); the test button/Test all
-   *  stays level-2 (real chat round-trip). */
-  const renderHealthDot = (config: ProviderConfig, idx: number) => {
-    const h = healthFor(config);
-    const cls =
-      h.state === 'reachable_models'
-        ? 'text-success'
-        : h.state === 'reachable_no_list'
-          ? 'text-warning'
-          : h.state === 'unreachable'
-            ? 'text-danger'
-            : 'text-subtle-foreground';
-    const titleKey =
-      h.state === 'reachable_models'
-        ? 'settings.healthDotModels'
-        : h.state === 'reachable_no_list'
-          ? 'settings.healthDotNoList'
-          : h.state === 'unreachable'
-            ? 'settings.healthDotUnreachable'
-            : 'settings.healthDotUnknown';
-    return (
-      <div className="flex items-center gap-1.5 flex-shrink-0 pt-2">
-        <button
-          type="button"
-          data-testid={`provider-health-dot-${idx}`}
-          data-health-state={h.state ?? 'unknown'}
-          onClick={() => void handleProbeHealth(config)}
-          disabled={h.probing}
-          title={t(titleKey)}
-          aria-label={t(titleKey)}
-          className={`text-[11px] leading-none ${cls} ${h.probing ? 'animate-pulse' : ''} transition-colors`}
-        >
-          {h.state ? '●' : '○'}
-        </button>
-        {h.at && (
-          <span className="text-[9px] font-mono text-subtle-foreground">
-            {formatRelativeTime(h.at, t)}
-          </span>
-        )}
-      </div>
-    );
-  };
-
   const providerSelectOptions: SelectOption[] = llmProviders.map((p) => ({
     value: p.key,
     label: `${p.label}${p.native ? ' (Native)' : ''}`,
@@ -754,103 +667,145 @@ export default function ProviderConfigList({
 
   return (
     <div className="space-y-4">
-      {/* Provider master-detail (B2): left list + right detail/draft pane */}
-      <div className="flex flex-col md:flex-row gap-4">
-        <ProviderMasterList
-          configs={providerConfigs}
-          llmProviders={llmProviders}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onAddDraft={openDraft}
-          draftActive={draft !== null}
-          draftLabel={
-            draft
-              ? llmProviders.find((p) => p.key === draft.provider)?.label ?? draft.provider
-              : undefined
-          }
-          testStatus={testStatus}
-          renderHealthDot={renderHealthDot}
-        />
-        <ProviderDetailPane
-          llmProviders={llmProviders}
-          providerSelectOptions={providerSelectOptions}
-          isNative={isNative}
-          baseUrlFor={baseUrlFor}
-          staticModelInfos={staticModelInfos}
-          draft={draft}
-          draftBusy={busy === -1}
-          onDraftProviderChange={handleDraftProviderChange}
-          onDraftModelChange={(v) =>
-            setDraft((prev) =>
-              prev ? { ...prev, model: v, testState: 'idle', testError: undefined } : prev,
-            )
-          }
-          onDraftBaseUrlChange={(v) =>
-            setDraft((prev) =>
-              prev ? { ...prev, base_url: v, testState: 'idle', testError: undefined } : prev,
-            )
-          }
-          onDraftApiKeyChange={(v) =>
-            setDraft((prev) =>
-              prev ? { ...prev, api_key: v, testState: 'idle', testError: undefined } : prev,
-            )
-          }
-          onDraftConfirm={handleDraftConfirm}
-          onDraftCancel={handleDraftCancel}
-          draftCustomExtras={
-            draft && draft.provider === 'custom'
-              ? renderCustomExtras({
-                  baseUrl: draft.base_url,
-                  onChip: handleChipFillDraft,
-                  requiredTestId: 'provider-draft-custom-required',
-                  noteTestId: 'provider-draft-custom-note',
-                })
-              : null
-          }
-          config={selectedConfig}
-          index={selectedIndex}
-          busy={busy}
-          onFieldChange={handleFieldChange}
-          onBaseUrlChange={(config, value) => handleLocalFieldChange(config, 'base_url', value)}
-          onBaseUrlBlur={handleBaseUrlBlur}
-          apiKeyDraft={selectedConfig ? (keyDrafts[selectedConfig.id] ?? '') : ''}
-          onApiKeyDraftChange={handleApiKeyDraftChange}
-          onApiKeyDraftBlur={handleApiKeyBlur}
-          onSetPrimary={handleSetPrimary}
-          onDelete={handleDelete}
-          registerBaseUrlRef={(id, el) => {
-            baseUrlInputRefs.current.set(id, el);
-          }}
-          modelOptions={selectedConfig ? optionsForRow(selectedConfig) : []}
-          modelStaleHint={selectedConfig ? staleHintFor(selectedConfig) : undefined}
-          onModelFocus={() => {
-            if (selectedConfig) ensureModelsLoaded(selectedConfig.id);
-          }}
-          onModelChange={(config, v) => handleFieldChange(config, 'model', v)}
-          onModelRefresh={() => {
-            if (selectedConfig) void loadModels(selectedConfig.id, true);
-          }}
-          showOllamaHint={selectedConfig ? showOllamaHint(selectedConfig) : false}
-          configCustomExtras={
-            selectedConfig && selectedConfig.provider === 'custom'
-              ? renderCustomExtras({
-                  baseUrl: selectedConfig.base_url,
-                  onChip: (url) => handleChipFillSaved(selectedConfig, url),
-                  requiredTestId: `provider-config-custom-required-${selectedIndex}`,
-                  noteTestId: `provider-config-custom-note-${selectedIndex}`,
-                })
-              : null
-          }
-          // B2 connection testing: level-1 = existing /health probe, level-2 =
-          // existing real-chat test (handleTestSaved). Health overlay resolves
-          // through healthFor (overlay → persisted columns).
-          health={selectedConfig ? healthFor(selectedConfig).state : null}
-          lastHealthAt={selectedConfig ? healthFor(selectedConfig).at : null}
-          onProbeHealth={handleProbeHealth}
-          onDeepTest={(config) => void handleTestSaved(config.id)}
-          deepTestStatus={selectedConfig ? testStatus[selectedConfig.id] : undefined}
-          modelCapabilities={selectedModelCaps}
-        />
+      {/* One column of cards; the selected one expands its fields inline. */}
+      <div className="flex flex-col gap-2.5">
+        {providerConfigs.map((config, idx) => (
+          <ProviderCard
+            key={config.id}
+            config={config}
+            index={idx}
+            llmProviders={llmProviders}
+            selected={!draft && config.id === selectedId}
+            onSelect={(id) => setSelectedId(selectedId === id && !draft ? -1 : id)}
+            status={statusFor(config)}
+          >
+            <ProviderDetailPane
+              llmProviders={llmProviders}
+              providerSelectOptions={providerSelectOptions}
+              isNative={isNative}
+              baseUrlFor={baseUrlFor}
+              staticModelInfos={staticModelInfos}
+              draft={null}
+              draftBusy={false}
+              onDraftProviderChange={handleDraftProviderChange}
+              onDraftModelChange={() => {}}
+              onDraftBaseUrlChange={() => {}}
+              onDraftApiKeyChange={() => {}}
+              onDraftConfirm={handleDraftConfirm}
+              onDraftCancel={handleDraftCancel}
+              draftCustomExtras={null}
+              config={config}
+              index={idx}
+              busy={busy}
+              onFieldChange={handleFieldChange}
+              onBaseUrlChange={(c, value) => handleLocalFieldChange(c, 'base_url', value)}
+              onBaseUrlBlur={handleBaseUrlBlur}
+              apiKeyDraft={keyDrafts[config.id] ?? ''}
+              onApiKeyDraftChange={handleApiKeyDraftChange}
+              onApiKeyDraftBlur={handleApiKeyBlur}
+              onSetPrimary={handleSetPrimary}
+              onDelete={handleDelete}
+              registerBaseUrlRef={(id, el) => {
+                baseUrlInputRefs.current.set(id, el);
+              }}
+              modelOptions={optionsForRow(config)}
+              modelStaleHint={staleHintFor(config)}
+              onModelFocus={() => ensureModelsLoaded(config.id)}
+              onModelChange={(c, v) => handleFieldChange(c, 'model', v)}
+              onModelRefresh={() => void loadModels(config.id, true)}
+              showOllamaHint={showOllamaHint(config)}
+              configCustomExtras={
+                config.provider === 'custom'
+                  ? renderCustomExtras({
+                      baseUrl: config.base_url,
+                      onChip: (url) => handleChipFillSaved(config, url),
+                      requiredTestId: `provider-config-custom-required-${idx}`,
+                      noteTestId: `provider-config-custom-note-${idx}`,
+                    })
+                  : null
+              }
+              onTest={(c) => void handleTestSaved(c.id)}
+              testStatus={testStatus[config.id]}
+              modelCapabilities={
+                optionsForRow(config).find((m) => m.id === config.model)?.capabilities ?? []
+              }
+            />
+          </ProviderCard>
+        ))}
+
+        {/* Draft (add-new) form as its own card at the end of the list. */}
+        {draft && (
+          <div data-testid="provider-draft-card" className="bg-surface border border-dashed border-primary/40 rounded-xl px-4 py-4">
+            <ProviderDetailPane
+              llmProviders={llmProviders}
+              providerSelectOptions={providerSelectOptions}
+              isNative={isNative}
+              baseUrlFor={baseUrlFor}
+              staticModelInfos={staticModelInfos}
+              draft={draft}
+              draftBusy={busy === -1}
+              onDraftProviderChange={handleDraftProviderChange}
+              onDraftModelChange={(v) =>
+                setDraft((prev) =>
+                  prev ? { ...prev, model: v, testState: 'idle', testError: undefined } : prev,
+                )
+              }
+              onDraftBaseUrlChange={(v) =>
+                setDraft((prev) =>
+                  prev ? { ...prev, base_url: v, testState: 'idle', testError: undefined } : prev,
+                )
+              }
+              onDraftApiKeyChange={(v) =>
+                setDraft((prev) =>
+                  prev ? { ...prev, api_key: v, testState: 'idle', testError: undefined } : prev,
+                )
+              }
+              onDraftConfirm={handleDraftConfirm}
+              onDraftCancel={handleDraftCancel}
+              draftCustomExtras={
+                draft.provider === 'custom'
+                  ? renderCustomExtras({
+                      baseUrl: draft.base_url,
+                      onChip: handleChipFillDraft,
+                      requiredTestId: 'provider-draft-custom-required',
+                      noteTestId: 'provider-draft-custom-note',
+                    })
+                  : null
+              }
+              config={null}
+              index={-1}
+              busy={busy}
+              onFieldChange={handleFieldChange}
+              onBaseUrlChange={() => {}}
+              onBaseUrlBlur={handleBaseUrlBlur}
+              apiKeyDraft=""
+              onApiKeyDraftChange={handleApiKeyDraftChange}
+              onApiKeyDraftBlur={handleApiKeyBlur}
+              onSetPrimary={handleSetPrimary}
+              onDelete={handleDelete}
+              registerBaseUrlRef={() => {}}
+              modelOptions={[]}
+              onModelFocus={() => {}}
+              onModelChange={() => {}}
+              onModelRefresh={() => {}}
+              showOllamaHint={false}
+              configCustomExtras={null}
+              onTest={() => {}}
+              modelCapabilities={[]}
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          data-testid="provider-add-model"
+          onClick={openDraft}
+          disabled={draft !== null || llmProviders.length === 0}
+          className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-mono font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-xl transition-colors disabled:opacity-50"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {t('settings.btnAddModel')}
+        </button>
       </div>
 
       {/* Test all button (batch level-2 usability test across saved configs) */}

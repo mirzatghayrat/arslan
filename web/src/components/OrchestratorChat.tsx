@@ -10,6 +10,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
+import type { ProviderConfig, ProviderOption } from '../api/client.types';
+import ModelSwitcher from './ModelSwitcher';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -70,6 +72,14 @@ interface OrchestratorChatProps {
   hasModel?: boolean;
   /** Navigate to the Settings screen. Used by the no-model hint. */
   onOpenSettings?: () => void;
+  /** Saved model configs — drives the composer's model chip and its switcher. */
+  providerConfigs?: ProviderConfig[];
+  /** Provider catalog, for display labels in the switcher. */
+  llmProviders?: ProviderOption[];
+  /** Ids whose launch-time test is still running. */
+  providerTestingIds?: Set<number>;
+  /** Make the picked model the primary one. */
+  onSelectModel?: (id: number) => void;
   /** The active conversation id — consumed by SandboxPanel (later task). */
   conversationId?: string;
   /** Pending inline roster invite (from a backend `propose_invite` frame). */
@@ -99,6 +109,10 @@ export default function OrchestratorChat({
   onRefine,
   hasModel = true,
   onOpenSettings,
+  providerConfigs,
+  llmProviders,
+  providerTestingIds,
+  onSelectModel,
   conversationId,
   pendingInvite,
   onAcceptInvite,
@@ -523,11 +537,18 @@ export default function OrchestratorChat({
                 {/* Left group: attach control + model indicator */}
                 <div className="flex items-center gap-2 min-w-0">
                   <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
-                  {/* Model indicator — static chip showing real configured model */}
-                  <div className="flex items-center gap-1 bg-background/40 px-2.5 py-1 rounded-full border border-border text-[10px] font-mono text-muted-foreground max-w-[160px] sm:max-w-none truncate">
-                    <Cpu className="w-3 h-3 text-primary flex-shrink-0" />
-                    <span className="ml-0.5 truncate">{settings ? `${settings.llm_provider} · ${settings.llm_model}` : '—'}</span>
-                  </div>
+                  {/* Which model is about to answer — and a way to change it.
+                      This read `settings.llm_provider · settings.llm_model` until
+                      now: two fields adapters.ts stopped mapping when the
+                      multi-config list became the source of truth, so the chip
+                      rendered a bare "·" forever. */}
+                  <ModelSwitcher
+                    configs={providerConfigs ?? []}
+                    llmProviders={llmProviders ?? []}
+                    testingIds={providerTestingIds}
+                    onSelect={(id) => onSelectModel?.(id)}
+                    onManage={onOpenSettings}
+                  />
                 </div>
 
                 <button

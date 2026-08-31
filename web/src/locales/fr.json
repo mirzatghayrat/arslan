@@ -513,10 +513,6 @@
     "customQuickFill": "Remplissage rapide :",
     "customChipOllamaRemote": "Ollama (distant)",
     "customCompatNote": "L'appel d'outils dépend des options du serveur (vLLM --enable-auto-tool-choice, llama.cpp --jinja) ; les décomptes de tokens en streaming peuvent manquer (affichés ≈) ; llama.cpp ne sert qu'un seul modèle.",
-    "healthDotModels": "Connecté — liste de modèles disponible",
-    "healthDotNoList": "Connecté mais sans liste de modèles — ne signifie pas inutilisable ; le chat peut fonctionner normalement",
-    "healthDotUnreachable": "Injoignable — échec de connexion",
-    "healthDotUnknown": "Connectivité non vérifiée — cliquer pour vérifier",
     "timeJustNow": "à l'instant",
     "timeMinutesAgo": "il y a {{n}} min",
     "timeHoursAgo": "il y a {{n}} h",
@@ -526,8 +522,6 @@
     "modelCapReasoning": "raisonnement",
     "capabilitiesLabel": "Capacités",
     "testConnection": "Tester la connexion",
-    "deepTest": "Test approfondi",
-    "deepTestOk": "Chat OK",
     "reachableNoListNote": "Connecté, mais aucune liste de modèles renvoyée — cela ne veut pas dire que c'est inutilisable ; le chat peut fonctionner.",
     "sectionSearch": "Recherche",
     "sectionAppearance": "Palette de thème",
@@ -676,7 +670,16 @@
     "labelDefaultRead": "Lire mes fichiers par défaut",
     "defaultReadDesc": "Autorise Arslan à lire votre Bureau, vos Documents et vos Téléchargements pour vous aider à retrouver et résumer. Il ne modifie ni ne supprime jamais rien sans vous demander à chaque fois. Désactivez pour limiter la lecture à un dossier de travail choisi.",
     "labelVoiceOutput": "Lire les réponses à voix haute",
-    "voiceOutputDesc": "Lit les réponses d'Arslan à voix haute avec la voix intégrée de votre Mac. Désactivé par défaut."
+    "voiceOutputDesc": "Lit les réponses d'Arslan à voix haute avec la voix intégrée de votre Mac. Désactivé par défaut.",
+    "statusOk": "Fonctionne",
+    "statusFailed": "Ne fonctionne pas",
+    "statusUntested": "Non testé",
+    "statusTesting": "Test en cours…",
+    "keyTypeToReplace": "saisir pour remplacer",
+    "primary": "Principal",
+    "modelSwitcherManage": "Gérer les modèles…",
+    "modelSwitcherNone": "Aucun modèle configuré",
+    "deletePrimaryBlocked": "Le modèle principal ne peut pas être supprimé — définissez-en un autre comme principal."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -705,7 +708,8 @@
     "discard_title": "Modifications non enregistrées",
     "discard_body": "Vous avez des modifications non enregistrées. Fermer quand même ?",
     "keep_editing": "Continuer l'édition",
-    "discard_ok": "Abandonner"
+    "discard_ok": "Abandonner",
+    "more": "Plus"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

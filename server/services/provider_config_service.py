@@ -1,6 +1,8 @@
 """CRUD for multi-key BYOK provider configs. One row is always is_primary."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +48,7 @@ def _to_public(row: ProviderConfig) -> dict:
         "key_status": _key_status(row.api_key),
         # P4: last connectivity probe (null until the first probe)
         "last_health": row.last_health,
+        "last_health_detail": row.last_health_detail,
         "last_health_at": row.last_health_at.isoformat() if row.last_health_at else None,
     }
 
@@ -77,29 +80,44 @@ async def list_for_routing(session: AsyncSession) -> list[dict]:
 
 
 #: The producer's vocabulary, mapped to the routing predicate. The ONLY writer of
-#: ProviderConfig.last_health is POST /settings/provider-configs/{id}/health, which
-#: persists provider_health.probe()'s "state" verbatim — so these keys are not a
-#: convention, they are that function's return values.
+#: ProviderConfig.last_health is record_test_verdict() below, which turns one
+#: chat-test result into one of these two words — so these keys are not a
+#: convention, they are that function's literals.
 #:
-#: 🔴 This used to test the column against ("ok", "healthy", "true", "1"). No probe
-#: has ever written any of those, so every probed config read as healthy=False and
-#: routing.usable() filtered it out — a config the user had TESTED was the one
-#: routing refused, while never-probed rows (NULL → None) stayed usable. `or primary`
-#: in select() hid it: the primary kept answering, and only non-"single" strategies
-#: lost their candidates. tests/server/test_health_vocabulary_reaches_routing.py
-#: pins each key to the producer and fails if the two ever diverge again.
+#: 🔴 History, twice over. This first tested the column against ("ok","healthy",
+#: "true","1") — words no producer ever wrote — so every probed config read as
+#: healthy=False and routing filtered out the very configs the user had tested.
+#: It was then pinned to the /models probe's three words. That probe is now gone:
+#: it answered "did /models list anything", which for a public model-list endpoint
+#: (OpenRouter's is public) returns 200 with no key at all — so a dead, capped or
+#: region-blocked key still read as reachable. The question was never "does the
+#: list endpoint answer", it is "can this LLM answer a message", so the chat test
+#: is the only producer now. tests/server/test_health_vocabulary_reaches_routing.py
+#: derives these keys from record_test_verdict's source and fails on any drift.
 _HEALTH_OK: dict[str, bool] = {
-    # Answered with a usable model list.
-    "reachable_models": True,
-    # HTTP answered but no usable list — an empty list, or a status like 401/404/405.
-    # Reachable, NOT broken: many gateways gate /models harder than /chat, and some
-    # providers expose no list endpoint at all. A key that is missing or won't decrypt
-    # is already caught by key_state; a genuinely dead one fails at the provider with
-    # a real error. Fail-open on the propose side is the standing rule.
-    "reachable_no_list": True,
-    # Connection-level failure: refused / DNS / timeout. Nothing answered.
-    "unreachable": False,
+    # A real chat round-trip came back. The only evidence that means anything.
+    "ok": True,
+    # The provider refused, or nothing came back. Unlike the old probe's
+    # "reachable_no_list", this is not an ambiguous signal to fail open on: the
+    # exact call the user's turn would make was made, and it did not work.
+    # select() still keeps the primary regardless, so a transient failure at
+    # launch cannot lock anyone out of their own default model.
+    "failed": False,
 }
+
+
+def record_test_verdict(row, *, ok: bool, detail: str | None) -> None:
+    """Persist one chat-test verdict on a config row. The ONLY writer of
+    last_health / last_health_at / last_health_detail.
+
+    ``detail`` is the human-readable reason from llm_errors (or None on success);
+    it is stored rather than kept in frontend memory so that the reason a model
+    is unusable survives a remount — "failed" with no reason is only marginally
+    better than a green dot that lies.
+    """
+    row.last_health = "ok" if ok else "failed"
+    row.last_health_at = datetime.utcnow()
+    row.last_health_detail = detail
 
 
 def _last_health_ok(row) -> bool | None:
@@ -149,8 +167,21 @@ async def update_config(session: AsyncSession, config_id: int, *, label: str | N
         row.model = model
     if base_url is not None:
         row.base_url = base_url or None
-    if api_key and not _looks_masked(api_key):
+    key_changed = bool(api_key) and not _looks_masked(api_key)
+    if key_changed:
         row.api_key = crypto.encrypt(api_key)
+    # A verdict is about the exact configuration that produced it. Change the
+    # provider, the model, where it points, or the key, and the stored "ok" is
+    # vouching for something nobody has tried — the same class of lie as a green
+    # dot from a public model list. Clear it back to "never tested"; the next
+    # launch (or the Test button) refills it with something that means anything.
+    # `label` is deliberately NOT in this set: renaming a row changes nothing
+    # about whether it works.
+    if (provider is not None or model is not None
+            or base_url is not None or key_changed):
+        row.last_health = None
+        row.last_health_at = None
+        row.last_health_detail = None
     await session.commit()
     await session.refresh(row)
     return _to_public(row)
