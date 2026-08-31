@@ -513,10 +513,6 @@
     "customQuickFill": "クイック入力:",
     "customChipOllamaRemote": "Ollama(リモート)",
     "customCompatNote": "ツール呼び出しはサーバーの起動フラグに依存します(vLLM --enable-auto-tool-choice、llama.cpp --jinja)。ストリーミングのトークン数は取得できない場合があります(≈ 表示)。llama.cpp は単一モデルのみ提供します。",
-    "healthDotModels": "接続済み——モデル一覧を取得できます",
-    "healthDotNoList": "接続済みですがモデル一覧が提供されていません——利用不可という意味ではなく、チャットは正常に動く可能性があります",
-    "healthDotUnreachable": "接続不可——接続に失敗しました",
-    "healthDotUnknown": "接続確認は未実施——クリックして確認",
     "timeJustNow": "たった今",
     "timeMinutesAgo": "{{n}}分前",
     "timeHoursAgo": "{{n}}時間前",
@@ -526,8 +522,6 @@
     "modelCapReasoning": "推論",
     "capabilitiesLabel": "機能",
     "testConnection": "接続テスト",
-    "deepTest": "詳細テスト",
-    "deepTestOk": "チャットOK",
     "reachableNoListNote": "接続済みですがモデル一覧が返されませんでした——使用不可とは限らず、チャットは動作する可能性があります",
     "sectionSearch": "検索",
     "sectionAppearance": "テーマパレット",
@@ -676,7 +670,16 @@
     "labelDefaultRead": "既定でファイルを読む",
     "defaultReadDesc": "デスクトップ・書類・ダウンロードを Arslan が読み、検索や要約を手伝います。変更や削除は毎回確認なしには行いません。オフにすると、指定したワークスペースのみ読みます。",
     "labelVoiceOutput": "返信を読み上げる",
-    "voiceOutputDesc": "Arslan の返信を、Mac 内蔵の音声で読み上げます。既定はオフ。"
+    "voiceOutputDesc": "Arslan の返信を、Mac 内蔵の音声で読み上げます。既定はオフ。",
+    "statusOk": "使用可能",
+    "statusFailed": "使用不可",
+    "statusUntested": "未テスト",
+    "statusTesting": "テスト中…",
+    "keyTypeToReplace": "入力すると置き換え",
+    "primary": "メイン",
+    "modelSwitcherManage": "モデルを管理…",
+    "modelSwitcherNone": "モデル未設定",
+    "deletePrimaryBlocked": "メインのモデルは削除できません。先に別のモデルをメインにしてください。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -705,7 +708,8 @@
     "discard_title": "未保存の変更",
     "discard_body": "未保存の変更があります。閉じますか？",
     "keep_editing": "編集を続ける",
-    "discard_ok": "破棄"
+    "discard_ok": "破棄",
+    "more": "その他"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

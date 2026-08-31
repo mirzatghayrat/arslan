@@ -12,14 +12,13 @@
  * from a node the container builds.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Star, Trash2 } from 'lucide-react';
+import { Star, Trash2, Loader2, FlaskConical, MoreHorizontal } from 'lucide-react';
 import type { ModelInfo, ProviderOption, ProviderConfig } from '../../api/client.types';
 import Select from '../Select';
 import type { SelectOption } from '../Select';
 import ModelCombobox from '../ModelCombobox';
-import ConnectionTester, { type DeepTestStatus } from './ConnectionTester';
 import CapabilityBadges from './CapabilityBadges';
 import ToolTransportWarning from './ToolTransportWarning';
 
@@ -84,12 +83,9 @@ export interface ProviderDetailPaneProps {
   configCustomExtras: React.ReactNode;
 
   // ── connection testing + capabilities (saved-config mode only) ──
-  /** Effective tri-state health overlay for the selected config (level-1). */
-  health?: string | null;
-  lastHealthAt?: string | null;
-  onProbeHealth: (config: ProviderConfig) => void;
-  onDeepTest: (config: ProviderConfig) => void;
-  deepTestStatus?: DeepTestStatus;
+  /** The one test: a real chat round-trip. There is no second, lesser test. */
+  onTest: (config: ProviderConfig) => void;
+  testStatus?: { state: 'idle' | 'testing' | 'ok' | 'failed'; error?: string; latency?: number };
   /** API-derived capabilities of the selected model (tools/vision/reasoning). */
   modelCapabilities: string[];
   onCapabilityOverride?: (cap: string, value: boolean) => void;
@@ -97,6 +93,8 @@ export interface ProviderDetailPaneProps {
 
 export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
   const { t } = useTranslation();
+  // Overflow menu for the rare + destructive actions (set primary / delete).
+  const [moreOpen, setMoreOpen] = useState(false);
   const {
     providerSelectOptions,
     isNative,
@@ -306,6 +304,22 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           undecryptable key (ARSLAN_SECRET_KEY changed) never reads as a plain
           "requires API key". */}
       <div className="sm:col-span-2 min-w-0">
+        {/* The backend has always sent a masked form of the stored key
+            (mask_secret → "sk-…1a4f"); the UI dropped it and showed an empty
+            password box, which reads as "nothing configured here" — the most
+            common reason someone replaces a key that was already fine. */}
+        {config.key_status === 'set' && !props.apiKeyDraft && config.api_key && (
+          <div
+            data-testid={`provider-config-key-masked-${index}`}
+            className="mb-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground"
+          >
+            <span className="tracking-wider">{config.api_key}</span>
+            <span className="text-subtle-foreground">·</span>
+            <span className="text-[10px] text-subtle-foreground">
+              {t('settings.keyTypeToReplace')}
+            </span>
+          </div>
+        )}
         <input
           type="password"
           data-testid={`provider-config-key-${index}`}
@@ -331,40 +345,98 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         )}
       </div>
 
-      {/* Set primary button (only for non-primary rows) */}
-      {!config.is_primary && (
+      {/* Actions, as one row across the full width rather than three loose grid
+          cells. Test is the only thing anyone comes here to press, so it is the
+          only thing that looks like a button; setting the primary and deleting
+          live behind the overflow — they are rare, and one is destructive.
+
+          There used to be TWO tests here: a "Test connection" that asked the
+          model-list endpoint, and a "Deep test" that sent a real message. Only
+          the second answered the question anyone actually has, and the first was
+          the one that lit up green — so the pair was worse than either alone. */}
+      <div className="sm:col-span-2 flex items-center gap-2 pt-3 mt-1 border-t border-border">
         <button
           type="button"
-          onClick={() => props.onSetPrimary(config.id)}
-          disabled={busy === config.id}
-          className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors disabled:opacity-50"
-          title={t('settings.btnSetPrimary')}
+          data-testid={`provider-config-test-${index}`}
+          onClick={() => props.onTest(config)}
+          disabled={props.testStatus?.state === 'testing'}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] font-mono font-medium text-primary-foreground bg-primary hover:bg-primary-hover rounded-lg transition-colors disabled:opacity-60"
         >
-          <Star className="w-3 h-3" />
-          {t('settings.btnSetPrimary')}
+          {props.testStatus?.state === 'testing' ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <FlaskConical className="w-3 h-3" />
+          )}
+          {t('settings.btnTest')}
         </button>
-      )}
 
-      {/* Delete button */}
-      <button
-        type="button"
-        onClick={() => props.onDelete(config.id)}
-        disabled={busy === config.id || config.is_primary}
-        className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-mono font-medium text-subtle-foreground hover:text-danger border border-border hover:border-danger/50 rounded-lg transition-colors disabled:opacity-30"
-        title={t('settings.btnDelete')}
-      >
-        <Trash2 className="w-3 h-3" />
-      </button>
+        {/* Round-trip time. It answers what the pill cannot: not "does it work"
+            but "how slow is it" — how you tell a healthy local model from one
+            that will make every turn feel broken. */}
+        {props.testStatus?.state === 'ok' && props.testStatus.latency != null && (
+          <span
+            data-testid={`provider-config-latency-${index}`}
+            className="text-[10px] font-mono text-muted-foreground"
+          >
+            · {props.testStatus.latency}ms
+          </span>
+        )}
 
-      {/* B2: two-level connection testing (level-1 /health, level-2 real chat) */}
-      <ConnectionTester
-        config={config}
-        health={props.health}
-        lastHealthAt={props.lastHealthAt}
-        onProbeHealth={props.onProbeHealth}
-        onDeepTest={props.onDeepTest}
-        deepTestStatus={props.deepTestStatus}
-      />
+        <span className="flex-1" />
+
+        <div className="relative">
+          <button
+            type="button"
+            data-testid={`provider-config-more-${index}`}
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            aria-label={t('common.more')}
+            onClick={() => setMoreOpen((o) => !o)}
+            className="px-2 py-1.5 text-subtle-foreground hover:text-foreground hover:bg-surface-raised rounded-lg transition-colors"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+          {moreOpen && (
+            <div
+              role="menu"
+              data-testid={`provider-config-more-menu-${index}`}
+              className="absolute right-0 bottom-full mb-1 w-44 bg-surface border border-border-strong rounded-xl p-1 shadow-lg z-40"
+            >
+              {!config.is_primary && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`provider-config-primary-${index}`}
+                  onClick={() => {
+                    props.onSetPrimary(config.id);
+                    setMoreOpen(false);
+                  }}
+                  disabled={busy === config.id}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-mono text-muted-foreground hover:text-primary hover:bg-surface-raised rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <Star className="w-3 h-3" />
+                  {t('settings.btnSetPrimary')}
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                data-testid={`provider-config-delete-${index}`}
+                onClick={() => {
+                  props.onDelete(config.id);
+                  setMoreOpen(false);
+                }}
+                disabled={busy === config.id || config.is_primary}
+                title={config.is_primary ? t('settings.deletePrimaryBlocked') : undefined}
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-mono text-subtle-foreground hover:text-danger hover:bg-danger/5 rounded-lg transition-colors disabled:opacity-30"
+              >
+                <Trash2 className="w-3 h-3" />
+                {t('settings.btnDelete')}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
       {props.configCustomExtras}

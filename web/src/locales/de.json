@@ -513,10 +513,6 @@
     "customQuickFill": "Schnell ausfüllen:",
     "customChipOllamaRemote": "Ollama (remote)",
     "customCompatNote": "Tool-Aufrufe hängen von Server-Flags ab (vLLM --enable-auto-tool-choice, llama.cpp --jinja); Streaming-Token-Zahlen können fehlen (angezeigt als ≈); llama.cpp stellt nur ein Modell bereit.",
-    "healthDotModels": "Verbunden — Modellliste verfügbar",
-    "healthDotNoList": "Verbunden, aber keine Modellliste — heißt nicht unbrauchbar; der Chat kann trotzdem funktionieren",
-    "healthDotUnreachable": "Nicht erreichbar — Verbindung fehlgeschlagen",
-    "healthDotUnknown": "Konnektivität noch nicht geprüft — zum Prüfen klicken",
     "timeJustNow": "gerade eben",
     "timeMinutesAgo": "vor {{n}} Min.",
     "timeHoursAgo": "vor {{n}} Std.",
@@ -526,8 +522,6 @@
     "modelCapReasoning": "Reasoning",
     "capabilitiesLabel": "Fähigkeiten",
     "testConnection": "Verbindung testen",
-    "deepTest": "Tiefentest",
-    "deepTestOk": "Chat OK",
     "reachableNoListNote": "Verbunden, aber keine Modellliste erhalten — das bedeutet nicht, dass es unbrauchbar ist; der Chat funktioniert möglicherweise.",
     "sectionSearch": "Suche",
     "sectionAppearance": "Farbpalette",
@@ -676,7 +670,16 @@
     "labelDefaultRead": "Meine Dateien standardmäßig lesen",
     "defaultReadDesc": "Arslan darf deinen Schreibtisch, Dokumente und Downloads lesen, um beim Finden und Zusammenfassen zu helfen. Es ändert oder löscht nie etwas ohne jedes Mal zu fragen. Ausschalten, um das Lesen auf einen gewählten Arbeitsordner zu beschränken.",
     "labelVoiceOutput": "Antworten vorlesen",
-    "voiceOutputDesc": "Arslans Antworten mit der eingebauten Stimme deines Macs vorlesen. Standardmäßig aus."
+    "voiceOutputDesc": "Arslans Antworten mit der eingebauten Stimme deines Macs vorlesen. Standardmäßig aus.",
+    "statusOk": "Funktioniert",
+    "statusFailed": "Funktioniert nicht",
+    "statusUntested": "Nicht getestet",
+    "statusTesting": "Wird getestet…",
+    "keyTypeToReplace": "tippen zum Ersetzen",
+    "primary": "Primär",
+    "modelSwitcherManage": "Modelle verwalten…",
+    "modelSwitcherNone": "Kein Modell konfiguriert",
+    "deletePrimaryBlocked": "Das primäre Modell kann nicht gelöscht werden — mache zuerst ein anderes primär."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -705,7 +708,8 @@
     "discard_title": "Ungespeicherte Änderungen",
     "discard_body": "Du hast ungespeicherte Änderungen. Trotzdem schließen?",
     "keep_editing": "Weiter bearbeiten",
-    "discard_ok": "Verwerfen"
+    "discard_ok": "Verwerfen",
+    "more": "Mehr"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

@@ -328,8 +328,9 @@ class ProviderConfig(Base):
     base_url = Column(String(255), nullable=True)
     api_key = Column(Text, nullable=False)           # encrypted
     is_primary = Column(Boolean, nullable=False, default=False)
-    last_health = Column(String(20), nullable=True)      # P4: reachable_models|reachable_no_list|unreachable|NULL=never checked
-    last_health_at = Column(DateTime, nullable=True)     # P4: when the last probe ran
+    last_health = Column(String(20), nullable=True)      # ok|failed|NULL=never tested (writer: record_test_verdict)
+    last_health_at = Column(DateTime, nullable=True)     # when that test ran
+    last_health_detail = Column(Text, nullable=True)     # human-readable reason when failed
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

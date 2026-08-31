@@ -170,6 +170,6 @@ describe("add-draft error surfacing", () => {
     // Draft closed, no error line, the new config's master row landed.
     await waitFor(() => expect(screen.queryByTestId("provider-draft-model")).toBeNull());
     expect(screen.queryByTestId("provider-draft-error")).toBeNull();
-    expect(screen.getByTestId("provider-master-row-0")).toBeInTheDocument();
+    expect(screen.getByTestId("provider-card-row-0")).toBeInTheDocument();
   });
 });

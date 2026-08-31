@@ -187,7 +187,8 @@ class ProviderConfigOut(BaseModel):
     key_status: str = "unset"   # unset | set | undecryptable (secret changed)
     is_primary: bool = False
     # Provider-P4: last connectivity probe result (null until first probe).
-    last_health: str | None = None       # reachable_models|reachable_no_list|unreachable
+    last_health: str | None = None       # ok | failed | None=never tested
+    last_health_detail: str | None = None  # human-readable reason when failed
     last_health_at: str | None = None    # naive-UTC ISO
 
 
@@ -456,19 +457,6 @@ class ModelListOut(BaseModel):
     stale: bool = False
     error: str | None = None
     source: str = "api"
-
-
-class HealthOut(BaseModel):
-    """Response of POST /settings/provider-configs/{id}/health (Provider-P4).
-
-    ``state`` is the tri-state connectivity verdict; ``reachable_no_list``
-    means HTTP answered but no usable model list (chat may still work).
-    """
-
-    state: str
-    latency_ms: int | None = None
-    detail: str | None = None
-    last_health_at: str | None = None
 
 
 class TitleIn(BaseModel):

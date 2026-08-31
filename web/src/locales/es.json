@@ -513,10 +513,6 @@
     "customQuickFill": "Relleno rápido:",
     "customChipOllamaRemote": "Ollama (remoto)",
     "customCompatNote": "Las llamadas a herramientas dependen de los flags del servidor (vLLM --enable-auto-tool-choice, llama.cpp --jinja); los recuentos de tokens en streaming pueden faltar (se muestran como ≈); llama.cpp sirve un solo modelo.",
-    "healthDotModels": "Conectado: lista de modelos disponible",
-    "healthDotNoList": "Conectado pero sin lista de modelos: no significa que no funcione; el chat puede funcionar igualmente",
-    "healthDotUnreachable": "Inaccesible: fallo de conexión",
-    "healthDotUnknown": "Conectividad sin comprobar: haz clic para comprobar",
     "timeJustNow": "ahora mismo",
     "timeMinutesAgo": "hace {{n}} min",
     "timeHoursAgo": "hace {{n}} h",
@@ -526,8 +522,6 @@
     "modelCapReasoning": "razonamiento",
     "capabilitiesLabel": "Capacidades",
     "testConnection": "Probar conexión",
-    "deepTest": "Prueba profunda",
-    "deepTestOk": "Chat correcto",
     "reachableNoListNote": "Conectado, pero no se devolvió la lista de modelos: no significa que no funcione; el chat podría funcionar.",
     "sectionSearch": "Búsqueda",
     "sectionAppearance": "Paleta de temas",
@@ -676,7 +670,16 @@
     "labelDefaultRead": "Leer mis archivos por defecto",
     "defaultReadDesc": "Permite que Arslan lea tu Escritorio, Documentos y Descargas para ayudarte a buscar y resumir. Nunca cambia ni borra nada sin preguntarte cada vez. Desactívalo para limitar la lectura a una carpeta de trabajo que elijas.",
     "labelVoiceOutput": "Leer las respuestas en voz alta",
-    "voiceOutputDesc": "Lee en voz alta las respuestas de Arslan con la voz integrada de tu Mac. Desactivado por defecto."
+    "voiceOutputDesc": "Lee en voz alta las respuestas de Arslan con la voz integrada de tu Mac. Desactivado por defecto.",
+    "statusOk": "Funciona",
+    "statusFailed": "No funciona",
+    "statusUntested": "Sin probar",
+    "statusTesting": "Probando…",
+    "keyTypeToReplace": "escribe para reemplazar",
+    "primary": "Principal",
+    "modelSwitcherManage": "Gestionar modelos…",
+    "modelSwitcherNone": "Ningún modelo configurado",
+    "deletePrimaryBlocked": "El modelo principal no se puede eliminar; primero haz principal a otro."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -705,7 +708,8 @@
     "discard_title": "Cambios sin guardar",
     "discard_body": "Tienes cambios sin guardar. ¿Cerrar de todos modos?",
     "keep_editing": "Seguir editando",
-    "discard_ok": "Descartar"
+    "discard_ok": "Descartar",
+    "more": "Más"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

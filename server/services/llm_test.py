@@ -49,12 +49,31 @@ async def test_connection(
         latency_ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "error": None, "latency_ms": latency_ms}
     except Exception as exc:  # noqa: BLE001
-        # P3: 401/403 from an OpenAI-compatible server almost always means
-        # "this endpoint wants an API key" (keyless test against LiteLLM with
-        # auth on, a cloud endpoint, …) — say that instead of the raw dump.
-        if (isinstance(exc, httpx.HTTPStatusError)
+        # Order matters, most-specific first.
+        #
+        # (1) With NO key configured, a 401/403 really does mean "this endpoint
+        # wants an API key" (P3's case: a keyless test against LiteLLM with auth
+        # on). This has to outrank the generic explanation below, which would
+        # otherwise tell someone to go replace a key that does not exist.
+        if (not api_key
+                and isinstance(exc, httpx.HTTPStatusError)
                 and exc.response.status_code in (401, 403)):
             status = exc.response.status_code
             return {"ok": False, "error": f"该服务器要求 API key(HTTP {status})",
                     "latency_ms": None}
+
+        # (2) Otherwise give the SAME explanation the chat path gives (#67). The
+        # old code guessed from the status alone and answered every 401/403 with
+        # "this server wants an API key" — but a 403 is "key limit exceeded" as
+        # often as it is "bad key", and answering the first with the second sends
+        # someone to rotate a key that was never the problem. A test button that
+        # disagrees with the turn it is meant to predict is worse than none.
+        #
+        # Imported here, not at module scope: server.orchestrator's package init
+        # is heavy and this module is pulled in eagerly by the settings API.
+        from server.orchestrator import llm_errors
+
+        explained = llm_errors.explain(str(exc))
+        if explained:
+            return {"ok": False, "error": explained, "latency_ms": None}
         return {"ok": False, "error": str(exc) or "connection failed", "latency_ms": None}

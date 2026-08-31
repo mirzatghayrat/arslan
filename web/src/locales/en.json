@@ -513,10 +513,6 @@
     "customQuickFill": "Quick fill:",
     "customChipOllamaRemote": "Ollama (remote)",
     "customCompatNote": "Tool calling depends on server flags (vLLM --enable-auto-tool-choice, llama.cpp --jinja); streaming token counts may be missing (shown as ≈); llama.cpp serves a single model.",
-    "healthDotModels": "Connected — model list available",
-    "healthDotNoList": "Connected but no model list — doesn't mean unusable; chat may still work",
-    "healthDotUnreachable": "Unreachable — connection failed",
-    "healthDotUnknown": "Connectivity not checked yet — click to check",
     "timeJustNow": "just now",
     "timeMinutesAgo": "{{n}}m ago",
     "timeHoursAgo": "{{n}}h ago",
@@ -526,8 +522,6 @@
     "modelCapReasoning": "reasoning",
     "capabilitiesLabel": "Capabilities",
     "testConnection": "Test connection",
-    "deepTest": "Deep test",
-    "deepTestOk": "Chat OK",
     "reachableNoListNote": "Connected, but no model list was returned — this doesn't mean it's unusable; chat may still work.",
     "sectionSearch": "Search",
     "sectionAppearance": "Theme Palette",
@@ -676,7 +670,16 @@
     "labelDefaultRead": "Read my files by default",
     "defaultReadDesc": "Let Arslan read your Desktop, Documents, and Downloads to help you find and summarize things. It never changes or deletes anything without asking you each time. Turn this off to limit reading to a workspace you choose.",
     "labelVoiceOutput": "Read replies aloud",
-    "voiceOutputDesc": "Speak Arslan's replies out loud as they arrive, using your Mac's built-in voice. Off by default."
+    "voiceOutputDesc": "Speak Arslan's replies out loud as they arrive, using your Mac's built-in voice. Off by default.",
+    "statusOk": "Working",
+    "statusFailed": "Not working",
+    "statusUntested": "Not tested",
+    "statusTesting": "Testing…",
+    "keyTypeToReplace": "type to replace",
+    "primary": "Primary",
+    "modelSwitcherManage": "Manage models…",
+    "modelSwitcherNone": "No model configured",
+    "deletePrimaryBlocked": "The primary model can't be deleted — make another one primary first."
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -705,7 +708,8 @@
     "discard_title": "Unsaved changes",
     "discard_body": "You have unsaved changes. Close anyway?",
     "keep_editing": "Keep editing",
-    "discard_ok": "Discard"
+    "discard_ok": "Discard",
+    "more": "More"
   },
   "sidebar": {
     "new_session": "New Orchestrator Session",

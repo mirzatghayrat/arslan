@@ -322,11 +322,15 @@ export interface ProviderConfig {
    *  ARSLAN_SECRET_KEY). Absent on legacy payloads → treated as 'unset'. */
   key_status?: 'set' | 'unset' | 'undecryptable';
   is_primary: boolean;
-  /** P4 tri-state connectivity of the last probe (null/absent = never probed):
-   *  "reachable_models" | "reachable_no_list" | "unreachable". */
-  last_health?: string | null;
-  /** Naive-UTC ISO of the last probe (no timezone suffix — append "Z" before parsing). */
+  /** Verdict of the last real chat test — the only evidence that means anything.
+   *  "ok" | "failed", or null/absent when never tested. A build predating
+   *  migration 0043 may still carry a retired probe word here; anything
+   *  unrecognised reads as "never tested" rather than as broken. */
+  last_health?: 'ok' | 'failed' | string | null;
+  /** Naive-UTC ISO of that test (no timezone suffix — append "Z" before parsing). */
   last_health_at?: string | null;
+  /** Human-readable reason when it failed, persisted so it survives a remount. */
+  last_health_detail?: string | null;
 }
 
 /** One model from GET /settings/provider-configs/{id}/models. */

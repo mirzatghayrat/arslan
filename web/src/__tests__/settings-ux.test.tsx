@@ -281,7 +281,7 @@ describe("(E) Test all batch button", () => {
     expect(screen.getByTestId("provider-test-all")).toBeInTheDocument();
   });
 
-  it("does NOT show per-row Test buttons on saved rows", () => {
+  it("puts the one Test button on the selected card only", () => {
     render(
       <ProviderConfigList
         llmProviders={providers}
@@ -292,7 +292,11 @@ describe("(E) Test all batch button", () => {
       />
     );
 
-    expect(screen.queryByTestId("provider-config-test-0")).toBeNull();
+    // The selected card carries the one Test button (there is no longer a
+    // lesser "connection" test to distinguish it from). Collapsed cards carry
+    // none — their status pill already says what the last test found, so a row
+    // of buttons would just be noise.
+    expect(screen.getByTestId("provider-config-test-0")).toBeInTheDocument();
     expect(screen.queryByTestId("provider-config-test-1")).toBeNull();
   });
 
@@ -318,9 +322,9 @@ describe("(E) Test all batch button", () => {
     });
 
     await waitFor(() => {
-      // Both rows should show the ok indicator
-      const okIndicators = screen.getAllByText("settings.testOk");
-      expect(okIndicators.length).toBe(2);
+      // Every card's pill flips to "working" — the one vocabulary, everywhere.
+      const pills = screen.getAllByText("settings.statusOk");
+      expect(pills.length).toBe(2);
     });
   });
 
@@ -341,18 +345,19 @@ describe("(E) Test all batch button", () => {
     fireEvent.click(screen.getByTestId("provider-test-all"));
 
     await waitFor(() => {
-      // The failed config is the selected one, so its error shows in BOTH the
-      // master-list row and the detail-pane ConnectionTester (level-2 result).
+      // The reason is on the card itself, collapsed or not: someone scanning to
+      // find out why nothing works should not have to open each one.
       expect(screen.getAllByText(/Invalid API key/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText("settings.testOk")).toBeInTheDocument();
+      expect(screen.getByText("settings.statusFailed")).toBeInTheDocument();
+      expect(screen.getByText("settings.statusOk")).toBeInTheDocument();
     });
   });
 });
 
 // ── (F) Deep test surfaces the latency from testProviderConfig ───────────────
 
-describe("(F) Deep test latency wiring", () => {
-  it("clicking the detail-pane deep test shows the latency_ms from testProviderConfig", async () => {
+describe("(F) Test latency wiring", () => {
+  it("clicking Test on the selected card shows the latency_ms from testProviderConfig", async () => {
     mockTestProviderConfig.mockResolvedValue({ ok: true, latency_ms: 150 });
 
     render(
@@ -365,9 +370,9 @@ describe("(F) Deep test latency wiring", () => {
       />
     );
 
-    // The primary config (id 1) is selected by default → its ConnectionTester
-    // level-2 button drives the deep test.
-    fireEvent.click(screen.getByTestId("connection-test-level2"));
+    // The primary config (id 1) is selected by default → its card's Test button
+    // runs the one real chat round-trip.
+    fireEvent.click(screen.getByTestId("provider-config-test-0"));
 
     await waitFor(() => {
       expect(mockTestProviderConfig).toHaveBeenCalledWith(1);

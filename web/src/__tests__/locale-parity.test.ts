@@ -231,7 +231,12 @@ describe("locale parity", () => {
     //               first-run consent line (spec 2026-08-24).
     // 1412 → 1414: settings.labelVoiceOutput + settings.voiceOutputDesc — the
     //               read-replies-aloud toggle (voice V1). Default off.
-    expect(enKeys).toHaveLength(1414);
+    // 1414 → 1416: +8 for the single status vocabulary (statusOk/Failed/Untested/
+    //               Testing, keyTypeToReplace, primary, modelSwitcherManage/None),
+    //               −6 for the retired two-level tester (healthDot×4, deepTest×2).
+    // 1416 → 1418: common.more + settings.deletePrimaryBlocked — the overflow
+    //               menu that took the rare/destructive actions out of the row.
+    expect(enKeys).toHaveLength(1418);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

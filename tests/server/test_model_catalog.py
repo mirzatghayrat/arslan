@@ -547,14 +547,16 @@ def test_chat_path_never_imports_model_catalog():
     repo = Path(__file__).resolve().parents[2]
     # model_catalog is a Settings-only surface. The whole of server/ and arslan/
     # (the runtime chat path — ws, services, registry, mcp, orchestrator, …) is
-    # scanned; only these three files may reference the module:
-    #   • server/api/settings.py            — the /models endpoint
-    #   • server/services/provider_health.py — the health probe the settings UI
-    #       drives (a settings interaction, NOT the chat/runtime path)
-    #   • server/services/model_catalog.py   — the module itself
+    # scanned; only these two files may reference the module:
+    #   • server/api/settings.py           — the /models endpoint (the model picker)
+    #   • server/services/model_catalog.py — the module itself
+    # provider_health.py used to be a third entry. It was deleted along with the
+    # /models-based health probe: listing models answered the wrong question
+    # (a public model list returns 200 with no key), so the connectivity verdict
+    # now comes from the real chat test instead. model_catalog survives ONLY as
+    # the model dropdown's data source.
     allowed = {
         repo / "server" / "api" / "settings.py",
-        repo / "server" / "services" / "provider_health.py",
         repo / "server" / "services" / "model_catalog.py",
     }
     # Match model_catalog as a whole word so incidental substrings — the
@@ -575,8 +577,8 @@ def test_chat_path_never_imports_model_catalog():
                 offenders.append(str(p.relative_to(repo)))
     assert not offenders, (
         f"model_catalog leaked into the chat/runtime path: {offenders} — it may "
-        "only be referenced from server/api/settings.py and the provider_health "
-        "probe it powers (round iron rule)")
+        "only be referenced from server/api/settings.py, which serves the model "
+        "picker (round iron rule)")
 
 
 # ---------------------------------------------------------------------------
