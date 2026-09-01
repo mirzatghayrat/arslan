@@ -64,6 +64,7 @@ from .versions._0040_mcp_host_allowed import upgrade_sync as _m0040
 from .versions._0041_scheduled_task_target import upgrade_sync as _m0041
 from .versions._0042_ssh_nodes_and_audit import upgrade_sync as _m0042
 from .versions._0043_provider_test_verdict import upgrade_sync as _m0043
+from .versions._0044_provider_verdict_repair import upgrade_sync as _m0044
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -105,6 +106,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0041", _m0041),
     ("0042", _m0042),
     ("0043", _m0043),
+    ("0044", _m0044),
 ]
 
 

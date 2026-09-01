@@ -10,6 +10,15 @@ a verdict that means something.
 
 last_health_detail carries the human-readable reason for a failure so it
 survives a remount; a bare "failed" is only marginally better than a lie.
+
+🔴 SHIPPED BROKEN in v0.1.33. Every statement here named ``provider_config``;
+the table is ``provider_configs``. The guard on the first line therefore always
+matched "table absent" and returned, so this migration did NOTHING while
+apply_pending recorded it as applied — a silent no-op that looks identical to
+success. Fixed here for any database that has not recorded 0043 yet; 0044
+repairs the ones that already have. A fresh install never noticed, because
+create_all builds the modern table straight from the model and no migration is
+involved: only an UPGRADE could see it.
 """
 from __future__ import annotations
 
@@ -19,14 +28,14 @@ def _columns(connection, table: str) -> set[str]:
 
 
 def upgrade_sync(connection) -> None:
-    if "provider_config" not in {r[0] for r in connection.exec_driver_sql(
+    if "provider_configs" not in {r[0] for r in connection.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table'")}:
         return
-    if "last_health_detail" not in _columns(connection, "provider_config"):
+    if "last_health_detail" not in _columns(connection, "provider_configs"):
         connection.exec_driver_sql(
-            "ALTER TABLE provider_config ADD COLUMN last_health_detail TEXT")
+            "ALTER TABLE provider_configs ADD COLUMN last_health_detail TEXT")
     # Old vocabulary → "never tested". Not a translation: the old words answered
     # a question this column no longer asks.
     connection.exec_driver_sql(
-        "UPDATE provider_config SET last_health = NULL, last_health_at = NULL "
+        "UPDATE provider_configs SET last_health = NULL, last_health_at = NULL "
         "WHERE last_health IN ('reachable_models','reachable_no_list','unreachable')")
