@@ -14,6 +14,8 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
+
+mod proxy;
 use std::sync::Mutex;
 
 use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
@@ -82,7 +84,28 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
         ));
     }
 
-    let mut child = Command::new(&exe)
+    let mut cmd = Command::new(&exe);
+    // Hand the sidecar the proxy this process had to go looking for. httpx
+    // reads these variables and nothing else, and a Finder-launched app has
+    // none of them, so without this every outbound call from the sidecar —
+    // every LLM request included — goes direct on a machine that can only
+    // reach the internet through a proxy.
+    match proxy::resolve() {
+        Some(ref url) => eprintln!("network: proxying through {url} (loopback exempt)"),
+        // Said out loud because "no proxy" and "proxy we failed to find" look
+        // identical from the outside, and the difference is the whole bug.
+        None => eprintln!("network: direct (no proxy in the environment or System Settings)"),
+    }
+    if let Some(url) = proxy::resolve() {
+        cmd.env("HTTPS_PROXY", &url)
+            .env("HTTP_PROXY", &url)
+            .env("ALL_PROXY", &url)
+            // Loopback stays direct: the sidecar is on 127.0.0.1 and so is a
+            // local model server. Proxying those would break a working setup.
+            .env("NO_PROXY", proxy::NO_PROXY);
+    }
+
+    let mut child = cmd
         // stdin is PIPED and the handle is then held for the life of this
         // process. That pipe is the sidecar's death signal: when we die — for
         // ANY reason, including SIGKILL, where our exit handlers never run —
@@ -352,7 +375,20 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
         if interactive {
             app.state::<UpdateShared>().set(&app, "checking", "", "");
         }
-        let updater = match app.updater() {
+        // Built rather than taken off the handle so the system proxy can be
+        // attached: reqwest reads only the environment, which a Finder-launched
+        // app does not have, and "could not reach the update feed" was the
+        // first symptom of that on a proxied machine.
+        let mut builder = app.updater_builder();
+        if let Some(url) = proxy::resolve() {
+            match url.parse() {
+                Ok(parsed) => builder = builder.proxy(parsed),
+                // An unparseable value is the user's own env var; say so once
+                // and carry on direct rather than failing the whole check.
+                Err(e) => eprintln!("ignoring unusable proxy {url:?}: {e}"),
+            }
+        }
+        let updater = match builder.build() {
             Ok(u) => u,
             Err(e) => {
                 eprintln!("updater unavailable: {e}");
