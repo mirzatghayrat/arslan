@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Both keys are load-bearing in the literal sense: without them macOS does
+       not deny the microphone, it KILLS the process. Measured on a signed,
+       hardened, notarized build launched the way a user launches it — the
+       crash report names the missing key in the TCC namespace. A denial can be
+       handled; a kill cannot, so these ship before any code touches audio.
+
+       The matching entitlement (com.apple.security.device.audio-input) is NOT
+       here on purpose: a non-sandboxed Developer ID app was measured recording
+       without it, and plain Developer ID signing cannot embed it anyway. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Arslan listens while you hold the mic button, so you can talk to it instead of typing.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Arslan turns what you say into text. For English and Chinese this happens on this Mac, and what you say is not sent anywhere.</string>
+</dict>
+</plist>

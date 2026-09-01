@@ -236,7 +236,10 @@ describe("locale parity", () => {
     //               −6 for the retired two-level tester (healthDot×4, deepTest×2).
     // 1416 → 1418: common.more + settings.deletePrimaryBlocked — the overflow
     //               menu that took the rare/destructive actions out of the row.
-    expect(enKeys).toHaveLength(1418);
+    // 1418 → 1426: six voice.* strings for push-to-talk (hold, listening, and
+    //               four refusals that must read as sentences, not silence) plus
+    //               settings.labelVoiceInputLocale / voiceInputLocaleDesc.
+    expect(enKeys).toHaveLength(1426);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

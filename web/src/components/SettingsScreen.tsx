@@ -228,6 +228,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
         voiceOutputEnabled={localSettings.voiceOutputEnabled ?? false}
         onVoiceOutputChange={(v) => saveField({ voiceOutputEnabled: v })}
+        voiceInputLocale={localSettings.voiceInputLocale ?? ''}
+        onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         sshEnabled={localSettings.sshEnabled ?? false}
         onSshChange={(v) => saveField({ sshEnabled: v })}
         spawnMode={localSettings.spawnMode}

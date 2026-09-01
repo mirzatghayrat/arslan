@@ -18,6 +18,8 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { LANGUAGE_OPTIONS } from '../../lib/languages';
+import { VOICE_LOCALE_BY_CODE } from '../../lib/speech';
 import { AlertTriangle, Sliders } from 'lucide-react';
 import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
@@ -47,6 +49,8 @@ export interface AdvancedSectionProps {
   onDefaultReadChange: (value: boolean) => void;
   voiceOutputEnabled: boolean;
   onVoiceOutputChange: (value: boolean) => void;
+  voiceInputLocale: string;
+  onVoiceInputLocaleChange: (value: string) => void;
   /** May Arslan log into another machine over SSH? Default OFF, separately. */
   sshEnabled: boolean;
   onSshChange: (value: boolean) => void;
@@ -75,6 +79,8 @@ export default function AdvancedSection({
   onDefaultReadChange,
   voiceOutputEnabled,
   onVoiceOutputChange,
+  voiceInputLocale,
+  onVoiceInputLocaleChange,
   sshEnabled,
   onSshChange,
   spawnMode,
@@ -169,6 +175,34 @@ export default function AdvancedSection({
             onChange={(e) => onVoiceOutputChange(e.target.checked)}
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
+        </div>
+
+        {/* The language you SPEAK. Separate from the interface language on
+            purpose: reading replies aloud followed the interface language and
+            handed an English voice Chinese sentences, and reading an English
+            UI while speaking Chinese is the ordinary case, not the edge one. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelVoiceInputLocale')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.voiceInputLocaleDesc')}
+            </p>
+          </div>
+          <select
+            data-testid="voice-input-locale"
+            value={voiceInputLocale}
+            onChange={(e) => onVoiceInputLocaleChange(e.target.value)}
+            className="text-[11px] font-mono bg-background border border-border rounded-lg px-2 py-1.5 shrink-0"
+          >
+            <option value="">{t('settings.labelLanguage')}</option>
+            {LANGUAGE_OPTIONS.map((o) => (
+              <option key={o.code} value={VOICE_LOCALE_BY_CODE[o.code] ?? o.code}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Local network discovery (P3a). Read-only, and off until chosen. */}

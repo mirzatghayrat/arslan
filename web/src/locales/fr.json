@@ -679,7 +679,9 @@
     "primary": "Principal",
     "modelSwitcherManage": "Gérer les modèles…",
     "modelSwitcherNone": "Aucun modèle configuré",
-    "deletePrimaryBlocked": "Le modèle principal ne peut pas être supprimé — définissez-en un autre comme principal."
+    "deletePrimaryBlocked": "Le modèle principal ne peut pas être supprimé — définissez-en un autre comme principal.",
+    "labelVoiceInputLocale": "Langue de la saisie vocale",
+    "voiceInputLocaleDesc": "La langue que vous PARLEZ, pas forcément celle de cette interface. Vide, elle suit la langue de l'interface."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1630,5 +1632,13 @@
     "confirm": "Mémoriser",
     "cancel": "Pas maintenant",
     "failed": "Impossible d'enregistrer cette machine."
+  },
+  "voice": {
+    "holdToTalk": "Maintenir pour parler",
+    "listening": "écoute…",
+    "errDenied": "Le micro ou la reconnaissance vocale est désactivé dans Réglages Système → Confidentialité et sécurité.",
+    "errNoAnswer": "La demande d'autorisation n'a jamais reçu de réponse. Maintenez à nouveau le bouton.",
+    "errLocale": "Ce Mac n'a pas de moteur pour cette langue parlée. Choisissez-en une autre dans Langue de la saisie vocale.",
+    "errNoInput": "Aucun micro n'est disponible sur ce Mac."
   }
 }

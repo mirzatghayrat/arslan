@@ -27,6 +27,8 @@ import { useSettingsStore } from '../stores/settingsStore';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
+import PushToTalk from './PushToTalk';
+import { voiceLangFor } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
@@ -123,6 +125,13 @@ export default function OrchestratorChat({
 }: OrchestratorChatProps) {
   const { t } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
+  // What the recogniser should EXPECT to hear. Its own setting first, because
+  // the language someone speaks is not the language their interface is in —
+  // reading replies aloud already made that mistake once, giving an English
+  // voice Chinese sentences.
+  const voiceLocale =
+    (settings?.voice_input_locale || '').trim() || voiceLangFor(settings?.language);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   // Real capability display names (key → name) for equipped-capability chips.
   const capabilityLabel = useCapabilityLabel();
   // Client-side user display name for the greeting + own-message sender label.
@@ -532,11 +541,22 @@ export default function OrchestratorChat({
                 className="w-full bg-transparent text-sm text-foreground placeholder-subtle-foreground focus:outline-none resize-none px-2 pt-1 font-sans leading-relaxed min-h-[55px]"
               />
 
+              {voiceError && (
+                <p data-testid="voice-error" className="px-2 pb-1 text-[11px] text-danger font-sans">
+                  {voiceError}
+                </p>
+              )}
               {/* Action options row */}
               <div className="flex items-center justify-between pt-2 border-t border-border/50 select-none">
                 {/* Left group: attach control + model indicator */}
                 <div className="flex items-center gap-2 min-w-0">
                   <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
+                  <PushToTalk
+                    locale={voiceLocale}
+                    onPartial={(text) => { setVoiceError(null); setInputValue(text); }}
+                    onFinal={(text) => setInputValue(text)}
+                    onError={(msg) => setVoiceError(msg)}
+                  />
                   {/* Which model is about to answer — and a way to change it.
                       This read `settings.llm_provider · settings.llm_model` until
                       now: two fields adapters.ts stopped mapping when the

@@ -679,7 +679,9 @@
     "primary": "Primary",
     "modelSwitcherManage": "Manage models…",
     "modelSwitcherNone": "No model configured",
-    "deletePrimaryBlocked": "The primary model can't be deleted — make another one primary first."
+    "deletePrimaryBlocked": "The primary model can't be deleted — make another one primary first.",
+    "labelVoiceInputLocale": "Voice input language",
+    "voiceInputLocaleDesc": "The language you SPEAK, which need not be the language of this interface. Left empty it follows the interface language."
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -1630,5 +1632,13 @@
     "confirm": "Remember it",
     "cancel": "Not now",
     "failed": "Could not enrol that machine."
+  },
+  "voice": {
+    "holdToTalk": "Hold to talk",
+    "listening": "listening…",
+    "errDenied": "Arslan cannot hear you: the microphone or speech recognition is switched off for it in System Settings → Privacy & Security.",
+    "errNoAnswer": "The permission prompt was never answered. Hold the button again to retry.",
+    "errLocale": "This Mac has no recogniser for that spoken language. Pick another under Voice input language.",
+    "errNoInput": "No microphone is available on this Mac."
   }
 }
