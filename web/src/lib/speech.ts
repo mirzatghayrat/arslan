@@ -64,16 +64,26 @@ export function speechSupported(): boolean {
     && typeof window.SpeechSynthesisUtterance !== "undefined";
 }
 
-/** Map the app's language setting to a BCP-47 voice tag. */
+/**
+ * The one place a UI language code becomes a BCP-47 tag a speech engine wants.
+ *
+ * Exported as a table rather than hidden in a switch because the settings
+ * picker needs the same mapping: two copies would drift, and a drifted voice
+ * locale is exactly the bug that made an English voice read Chinese.
+ */
+export const VOICE_LOCALE_BY_CODE: Record<string, string> = {
+  zh: "zh-CN",
+  "zh-cn": "zh-CN",
+  ja: "ja-JP",
+  de: "de-DE",
+  fr: "fr-FR",
+  es: "es-ES",
+  en: "en-US",
+};
+
+/** Map the app's language setting to a BCP-47 tag. Unknown codes read as en-US. */
 export function voiceLangFor(appLanguage: string | undefined): string {
-  switch ((appLanguage || "").toLowerCase()) {
-    case "zh": case "zh-cn": return "zh-CN";
-    case "ja": return "ja-JP";
-    case "de": return "de-DE";
-    case "fr": return "fr-FR";
-    case "es": return "es-ES";
-    default: return "en-US";
-  }
+  return VOICE_LOCALE_BY_CODE[(appLanguage || "").toLowerCase()] ?? "en-US";
 }
 
 /**

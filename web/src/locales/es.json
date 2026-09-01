@@ -679,7 +679,9 @@
     "primary": "Principal",
     "modelSwitcherManage": "Gestionar modelos…",
     "modelSwitcherNone": "Ningún modelo configurado",
-    "deletePrimaryBlocked": "El modelo principal no se puede eliminar; primero haz principal a otro."
+    "deletePrimaryBlocked": "El modelo principal no se puede eliminar; primero haz principal a otro.",
+    "labelVoiceInputLocale": "Idioma de entrada de voz",
+    "voiceInputLocaleDesc": "El idioma que HABLAS, que no tiene por qué ser el de esta interfaz. Vacío, sigue al de la interfaz."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -1630,5 +1632,13 @@
     "confirm": "Recordarla",
     "cancel": "Ahora no",
     "failed": "No se pudo registrar esa máquina."
+  },
+  "voice": {
+    "holdToTalk": "Mantén para hablar",
+    "listening": "escuchando…",
+    "errDenied": "El micrófono o el reconocimiento de voz está desactivado en Ajustes del Sistema → Privacidad y seguridad.",
+    "errNoAnswer": "Nadie respondió a la solicitud de permiso. Mantén pulsado de nuevo.",
+    "errLocale": "Este Mac no tiene reconocimiento para ese idioma hablado. Elige otro en Idioma de entrada de voz.",
+    "errNoInput": "No hay ningún micrófono disponible en este Mac."
   }
 }

@@ -69,6 +69,7 @@ class SettingsIn(BaseModel):
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
     voice_output_enabled: str | None = None
+    voice_input_locale: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -122,6 +123,7 @@ class SettingsOut(BaseModel):
     ssh_enabled: str = ""
     default_read_enabled: str = ""
     voice_output_enabled: str = ""
+    voice_input_locale: str = ""
 
 
 class AccessTokenOut(BaseModel):

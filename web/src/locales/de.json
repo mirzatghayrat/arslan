@@ -679,7 +679,9 @@
     "primary": "Primär",
     "modelSwitcherManage": "Modelle verwalten…",
     "modelSwitcherNone": "Kein Modell konfiguriert",
-    "deletePrimaryBlocked": "Das primäre Modell kann nicht gelöscht werden — mache zuerst ein anderes primär."
+    "deletePrimaryBlocked": "Das primäre Modell kann nicht gelöscht werden — mache zuerst ein anderes primär.",
+    "labelVoiceInputLocale": "Sprache der Spracheingabe",
+    "voiceInputLocaleDesc": "Die Sprache, die du SPRICHST — nicht zwingend die dieser Oberfläche. Leer folgt sie der Oberflächensprache."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",
@@ -1630,5 +1632,13 @@
     "confirm": "Merken",
     "cancel": "Jetzt nicht",
     "failed": "Die Maschine konnte nicht aufgenommen werden."
+  },
+  "voice": {
+    "holdToTalk": "Zum Sprechen halten",
+    "listening": "hört zu…",
+    "errDenied": "Mikrofon oder Spracherkennung sind in den Systemeinstellungen → Datenschutz & Sicherheit deaktiviert.",
+    "errNoAnswer": "Die Berechtigungsabfrage wurde nie beantwortet. Halte die Taste erneut gedrückt.",
+    "errLocale": "Für diese gesprochene Sprache gibt es auf diesem Mac keine Erkennung. Wähle unter Spracheingabe eine andere.",
+    "errNoInput": "Auf diesem Mac ist kein Mikrofon verfügbar."
   }
 }

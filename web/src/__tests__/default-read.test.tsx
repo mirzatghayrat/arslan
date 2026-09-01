@@ -23,6 +23,7 @@ function props(over: Partial<Props> = {}): Props {
     sshEnabled: false, onSshChange: vi.fn(),
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
     voiceOutputEnabled: false, onVoiceOutputChange: vi.fn(),
+    voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
     spawnMode: "auto", onSpawnModeChange: vi.fn(),
     ...over,
   };

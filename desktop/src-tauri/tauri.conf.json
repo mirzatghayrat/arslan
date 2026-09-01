@@ -26,7 +26,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "binaries/sidecar": "sidecar"
+      "binaries/sidecar": "sidecar",
+        "binaries/listen": "listen"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"

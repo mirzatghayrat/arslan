@@ -29,7 +29,7 @@ _PLAIN_KEYS = (
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
-               "voice_output_enabled")
+               "voice_output_enabled", "voice_input_locale")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days", "evolution_max_dispatches",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")

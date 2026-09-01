@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sshEnabled: false,           // default OFF — the highest-risk surface here
   defaultReadEnabled: true,    // default ON — reads of Desktop/Documents/Downloads
   voiceOutputEnabled: false,   // default OFF — read replies aloud (opt-in)
+  voiceInputLocale: "",        // "" = follow the interface language
   language: 'en',
   theme: 'dark',
   telemetry: false,

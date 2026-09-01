@@ -15,6 +15,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
+mod listen;
 mod proxy;
 use std::sync::Mutex;
 
@@ -718,10 +719,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
         .manage(UpdateShared::default())
+        .manage(listen::Listener::default())
         .invoke_handler(tauri::generate_handler![
             update_status,
             install_update,
-            open_external
+            open_external,
+            listen::voice_start,
+            listen::voice_stop
         ])
         .on_menu_event(|app, event| {
             if event.id() == "check-for-updates" {

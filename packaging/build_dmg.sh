@@ -147,6 +147,19 @@ step "[4/7] staging the sidecar into Tauri resources"
 # tested without a five-minute build in front of them.
 "$HERE/stage_sidecar.sh" "$HERE/dist/arslan-server" "$TAURI/binaries/sidecar"
 
+step "[4b/7] building the push-to-talk listener"
+# --------------------------------------------------------------------------
+# A tiny Swift binary, not code in the Rust shell: Speech and AVAudioEngine are
+# Swift APIs on a real-time audio thread. It ships INSIDE the bundle, which is
+# what makes it legal — TCC reads the usage strings from the app's Info.plist
+# and a child living there inherits them. Measured: the same binary outside a
+# bundle carrying those keys is killed outright by TCC, not denied.
+mkdir -p "$TAURI/binaries/listen"
+swiftc -O -o "$TAURI/binaries/listen/arslan-listen" "$HERE/listen/arslan-listen.swift"
+# A listener that failed to build must not produce a quietly voiceless app.
+test -x "$TAURI/binaries/listen/arslan-listen" \
+  || { echo "ERROR: the listener did not build" >&2; exit 1; }
+
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   step "    signing the sidecar's Mach-O files"
   # BEFORE tauri build: `tauri build` signs the .app, sealing resources into
@@ -166,6 +179,13 @@ if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   done
   codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime \
     --entitlements "$TAURI/entitlements.plist" "$TAURI/binaries/sidecar/arslan-server"
+
+  step "    signing the listener"
+  # No entitlements: a non-sandboxed Developer ID app was MEASURED recording
+  # with none, and audio-input cannot be embedded by plain Developer ID signing
+  # anyway. Hardened runtime and a timestamp are what notarization wants.
+  codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime \
+    "$TAURI/binaries/listen/arslan-listen"
 fi
 
 # --------------------------------------------------------------------------

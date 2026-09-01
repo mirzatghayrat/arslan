@@ -147,7 +147,7 @@ jobs:
         # like a test that passes. (PR #23 claimed "the crate has no tests yet";
         # that was wrong, and this step is the correction.)
         run: |
-          mkdir -p desktop/src-tauri/binaries/sidecar
+          mkdir -p desktop/src-tauri/binaries/sidecar desktop/src-tauri/binaries/listen
           cargo test --manifest-path desktop/src-tauri/Cargo.toml
 
       - name: Rust clippy
@@ -156,7 +156,7 @@ jobs:
         # build. An empty directory satisfies the existence check — clippy
         # compiles the shell, it does not bundle it.
         run: |
-          mkdir -p desktop/src-tauri/binaries/sidecar
+          mkdir -p desktop/src-tauri/binaries/sidecar desktop/src-tauri/binaries/listen
           cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Install uv

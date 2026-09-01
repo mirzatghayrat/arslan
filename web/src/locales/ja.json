@@ -679,7 +679,9 @@
     "primary": "メイン",
     "modelSwitcherManage": "モデルを管理…",
     "modelSwitcherNone": "モデル未設定",
-    "deletePrimaryBlocked": "メインのモデルは削除できません。先に別のモデルをメインにしてください。"
+    "deletePrimaryBlocked": "メインのモデルは削除できません。先に別のモデルをメインにしてください。",
+    "labelVoiceInputLocale": "音声入力の言語",
+    "voiceInputLocaleDesc": "あなたが**話す**言語。この画面の言語と同じである必要はありません。空欄なら画面の言語に従います。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -1630,5 +1632,13 @@
     "confirm": "記憶する",
     "cancel": "今はしない",
     "failed": "登録できませんでした。"
+  },
+  "voice": {
+    "holdToTalk": "押して話す",
+    "listening": "聞いています…",
+    "errDenied": "マイクまたは音声認識が「システム設定 → プライバシーとセキュリティ」でオフになっています。",
+    "errNoAnswer": "許可ダイアログに応答がありませんでした。もう一度押し続けてください。",
+    "errLocale": "この Mac にはその話し言葉の認識エンジンがありません。音声入力言語で別の言語を選んでください。",
+    "errNoInput": "この Mac に使用できるマイクがありません。"
   }
 }

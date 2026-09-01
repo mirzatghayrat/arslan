@@ -679,7 +679,9 @@
     "primary": "主力",
     "modelSwitcherManage": "管理模型…",
     "modelSwitcherNone": "还没配置模型",
-    "deletePrimaryBlocked": "主力模型不能删——先把别的设成主力。"
+    "deletePrimaryBlocked": "主力模型不能删——先把别的设成主力。",
+    "labelVoiceInputLocale": "语音输入语言",
+    "voiceInputLocaleDesc": "你**说**的语言,不必和界面语言相同。留空则跟随界面语言。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -1630,5 +1632,13 @@
     "confirm": "记住它",
     "cancel": "先不要",
     "failed": "登记失败。"
+  },
+  "voice": {
+    "holdToTalk": "按住说话",
+    "listening": "在听…",
+    "errDenied": "Arslan 听不到你:麦克风或语音识别在「系统设置 → 隐私与安全性」里对它是关的。",
+    "errNoAnswer": "授权框一直没被回应。再按住一次可重试。",
+    "errLocale": "这台 Mac 上没有这种口语的识别器。到「语音输入语言」里换一个。",
+    "errNoInput": "这台 Mac 上没有可用的麦克风。"
   }
 }

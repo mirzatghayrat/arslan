@@ -267,6 +267,7 @@ export interface AppSettings {
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
   voice_output_enabled?: string; // "true" | "false" (default-OFF)
+  voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;
