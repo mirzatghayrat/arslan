@@ -6,9 +6,9 @@
 //! emits the final and re-arms. Every helper line is also forwarded verbatim
 //! to the webview on `voice://conv`, errors included.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -94,11 +94,49 @@ fn helper_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("cannot locate the voice helper: {e}"))
 }
 
-fn write_cmd(stdin: &Arc<Mutex<ChildStdin>>, cmd: &str) -> Result<(), String> {
+fn write_cmd<W: Write>(stdin: &Mutex<W>, cmd: &str) -> Result<(), String> {
     let mut s = stdin.lock().unwrap();
     writeln!(s, "{{\"c\":\"{cmd}\"}}")
         .and_then(|_| s.flush())
         .map_err(|e| format!("voice helper stdin: {e}"))
+}
+
+/// Read helper lines off `stdout`, drive the endpointer, and forward every
+/// non-empty line to `emit` — finishing always with `{"t":"ended"}`.
+///
+/// `stdin` is held as a `Weak`: this function upgrades it only for the
+/// duration of a single `end_utterance` write, then drops that temporary
+/// strong reference immediately. That is load-bearing, not cosmetic — the
+/// binding contract is "stop = drop stdin (EOF), never kill", and the helper
+/// only sees EOF once every strong reference to its stdin is gone. If this
+/// function held its own `Arc` for the loop's lifetime (as the reader thread
+/// used to), `stop_inner` dropping the state's reference would not be
+/// enough: the fd would stay open, the helper would never exit, stdout would
+/// never EOF, and this loop — and the `ended` event — would never fire.
+pub fn pump<R: Read, W: Write + Send + 'static>(
+    stdout: R,
+    stdin: Weak<Mutex<W>>,
+    silence_ms: u64,
+    mut emit: impl FnMut(String),
+) {
+    let t0 = Instant::now();
+    let mut ep = Endpointer::new(silence_ms);
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let now = t0.elapsed().as_millis() as u64;
+        if drive(&mut ep, &parse_helper_line(&line), now) {
+            // Upgrade only for this one write, then let the temporary Arc
+            // drop immediately — holding it any longer than this statement
+            // would recreate the bug this function exists to fix.
+            if let Some(s) = stdin.upgrade() {
+                let _ = write_cmd(&s, "end_utterance");
+            }
+        }
+        emit(line);
+    }
+    emit(r#"{"t":"ended"}"#.to_string());
 }
 
 #[tauri::command]
@@ -136,21 +174,13 @@ pub fn voice_conversation_start(
     ));
 
     let handle = app.clone();
-    let writer = stdin.clone();
+    // Weak, not a clone: the reader must hold no strong reference to stdin,
+    // or dropping the state's Arc in `stop_inner` would not close the fd.
+    let weak_stdin: Weak<Mutex<ChildStdin>> = Arc::downgrade(&stdin);
     std::thread::spawn(move || {
-        let t0 = Instant::now();
-        let mut ep = Endpointer::new(silence_ms);
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let now = t0.elapsed().as_millis() as u64;
-            if drive(&mut ep, &parse_helper_line(&line), now) {
-                let _ = write_cmd(&writer, "end_utterance");
-            }
+        pump(stdout, weak_stdin, silence_ms, |line| {
             let _ = handle.emit(EVENT, line);
-        }
-        let _ = handle.emit(EVENT, r#"{"t":"ended"}"#.to_string());
+        });
     });
 
     *state.child.lock().unwrap() = Some(child);
@@ -250,5 +280,119 @@ mod tests {
     #[test]
     fn the_event_name_is_the_one_the_webview_listens_on() {
         assert_eq!(EVENT, "voice://conv");
+    }
+
+    /// `/bin/cat` stands in for the voice helper here: it echoes whatever it
+    /// reads on stdin back to stdout, and — critically for this test — exits
+    /// on stdin EOF, exactly like the contract `pump` relies on. This proves
+    /// the full lifecycle: `pump` forwards lines it reads, and dropping the
+    /// *last* strong reference to stdin (not killing anything) is enough to
+    /// end the helper, end `pump`'s read loop, and emit `{"t":"ended"}`.
+    ///
+    /// This is the assertion that fails against the pre-fix `pump` (which
+    /// upgraded the `Weak` once and held the `Arc` for the whole loop, just
+    /// like the old reader thread's captured `Arc` clone): holding a second
+    /// strong reference keeps the fd open, `cat` never sees EOF, and the
+    /// thread never finishes within the deadline.
+    #[test]
+    fn dropping_the_last_stdin_reference_ends_the_pump_and_emits_ended() {
+        use std::time::Duration;
+
+        let mut child = Command::new("/bin/cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("spawn /bin/cat");
+        let stdout = child.stdout.take().expect("cat has stdout");
+        let stdin = Arc::new(Mutex::new(child.stdin.take().expect("cat has stdin")));
+        let weak = Arc::downgrade(&stdin);
+
+        let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let lines_for_emit = lines.clone();
+        let handle = std::thread::spawn(move || {
+            pump(stdout, weak, 900, move |line| {
+                lines_for_emit.lock().unwrap().push(line);
+            });
+        });
+
+        // Write through the Arc, proving `pump` forwards what it reads back
+        // (cat echoes it verbatim).
+        {
+            let mut s = stdin.lock().unwrap();
+            writeln!(s, r#"{{"t":"ready"}}"#).unwrap();
+            s.flush().unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|l| l == r#"{"t":"ready"}"#)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "cat never echoed the line back within 2s"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // Drop the only strong reference left. This must close the fd, cat
+        // must see EOF and exit, cat's stdout must then EOF, and `pump`'s
+        // read loop must end.
+        drop(stdin);
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !handle.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "pump thread never ended within 3s after the last stdin reference was dropped"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        handle.join().expect("pump thread panicked");
+
+        let collected = lines.lock().unwrap();
+        assert_eq!(
+            collected.last().map(String::as_str),
+            Some(r#"{"t":"ended"}"#),
+            "pump must emit ended once its read loop ends"
+        );
+
+        let _ = child.wait();
+    }
+
+    /// When the state's `Arc` is already gone before `end_utterance` would
+    /// be written (e.g. a stop raced the reader), `pump` must not panic — it
+    /// just skips the write, since there is nothing left to write to.
+    #[test]
+    fn pump_does_not_panic_when_stdin_is_already_gone() {
+        let stdin: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let weak = Arc::downgrade(&stdin);
+        drop(stdin); // the only strong reference is gone before pump ever runs
+
+        // ready arms the endpointer's partial; a loud level marks voice; the
+        // next line (silence_ms: 0) is due immediately, so `drive` returns
+        // true and `pump` must try — and fail — to upgrade the Weak.
+        let script = concat!(
+            "{\"t\":\"ready\"}\n",
+            "{\"t\":\"partial\",\"text\":\"hi\"}\n",
+            "{\"t\":\"level\",\"peak\":0.5}\n",
+            "{\"t\":\"level\",\"peak\":0.0}\n",
+        );
+        let reader = std::io::Cursor::new(script.as_bytes());
+
+        let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let lines_for_emit = lines.clone();
+        pump(reader, weak, 0, move |line| {
+            lines_for_emit.lock().unwrap().push(line);
+        });
+
+        assert_eq!(
+            lines.lock().unwrap().last().map(String::as_str),
+            Some(r#"{"t":"ended"}"#)
+        );
     }
 }
