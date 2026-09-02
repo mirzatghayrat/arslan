@@ -66,21 +66,47 @@ final class Ear {
     }
 
     /// Arm a fresh request. Called at start and after every final.
-    func arm() {
-        lock.lock(); defer { lock.unlock() }
-        task?.cancel()
+    func arm() { rearm(after: nil) }
+
+    /// The real implementation. `finishedTask`, when given, is the task
+    /// whose completion handler triggered this call — it has already
+    /// delivered `isFinal` or an error, so it is done and must never be
+    /// cancelled from its own stack.
+    ///
+    /// Must never run on the recognition callback's own stack: the
+    /// callback hands off to `work.async` before calling this, because
+    /// `NSLock` is not reentrant and `SFSpeechRecognitionTask.cancel()`
+    /// can synchronously re-invoke its own completion handler. Taking
+    /// `lock` here while that handler is still on the stack (as `arm()`
+    /// used to, calling itself straight from the callback) would try to
+    /// lock a lock this same stack already holds and hang forever —
+    /// taking every later `endUtterance()`/`setMuted()` down with it,
+    /// since stdin's command loop blocks on the same `lock`.
+    private func rearm(after finishedTask: SFSpeechRecognitionTask?) {
+        lock.lock()
+        // Cancel only a task that is still running. One that just
+        // finished (isFinal/error already delivered) needs no
+        // cancellation, and identity — not nil-ness — is what tells
+        // them apart, since `task` still points at it here.
+        if let current = task, current !== finishedTask {
+            current.cancel()
+        }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
         request = req
         ending = false
-        task = recognizer.recognitionTask(with: req) { [weak self] result, error in
+        // `newTask` is captured by its own completion handler before this
+        // line finishes assigning it — safe because the handler only ever
+        // runs later, asynchronously, once `recognitionTask` has returned.
+        var newTask: SFSpeechRecognitionTask?
+        newTask = recognizer.recognitionTask(with: req) { [weak self] result, error in
             guard let self = self else { return }
             if let r = result {
                 let text = r.bestTranscription.formattedString
                 if r.isFinal {
                     emit(["t": "final", "text": text])
-                    self.arm()
+                    work.async { self.rearm(after: newTask) }
                 } else {
                     emit(["t": "partial", "text": text])
                 }
@@ -89,9 +115,15 @@ final class Ear {
                 if e.code != 1110 {
                     emit(["t": "error", "code": "recognition-failed", "msg": e.localizedDescription])
                 }
-                self.arm()
+                work.async { self.rearm(after: newTask) }
             }
         }
+        task = newTask
+        lock.unlock()
+        // Emitted after the lock is released: `emit` blocks on a
+        // `DispatchQueue.sync` plus JSON serialisation and a flushed
+        // `print`, none of which should happen while other threads are
+        // waiting on `lock`.
         emit(["t": "ready"])
     }
 
@@ -155,10 +187,24 @@ final class Ear {
                 if fed { status.pointee = .noDataNow; return nil }
                 fed = true; status.pointee = .haveData; return mono
             }
-            if out.frameLength > 0 { req?.append(out) }
+            if out.frameLength > 0 { append(out, ifStill: req) }
         } else {
-            req?.append(mono)
+            append(mono, ifStill: req)
         }
+    }
+
+    /// The only path that ever calls `SFSpeechAudioBufferRecognitionRequest.append`.
+    /// `req` is the request `consume()` saw under `lock` before doing the
+    /// (lock-free) channel copy and conversion above; by the time this runs,
+    /// `end_utterance` may have called `endAudio()` on it, or `arm()` may
+    /// have already replaced it with a new one. Re-checking `!ending` and
+    /// `req === request` inside `lock` — right before the append — is what
+    /// keeps the tap from ever appending to a request that has already
+    /// finished.
+    private func append(_ buffer: AVAudioPCMBuffer, ifStill req: SFSpeechAudioBufferRecognitionRequest?) {
+        lock.lock(); defer { lock.unlock() }
+        guard !ending, let req = req, req === request else { return }
+        req.append(buffer)
     }
 }
 
