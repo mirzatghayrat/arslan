@@ -195,6 +195,18 @@
           "markdownDescription": "Enables the update_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the voice_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voice-start",
+          "markdownDescription": "Enables the voice_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the voice_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voice-stop",
+          "markdownDescription": "Enables the voice_stop command without any pre-configured scope."
+        },
+        {
           "description": "Denies the install_update command without any pre-configured scope.",
           "type": "string",
           "const": "deny-install-update",
@@ -211,6 +223,18 @@
           "type": "string",
           "const": "deny-update-status",
           "markdownDescription": "Denies the update_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voice_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voice-start",
+          "markdownDescription": "Denies the voice_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voice_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voice-stop",
+          "markdownDescription": "Denies the voice_stop command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
