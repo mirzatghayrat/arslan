@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS } from './data';
 import { Spawn, Message, MessageAttachment, AppSettings } from './types';
 import { useSpawnStore } from './stores/spawnStore';
 import { useArslanStore } from './stores/arslanStore';
-import { voiceLangFor } from './lib/speech';
+import { preferredVoiceLocale } from './lib/speech';
 import { runLaunchTests } from './lib/launchTest';
 import { useSettingsStore } from './stores/settingsStore';
 import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
@@ -385,15 +385,17 @@ export default function App() {
   const [spawns, setSpawns] = useState<Spawn[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
-  // Push voice-output preference + language into the arslan store so the reply
-  // stream can be spoken (V1). Kept here because App owns settings; the store
-  // holds only the device singleton.
+  // Push voice-output preference + language HINT into the arslan store so the
+  // reply stream can be spoken (V1). The hint is what the user said they speak
+  // (else the interface language); each sentence's own script overrides it
+  // (V1b). Kept here because App owns settings; the store holds only the
+  // device singleton.
   useEffect(() => {
     setVoice({
       enabled: settings.voiceOutputEnabled ?? false,
-      lang: voiceLangFor(settings.language),
+      lang: preferredVoiceLocale(settings.voiceInputLocale, settings.language),
     });
-  }, [settings.voiceOutputEnabled, settings.language, setVoice]);
+  }, [settings.voiceOutputEnabled, settings.voiceInputLocale, settings.language, setVoice]);
 
   // Stage B: provider/search-provider catalogs for Settings dropdowns (live from backend)
   const [llmProviders, setLlmProviders] = useState<ProviderOption[]>([]);
