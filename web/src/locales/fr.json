@@ -681,7 +681,14 @@
     "modelSwitcherNone": "Aucun modèle configuré",
     "deletePrimaryBlocked": "Le modèle principal ne peut pas être supprimé — définissez-en un autre comme principal.",
     "labelVoiceInputLocale": "Langue de la saisie vocale",
-    "voiceInputLocaleDesc": "La langue que vous PARLEZ, pas forcément celle de cette interface. Vide, elle suit la langue de l'interface."
+    "voiceInputLocaleDesc": "La langue que vous PARLEZ, pas forcément celle de cette interface. Vide, elle suit la langue de l'interface.",
+    "labelVoiceMode": "Microphone",
+    "voiceModeDesc": "Désactivé ; maintenir pour parler ; ou écouter en continu et envoyer chaque phrase dès qu'elle se termine. En mode conversation, le micro est coupé pendant la lecture d'une réponse.",
+    "voiceModeOff": "Désactivé",
+    "voiceModePushToTalk": "Maintenir pour parler",
+    "voiceModeConversation": "Conversation",
+    "labelVoiceEndpointSilence": "Fin de phrase (ms)",
+    "voiceEndpointSilenceDesc": "Durée de la pause avant l'envoi de ce que vous avez dit. 900 ms correspondent à une respiration normale ; moins vous coupe, plus paraît lent."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

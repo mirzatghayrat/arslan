@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultReadEnabled: true,    // default ON — reads of Desktop/Documents/Downloads
   voiceOutputEnabled: false,   // default OFF — read replies aloud (opt-in)
   voiceInputLocale: "",        // "" = follow the interface language
+  voiceMode: 'push_to_talk',   // always-on listening is a choice, not a default
+  voiceEndpointSilenceMs: 900, // measured default; see the V2 spec §3.1
   language: 'en',
   theme: 'dark',
   telemetry: false,

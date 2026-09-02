@@ -681,7 +681,14 @@
     "modelSwitcherNone": "Ningún modelo configurado",
     "deletePrimaryBlocked": "El modelo principal no se puede eliminar; primero haz principal a otro.",
     "labelVoiceInputLocale": "Idioma de entrada de voz",
-    "voiceInputLocaleDesc": "El idioma que HABLAS, que no tiene por qué ser el de esta interfaz. Vacío, sigue al de la interfaz."
+    "voiceInputLocaleDesc": "El idioma que HABLAS, que no tiene por qué ser el de esta interfaz. Vacío, sigue al de la interfaz.",
+    "labelVoiceMode": "Micrófono",
+    "voiceModeDesc": "Apagado; mantener pulsado para hablar; o escuchar siempre y enviar cada frase al terminarla. En modo conversación el micrófono se silencia mientras se lee una respuesta.",
+    "voiceModeOff": "Apagado",
+    "voiceModePushToTalk": "Mantener para hablar",
+    "voiceModeConversation": "Conversación",
+    "labelVoiceEndpointSilence": "Fin de frase (ms)",
+    "voiceEndpointSilenceDesc": "Cuánto debes pausar antes de que se envíe lo dicho. 900 ms es una respiración normal; menos te corta, más parece lento."
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

@@ -681,7 +681,14 @@
     "modelSwitcherNone": "Kein Modell konfiguriert",
     "deletePrimaryBlocked": "Das primäre Modell kann nicht gelöscht werden — mache zuerst ein anderes primär.",
     "labelVoiceInputLocale": "Sprache der Spracheingabe",
-    "voiceInputLocaleDesc": "Die Sprache, die du SPRICHST — nicht zwingend die dieser Oberfläche. Leer folgt sie der Oberflächensprache."
+    "voiceInputLocaleDesc": "Die Sprache, die du SPRICHST — nicht zwingend die dieser Oberfläche. Leer folgt sie der Oberflächensprache.",
+    "labelVoiceMode": "Mikrofon",
+    "voiceModeDesc": "Aus; Taste halten zum Sprechen; oder dauerhaft zuhören und jeden Satz senden, sobald er endet. Im Gesprächsmodus ist das Mikrofon stumm, während eine Antwort vorgelesen wird.",
+    "voiceModeOff": "Aus",
+    "voiceModePushToTalk": "Halten zum Sprechen",
+    "voiceModeConversation": "Gespräch",
+    "labelVoiceEndpointSilence": "Satzende (ms)",
+    "voiceEndpointSilenceDesc": "Wie lange du pausierst, bevor das Gesagte gesendet wird. 900 ms sind ein normaler Atemzug; kürzer schneidet dich ab, länger wirkt träge."
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

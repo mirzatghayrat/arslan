@@ -681,7 +681,14 @@
     "modelSwitcherNone": "还没配置模型",
     "deletePrimaryBlocked": "主力模型不能删——先把别的设成主力。",
     "labelVoiceInputLocale": "语音输入语言",
-    "voiceInputLocaleDesc": "你**说**的语言,不必和界面语言相同。留空则跟随界面语言。"
+    "voiceInputLocaleDesc": "你**说**的语言,不必和界面语言相同。留空则跟随界面语言。",
+    "labelVoiceMode": "麦克风",
+    "voiceModeDesc": "关闭;按住说话;或一直听着,每说完一句就发送。对话模式下,朗读回复时麦克风会静音。",
+    "voiceModeOff": "关闭",
+    "voiceModePushToTalk": "按住说话",
+    "voiceModeConversation": "对话",
+    "labelVoiceEndpointSilence": "一句话的结束(毫秒)",
+    "voiceEndpointSilenceDesc": "停顿多久之后把你说的话发出去。900 毫秒约等于正常换气;更短会打断你,更长会显得迟钝。"
   },
   "errors": {
     "load_failed": "加载数据失败。",

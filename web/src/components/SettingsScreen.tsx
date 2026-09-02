@@ -230,6 +230,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onVoiceOutputChange={(v) => saveField({ voiceOutputEnabled: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
+        voiceMode={localSettings.voiceMode ?? 'push_to_talk'}
+        onVoiceModeChange={(v) => saveField({ voiceMode: v })}
+        voiceEndpointSilenceMs={localSettings.voiceEndpointSilenceMs ?? 900}
+        onVoiceEndpointSilenceChange={(v) => saveField({ voiceEndpointSilenceMs: v })}
         sshEnabled={localSettings.sshEnabled ?? false}
         onSshChange={(v) => saveField({ sshEnabled: v })}
         spawnMode={localSettings.spawnMode}

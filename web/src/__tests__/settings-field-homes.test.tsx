@@ -129,6 +129,8 @@ describe("no control was lost in the redesign", () => {
         defaultReadEnabled={true} onDefaultReadChange={() => {}}
         voiceOutputEnabled={false} onVoiceOutputChange={() => {}}
         voiceInputLocale="" onVoiceInputLocaleChange={() => {}}
+        voiceMode="push_to_talk" onVoiceModeChange={() => {}}
+        voiceEndpointSilenceMs={900} onVoiceEndpointSilenceChange={() => {}}
         sshEnabled={false} onSshChange={() => {}}
         spawnMode="auto" onSpawnModeChange={() => {}}
       />,

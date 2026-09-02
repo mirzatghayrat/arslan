@@ -67,6 +67,9 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // Empty means "follow the interface language" — resolved at the call site,
     // not stored, so changing the UI language moves it too.
     voiceInputLocale: backend.voice_input_locale ?? "",
+    voiceMode: (["off", "push_to_talk", "conversation"].includes(backend.voice_mode ?? "")
+      ? backend.voice_mode : "push_to_talk") as AppSettings["voiceMode"],
+    voiceEndpointSilenceMs: Number.parseInt(backend.voice_endpoint_silence_ms ?? "", 10) || 900,
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
@@ -112,6 +115,8 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
   voiceOutputEnabled: { key: "voice_output_enabled", to: (v) => (v ? "true" : "false") },
   voiceInputLocale: { key: "voice_input_locale", to: (v) => String(v) },
+  voiceMode: { key: "voice_mode", to: (v) => String(v) },
+  voiceEndpointSilenceMs: { key: "voice_endpoint_silence_ms", to: (v) => String(v) },
   embeddingConfigId: { key: "embedding_config_id", to: (v) => (v as string) ?? "" },
   synthesisConfigId: { key: "synthesis_config_id", to: (v) => (v as string) ?? "" },
   compactionConfigId: { key: "compaction_config_id", to: (v) => (v as string) ?? "" },

@@ -25,6 +25,7 @@ import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
+import type { VoiceMode } from '../../types';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
 export type SpawnMode = 'auto' | 'interactive' | 'strict';
@@ -51,6 +52,12 @@ export interface AdvancedSectionProps {
   onVoiceOutputChange: (value: boolean) => void;
   voiceInputLocale: string;
   onVoiceInputLocaleChange: (value: string) => void;
+  /** How the microphone is used: not at all, held, or always listening. */
+  voiceMode: VoiceMode;
+  onVoiceModeChange: (value: VoiceMode) => void;
+  /** Conversation mode: silence (ms) after speech that ends a sentence. */
+  voiceEndpointSilenceMs: number;
+  onVoiceEndpointSilenceChange: (value: number) => void;
   /** May Arslan log into another machine over SSH? Default OFF, separately. */
   sshEnabled: boolean;
   onSshChange: (value: boolean) => void;
@@ -81,6 +88,10 @@ export default function AdvancedSection({
   onVoiceOutputChange,
   voiceInputLocale,
   onVoiceInputLocaleChange,
+  voiceMode,
+  onVoiceModeChange,
+  voiceEndpointSilenceMs,
+  onVoiceEndpointSilenceChange,
   sshEnabled,
   onSshChange,
   spawnMode,
@@ -203,6 +214,47 @@ export default function AdvancedSection({
               </option>
             ))}
           </select>
+        </div>
+
+        {/* How the microphone is used. Conversation mode is opt-in: an app that
+            listens all the time is a choice the user makes, never a default. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelVoiceMode')}</h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.voiceModeDesc')}</p>
+          </div>
+          <select
+            data-testid="voice-mode"
+            value={voiceMode}
+            onChange={(e) => onVoiceModeChange(e.target.value as VoiceMode)}
+            className="text-[11px] font-mono bg-background border border-border rounded-lg px-2 py-1.5 shrink-0"
+          >
+            <option value="off">{t('settings.voiceModeOff')}</option>
+            <option value="push_to_talk">{t('settings.voiceModePushToTalk')}</option>
+            <option value="conversation">{t('settings.voiceModeConversation')}</option>
+          </select>
+        </div>
+
+        {/* The one tunable of the endpointer (spec §3.1). Clamped: below 300 ms
+            every breath ends a sentence, above 3 s the app feels deaf. */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelVoiceEndpointSilence')}</h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.voiceEndpointSilenceDesc')}</p>
+          </div>
+          <input
+            data-testid="voice-endpoint-silence"
+            type="number"
+            min={300}
+            max={3000}
+            step={100}
+            value={voiceEndpointSilenceMs}
+            onChange={(e) => {
+              const n = Number.parseInt(e.target.value, 10);
+              onVoiceEndpointSilenceChange(Math.min(3000, Math.max(300, Number.isNaN(n) ? 900 : n)));
+            }}
+            className="w-24 text-[11px] font-mono bg-background border border-border rounded-lg px-2 py-1.5 shrink-0"
+          />
         </div>
 
         {/* Local network discovery (P3a). Read-only, and off until chosen. */}

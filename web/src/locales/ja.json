@@ -681,7 +681,14 @@
     "modelSwitcherNone": "モデル未設定",
     "deletePrimaryBlocked": "メインのモデルは削除できません。先に別のモデルをメインにしてください。",
     "labelVoiceInputLocale": "音声入力の言語",
-    "voiceInputLocaleDesc": "あなたが**話す**言語。この画面の言語と同じである必要はありません。空欄なら画面の言語に従います。"
+    "voiceInputLocaleDesc": "あなたが**話す**言語。この画面の言語と同じである必要はありません。空欄なら画面の言語に従います。",
+    "labelVoiceMode": "マイク",
+    "voiceModeDesc": "オフ、押している間だけ聞く、または常に聞き取り、一文ごとに送信。会話モードでは返答の読み上げ中はマイクをミュートします。",
+    "voiceModeOff": "オフ",
+    "voiceModePushToTalk": "押して話す",
+    "voiceModeConversation": "会話",
+    "labelVoiceEndpointSilence": "文の区切り(ミリ秒)",
+    "voiceEndpointSilenceDesc": "どれだけ間を置いたら送信するか。900 ミリ秒は普通の息継ぎ程度。短いと途中で切れ、長いと反応が鈍く感じます。"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

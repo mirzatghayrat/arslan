@@ -239,7 +239,11 @@ describe("locale parity", () => {
     // 1418 → 1426: six voice.* strings for push-to-talk (hold, listening, and
     //               four refusals that must read as sentences, not silence) plus
     //               settings.labelVoiceInputLocale / voiceInputLocaleDesc.
-    expect(enKeys).toHaveLength(1426);
+    // 1426 → 1433: settings.labelVoiceMode / voiceModeDesc / voiceModeOff /
+    //               voiceModePushToTalk / voiceModeConversation /
+    //               labelVoiceEndpointSilence / voiceEndpointSilenceDesc — the
+    //               voice_mode and voice_endpoint_silence_ms settings (Task 5).
+    expect(enKeys).toHaveLength(1433);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
