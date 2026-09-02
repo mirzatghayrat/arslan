@@ -212,7 +212,10 @@ work.async {
     // --- authorization (a refusal is a line, never silence) ---
     let authSem = DispatchSemaphore(value: 0)
     var speechAuth: SFSpeechRecognizerAuthorizationStatus = .notDetermined
-    SFSpeechRecognizer.requestAuthorization { s in speechAuth = s; authSem.signal() }
+    // Phase lines: a helper that is waiting on a permission prompt looks exactly
+// like a dead one from the outside. Say which it is.
+emit(["t": "state", "phase": "authorizing"])
+SFSpeechRecognizer.requestAuthorization { s in speechAuth = s; authSem.signal() }
     authSem.wait()
     guard speechAuth == .authorized else { fail("speech-denied", "speech recognition is off for Arslan in System Settings") }
     let micSem = DispatchSemaphore(value: 0); var micOK = false
@@ -226,7 +229,8 @@ work.async {
     guard recognizer.isAvailable else { fail("recognizer-unavailable", "the recognizer for \(localeId) is not available right now") }
 
     let ear = Ear(recognizer: recognizer)
-    ear.start()
+    emit(["t": "state", "phase": "authorized"])
+ear.start()
 
     // --- commands until stdin closes ---
     // Run on a dedicated thread, never on `work`: `readLine()` blocks for
