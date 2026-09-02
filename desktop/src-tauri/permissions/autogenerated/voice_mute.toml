@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-voice-mute"
+description = "Enables the voice_mute command without any pre-configured scope."
+commands.allow = ["voice_mute"]
+
+[[permission]]
+identifier = "deny-voice-mute"
+description = "Denies the voice_mute command without any pre-configured scope."
+commands.deny = ["voice_mute"]
