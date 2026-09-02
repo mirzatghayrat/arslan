@@ -31,7 +31,7 @@ function stubSynth(initial: SpeechSynthesisVoice[]) {
     constructor(t: string) { this.text = t; }
   };
   const synth = {
-    speak: (u: any) => spoken.push({ text: u.text, lang: u.lang, voice: u.voice }),
+    speak: (u: any): any => spoken.push({ text: u.text, lang: u.lang, voice: u.voice }),
     cancel: vi.fn(),
     getVoices: () => voices,
     addEventListener: (_: string, cb: () => void) => listeners.push(cb),
@@ -285,5 +285,42 @@ describe("the speaker picks a voice per sentence", () => {
     const sp = createSpeaker("en-US");
     await sp.feed("こんにちは。");
     expect(spoken).toEqual([{ text: "こんにちは。", lang: "ja-JP", voice: null }]);
+  });
+});
+
+describe("the speaker says when it is speaking", () => {
+  test("active from the first utterance until the last one ends", async () => {
+    const { synth } = stubSynth([voice("en-US")]);
+    const started: any[] = [];
+    synth.speak = (u: any) => started.push(u);       // capture, do not auto-end
+    const seen: boolean[] = [];
+    const sp = createSpeaker("en-US", { onActive: (a) => seen.push(a) });
+    await sp.feed("One. Two.");
+    expect(seen).toEqual([true]);                     // once, not per sentence
+    started[0].onend?.();
+    expect(seen).toEqual([true]);                     // still one pending
+    started[1].onend?.();
+    expect(seen).toEqual([true, false]);
+  });
+
+  test("cancel() ends the active state even with utterances pending", async () => {
+    const { synth } = stubSynth([voice("en-US")]);
+    synth.speak = () => {};
+    const seen: boolean[] = [];
+    const sp = createSpeaker("en-US", { onActive: (a) => seen.push(a) });
+    await sp.feed("Never finishes.");
+    sp.cancel();
+    expect(seen).toEqual([true, false]);
+  });
+
+  test("an utterance error counts as ended", async () => {
+    const { synth } = stubSynth([voice("en-US")]);
+    const started: any[] = [];
+    synth.speak = (u: any) => started.push(u);
+    const seen: boolean[] = [];
+    const sp = createSpeaker("en-US", { onActive: (a) => seen.push(a) });
+    await sp.feed("Oops.");
+    started[0].onerror?.();
+    expect(seen).toEqual([true, false]);
   });
 });

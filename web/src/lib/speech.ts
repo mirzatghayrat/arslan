@@ -197,13 +197,22 @@ export function loadVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
  * feed()/end() resolve once their sentences have been handed to the engine;
  * callers that stream may ignore the promise, tests await it.
  */
-export function createSpeaker(hint: string) {
+export function createSpeaker(hint: string, hooks: { onActive?: (active: boolean) => void } = {}) {
   const feeder = createSentenceFeeder();
   const enabled = speechSupported();
   // One load per speaker (= per reply). Every say() chains on the same
   // promise, so sentences reach the engine in the order they were fed.
   const ready = enabled ? loadVoices() : Promise.resolve([]);
   let cancelled = false;
+  // How many utterances the engine still owes us an `end` for. Crossing 0→1
+  // and 1→0 is what the conversation mode's microphone gate listens to.
+  let pending = 0;
+  function setPending(n: number) {
+    const was = pending > 0;
+    pending = n;
+    const now = pending > 0;
+    if (was !== now) hooks.onActive?.(now);
+  }
 
   function say(sentence: string): Promise<void> {
     if (!sentence) return Promise.resolve();
@@ -213,6 +222,10 @@ export function createSpeaker(hint: string) {
       u.lang = utteranceLangFor(sentence, hint);
       const v = pickVoice(voices, u.lang);
       if (v) u.voice = v;
+      const done = () => { if (!cancelled) setPending(pending - 1); };
+      u.onend = done;
+      u.onerror = done;
+      setPending(pending + 1);
       window.speechSynthesis.speak(u);
     });
   }
@@ -229,6 +242,7 @@ export function createSpeaker(hint: string) {
     cancel() {
       cancelled = true;
       if (enabled) window.speechSynthesis.cancel();
+      setPending(0);
     },
   };
 }
