@@ -28,7 +28,7 @@ import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import PushToTalk from './PushToTalk';
-import { voiceLangFor } from '../lib/speech';
+import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
@@ -129,8 +129,7 @@ export default function OrchestratorChat({
   // the language someone speaks is not the language their interface is in —
   // reading replies aloud already made that mistake once, giving an English
   // voice Chinese sentences.
-  const voiceLocale =
-    (settings?.voice_input_locale || '').trim() || voiceLangFor(settings?.language);
+  const voiceLocale = preferredVoiceLocale(settings?.voice_input_locale, settings?.language);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   // Real capability display names (key → name) for equipped-capability chips.
   const capabilityLabel = useCapabilityLabel();
