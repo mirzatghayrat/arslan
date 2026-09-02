@@ -94,7 +94,7 @@ V2a = 常开听 + 端点 + 自动发送,**它念的时候麦克风静音**(说�
 
 ### 3.1 端点检测(什么时候算你说完)—— Rust 纯函数(按 P2 结果改:用**音频静音**不用 partial 停更)
 输入:识别器的 partial 流(文本 + 到达时刻)。规则(V2 用静音超时,上位 spec 定的):
-- helper 每 100 ms 报一次输入电平(`level{rms}`,来自第 0 声道);壳维护「最近一次高于门限的时刻」。**partial 非空**,且 `now - last_voice_above_threshold ≥ endpoint_silence_ms`(默认 900,可调)⇒ **端点** ⇒ 壳发 `{"c":"end_utterance"}` → helper `request.endAudio()` → 识别器出 final(实测 20–40 ms)→ **立刻重新 arm 一个新 request**(常开的关键:识别 session 是一句一个;新 request 到首个 partial 实测 0.9–2.5 s,这段延迟是 V2a 体感的主要来源)。
+- helper 每 100 ms 报一次输入电平(`level{peak}`,第 0 声道的绝对峰值,探针量的就是它:静音 ≤0.016、人声 ≥0.15,门限 0.04);壳维护「最近一次高于门限的时刻」。**partial 非空**,且 `now - last_voice_above_threshold ≥ endpoint_silence_ms`(默认 900,可调)⇒ **端点** ⇒ 壳发 `{"c":"end_utterance"}` → helper `request.endAudio()` → 识别器出 final(实测 20–40 ms)→ **立刻重新 arm 一个新 request**(常开的关键:识别 session 是一句一个;新 request 到首个 partial 实测 0.9–2.5 s,这段延迟是 V2a 体感的主要来源)。
 - 🔴 不用「partial 多久没变」判端点:P2 实测 on-device 识别器 partial 更新稀疏,一句不停顿的话会被切成两条。
 - partial 是空的 ⇒ 永远不算端点(呼吸、噪音不发消息)。
 - 一句 final 的文本和上一句相同且间隔 < 1s ⇒ 丢弃(识别器重启时偶发重复,P2 会量)。
@@ -110,8 +110,8 @@ V2a = 常开听 + 端点 + 自动发送,**它念的时候麦克风静音**(说�
 
 ## §4 helper 协议(JSON 行,双向)
 
-stdin 命令:`{"c":"start","locale":"zh-CN"}` · `{"c":"end_utterance"}` · `{"c":"say","id":7,"text":"…","lang":"zh-CN"}`(A 方案) · `{"c":"stop_say"}` · `{"c":"mute"}` / `{"c":"unmute"}`(V2a 半双工) · stdin 关 = 退出。
-stdout 事件:`ready` · `partial{text,ms}` · `final{text}` · `error{code,msg}` · `speaking{id}` · `spoke{id}` · `interrupted` · `state{listening|muted}`。
+stdin 命令(V2a):`{"c":"end_utterance"}` · `{"c":"mute"}` / `{"c":"unmute"}`;locale 走第一个位置参数;stdin 关 = 退出。(`say/stop_say` 随 A 方案作废。)施工 plan:`docs/specs/2026-09-03-realtime-voice-v2a-plan.md`。
+stdout 事件(V2a):`ready` · `partial{text}` · `final{text}` · `level{peak}` · `state{muted}` · `error{code,msg}`;壳补一条 `ended`。(`speaking/spoke/interrupted` 是 A 方案的,随决策①=B 作废。)
 错误码沿用 V1a 七个;**顺手收掉两处死分支**(`PushToTalk.tsx:55-57` 的 `mic-auth-timeout`/`speech-auth-timeout` 从没被发出;`recognizer-unavailable`/`engine-failed`/`recognition-failed` 没有映射)—— 这是 V2 会重写这张表,不算顺手扩范围。
 
 Rust `voice.rs`(取代 `listen.rs`,保留 `voice_start`/`voice_stop` 名字给 PTT 兼容):命令 `voice_conversation_start/stop`、`voice_say`、`voice_stop_say`;事件通道沿用 `voice://line`(它的名字有 Rust 测试钉着,`listen.rs:111-121`)。🔴 每个新命令 = build.rs 清单 + capability 权限 + 守卫,三处 lockstep(§0.2 的守卫会替你逮)。
