@@ -229,19 +229,31 @@ work.async {
     ear.start()
 
     // --- commands until stdin closes ---
-    while let line = readLine(strippingNewline: true) {
-        guard let d = line.data(using: .utf8),
-              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let c = o["c"] as? String else { continue }
-        switch c {
-        case "end_utterance": ear.endUtterance()
-        case "mute": ear.setMuted(true)
-        case "unmute": ear.setMuted(false)
-        default: break
+    // Run on a dedicated thread, never on `work`: `readLine()` blocks for
+    // the life of the process, and `work` is a *serial* queue. The
+    // recognition callback hands re-arm off with `work.async { self.rearm(
+    // after:) }` (see Ear.rearm's doc comment) so it never runs on the
+    // callback's own stack — but a serial queue only runs one block at a
+    // time, so if this loop occupied `work` itself, every queued re-arm
+    // would sit behind it forever: after the first `final` (or first 1110)
+    // the recogniser would never be re-armed and the mic would go silently
+    // dead. Putting the loop on its own thread leaves `work` free to run
+    // each `rearm` call to completion as soon as it is queued.
+    Thread {
+        while let line = readLine(strippingNewline: true) {
+            guard let d = line.data(using: .utf8),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  let c = o["c"] as? String else { continue }
+            switch c {
+            case "end_utterance": ear.endUtterance()
+            case "mute": ear.setMuted(true)
+            case "unmute": ear.setMuted(false)
+            default: break
+            }
         }
-    }
-    // stdin closed: the shell is gone or the session ended. Let go of the mic.
-    ear.engine.stop()
-    exit(0)
+        // stdin closed: the shell is gone or the session ended. Let go of the mic.
+        ear.engine.stop()
+        exit(0)
+    }.start()
 }
 RunLoop.main.run()
