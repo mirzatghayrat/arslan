@@ -15,7 +15,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
-mod endpoint;
+pub mod endpoint;
 mod listen;
 mod proxy;
 use std::sync::Mutex;
