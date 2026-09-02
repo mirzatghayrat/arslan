@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 
 import pytest
 import pytest_asyncio
-from anyio.from_thread import start_blocking_portal
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -20,6 +19,7 @@ from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
 from server.services import evolution_estimate, evolution_watcher
+from tests.server.portal_teardown import shared_portal
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -62,12 +62,15 @@ aiosqlite_guard.install()
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Say it out loud if the guard fired. A suppressed error nobody hears
+    """Say it out loud if a guard fired. A suppressed error nobody hears
     about is the thing this project calls a lie."""
-    line = aiosqlite_guard.report()
-    if line:
-        terminalreporter.write_sep("-", "aiosqlite")
-        terminalreporter.write_line(line)
+    from tests.server import portal_teardown
+
+    for title, line in (("aiosqlite", aiosqlite_guard.report()),
+                        ("portal teardown", portal_teardown.report())):
+        if line:
+            terminalreporter.write_sep("-", title)
+            terminalreporter.write_line(line)
 
 
 @pytest.fixture(autouse=True)
@@ -235,23 +238,17 @@ def portal():
     seed and every TestClient/websocket_connect built via ``build_ws_client``,
     so no pooled aiosqlite connection is reused across loops (the flake root).
 
-    Teardown order is load-bearing: dispose every engine ON the portal loop
-    BEFORE stopping the portal, else the portal thread's ``join()`` blocks
-    terminating a live connection. ``portal.stop(cancel_remaining=True)`` also
-    cancels fire-and-forget stragglers (distill/ledger ``create_task``) that
-    anyio's own ``__exit__`` (cancel_remaining=False) would otherwise wait on —
-    the source of the >120s teardown hangs seen on slow CI.
+    Teardown lives in ``tests.server.portal_teardown.shared_portal`` so it can
+    be tested as behaviour. The order there is load-bearing: drain the test's
+    stragglers (cancel, then WAIT — bounded), dispose every engine ON the
+    portal loop, ``stop(cancel_remaining=True)``, join the thread with a bound.
+    "Dispose before stop" alone was believed to have fixed the >120s teardown
+    hang (docs/tech-debt/single-loop-sqlite-flake.md) and CI proved it had
+    not: the hang was anyio's own unbounded ``thread.join()`` AFTER that
+    finally had run. The bound turns it into seconds and a named report.
     """
-    with start_blocking_portal() as p:
-        p._test_engines = []  # populated by build_ws_client, disposed below
-        try:
-            yield p
-        finally:
-            try:
-                for _engine in p._test_engines:
-                    p.call(_engine.dispose)
-            finally:
-                p.call(p.stop, True)
+    with shared_portal() as p:
+        yield p
 
 
 def build_ws_client(

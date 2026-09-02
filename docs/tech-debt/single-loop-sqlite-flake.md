@@ -1,6 +1,27 @@
 # Tech debt: cross-event-loop SQLite "database is locked" test flake
 
-**Status:** ✅ RESOLVED (2026-07-14) — root fix landed on branch `fix/portal-teardown-rootfix`. · **Owner:** maintainer
+**Status:** 🟠 REOPENED (2026-09-02) — the `database is locked` half stays fixed; the **portal-teardown hang is back** and was never what the 07-14 fix said it was. · **Owner:** maintainer
+
+## Reopened (2026-09-02) — the hang outlived "dispose before stop"
+
+The 07-14 resolution below says the teardown hang was fixed by disposing every engine on the portal loop before `portal.stop(cancel_remaining=True)`. CI has since shown the same signature with that ordering in place:
+
+- run `33637526779` (PR #81, a frontend-only change), and the run the session before it: `Failed: Timeout (>120.0s)` at `anyio/from_thread.py:560 thread.join()` inside `start_blocking_portal.__exit__`; 3872 passed, 41 skipped, **1 error** = whichever test tore down last (`test_run_command_confirm_flow.py::test_ask_risky_auto_runs_low_no_card`). The **same SHA** went green on the parallel push-event run.
+
+**What the traceback establishes:** the fixture's own `finally` (dispose engines → `stop(True)`) had *completed*. The hang is anyio's own unbounded `thread.join()` after it. The log line immediately before is an aiosqlite connection inside SQLAlchemy's `do_terminate` being **cancelled by that `stop(True)`** through the greenlet bridge, where the inner close is `asyncio.shield`ed and so outlives the cancel. In the same run the aiosqlite guard counted 55 deliveries into an already-closed loop.
+
+**What it does not establish:** why the loop then never finishes. Two local reproductions of exactly that shape came back CLEAN — kept as `docs/tech-debt/aiosqlite_portal_hang_repro.py` so nobody rebuilds them. CI is Linux and loaded; this machine is neither.
+
+**What landed instead (maintainer picked option B: fix on the evidence, bound the rest, say which is which):** `tests/server/portal_teardown.py`, tested by `tests/server/test_portal_teardown.py`.
+
+| Move | Rests on |
+|---|---|
+| Drain the test's own tasks before stopping: a short *settle* window for them to finish on their own, ONE cancel sweep, then a bounded wait for everything including tasks born while unwinding (a shield's inner close) | the CI traceback — the cancel landed inside a connection close; let closes finish instead |
+| Name every task still alive at the bound, with the frame it is suspended in, as a warning on the test and a terminal-summary line | nothing yet — this is how the next CI occurrence gets *attributed* rather than re-run |
+| Join the portal thread with a bound (10 s); past it the daemon thread is abandoned, counted, reported | proven locally with a task that survives every cancel: seconds and a name, instead of 120 s and a phantom ERROR |
+
+The mechanism is unchanged and the ledger stays open. When the summary line names the stuck frame on CI, that is the root-fix ticket's first line.
+
 
 ## Resolution (2026-07-14) — root fix landed
 
