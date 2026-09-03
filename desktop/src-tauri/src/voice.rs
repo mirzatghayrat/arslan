@@ -31,6 +31,9 @@ pub enum HelperLine {
     #[allow(dead_code)]
     Final(String),
     Level(f32),
+    /// The helper confirming the microphone is now off. Only `muted:true` —
+    /// an unmute needs no action, since the endpointer is already empty.
+    Muted,
     Other,
 }
 
@@ -53,6 +56,11 @@ pub fn parse_helper_line(s: &str) -> HelperLine {
             Some(p) => HelperLine::Level(p as f32),
             None => HelperLine::Other,
         },
+        // `state` also carries phase lines and the voice-processing notice;
+        // only a confirmed mute is a line the endpointer cares about.
+        Some("state") if v.get("muted").and_then(|m| m.as_bool()) == Some(true) => {
+            HelperLine::Muted
+        }
         _ => HelperLine::Other,
     }
 }
@@ -73,6 +81,15 @@ pub fn drive(ep: &mut Endpointer, line: &HelperLine, now_ms: u64) -> bool {
         HelperLine::Level(p) => {
             ep.on_level(*p, now_ms);
             fire_if_due(ep, now_ms)
+        }
+        // The microphone just went off — throw away whatever was half-heard.
+        // A fragment captured in the instant before the mute would otherwise
+        // keep `has_text` set through the silent stretch and fire
+        // `end_utterance` the moment the mic came back, sending half a
+        // sentence into a turn that had already moved on.
+        HelperLine::Muted => {
+            ep.reset();
+            false
         }
         HelperLine::Final(_) | HelperLine::Other => false,
     }
@@ -248,6 +265,17 @@ mod tests {
         );
         assert!(matches!(
             parse_helper_line(r#"{"t":"state","muted":true}"#),
+            HelperLine::Muted
+        ));
+        // Only the muted-true state line matters here; the rest (phase lines,
+        // the voice-processing notice, an unmute) carry nothing the endpointer
+        // acts on and must stay inert.
+        assert!(matches!(
+            parse_helper_line(r#"{"t":"state","muted":false}"#),
+            HelperLine::Other
+        ));
+        assert!(matches!(
+            parse_helper_line(r#"{"t":"state","phase":"authorizing"}"#),
             HelperLine::Other
         ));
         assert!(matches!(parse_helper_line("not json"), HelperLine::Other));
@@ -275,6 +303,26 @@ mod tests {
         // Ready resets: a new utterance starts from nothing.
         assert!(!drive(&mut ep, &HelperLine::Ready, 1_600));
         assert!(!drive(&mut ep, &HelperLine::Level(0.01), 3_000));
+    }
+
+    /// A mute must throw away the half-heard fragment that was in flight.
+    ///
+    /// The mic goes quiet exactly when the reply starts playing. Without this,
+    /// the partial captured in the instant before the mute keeps `has_text`
+    /// set, the level meter goes silent (it is muted), and the first silence
+    /// check after unmuting fires `end_utterance` — sending a fragment the
+    /// user never finished saying, attributed to a turn that is already over.
+    #[test]
+    fn a_mute_resets_the_endpointer_so_a_stale_fragment_cannot_fire() {
+        let mut ep = Endpointer::new(900);
+        assert!(!drive(&mut ep, &HelperLine::Ready, 0));
+        assert!(!drive(&mut ep, &HelperLine::Level(0.5), 100));
+        assert!(!drive(&mut ep, &HelperLine::Partial("x".into()), 200));
+        assert!(!drive(&mut ep, &HelperLine::Muted, 300));
+        assert!(
+            !drive(&mut ep, &HelperLine::Level(0.01), 5_300),
+            "the fragment captured before the mute must not end an utterance five seconds later"
+        );
     }
 
     #[test]
