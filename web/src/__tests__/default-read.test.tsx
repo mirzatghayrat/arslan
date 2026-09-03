@@ -24,6 +24,8 @@ function props(over: Partial<Props> = {}): Props {
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
     voiceOutputEnabled: false, onVoiceOutputChange: vi.fn(),
     voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
+    voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(),
+    voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
     spawnMode: "auto", onSpawnModeChange: vi.fn(),
     ...over,
   };

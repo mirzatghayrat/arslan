@@ -14,6 +14,10 @@ fn main() {
             "open_external",
             "voice_start",
             "voice_stop",
+            "voice_conversation_start",
+            "voice_conversation_stop",
+            "voice_mute",
+            "voice_unmute",
         ]),
     ))
     .expect("failed to run tauri-build");

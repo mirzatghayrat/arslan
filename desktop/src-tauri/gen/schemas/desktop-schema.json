@@ -195,6 +195,24 @@
           "markdownDescription": "Enables the update_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the voice_conversation_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voice-conversation-start",
+          "markdownDescription": "Enables the voice_conversation_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the voice_conversation_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voice-conversation-stop",
+          "markdownDescription": "Enables the voice_conversation_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the voice_mute command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voice-mute",
+          "markdownDescription": "Enables the voice_mute command without any pre-configured scope."
+        },
+        {
           "description": "Enables the voice_start command without any pre-configured scope.",
           "type": "string",
           "const": "allow-voice-start",
@@ -205,6 +223,12 @@
           "type": "string",
           "const": "allow-voice-stop",
           "markdownDescription": "Enables the voice_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the voice_unmute command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voice-unmute",
+          "markdownDescription": "Enables the voice_unmute command without any pre-configured scope."
         },
         {
           "description": "Denies the install_update command without any pre-configured scope.",
@@ -225,6 +249,24 @@
           "markdownDescription": "Denies the update_status command without any pre-configured scope."
         },
         {
+          "description": "Denies the voice_conversation_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voice-conversation-start",
+          "markdownDescription": "Denies the voice_conversation_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voice_conversation_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voice-conversation-stop",
+          "markdownDescription": "Denies the voice_conversation_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voice_mute command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voice-mute",
+          "markdownDescription": "Denies the voice_mute command without any pre-configured scope."
+        },
+        {
           "description": "Denies the voice_start command without any pre-configured scope.",
           "type": "string",
           "const": "deny-voice-start",
@@ -235,6 +277,12 @@
           "type": "string",
           "const": "deny-voice-stop",
           "markdownDescription": "Denies the voice_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voice_unmute command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voice-unmute",
+          "markdownDescription": "Denies the voice_unmute command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

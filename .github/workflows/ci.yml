@@ -126,6 +126,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Swift helpers typecheck
+        # The two voice helpers are compiled only by build_dmg.sh on a tag
+        # push. A syntax error in either would surface at release time, after
+        # every other check had passed. Typecheck is seconds; it is not a
+        # runtime test (that needs a microphone and TCC — see the V2 spec §8).
+        run: |
+          for f in packaging/listen/*.swift; do
+            swiftc -typecheck "$f"
+          done
+
       # ── Rust: the desktop shell, checked at last ─────────────────────────────
       # lib.rs owns the window, the updater, and the sidecar lifecycle — the
       # exact layer every packaged-only defect has lived in — and until this

@@ -37,6 +37,8 @@ function setup(overrides: Partial<Props> = {}) {
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
     voiceOutputEnabled: false, onVoiceOutputChange: vi.fn(),
     voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
+    voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(),
+    voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
     shellConfirmPolicy: "ask_all",
     onShellConfirmPolicyChange: vi.fn(),
     spawnMode: "auto",
@@ -111,5 +113,22 @@ describe("AdvancedSection", () => {
     expect(interactive).toBeTruthy();
     await user.click(interactive as HTMLElement);
     expect(props.onSpawnModeChange).toHaveBeenCalledWith("interactive");
+  });
+
+  it("offers the three voice modes and reports the pick", () => {
+    const props = setup({ voiceMode: "push_to_talk" });
+    const sel = screen.getByTestId("voice-mode") as HTMLSelectElement;
+    expect(Array.from(sel.options).map((o) => o.value)).toEqual(["off", "push_to_talk", "conversation"]);
+    fireEvent.change(sel, { target: { value: "conversation" } });
+    expect(props.onVoiceModeChange).toHaveBeenCalledWith("conversation");
+  });
+
+  it("the endpoint silence is a number in milliseconds, clamped to 300–3000", () => {
+    const props = setup({ voiceEndpointSilenceMs: 900 });
+    const input = screen.getByTestId("voice-endpoint-silence") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "50" } });
+    expect(props.onVoiceEndpointSilenceChange).toHaveBeenLastCalledWith(300);
+    fireEvent.change(input, { target: { value: "1500" } });
+    expect(props.onVoiceEndpointSilenceChange).toHaveBeenLastCalledWith(1500);
   });
 });

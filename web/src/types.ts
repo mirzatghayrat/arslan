@@ -185,6 +185,9 @@ export interface UiRun {
   finalOutput?: string | null;
 }
 
+/** How the microphone is used: not at all, held, or always listening. */
+export type VoiceMode = 'off' | 'push_to_talk' | 'conversation';
+
 export interface AppSettings {
   searchProvider: string;
   /** Self-hosted SearXNG address. Plain text — an address, not a credential. */
@@ -212,6 +215,10 @@ export interface AppSettings {
   defaultReadEnabled: boolean;
   voiceOutputEnabled: boolean;
   voiceInputLocale: string;
+  /** How the microphone is used: not at all, held, or always listening. */
+  voiceMode: VoiceMode;
+  /** Conversation mode: silence (ms) after speech that ends a sentence. */
+  voiceEndpointSilenceMs: number;
   /** Embedding provider override: "" = auto, "local" = local model, or a provider-config id (as string). */
   embeddingConfigId?: string;
   /** Per-task model slots. Empty or absent = unset, and that task keeps the exact

@@ -138,6 +138,8 @@ describe("every settings field the UI can edit is mappable", () => {
       default_read_enabled: { defaultReadEnabled: true },
       voice_output_enabled: { voiceOutputEnabled: true },
       voice_input_locale: { voiceInputLocale: "zh-CN" },
+      voice_mode: { voiceMode: "conversation" },
+      voice_endpoint_silence_ms: { voiceEndpointSilenceMs: 1200 },
     };
 
     const unmappable: string[] = [];

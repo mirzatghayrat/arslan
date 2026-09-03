@@ -681,7 +681,14 @@
     "modelSwitcherNone": "还没配置模型",
     "deletePrimaryBlocked": "主力模型不能删——先把别的设成主力。",
     "labelVoiceInputLocale": "语音输入语言",
-    "voiceInputLocaleDesc": "你**说**的语言,不必和界面语言相同。留空则跟随界面语言。"
+    "voiceInputLocaleDesc": "你**说**的语言,不必和界面语言相同。留空则跟随界面语言。",
+    "labelVoiceMode": "麦克风",
+    "voiceModeDesc": "关闭;按住说话;或一直听着,每说完一句就发送。对话模式下,朗读回复时麦克风会静音。",
+    "voiceModeOff": "关闭",
+    "voiceModePushToTalk": "按住说话",
+    "voiceModeConversation": "对话",
+    "labelVoiceEndpointSilence": "一句话的结束(毫秒)",
+    "voiceEndpointSilenceDesc": "停顿多久之后把你说的话发出去。900 毫秒约等于正常换气;更短会打断你,更长会显得迟钝。"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -1639,6 +1646,9 @@
     "errDenied": "Arslan 听不到你:麦克风或语音识别在「系统设置 → 隐私与安全性」里对它是关的。",
     "errNoAnswer": "授权框一直没被回应。再按住一次可重试。",
     "errLocale": "这台 Mac 上没有这种口语的识别器。到「语音输入语言」里换一个。",
-    "errNoInput": "这台 Mac 上没有可用的麦克风。"
+    "errNoInput": "这台 Mac 上没有可用的麦克风。",
+    "conversationStart": "开始对话",
+    "conversationStop": "停止聆听",
+    "speaking": "朗读中…"
   }
 }

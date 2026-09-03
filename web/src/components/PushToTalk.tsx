@@ -16,12 +16,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Mic, Loader2 } from 'lucide-react';
-
-type Line =
-  | { t: 'ready' }
-  | { t: 'partial'; text: string }
-  | { t: 'final'; text: string }
-  | { t: 'error'; code: string; msg: string };
+import { parseLine, errorMessage } from '../lib/voiceLine';
+export { parseLine, errorMessage };   // push-to-talk.test.ts imports them from here
 
 export interface PushToTalkProps {
   /** BCP-47 tag the recognizer should expect, e.g. "zh-CN". */
@@ -33,35 +29,6 @@ export interface PushToTalkProps {
   /** A refusal or a missing device, in words the user can act on. */
   onError: (message: string) => void;
   disabled?: boolean;
-}
-
-/** Parse one line from the helper. Malformed input is ignored, not thrown. */
-export function parseLine(raw: string): Line | null {
-  try {
-    const o = JSON.parse(raw);
-    if (o && typeof o.t === 'string') return o as Line;
-  } catch {
-    /* a partial write or a stray log line is not worth a crash */
-  }
-  return null;
-}
-
-/** Turn an error code from the helper into something worth reading. */
-export function errorMessage(code: string, fallback: string, t: (k: string) => string): string {
-  switch (code) {
-    case 'mic-denied':
-    case 'speech-denied':
-      return t('voice.errDenied');
-    case 'mic-auth-timeout':
-    case 'speech-auth-timeout':
-      return t('voice.errNoAnswer');
-    case 'locale-unsupported':
-      return t('voice.errLocale');
-    case 'no-input':
-      return t('voice.errNoInput');
-    default:
-      return fallback;
-  }
 }
 
 export default function PushToTalk({

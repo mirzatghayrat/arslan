@@ -268,6 +268,8 @@ export interface AppSettings {
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
   voice_output_enabled?: string; // "true" | "false" (default-OFF)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
+  voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
+  voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;

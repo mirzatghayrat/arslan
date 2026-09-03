@@ -15,8 +15,10 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
+pub mod endpoint;
 mod listen;
 mod proxy;
+mod voice;
 use std::sync::Mutex;
 
 use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
@@ -720,12 +722,17 @@ pub fn run() {
         .manage(Sidecar::default())
         .manage(UpdateShared::default())
         .manage(listen::Listener::default())
+        .manage(voice::Conversation::default())
         .invoke_handler(tauri::generate_handler![
             update_status,
             install_update,
             open_external,
             listen::voice_start,
-            listen::voice_stop
+            listen::voice_stop,
+            voice::voice_conversation_start,
+            voice::voice_conversation_stop,
+            voice::voice_mute,
+            voice::voice_unmute
         ])
         .on_menu_event(|app, event| {
             if event.id() == "check-for-updates" {

@@ -681,7 +681,14 @@
     "modelSwitcherNone": "Aucun modèle configuré",
     "deletePrimaryBlocked": "Le modèle principal ne peut pas être supprimé — définissez-en un autre comme principal.",
     "labelVoiceInputLocale": "Langue de la saisie vocale",
-    "voiceInputLocaleDesc": "La langue que vous PARLEZ, pas forcément celle de cette interface. Vide, elle suit la langue de l'interface."
+    "voiceInputLocaleDesc": "La langue que vous PARLEZ, pas forcément celle de cette interface. Vide, elle suit la langue de l'interface.",
+    "labelVoiceMode": "Microphone",
+    "voiceModeDesc": "Désactivé ; maintenir pour parler ; ou écouter en continu et envoyer chaque phrase dès qu'elle se termine. En mode conversation, le micro est coupé pendant la lecture d'une réponse.",
+    "voiceModeOff": "Désactivé",
+    "voiceModePushToTalk": "Maintenir pour parler",
+    "voiceModeConversation": "Conversation",
+    "labelVoiceEndpointSilence": "Fin de phrase (ms)",
+    "voiceEndpointSilenceDesc": "Durée de la pause avant l'envoi de ce que vous avez dit. 900 ms correspondent à une respiration normale ; moins vous coupe, plus paraît lent."
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1639,6 +1646,9 @@
     "errDenied": "Le micro ou la reconnaissance vocale est désactivé dans Réglages Système → Confidentialité et sécurité.",
     "errNoAnswer": "La demande d'autorisation n'a jamais reçu de réponse. Maintenez à nouveau le bouton.",
     "errLocale": "Ce Mac n'a pas de moteur pour cette langue parlée. Choisissez-en une autre dans Langue de la saisie vocale.",
-    "errNoInput": "Aucun micro n'est disponible sur ce Mac."
+    "errNoInput": "Aucun micro n'est disponible sur ce Mac.",
+    "conversationStart": "Démarrer la conversation",
+    "conversationStop": "Arrêter l'écoute",
+    "speaking": "lecture…"
   }
 }

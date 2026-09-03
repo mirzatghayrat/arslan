@@ -160,6 +160,10 @@ swiftc -O -o "$TAURI/binaries/listen/arslan-listen" "$HERE/listen/arslan-listen.
 test -x "$TAURI/binaries/listen/arslan-listen" \
   || { echo "ERROR: the listener did not build" >&2; exit 1; }
 
+swiftc -O -o "$TAURI/binaries/listen/arslan-voice" "$HERE/listen/arslan-voice.swift"
+test -x "$TAURI/binaries/listen/arslan-voice" \
+  || { echo "ERROR: the conversation helper did not build" >&2; exit 1; }
+
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   step "    signing the sidecar's Mach-O files"
   # BEFORE tauri build: `tauri build` signs the .app, sealing resources into
@@ -186,6 +190,9 @@ if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   # anyway. Hardened runtime and a timestamp are what notarization wants.
   codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime \
     "$TAURI/binaries/listen/arslan-listen"
+
+  codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime \
+    "$TAURI/binaries/listen/arslan-voice"
 fi
 
 # --------------------------------------------------------------------------

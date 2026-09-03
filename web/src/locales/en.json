@@ -681,7 +681,14 @@
     "modelSwitcherNone": "No model configured",
     "deletePrimaryBlocked": "The primary model can't be deleted — make another one primary first.",
     "labelVoiceInputLocale": "Voice input language",
-    "voiceInputLocaleDesc": "The language you SPEAK, which need not be the language of this interface. Left empty it follows the interface language."
+    "voiceInputLocaleDesc": "The language you SPEAK, which need not be the language of this interface. Left empty it follows the interface language.",
+    "labelVoiceMode": "Microphone",
+    "voiceModeDesc": "Off; hold a button to talk; or keep listening and send each sentence as you finish it. In conversation mode the microphone is muted while a reply is being read aloud.",
+    "voiceModeOff": "Off",
+    "voiceModePushToTalk": "Hold to talk",
+    "voiceModeConversation": "Conversation",
+    "labelVoiceEndpointSilence": "End of sentence (ms)",
+    "voiceEndpointSilenceDesc": "How long you have to pause before what you said is sent. 900 ms is a normal breath; shorter cuts you off, longer feels slow."
   },
   "errors": {
     "load_failed": "Failed to load data.",
@@ -1639,6 +1646,9 @@
     "errDenied": "Arslan cannot hear you: the microphone or speech recognition is switched off for it in System Settings → Privacy & Security.",
     "errNoAnswer": "The permission prompt was never answered. Hold the button again to retry.",
     "errLocale": "This Mac has no recogniser for that spoken language. Pick another under Voice input language.",
-    "errNoInput": "No microphone is available on this Mac."
+    "errNoInput": "No microphone is available on this Mac.",
+    "conversationStart": "Start conversation",
+    "conversationStop": "Stop listening",
+    "speaking": "speaking…"
   }
 }

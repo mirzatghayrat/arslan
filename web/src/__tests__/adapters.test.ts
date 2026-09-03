@@ -92,6 +92,16 @@ describe("toUiSettings", () => {
     const ui = toUiSettings(backendBase);
     expect((ui as { llmStrategy: string }).llmStrategy).toBe("single");
   });
+
+  it("voice_endpoint_silence_ms is clamped to 300–3000 on read, and defaults to 900 when unusable", () => {
+    const read = (v: string | undefined) => toUiSettings({ voice_endpoint_silence_ms: v } as any).voiceEndpointSilenceMs;
+    expect(read("50")).toBe(300);
+    expect(read("99999")).toBe(3000);
+    expect(read("1200")).toBe(1200);
+    expect(read("")).toBe(900);
+    expect(read(undefined)).toBe(900);
+    expect(read("abc")).toBe(900);
+  });
 });
 
 // ── toBackendSettings (masked-key omission) ───────────────────────────────────
@@ -109,7 +119,7 @@ describe("toBackendSettings", () => {
     llmStrategy: "single",
     distillOnSessionEnd: true,
     orchestratorShellEnabled: false,
-    shellConfirmPolicy: "ask_all", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceOutputEnabled: false, voiceInputLocale: "",
+    shellConfirmPolicy: "ask_all", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceOutputEnabled: false, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
     mcpServerEnabled: false,
   };
 

@@ -80,6 +80,9 @@ interface ArslanState {
   // stream_start's run_id — spawn runs only). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
   activeRunId: number | null;
+  // The Web Speech speaker owes the engine at least one utterance end. Conversation
+  // mode mutes the microphone while this is true.
+  speaking: boolean;
 
   setSpawnNames: (map: Record<number, string>) => void;
   setThinking: (v: boolean) => void;
@@ -153,7 +156,9 @@ let _voiceLang = "en-US";
 
 function _voiceStart() {
   if (_speaker) _speaker.cancel();
-  _speaker = _voiceEnabled ? createSpeaker(_voiceLang) : null;
+  _speaker = _voiceEnabled
+    ? createSpeaker(_voiceLang, { onActive: (a) => useArslanStore.setState({ speaking: a }) })
+    : null;
 }
 function _voiceFeed(text: string) { _speaker?.feed(text); }
 function _voiceEnd() { _speaker?.end(); }
@@ -205,6 +210,7 @@ function initialData() {
     lastFrameAt: null as number | null,
     stalled: false,
     activeRunId: null as number | null,
+    speaking: false,
   };
 }
 

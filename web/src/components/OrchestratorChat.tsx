@@ -24,10 +24,13 @@ import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
 import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
+import { clampEndpointSilenceMs } from '../api/adapters';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import PushToTalk from './PushToTalk';
+import ConversationToggle from './ConversationToggle';
+import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
@@ -131,6 +134,37 @@ export default function OrchestratorChat({
   // voice Chinese sentences.
   const voiceLocale = preferredVoiceLocale(settings?.voice_input_locale, settings?.language);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // Which microphone control the composer shows. The setting is the user's
+  // choice; the toggle below is per session — an app must not start
+  // listening because a setting was flipped last week.
+  const voiceMode = settings?.voice_mode === 'off' || settings?.voice_mode === 'conversation' ? settings.voice_mode : 'push_to_talk';
+  const [conversationOn, setConversationOn] = useState(false);
+  const conversation = useConversationMode({
+    enabled: voiceMode === 'conversation' && conversationOn,
+    locale: voiceLocale,
+    silenceMs: clampEndpointSilenceMs(settings?.voice_endpoint_silence_ms),
+    onFinal: (text) => { setVoiceError(null); onSendMessage?.(text, undefined); },
+    onError: (msg) => { setVoiceError(msg); setConversationOn(false); },
+    // The helper is gone (it exited, or the shell lost it). The toggle is ours,
+    // so put it back — a lit button over a dead session takes two presses to
+    // restart, and the first one looks like it did nothing.
+    onEnded: () => setConversationOn(false),
+  });
+  const micControl = voiceMode === 'push_to_talk' ? (
+    <PushToTalk
+      locale={voiceLocale}
+      onPartial={(text) => { setVoiceError(null); setInputValue(text); }}
+      onFinal={(text) => setInputValue(text)}
+      onError={(msg) => setVoiceError(msg)}
+    />
+  ) : voiceMode === 'conversation' ? (
+    <ConversationToggle
+      active={conversationOn}
+      phase={conversation.phase}
+      partial={conversation.partial}
+      onToggle={() => setConversationOn((v) => !v)}
+    />
+  ) : null;
   // Real capability display names (key → name) for equipped-capability chips.
   const capabilityLabel = useCapabilityLabel();
   // Client-side user display name for the greeting + own-message sender label.
@@ -550,12 +584,7 @@ export default function OrchestratorChat({
                 {/* Left group: attach control + model indicator */}
                 <div className="flex items-center gap-2 min-w-0">
                   <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
-                  <PushToTalk
-                    locale={voiceLocale}
-                    onPartial={(text) => { setVoiceError(null); setInputValue(text); }}
-                    onFinal={(text) => setInputValue(text)}
-                    onError={(msg) => setVoiceError(msg)}
-                  />
+                  {micControl}
                   {/* Which model is about to answer — and a way to change it.
                       This read `settings.llm_provider · settings.llm_model` until
                       now: two fields adapters.ts stopped mapping when the
@@ -1474,6 +1503,7 @@ export default function OrchestratorChat({
               />
               <div className="composer-row">
                 <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
+                {micControl}
                 {/* Right-side action group: composer-row is space-between, so stop
                     must share a wrapper with send to sit NEXT to it (not centered). */}
                 <div className="flex items-center gap-1.5">
