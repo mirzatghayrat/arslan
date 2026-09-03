@@ -69,7 +69,10 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     voiceInputLocale: backend.voice_input_locale ?? "",
     voiceMode: (["off", "push_to_talk", "conversation"].includes(backend.voice_mode ?? "")
       ? backend.voice_mode : "push_to_talk") as AppSettings["voiceMode"],
-    voiceEndpointSilenceMs: Number.parseInt(backend.voice_endpoint_silence_ms ?? "", 10) || 900,
+    voiceEndpointSilenceMs: (() => {
+      const n = Number.parseInt(backend.voice_endpoint_silence_ms ?? "", 10);
+      return Number.isNaN(n) || n <= 0 ? 900 : Math.min(3000, Math.max(300, n));
+    })(),
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
