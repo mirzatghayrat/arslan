@@ -243,7 +243,10 @@ describe("locale parity", () => {
     //               voiceModePushToTalk / voiceModeConversation /
     //               labelVoiceEndpointSilence / voiceEndpointSilenceDesc — the
     //               voice_mode and voice_endpoint_silence_ms settings (Task 5).
-    expect(enKeys).toHaveLength(1433);
+    // 1433 → 1436: voice.conversationStart / conversationStop / speaking — the
+    //               conversation-mode toggle's label pair and the muted-while-
+    //               replying marker (Task 6).
+    expect(enKeys).toHaveLength(1436);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

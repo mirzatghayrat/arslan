@@ -1646,6 +1646,9 @@
     "errDenied": "Le micro ou la reconnaissance vocale est désactivé dans Réglages Système → Confidentialité et sécurité.",
     "errNoAnswer": "La demande d'autorisation n'a jamais reçu de réponse. Maintenez à nouveau le bouton.",
     "errLocale": "Ce Mac n'a pas de moteur pour cette langue parlée. Choisissez-en une autre dans Langue de la saisie vocale.",
-    "errNoInput": "Aucun micro n'est disponible sur ce Mac."
+    "errNoInput": "Aucun micro n'est disponible sur ce Mac.",
+    "conversationStart": "Démarrer la conversation",
+    "conversationStop": "Arrêter l'écoute",
+    "speaking": "lecture…"
   }
 }

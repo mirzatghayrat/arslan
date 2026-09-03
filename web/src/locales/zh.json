@@ -1646,6 +1646,9 @@
     "errDenied": "Arslan 听不到你:麦克风或语音识别在「系统设置 → 隐私与安全性」里对它是关的。",
     "errNoAnswer": "授权框一直没被回应。再按住一次可重试。",
     "errLocale": "这台 Mac 上没有这种口语的识别器。到「语音输入语言」里换一个。",
-    "errNoInput": "这台 Mac 上没有可用的麦克风。"
+    "errNoInput": "这台 Mac 上没有可用的麦克风。",
+    "conversationStart": "开始对话",
+    "conversationStop": "停止聆听",
+    "speaking": "朗读中…"
   }
 }

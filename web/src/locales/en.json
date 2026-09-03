@@ -1646,6 +1646,9 @@
     "errDenied": "Arslan cannot hear you: the microphone or speech recognition is switched off for it in System Settings → Privacy & Security.",
     "errNoAnswer": "The permission prompt was never answered. Hold the button again to retry.",
     "errLocale": "This Mac has no recogniser for that spoken language. Pick another under Voice input language.",
-    "errNoInput": "No microphone is available on this Mac."
+    "errNoInput": "No microphone is available on this Mac.",
+    "conversationStart": "Start conversation",
+    "conversationStop": "Stop listening",
+    "speaking": "speaking…"
   }
 }

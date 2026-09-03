@@ -1646,6 +1646,9 @@
     "errDenied": "Mikrofon oder Spracherkennung sind in den Systemeinstellungen → Datenschutz & Sicherheit deaktiviert.",
     "errNoAnswer": "Die Berechtigungsabfrage wurde nie beantwortet. Halte die Taste erneut gedrückt.",
     "errLocale": "Für diese gesprochene Sprache gibt es auf diesem Mac keine Erkennung. Wähle unter Spracheingabe eine andere.",
-    "errNoInput": "Auf diesem Mac ist kein Mikrofon verfügbar."
+    "errNoInput": "Auf diesem Mac ist kein Mikrofon verfügbar.",
+    "conversationStart": "Gespräch starten",
+    "conversationStop": "Zuhören beenden",
+    "speaking": "spricht…"
   }
 }

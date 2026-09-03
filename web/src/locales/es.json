@@ -1646,6 +1646,9 @@
     "errDenied": "El micrófono o el reconocimiento de voz está desactivado en Ajustes del Sistema → Privacidad y seguridad.",
     "errNoAnswer": "Nadie respondió a la solicitud de permiso. Mantén pulsado de nuevo.",
     "errLocale": "Este Mac no tiene reconocimiento para ese idioma hablado. Elige otro en Idioma de entrada de voz.",
-    "errNoInput": "No hay ningún micrófono disponible en este Mac."
+    "errNoInput": "No hay ningún micrófono disponible en este Mac.",
+    "conversationStart": "Iniciar conversación",
+    "conversationStop": "Dejar de escuchar",
+    "speaking": "hablando…"
   }
 }
