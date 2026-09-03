@@ -222,7 +222,17 @@ export function createSpeaker(hint: string, hooks: { onActive?: (active: boolean
       u.lang = utteranceLangFor(sentence, hint);
       const v = pickVoice(voices, u.lang);
       if (v) u.voice = v;
-      const done = () => { if (!cancelled) setPending(pending - 1); };
+      // Engines have been seen to fire both `end` and `error` for the same
+      // utterance. Counting it twice drives `pending` below zero, and a
+      // negative count never crosses back through zero again — so the speaker
+      // would report itself as speaking for the rest of the session, and in
+      // conversation mode the microphone it gates would stay muted.
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        if (!cancelled) setPending(pending - 1);
+      };
       u.onend = done;
       u.onerror = done;
       setPending(pending + 1);

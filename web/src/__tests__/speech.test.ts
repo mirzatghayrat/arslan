@@ -313,6 +313,27 @@ describe("the speaker says when it is speaking", () => {
     expect(seen).toEqual([true, false]);
   });
 
+  test("one utterance that both ends and errors settles once", async () => {
+    // Engines have been seen to fire both on the same utterance. Counting it
+    // twice drives `pending` negative, and a negative count never crosses back
+    // to zero — so the speaker reports itself as speaking forever, and in
+    // conversation mode the microphone it gates stays muted for the rest of
+    // the session.
+    const { synth } = stubSynth([voice("en-US")]);
+    const started: any[] = [];
+    synth.speak = (u: any) => started.push(u);
+    const seen: boolean[] = [];
+    const sp = createSpeaker("en-US", { onActive: (a) => seen.push(a) });
+    await sp.feed("Twice.");
+    started[0].onend?.();
+    started[0].onerror?.();
+    expect(seen).toEqual([true, false]);
+    // The proof that the count is 0 and not -1: the next sentence must be
+    // able to make it active again.
+    await sp.feed("Again.");
+    expect(seen).toEqual([true, false, true]);
+  });
+
   test("an utterance error counts as ended", async () => {
     const { synth } = stubSynth([voice("en-US")]);
     const started: any[] = [];
