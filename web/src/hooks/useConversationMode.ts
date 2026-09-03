@@ -20,6 +20,10 @@ export interface ConversationOptions {
   silenceMs: number;
   onFinal: (text: string) => void;
   onError: (message: string) => void;
+  /** The helper process is gone — the shell's `ended` line. The caller owns
+   *  the toggle, so only it can put the button back; the hook going `off` by
+   *  itself just leaves a lit control over a dead session. */
+  onEnded?: () => void;
 }
 
 function tauri(): any { return (window as any).__TAURI__; }
@@ -30,8 +34,13 @@ export function useConversationMode(opts: ConversationOptions): { phase: Convers
   const [partial, setPartial] = useState('');
   const speaking = useArslanStore((s) => s.speaking);
   // Callbacks in refs so a re-render never restarts the helper.
-  const cb = useRef({ onFinal: opts.onFinal, onError: opts.onError, t });
-  cb.current = { onFinal: opts.onFinal, onError: opts.onError, t };
+  const cb = useRef({ onFinal: opts.onFinal, onError: opts.onError, onEnded: opts.onEnded, t });
+  cb.current = { onFinal: opts.onFinal, onError: opts.onError, onEnded: opts.onEnded, t };
+  // What `speaking` was the last time the gate acted. The gate's effect also
+  // re-runs when the phase leaves `arming`, and without this it treated that
+  // as "not speaking" all over again and wrote an unmute down the pipe to a
+  // helper that had never been muted.
+  const wasSpeaking = useRef(false);
 
   useEffect(() => {
     const tr = tauri();
@@ -51,13 +60,22 @@ export function useConversationMode(opts: ConversationOptions): { phase: Convers
           setPartial('');
           if (line.text.trim()) cb.current.onFinal(line.text.trim());
         } else if (line.t === 'error') cb.current.onError(errorMessage(line.code, line.msg, cb.current.t));
-        else if (line.t === 'ended') setPhase('off');
+        else if (line.t === 'ended') { setPhase('off'); cb.current.onEnded?.(); }
       });
       if (cancelled) { un(); return; }
       unlisten = un;
       setPhase('arming');
       try {
         await tr.core.invoke('voice_conversation_start', { locale: opts.locale, silenceMs: opts.silenceMs });
+        // The cleanup may have run while that invoke was in flight. Its own
+        // `voice_conversation_stop` reached a shell that had not spawned
+        // anything yet, so the helper that exists now belongs to nobody and
+        // would hold the microphone until the app quits. Stop it again, now
+        // that there is something to stop.
+        if (cancelled) {
+          tr.core.invoke('voice_conversation_stop').catch(() => {});
+          return;
+        }
       } catch (e) {
         cb.current.onError(String(e));
         setPhase('off');
@@ -68,6 +86,8 @@ export function useConversationMode(opts: ConversationOptions): { phase: Convers
       unlisten?.();
       setPhase('off');
       setPartial('');
+      // The next helper starts unmuted, whatever this one was doing.
+      wasSpeaking.current = false;
       tr.core.invoke('voice_conversation_stop').catch(() => { /* the helper dies with its stdin anyway */ });
     };
   }, [opts.enabled, opts.locale, opts.silenceMs]);
@@ -79,6 +99,11 @@ export function useConversationMode(opts: ConversationOptions): { phase: Convers
     if (phase === 'off' || phase === 'arming') return;
     const tr = tauri();
     if (!tr?.core?.invoke) return;
+    // Only a real change of the speaker's state is a command worth sending.
+    // This effect also fires when the phase leaves `arming`, and that is not
+    // news about the microphone.
+    if (speaking === wasSpeaking.current) return;
+    wasSpeaking.current = speaking;
     if (speaking) {
       setPhase('muted');
       tr.core.invoke('voice_mute').catch(() => {});

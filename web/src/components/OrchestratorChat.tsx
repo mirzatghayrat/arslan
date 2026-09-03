@@ -145,6 +145,10 @@ export default function OrchestratorChat({
     silenceMs: clampEndpointSilenceMs(settings?.voice_endpoint_silence_ms),
     onFinal: (text) => { setVoiceError(null); onSendMessage?.(text, undefined); },
     onError: (msg) => { setVoiceError(msg); setConversationOn(false); },
+    // The helper is gone (it exited, or the shell lost it). The toggle is ours,
+    // so put it back — a lit button over a dead session takes two presses to
+    // restart, and the first one looks like it did nothing.
+    onEnded: () => setConversationOn(false),
   });
   const micControl = voiceMode === 'push_to_talk' ? (
     <PushToTalk

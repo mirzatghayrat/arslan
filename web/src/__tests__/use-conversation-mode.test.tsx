@@ -41,6 +41,10 @@ describe("useConversationMode", () => {
     expect(result.current.phase).toBe("arming");
     act(() => emit('{"t":"ready"}'));
     expect(result.current.phase).toBe("listening");
+    // The helper comes up unmuted. Telling it to unmute because a phase change
+    // re-ran the gate is a command about nothing — and the reason to care is
+    // that it is written down the pipe the recogniser is reading.
+    expect(invokes.map(([c]) => c)).not.toContain("voice_unmute");
     act(() => emit('{"t":"partial","text":"打开"}'));
     expect(result.current.partial).toBe("打开");
     act(() => emit('{"t":"final","text":"打开桌面"}'));
@@ -79,6 +83,40 @@ describe("useConversationMode", () => {
     rerender({ enabled: false });
     await flush();
     expect(invokes.map(([c]) => c)).toContain("voice_conversation_stop");
+  });
+
+  test("the helper ending reaches the caller, once", async () => {
+    // `ended` is the shell saying the helper process is gone. The hook knew;
+    // the caller did not, so its toggle stayed lit over a dead session and
+    // the only way back was to press it twice.
+    const onEnded = vi.fn();
+    renderHook(() => useConversationMode({ enabled: true, locale: "en-US", silenceMs: 900, onFinal: vi.fn(), onError: vi.fn(), onEnded }));
+    await flush();
+    act(() => emit('{"t":"ended"}'));
+    expect(onEnded).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stop that races the start invoke still stops the helper", async () => {
+    // The window: cleanup runs while `voice_conversation_start` is still in
+    // flight. Its `voice_conversation_stop` reaches a shell that has not
+    // spawned anything yet, and the helper that appears a moment later belongs
+    // to nobody — holding the microphone until the app quits.
+    let resolveStart: () => void = () => {};
+    const inFlight = new Promise<void>((r) => { resolveStart = r; });
+    (window as any).__TAURI__.core.invoke = vi.fn(async (cmd: string, args?: unknown) => {
+      invokes.push([cmd, args]);
+      if (cmd === "voice_conversation_start") await inFlight;
+    });
+    const { unmount } = renderHook(() => useConversationMode({ enabled: true, locale: "en-US", silenceMs: 900, onFinal: vi.fn(), onError: vi.fn() }));
+    await flush();
+    expect(invokes.map(([c]) => c)).toContain("voice_conversation_start");
+    unmount();
+    await flush();
+    const stopsBefore = invokes.filter(([c]) => c === "voice_conversation_stop").length;
+    resolveStart();
+    await flush();
+    const stopsAfter = invokes.filter(([c]) => c === "voice_conversation_stop").length;
+    expect(stopsAfter).toBe(stopsBefore + 1);
   });
 
   test("no Tauri at all: stays off and never throws", async () => {
