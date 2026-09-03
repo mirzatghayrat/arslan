@@ -208,19 +208,92 @@ final class Ear {
     }
 }
 
+// --- stop, watched from the very first moment --------------------------------
+// 🔴 The reader used to start only AFTER `authSem.wait()`, `micSem.wait()` and
+// `ear.start()`. That is the hole `arslan-listen` documents and fixes (see its
+// "releasing the button, watched from the first moment" block): while a TCC
+// prompt is on screen nobody is reading stdin, so the shell's stop — which is
+// only ever "close stdin" — is ignored, and if the user later clicks Allow the
+// helper claims the microphone as an orphan of a session that ended minutes
+// ago. Letting go has to mean letting go at every stage, including the stage
+// where nothing has been granted yet.
+var releasedFlag = false
+let releaseLock = NSLock()
+func markReleased() { releaseLock.lock(); releasedFlag = true; releaseLock.unlock() }
+func wasReleased() -> Bool { releaseLock.lock(); defer { releaseLock.unlock() }; return releasedFlag }
+
+// The ear does not exist until authorization has succeeded, but the reader
+// thread is running long before that. It is shared under its own lock so the
+// EOF path can stop the engine the moment there is one — and commands that
+// arrive before it exists are dropped, since there is nothing to act on.
+var sharedEar: Ear?
+let earLock = NSLock()
+func setEar(_ e: Ear) { earLock.lock(); sharedEar = e; earLock.unlock() }
+func currentEar() -> Ear? { earLock.lock(); defer { earLock.unlock() }; return sharedEar }
+
+/// Wait for `sem`, but never past a stop and never forever.
+///
+/// Returns normally when the semaphore is signalled. On a stop it exits
+/// silently: the shell that would have read an error line is the thing that
+/// just went away. On `limit` seconds with no answer it emits `code` and exits
+/// 1 — a prompt nobody ever answers is indistinguishable from a hung helper
+/// from the outside, and `voiceLine.ts` already has a sentence for this.
+func waitOrGiveUp(_ sem: DispatchSemaphore, limit: TimeInterval, code: String, what: String) {
+    let deadline = Date().addingTimeInterval(limit)
+    while sem.wait(timeout: .now() + 0.2) == .timedOut {
+        if wasReleased() { exit(0) }
+        if Date() >= deadline {
+            fail(code, "no answer to the \(what) permission prompt after \(Int(limit))s")
+        }
+    }
+}
+
+// --- commands, and the stop signal, on their own thread ----------------------
+// Started before anything is asked for or opened, for the reason above.
+//
+// Never on `work`: `readLine()` blocks for the life of the process, and `work`
+// is a *serial* queue. The recognition callback hands re-arm off with
+// `work.async { self.rearm(after:) }` (see Ear.rearm's doc comment) so it never
+// runs on the callback's own stack — but a serial queue only runs one block at
+// a time, so if this loop occupied `work` itself, every queued re-arm would sit
+// behind it forever: after the first `final` (or first 1110) the recogniser
+// would never be re-armed and the mic would go silently dead. Its own thread
+// leaves `work` free to run each `rearm` call to completion as soon as it is
+// queued.
+Thread {
+    while let line = readLine(strippingNewline: true) {
+        guard let d = line.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let c = o["c"] as? String else { continue }
+        // Before the ear exists there is nothing to end, mute or unmute.
+        guard let ear = currentEar() else { continue }
+        switch c {
+        case "end_utterance": ear.endUtterance()
+        case "mute": ear.setMuted(true)
+        case "unmute": ear.setMuted(false)
+        default: break
+        }
+    }
+    // stdin closed: the shell is gone or the session ended. Let go of the mic —
+    // whether or not we ever got as far as opening it.
+    markReleased()
+    currentEar()?.engine.stop()
+    exit(0)
+}.start()
+
 work.async {
     // --- authorization (a refusal is a line, never silence) ---
+    // Phase lines: a helper that is waiting on a permission prompt looks exactly
+    // like a dead one from the outside. Say which it is.
+    emit(["t": "state", "phase": "authorizing"])
     let authSem = DispatchSemaphore(value: 0)
     var speechAuth: SFSpeechRecognizerAuthorizationStatus = .notDetermined
-    // Phase lines: a helper that is waiting on a permission prompt looks exactly
-// like a dead one from the outside. Say which it is.
-emit(["t": "state", "phase": "authorizing"])
-SFSpeechRecognizer.requestAuthorization { s in speechAuth = s; authSem.signal() }
-    authSem.wait()
+    SFSpeechRecognizer.requestAuthorization { s in speechAuth = s; authSem.signal() }
+    waitOrGiveUp(authSem, limit: 120, code: "speech-auth-timeout", what: "speech recognition")
     guard speechAuth == .authorized else { fail("speech-denied", "speech recognition is off for Arslan in System Settings") }
     let micSem = DispatchSemaphore(value: 0); var micOK = false
     AVCaptureDevice.requestAccess(for: .audio) { g in micOK = g; micSem.signal() }
-    micSem.wait()
+    waitOrGiveUp(micSem, limit: 120, code: "mic-auth-timeout", what: "microphone")
     guard micOK else { fail("mic-denied", "the microphone is off for Arslan in System Settings") }
 
     guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeId)) else {
@@ -228,36 +301,14 @@ SFSpeechRecognizer.requestAuthorization { s in speechAuth = s; authSem.signal() 
     }
     guard recognizer.isAvailable else { fail("recognizer-unavailable", "the recognizer for \(localeId) is not available right now") }
 
-    let ear = Ear(recognizer: recognizer)
-    emit(["t": "state", "phase": "authorized"])
-ear.start()
+    // A stop that landed while the prompts were up: never open the microphone
+    // at all. (The reader thread exits the process on EOF regardless — this
+    // only keeps us from claiming the device on the way out.)
+    if wasReleased() { exit(0) }
 
-    // --- commands until stdin closes ---
-    // Run on a dedicated thread, never on `work`: `readLine()` blocks for
-    // the life of the process, and `work` is a *serial* queue. The
-    // recognition callback hands re-arm off with `work.async { self.rearm(
-    // after:) }` (see Ear.rearm's doc comment) so it never runs on the
-    // callback's own stack — but a serial queue only runs one block at a
-    // time, so if this loop occupied `work` itself, every queued re-arm
-    // would sit behind it forever: after the first `final` (or first 1110)
-    // the recogniser would never be re-armed and the mic would go silently
-    // dead. Putting the loop on its own thread leaves `work` free to run
-    // each `rearm` call to completion as soon as it is queued.
-    Thread {
-        while let line = readLine(strippingNewline: true) {
-            guard let d = line.data(using: .utf8),
-                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                  let c = o["c"] as? String else { continue }
-            switch c {
-            case "end_utterance": ear.endUtterance()
-            case "mute": ear.setMuted(true)
-            case "unmute": ear.setMuted(false)
-            default: break
-            }
-        }
-        // stdin closed: the shell is gone or the session ended. Let go of the mic.
-        ear.engine.stop()
-        exit(0)
-    }.start()
+    let ear = Ear(recognizer: recognizer)
+    setEar(ear)
+    emit(["t": "state", "phase": "authorized"])
+    ear.start()
 }
 RunLoop.main.run()
