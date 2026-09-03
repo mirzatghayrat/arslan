@@ -24,6 +24,7 @@ import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
 import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
+import { clampEndpointSilenceMs } from '../api/adapters';
 import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
@@ -141,7 +142,7 @@ export default function OrchestratorChat({
   const conversation = useConversationMode({
     enabled: voiceMode === 'conversation' && conversationOn,
     locale: voiceLocale,
-    silenceMs: Number.parseInt(settings?.voice_endpoint_silence_ms ?? '', 10) || 900,
+    silenceMs: clampEndpointSilenceMs(settings?.voice_endpoint_silence_ms),
     onFinal: (text) => { setVoiceError(null); onSendMessage?.(text, undefined); },
     onError: (msg) => { setVoiceError(msg); setConversationOn(false); },
   });

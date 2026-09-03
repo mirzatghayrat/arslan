@@ -17,6 +17,25 @@ function looksMasked(value: string): boolean {
   return value === "***" || MASK_BULLET_RE.test(value) || MASK_PREFIX_RE.test(value);
 }
 
+
+/**
+ * The endpointer's silence window, in milliseconds, from whatever the backend
+ * stored. Absent, unparseable or non-positive reads as the 900 ms default;
+ * anything else is held inside 300–3000, because the value is a delay the user
+ * sits through with the microphone open — 50 ms sends a message mid-breath and
+ * 30 s looks like the app stopped listening.
+ *
+ * Exported because there are two readers, and they read different shapes of
+ * the same setting: `toUiSettings` maps the whole settings object for the
+ * settings screen, while the composer pulls this one key straight out of the
+ * backend store. The composer is the one whose value actually reaches
+ * `voice_conversation_start`, so a clamp that only lived in the adapter was a
+ * clamp on the path nobody took.
+ */
+export function clampEndpointSilenceMs(raw: string | number | undefined): number {
+  const n = typeof raw === "number" ? Math.trunc(raw) : Number.parseInt(raw ?? "", 10);
+  return Number.isNaN(n) || n <= 0 ? 900 : Math.min(3000, Math.max(300, n));
+}
 /**
  * Maps a backend AppSettings (snake_case) → UI AppSettings (camelCase).
  *
@@ -69,10 +88,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     voiceInputLocale: backend.voice_input_locale ?? "",
     voiceMode: (["off", "push_to_talk", "conversation"].includes(backend.voice_mode ?? "")
       ? backend.voice_mode : "push_to_talk") as AppSettings["voiceMode"],
-    voiceEndpointSilenceMs: (() => {
-      const n = Number.parseInt(backend.voice_endpoint_silence_ms ?? "", 10);
-      return Number.isNaN(n) || n <= 0 ? 900 : Math.min(3000, Math.max(300, n));
-    })(),
+    voiceEndpointSilenceMs: clampEndpointSilenceMs(backend.voice_endpoint_silence_ms),
     embeddingConfigId: backend.embedding_config_id ?? "",
   synthesisConfigId: backend.synthesis_config_id ?? "",
   compactionConfigId: backend.compaction_config_id ?? "",
