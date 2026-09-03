@@ -307,8 +307,13 @@ work.async {
     if wasReleased() { exit(0) }
 
     let ear = Ear(recognizer: recognizer)
-    setEar(ear)
     emit(["t": "state", "phase": "authorized"])
     ear.start()
+    // Published only AFTER start() returned: the stdin thread's EOF path stops
+    // the engine through this reference, and two threads inside AVAudioEngine
+    // at once is not something Apple promises to survive. Before publication
+    // an EOF simply exits the process, which releases the device just the same.
+    setEar(ear)
+    if wasReleased() { ear.engine.stop(); exit(0) }
 }
 RunLoop.main.run()
