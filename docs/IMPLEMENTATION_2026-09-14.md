@@ -13,7 +13,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | --- | --- | --- |
 | P0-01 | No automatic unsandboxed retry | Implemented; 19 targeted tests passed, full regression pending |
 | P0-02 | Filesystem isolation | Implemented for Python; native kernel-denial tests passed, full regression pending |
-| P1-01 | Startup/authentication boundary | Pending |
+| P1-01 | Startup/authentication boundary | Connection-level HTTP/WS guard implemented; 31 auth tests pass |
 | P1-02 | Accurate safety documentation and release | Pending |
 | P1-03 | Unified host/spawn Run, cancellation, events | Pending |
 | P1-04 | Persistent downloadable artifacts | Pending |
@@ -54,3 +54,8 @@ Release only the verified scope and clearly identify unverified features.
   The profile grants that narrow operation, not broad filesystem read access.
 - New Node-based sandbox dependency deferred: native isolation is verified first;
   packaged interpreter availability and cross-platform support remain separate gates.
+- P1-01: unauthenticated mode now rejects non-loopback or unknown ASGI peers before
+  routing, independently of HOST/ARSLAN_BIND_HOST. Local Host/forwarding headers do
+  not override the peer check. HTTP is 403 and WS is 1008. Reverse proxies still
+  require configured authentication; a proxy must not hide remote peers behind an
+  unauthenticated localhost backend. No public listener was opened for these tests.

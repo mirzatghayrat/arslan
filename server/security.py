@@ -19,6 +19,40 @@ from urllib.parse import urlsplit
 
 from server import config
 
+
+class LocalOnlyWhenUnauthenticatedMiddleware:
+    """Enforce the actual connection boundary, not an advertised launch setting.
+
+    The zero-token developer mode is local-only even when uvicorn is accidentally
+    bound to all interfaces. Host/Origin headers cannot opt a remote peer into it.
+    Reverse proxies must configure a token; do not expose an unauthenticated local
+    backend through a proxy that discards the client's address.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        from server.auth import active_token
+        from server.token_bootstrap import is_loopback_host
+
+        if scope["type"] in {"http", "websocket"} and not active_token():
+            client = scope.get("client")
+            if not client or not is_loopback_host(client[0]):
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008,
+                                "reason": "Remote access requires an API token"})
+                else:
+                    from starlette.responses import JSONResponse
+                    response = JSONResponse(
+                        {"detail": "Remote access requires ARSLAN_API_TOKEN; "
+                                   "unauthenticated development mode is loopback-only"},
+                        status_code=403,
+                    )
+                    await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
 # Loopback hostnames trusted locally in dev (any scheme/port). Not trusted
 # implicitly in prod — prod uses the explicit ARSLAN_ALLOWED_ORIGINS allowlist.
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})

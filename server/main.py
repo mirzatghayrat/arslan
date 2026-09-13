@@ -334,6 +334,8 @@ def create_app() -> FastAPI:
 
     from server import security
 
+    app.add_middleware(security.LocalOnlyWhenUnauthenticatedMiddleware)
+
     # add_middleware wraps in reverse order → TrustedHost (added last) is outermost,
     # so a foreign Host is rejected before CORS/routing runs. CORS uses an explicit
     # allowlist (dev: the vite dev server; prod: ARSLAN_ALLOWED_ORIGINS) — never

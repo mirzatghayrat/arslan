@@ -16,7 +16,10 @@ This module closes that gap *without* adding friction for developers:
         ``HOST`` / ``ARSLAN_BIND_HOST`` (same signal as the boot advisory in
         ``server.main``). LIMITATION: a bare ``uvicorn --host 0.0.0.0`` with
         neither env var set is invisible here — prod/packaged users should set
-        one of the env vars, and prod already forces enforcement anyway.
+        one of the env vars, and prod already forces enforcement anyway. The
+        connection-boundary middleware independently rejects ALL non-loopback
+        requests while no token is active, so an unadvertised public bind cannot
+        expose an unauthenticated API or WebSocket.
 
   * ``bootstrap_api_token(cfg)`` (called once at boot):
       - explicit non-empty ``ARSLAN_API_TOKEN`` -> use it, persist nothing;

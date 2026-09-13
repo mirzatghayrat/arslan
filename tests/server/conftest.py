@@ -53,6 +53,24 @@ def _heal_config_drift() -> bool:
 _TEST_CRYPTO_SALT = bytes(range(16))
 
 
+@pytest.fixture(autouse=True)
+def _testclient_models_loopback(monkeypatch):
+    """In-process clients model a local dev connection unless a test specifies a peer.
+
+    Starlette defaults to the synthetic hostname 'testclient', not an IP address.
+    Production correctly fails closed for unknown peers; set an actual loopback
+    address here instead of adding a test-only bypass to the production policy.
+    """
+    from starlette.testclient import TestClient
+    original = TestClient.__init__
+
+    def initialize(self, *args, **kwargs):
+        kwargs.setdefault("client", ("127.0.0.1", 50000))
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(TestClient, "__init__", initialize)
+
+
 # The aiosqlite teardown guard is installed at import time rather than in a
 # fixture: the race it addresses happens BETWEEN tests, when no fixture is
 # active. It counts what it catches; see the terminal summary hook below.
