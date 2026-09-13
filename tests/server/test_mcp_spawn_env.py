@@ -106,6 +106,9 @@ async def test_stdio_spawn_uses_resolved_command_and_merged_path(tmp_path, monke
     npx.write_text("#!/bin/sh\n")
     npx.chmod(0o755)
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("ARSLAN_SECRET_KEY", "synthetic-parent-only")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-parent-provider")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/synthetic-agent.sock")
     monkeypatch.setattr(spawn_env, "login_shell_path", lambda: str(fake_bin))
 
     captured = {}
@@ -148,6 +151,16 @@ async def test_stdio_spawn_uses_resolved_command_and_merged_path(tmp_path, monke
     params = captured["params"]
     assert params.command == str(npx)
     assert str(fake_bin) in params.env["PATH"].split(os.pathsep)
+    assert not {"ARSLAN_SECRET_KEY", "OPENAI_API_KEY", "SSH_AUTH_SOCK"} & params.env.keys()
+
+
+def test_only_explicit_server_credentials_cross_environment(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "ambient-do-not-inherit")
+    monkeypatch.setenv("NODE_OPTIONS", "--require=/untrusted.js")
+    env = spawn_env.child_environment({"HTTPS_PROXY": "http://proxy:8080"}, {"GITHUB_TOKEN": "explicit-server-token"})
+    assert env["GITHUB_TOKEN"] == "explicit-server-token"
+    assert env["HTTPS_PROXY"] == "http://proxy:8080"
+    assert "NODE_OPTIONS" not in env
 
 
 async def test_stdio_spawn_explicit_env_path_wins(tmp_path, monkeypatch):

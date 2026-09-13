@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
 from mcp.client.streamable_http import streamablehttp_client
 
@@ -64,7 +63,7 @@ class MCPSessionManager:
                     "MCP stdio %s proxy source: %s", server.get("label") or server["id"], source
                 )
                 from server.mcp import spawn_env
-                env = {**os.environ, **additions, **server_env}      # explicit server env wins
+                env = spawn_env.child_environment(additions, server_env)
                 # Packaged .app PATH is LaunchServices-minimal: resolve the command
                 # against the merged (login-shell) PATH and hand the child that PATH
                 # too — npx itself needs to find node. A user-configured PATH wins.

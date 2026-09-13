@@ -118,3 +118,12 @@ Release only the verified scope and clearly identify unverified features.
 - Memory regression subset: 34 passed, including long CJK summary fallback,
   oversized-first-fact refusal, fail-closed sensitive filtering and active-only
   retrieval. These tests do not measure live semantic memory quality.
+- Post-recipe frontend full run: 216 files / 1675 tests passed; production build
+  passed (main JS 2735.53 kB, gzip 860.44 kB; chunk-size warning remains). Desktop
+  npm audit also reports zero known vulnerabilities; default-branch GitHub alerts
+  will remain until fixes reach main.
+- MCP subprocess environments now pass only runtime essentials, resolved proxy
+  configuration and explicit server credentials. Parent provider keys, Arslan's
+  encryption secret, SSH agent sockets and runtime injection flags are not
+  inherited wholesale. Fourteen targeted MCP environment/session tests pass.
+  This is not a filesystem sandbox for arbitrary configured MCP executables.

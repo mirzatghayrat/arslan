@@ -21,6 +21,22 @@ import subprocess
 _FALLBACK_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 _SHELL_TIMEOUT = 5.0
 
+# Ambient provider keys, the Arslan secret, SSH agents, NODE_OPTIONS and
+# PYTHONPATH must not leak into every third-party MCP subprocess. This is
+# least-privilege environment passing, NOT filesystem/process isolation.
+_AMBIENT_KEYS = frozenset({
+    "HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+    "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
+})
+
+
+def child_environment(additions: dict, explicit: dict) -> dict:
+    """Only runtime basics and explicitly configured server credentials cross."""
+    ambient = {key: value for key, value in os.environ.items() if key.upper() in _AMBIENT_KEYS}
+    return {**ambient, **additions, **explicit}
+
 
 @functools.lru_cache(maxsize=1)
 def login_shell_path() -> str:
