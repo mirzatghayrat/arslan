@@ -4,6 +4,22 @@ Passing deterministic tests proves the exercised contracts, not an 8/10 agent.
 No paid model evaluation or independent human calibration was performed in the
 2026-09-14 reliability work. Do not substitute test counts for task success rates.
 
+## Reproducible zero-cost contract suite
+
+`uv run python -m scripts.acceptance_contracts --output /path/to/new-results`
+runs 30 fixed behavior contracts with deterministic provider substitutes. It
+executes real storage, cancellation, artifact export, recipe scheduling, backup,
+permission, context and retrieval code. The browser transport and Gemini API
+are mocked; the Python artifact case uses the actual local sandbox on macOS.
+These are **not 30 natural-language end-to-end tasks with a real model**.
+
+The output folder must not already exist. It contains pytest logs, JUnit and a
+JSON report with commit/dirty status, catalog and test source hashes, platform,
+configuration, per-contract timing/status/reasons and zero external model cost.
+Missing/skipped tests are not passes; one failed parameter fails its whole
+contract. Temporary application storage is removed after the run. Fixtures use
+synthetic keys; parent provider credentials are not passed into the test process.
+
 ## Judge reliability
 
 The pairwise judge runs both output orders, with each arm's trace evidence moving

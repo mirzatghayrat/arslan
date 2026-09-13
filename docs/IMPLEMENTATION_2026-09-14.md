@@ -20,7 +20,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P1-05 | Shared execution budget | Shared request/tool/time/token/output/artifact limits implemented; targeted tests pass |
 | P1-06 | Provider contract verification | Gemini native tool/continuation gap implemented and mock-wire roundtrip verified; live calls pending budget |
 | P1-07 | Recovery and backup acceptance | Periodic partial-output checkpoints and new-directory validated restore implemented; synthetic roundtrip tests pass |
-| P1-08 | End-to-end task benchmark | Pending; paid calls need budget |
+| P1-08 | End-to-end task benchmark | 30 fixed deterministic engineering contracts and provenance runner added; real-model task benchmark pending approved budget |
 | P2-01 | Memory quality, context budgets, scale | CJK-aware context caps and bounded exact-vector scan tested at 1k/10k/100k; live semantic recall evaluation pending |
 | P2-02 | Evolution evidence and judge calibration | Judge schema/margin/disagreement handling hardened; invalid old probe retired; live calibration still pending |
 | P2-03 | Capability/version/provenance documentation | Pending |
