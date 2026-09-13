@@ -88,6 +88,34 @@ only while the app is fully closed. Boot can then apply any pending migrations.
 Verify notes, a known provider credential and an artifact before discarding the
 old directory. No automatic in-place restore endpoint is exposed over HTTP.
 
+## Optional static webpage preview
+
+The browser button opens an explicitly initiated preview, not an autonomous
+browser agent. Setup downloads Playwright MCP **0.0.80** with an npm integrity
+lock and its matching Chromium Headless Shell revision. Node.js 18+ is an
+external prerequisite. No model API calls or signed-in browser profiles are used.
+
+Page scripts, service workers, website downloads, QUIC, and proxy bypasses are
+disabled. Only navigation, accessibility snapshots and viewport screenshots are
+exposed internally. Public HTTPS page resources pass through a per-visit CONNECT
+proxy that validates every DNS answer and connects to a pinned public IP, on port
+443 only. TLS remains end-to-end, with certificate validation enabled. Limits:
+45 seconds overall, 32 connections and 50 MiB of tunnel traffic per visit.
+
+Chromium's renderer sandbox stays enabled. **This is not kernel-enforced egress
+or filesystem isolation for the trusted Node/Chromium parent processes.** macOS
+rejected nested Chromium sandbox initialization under an outer Seatbelt profile;
+we did not work around that by disabling the renderer sandbox. Full scripted
+browser automation is deferred. Script-dependent websites may look incomplete.
+Failed previews remain failed Runs, and saved output is accessible through the
+existing authenticated artifact downloads. Stop uses the shared Run registry.
+
+Source contracts checked against the pinned package and the official
+[Playwright MCP documentation](https://github.com/microsoft/playwright-mcp).
+Generic user-configured MCP servers are separate from this preview and do not
+inherit its restrictions. The generic preset now pins the same MCP version;
+`browser_tabs` requires approval because it can create and close tabs.
+
 ## Verification boundary
 
 Transport mocks and synthetic task tests verify control flow, isolation,

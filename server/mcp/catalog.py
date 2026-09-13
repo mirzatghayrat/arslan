@@ -72,7 +72,7 @@ CONNECTORS: list[dict] = [
     # different and much larger thing than one that cannot, and which of the two
     # this is must not depend on anybody remembering a flag.
     {"key": "playwright", "auth": "none", "label": "Playwright", "transport": "stdio", "command": "npx",
-     "args": ["-y", "@playwright/mcp@latest", "--isolated"], "url": None,
+     "args": ["-y", "@playwright/mcp@0.0.80", "--isolated", "--sandbox"], "url": None,
      "runtime": "node", "env": [], "requires_path": False, "path_placeholder": None,
      "description": ("Drive a web page through its accessibility tree — read what is on "
                      "screen, and (once you allow it) click and type. Runs in a private "
@@ -98,7 +98,8 @@ PLAYWRIGHT_TOOL_TIERS: dict[str, str] = {
     "browser_take_screenshot": "safe",
     "browser_console_messages": "safe",
     "browser_network_requests": "safe",
-    "browser_tabs": "safe",
+    # One endpoint also creates/closes/selects tabs; its name is not read-only.
+    "browser_tabs": "orchestrator",
     # act on the page — deliberately NOT safe
     "browser_click": "orchestrator",
     "browser_type": "orchestrator",

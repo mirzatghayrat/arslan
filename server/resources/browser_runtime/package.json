@@ -1,0 +1,6 @@
+{
+  "name": "arslan-managed-browser",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": { "@playwright/mcp": "0.0.80" }
+}

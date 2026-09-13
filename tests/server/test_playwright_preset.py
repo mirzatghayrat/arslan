@@ -63,14 +63,14 @@ def test_the_heuristic_alone_would_call_every_observer_unsafe(tool):
 
 @pytest.mark.parametrize("tool", [
     "browser_snapshot", "browser_take_screenshot", "browser_console_messages",
-    "browser_network_requests", "browser_tabs"])
+    "browser_network_requests"])
 def test_observers_are_graded_safe(tool):
     assert suggested_tier_for(PLAYWRIGHT, tool) == "safe"
 
 
 @pytest.mark.parametrize("tool", [
     "browser_click", "browser_type", "browser_fill_form", "browser_navigate",
-    "browser_evaluate", "browser_file_upload", "browser_press_key"])
+    "browser_evaluate", "browser_file_upload", "browser_press_key", "browser_tabs"])
 def test_anything_that_acts_starts_restricted(tool):
     """The discriminating half. A table that graded everything safe would pass
     the observers test and hand a spawn the ability to click through a page."""

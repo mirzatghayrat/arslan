@@ -29,7 +29,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P2-06 | Loading, empty states, steps and artifacts UI | Pending |
 | P2-07 | Voice and native desktop acceptance | Pending; physical checks explicit |
 | P3-01 | Versioned recipes and bounded collaboration | Immutable versions, dependency execution, 1–4 parallel steps, approval/resume API and six-language editor implemented; behavior tests pass |
-| P3-02 | Controlled browser workflow (selected first) | Pending; cross-platform later |
+| P3-02 | Controlled browser workflow (selected first) | Static preview implemented and UI-verified; full interactive browser deferred, no kernel egress claim |
 
 ## Verification log
 
@@ -135,3 +135,13 @@ Release only the verified scope and clearly identify unverified features.
   Matplotlib PNG generation passed inside Seatbelt; reading an unrelated
   synthetic outside file was denied. Runtime adds 231 MiB unpacked. This is
   pre-signing evidence; final signed-app checks remain a release gate.
+- Static browser preview: 36 backend/policy tests and 8 frontend/locale tests
+  passed. Real Chromium (sandbox on, page scripts off) fetched example.com,
+  exported text/PNG and terminated on cancellation. UI verified completed
+  snapshot/downloads and rejection of loopback navigation. Two-step recipe
+  editing, dependency/approval toggles and immutable version save were also
+  checked in the UI with synthetic data; no model calls were made.
+- Full interactive browser remains deferred: macOS rejected nested renderer
+  sandbox initialization under an outer Seatbelt profile. The static preview
+  uses Chromium's renderer sandbox and a public-IP-pinning HTTPS proxy; do not
+  describe that as a kernel network/filesystem jail for Node or the browser host.

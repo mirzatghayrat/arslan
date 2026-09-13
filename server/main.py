@@ -306,6 +306,8 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
         logger.warning("curation loop stop failed (non-fatal): %s", exc)
 
+    from server.api import browser as _browser_api
+    await _browser_api.shutdown()
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()
 
@@ -416,6 +418,8 @@ def create_app() -> FastAPI:
     app.include_router(runs_api.router, prefix="/api/v1")
     from server.api import recipes as recipes_api
     app.include_router(recipes_api.router, prefix="/api/v1")
+    from server.api import browser as browser_api
+    app.include_router(browser_api.router, prefix="/api/v1")
 
     from server.api import conversations as conversations_api
 

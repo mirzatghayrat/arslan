@@ -50,6 +50,7 @@ import BrainSection from './components/brain/BrainSection';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
+import BrowserPanel from './components/BrowserPanel';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
@@ -75,6 +76,7 @@ export default function App() {
 
 // Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'
   const [activeSection, setActiveSection] = useState<Section>('arslan');
+  const [showBrowser, setShowBrowser] = useState(false);
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -957,18 +959,16 @@ export default function App() {
                 <Terminal className="w-3.5 h-3.5" />
               </span>
 
-              {/* Browser — placeholder, deliberately inert and grey. Nothing is
-                  wired behind it; it is here so the slot exists when a built-in
-                  browser is evaluated. Not a disabled BUTTON: a control that
-                  looks pressable and does nothing is worse than a marker. */}
-              <span
+              {/* Explicit-user static preview, not an autonomous browser agent. */}
+              <button
                 data-testid="browser-indicator"
-                title={t('orchestrator.browser_soon')}
-                aria-label={t('orchestrator.browser_soon')}
-                className="flex items-center px-2 py-1.5 rounded-lg border border-border text-subtle-foreground/50"
+                onClick={() => setShowBrowser(true)}
+                title={t('browser.title')}
+                aria-label={t('browser.title')}
+                className="flex items-center px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary"
               >
                 <Globe className="w-3.5 h-3.5" />
-              </span>
+              </button>
             </div>
           </div>
 
@@ -1747,6 +1747,7 @@ export default function App() {
         </div>
       )}
 
+      <BrowserPanel open={showBrowser} onClose={() => setShowBrowser(false)} />
       {/* Transient toast (distill confirmation / failure). */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">
@@ -1760,4 +1761,3 @@ export default function App() {
     </div>
   );
 }
-
