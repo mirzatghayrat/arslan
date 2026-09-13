@@ -44,7 +44,7 @@ def test_a_preset_verdict_matches_the_provider_it_expands_to():
     assert not mismatched, f"key verdict != expanded-provider verdict: {mismatched}"
 
 
-def test_a_provider_that_still_drops_tools_is_still_reported_broken():
+def test_a_provider_that_drops_tools_is_still_reported_broken(monkeypatch):
     """Guards the other direction: this must not be satisfied by blanket approval.
 
     This test used to name anthropic here too. G1 gave the Anthropic adapter a real
@@ -57,7 +57,9 @@ def test_a_provider_that_still_drops_tools_is_still_reported_broken():
     The flip is not taken on faith: tests/llm/test_tool_transport.py captures the real
     Anthropic request body, so the table's claim is re-measured rather than asserted.
     """
-    assert cf.tool_calling_state("gemini") == cf.UNSUPPORTED
+    monkeypatch.setitem(cf.NATIVE_TOOL_CALLS, "test-unsupported", cf.UNSUPPORTED)
+    assert cf.tool_calling_state("test-unsupported") == cf.UNSUPPORTED
+    assert cf.tool_calling_state("gemini") == cf.SUPPORTED
     assert cf.tool_calling_state("anthropic") == cf.SUPPORTED, (
         "G1 put tool schemas on the Anthropic wire — if this is UNSUPPORTED again, "
         "either the transport regressed or the table drifted from it"

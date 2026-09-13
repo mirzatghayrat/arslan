@@ -15,6 +15,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import Capabilities from "../components/Capabilities";
+import * as transport from "../lib/toolTransport";
 import "../i18n";
 
 vi.mock("../api/catalog", () => ({ getMcpCatalog: vi.fn(async () => []) }));
@@ -26,10 +27,11 @@ vi.mock("../api/mcp", () => ({
 }));
 
 describe("the Capability Library says when equipping will have no effect", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.restoreAllMocks());
 
   test("a provider that cannot carry tools is called out", () => {
-    render(<Capabilities provider="gemini" />);
+    vi.spyOn(transport, "toolTransportState").mockReturnValue("unsupported");
+    render(<Capabilities provider="test-unsupported" />);
     const notice = screen.getByTestId("tool-transport-warning");
     expect(notice).toHaveAttribute("data-state", "unsupported");
     // MCP servers are named in the copy, because the MCPS tab is where someone
@@ -41,8 +43,8 @@ describe("the Capability Library says when equipping will have no effect", () =>
     // On Settings, "this provider" points at the select directly above it. Here
     // there is no antecedent on the page at all, and an unattributed warning
     // gets read as being about something else.
-    render(<Capabilities provider="gemini" />);
-    expect(screen.getByTestId("tool-transport-provider")).toHaveTextContent("gemini");
+    render(<Capabilities provider="unknown-provider" />);
+    expect(screen.getByTestId("tool-transport-provider")).toHaveTextContent("unknown-provider");
   });
 
   test("a provider that carries tools gets no notice", () => {
@@ -68,7 +70,7 @@ describe("the Capability Library says when equipping will have no effect", () =>
     // Testing the POSITION, not just the presence: rendered inside one tab's
     // panel it would vanish the moment someone clicked MCPS — the tab that
     // needed it most.
-    render(<Capabilities provider="gemini" />);
+    render(<Capabilities provider="unknown-provider" />);
     const notice = screen.getByTestId("tool-transport-warning");
     const tablist = screen.getByRole("tablist");
     expect(notice.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -84,7 +86,7 @@ describe("the Capability Library says when equipping will have no effect", () =>
     // never be transported — the most confident false claim in the app — so
     // "the notice survives that click" is the thing worth asserting, not just
     // where it sits in the DOM.
-    render(<Capabilities provider="gemini" />);
+    render(<Capabilities provider="unknown-provider" />);
     expect(screen.getByTestId("tool-transport-warning")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: /MCPs/i }));
     await waitFor(() =>

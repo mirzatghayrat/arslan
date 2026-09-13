@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { TOOL_TRANSPORT, type ToolTransport } from "../lib/toolTransport";
+import { TOOL_TRANSPORT, toolTransportState, type ToolTransport } from "../lib/toolTransport";
 
 const REPO = join(__dirname, "..", "..", "..");
 
@@ -60,16 +60,10 @@ describe("tool-transport table", () => {
     expect(TOOL_TRANSPORT).toEqual(backendTable());
   });
 
-  it("still names a provider this notice exists for", () => {
-    // A guard on equality alone would stay green if BOTH sides were emptied.
-    //
-    // This asserted anthropic too until G1 put tool schemas on the Anthropic wire.
-    // The fact was updated and the guard kept: what it defends against is the two
-    // tables being blanked or blanket-approved in lockstep, which equality alone
-    // cannot see. Gemini carries that on its own now — when Gemini is fixed, this
-    // needs a provider that genuinely drops tools, or it stops guarding anything.
+  it("tracks the native providers while unknown paths remain unverified", () => {
     const backend = backendTable();
-    expect(backend.gemini).toBe("unsupported");
+    expect(backend.gemini).toBe("supported");
     expect(backend.anthropic).toBe("supported");
+    expect(toolTransportState("unmeasured-provider")).toBe("unverified");
   });
 });

@@ -7,9 +7,8 @@
  * which passes tool schemas to the adapter. `openai_provider` serializes them
  * (`if tools: payload["tools"] = tools`), and since G1 the Anthropic adapter
  * does too (`_translate_tools` -> tools[].input_schema, `tool_use` parsed back).
- * The GEMINI adapter still accepts the argument and never puts it on the wire.
- * So on that one, every equipped tool and every MCP tool is inert, the model is
- * never told the tool exists, and nothing anywhere says so.
+ * Gemini now transmits functionDeclarations and roundtrips function responses.
+ * This measures transport support, not live acceptance of every vendor model.
  *
  * This comment said "the Anthropic and Gemini adapters" until G1 landed. It is
  * updated here in the same change as the verdict, because a stale explanation
@@ -54,7 +53,7 @@ export const TOOL_TRANSPORT: Readonly<Record<string, ToolTransport>> = {
   // back. Flipped here in the same change as the Python table, because these two
   // disagreeing is a warning that contradicts the app it is warning about.
   anthropic: "supported",
-  gemini: "unsupported", // arslan/llm/providers/gemini_provider.py builds no `tools`
+  gemini: "supported", // Native functionDeclarations + functionResponse transport.
   // Tier-0 presets: the dropdown stores the PRESET KEY, and expand_preset maps
   // every one of these to provider "openai", so tools are sent. Omitting them
   // made the notice claim "nobody has measured this" on eight of the eleven
