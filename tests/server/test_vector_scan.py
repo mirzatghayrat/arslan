@@ -35,6 +35,7 @@ def test_corrupt_and_nonfinite_vectors_are_skipped():
               (4, np.array([1, 0], dtype="<f4").tobytes())])
     assert scan.ids() == [4]
     assert scan.skipped == 2
+    assert scan.filtered == 1
 
 
 def test_zero_query_and_zero_k_return_empty():

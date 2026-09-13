@@ -21,6 +21,7 @@ class CosineTopK:
         self.k, self.minimum = k, minimum
         self.heap: list[tuple[float, int, int]] = []
         self.skipped = 0
+        self.filtered = 0
 
     def add(self, rows) -> None:
         if len(rows) > BATCH_SIZE:
@@ -44,7 +45,11 @@ class CosineTopK:
         scores = matrix @ self.query / (norms * self.norm + 1e-9)
         for cid, score in zip(ids, scores, strict=True):
             value = float(score)
-            if not np.isfinite(value) or value < self.minimum:
+            if not np.isfinite(value):
+                self.skipped += 1
+                continue
+            if value < self.minimum:
+                self.filtered += 1
                 continue
             item = (value, -cid, cid)  # lower ID wins equal-score ties, independent of batches
             if len(self.heap) < self.k:

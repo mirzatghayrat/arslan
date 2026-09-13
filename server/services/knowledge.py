@@ -167,6 +167,9 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
             while rows:
                 top.add(rows)
                 rows = await stream.fetchmany(BATCH_SIZE)
+            if top.filtered or top.skipped:
+                logger.debug("_MIN_COSINE=%s dropped %d vectors; skipped %d invalid vectors",
+                             _MIN_COSINE, top.filtered, top.skipped)
             ids = top.ids()
         finally:
             await stream.close()

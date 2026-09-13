@@ -214,3 +214,20 @@ SOFTWARE.
   permission notice — the same MIT text reproduced above (obra/superpowers) applies.
 - Used as the persona-seed library (identity references composed into spawns; curation-only —
   imported into the `persona_seeds` table, never redistributed as standalone files).
+
+---
+
+## Bundled computation runtime (desktop 0.1.38+)
+
+The desktop build stages uv-managed standalone CPython and the lockfile-resolved
+`sandbox` dependency group (NumPy, pandas, Matplotlib and their dependencies).
+The runtime is copied without stripping its `lib/python3.11/LICENSE.txt`, wheel
+`*.dist-info` license files, or bundled font notices. These notices travel inside
+`Contents/Resources/sidecar/python_runtime` with the binaries they describe.
+Exact distributions and hashes are recorded in `uv.lock`; the source staging
+procedure is `packaging/stage_python_runtime.py`.
+
+Optional webpage preview installs the separately integrity-locked Playwright MCP
+and Chromium Headless Shell runtime only after the user requests setup. It is not
+copied into the desktop bundle. The installation retains upstream package and
+browser notices; see `server/resources/browser_runtime/package-lock.json`.
