@@ -6,6 +6,7 @@ import type { RunListItem, RunSummary } from "../api/client.types";
 import type { UiRun } from "../types";
 import RunCompareChart from "./RunCompareChart";
 import EChart from "./EChart";
+import ArtifactDownloads from "./ArtifactDownloads";
 import { triggerDownload } from "./MessageBody";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
@@ -71,6 +72,7 @@ function buildRunMarkdown(run: UiRun, t: TFn): string {
  * — they never reach 'scored' or 'score_failed'. */
 const TERMINAL_RUN_STATUSES = new Set([
   "scored", "score_failed", "cancelled", "interrupted", "replayed",
+  "completed", "failed",
 ]);
 
 export function isTerminalRunStatus(status: string): boolean {
@@ -256,6 +258,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       </header>
 
       <p className="run-replay__usermsg">{run.userMessage}</p>
+      <ArtifactDownloads files={run.artifacts} />
 
       {run.errorText != null && (
         <div className="run-replay__error-banner" role="alert">
@@ -483,6 +486,8 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
              "评分中…" forever would be a lie. Same interrupted wording as the
              chat stall/cancel markers (working.stalled = 已中断/Interrupted). */
           <p className="run-replay__pending">⏸ {t("working.stalled")}</p>
+        ) : run.status === "completed" || run.status === "failed" ? (
+          <p className="run-replay__pending">{t('files.unscored')}</p>
         ) : (
           <p className="run-replay__pending">{t("replay.scoring")}</p>
         )}

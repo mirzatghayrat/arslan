@@ -136,10 +136,13 @@ def tool_call(tool: str, args_summary: str) -> dict[str, Any]:
     return {"type": "tool_call", "tool": tool, "args_summary": args_summary}
 
 
-def tool_result(tool: str, ok: bool, summary: str, artifact: dict | None = None) -> dict[str, Any]:
+def tool_result(tool: str, ok: bool, summary: str, artifact: dict | None = None,
+                artifacts: list[dict] | None = None) -> dict[str, Any]:
     frame: dict[str, Any] = {"type": "tool_result", "tool": tool, "ok": ok, "summary": summary}
     if artifact is not None:
         frame["artifact"] = artifact
+    if artifacts:
+        frame["artifacts"] = artifacts
     return frame
 
 

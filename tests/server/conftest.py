@@ -71,6 +71,18 @@ def _testclient_models_loopback(monkeypatch):
     monkeypatch.setattr(TestClient, "__init__", initialize)
 
 
+@pytest.fixture
+async def execution_db(monkeypatch):
+    """Isolated database for execution-lifecycle tests; never touch local app data."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+    yield maker
+    await engine.dispose()
+
+
 # The aiosqlite teardown guard is installed at import time rather than in a
 # fixture: the race it addresses happens BETWEEN tests, when no fixture is
 # active. It counts what it catches; see the terminal summary hook below.

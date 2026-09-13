@@ -1,4 +1,5 @@
 {
+  "files": { "download": "Descargar archivo", "downloadFailed": "Error de descarga. Comprueba la conexión e inténtalo de nuevo.", "unscored": "Ejecución terminada; las tareas del asistente principal no se puntúan automáticamente." },
   "app": {
     "name": "Arslan",
     "tagline": "Crea tus propios spawns de IA"

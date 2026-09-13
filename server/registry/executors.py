@@ -596,7 +596,8 @@ class RunPythonExecutor:
             return {"ok": False, "external": False,
                     "error": result.get("error") or "execution failed",
                     **{k: result[k]
-                       for k in ("stdout", "stderr", "exit_code", "sandboxed", "network_isolated")
+                       for k in ("stdout", "stderr", "exit_code", "sandboxed", "network_isolated",
+                                 "artifacts", "artifact_warnings")
                        if k in result}}
         n_files = len(result.get("files") or [])
         summary = (f"已执行 Python:exit 0,stdout {len(result.get('stdout') or '')} 字"

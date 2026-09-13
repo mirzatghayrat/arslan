@@ -198,7 +198,7 @@ async def test_ledger_db_failure_never_breaks_wrapped_call(memdb, monkeypatch):
 # Capture point: answer (_handle_answer)
 # ---------------------------------------------------------------------------
 
-async def test_answer_path_writes_answer_row(memdb, monkeypatch):
+async def test_answer_path_writes_host_run_without_duplicate_ledger(memdb, monkeypatch):
     from server.orchestrator import arslan, tool_loop
 
     async def fake_run_native(*, system, user_content, history, emit, on_chunk,
@@ -216,10 +216,11 @@ async def test_answer_path_writes_answer_row(memdb, monkeypatch):
     out = await arslan._handle_answer("c-ans", "你好", events.append)
     assert out == "hello there"
     rows = await _rows(memdb)
-    assert len(rows) == 1
-    r = rows[0]
-    assert (r.scope, r.conversation_id) == ("answer", "c-ans")
-    assert (r.tokens_in, r.tokens_out, r.tokens_total) == (100, 40, 140)
+    assert rows == []
+    async with memdb() as db:
+        r = (await db.execute(select(Run))).scalar_one()
+    assert (r.kind, r.conversation_id) == ("host", "c-ans")
+    assert (r.tokens_in, r.tokens_out, r.task_tokens) == (100, 40, 140)
     assert r.tokens_estimated is False
 
 

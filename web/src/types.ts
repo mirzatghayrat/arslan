@@ -1,4 +1,5 @@
 export interface ToolActivity {
+  artifacts?: import('./api/client.types').StoredArtifact[];
   id: string;
   toolName: string;
   emoji: string;
@@ -147,6 +148,7 @@ export interface UiRunDimension {
 }
 
 export interface UiRun {
+  artifacts?: import('./api/client.types').StoredArtifact[];
   id: number;
   spawnName: string | null;
   userMessage: string;

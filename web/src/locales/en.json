@@ -1,4 +1,5 @@
 {
+  "files": { "download": "Download file", "downloadFailed": "Download failed. Check your connection and try again.", "unscored": "Execution finished; host tasks are not automatically judge-scored." },
   "app": {
     "name": "Arslan",
     "tagline": "Build your own AI spawns"

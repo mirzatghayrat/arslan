@@ -77,7 +77,7 @@ interface ArslanState {
   lastFrameAt: number | null;
   stalled: boolean;
   // S3-M1 · cancellable runs: the recorded run id of the in-flight stream (from
-  // stream_start's run_id — spawn runs only). The stop button POSTs
+  // stream_start's run_id — both host and spawn runs). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
   activeRunId: number | null;
   // The Web Speech speaker owes the engine at least one utterance end. Conversation
@@ -486,7 +486,7 @@ function makeActions(set: SetState, get: GetState) {
             spawnId: state.streamSpawnId,
             spawnName: state.streamSpawnName,
             spawnMessageId: meta?.assistant_message_id ?? null,
-            runId: meta?.run_id ?? null,
+            runId: frame.run_id ?? meta?.run_id ?? state.activeRunId ?? null,
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),
@@ -593,6 +593,7 @@ function makeActions(set: SetState, get: GetState) {
                 ...steps[i],
                 status: frame.ok ? "ok" : "error",
                 resultSummary: frame.summary,
+                artifacts: frame.artifacts,
                 // 🔒 SECURITY: artifactSvg / artifactChart / artifactPptx come ONLY from the backend
                 // render_chart/render_deck tool_result frame's artifact, NEVER from LLM message text.
                 ...(frame.artifact?.kind === "svg" ? { artifactSvg: frame.artifact.content } : {}),

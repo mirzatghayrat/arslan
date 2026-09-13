@@ -1,4 +1,5 @@
 {
+  "files": { "download": "下载文件", "downloadFailed": "下载失败，请检查连接后重试。", "unscored": "执行已结束；主助手任务不进行自动裁判评分。" },
   "app": {
     "name": "Arslan",
     "tagline": "打造你专属的 AI 分身"

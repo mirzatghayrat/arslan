@@ -864,7 +864,7 @@ def _to_frame(ev: dict) -> dict:
         return protocol.tool_call(ev.get("tool", ""), ev.get("args_summary", ""))
     if t == "tool_result":
         return protocol.tool_result(ev.get("tool", ""), bool(ev.get("ok")),
-                                    ev.get("summary", ""), ev.get("artifact"))
+                                    ev.get("summary", ""), ev.get("artifact"), ev.get("artifacts"))
     if t == "escalation":
         return protocol.escalation(
             ev.get("spawn_id"), ev.get("spawn_name"), ev.get("kind", "data"), ev.get("need", "")

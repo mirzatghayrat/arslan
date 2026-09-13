@@ -1,4 +1,5 @@
 {
+  "files": { "download": "Télécharger le fichier", "downloadFailed": "Échec du téléchargement. Vérifiez la connexion et réessayez.", "unscored": "Exécution terminée ; les tâches de l’assistant principal ne sont pas notées automatiquement." },
   "app": {
     "name": "Arslan",
     "tagline": "Créez vos propres spawns d'IA"

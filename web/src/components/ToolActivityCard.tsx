@@ -18,6 +18,7 @@ import type { ToolActivity } from '../types';
 import { humanizeStep, humanizeOutcome, provenanceFromSummary } from '../lib/toolHumanize';
 import EChart from './EChart';
 import DeckDownloadCard from './DeckDownloadCard';
+import ArtifactDownloads from './ArtifactDownloads';
 
 export default function ToolActivityCard({ activity }: { activity: ToolActivity }) {
   const { t } = useTranslation();
@@ -79,6 +80,7 @@ export default function ToolActivityCard({ activity }: { activity: ToolActivity 
       {activity.artifactPptx && (
         <DeckDownloadCard {...activity.artifactPptx} />
       )}
+      <ArtifactDownloads files={activity.artifacts} />
 
       {/* Raw args/result live behind a small collapsed 详情 toggle (default collapsed). */}
       {(activity.action || activity.outputSummary) && (

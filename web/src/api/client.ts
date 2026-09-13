@@ -445,6 +445,18 @@ export const api = {
       }),
     }),
   getRun: (id: number) => request<RunDetailDto>(`/runs/${id}`),
+  downloadRunArtifact: async (runId: number, filename: string): Promise<Blob> => {
+    if (!Number.isSafeInteger(runId) || runId <= 0 || !filename.startsWith(`run_${runId}_`)
+        || /[/\\\u0000]/.test(filename) || filename.includes('..')) {
+      throw new Error('Invalid artifact identity');
+    }
+    const token = useAuthStore.getState().token;
+    const response = await fetch(`${BASE}/runs/${runId}/artifacts/${encodeURIComponent(filename)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new ApiError(`Download failed: HTTP ${response.status}`, response.status);
+    return new Blob([await response.arrayBuffer()], { type: 'application/octet-stream' });
+  },
   getRuns: (spawnId?: number, limit = 50, conversationId?: string) => {
     const qs = new URLSearchParams();
     if (spawnId != null) qs.set("spawn_id", String(spawnId));

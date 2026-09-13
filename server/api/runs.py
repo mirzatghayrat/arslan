@@ -110,7 +110,7 @@ async def list_runs(
     # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
     # surface in the runs list. get_run detail stays unfiltered so the card can link into a
     # specific replay run's trace.
-    q = select(Run).where(Run.kind == "live").order_by(Run.id.desc()).limit(limit)
+    q = select(Run).where(Run.kind.in_(("live", "host"))).order_by(Run.id.desc()).limit(limit)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
@@ -425,6 +425,14 @@ async def runs_timeline(rng: str = Query("1h", alias="range"),
 
 
 # Registered BEFORE /runs/{run_id} (codebase convention for the catch-all gotcha).
+@router.get("/runs/{run_id}/artifacts")
+async def list_run_artifacts(run_id: int, db: AsyncSession = Depends(get_session)) -> list[dict]:
+    from server.services import artifact_store
+    if await db.get(Run, run_id) is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return artifact_store.list_artifacts(run_id)
+
+
 @router.get("/runs/{run_id}/artifacts/{filename}")
 async def download_run_artifact(run_id: int, filename: str) -> FileResponse:
     """Serve an HTML deliverable stored by the spawn-output artifact channel (HX-2).
@@ -433,22 +441,21 @@ async def download_run_artifact(run_id: int, filename: str) -> FileResponse:
     retrievable from here. The filename is strictly validated: it must belong to THIS
     run (run_{id}_ prefix) and contain no separators or dot-dot — traversal rejected.
     """
-    from server.services.html_artifact import artifacts_dir
+    from server.services import artifact_store
 
-    if (
-        "/" in filename or "\\" in filename or ".." in filename
-        or not filename.startswith(f"run_{run_id}_")
-        or not filename.endswith(".html")
-    ):
+    if not artifact_store.safe_filename(run_id, filename):
         raise HTTPException(status_code=400, detail="invalid artifact filename")
-    path = artifacts_dir() / filename
-    if not path.is_file():
+    path = artifact_store.root() / filename
+    if path.is_symlink() or not path.is_file():
         raise HTTPException(status_code=404, detail="artifact not found")
-    return FileResponse(path, media_type="text/html; charset=utf-8", filename=filename)
+    return FileResponse(path, media_type="application/octet-stream", filename=filename,
+                        headers={"X-Content-Type-Options": "nosniff",
+                                 "Content-Security-Policy": "sandbox"})
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
 async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDetailOut:
+    from server.services import artifact_store
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
@@ -460,6 +467,7 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
     )).scalars().all()
 
     return RunDetailOut(
+        artifacts=artifact_store.list_artifacts(run_id),
         run=RunOut(
             id=run.id, conversation_id=run.conversation_id, spawn_id=run.spawn_id,
             spawn_name=run.spawn_name, user_message=run.user_message, total_ms=run.total_ms,

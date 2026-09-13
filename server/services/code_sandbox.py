@@ -405,6 +405,16 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             "sandboxed": sandboxed,
             "network_isolated": network_isolated, "env_note": env_note,
         }
+        from server.services import artifact_store, execution_context
+        run_id = execution_context.current_run_id()
+        if run_id is not None:
+            artifacts, warnings = artifact_store.export_workspace(
+                run_id, tmp, excluded={"main.py", ".mpl", "references", *extra_names})
+            result["artifacts"] = artifacts
+            result["artifact_warnings"] = warnings
+        elif files:
+            result["artifact_warnings"] = [
+                "No recorded Run owns this execution; temporary files are not downloadable"]
         if proc.returncode != 0:
             result["error"] = f"exit {proc.returncode}: {stderr[-500:] or 'no stderr'}"
         return result

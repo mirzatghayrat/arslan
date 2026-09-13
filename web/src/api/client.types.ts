@@ -178,6 +178,7 @@ export type ScheduledTaskUpdateBody = Partial<ScheduledTaskCreateBody>;
 
 /** One step of a spawn's tool loop, paired from tool_call/tool_result frames. */
 export interface ToolStep {
+  artifacts?: StoredArtifact[];
   tool: string;
   argsSummary: string;
   status: "running" | "ok" | "error";
@@ -188,6 +189,17 @@ export interface ToolStep {
   artifactChart?: Record<string, unknown>;
   /** Downloadable .pptx from a backend render_deck tool_result artifact (kind: "pptx"). NEVER from LLM message text. */
   artifactPptx?: { filename: string; bytesB64: string; slides: number };
+}
+
+export interface StoredArtifact {
+  kind: "file";
+  run_id: number;
+  filename: string;
+  title: string;
+  bytes: number;
+  sha256: string;
+  media_type: string;
+  url: string;
 }
 
 export interface EscalationInfo {
@@ -533,6 +545,7 @@ export type ArslanServerMessage =
   | {
       type: "stream_end";
       message_id: number | null;
+      run_id?: number;
       usage?: StreamUsage;
       artifact?: { kind: string; filename?: string; title?: string; bytes?: number;
                    complete?: boolean; content?: string };
@@ -564,6 +577,7 @@ export type ArslanServerMessage =
       tool: string;
       ok: boolean;
       summary: string;
+      artifacts?: StoredArtifact[];
       // Legacy SVG artifact carries `content`; the ECharts artifact carries `spec`
       // (a plain-JSON ECharts option object); the pptx artifact carries base64 file bytes.
       // All come ONLY from the backend.
@@ -656,6 +670,7 @@ export interface RunDto {
 }
 
 export interface RunDetailDto {
+  artifacts?: StoredArtifact[];
   run: RunDto;
   steps: RunStepDto[];
   evaluations: RunEvaluationDto[];

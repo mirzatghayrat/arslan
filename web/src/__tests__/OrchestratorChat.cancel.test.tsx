@@ -13,7 +13,7 @@ import type { ArslanThreadItem } from '../api/client.types';
  *  - activeRunId != null → the composer shows a stop button; clicking it POSTs
  *    api.cancelRun(activeRunId) exactly once (pending-latch blocks double-POST);
  *  - activeRunId == null → NO stop button, even while thinking/turnActive
- *    (an unrecorded arslan turn has no cancel target);
+ *    (pre-routing work has no cancel target; host answers now carry a run_id);
  *  - an item with cancelled:true renders the muted interrupted marker
  *    (reuses the stall indicator's existing `working.stalled` key — same
  *    translations in all 6 locales, no duplicate key added).
@@ -42,6 +42,15 @@ beforeEach(() => {
 });
 
 describe('OrchestratorChat stop button (S3-M1)', () => {
+  it('a host answer stream has the same stop control as a spawn run', () => {
+    useArslanStore.setState({
+      streaming: true, streamSource: 'arslan', activeRunId: 73,
+      workStartedAt: Date.now(), lastFrameAt: Date.now(),
+    } as never);
+    render(<OrchestratorChat {...base} />);
+    fireEvent.click(screen.getByTitle('chat.stopRun'));
+    expect(cancelRun).toHaveBeenCalledWith(73);
+  });
   it('streaming with activeRunId=42 → stop button rendered; click calls api.cancelRun(42) once', () => {
     useArslanStore.setState({
       streaming: true, activeRunId: 42, workStartedAt: Date.now(), lastFrameAt: Date.now(),

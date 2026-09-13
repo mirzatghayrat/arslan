@@ -1,4 +1,5 @@
 {
+  "files": { "download": "Datei herunterladen", "downloadFailed": "Download fehlgeschlagen. Verbindung prüfen und erneut versuchen.", "unscored": "Ausführung beendet; Hauptassistent-Aufgaben werden nicht automatisch bewertet." },
   "app": {
     "name": "Arslan",
     "tagline": "Erstelle deine eigenen KI-Spawns"

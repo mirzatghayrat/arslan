@@ -43,7 +43,6 @@ from server.services import (
     spawn_match_service,
     spawn_service,
     staffing_gather,
-    usage_ledger,
 )
 from server.services.llm_factory import build_adapter
 
@@ -1037,33 +1036,18 @@ async def _handle_answer(
     # default is truthfully False everywhere; PA-2's dispatch/invite paths pass True.
     turn_delegated: bool = False,
 ) -> str | None:
-    # S3-M3 usage ledger: the answer path produces no Run row, so its tokens (run_native
-    # + any promise-guard resynthesis) are ledgered under scope="answer". VERIFIED not to
-    # nest with _dispatch_spawn's usage_sink.collecting(): that block wraps ONLY
-    # dispatcher.dispatch and _handle_escalation (which re-dispatches, never answers) —
-    # every _handle_answer call sits at orchestration level, OUTSIDE any run's collecting
-    # region. Even under accidental nesting collecting() is set/reset, so an outer
-    # bucket would resume untouched.
-    #
-    # Turn journal (thread-switch reattach): the answer path produces no Run row,
-    # so — unlike spawn dispatch — nothing journaled its frames and a reconnecting
-    # socket got no stream_start preamble. Scope note: this covers the ANSWER
-    # turn only; the short conversational streams elsewhere in this file (store
-    # question, invite ask) are one-sentence and stay unjournaled.
-    from server.services import turn_journal
+    from server.services import host_run
 
-    journal = turn_journal.begin(conversation_id)
-    emit = journal.tee(emit)
-    try:
-        async with usage_ledger.scope("answer", conversation_id):
-            return await _handle_answer_body(
-                conversation_id, user_message, emit, extra_system=extra_system,
-                attached_context=attached_context, images=images,
-                confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule,
-                intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
-    finally:
-        turn_journal.end(conversation_id, journal)
+    async def body(run_emit):
+        return await _handle_answer_body(
+            conversation_id, user_message, run_emit, extra_system=extra_system,
+            attached_context=attached_context, images=images,
+            confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
+            confirm_schedule=confirm_schedule,
+            intercept_spawn_name=intercept_spawn_name, turn_delegated=turn_delegated)
+
+    return await host_run.execute(conversation_id, user_message, emit, body,
+                                  has_images=bool(images))
 
 
 async def _handle_answer_body(
@@ -1090,6 +1074,7 @@ async def _handle_answer_body(
         extra_system=extra_system, roster=roster, facts=facts,
         summary=ctx["summary"], kb_block=kb_block,
     )
+    run_trace.record_prompt(system_prompt=system, injected_kb=kb_block or None)
 
     # Plain string when there are no images, so text-only turns are byte-identical
     # to before; a neutral block list otherwise (providers translate it).
@@ -1208,9 +1193,9 @@ async def _handle_answer_body(
     msg_id = await memory.add_message(conversation_id, "arslan", full)
     # S3-M3 Task 5 seam choice: the answer turn's usage rides the stream_end the body
     # ALREADY emits (one frame shape for dispatch + answer, no extra answer_usage frame).
-    # _handle_answer_body only ever runs inside _handle_answer's usage_ledger.scope()
+    # _handle_answer_body runs inside the host Run's usage_sink.collecting()
     # wrapper, so the collecting contextvars are still open here and detail()/total()
-    # read exactly what the wrapper will ledger on exit.
+    # read exactly what the Run will persist on exit (no duplicate ledger entry).
     emit({"type": "stream_end", "message_id": msg_id,
           "usage": _usage_frame(usage_sink.detail())})
     return full

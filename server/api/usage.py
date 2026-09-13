@@ -76,7 +76,7 @@ def item_usd(model: str | None, tokens_in: int | None, tokens_out: int | None,
 # scheduled fires target real/dedicated conversations users open — unlike synthetic
 # replay cids — so they count in BOTH the summary and the per-conversation view);
 # replay stays behind the include_replay gate.
-_KIND_SCOPES = {"live": "spawn", "scheduled": "scheduled", "replay": "replay"}
+_KIND_SCOPES = {"live": "spawn", "host": "answer", "scheduled": "scheduled", "replay": "replay"}
 
 
 async def fetch_usage_items(
@@ -89,7 +89,7 @@ async def fetch_usage_items(
     # the single largest burner — omitting them would break the card's own "never
     # pretends full coverage" contract). Replay rows carry synthetic conversation
     # ids ("evolution-replay"), so per-conversation queries never see them.
-    kinds = ("live", "scheduled", "replay") if include_replay else ("live", "scheduled")
+    kinds = ("live", "host", "scheduled", "replay") if include_replay else ("live", "host", "scheduled")
     run_q = select(Run.kind, Run.provider, Run.model, Run.tokens_in, Run.tokens_out,
                    Run.tokens_estimated, Run.task_tokens, Run.created_at
                    ).where(Run.kind.in_(kinds))

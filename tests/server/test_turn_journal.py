@@ -17,7 +17,7 @@ Contract pinned here:
   own journal (a racing begin from another tab must not be clobbered).
 """
 import server.orchestrator.arslan as arslan_mod
-from server.services import turn_journal
+from server.services import run_registry, turn_journal
 
 
 def _drain_active():
@@ -80,7 +80,7 @@ def test_end_pops_only_its_own_journal():
     assert not turn_journal.active("c4")
 
 
-async def test_handle_answer_journals_while_running_and_clears_after(monkeypatch):
+async def test_handle_answer_journals_while_running_and_clears_after(monkeypatch, execution_db):
     """Placement: the tee wraps _handle_answer's whole body — events emitted by
     the body are snapshot-able mid-flight (that IS the reattach window), and the
     journal is gone once the turn returns, success or raise."""
@@ -89,7 +89,7 @@ async def test_handle_answer_journals_while_running_and_clears_after(monkeypatch
     async def fake_body(conversation_id, user_message, emit, **kwargs):  # noqa: ANN001
         emit({"type": "stream_start", "source": "arslan"})
         emit({"type": "stream_chunk", "content": "partial"})
-        captured["mid_flight"] = turn_journal.snapshot(conversation_id)
+        captured["mid_flight"] = run_registry.journal_snapshots(conversation_id)[0][1]
         return "done"
 
     monkeypatch.setattr(arslan_mod, "_handle_answer_body", fake_body)
@@ -97,6 +97,7 @@ async def test_handle_answer_journals_while_running_and_clears_after(monkeypatch
     assert out == "done"
     assert [e["type"] for e in captured["mid_flight"]] == ["stream_start", "stream_chunk"]
     assert not turn_journal.active("conv-a")                 # cleared on the way out
+    assert not run_registry.active_for("conv-a")
 
     async def raising_body(conversation_id, user_message, emit, **kwargs):  # noqa: ANN001
         emit({"type": "stream_start", "source": "arslan"})
@@ -108,3 +109,4 @@ async def test_handle_answer_journals_while_running_and_clears_after(monkeypatch
     except RuntimeError:
         pass
     assert not turn_journal.active("conv-a")                 # cleared on raise too
+    assert not run_registry.active_for("conv-a")

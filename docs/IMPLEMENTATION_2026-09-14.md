@@ -15,8 +15,8 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P0-02 | Filesystem isolation | Implemented for Python; native kernel-denial tests passed, full regression pending |
 | P1-01 | Startup/authentication boundary | Connection-level HTTP/WS guard implemented; 31 auth tests pass |
 | P1-02 | Accurate safety documentation and release | Pending |
-| P1-03 | Unified host/spawn Run, cancellation, events | Pending |
-| P1-04 | Persistent downloadable artifacts | Pending |
+| P1-03 | Unified host/spawn Run, cancellation, events | Host Run lifecycle implemented; targeted storage/cancel/reconnect/accounting tests pass |
+| P1-04 | Persistent downloadable artifacts | Python Run outputs persisted with safe export, metadata and authenticated downloads; targeted tests pass |
 | P1-05 | Shared execution budget | Pending |
 | P1-06 | Provider contract verification | Pending; paid calls need budget |
 | P1-07 | Recovery and backup acceptance | Pending |
@@ -59,3 +59,15 @@ Release only the verified scope and clearly identify unverified features.
   not override the peer check. HTTP is 403 and WS is 1008. Reverse proxies still
   require configured authentication; a proxy must not hide remote peers behind an
   unauthenticated localhost backend. No public listener was opened for these tests.
+- P1-03: host answers now have kind=host Runs, shared registry cancellation and
+  reconnect journals, durable full/partial output, tool trace, prompt and single
+  usage accounting. Completed/failed host runs are terminal and never auto-scored
+  or admitted into spawn evolution. Host stop button and RunReplay linkage tested.
+  Pre-routing conversational micro-turns and direct spawn chat are not yet unified.
+- P1-04: recorded Python tools export regular files before temporary cleanup (32
+  files, 50 MiB/file, 100 MiB/call). Symlinks and staged inputs are excluded; metadata
+  carries Run owner, byte count and SHA-256. Chat download cards and persisted Run
+  detail downloads use authenticated API calls. HTML downloads are attachment-only
+  with nosniff/CSP sandbox. Standalone unrecorded calls explicitly report that their
+  files are temporary, not downloadable. Generic export and real Python roundtrip
+  tests passed; full regression is the next gate.

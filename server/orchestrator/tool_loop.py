@@ -291,7 +291,8 @@ def _mcp_degrade_hint(n: int) -> str:
 def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo,
                         mcp_fail_counts: dict | None = None) -> dict:
     emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
-          "summary": _summarize_result(result), "artifact": result.get("artifact")})
+          "summary": _summarize_result(result), "artifact": result.get("artifact"),
+          "artifacts": result.get("artifacts") or []})
     tool_trace.append({"tool": tool_key, "args": args, "result": result})
     run_trace.record(tool=tool_key, args=args, result=result,
                       ok=bool(result.get("ok")), error=result.get("error"), ms=None)

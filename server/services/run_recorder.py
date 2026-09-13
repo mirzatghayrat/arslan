@@ -57,13 +57,14 @@ def is_continuation(run_id: int) -> bool:
 class RunRecorder:
     def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
                  spawn_name: str | None = None, continuation: bool = False,
-                 spawn_id: int | None = None) -> None:
+                 spawn_id: int | None = None, kind: str = "live") -> None:
         self.run_id = run_id
         self.started_at = started_at
         self.route_ms = route_ms
         self.spawn_name = spawn_name
         self.continuation = continuation
         self.spawn_id = spawn_id
+        self.kind = kind
         self._events: list[tuple[datetime, dict]] = []
         # Two-flag finalize latch (review I1 + residual): _finalizing blocks true
         # re-entrancy from entry; _finalized flips only AFTER the commit landed, so a
@@ -114,7 +115,7 @@ class RunRecorder:
             run_id = run.id
         if continuation:
             _continuation_run_ids.add(run_id)
-        return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id)
+        return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id, kind)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
@@ -146,7 +147,7 @@ class RunRecorder:
             if t == "routing":
                 add("route", {"spawn_name": ev.get("spawn_name")}, {},
                     self.started_at, ts, idx, duration_ms=self.route_ms)
-            elif t == "stream_start" and ev.get("source") == "spawn":
+            elif t == "stream_start" and ev.get("source") in {"spawn", "arslan"}:
                 dispatch_start = ts
                 dispatch_start_order = idx
             elif t == "tool_call":
@@ -266,7 +267,8 @@ class RunRecorder:
                     # stay kind='scheduled' end-to-end (the corpus filters key on kind=='live',
                     # so clobbering it back to 'live' here would leak scheduled runs into the
                     # evolution corpus). The `or "live"` keeps the unset-column re-affirmation.
-                    run.status = status_override or ("replayed" if replay else "recorded")
+                    terminal = ("failed" if error_kind else "completed") if self.kind == "host" else "recorded"
+                    run.status = status_override or ("replayed" if replay else terminal)
                     run.kind = "replay" if replay else (run.kind or "live")
                     run.epoch = 1
                     run.continuation = self.continuation
@@ -275,7 +277,7 @@ class RunRecorder:
                     # so the run row carries the full text for RunReplay. Plain
                     # live runs still do NOT persist it (storage discipline —
                     # their output lives in the reachable conversation).
-                    if replay or (run.kind == "scheduled"):
+                    if replay or run.kind in {"scheduled", "host"}:
                         run.final_output = full_output
                     run.model = model
                     run.provider = provider
@@ -315,7 +317,7 @@ class RunRecorder:
             # clearing _finalizing is then inert.)
             self._finalizing = False
             raise
-        if replay or status_override is not None:
+        if replay or status_override is not None or self.kind == "host":
             # replay → paired gate; cancelled/interrupted → never scored. This also skips
             # the evolution_watcher nudge below — harmless, since a cancelled run creates
             # no scored run, so the nudge would be a guaranteed no-op.

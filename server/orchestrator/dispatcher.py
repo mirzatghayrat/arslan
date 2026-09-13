@@ -658,10 +658,14 @@ async def dispatch(
     # refusing one.
     user_content = with_images(user_content, images)
 
-    full, escalation = await _run_model(
-        spawn, system, wired, user_content, history, current_turn, conversation_id,
-        on_chunk, on_event, allow_escalation,
-    )
+    from contextlib import nullcontext
+    from server.services.execution_context import bind_run
+
+    with bind_run(run_id) if run_id is not None else nullcontext():
+        full, escalation = await _run_model(
+            spawn, system, wired, user_content, history, current_turn, conversation_id,
+            on_chunk, on_event, allow_escalation,
+        )
 
     # HX-2 (B1/B3): sniff the final output for a full/truncated HTML document at THIS
     # exit — every dispatched spawn passes through here, so the channel is universal.

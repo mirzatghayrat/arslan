@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 # The keyless search default lives in the registry; this schema must report the
@@ -523,6 +523,7 @@ class RunOut(BaseModel):
 
 
 class RunDetailOut(BaseModel):
+    artifacts: list[dict] = Field(default_factory=list)
     run: RunOut
     steps: list[RunStepOut]
     evaluations: list[RunEvaluationOut]

@@ -402,7 +402,6 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       };
     }
 
-    if (item.role === "spawn") {
       // Map the first ToolStep to a ToolActivity if present
       const firstStep = item.toolSteps?.[0];
       const toolActivity: Message["toolActivity"] = firstStep
@@ -426,8 +425,10 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             // download card never rendered on the orchestrator thread even though
             // the file was generated and sitting in the store (live incident).
             artifactPptx: item.toolSteps?.find((s) => s.artifactPptx)?.artifactPptx,
+            artifacts: item.toolSteps?.flatMap((s) => s.artifacts ?? []),
           }
         : undefined;
+    if (item.role === "spawn") {
       return {
         id,
         sender: "spawn",
@@ -461,6 +462,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       senderAvatar: "🦁",
       text: item.content,
       timestamp,
+      toolActivity,
+      runId: item.runId ?? undefined,
       // 🔒 stream_end html artifact can also ride an arslan-role turn (escalation path).
       artifactHtml: item.artifactHtml,
       // PA-3 structured clarification card (🔒 backend clarify_options frames only).
@@ -539,6 +542,7 @@ export function toUiRun(dto: RunDetailDto, t: TranslateFn): UiRun {
   }));
   return {
     id: run.id,
+    artifacts: dto.artifacts,
     spawnName: run.spawn_name,
     userMessage: run.user_message,
     status: run.status,
