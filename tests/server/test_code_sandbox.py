@@ -2,6 +2,7 @@
 
 Tests preset the interpreter cache to the test venv's python so no batteries env is built.
 """
+import subprocess
 import sys
 
 import pytest
@@ -378,3 +379,25 @@ async def test_escape_valve_is_disabled_in_packaged_build(monkeypatch):
     monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
     monkeypatch.setenv("ARSLAN_PACKAGED", "1")
     assert not code_sandbox._unsandboxed_valve_open()
+
+
+async def test_packaged_runtime_skips_download_and_host_python(monkeypatch, tmp_path):
+    sidecar = tmp_path / "arslan-server"
+    runtime = tmp_path / "python_runtime" / "bin" / "python3"
+    runtime.parent.mkdir(parents=True)
+    runtime.touch()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(sidecar))
+    monkeypatch.delenv("ARSLAN_SANDBOX_PYTHON", raising=False)
+    monkeypatch.setattr(code_sandbox, "_env_cache", None)
+    monkeypatch.setattr(code_sandbox.subprocess, "run", lambda *a, **kw:
+                        subprocess.CompletedProcess(a, 0, "1\n", ""))
+
+    def no_download(*args):
+        raise AssertionError("Packaged execution must never install dependencies")
+
+    monkeypatch.setattr(code_sandbox, "_create_batteries_env", no_download)
+    monkeypatch.setattr(code_sandbox.shutil, "which", no_download)
+    python, note = await code_sandbox._sandbox_python()
+    assert python == str(runtime)
+    assert "no first-run downloads" in note

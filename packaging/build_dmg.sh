@@ -146,6 +146,7 @@ step "[4/7] staging the sidecar into Tauri resources"
 # The dereference and the two guards live in their own script so they can be
 # tested without a five-minute build in front of them.
 "$HERE/stage_sidecar.sh" "$HERE/dist/arslan-server" "$TAURI/binaries/sidecar"
+"$ROOT/.venv/bin/python" "$HERE/stage_python_runtime.py" "$TAURI/binaries/sidecar/python_runtime"
 
 step "[4b/7] building the push-to-talk listener"
 # --------------------------------------------------------------------------

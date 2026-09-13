@@ -133,6 +133,29 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
     c.ok(sidecar.is_file() and os.access(sidecar, os.X_OK),
          "the sidecar is present and executable", str(sidecar))
 
+    runtime = sidecar.parent / "python_runtime" / "bin" / "python3"
+    if c.ok(runtime.is_file() and os.access(runtime, os.X_OK),
+            "the standalone compute runtime ships inside the app", str(runtime)):
+        with tempfile.TemporaryDirectory(prefix="arslan-packaged-compute-") as temp:
+            try:
+                probe = subprocess.run(
+                    [str(runtime), "-I", "-c",
+                     "import sys,pathlib,numpy,pandas,matplotlib; matplotlib.use('Agg'); "
+                     "import matplotlib.pyplot as p; "
+                     "assert pathlib.Path(sys.prefix).resolve() == pathlib.Path(sys.argv[1]).resolve(); "
+                     "assert pandas.Series([1,2,3]).sum() == 6; "
+                     "p.plot([1,2]); p.savefig('chart.png'); "
+                     "assert pathlib.Path('chart.png').stat().st_size > 100",
+                     str(runtime.parent.parent)],
+                    cwd=temp, env={"PATH": "/usr/bin:/bin", "HOME": temp,
+                                   "MPLCONFIGDIR": temp},
+                    capture_output=True, text=True, timeout=60,
+                )
+                c.ok(probe.returncode == 0, "packaged compute works without host Python or pip",
+                     probe.stderr[-2000:])
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                c.ok(False, "packaged compute works without host Python or pip", str(exc))
+
     # NO ASSERTION ON THE WINDOW-DRAGGING GRANT, and the reason is measured
     # rather than assumed. The obvious artifact-level check is to look for
     # "core:window:allow-start-dragging" in Contents/MacOS/Arslan. Measured on

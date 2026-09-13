@@ -95,8 +95,10 @@ Release only the verified scope and clearly identify unverified features.
   tests pass, including parallel admission, multi-tool responses and timeout
   finalization. Python pipe capture and directory scanning are bounded too.
 - Packaged builds never relaunch the frozen server as a Python CLI and never
-  honor the development unsandboxed escape valve. Without a verified external
-  Python 3.11+ interpreter, computation fails with an actionable prerequisite.
+  honor the development unsandboxed escape valve. A standalone Python runtime
+  with lockfile-pinned NumPy/Pandas/Matplotlib is staged before signing, verified
+  after relocation, and checked again inside the built app. No first-run pip or
+  implicit Homebrew dependency. Missing/broken runtime fails closed.
 - First remote CI: frontend, native macOS and secrets passed; Linux backend
   had one stale Gemini capability matrix failure (3902 passed). Updated the
   transport claim and preserved unknown/unsupported-state mechanism tests.
@@ -127,3 +129,9 @@ Release only the verified scope and clearly identify unverified features.
   encryption secret, SSH agent sockets and runtime injection flags are not
   inherited wholesale. Fourteen targeted MCP environment/session tests pass.
   This is not a filesystem sandbox for arbitrary configured MCP executables.
+- Post-recipe full backend: **3985 passed, 14 skipped**. Remote Linux backend,
+  frontend, native macOS and secret-check jobs all passed on b17a146a.
+- Bundled runtime canary: clean relocated interpreter, DataFrame CSV and real
+  Matplotlib PNG generation passed inside Seatbelt; reading an unrelated
+  synthetic outside file was denied. Runtime adds 231 MiB unpacked. This is
+  pre-signing evidence; final signed-app checks remain a release gate.

@@ -9,9 +9,9 @@ Security model (decisions locked with the user 2026-07-02):
     staged references read-only, network and host IPC denied. A missing or failing
     wrapper never triggers an automatic unsandboxed retry. Only the separately configured
     developer escape valve may select an unisolated backend BEFORE execution.
-  • Batteries: a dedicated venv with numpy/pandas/matplotlib, created lazily on FIRST use from
-    the host side (host has network; the sandboxed child does not). Falls back to the server's
-    interpreter (stdlib-only) if creation fails — again, stated in the result.
+  • Desktop batteries: standalone Python + locked numpy/pandas/matplotlib bundled at build
+    time, with no first-run downloads. Source installs create a dedicated venv lazily from
+    the host side and explicitly report a host-runtime fallback if that setup fails.
 
 The model supplies CODE TEXT via the safe-tier `run_python` tool; this module is the only
 execution path and applies every guard unconditionally.
@@ -75,10 +75,11 @@ def _host_python() -> str:
     if not getattr(sys, "frozen", False):
         return sys.executable
     configured = os.environ.get("ARSLAN_SANDBOX_PYTHON", "").strip()
-    python = configured or shutil.which("python3", path="/opt/homebrew/bin:/usr/local/bin")
+    bundled = Path(sys.executable).parent / "python_runtime" / "bin" / "python3"
+    python = configured or (str(bundled) if bundled.is_file() else None)
     if not python or not Path(python).is_absolute() or not Path(python).is_file():
-        raise RuntimeError("Packaged Python execution requires Python 3.11+; install it or "
-                           "set ARSLAN_SANDBOX_PYTHON to its absolute interpreter path")
+        raise RuntimeError("Packaged Python execution requires Python 3.11+ in the app bundle; "
+                           "reinstall Arslan or explicitly set ARSLAN_SANDBOX_PYTHON")
     if Path(python).resolve() == Path(sys.executable).resolve():
         raise RuntimeError("The packaged server cannot be used as the sandbox interpreter")
     probe = subprocess.run(
@@ -95,6 +96,12 @@ async def _sandbox_python() -> tuple[str, str]:
     """Resolve (interpreter, env_note), creating the batteries venv lazily on first use."""
     global _env_cache
     if _env_cache is not None:
+        return _env_cache
+    if getattr(sys, "frozen", False):
+        # The signed, build-time populated runtime is read-only to generated code.
+        # Never run pip, create a venv, or silently borrow Homebrew in a desktop install.
+        python = await asyncio.to_thread(_host_python)
+        _env_cache = (python, "packaged Python runtime (no first-run downloads)")
         return _env_cache
     venv_dir = _data_dir() / "sandbox_env"
     py = venv_dir / "bin" / "python"
