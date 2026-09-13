@@ -152,24 +152,34 @@ async def _vector_route(db, query: str, where: str, params: dict) -> tuple[list[
         # vector scope (fresh spawn / backfill pending) must not pay a network
         # embedding call on every dispatch. Provider resolution above is cheap
         # (pure DB read) and supplies the model_id filter for this SELECT.
+        from server.services.vector_scan import BATCH_SIZE, CosineTopK
         stmt = _bind(sa_text(
-            "SELECT kc.id, kc.source, kc.text, kc.embedding, kc.collection_id, kc.spawn_id FROM knowledge_chunks kc "
-            f"WHERE {where} AND kc.embedding IS NOT NULL AND kc.embedding_model = :em"), params)
-        rows = (await db.execute(stmt, {**params, "em": provider.model_id})).all()
-        if not rows:
+            "SELECT kc.id, kc.embedding FROM knowledge_chunks kc "
+            f"WHERE {where} AND kc.embedding IS NOT NULL AND kc.embedding_model = :em "
+            "ORDER BY kc.id"), params)
+        stream = await db.stream(stmt, {**params, "em": provider.model_id})
+        try:
+            rows = await stream.fetchmany(BATCH_SIZE)
+            if not rows:
+                return [], {}  # no embedding bill for an empty scope
+            qvec = (await provider.embed([query]))[0]
+            top = CosineTopK(qvec, k=CANDIDATES, minimum=_MIN_COSINE)
+            while rows:
+                top.add(rows)
+                rows = await stream.fetchmany(BATCH_SIZE)
+            ids = top.ids()
+        finally:
+            await stream.close()
+        if not ids:
             return [], {}
-        qvec = (await provider.embed([query]))[0]
-        import numpy as np
-        mat = np.array([embedding_service.blob_to_vec(r[3]) for r in rows], dtype=np.float32)
-        q = np.array(qvec, dtype=np.float32)
-        sims = mat @ q / (np.linalg.norm(mat, axis=1) * (np.linalg.norm(q) or 1e-9) + 1e-9)
-        order = np.argsort(-sims, kind="stable")[:CANDIDATES]
-        kept = [i for i in order if sims[i] >= _MIN_COSINE]
-        if len(kept) < len(order):
-            logger.debug("vector route: dropped %d/%d below _MIN_COSINE=%.2f",
-                         len(order) - len(kept), len(order), _MIN_COSINE)
-        return ([rows[i][0] for i in kept],
-                {rows[i][0]: (rows[i][1], rows[i][2], rows[i][4], rows[i][5]) for i in kept})
+        # Fetch text only for the winners, and reapply the permission scope.
+        details = _bind(sa_text(
+            "SELECT kc.id, kc.source, kc.text, kc.collection_id, kc.spawn_id FROM knowledge_chunks kc "
+            f"WHERE kc.id IN :ids AND {where} AND kc.embedding_model = :em"
+        ).bindparams(bindparam("ids", expanding=True)), params)
+        found = (await db.execute(details, {**params, "ids": ids, "em": provider.model_id})).all()
+        meta = {row[0]: (row[1], row[2], row[3], row[4]) for row in found}
+        return [cid for cid in ids if cid in meta], meta
     except Exception as exc:  # noqa: BLE001 — vector route is never fatal
         logger.warning("vector route failed (non-fatal): %s", exc)
         return [], {}

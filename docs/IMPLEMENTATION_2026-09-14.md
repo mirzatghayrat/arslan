@@ -21,7 +21,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P1-06 | Provider contract verification | Gemini native tool/continuation gap implemented and mock-wire roundtrip verified; live calls pending budget |
 | P1-07 | Recovery and backup acceptance | Periodic partial-output checkpoints and new-directory validated restore implemented; synthetic roundtrip tests pass |
 | P1-08 | End-to-end task benchmark | Pending; paid calls need budget |
-| P2-01 | Memory quality, context budgets, scale | Deterministic CJK-aware summary/history/facts caps tested; recall-quality/scale evaluation pending |
+| P2-01 | Memory quality, context budgets, scale | CJK-aware context caps and bounded exact-vector scan tested at 1k/10k/100k; live semantic recall evaluation pending |
 | P2-02 | Evolution evidence and judge calibration | Pending; live evidence required |
 | P2-03 | Capability/version/provenance documentation | Pending |
 | P2-04 | Dependency and test infrastructure | pypdf and frontend advisory fixes applied; npm audit zero; final regression pending |
