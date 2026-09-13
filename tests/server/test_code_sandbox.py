@@ -264,3 +264,79 @@ async def test_executor_propagates_sandboxed(monkeypatch):
     monkeypatch.delenv("ARSLAN_ALLOW_UNSANDBOXED_PY", raising=False)
     refused = await RunPythonExecutor().execute({"code": "print('nope')"})
     assert refused["ok"] is False and refused["sandboxed"] is False
+
+
+@_NEEDS_REAL_SANDBOX
+@pytest.mark.parametrize("operation", [
+    "p.read_text()", "p.write_text('changed')", "p.unlink()", "p.chmod(0o777)",
+    "Path('link').symlink_to(p); Path('link').read_text()",
+    "Path('link').symlink_to(p); Path('link').write_text('changed')",
+])
+async def test_host_files_are_kernel_denied(tmp_path, operation):
+    canary = tmp_path / "outside.txt"
+    canary.write_text("private-canary")
+    mode = canary.stat().st_mode
+    result = await code_sandbox.run_python(
+        f"from pathlib import Path\np = Path({str(canary)!r})\n"
+        f"try:\n    {operation}\n"
+        "except PermissionError:\n    print('DENIED')\n"
+        "else:\n    raise AssertionError('host access permitted')\n"
+    )
+    assert result["ok"], result
+    assert result["stdout"].strip() == "DENIED"
+    assert canary.read_text() == "private-canary"
+    assert canary.stat().st_mode == mode
+
+
+@_NEEDS_REAL_SANDBOX
+async def test_child_interpreter_inherits_file_denial(tmp_path):
+    canary = tmp_path / "outside.txt"
+    canary.write_text("private-canary")
+    child = f"open({str(canary)!r}).read()"
+    result = await code_sandbox.run_python(
+        "import subprocess, sys\n"
+        f"p = subprocess.run([sys.executable, '-c', {child!r}], capture_output=True)\n"
+        "assert p.returncode != 0\nassert b'PermissionError' in p.stderr, p.stderr\n"
+        "print('DENIED')\n"
+    )
+    assert result["ok"], result
+
+
+@_NEEDS_REAL_SANDBOX
+async def test_network_socket_is_denied():
+    result = await code_sandbox.run_python(
+        "import socket\n"
+        "try:\n    socket.socket().connect(('127.0.0.1', 9))\n"
+        "except PermissionError:\n    print('DENIED')\n"
+        "else:\n    raise AssertionError('network permitted')\n"
+    )
+    assert result["ok"], result
+
+
+@_NEEDS_REAL_SANDBOX
+async def test_stdlib_compute_and_staged_inputs_remain_available():
+    result = await code_sandbox.run_python(
+        "import csv, json, sqlite3, hashlib, statistics\n"
+        "from pathlib import Path\n"
+        "assert Path('references/data.txt').read_text() == 'reference'\n"
+        "assert Path('input.txt').read_text() == 'input'\n"
+        "db = sqlite3.connect('result.db'); db.execute('create table t (n int)'); db.close()\n"
+        "Path('result.json').write_text(json.dumps({'mean': statistics.mean([1,2,3])}))\n",
+        extra_files={"input.txt": "input", "..": "ignored", ".": "ignored"},
+        read_only_files={"data.txt": "reference", "..": "ignored", ".": "ignored"},
+    )
+    assert result["ok"], result
+    assert any("result.json" in name for name in result["files"])
+
+
+@_NEEDS_REAL_SANDBOX
+async def test_numpy_runtime_is_readable_but_not_writable():
+    pytest.importorskip("numpy")
+    result = await code_sandbox.run_python(
+        "import numpy as np\nfrom pathlib import Path\n"
+        "assert np.array([1,2,3]).sum() == 6\n"
+        "try:\n    (Path(np.__file__).parent / 'sandbox-canary').write_text('bad')\n"
+        "except PermissionError:\n    print('DENIED')\n"
+        "else:\n    raise AssertionError('runtime write permitted')\n"
+    )
+    assert result["ok"], result

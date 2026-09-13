@@ -12,7 +12,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | ID | Work | State |
 | --- | --- | --- |
 | P0-01 | No automatic unsandboxed retry | Implemented; 19 targeted tests passed, full regression pending |
-| P0-02 | Filesystem isolation | Pending |
+| P0-02 | Filesystem isolation | Implemented for Python; native kernel-denial tests passed, full regression pending |
 | P1-01 | Startup/authentication boundary | Pending |
 | P1-02 | Accurate safety documentation and release | Pending |
 | P1-03 | Unified host/spawn Run, cancellation, events | Pending |
@@ -42,3 +42,15 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 
 Do not mark an item complete solely because code exists or a mocked test passes.
 Release only the verified scope and clearly identify unverified features.
+
+- P0-02: Python now uses default-deny Seatbelt rules (read-only interpreter libraries,
+  read/write per-run workspace, read-only staged references, no network or host IPC).
+  Command execution remains a distinct confirmation-gated, network-only policy.
+- Real macOS tests deny external canary read/write/unlink/chmod, symlink access,
+  child-interpreter access, network sockets, and writes to NumPy's runtime. Normal
+  stdlib, SQLite, NumPy, staged input and generated-output paths pass. The Python
+  suite has 29 passed / 1 platform-path skip; skill import/reference tests also pass.
+- macOS 26 dyld requires read-data on the literal root vnode (not its descendants).
+  The profile grants that narrow operation, not broad filesystem read access.
+- New Node-based sandbox dependency deferred: native isolation is verified first;
+  packaged interpreter availability and cross-platform support remain separate gates.

@@ -5,7 +5,8 @@ Security model (decisions locked with the user 2026-07-02):
   • Ephemeral cwd: a fresh tmpdir per run, deleted afterwards.
   • Env fully scrubbed: the child NEVER inherits the server env (no API keys, no DB paths).
   • Resource caps: wall-clock timeout (process-group kill), CPU/address-space/file-size rlimits.
-  • NETWORK DENIED on macOS via `sandbox-exec` (kernel seatbelt). A missing or failing
+  • Default-deny macOS `sandbox-exec`: runtime read-only, temporary workspace read/write,
+    staged references read-only, network and host IPC denied. A missing or failing
     wrapper never triggers an automatic unsandboxed retry. Only the separately configured
     developer escape valve may select an unisolated backend BEFORE execution.
   • Batteries: a dedicated venv with numpy/pandas/matplotlib, created lazily on FIRST use from
@@ -18,6 +19,7 @@ execution path and applies every guard unconditionally.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -38,8 +40,8 @@ _MEM_BYTES = 1024 ** 3      # 1 GB address space (pandas/matplotlib need room)
 _FSIZE_BYTES = 50 * 1024 ** 2
 _BATTERIES = ("numpy", "pandas", "matplotlib")
 
-# Seatbelt profile: allow everything EXCEPT network. File writes are already confined by
-# cwd=tmpdir + scrubbed HOME/TMPDIR + FSIZE rlimit; the hard line v1 draws is exfiltration.
+# Legacy command profile: network isolation ONLY. Commands require separate user approval.
+# Python uses computation_profile below; cwd/HOME are never filesystem security boundaries.
 _SEATBELT_PROFILE = "(version 1)\n(allow default)\n(deny network*)\n"
 
 # Module cache: resolved sandbox interpreter + one-line env note. Tests may preset this.
@@ -115,6 +117,42 @@ def readonly_profile(ro_subpath: str) -> str:
     references/ subdir. macOS-only enforcement; on Linux run_python is fail-closed (no run)."""
     return (f"(version 1)\n(allow default)\n(deny network*)\n"
             f'(deny file-write* (subpath "{ro_subpath}"))\n')
+
+
+def computation_profile(python: str, workspace: Path, references: Path | None = None) -> str:
+    """Default-deny compute policy: runtime reads, workspace writes, no network/host IPC.
+
+    Grant only the interpreter's installation and venv libraries, never their parent
+    project or the app-data root. Resolve symlinks before constructing Seatbelt paths.
+    JSON quoting is also valid for these SBPL strings and prevents path injection.
+    """
+    executable = Path(python).absolute()
+    resolved = executable.resolve()
+    prefixes = {executable.parent.parent, resolved.parent.parent}
+    reads = {Path("/System/Library"), Path("/System/Volumes/Preboot/Cryptexes/OS"),
+             Path("/usr/lib"), Path("/usr/share/locale")}
+    for prefix in prefixes:
+        reads.update({(prefix / "lib").resolve(), (prefix / "bin").resolve()})
+    lines = ["(version 1)", "(deny default)", "(allow sysctl-read)",
+             # dyld on macOS 26 reads the root vnode while locating its shared cache.
+             # Literal '/', unlike subpath '/', does NOT grant descendants.
+             '(allow file-read-data (literal "/"))',
+             "(allow file-read-metadata)", "(allow process-fork)",
+             "(allow process-info* (target self))"]
+    for path in sorted(reads):
+        lines.append(f"(allow file-read* file-map-executable (subpath {json.dumps(str(path))}))")
+    for path in ("/dev/null", "/dev/random", "/dev/urandom", "/private/etc/localtime"):
+        lines.append(f"(allow file-read* (literal {json.dumps(path)}))")
+    for path in {executable, resolved}:
+        lines.append(f"(allow process-exec (literal {json.dumps(str(path))}))")
+    # Python uses pyvenv.cfg to locate the base stdlib; this does not grant sibling reads.
+    for prefix in prefixes:
+        lines.append(f"(allow file-read* (literal {json.dumps(str(prefix / 'pyvenv.cfg'))}))")
+    lines.append(f"(allow file-read* file-write* (subpath {json.dumps(str(workspace.resolve()))}))")
+    lines.append('(allow file-write* (literal "/dev/null"))')
+    if references is not None:
+        lines.append(f"(deny file-write* (subpath {json.dumps(str(references.resolve()))}))")
+    return "\n".join(lines) + "\n"
 
 
 def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
@@ -278,7 +316,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         extra_names = set()
         for fname, content in (extra_files or {}).items():
             # flat, safe names only — no separators, no traversal, never main.py
-            if not re.fullmatch(r"[A-Za-z0-9._-]+", fname) or fname == "main.py":
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", fname) or fname in {".", "..", "main.py"}:
                 continue
             (tmp / fname).write_text(str(content), encoding="utf-8")
             extra_names.add(fname)
@@ -289,7 +327,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         ro_dir = tmp / "references"
         wrote_ro = False
         for fname, content in (read_only_files or {}).items():
-            if not re.fullmatch(r"[A-Za-z0-9._-]+", fname):
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", fname) or fname in {".", ".."}:
                 continue
             if not wrote_ro:
                 ro_dir.mkdir()
@@ -310,9 +348,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         # When references are staged, tighten the seatbelt profile with a kernel write-deny on
         # their REALPATH (resolve symlinks — seatbelt matches realpath; /var → /private/var on
         # macOS). Only emit the rule when the dir exists, and never loosen the base profile.
-        profile = None
-        if sandboxed and wrote_ro:
-            profile = readonly_profile(str(ro_dir.resolve()))
+        profile = computation_profile(python, tmp, ro_dir if wrote_ro else None) if sandboxed else None
         wrapper = backend.wrapper(profile) if sandboxed else None
         if sandboxed and not wrapper:
             return {"ok": False, "sandboxed": False, "network_isolated": False,
@@ -335,13 +371,14 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         except asyncio.CancelledError:
             # Run cancel (S3-M1): the child must not outlive the cancelled task.
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                os.killpg(proc.pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 proc.kill()
+            await proc.wait()
             raise
         except TimeoutError:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                os.killpg(proc.pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 proc.kill()
             await proc.wait()
@@ -357,7 +394,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         files = sorted(
             f"{p.relative_to(tmp)} ({p.stat().st_size}B)"
             for p in tmp.rglob("*")
-            if p.is_file() and p != script and ".mpl" not in p.parts
+            if not p.is_symlink() and p.is_file() and p != script and ".mpl" not in p.parts
             and "references" not in p.parts  # read-only inputs we staged, not code outputs
             and p.name not in extra_names  # inputs we staged, not outputs the code produced
         )
@@ -375,11 +412,12 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         # Restore write perms on the locked-down references/ so rmtree can clean it up
         # (a 0o555 dir / 0o444 files would otherwise leak the tmpdir).
         ro_dir = tmp / "references"
-        if ro_dir.is_dir():
+        if not ro_dir.is_symlink() and ro_dir.is_dir():
             try:
                 ro_dir.chmod(0o755)
                 for p in ro_dir.iterdir():
-                    p.chmod(0o644)
+                    if not p.is_symlink():
+                        p.chmod(0o644)
             except OSError:
                 pass
         shutil.rmtree(tmp, ignore_errors=True)
