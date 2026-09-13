@@ -11,8 +11,8 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 
 | ID | Work | State |
 | --- | --- | --- |
-| P0-01 | No automatic unsandboxed retry | Implemented; 19 targeted tests passed, full regression pending |
-| P0-02 | Filesystem isolation | Implemented for Python; native kernel-denial tests passed, full regression pending |
+| P0-01 | No automatic unsandboxed retry | Implemented; native denial tests and full 4027-test backend regression passed at db43ccaa |
+| P0-02 | Filesystem isolation | Implemented for macOS Python; native kernel-denial tests and full backend regression passed |
 | P1-01 | Startup/authentication boundary | Connection-level HTTP/WS guard implemented; 31 auth tests pass |
 | P1-02 | Accurate safety documentation and release | README/SECURITY contracts corrected; release gates pending |
 | P1-03 | Unified host/spawn Run, cancellation, events | Host Run lifecycle implemented; targeted storage/cancel/reconnect/accounting tests pass |
@@ -24,7 +24,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P2-01 | Memory quality, context budgets, scale | CJK-aware context caps and bounded exact-vector scan tested at 1k/10k/100k; live semantic recall evaluation pending |
 | P2-02 | Evolution evidence and judge calibration | Judge schema/margin/disagreement handling hardened; invalid old probe retired; live calibration still pending |
 | P2-03 | Capability/version/provenance documentation | Source-generated catalog/executor/transport inventory with drift test; pinned browser runtime and corrected capability boundaries |
-| P2-04 | Dependency and test infrastructure | pypdf and frontend advisory fixes applied; npm audit zero; final regression pending |
+| P2-04 | Dependency and test infrastructure | pypdf/npm advisories fixed; full regression passed at db43ccaa; Linux-only glib advisory remains explicit |
 | P2-05 | Behavior-oriented module boundaries | Partial: host_run, execution budgets, artifact store, recipes, browser proxy/service and vector scan isolated with behavior tests; broad App/tool-loop rewrite deferred |
 | P2-06 | Loading, empty states, steps and artifacts UI | Partial: recipe/artifact UI, graph loading/error/empty states and deferred chart loading implemented and UI-verified |
 | P2-07 | Voice and native desktop acceptance | Explicit device acceptance matrix recorded in EVALUATION.md; physical checks pending |
@@ -32,6 +32,20 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P3-02 | Controlled browser workflow (selected first) | Static preview implemented and UI-verified; full interactive browser deferred, no kernel egress claim |
 
 ## Verification log
+
+- Release preparation at db43ccaa: **4027 backend tests passed, 14 skipped**
+  (290.02s), **1680 frontend tests passed**, TypeScript/build and CI-scoped Ruff
+  passed. An earlier full run caught a missing vector-filter diagnostic log;
+  the log was restored and the full suite rerun, rather than weakening its test.
+  Existing fixture teardown/async-mark warnings remain; this is not a zero-warning
+  claim. The fixed acceptance runner reports **30/30** contracts on this commit.
+- A separate post-signing frozen-service computation gate was then added:
+  `--compute-selftest` uses only disposable storage, runs the production Python
+  sandbox/export path, checks outside read/write and socket denial, and verifies
+  persisted CSV contents plus PNG/hash bytes after workspace cleanup. Source
+  interpreter use refuses; override runtime paths are ignored for this test.
+  Packaging/entrypoint targeted tests: **32 passed**. Actual signed-app execution
+  of this new gate remains pending the release workflow.
 
 - Baseline audit: 3912 backend tests and 1669 frontend tests passed on the same
   commit, recorded separately on 2026-09-13. This is not post-change evidence.

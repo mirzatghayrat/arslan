@@ -155,6 +155,17 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
                      probe.stderr[-2000:])
             except (OSError, subprocess.TimeoutExpired) as exc:
                 c.ok(False, "packaged compute works without host Python or pip", str(exc))
+            try:
+                probe = subprocess.run(
+                    [str(sidecar), "--compute-selftest"], cwd=temp,
+                    env={"PATH": "/usr/bin:/bin", "HOME": temp, "ARSLAN_SECRET_KEY_FILE": ""},
+                    capture_output=True, text=True, timeout=90,
+                )
+                c.ok(probe.returncode == 0 and '"compute_selftest": "passed"' in probe.stdout,
+                     "frozen service sandbox denies host access and preserves CSV/PNG artifacts",
+                     (probe.stdout + probe.stderr)[-2000:])
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                c.ok(False, "frozen service sandbox denies host access and preserves CSV/PNG artifacts", str(exc))
 
     # NO ASSERTION ON THE WINDOW-DRAGGING GRANT, and the reason is measured
     # rather than assumed. The obvious artifact-level check is to look for

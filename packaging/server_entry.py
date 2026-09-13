@@ -432,7 +432,97 @@ def selftest() -> int:
     return 0
 
 
+def compute_selftest() -> int:
+    """Exercise the frozen service's actual sandbox/export path with disposable data.
+
+    Separate from --selftest: the pre-staging bundle has no compute runtime yet.
+    No server is started and no existing application data is read or changed.
+    """
+    import asyncio
+    import hashlib
+    import json
+    import tempfile
+
+    if not getattr(sys, "frozen", False):
+        print("compute selftest requires the packaged service", file=sys.stderr)
+        return 1
+    keys = ("HOME", "ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_SECRET_KEY",
+            "ARSLAN_SECRET_KEY_FILE", "ARSLAN_API_TOKEN", "ARSLAN_PACKAGED",
+            "ARSLAN_SANDBOX_PYTHON", "ARSLAN_ALLOW_UNSANDBOXED_PY")
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        with tempfile.TemporaryDirectory(prefix="arslan-frozen-compute-") as temp:
+            base = pathlib.Path(temp)
+            home = base / "home"
+            home.mkdir()
+            canary = base / "outside-canary.txt"
+            canary.write_text("unchanged")
+            os.environ.update(HOME=str(home), ARSLAN_DATA_DIR=str(base / "data"),
+                              ARSLAN_DB_PATH=str(base / "synthetic.db"),
+                              ARSLAN_SECRET_KEY="packaged-selftest-only", ARSLAN_SECRET_KEY_FILE="",
+                              ARSLAN_API_TOKEN="", ARSLAN_PACKAGED="1")
+            os.environ.pop("ARSLAN_SANDBOX_PYTHON", None)
+            os.environ.pop("ARSLAN_ALLOW_UNSANDBOXED_PY", None)
+            from server.services import artifact_store, code_sandbox, execution_context
+
+            code = f'''import errno, pathlib, socket
+import numpy, pandas, matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plot
+frame = pandas.DataFrame({{"x": [1, 2, 3]}})
+assert frame.x.sum() == 6
+frame.to_csv("result.csv", index=False)
+plot.plot(frame.x)
+plot.savefig("chart.png")
+for mode in ("r", "w"):
+    try:
+        with open({str(canary)!r}, mode):
+            pass
+    except OSError as error:
+        assert error.errno in (errno.EPERM, errno.EACCES)
+    else:
+        raise AssertionError("outside file access was not denied")
+try:
+    with socket.socket() as sock:
+        sock.settimeout(1)
+        sock.connect(("127.0.0.1", 9))
+except OSError as error:
+    assert error.errno in (errno.EPERM, errno.EACCES)
+else:
+    raise AssertionError("network access was not denied")
+print("COMPUTE_CANARY_OK")
+'''
+            with execution_context.bind_run(1):
+                result = asyncio.run(code_sandbox.run_python(code, timeout_s=30))
+            assert result.get("ok") and result.get("sandboxed") and result.get("network_isolated"), result.get("error")
+            assert "COMPUTE_CANARY_OK" in result.get("stdout", ""), "canary did not complete"
+            assert canary.read_text() == "unchanged", "outside canary was modified"
+            artifacts = {item["title"]: item for item in result.get("artifacts", [])}
+            assert {"result.csv", "chart.png"} <= artifacts.keys(), "exported artifacts missing"
+            for item in artifacts.values():
+                data = (artifact_store.root() / item["filename"]).read_bytes()
+                assert hashlib.sha256(data).hexdigest() == item["sha256"], "artifact hash mismatch"
+                if item["title"] == "result.csv":
+                    assert data.replace(b"\r\n", b"\n") == b"x\n1\n2\n3\n", "CSV contents differ"
+                elif item["title"] == "chart.png":
+                    assert data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) > 100, "invalid PNG"
+            print(json.dumps({"compute_selftest": "passed", "sandboxed": True,
+                              "network_isolated": True, "durable_artifacts": len(artifacts)}))
+            return 0
+    except Exception as exc:  # noqa: BLE001 — a failed gate must never launch the app
+        print(f"compute selftest failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def main() -> int:
+    if "--compute-selftest" in sys.argv[1:]:
+        return compute_selftest()
     if "--selftest" in sys.argv[1:]:
         return selftest()
 

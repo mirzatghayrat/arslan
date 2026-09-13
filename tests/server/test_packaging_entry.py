@@ -28,6 +28,60 @@ def _load_entry():
     return mod
 
 
+def test_compute_selftest_refuses_source_interpreter(entry, monkeypatch):
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    assert entry.compute_selftest() == 1
+
+
+def test_compute_selftest_verifies_export_and_restores_environment(entry, monkeypatch):
+    from server.services import artifact_store, code_sandbox, execution_context
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("ARSLAN_DATA_DIR", "must-survive-selftest")
+    monkeypatch.setenv("ARSLAN_SANDBOX_PYTHON", "must-not-be-used")
+    before_home = os.environ.get("HOME")
+    roots = []
+
+    async def fake_run(code, timeout_s):
+        assert execution_context.current_run_id() == 1
+        assert "ARSLAN_SANDBOX_PYTHON" not in os.environ
+        assert "outside file access was not denied" in code
+        roots.append(artifact_store.root())
+        return {"ok": True, "sandboxed": True, "network_isolated": True,
+                "stdout": "COMPUTE_CANARY_OK", "artifacts": [
+                    artifact_store.store_bytes(1, "result.csv", b"x\n1\n2\n3\n"),
+                    artifact_store.store_bytes(1, "chart.png", b"\x89PNG\r\n\x1a\n" + b"x" * 200)]}
+
+    monkeypatch.setattr(code_sandbox, "run_python", fake_run)
+    assert entry.compute_selftest() == 0
+    assert os.environ["ARSLAN_DATA_DIR"] == "must-survive-selftest"
+    assert os.environ["ARSLAN_SANDBOX_PYTHON"] == "must-not-be-used"
+    assert os.environ.get("HOME") == before_home
+    assert execution_context.current_run_id() is None
+    assert not roots[0].exists()
+
+
+@pytest.mark.parametrize("sandboxed", [False, True])
+def test_compute_selftest_rejects_unisolated_or_missing_artifacts(entry, monkeypatch, sandboxed):
+    from server.services import code_sandbox
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    async def fake_run(code, timeout_s):
+        return {"ok": True, "sandboxed": sandboxed, "network_isolated": sandboxed,
+                "stdout": "COMPUTE_CANARY_OK", "artifacts": []}
+
+    monkeypatch.setattr(code_sandbox, "run_python", fake_run)
+    assert entry.compute_selftest() == 1
+
+
+def test_compute_selftest_flag_never_starts_server(entry, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--compute-selftest"])
+    monkeypatch.setattr(entry, "compute_selftest", lambda: 7)
+    monkeypatch.setattr(entry, "_sanitize_env", lambda: pytest.fail("must not boot"))
+    assert entry.main() == 7
+
+
 @pytest.fixture
 def entry():
     return _load_entry()
