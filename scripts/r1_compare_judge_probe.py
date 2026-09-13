@@ -44,6 +44,11 @@ _K = 5
 
 
 async def main():
+    raise SystemExit(
+        "Retired probe: its tiny synthetic corpus and obsolete better>=1 gate do not "
+        "validate the current replay gate. No provider calls were made. See "
+        "docs/EVALUATION.md for the replacement acceptance protocol."
+    )
     same_total = same_tie = 0
     for c in _SAME:
         v = await compare_judge.compare(task=c["task"], persona=c["persona"],

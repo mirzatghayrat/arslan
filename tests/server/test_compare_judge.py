@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from arslan.models import LLMResponse
 from server.services import compare_judge
 
@@ -64,3 +66,29 @@ async def test_degraded_on_unparseable(monkeypatch):
     assert out["overall"] == "tie"
     assert out["position_sensitive"] is True
     assert out["dimensions"] == {"fabrication": "tie", "identity": "tie", "completion": "tie"}
+
+
+@pytest.mark.parametrize("dimensions", [[], None, "bad", {"fabrication": "1"},
+                                       {"fabrication": "wrong", "identity": "1", "completion": "1"}])
+async def test_malformed_dimensions_degrade_without_crash(monkeypatch, dimensions):
+    _stub(monkeypatch, [json.dumps({"dimensions": dimensions, "overall": "1"}),
+                        _resp("2", "2", "2", "2")])
+    out = await compare_judge.compare(task="t", persona="p", output_a="A", output_b="B")
+    assert out == compare_judge._degraded()
+
+
+@pytest.mark.parametrize("margin, expected", [("NaN", 0), ("Infinity", 0), (-2, 0), (99, 10)])
+async def test_margin_finite_and_bounded(monkeypatch, margin, expected):
+    _stub(monkeypatch, [_resp("1", "1", "1", "1", margin=margin, reason=["bad"]),
+                        _resp("2", "2", "2", "2", margin=margin, reason="valid")])
+    out = await compare_judge.compare(task="t", persona="p", output_a="A", output_b="B")
+    assert out["margin"] == expected
+    assert out["reason"] == "valid"
+
+
+async def test_winner_tie_disagreement_is_position_sensitive(monkeypatch):
+    _stub(monkeypatch, [_resp("1", "1", "1", "1"),
+                        _resp("tie", "tie", "tie", "tie")])
+    out = await compare_judge.compare(task="t", persona="p", output_a="A", output_b="B")
+    assert out["overall"] == "tie"
+    assert out["position_sensitive"] is True

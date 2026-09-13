@@ -8,6 +8,7 @@ Any parse/LLM failure degrades to an all-tie verdict (safe side: 'not proven bet
 from __future__ import annotations
 
 import logging
+import math
 
 from server.orchestrator.json_protocol import parse_json_object
 from server.services import evolution_meter
@@ -42,7 +43,12 @@ async def _judge_once(adapter, *, task: str, persona: str, first: str, second: s
                               first_evidence=first_evidence, second_evidence=second_evidence),
         )
         parsed = parse_json_object(resp.content or "")
-        if not isinstance(parsed, dict) or "dimensions" not in parsed or "overall" not in parsed:
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("dimensions"), dict):
+            return None
+        slots = ("1", "2", "tie")
+        if parsed.get("overall") not in slots or any(
+            parsed["dimensions"].get(d) not in slots for d in _DIMENSIONS
+        ):
             return None
         return parsed
     except Exception as exc:  # noqa: BLE001
@@ -70,6 +76,7 @@ def _to_ab(pass_: dict, *, slot1: str, slot2: str) -> tuple[dict, str, float]:
         margin = float(pass_.get("margin", 0) or 0)
     except (TypeError, ValueError):
         margin = 0.0
+    margin = min(10.0, max(0.0, margin)) if math.isfinite(margin) else 0.0
     return dims, overall, margin
 
 
@@ -105,9 +112,10 @@ async def compare(*, task: str, persona: str, output_a: str, output_b: str, item
 
     dims = {d: merge(d1[d], d2[d]) for d in _DIMENSIONS}
     overall = merge(o1, o2)
-    position_sensitive = o1 in ("a", "b") and o2 in ("a", "b") and o1 != o2
+    position_sensitive = o1 != o2 or any(d1[d] != d2[d] for d in _DIMENSIONS)
     margin = round((m1 + m2) / 2, 2) if overall != "tie" else 0.0
-    reason = (p1.get("reason") or p2.get("reason") or "")[:300]
+    reason = next((p["reason"][:300] for p in (p1, p2)
+                   if isinstance(p.get("reason"), str) and p["reason"]), "")
 
     return {
         "dimensions": dims,
