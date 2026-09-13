@@ -24,6 +24,31 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+class RecipeVersion(Base):
+    __tablename__ = "recipe_versions"
+    __table_args__ = (UniqueConstraint("key", "version"),)
+    id = Column(Integer, primary_key=True)
+    key = Column(String(60), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    name = Column(String(100), nullable=False)
+    spec = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RecipeExecution(Base):
+    __tablename__ = "recipe_executions"
+    id = Column(Integer, primary_key=True)
+    request_key = Column(String(80), nullable=False, unique=True)
+    recipe_id = Column(Integer, ForeignKey("recipe_versions.id"), nullable=False)
+    input = Column(Text, nullable=False)
+    status = Column(String(30), nullable=False, default="queued")
+    checkpoint = Column(JSON, nullable=False, default=dict)
+    run_id = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Spawn(Base):
     __tablename__ = "spawns"
 

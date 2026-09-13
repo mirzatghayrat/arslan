@@ -9,6 +9,7 @@ import { getIcon } from './iconMap';
 import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import EmptyState, { EmptyStateAction } from "./EmptyState";
+import RecipePanel from "./RecipePanel";
 
 interface SpawnsDashboardProps {
   spawns: Spawn[];
@@ -39,6 +40,7 @@ export default function SpawnsDashboard({
   const { t } = useTranslation();
   const capabilityLabel = useCapabilityLabel();
   const [detailSpawnId, setDetailSpawnId] = useState<string | null>(null);
+  const [showRecipes, setShowRecipes] = useState(false);
   return (
     <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
       {/* Decorative Top Lights */}
@@ -60,6 +62,8 @@ export default function SpawnsDashboard({
 
         {/* Buttons right: Spawn Creator & Card Style Variator */}
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:border-primary"
+            onClick={() => setShowRecipes(v => !v)} aria-expanded={showRecipes}>{t("recipes.title")}</button>
           {/* Create spawn handler */}
           <button
             id="create-spawn-trigger"
@@ -72,6 +76,7 @@ export default function SpawnsDashboard({
       </div>
 
       {/* Spawns Grid Render */}
+      {showRecipes && <RecipePanel spawns={spawns} />}
       {spawns.length === 0 ? (
         backendStatus === 'offline' ? (
           <EmptyState icon={WifiOff} tone="danger" testId="empty-spawn-ledger-offline"

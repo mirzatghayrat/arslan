@@ -51,7 +51,7 @@ async def mark_interrupted_runs() -> int:
     Assumes exclusive DB ownership (single process — same assumption as run_registry)."""
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
-            select(Run).where(Run.status == "recording", Run.kind.in_((*_REAPED_KINDS, "host"))))
+            select(Run).where(Run.status == "recording", Run.kind.in_((*_REAPED_KINDS, "host", "recipe", "recipe_step"))))
         runs = list(rows.scalars().all())
         for run in runs:
             run.status = "interrupted"

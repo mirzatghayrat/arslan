@@ -74,7 +74,8 @@ def test_a_database_that_already_recorded_the_broken_0043_is_repaired(tmp_path):
     with eng.begin() as conn:
         applied = runner.apply_pending(conn)
 
-    assert applied == ["0044"], "only the repair should be outstanding"
+    assert applied == [version for version, _ in runner.MIGRATIONS if version >= "0044"]
+    assert applied[0] == "0044", "the repair must precede all newer migrations"
     assert "last_health_detail" in _columns(eng, "provider_configs")
 
 

@@ -247,7 +247,8 @@ describe("locale parity", () => {
     //               conversation-mode toggle's label pair and the muted-while-
     //               replying marker (Task 6).
     // Durable file downloads add three messages, translated in all six locales.
-    expect(enKeys).toHaveLength(1439);
+    // Task recipes add 40 translated controls and execution states.
+    expect(enKeys).toHaveLength(1479);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

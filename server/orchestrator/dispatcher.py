@@ -579,6 +579,7 @@ async def dispatch(
     run_id: int | None = None,
     replay: bool = False,
     ambient: dict | None = None,
+    include_history: bool = True,
 ) -> dict:
     """Run the spawn on a clean task. Streams via on_chunk; returns
     {full_output, spawn_name, summary_message_id, assistant_message_id, escalation,
@@ -635,7 +636,7 @@ async def dispatch(
         attached_context=attached_context, system_prompt_override=system_prompt_override,
     )
 
-    history = await _spawn_history(spawn_id)
+    history = await _spawn_history(spawn_id) if include_history else []
 
     if instruction:
         user_content = (

@@ -72,9 +72,11 @@ def _testclient_models_loopback(monkeypatch):
 
 
 @pytest.fixture
-async def execution_db(monkeypatch):
+async def execution_db(monkeypatch, tmp_path):
     """Isolated database for execution-lifecycle tests; never touch local app data."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    # Real file + pooled connections: cancelling an active query can invalidate
+    # one connection. A :memory: database would disappear with it, unlike production.
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'execution.db'}")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

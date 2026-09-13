@@ -4,7 +4,7 @@ Arslan is a local-first personal AI orchestrator. By design it runs powerful, po
 
 ## What Arslan runs
 
-- **A code sandbox.** Arslan generates and executes code. On macOS this runs under a kernel-enforced seatbelt profile with the network denied.
+- **A Python computation sandbox.** On macOS, generated Python uses a default-deny Seatbelt profile: read-only interpreter libraries, a per-run read/write workspace, read-only staged inputs, and denied network/host IPC. Other tool classes have different boundaries; this is not an app-wide jail.
 - **A credential-injecting MITM proxy.** So sandboxed git can reach the network without the raw tokens ever entering the sandbox, a local proxy terminates TLS and injects credentials on the way out. The raw secret lives only in the parent process.
 - **Stored BYOK secrets.** Your LLM provider API keys are stored on disk, encrypted at rest.
 - **An MCP client.** Arslan can launch configured MCP servers as **stdio subprocesses** — i.e. it runs arbitrary local commands that you configure.
@@ -14,8 +14,10 @@ Arslan is a local-first personal AI orchestrator. By design it runs powerful, po
 - **Environment split.** `ARSLAN_ENV=dev` on **localhost is unauthenticated by design** — zero friction for local, single-user use. This is intended only for a loopback bind on a machine you control.
 - **Auth enforced where it matters.** In `prod`, in packaged builds (`ARSLAN_PACKAGED=1`), or on a **non-loopback bind**, Arslan requires a bearer token. If `ARSLAN_API_TOKEN` is empty in those modes, a token is **auto-generated on first run**, persisted to `<data_dir>/api_token` (owner-only), printed once at boot, and viewable/resettable from Settings.
 - **Cross-site protections.** TrustedHost, CORS, and WebSocket-Origin checks block cross-site drive-by requests. Non-localhost / prod deployments must configure `ARSLAN_ALLOWED_HOSTS` and `ARSLAN_ALLOWED_ORIGINS`.
-- **Secrets encrypted, public key refused.** BYOK secrets are **Fernet-encrypted** with a key derived via **PBKDF2-HMAC-SHA256** (per-install random salt at `<data_dir>/crypto_salt`, high iteration count). The app **refuses to write secrets under the built-in public dev key** — you must set a real `ARSLAN_SECRET_KEY` (the `ARSLAN_ALLOW_INSECURE_SECRETS` escape hatch exists for dev testing only and must never be used for real keys).
+- **Secrets encrypted, public key refused.** BYOK secrets are **Fernet-encrypted** with a key derived via **PBKDF2-HMAC-SHA256** (per-install random salt stored in the database since migration 0039). The app **refuses to write secrets under the built-in public dev key** — you must set a real `ARSLAN_SECRET_KEY` (the `ARSLAN_ALLOW_INSECURE_SECRETS` escape hatch exists for dev testing only and must never be used for real keys).
 - **Sandbox fails closed.** Where the kernel sandbox is unavailable, code execution fails closed rather than silently running unsandboxed.
+- **Child output cannot weaken policy.** A failed child is never retried outside its sandbox, regardless of its stderr. The development unsandboxed escape valve is disabled in production and packaged builds.
+- **Actual-peer authentication guard.** With no active API token, HTTP and WebSocket middleware reject non-loopback or unknown peers, even when a bare server launcher hides its bind address from configuration. A reverse proxy must still use a token: loopback proxying is not authentication.
 
 ## Known boundaries
 
@@ -24,6 +26,7 @@ Please read these before exposing Arslan beyond a trusted local machine:
 - **The kernel sandbox is macOS seatbelt only.** On non-macOS platforms it is unavailable and fails closed. The dev-only `ARSLAN_ALLOW_UNSANDBOXED_PY=1` escape hatch runs generated Python with the server's full privileges and network access — only enable it on a machine you fully trust.
 - **Do not expose the server to an untrusted network without a token + allowlist.** An unauthenticated instance grants full control of the orchestrator, its stored secrets, and code execution to anyone who can reach it. Always set `ARSLAN_API_TOKEN` (or rely on the prod/packaged auto-token) **and** the host/origin allowlists for any non-loopback bind.
 - **The MCP client runs arbitrary configured stdio commands by design.** Only configure MCP servers you trust; a malicious server definition can run arbitrary local commands.
+- **Confirmed shell commands are NOT filesystem-isolated.** Their Seatbelt policy constrains networking, not filesystem access. Changing HOME/cwd does not prevent absolute-path access. Each command requires the existing confirmation policy; do not treat this as the Python computation sandbox.
 - **BYOK secret confidentiality depends on `ARSLAN_SECRET_KEY` and `crypto_salt`.** Anyone with both the ciphertext and these can decrypt stored keys. Protect your data directory accordingly.
 - **SSRF protection is delegated to your proxy for `https` + proxy.** Outbound fetches normally resolve the hostname once, reject any non-global address, and pin the connection to that IP — so a name that re-resolves to a private address between the check and the connection cannot be reached. That guarantee **cannot** be carried over an HTTP proxy on `https`: httpcore's CONNECT tunnel ignores the `sni_hostname` extension and hands the tunnel's own origin host to TLS, so pinning would make certificate validation fail against an IP literal. In that one combination Arslan degrades to *the proxy decides where the request goes* and **logs a warning** rather than failing silently. Plain `http` through a proxy, and every non-proxied request, still pin. If `HTTPS_PROXY`/`https_proxy` is set in your environment, your `https` fetches run in this delegated mode — point it at a proxy you trust, or unset it for the pinned path.
 
@@ -32,7 +35,11 @@ Please read these before exposing Arslan beyond a trusted local machine:
 
 ## Backup & durability
 
-The `<data_dir>/crypto_salt` and `<data_dir>/api_token` files are part of the backup unit — back them up **together with** the database, not separately. New-scheme (PBKDF2) encrypted secrets are derived from `ARSLAN_SECRET_KEY` **and** the per-install `crypto_salt`: **losing `crypto_salt` (or restoring a mismatched one) makes those stored secrets undecryptable**, even with the correct `ARSLAN_SECRET_KEY`. Restore the whole data directory as a unit. The secret itself deliberately lives **outside** the data dir (your explicit env value, or the dev auto-generated `~/.arslan/secret_key` / `ARSLAN_SECRET_KEY_FILE`), so a complete backup is **two pieces**: the data directory **plus** that secret.
+The PBKDF2 salt now lives in the **database**, beside the ciphertext (migration 0039). A legacy `crypto_salt` file is only a recovery candidate, not the active derivation source. The external `ARSLAN_SECRET_KEY` remains essential: keep it separately from the data archive. Never publish either private data or keys.
+
+Stop the app before taking a backup. `python -m scripts.backup_data create` uses SQLite's backup API (including committed WAL data), checksums files, and excludes access tokens, the external secret and rebuildable caches. Restore validates checksums, paths and database integrity **into a new directory only**. See [Recovery and execution contracts](docs/RELIABILITY.md). Checksums detect damage, not authenticity: only restore archives you trust.
+
+Run text is checkpointed periodically and interrupted runs are marked at boot. This is partial-output recovery, not transparent replay of external effects. Task recipes retain completed-step outputs; retrying unfinished steps requires explicit confirmation and can repeat effects that completed before a crash.
 
 ## Reporting a vulnerability
 

@@ -14,21 +14,21 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P0-01 | No automatic unsandboxed retry | Implemented; 19 targeted tests passed, full regression pending |
 | P0-02 | Filesystem isolation | Implemented for Python; native kernel-denial tests passed, full regression pending |
 | P1-01 | Startup/authentication boundary | Connection-level HTTP/WS guard implemented; 31 auth tests pass |
-| P1-02 | Accurate safety documentation and release | Pending |
+| P1-02 | Accurate safety documentation and release | README/SECURITY contracts corrected; release gates pending |
 | P1-03 | Unified host/spawn Run, cancellation, events | Host Run lifecycle implemented; targeted storage/cancel/reconnect/accounting tests pass |
 | P1-04 | Persistent downloadable artifacts | Python Run outputs persisted with safe export, metadata and authenticated downloads; targeted tests pass |
 | P1-05 | Shared execution budget | Shared request/tool/time/token/output/artifact limits implemented; targeted tests pass |
 | P1-06 | Provider contract verification | Gemini native tool/continuation gap implemented and mock-wire roundtrip verified; live calls pending budget |
-| P1-07 | Recovery and backup acceptance | Pending |
+| P1-07 | Recovery and backup acceptance | Periodic partial-output checkpoints and new-directory validated restore implemented; synthetic roundtrip tests pass |
 | P1-08 | End-to-end task benchmark | Pending; paid calls need budget |
-| P2-01 | Memory quality, context budgets, scale | Pending |
+| P2-01 | Memory quality, context budgets, scale | Deterministic CJK-aware summary/history/facts caps tested; recall-quality/scale evaluation pending |
 | P2-02 | Evolution evidence and judge calibration | Pending; live evidence required |
 | P2-03 | Capability/version/provenance documentation | Pending |
-| P2-04 | Dependency and test infrastructure | Pending |
+| P2-04 | Dependency and test infrastructure | pypdf and frontend advisory fixes applied; npm audit zero; final regression pending |
 | P2-05 | Behavior-oriented module boundaries | Pending |
 | P2-06 | Loading, empty states, steps and artifacts UI | Pending |
 | P2-07 | Voice and native desktop acceptance | Pending; physical checks explicit |
-| P3-01 | Versioned recipes and bounded collaboration | Pending; after Run/artifact/budget |
+| P3-01 | Versioned recipes and bounded collaboration | Immutable versions, dependency execution, 1–4 parallel steps, approval/resume API and six-language editor implemented; behavior tests pass |
 | P3-02 | Controlled browser workflow (selected first) | Pending; cross-platform later |
 
 ## Verification log
@@ -100,3 +100,21 @@ Release only the verified scope and clearly identify unverified features.
 - First remote CI: frontend, native macOS and secrets passed; Linux backend
   had one stale Gemini capability matrix failure (3902 passed). Updated the
   transport claim and preserved unknown/unsupported-state mechanism tests.
+- Budget-stage full backend regression: 3953 passed, 14 skipped, two stale
+  contract assertions failed (Gemini verdict and migration-tail list); corrected
+  with focused reruns. Full frontend dependency rerun: 1670 passed, two stale
+  Gemini-table assertions failed; synchronized frontend notices and tests.
+- Backup tests cover committed WAL, salt/ciphertext roundtrip, real artifact
+  bytes, refusal to overwrite, checksum corruption, traversal, symlink and
+  duplicate-member rejection. No real user data or credentials used.
+- Run checkpoint tests cover boot interruption and prevention of late partial
+  writes overwriting final output. This is not automatic exactly-once tool replay.
+- Recipe tests exercise actual Run storage with a deterministic dispatcher:
+  concurrent roots followed by a dependent step, one shared budget, immutable
+  versions, idempotent start, explicit approval, no repeated completed steps,
+  failure cancellation, parent-stop propagation and authenticated HTTP validation.
+  Frontend tests cover dependency editing, saved-version-only execution,
+  idempotency after uncertain responses and explicit retry confirmation.
+- Memory regression subset: 34 passed, including long CJK summary fallback,
+  oversized-first-fact refusal, fail-closed sensitive filtering and active-only
+  retrieval. These tests do not measure live semantic memory quality.

@@ -134,7 +134,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.10" },
     { name = "pyobjc-framework-vision", marker = "sys_platform == 'darwin'", specifier = ">=10.0" },
-    { name = "pypdf", specifier = ">=6.15.0" },
+    { name = "pypdf", specifier = ">=6.16.1" },
     { name = "pypdfium2", specifier = ">=4.30" },
     { name = "pytesseract", marker = "extra == 'ocr'", specifier = ">=0.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

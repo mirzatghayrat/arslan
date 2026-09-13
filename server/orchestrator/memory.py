@@ -7,6 +7,8 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from arslan.context_budget import clip as clip_context, estimate_tokens
+
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ArslanSummary, UserFact
 from server.services.llm_factory import build_adapter
@@ -14,23 +16,6 @@ from server.services.llm_factory import build_adapter
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TOKEN_BUDGET = 3000  # ~working context tokens for Arslan; env-tunable
-
-
-def estimate_tokens(text: str) -> int:
-    """Estimate tokens. CJK chars are ~1 token each; other text ~4 chars/token.
-
-    The product targets Chinese users, where a naive 4-chars/token estimate
-    undercounts tokens by ~2x and lets the thread run far past the intended budget.
-    """
-    cjk = sum(
-        1
-        for ch in text
-        if "一" <= ch <= "鿿"   # CJK Unified Ideographs
-        or "぀" <= ch <= "ヿ"   # Hiragana + Katakana
-        or "가" <= ch <= "힯"   # Hangul syllables
-    )
-    other = len(text) - cjk
-    return cjk + other // 4
 
 
 _FACTS_MAX_COUNT = 40      # 注入事实条数硬上限
@@ -108,7 +93,25 @@ async def assemble_working_context(conversation_id: str) -> dict:
             )
         else:  # arslan's own turns pass through verbatim
             history.append({"role": "assistant", "content": m.content})
-    return {"summary": summ.summary if summ else "", "history": history}
+    # Compaction is model-backed and may fail. Prompt admission is deterministic
+    # regardless: keep a bounded summary and the newest turns without deleting
+    # ANY source messages. This is an estimate, not an exact vendor-token bound.
+    budget = max(1, _token_budget())
+    original_summary = summ.summary if summ else ""
+    summary = clip_context(original_summary, max(1, budget // 2))
+    remaining = budget - estimate_tokens(summary)
+    bounded = []
+    for message in reversed(history):
+        content = clip_context(message["content"], remaining)
+        if content:
+            bounded.append({**message, "content": content})
+            remaining -= estimate_tokens(content)
+        if remaining <= 0 or content != message["content"]:
+            break
+    bounded.reverse()
+    truncated = summary != original_summary or bounded != history
+    return {"summary": summary, "history": bounded, "truncated": truncated,
+            "budget_mode": "estimated_text_tokens"}
 
 
 async def maybe_compact(conversation_id: str) -> None:
@@ -153,9 +156,7 @@ async def maybe_compact(conversation_id: str) -> None:
             # once more, then hard-truncate as a guaranteed floor so context can't grow.
             if estimate_tokens(new_summary) > _summary_token_cap():
                 new_summary = await _summarize(adapter, new_summary)
-                cap_chars = _summary_token_cap() * 4
-                if len(new_summary) > cap_chars:
-                    new_summary = new_summary[:cap_chars]
+                new_summary = clip_context(new_summary, _summary_token_cap())
 
         async with db_session.AsyncSessionLocal() as db:
             db.add(
@@ -460,18 +461,17 @@ async def facts_text(*, include_sensitive: bool = False,
 
     ranked = sorted(facts, key=lambda f: (-(f.confidence or 0.6), -_ordinal(f), -f.id))
     chosen = []
-    spent = 0
+    header = "Known facts about the user:\n"
     for f in ranked[:_FACTS_MAX_COUNT]:
-        line_tokens = estimate_tokens(f"- {f.content}")
-        if chosen and spent + line_tokens > limit_tokens:
-            break
+        candidate = header + "\n".join(f"- {item.content}" for item in [*chosen, f])
+        if estimate_tokens(candidate) > limit_tokens:
+            continue  # Never inject a partial fact or exempt an oversized first fact.
         chosen.append(f)
-        spent += line_tokens
     if len(chosen) < total:
         # 诚实:截断留痕,不静默
         logger.debug("facts_text: capped %d/%d facts (count/token budget)", len(chosen), total)
     chosen.sort(key=lambda f: f.id)  # 渲染回 id 升序:注入文本稳定,利缓存
-    return "Known facts about the user:\n" + "\n".join(f"- {f.content}" for f in chosen)
+    return header + "\n".join(f"- {f.content}" for f in chosen) if chosen else ""
 
 
 async def user_turn_count(conversation_id: str) -> int:

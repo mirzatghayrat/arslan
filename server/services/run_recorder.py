@@ -17,12 +17,16 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Literal
 
+from sqlalchemy import update
+
 from arslan.llm import usage_sink
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunStep
 
 RUN_RAW_CAP = 2000   # per-tool args_full / result_raw truncation cap
 RUN_ERR_CAP = 2000   # error_text truncation cap
+CHECKPOINT_INTERVAL = 0.5
+CHECKPOINT_CHARS = 262_144
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,7 @@ class RunRecorder:
         # handler's second finalize run against the clean state.
         self._finalizing = False
         self._finalized = False
+        self._checkpoint_task: asyncio.Task | None = None
 
     @classmethod
     async def start(
@@ -121,9 +126,47 @@ class RunRecorder:
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
             self._events.append((datetime.utcnow(), ev))
+            if (ev.get("type") == "stream_chunk" and not self._finalizing
+                    and not self._finalized
+                    and (self._checkpoint_task is None or self._checkpoint_task.done())):
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass  # Synchronous inspection/test clients cannot schedule a writer.
+                else:
+                    self._checkpoint_task = loop.create_task(self._checkpoint_later())
             emit(ev)
 
         return _emit
+
+    async def _checkpoint_later(self) -> None:
+        try:
+            await asyncio.sleep(CHECKPOINT_INTERVAL)
+            await self.flush_checkpoint()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Run %s partial-output checkpoint failed: %s", self.run_id, type(exc).__name__)
+
+    async def flush_checkpoint(self) -> None:
+        """Durable partial output, not an automatic side-effect replay checkpoint.
+
+        Periodic writes preserve text up to the last successful checkpoint. Boot marks the row
+        interrupted; it NEVER retries a tool that might already have had effects.
+        """
+        if self._finalizing or self._finalized:
+            return
+        text = "".join(str(ev.get("content") or "") for _, ev in self._events
+                       if ev.get("type") == "stream_chunk")
+        if len(text) > CHECKPOINT_CHARS:
+            text = text[:CHECKPOINT_CHARS] + "\n[partial output checkpoint truncated]"
+        values = {"final_output": text}
+        from arslan.execution_budget import current
+        if current() is not None:
+            values["execution_budget"] = current().snapshot()
+        async with db_session.AsyncSessionLocal() as db:
+            await db.execute(update(Run).where(Run.id == self.run_id, Run.status == "recording").values(**values))
+            await db.commit()
 
     def _derive_steps(self, full_output: str) -> list[dict]:
         steps: list[dict] = []
@@ -244,6 +287,12 @@ class RunRecorder:
         if self._finalizing or self._finalized:
             return self.run_id
         self._finalizing = True
+        if self._checkpoint_task is not None and not self._checkpoint_task.done():
+            self._checkpoint_task.cancel()
+            try:
+                await self._checkpoint_task
+            except asyncio.CancelledError:
+                pass
         ended = datetime.utcnow()
         steps = self._derive_steps(full_output)
         self._merge_tool_trace(steps)
@@ -268,7 +317,7 @@ class RunRecorder:
                     # stay kind='scheduled' end-to-end (the corpus filters key on kind=='live',
                     # so clobbering it back to 'live' here would leak scheduled runs into the
                     # evolution corpus). The `or "live"` keeps the unset-column re-affirmation.
-                    terminal = ("failed" if error_kind else "completed") if self.kind == "host" else "recorded"
+                    terminal = ("failed" if error_kind else "completed") if self.kind in {"host", "recipe", "recipe_step"} else "recorded"
                     run.status = status_override or ("replayed" if replay else terminal)
                     run.kind = "replay" if replay else (run.kind or "live")
                     run.epoch = 1
@@ -278,8 +327,10 @@ class RunRecorder:
                     # so the run row carries the full text for RunReplay. Plain
                     # live runs still do NOT persist it (storage discipline —
                     # their output lives in the reachable conversation).
-                    if replay or run.kind in {"scheduled", "host"}:
+                    if replay or status_override is not None or run.kind in {"scheduled", "host", "recipe", "recipe_step"}:
                         run.final_output = full_output
+                    else:
+                        run.final_output = None  # Completed live output is in its linked message.
                     run.model = model
                     run.provider = provider
                     run.tokens_in = tokens_in
@@ -324,7 +375,7 @@ class RunRecorder:
             # clearing _finalizing is then inert.)
             self._finalizing = False
             raise
-        if replay or status_override is not None or self.kind == "host":
+        if replay or status_override is not None or self.kind in {"host", "recipe", "recipe_step"}:
             # replay → paired gate; cancelled/interrupted → never scored. This also skips
             # the evolution_watcher nudge below — harmless, since a cancelled run creates
             # no scored run, so the nudge would be a guaranteed no-op.

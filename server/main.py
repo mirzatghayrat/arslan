@@ -201,6 +201,8 @@ async def lifespan(app: FastAPI):
 
         await run_reaper.mark_interrupted_runs()
         await run_reaper.reap_stuck_runs()
+        from server.services import recipes
+        await recipes.mark_interrupted()
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
 
@@ -412,6 +414,8 @@ def create_app() -> FastAPI:
     from server.api import runs as runs_api
 
     app.include_router(runs_api.router, prefix="/api/v1")
+    from server.api import recipes as recipes_api
+    app.include_router(recipes_api.router, prefix="/api/v1")
 
     from server.api import conversations as conversations_api
 

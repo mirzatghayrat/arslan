@@ -48,8 +48,8 @@ async def run_command(command: str, argv: list[str], *, timeout_s: float = TIMEO
     Local commands (default): ephemeral cwd, HOME/TMPDIR scrubbed, ALL network denied — unchanged.
     Network commands (git/gh): pass `proxy_port` → seatbelt allows ONLY localhost:proxy_port;
     `cwd` = the real repo (so git operates on it); `extra_env` = proxy/CA env. HOME/TMPDIR stay
-    scrubbed to `tmp`, so the sandboxed git still cannot read ~/.ssh or ~/.gitconfig — auth is
-    injected by the proxy, never by mounted credentials."""
+    scrubbed to `tmp` to avoid ambient configuration, but absolute-path filesystem
+    access is NOT blocked. Auth is injected by the proxy, not mounted credentials."""
     wrapper = _seatbelt_wrapper(net_profile(proxy_port) if proxy_port else None)
     if wrapper is None:
         return {"ok": False, "exit_code": None,

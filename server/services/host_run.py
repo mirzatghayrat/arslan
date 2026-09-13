@@ -17,10 +17,10 @@ from server.services import execution_context, run_recorder, run_registry
 @governed
 async def execute(conversation_id: str, user_message: str, emit: Callable[[dict], None],
                   body: Callable[[Callable[[dict], None]], Awaitable[str | None]],
-                  *, has_images: bool = False) -> str | None:
+                  *, has_images: bool = False, kind: str = "host", name: str = "Arslan") -> str | None:
     recorder = await run_recorder.RunRecorder.start(
-        conversation_id=conversation_id, spawn_id=None, spawn_name="Arslan",
-        user_message=user_message, kind="host", has_images=has_images,
+        conversation_id=conversation_id, spawn_id=None, spawn_name=name,
+        user_message=user_message, kind=kind, has_images=has_images,
     )
     tee = recorder.tee(emit)
     chunks: list[str] = []

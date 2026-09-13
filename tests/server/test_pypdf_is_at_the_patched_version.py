@@ -42,7 +42,7 @@ from packaging.version import Version
 
 # The release that carries #3944 and #3946. Raise this when a later CVE lands;
 # never lower it.
-PATCHED = Version("6.15.0")
+PATCHED = Version("6.16.1")  # Also covers the September outline/XForm resource-exhaustion fixes.
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
