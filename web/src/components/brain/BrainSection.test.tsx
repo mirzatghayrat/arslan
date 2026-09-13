@@ -30,8 +30,24 @@ vi.mock("../../api/client", () => ({ api: {
 vi.mock("../../lib/feed", () => ({ feedFile: vi.fn(), feedTextOrUrl: vi.fn() }));
 vi.mock("./BrainIndexHealth", () => ({ default: () => <div /> }));
 import BrainSection from "./BrainSection";
+import { api } from "../../api/client";
 
 describe("BrainSection", () => {
+  it("shows the real empty state when the backend returns only its self anchor", async () => {
+    render(<BrainSection />);
+    expect(await screen.findByTestId("empty-brain-graph")).toBeTruthy();
+  });
+
+  it("does not present a failed graph request as an empty memory, and can retry", async () => {
+    vi.mocked(api.getBrainGraph).mockRejectedValueOnce(new Error("offline"));
+    render(<BrainSection />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("brain.graph_load_failed");
+    expect(screen.queryByTestId("empty-brain-graph")).toBeNull();
+    fireEvent.click(screen.getByText("errorBoundary.reload"));
+    expect(await screen.findByTestId("empty-brain-graph")).toBeTruthy();
+  });
+
   it("always mounts the graph as the main canvas (no tabs)", async () => {
     render(<BrainSection />);
     await waitFor(() => expect(screen.getByTestId("brain-graph")).toBeTruthy());

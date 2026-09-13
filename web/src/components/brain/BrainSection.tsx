@@ -51,6 +51,8 @@ export default function BrainSection() {
   // never reaches what gets injected into a spawn.
   const [asOf, setAsOf] = useState<string | null>(null);
   const [graphNodes, setGraphNodes] = useState<GraphNodeDto[]>([]);
+  const [graphStatus, setGraphStatus] = useState<"loading" | "ready" | "error">("loading");
+  const hasKnowledge = graphNodes.some(n => !["self", "tag", "ghost"].includes(n.kind));
 
   // The graph is ALWAYS the main canvas; picking anything (tree row or graph node)
   // slides its detail in as the right rail over the graph — the graph stays visible.
@@ -125,24 +127,25 @@ export default function BrainSection() {
         onGenerate={(t) => void generateFromTopic(t)} />
 
       <div className="flex-1 relative h-full overflow-hidden">
-        {error
-          ? <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-muted-foreground">{t("brain.graph_load_failed")}</div>
-          : <BrainGraph litId={lit} onHover={setHoveredId} onPick={pick}
+        <BrainGraph litId={lit} onHover={setHoveredId} onPick={pick}
               onCreateNoteWithTitle={(t) => void createNoteWithTitle(t)} showTags={showTags}
-              glowIds={glowIds} reloadKey={graphKey} asOf={asOf} onData={setGraphNodes}
-              className="w-full h-full" />}
+              glowIds={glowIds} reloadKey={graphKey} asOf={asOf} onData={setGraphNodes} onStatus={setGraphStatus}
+              className="w-full h-full" />
+        {(error || graphStatus === "error") && <div role="alert" className="absolute inset-0 flex flex-col gap-3 items-center justify-center text-sm text-muted-foreground bg-background/90">
+          <p>{t("brain.graph_load_failed")}</p><button className="rounded-lg border border-border px-4 py-2 hover:text-primary" onClick={reloadAll}>{t("errorBoundary.reload")}</button>
+        </div>}
         {/* F1 — sits over the graph, above the activity strip. Renders nothing until the
             data spans more than one instant, so an empty or same-day brain is not given
             a control that cannot do anything. */}
         <BrainAsOfSlider nodes={graphNodes} value={asOf} onChange={setAsOf}
           className="absolute bottom-14 left-3 right-3 z-10 rounded bg-surface-raised/80 px-2 py-1.5 backdrop-blur" />
-        {loading && <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-subtle-foreground uppercase tracking-widest pointer-events-none">loading…</div>}
+        {(loading || graphStatus === "loading") && !error && <div role="status" className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground pointer-events-none">{t("brain.loading")}</div>}
 
         {/* Gate item ②. A brand-new brain used to render a silent black canvas —
             the only copy was in the left nav, and only when a branch happened to
             be expanded. No action button here on purpose: the feed field IS the
             left panel this points at, and a second one would be a decoy. */}
-        {!loading && !error && graphNodes.length === 0 && (
+        {!loading && !error && graphStatus === "ready" && !hasKnowledge && (
           <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
             <EmptyState icon={Brain} testId="empty-brain-graph"
               title={t("brain.graph_empty_title")} body={t("brain.graph_empty_body")} />

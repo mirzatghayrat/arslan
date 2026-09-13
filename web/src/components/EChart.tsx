@@ -13,8 +13,9 @@
 // the alternate palettes). We register the theme lazily on first render and
 // re-read the vars then, because module-load-time getComputedStyle can run
 // before the theme stylesheet is applied.
-import { useEffect, useRef } from "react";
-import * as echarts from "echarts";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { ECharts } from "echarts";
 
 const THEME_NAME = "arslan";
 let themeRegistered = false;
@@ -80,7 +81,7 @@ function buildArslanTheme(): Record<string, unknown> {
   };
 }
 
-function ensureThemeRegistered(): void {
+function ensureThemeRegistered(echarts: typeof import("echarts")): void {
   if (themeRegistered) return;
   echarts.registerTheme(THEME_NAME, buildArslanTheme());
   themeRegistered = true;
@@ -94,26 +95,39 @@ interface EChartProps {
 }
 
 export default function EChart({ option, className, height = 320 }: EChartProps) {
+  const { t } = useTranslation();
   const elRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useRef<ECharts | null>(null);
+  const optionRef = useRef(option);
+  optionRef.current = option;
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   // Init / dispose lifecycle.
   useEffect(() => {
     const el = elRef.current;
     if (!el) return;
 
-    ensureThemeRegistered();
-    // SVG renderer: the DOM holds a real <svg> (captured by the per-message
-    // .html export in MessageBody), and charts stay crisp/static.
-    const chart = echarts.init(el, THEME_NAME, { renderer: "svg" });
-    chartRef.current = chart;
-
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(el);
+    let disposed = false;
+    let ro: ResizeObserver | null = null;
+    // Keep the large renderer off the startup path; download only for a visible
+    // chart. A pending import must never initialize against an unmounted node.
+    import("echarts").then(echarts => {
+      if (disposed) return;
+      ensureThemeRegistered(echarts);
+      const chart = echarts.init(el, THEME_NAME, { renderer: "svg" });
+      chartRef.current = chart;
+      chart.setOption(optionRef.current, true);
+      ro = new ResizeObserver(() => chart.resize());
+      ro.observe(el);
+      setState("ready");
+    }).catch(() => {
+      if (!disposed) { chartRef.current?.dispose(); chartRef.current = null; setState("error"); }
+    });
 
     return () => {
-      ro.disconnect();
-      chart.dispose();
+      disposed = true;
+      ro?.disconnect();
+      chartRef.current?.dispose();
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,10 +142,15 @@ export default function EChart({ option, className, height = 320 }: EChartProps)
 
   return (
     <div
-      ref={elRef}
-      className={className}
+      className={`relative ${className || ""}`}
       style={{ width: "100%", height }}
       data-testid="echart"
-    />
+    >
+      <div ref={elRef} style={{ width: "100%", height: "100%" }} />
+      {state !== "ready" && <div role={state === "error" ? "alert" : "status"}
+        className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+        {t(state === "error" ? "chart.failed" : "chart.loading")}
+      </div>}
+    </div>
   );
 }

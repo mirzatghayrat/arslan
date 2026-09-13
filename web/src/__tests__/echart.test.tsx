@@ -1,4 +1,4 @@
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 // Mock echarts so the test asserts the wrapper's contract (SVG renderer +
@@ -24,11 +24,11 @@ afterEach(() => {
 });
 
 describe("EChart", () => {
-  it("registers the arslan theme, inits with the SVG renderer, and applies the option", () => {
+  it("registers the arslan theme, inits with the SVG renderer, and applies the option", async () => {
     const option = { series: [{ type: "bar", data: [1, 2, 3] }] };
     render(<EChart option={option} className="tool-chart" />);
 
-    expect(registerTheme).toHaveBeenCalledWith("arslan", expect.any(Object));
+    await waitFor(() => expect(registerTheme).toHaveBeenCalledWith("arslan", expect.any(Object)));
     // init(el, themeName, { renderer: "svg" })
     expect(init).toHaveBeenCalledTimes(1);
     const initArgs = init.mock.calls[0] as unknown[];
@@ -40,9 +40,17 @@ describe("EChart", () => {
     expect(setOptionArgs[0]).toBe(option);
   });
 
-  it("disposes the chart on unmount", () => {
+  it("disposes the chart on unmount", async () => {
     const { unmount } = render(<EChart option={{ series: [] }} />);
+    await waitFor(() => expect(init).toHaveBeenCalledOnce());
     unmount();
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not initialize a renderer after an immediate unmount", async () => {
+    const { unmount } = render(<EChart option={{ series: [] }} />);
+    unmount();
+    await Promise.resolve();
+    expect(init).not.toHaveBeenCalled();
   });
 });

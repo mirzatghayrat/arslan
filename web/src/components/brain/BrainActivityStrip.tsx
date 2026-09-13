@@ -153,7 +153,10 @@ function BrainActivityStrip({ litId, onHover, onPick, reloadKey = 0 }: Props) {
         {hidden > 0 && (
           <span data-testid="strip-hidden">{t("brain.strip_hidden", { hidden, max: MAX_ROWS })}</span>
         )}
-        <span>{dto.coverage_note}</span>
+        <details className="w-full">
+          <summary className="cursor-pointer text-muted-foreground">{t("brain.strip_details")}</summary>
+          <p className="mt-2 leading-relaxed">{dto.coverage_note}</p>
+        </details>
       </div>
     </div>
   );

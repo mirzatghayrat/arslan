@@ -43,6 +43,7 @@ interface Props {
    * read them. The graph keeps ownership of the fetch (extending, not rebuilding); this
    * only shares the result, so there is still exactly one request per reloadKey. */
   onData?: (nodes: GraphNodeDto[]) => void;
+  onStatus?: (status: "loading" | "ready" | "error") => void;
   className?: string;
 }
 /** d3 replaces a link's string endpoint with the node object once the simulation runs,
@@ -54,7 +55,7 @@ const endpointId = (e: string | SimNode): string =>
 const W = 760, H = 620;
 const CHARGE = -160, DISTANCE = 70;   // fixed physics (tuning sliders removed)
 
-export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTitle, showTags, glowIds, reloadKey = 0, asOf = null, onData, className }: Props) {
+export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTitle, showTags, glowIds, reloadKey = 0, asOf = null, onData, onStatus, className }: Props) {
   const { t } = useTranslation();
   const [data, setData] = useState<BrainGraphDto | null>(null);
   const [nodes, setNodes] = useState<SimNode[]>([]);
@@ -71,11 +72,14 @@ export default function BrainGraph({ litId, onHover, onPick, onCreateNoteWithTit
   // frame. That would turn a paint-time filter into a request storm.
   const onDataRef = useRef(onData);
   onDataRef.current = onData;
+  const onStatusRef = useRef(onStatus);
+  onStatusRef.current = onStatus;
   useEffect(() => {
     let ok = true;
+    onStatusRef.current?.("loading");
     api.getBrainGraph()
-      .then((d) => { if (ok) { setData(d); onDataRef.current?.(d.nodes); } })
-      .catch(() => { if (ok) { setData({ nodes: [], links: [] }); onDataRef.current?.([]); } });
+      .then((d) => { if (ok) { setData(d); onDataRef.current?.(d.nodes); onStatusRef.current?.("ready"); } })
+      .catch(() => { if (ok) { setData({ nodes: [], links: [] }); onDataRef.current?.([]); onStatusRef.current?.("error"); } });
     return () => { ok = false; };
   }, [reloadKey]);
 

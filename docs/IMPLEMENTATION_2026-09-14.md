@@ -26,7 +26,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P2-03 | Capability/version/provenance documentation | Pending |
 | P2-04 | Dependency and test infrastructure | pypdf and frontend advisory fixes applied; npm audit zero; final regression pending |
 | P2-05 | Behavior-oriented module boundaries | Pending |
-| P2-06 | Loading, empty states, steps and artifacts UI | Pending |
+| P2-06 | Loading, empty states, steps and artifacts UI | Partial: recipe/artifact UI, graph loading/error/empty states and deferred chart loading implemented and UI-verified |
 | P2-07 | Voice and native desktop acceptance | Pending; physical checks explicit |
 | P3-01 | Versioned recipes and bounded collaboration | Immutable versions, dependency execution, 1–4 parallel steps, approval/resume API and six-language editor implemented; behavior tests pass |
 | P3-02 | Controlled browser workflow (selected first) | Static preview implemented and UI-verified; full interactive browser deferred, no kernel egress claim |
@@ -42,6 +42,17 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 
 Do not mark an item complete solely because code exists or a mocked test passes.
 Release only the verified scope and clearly identify unverified features.
+
+- P2-06: the graph always contains a synthetic self node, so checking for zero
+  nodes hid the empty-state guidance. Real knowledge nodes now determine emptiness;
+  failed graph loads expose an explicit retry instead of looking empty. Verified
+  in the isolated browser. Coverage details are collapsible, with retention and
+  empty-window warnings remaining visible. All six locales retain parity.
+- Chart rendering is now deferred until needed, with asynchronous cleanup tests.
+  Production main JS changed from 2735.53 kB / 860.44 kB gzip to 1612.81 kB /
+  484.35 kB gzip; deferred chart chunk is 1136.82 kB / 381.24 kB gzip. These are
+  bundle bytes, not measured cold-start timings; large-chunk warnings remain.
+  Full frontend: 217 files / 1680 tests pass, TypeScript and production build pass.
 
 - P0-02: Python now uses default-deny Seatbelt rules (read-only interpreter libraries,
   read/write per-run workspace, read-only staged references, no network or host IPC).

@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import SpawnDirectChat from '../components/SpawnDirectChat'
 
@@ -68,7 +68,7 @@ describe('SpawnDirectChat tool frames + artifact', () => {
     expect(screen.getByText(/chart rendered/)).toBeTruthy();
   });
 
-  it('renders an ECharts artifact via the EChart component', () => {
+  it('renders an ECharts artifact via the EChart component', async () => {
     // render_chart now emits { kind: 'echarts', spec } — the direct chat must render it
     // through <EChart>, not silently drop it (which showed only the "completed" summary).
     setOption.mockClear();
@@ -85,6 +85,6 @@ describe('SpawnDirectChat tool frames + artifact', () => {
     const chart = container.querySelector('.tool-chart[data-testid="echart"]');
     expect(chart).toBeTruthy();
     // ...and the backend spec was applied to the chart.
-    expect(setOption).toHaveBeenCalledWith(spec, true);
+    await waitFor(() => expect(setOption).toHaveBeenCalledWith(spec, true));
   });
 });
