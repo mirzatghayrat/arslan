@@ -5,9 +5,9 @@ Security model (decisions locked with the user 2026-07-02):
   • Ephemeral cwd: a fresh tmpdir per run, deleted afterwards.
   • Env fully scrubbed: the child NEVER inherits the server env (no API keys, no DB paths).
   • Resource caps: wall-clock timeout (process-group kill), CPU/address-space/file-size rlimits.
-  • NETWORK DENIED on macOS via `sandbox-exec` (kernel seatbelt). If the wrapper is unavailable
-    (non-darwin, or nested-sandbox environments), we run WITHOUT it and say so honestly in the
-    result — never silently pretend isolation. v2: user-configurable domain allowlist.
+  • NETWORK DENIED on macOS via `sandbox-exec` (kernel seatbelt). A missing or failing
+    wrapper never triggers an automatic unsandboxed retry. Only the separately configured
+    developer escape valve may select an unisolated backend BEFORE execution.
   • Batteries: a dedicated venv with numpy/pandas/matplotlib, created lazily on FIRST use from
     the host side (host has network; the sandboxed child does not). Falls back to the server's
     interpreter (stdlib-only) if creation fails — again, stated in the result.
@@ -314,6 +314,10 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         if sandboxed and wrote_ro:
             profile = readonly_profile(str(ro_dir.resolve()))
         wrapper = backend.wrapper(profile) if sandboxed else None
+        if sandboxed and not wrapper:
+            return {"ok": False, "sandboxed": False, "network_isolated": False,
+                    "error": "sandbox backend returned no wrapper; refusing to execute",
+                    "env_note": env_note}
         network_isolated = wrapper is not None
         if wrapper:
             argv = [*wrapper, *argv]
@@ -345,31 +349,9 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
                     "sandboxed": sandboxed,
                     "network_isolated": network_isolated, "env_note": env_note}
 
-        # Nested-sandbox environments refuse sandbox-exec itself (exit 65/71 before user code
-        # runs). Retry WITHOUT the wrapper and report isolation honestly (sandboxed→False too).
-        if wrapper and proc.returncode != 0 and b"sandbox-exec" in (err_b or b""):
-            network_isolated = False
-            sandboxed = False
-            proc = await _spawn([python, str(script)])
-            try:
-                out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-            except asyncio.CancelledError:
-                # Run cancel (S3-M1): same kill guard for the unsandboxed retry child.
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    proc.kill()
-                raise
-            except TimeoutError:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    proc.kill()
-                await proc.wait()
-                return {"ok": False, "error": f"execution timed out after {int(timeout_s)}s",
-                        "sandboxed": sandboxed,
-                        "network_isolated": network_isolated, "env_note": env_note}
-
+        # stderr is untrusted program output, not proof of a launcher failure. Even a
+        # genuine sandbox startup failure must remain a failure: never retry with fewer
+        # restrictions. The execution decision above is final for this invocation.
         stdout = _truncate((out_b or b"").decode("utf-8", errors="replace"))
         stderr = _truncate((err_b or b"").decode("utf-8", errors="replace"))
         files = sorted(

@@ -191,9 +191,8 @@ async def test_no_backend_valve_on_runs_unsandboxed_with_banner(monkeypatch, cap
     assert any("UNSANDBOXED run_python" in rec.message for rec in caplog.records)
 
 
-async def test_darwin_path_reports_sandboxed_true(monkeypatch):
-    # When a backend IS available the result carries sandboxed=True (env preset skips seatbelt
-    # wrapping via a stub backend so the test runs on any host).
+async def test_available_backend_without_wrapper_refuses(monkeypatch):
+    # An available() claim does not authorize execution without an actual wrapper.
     class _Avail(code_sandbox.SandboxBackend):
         name = "test-avail"
 
@@ -201,11 +200,58 @@ async def test_darwin_path_reports_sandboxed_true(monkeypatch):
             return True
 
         def wrapper(self, profile=None):
-            return None  # no real wrapper needed for the flag assertion
+            return None
 
     monkeypatch.setattr(code_sandbox, "_select_backend", lambda: _Avail())
     r = await code_sandbox.run_python("print('ok')")
-    assert r["ok"] is True and r["sandboxed"] is True
+    assert r["ok"] is False and r["sandboxed"] is False
+    assert "refusing" in r["error"]
+
+
+async def test_untrusted_stderr_never_retries_without_wrapper(monkeypatch):
+    class Backend(code_sandbox.SandboxBackend):
+        def available(self):
+            return True
+
+        def wrapper(self, profile=None):
+            return ["/test/sandbox-exec", "-p", "deny"]
+
+    class FailedProcess:
+        returncode = 1
+
+        async def communicate(self):
+            return b"", b"sandbox-exec: a marker entirely controlled by user code"
+
+    calls = []
+
+    async def spawn(*argv, **kwargs):
+        calls.append(argv)
+        return FailedProcess()
+
+    monkeypatch.setattr(code_sandbox, "_select_backend", Backend)
+    monkeypatch.setattr(code_sandbox.asyncio, "create_subprocess_exec", spawn)
+    result = await code_sandbox.run_python("raise SystemExit(1)")
+    assert not result["ok"]
+    assert result["sandboxed"] and result["network_isolated"]
+    assert len(calls) == 1
+    assert calls[0][0] == "/test/sandbox-exec"
+
+
+@_NEEDS_REAL_SANDBOX
+async def test_real_user_stderr_cannot_trigger_second_process():
+    result = await code_sandbox.run_python(
+        "import pathlib, sys\n"
+        "marker = pathlib.Path('attempt')\n"
+        "if marker.exists():\n"
+        "    print('UNSANDBOXED_SECOND_ATTEMPT')\n"
+        "else:\n"
+        "    marker.write_text('first')\n"
+        "    print('sandbox-exec', file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+    )
+    assert not result["ok"]
+    assert result["sandboxed"] and result["network_isolated"]
+    assert "UNSANDBOXED_SECOND_ATTEMPT" not in result["stdout"]
 
 
 async def test_executor_propagates_sandboxed(monkeypatch):
