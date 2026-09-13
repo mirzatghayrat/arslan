@@ -1,8 +1,11 @@
 # Arslan capabilities — the honest map
 
 This document states exactly what spawns (Arslan's specialist agents) can and cannot do,
-and where every boundary is enforced. It is kept deliberately honest: **everything listed
-as equippable works; everything gated says so.**
+and where boundaries are enforced. An equippable capability has an implementation;
+success still depends on permissions, setup, provider availability and the task.
+See the [source-generated inventory](CAPABILITY_INVENTORY.md) for current catalog,
+executor and provider-transport declarations, and [reliability contracts](RELIABILITY.md)
+for tested boundaries and limitations.
 
 ## The tier model (one choke point)
 
@@ -22,7 +25,7 @@ All capability reads/writes flow through `server/registry/service.py`:
 | Web Search & Scraping | `web_search`, `web_extract` | Live web via the configured search provider; the fetch resolves each hop once and connects to that pinned address, so a private/internal target is refused and cannot be swapped in afterwards by DNS. **Proxy caveat:** with `HTTPS_PROXY` (or `ALL_PROXY`) set, an **https** fetch cannot be pinned — the CONNECT tunnel would present the pinned IP to the TLS handshake and certificate validation would fail — so pinning is disabled for that combination and the protection is delegated to your proxy. It is logged at WARNING each time, so you can tell which mode an install is in. Plain **http** through a proxy is still pinned. Universal baseline for every spawn. |
 | Charting | `render_chart` | 9 chart types → interactive ECharts, backend-built from validated data (the model never authors render config). |
 | Deck / PPTX | `render_deck` | Native, editable PowerPoint from a validated slide spec — real shapes + speaker notes, not images. |
-| Code Sandbox | `run_python` | Local sandboxed Python: ephemeral tmpdir, fully scrubbed env (no keys), CPU/memory/output caps, **network denied** (macOS seatbelt; the result reports `network_isolated` honestly). numpy/pandas/matplotlib preinstalled (lazy first-use venv, ~200 MB disk). Can also run scripts bundled with imported skills (`{"skill_script": "<key>/<file>.py"}`). |
+| Code Sandbox | `run_python` | Default-deny macOS Seatbelt: runtime read-only, per-call workspace writable, staged references read-only, network denied and no automatic unsandboxed retry. Scrubbed environment and bounded output. Packaged app includes a locked Python/NumPy/Pandas/Matplotlib runtime; source installs may prepare a first-use venv. Recorded outputs persist as authenticated downloads. Can run imported skill scripts (`{"skill_script": "<key>/<file>.py"}`). Unsupported platforms refuse this sandboxed path. |
 | Skill Authoring | `create_skill` | Drafts a skill **candidate** only — going live always requires the human promote gate. |
 | MCP (`mcp_*`) | user-connected | Any MCP server the user connects and wires; one-click connect list for credential-free official servers. |
 
@@ -45,14 +48,20 @@ evaluation reports "insufficient samples" honestly — the human promote gate st
 ## Task execution model
 
 - Spawns run a bounded tool loop (up to 8 tool calls per turn, ~20 s per tool). Long jobs
-  are decomposed by Arslan (the orchestrator), not by unbounded spawn autonomy.
+  can be organized as explicitly started, immutable task recipes with dependencies,
+  approvals and 1–4 parallel steps. Completed-step reuse requires explicit resume.
+  Child tasks share whole-run request/tool/time/token/output/artifact budgets.
 - If the budget runs out mid-task the loop makes a text-only salvage attempt and answers
   honestly with what it has — raw tool-protocol JSON is never shown to the user.
-- Spawns do **not** browse the web interactively, execute shell commands, or message each
-  other. Full `code_execution` remains orchestrator-tier and un-wired for now (roadmap).
+- Spawns do **not** receive arbitrary peer messaging or unrestricted shell access.
+  Host command execution remains confirmation-gated and is not a filesystem jail.
+  The optional browser panel is an explicit static public-HTTPS preview, not an
+  autonomous interactive browser. User-connected MCP servers have their own trust
+  boundaries and are not covered by the Python sandbox.
 
 ## Provenance discipline
 
 Nothing third-party ships without a verified permissive license (`THIRD_PARTY_NOTICES.md`).
 The same gate applies to runtime imports. Web content entering prompts is framed as
-untrusted data (`wrap_external`) — instructions found inside it are never followed.
+untrusted data (`wrap_external`). This is a prompt boundary, not a guarantee against
+all prompt injection; tool authorization and execution policy remain necessary.

@@ -23,9 +23,9 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P1-08 | End-to-end task benchmark | 30 fixed deterministic engineering contracts and provenance runner added; real-model task benchmark pending approved budget |
 | P2-01 | Memory quality, context budgets, scale | CJK-aware context caps and bounded exact-vector scan tested at 1k/10k/100k; live semantic recall evaluation pending |
 | P2-02 | Evolution evidence and judge calibration | Judge schema/margin/disagreement handling hardened; invalid old probe retired; live calibration still pending |
-| P2-03 | Capability/version/provenance documentation | Pending |
+| P2-03 | Capability/version/provenance documentation | Source-generated catalog/executor/transport inventory with drift test; pinned browser runtime and corrected capability boundaries |
 | P2-04 | Dependency and test infrastructure | pypdf and frontend advisory fixes applied; npm audit zero; final regression pending |
-| P2-05 | Behavior-oriented module boundaries | Pending |
+| P2-05 | Behavior-oriented module boundaries | Partial: host_run, execution budgets, artifact store, recipes, browser proxy/service and vector scan isolated with behavior tests; broad App/tool-loop rewrite deferred |
 | P2-06 | Loading, empty states, steps and artifacts UI | Partial: recipe/artifact UI, graph loading/error/empty states and deferred chart loading implemented and UI-verified |
 | P2-07 | Voice and native desktop acceptance | Explicit device acceptance matrix recorded in EVALUATION.md; physical checks pending |
 | P3-01 | Versioned recipes and bounded collaboration | Immutable versions, dependency execution, 1–4 parallel steps, approval/resume API and six-language editor implemented; behavior tests pass |
