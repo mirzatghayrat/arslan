@@ -3,24 +3,10 @@
 Differences handled: messages are ``contents`` with ``parts`` (role "model" for
 the assistant), the system prompt is ``systemInstruction`` (top-level), auth is
 the ``x-goog-api-key`` header, ``temperature`` lives under ``generationConfig``,
-and streaming uses ``:streamGenerateContent?alt=sse``. Tools are driven by
-Arslan's own prompt/JSON protocol, so native tool mapping is omitted.
-
-🔴 TOOLS ARE ACCEPTED AND DROPPED — deliberately, and only until G1 round 2.
-
-`chat`/`chat_stream` take a `tools` argument and this provider does not
-serialise it. Gemini wants `functionDeclarations` with an OpenAPI-SUBSET schema
-(not full JSON Schema), which is real translation work, and ruling ①A put
-Anthropic first.
-
-This note exists because the absence of it was the worse half of the bug. The
-word `tools` appeared in this file exactly twice, both times in a signature,
-with nothing saying it went nowhere — so a reader wiring up an MCP server here
-had every reason to think it worked, and the failure is silent: the model never
-learns a tool exists, `tool_calls` comes back empty, and run_native treats the
-first reply as the final answer. Anthropic at least documented its own version
-of this. Until the translation lands, the capability matrix must show this cell
-RED, not merely untested.
+and streaming uses ``:streamGenerateContent?alt=sse``. Native function declarations
+use the documented parametersJsonSchema field; functionCall responses normalize
+to Arslan tools. Opaque continuation parts preserve Gemini thought signatures.
+Streaming with tools remains explicitly unsupported; run_native uses chat().
 """
 from __future__ import annotations
 
@@ -53,6 +39,15 @@ def _parts(content: Any) -> list[dict[str, Any]]:
             parts.append({"inline_data": {"mime_type": b["mime_type"], "data": b["data"]}})
         elif isinstance(b, dict) and b.get("type") == "text":
             parts.append({"text": b.get("text", "")})
+        elif isinstance(b, dict) and b.get("type") == "provider_content":
+            if b.get("provider") != "gemini":
+                raise ValueError("foreign provider continuation cannot be sent to Gemini")
+            parts.extend(b.get("parts") or [])
+        elif isinstance(b, dict) and b.get("type") == "function_response":
+            response = {"name": b["name"], "response": b["response"]}
+            if b.get("id"):
+                response["id"] = b["id"]
+            parts.append({"functionResponse": response})
         else:
             parts.append({"text": str(b)})
     return parts
@@ -99,14 +94,26 @@ class GeminiProvider(BaseLLMProvider):
             contents.append({"role": role, "parts": _parts(m["content"])})
         return system, contents
 
-    def _payload(self, messages: list[dict[str, Any]], temperature: float) -> dict[str, Any]:
+    def _payload(self, messages: list[dict[str, Any]], temperature: float,
+                 tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         system, contents = self._to_contents(messages)
         payload: dict[str, Any] = {
             "contents": contents,
-            "generationConfig": {"temperature": temperature},
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": 8192},
         }
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
+        if tools:
+            declarations = []
+            for tool in tools:
+                function = tool.get("function") or {}
+                if tool.get("type") != "function" or not function.get("name"):
+                    raise ValueError("Gemini tools require a named function declaration")
+                declarations.append({
+                    "name": function["name"], "description": function.get("description") or "",
+                    "parametersJsonSchema": function.get("parameters") or {"type": "object"},
+                })
+            payload["tools"] = [{"functionDeclarations": declarations}]
         return payload
 
     async def chat(
@@ -115,16 +122,13 @@ class GeminiProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> LLMResponse:
-        # G1 / ①A: `tools` is accepted and NOT serialised — Gemini needs
-        # functionDeclarations with an OpenAPI-subset schema, which lands in
-        # round 2. See the module docstring; the capability matrix shows RED.
         url = f"{self.base_url}/models/{self.model}:generateContent"
         # Use a generous read timeout — Gemini thinking models (e.g. 2.5 Pro) can
         # hold the connection for 120 s+ before returning the first token.
         timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
         async with self._client() as client:
             response = await client.post(
-                url, json=self._payload(messages, temperature),
+                url, json=self._payload(messages, temperature, tools),
                 headers=self._headers(), timeout=timeout,
             )
             try:
@@ -202,10 +206,24 @@ class GeminiProvider(BaseLLMProvider):
     @staticmethod
     def _parse_response(data: dict[str, Any]) -> LLMResponse:
         text = _first_text(data)
+        candidates = data.get("candidates") or []
+        parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+        calls = []
+        for index, part in enumerate(parts):
+            function = part.get("functionCall")
+            if function is None:
+                continue
+            if not isinstance(function.get("args", {}), dict):
+                raise ValueError("Gemini functionCall args must be an object")
+            calls.append({"id": function.get("id") or f"gemini_{index}", "type": "function",
+                          "provider_id": function.get("id"),
+                          "function": {"name": function.get("name", ""),
+                                       "arguments": function.get("args") or {}}})
         return LLMResponse(
             role="assistant",
             content=text or None,
-            tool_calls=[],
+            tool_calls=calls,
+            provider_content={"provider": "gemini", "parts": parts} if calls else None,
             usage=data.get("usageMetadata", {}) or {},
         )
 
@@ -216,4 +234,4 @@ def _first_text(obj: dict[str, Any]) -> str:
     if not candidates:
         return ""
     parts = (candidates[0].get("content") or {}).get("parts") or []
-    return "".join(p.get("text", "") for p in parts)
+    return "".join(p.get("text", "") for p in parts if not p.get("thought"))

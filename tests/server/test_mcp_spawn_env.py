@@ -18,9 +18,12 @@ from server.mcp import spawn_env
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
-    spawn_env.login_shell_path.cache_clear()
+    # Hold the original cached callable: tests replace the module attribute, and
+    # fixture teardown order must not decide whether cache cleanup crashes.
+    cached = spawn_env.login_shell_path
+    cached.cache_clear()
     yield
-    spawn_env.login_shell_path.cache_clear()
+    cached.cache_clear()
 
 
 def test_login_shell_path_is_fetched_once_then_cached(monkeypatch):

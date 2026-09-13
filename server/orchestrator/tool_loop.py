@@ -1363,6 +1363,8 @@ async def run_native(
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
 
         if not forced and tool_calls:
+            provider_content = getattr(resp, "provider_content", None)
+            history_start = len(convo)
             for call in tool_calls:
                 fn = call.get("function") or {}
                 name = str(fn.get("name") or "")
@@ -1406,6 +1408,24 @@ async def run_native(
                     confirm_command=confirm_command, mcp_fail_counts=mcp_fail_counts,
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
                     log_events=log_events, fetch_budget=fetch_budget, caller=caller)
+            if provider_content:
+                # Native Gemini needs the original model parts (including opaque
+                # signatures) followed by functionResponse parts, not a textified
+                # call transcript. Keep the same already-framed tool feedback.
+                added = convo[history_start:]
+                responses = []
+                for index in range(0, len(added), 2):
+                    invocation = json.loads(added[index]["content"])
+                    response = {"type": "function_response", "name": invocation["tool"],
+                                "response": {"result": added[index + 1]["content"]}}
+                    call_index = index // 2
+                    if call_index < len(tool_calls) and tool_calls[call_index].get("provider_id"):
+                        response["id"] = tool_calls[call_index]["provider_id"]
+                    responses.append(response)
+                del convo[history_start:]
+                convo.append({"role": "assistant", "content": [
+                    {"type": "provider_content", **provider_content}]})
+                convo.append({"role": "user", "content": responses})
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})

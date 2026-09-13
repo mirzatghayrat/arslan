@@ -18,7 +18,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P1-03 | Unified host/spawn Run, cancellation, events | Host Run lifecycle implemented; targeted storage/cancel/reconnect/accounting tests pass |
 | P1-04 | Persistent downloadable artifacts | Python Run outputs persisted with safe export, metadata and authenticated downloads; targeted tests pass |
 | P1-05 | Shared execution budget | Pending |
-| P1-06 | Provider contract verification | Pending; paid calls need budget |
+| P1-06 | Provider contract verification | Gemini native tool/continuation gap implemented and mock-wire roundtrip verified; live calls pending budget |
 | P1-07 | Recovery and backup acceptance | Pending |
 | P1-08 | End-to-end task benchmark | Pending; paid calls need budget |
 | P2-01 | Memory quality, context budgets, scale | Pending |
@@ -71,3 +71,17 @@ Release only the verified scope and clearly identify unverified features.
   with nosniff/CSP sandbox. Standalone unrecorded calls explicitly report that their
   files are temporary, not downloadable. Generic export and real Python roundtrip
   tests passed; full regression is the next gate.
+- Phase-one full regression at e4036d32: 3936 backend passes, 14 skips; four
+  failures were old host-Run assumptions/marker counts and seven teardown errors
+  came from a fixture relying on monkeypatch ordering. Corrected explicitly,
+  targeted rerun 38 passed. Frontend 1671 passed / one locale-key-count guard
+  failed; three new translations accounted for. Full rerun still required.
+- macOS marked suite: **40 passed, zero skipped** (night-macos.xml). CI's exact
+  native-test population guard updated alongside the measured test set.
+- Gemini non-stream native tools now serialize functionDeclarations with
+  parametersJsonSchema, normalize calls, preserve opaque thoughtSignature parts,
+  return grouped functionResponses, and exclude thought text from visible output.
+  Wire tests plus real tool-loop / mock HTTP two-tool roundtrip passed. This is
+  transport evidence, NOT live provider acceptance. References checked 2026-09-14:
+  https://ai.google.dev/api/generate-content#FunctionDeclaration and
+  https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures.

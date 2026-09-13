@@ -190,19 +190,32 @@ def test_openai_omits_the_key_when_there_are_no_tools():
 # signature, with no docstring or comment admitting the drop.
 # ---------------------------------------------------------------------------
 
-def test_gemini_admits_in_writing_that_it_drops_tools():
-    import inspect
+async def test_gemini_sends_native_function_declarations():
+    captured = {}
+    provider = GeminiProvider(model="gemini-test", transport=httpx.MockTransport(
+        _capture(captured, {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})))
+    await provider.chat([{"role": "user", "content": "test"}], tools=NEUTRAL_TOOLS)
+    declarations = captured["payload"]["tools"][0]["functionDeclarations"]
+    assert [f["name"] for f in declarations] == ["web_search", "mcp_playwright_navigate"]
+    assert declarations[0]["parametersJsonSchema"] == NEUTRAL_TOOLS[0]["function"]["parameters"]
+    assert captured["payload"]["generationConfig"]["maxOutputTokens"] == 8192
 
-    # The MODULE, not just the class — mirroring where anthropic_provider puts
-    # its own version of this disclosure (module docstring + an inline note at
-    # the payload site), so the two providers are honest in the same place.
-    src = inspect.getsource(inspect.getmodule(GeminiProvider))
-    assert "tools" in src
-    lowered = src.lower()
-    assert ("not implemented" in lowered or "dropped" in lowered or "ignored" in lowered), (
-        "Gemini still takes `tools` and discards it with nothing in the file saying so — "
-        "the half of this bug that costs the NEXT reader, not the user"
-    )
+
+def test_gemini_preserves_opaque_signature_and_parses_calls():
+    parts = [{"thought": True, "text": "not user-visible"},
+             {"functionCall": {"name": "web_search", "args": {"query": "test"}},
+              "thoughtSignature": "opaque-signature"}]
+    result = GeminiProvider._parse_response({"candidates": [{"content": {"parts": parts}}]})
+    assert result.tool_calls[0]["function"] == {"name": "web_search", "arguments": {"query": "test"}}
+    assert result.content is None
+    assert result.provider_content == {"provider": "gemini", "parts": parts}
+    _, contents = GeminiProvider._to_contents([
+        {"role": "assistant", "content": [{"type": "provider_content", **result.provider_content}]},
+        {"role": "user", "content": [{"type": "function_response", "name": "web_search",
+                                        "response": {"result": "found"}}]},
+    ])
+    assert contents[0]["parts"] == parts
+    assert contents[1]["parts"] == [{"functionResponse": {"name": "web_search", "response": {"result": "found"}}}]
 
 
 # ---------------------------------------------------------------------------

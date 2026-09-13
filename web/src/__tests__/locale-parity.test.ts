@@ -246,7 +246,8 @@ describe("locale parity", () => {
     // 1433 → 1436: voice.conversationStart / conversationStop / speaking — the
     //               conversation-mode toggle's label pair and the muted-while-
     //               replying marker (Task 6).
-    expect(enKeys).toHaveLength(1436);
+    // Durable file downloads add three messages, translated in all six locales.
+    expect(enKeys).toHaveLength(1439);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

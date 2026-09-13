@@ -16,7 +16,7 @@ def _patch_common(monkeypatch, arslan_mod):
     monkeypatch.setattr(arslan_mod.memory, "add_message", fake_add)
 
 
-async def test_handle_answer_injects_collection_kb(monkeypatch):
+async def test_handle_answer_injects_collection_kb(monkeypatch, execution_db):
     from server.orchestrator import arslan as arslan_mod
     from server.services import knowledge
     captured = {}
@@ -37,7 +37,7 @@ async def test_handle_answer_injects_collection_kb(monkeypatch):
     assert "[公司手册.pdf] 报销上限 500 元" in captured["system"]
 
 
-async def test_handle_answer_survives_retrieve_failure(monkeypatch):
+async def test_handle_answer_survives_retrieve_failure(monkeypatch, execution_db):
     from server.orchestrator import arslan as arslan_mod
     from server.services import knowledge
     captured = {}

@@ -35,7 +35,8 @@ TESTS = pathlib.Path(__file__).parents[1]
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
-    "server/test_code_sandbox.py": 8,
+    "server/test_code_sandbox.py": 14,
+    "server/test_artifact_store.py": 1,
     "server/test_ocr_vision.py": 5,
     "server/test_command_sandbox_net.py": 3,
     "server/test_skill_script_failclosed.py": 3,
@@ -55,7 +56,9 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 28
+EXPECTED_TOTAL = 40
+# The external-file test has six attack cases under one marked function.
+PARAMETERIZED_EXTRA_CASES = 5
 
 #: Text that means "this test only means something on macOS". Kept broad on
 #: purpose — a new gating phrase should trip the drift check and be added here
@@ -184,4 +187,4 @@ def test_the_marked_population_matches_the_measurement():
         f"the macos-marked population changed.\n  expected: {EXPECTED_FILES}\n"
         f"  actual:   {actual}"
     )
-    assert sum(actual.values()) == EXPECTED_TOTAL
+    assert sum(actual.values()) + PARAMETERIZED_EXTRA_CASES == EXPECTED_TOTAL

@@ -240,7 +240,8 @@ jobs:
         run: |
           .venv/bin/python - <<'PY'
           import sys, xml.etree.ElementTree as ET
-          EXPECTED = 28
+          # 40 real macOS cases: includes file-denial attacks and durable export.
+          EXPECTED = 40
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

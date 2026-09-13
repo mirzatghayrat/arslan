@@ -86,6 +86,9 @@ class LLMResponse(BaseModel):
     role: str = "assistant"
     content: str | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    # Opaque provider continuation parts (e.g. Gemini thought signatures). Never
+    # display them or flatten them into prompt text; return verbatim to that provider.
+    provider_content: dict[str, Any] | None = None
     usage: dict[str, Any]
 
 

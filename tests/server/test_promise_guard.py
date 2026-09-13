@@ -265,7 +265,7 @@ async def test_regression_doer_first_divert_promise_is_intercepted(maker, monkey
         evs = (await s.execute(select(ConversationEvent))).scalars().all()
         msgs = (await s.execute(
             select(ArslanMessage).order_by(ArslanMessage.id))).scalars().all()
-    assert runs == []
+    assert len(runs) == 1 and runs[0].kind == "host" and runs[0].spawn_id is None
 
     # 2. the correction was emitted live AND persisted (history stays honest)
     streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
