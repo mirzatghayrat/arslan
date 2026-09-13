@@ -92,6 +92,8 @@ class OpenAIProvider(BaseLLMProvider):
     ) -> LLMResponse:
         """POST to {base_url}/chat/completions and return a normalised LLMResponse."""
         payload = self._payload(messages, tools, temperature)
+        from arslan.execution_budget import model_request
+        payload["max_tokens"] = model_request(payload["max_tokens"])
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -178,6 +180,8 @@ class OpenAIProvider(BaseLLMProvider):
     ) -> AsyncIterator[str]:
         """Single SSE request: yield content deltas, capture the usage frame."""
         self._last_stream_usage = None  # reset per attempt — no stale carry-over
+        from arslan.execution_budget import model_request
+        payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST",

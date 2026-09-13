@@ -62,6 +62,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from arslan.llm import usage_sink
+from arslan.execution_budget import governed
 from server.db import session as db_session
 from server.db.models import ScheduledTask, ScheduledTaskRun
 from server.orchestrator import dispatcher, memory, run_trace
@@ -379,6 +380,7 @@ def _supervise(coro) -> asyncio.Task:
     return task
 
 
+@governed
 async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> dict:
     """One recorded headless dispatch: frames fan out to whatever sinks are attached
     (run_registry.make_emit — online users see the stream live, zero sinks drop

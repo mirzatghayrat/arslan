@@ -29,6 +29,7 @@ from server.orchestrator.tool_caller import ToolCaller
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
 from arslan.llm import prices, usage_sink
+from arslan.execution_budget import governed
 from arslan.llm.cached_system import build_cached_system
 from server.registry import service as registry_service
 from server.services import (
@@ -468,6 +469,7 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     return f"{user_message}\n{names}" if user_message else names
 
 
+@governed
 async def handle_user_message(
     conversation_id: str,
     user_message: str,
@@ -1216,6 +1218,7 @@ async def _invite_capability_summary(spawn_id: int) -> str:
     return "can help with this task"
 
 
+@governed
 async def dispatch_routed(  # noqa: ANN001
     conversation_id, spawn_id, task_brief, needs_proposal, emit: EventSink, *,
     user_message: str = "", route_ms: int | None = None,
@@ -2015,6 +2018,7 @@ async def _handle_escalation(  # noqa: ANN001
     return out
 
 
+@governed
 async def _dispatch_spawn(  # noqa: ANN001
     conversation_id,
     spawn_id,

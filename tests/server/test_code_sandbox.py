@@ -340,3 +340,41 @@ async def test_numpy_runtime_is_readable_but_not_writable():
         "else:\n    raise AssertionError('runtime write permitted')\n"
     )
     assert result["ok"], result
+
+
+async def test_bounded_pipe_reader_discards_excess_without_retaining_it():
+    class Stream:
+        def __init__(self):
+            self.blocks = 200
+
+        async def read(self, n):
+            if not self.blocks:
+                return b""
+            self.blocks -= 1
+            return b"x" * n
+
+    class Process:
+        stdout = Stream()
+        stderr = Stream()
+
+        async def wait(self):
+            return 0
+
+    out, err = await code_sandbox._bounded_communicate(Process())
+    assert len(out) < code_sandbox.MAX_OUTPUT_CHARS * 4 + 100
+    assert len(err) < code_sandbox.MAX_OUTPUT_CHARS * 4 + 100
+    assert b"truncated" in out and b"truncated" in err
+
+
+async def test_packaged_build_never_uses_sidecar_as_python(monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.delenv("ARSLAN_SANDBOX_PYTHON", raising=False)
+    monkeypatch.setattr(code_sandbox.shutil, "which", lambda *a, **k: None)
+    with pytest.raises(RuntimeError, match="requires Python"):
+        code_sandbox._host_python()
+
+
+async def test_escape_valve_is_disabled_in_packaged_build(monkeypatch):
+    monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
+    monkeypatch.setenv("ARSLAN_PACKAGED", "1")
+    assert not code_sandbox._unsandboxed_valve_open()

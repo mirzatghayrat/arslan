@@ -9,10 +9,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from arslan.llm import usage_sink
+from arslan.execution_budget import governed
 from server.orchestrator import run_trace
 from server.services import execution_context, run_recorder, run_registry
 
 
+@governed
 async def execute(conversation_id: str, user_message: str, emit: Callable[[dict], None],
                   body: Callable[[Callable[[dict], None]], Awaitable[str | None]],
                   *, has_images: bool = False) -> str | None:

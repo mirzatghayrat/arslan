@@ -469,6 +469,7 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
     return RunDetailOut(
         artifacts=artifact_store.list_artifacts(run_id),
         run=RunOut(
+            execution_budget=run.execution_budget,
             id=run.id, conversation_id=run.conversation_id, spawn_id=run.spawn_id,
             spawn_name=run.spawn_name, user_message=run.user_message, total_ms=run.total_ms,
             task_tokens=run.task_tokens, status=run.status,

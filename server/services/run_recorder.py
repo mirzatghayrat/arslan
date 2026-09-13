@@ -31,7 +31,8 @@ def _default_schedule(run_id: int) -> None:
     """Fire-and-forget judge scoring (overridable in tests)."""
     from server.services import run_eval_service
 
-    asyncio.create_task(run_eval_service.score(run_id))
+    from arslan.execution_budget import detached_context, governed
+    asyncio.create_task(governed(run_eval_service.score)(run_id), context=detached_context())
 
 
 # Module-level indirection so tests can stub scheduling.
@@ -289,6 +290,12 @@ class RunRecorder:
                     run.system_prompt = system_prompt
                     run.injected_kb = injected_kb
                     run.injected_kb_sources = injected_kb_sources
+                    from arslan.execution_budget import current
+                    budget = current()
+                    if budget is not None:
+                        if budget.remaining_seconds() <= 0:
+                            budget.stop_reason = budget.stop_reason or "wall_seconds"
+                        run.execution_budget = budget.snapshot()
                     for s in steps:
                         db.add(RunStep(run_id=self.run_id, **s))
                     if summary_message_id is not None:

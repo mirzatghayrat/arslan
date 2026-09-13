@@ -126,9 +126,12 @@ class GeminiProvider(BaseLLMProvider):
         # Use a generous read timeout — Gemini thinking models (e.g. 2.5 Pro) can
         # hold the connection for 120 s+ before returning the first token.
         timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
+        from arslan.execution_budget import model_request
+        payload = self._payload(messages, temperature, tools)
+        payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
         async with self._client() as client:
             response = await client.post(
-                url, json=self._payload(messages, temperature, tools),
+                url, json=payload,
                 headers=self._headers(), timeout=timeout,
             )
             try:
@@ -170,9 +173,12 @@ class GeminiProvider(BaseLLMProvider):
         self._last_stream_usage = None
         tin: int | None = None
         tout: int | None = None
+        from arslan.execution_budget import model_request
+        payload = self._payload(messages, temperature)
+        payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
         async with self._client() as client:
             async with client.stream(
-                "POST", url, json=self._payload(messages, temperature),
+                "POST", url, json=payload,
                 headers=self._headers(), timeout=timeout,
             ) as response:
                 try:

@@ -496,6 +496,7 @@ class RunEvaluationOut(BaseModel):
 
 
 class RunOut(BaseModel):
+    execution_budget: dict | None = None
     id: int
     conversation_id: str
     spawn_id: int | None

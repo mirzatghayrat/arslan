@@ -33,6 +33,10 @@ def safe_filename(run_id: int, filename: str) -> bool:
 def store_bytes(run_id: int, title: str, data: bytes) -> dict:
     if run_id <= 0 or len(data) > MAX_FILE_BYTES:
         raise ValueError("invalid artifact owner or oversized file")
+    from arslan.execution_budget import current
+    budget = current()
+    if budget is not None:
+        budget.reserve_artifact(len(data))
     basename = re.sub(r"[^\w.() -]", "_", Path(title).name)[:120].strip(". ") or "file.bin"
     basename = basename.replace("..", "_")
     filename = f"run_{run_id}_{uuid.uuid4().hex[:16]}_{basename}"
@@ -70,7 +74,10 @@ def export_workspace(run_id: int, workspace: Path, *, excluded: set[str]) -> tup
     warnings: list[str] = []
     total = 0
     workspace = workspace.resolve()
-    for path in sorted(workspace.rglob("*")):
+    for scanned, path in enumerate(workspace.rglob("*")):
+        if scanned >= 512:
+            warnings.append("Output scan limit reached (512 entries)")
+            break
         relative = path.relative_to(workspace)
         if any(part in excluded for part in relative.parts):
             continue
@@ -96,7 +103,12 @@ def export_workspace(run_id: int, workspace: Path, *, excluded: set[str]) -> tup
                 if len(data) > limit:
                     warnings.append(f"Output grew beyond limit: {relative}")
                     continue
-            artifacts.append(store_bytes(run_id, str(relative), data))
+            from arslan.execution_budget import BudgetExceeded
+            try:
+                artifacts.append(store_bytes(run_id, str(relative), data))
+            except BudgetExceeded as exc:
+                warnings.append(str(exc))
+                break
             total += len(data)
         except OSError as exc:
             warnings.append(f"Could not preserve {relative}: {type(exc).__name__}")

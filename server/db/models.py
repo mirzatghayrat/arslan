@@ -368,6 +368,7 @@ class Run(Base):
     ended_at = Column(DateTime, nullable=True)
     total_ms = Column(Integer, nullable=True)
     task_tokens = Column(Integer, nullable=False, default=0)   # router+dispatch+tools (NOT judge)
+    execution_budget = Column(JSON, nullable=True)
     status = Column(String(20), nullable=False, default="recording")
     # "recording" | "recorded" | "scored" | "score_failed" | "replayed" | "cancelled" | "interrupted"
     overall_score = Column(Float, nullable=True)   # /10

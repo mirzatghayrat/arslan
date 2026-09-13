@@ -209,10 +209,13 @@ class AnthropicProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
     ) -> LLMResponse:
+        from arslan.execution_budget import model_request
+        payload = self._payload(messages, temperature, tools)
+        payload["max_tokens"] = model_request(payload["max_tokens"])
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/messages",
-                json=self._payload(messages, temperature, tools),
+                json=payload,
                 headers=self._headers(),
                 timeout=60.0,
             )
@@ -243,6 +246,8 @@ class AnthropicProvider(BaseLLMProvider):
                 f"{type(self).__name__}.chat_stream does not support tools; "
                 "use chat() for tool-calling turns")
         payload = {**self._payload(messages, temperature), "stream": True}
+        from arslan.execution_budget import model_request
+        payload["max_tokens"] = model_request(payload["max_tokens"])
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
         # Review I2: message_start ALSO carries an initial output_tokens (≈1), so

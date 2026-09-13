@@ -17,7 +17,7 @@ An 8/10 target is an acceptance goal, not a claim of achieved quality.
 | P1-02 | Accurate safety documentation and release | Pending |
 | P1-03 | Unified host/spawn Run, cancellation, events | Host Run lifecycle implemented; targeted storage/cancel/reconnect/accounting tests pass |
 | P1-04 | Persistent downloadable artifacts | Python Run outputs persisted with safe export, metadata and authenticated downloads; targeted tests pass |
-| P1-05 | Shared execution budget | Pending |
+| P1-05 | Shared execution budget | Shared request/tool/time/token/output/artifact limits implemented; targeted tests pass |
 | P1-06 | Provider contract verification | Gemini native tool/continuation gap implemented and mock-wire roundtrip verified; live calls pending budget |
 | P1-07 | Recovery and backup acceptance | Pending |
 | P1-08 | End-to-end task benchmark | Pending; paid calls need budget |
@@ -85,3 +85,18 @@ Release only the verified scope and clearly identify unverified features.
   transport evidence, NOT live provider acceptance. References checked 2026-09-14:
   https://ai.google.dev/api/generate-content#FunctionDeclaration and
   https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures.
+- P1-05: nested dispatches and concurrent child tasks share one budget. Provider
+  HTTP requests (including retries), tool calls, wall time, output tokens and
+  artifact bytes are admitted against limits; actual token usage gates the next
+  request, not a guaranteed dollar ceiling. Snapshots persist on Run records.
+  Defaults: 32 requests, 24 tools, 128k tokens, 600s, 8192 output tokens/request,
+  100 MiB artifacts; configurable through ARSLAN_RUN_MAX_* environment settings.
+  Background scoring receives a separate bounded context. Nine budget behavior
+  tests pass, including parallel admission, multi-tool responses and timeout
+  finalization. Python pipe capture and directory scanning are bounded too.
+- Packaged builds never relaunch the frozen server as a Python CLI and never
+  honor the development unsandboxed escape valve. Without a verified external
+  Python 3.11+ interpreter, computation fails with an actionable prerequisite.
+- First remote CI: frontend, native macOS and secrets passed; Linux backend
+  had one stale Gemini capability matrix failure (3902 passed). Updated the
+  transport claim and preserved unknown/unsupported-state mechanism tests.

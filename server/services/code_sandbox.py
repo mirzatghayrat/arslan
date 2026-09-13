@@ -61,13 +61,34 @@ def _create_batteries_env(venv_dir: Path) -> tuple[str, str]:
     """Host-side, one-time: venv + numpy/pandas/matplotlib. Blocking — call in a thread.
     Writes a .ready marker ONLY after pip succeeds, so a half-built env (venv created, pip
     failed) is never mistaken for a working one on the next boot."""
-    subprocess.run([sys.executable, "-m", "venv", "--clear", str(venv_dir)],
+    subprocess.run([_host_python(), "-m", "venv", "--clear", str(venv_dir)],
                    check=True, capture_output=True, timeout=120)
     py = venv_dir / "bin" / "python"
     subprocess.run([str(py), "-m", "pip", "install", "--quiet", *_BATTERIES],
                    check=True, capture_output=True, timeout=600)
     (venv_dir / ".ready").write_text("ok")
     return str(py), "batteries: numpy/pandas/matplotlib"
+
+
+def _host_python() -> str:
+    """A frozen sidecar is NOT a Python CLI; never re-launch the server as one."""
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    configured = os.environ.get("ARSLAN_SANDBOX_PYTHON", "").strip()
+    python = configured or shutil.which("python3", path="/opt/homebrew/bin:/usr/local/bin")
+    if not python or not Path(python).is_absolute() or not Path(python).is_file():
+        raise RuntimeError("Packaged Python execution requires Python 3.11+; install it or "
+                           "set ARSLAN_SANDBOX_PYTHON to its absolute interpreter path")
+    if Path(python).resolve() == Path(sys.executable).resolve():
+        raise RuntimeError("The packaged server cannot be used as the sandbox interpreter")
+    probe = subprocess.run(
+        [python, "-I", "-c", "import sys; print(int(sys.version_info >= (3, 11)))"],
+        capture_output=True, text=True, timeout=5,
+        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+    )
+    if probe.returncode != 0 or probe.stdout.strip() != "1":
+        raise RuntimeError("Sandbox interpreter must be a working Python 3.11+")
+    return python
 
 
 async def _sandbox_python() -> tuple[str, str]:
@@ -85,7 +106,7 @@ async def _sandbox_python() -> tuple[str, str]:
     except Exception as exc:  # noqa: BLE001 — degraded but honest fallback
         logger.warning("sandbox batteries env creation failed: %s", exc)
         shutil.rmtree(venv_dir, ignore_errors=True)
-        _env_cache = (sys.executable, "batteries unavailable — stdlib only")
+        _env_cache = (_host_python(), "batteries unavailable — using host Python runtime")
     return _env_cache
 
 
@@ -232,6 +253,10 @@ def _select_backend() -> SandboxBackend:
 def _unsandboxed_valve_open() -> bool:
     """The deliberate, VISIBLE escape valve: ARSLAN_ALLOW_UNSANDBOXED_PY truthy lets run_python
     execute WITHOUT isolation (pure-stdlib no-net compute is real before bubblewrap lands)."""
+    from server import config
+    if (config.settings.is_prod or getattr(sys, "frozen", False)
+            or os.environ.get("ARSLAN_PACKAGED", "").strip().lower() in {"1", "true", "yes", "on"}):
+        return False
     return os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY", "").strip().lower() in (
         "1", "true", "yes", "on")
 
@@ -263,6 +288,26 @@ def _truncate(s: str) -> str:
     if len(s) <= MAX_OUTPUT_CHARS:
         return s
     return s[:MAX_OUTPUT_CHARS] + f"\n…[truncated, {len(s)} chars total]"
+
+
+async def _bounded_communicate(proc) -> tuple[bytes, bytes]:
+    """Drain pipes continuously but retain only a bounded prefix, not unbounded RAM."""
+    if not hasattr(proc, "stdout") or not hasattr(proc, "stderr"):
+        return await proc.communicate()  # Minimal injected process doubles.
+
+    async def read(stream):
+        kept = bytearray()
+        total = 0
+        while block := await stream.read(65536):
+            total += len(block)
+            kept.extend(block[:max(0, MAX_OUTPUT_CHARS * 4 - len(kept))])
+        if total > len(kept):
+            kept.extend(f"\n[output truncated; {total} bytes]".encode())
+        return bytes(kept)
+
+    out, err = await asyncio.gather(read(proc.stdout), read(proc.stderr))
+    await proc.wait()
+    return out, err
 
 
 async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
@@ -307,7 +352,11 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
     else:
         sandboxed = True
 
-    python, env_note = await _sandbox_python()
+    try:
+        python, env_note = await _sandbox_python()
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "sandboxed": False, "network_isolated": False,
+                "error": str(exc)}
     tmp = Path(tempfile.mkdtemp(prefix="arslan-sbx-"))
     try:
         script = tmp / "main.py"
@@ -367,7 +416,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
 
         proc = await _spawn(argv)
         try:
-            out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+            out_b, err_b = await asyncio.wait_for(_bounded_communicate(proc), timeout=timeout_s)
         except asyncio.CancelledError:
             # Run cancel (S3-M1): the child must not outlive the cancelled task.
             try:
@@ -389,11 +438,19 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         # stderr is untrusted program output, not proof of a launcher failure. Even a
         # genuine sandbox startup failure must remain a failure: never retry with fewer
         # restrictions. The execution decision above is final for this invocation.
+        # A child may close its pipes and keep running after the interpreter exits.
+        # Kill the owned session's remaining group before snapshotting files.
+        if getattr(proc, "pid", None) is not None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         stdout = _truncate((out_b or b"").decode("utf-8", errors="replace"))
         stderr = _truncate((err_b or b"").decode("utf-8", errors="replace"))
+        from itertools import islice
         files = sorted(
             f"{p.relative_to(tmp)} ({p.stat().st_size}B)"
-            for p in tmp.rglob("*")
+            for p in islice(tmp.rglob("*"), 512)
             if not p.is_symlink() and p.is_file() and p != script and ".mpl" not in p.parts
             and "references" not in p.parts  # read-only inputs we staged, not code outputs
             and p.name not in extra_names  # inputs we staged, not outputs the code produced

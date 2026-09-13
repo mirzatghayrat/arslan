@@ -6,7 +6,7 @@ captures the real request body rather than reading the source):
 
     openai-compatible   tools ARE sent
     anthropic direct    tools ARE sent   (G1, 2026-08-01)
-    gemini              tools are DROPPED
+    gemini              tools ARE sent   (2026-09-14)
 
 On a provider that drops them, every MCP tool and every native tool a spawn is
 equipped with is silently inert. The equipment page says "equipped", the model
@@ -45,7 +45,7 @@ NATIVE_TOOL_CALLS: dict[str, str] = {
     # G1 ①A. Flipped only because the wire test above re-measures it — the
     # table is a claim and that test is what stops it becoming decoration.
     "anthropic": SUPPORTED,     # _translate_tools -> tools[].input_schema; tool_use parsed back
-    "gemini": UNSUPPORTED,      # arslan/llm/providers/gemini_provider.py builds no `tools`
+    "gemini": SUPPORTED,       # functionDeclarations + functionCall/functionResponse roundtrip
     # Tier-0 presets. The Settings dropdown stores the PRESET KEY as the
     # provider (presets.provider_options: "the frontend renders label, stores
     # key"), and expand_preset turns every one of these into provider "openai"
@@ -70,9 +70,6 @@ REASONS: dict[str, str] = {
     # anthropic has no entry any more: a reason exists to explain a capability
     # that will NOT run, and leaving a stale one here would have it surface
     # beside a capability that now does.
-    "gemini": ("Arslan's Gemini path sends text only — it does not pass tool "
-               "definitions to the model yet. Tools you install will not be "
-               "called while this provider is selected."),
 }
 
 

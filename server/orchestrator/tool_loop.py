@@ -494,6 +494,10 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     run_command is special: it requires per-command user confirmation via the injected
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default)."""
+    from arslan.execution_budget import current
+    budget = current()
+    if budget is not None:
+        budget.tool()
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
 
@@ -1206,10 +1210,13 @@ async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
     then produces nothing); a single retry recovers most transient stalls. Framework-general
     reliability — any BYOK provider can be flaky, so the loop shouldn't dead-hang on one bad call."""
     last: Exception | None = None
+    from arslan.execution_budget import BudgetExceeded
     for _ in range(2):
         try:
             return await asyncio.wait_for(
                 a.chat(system, user, history=history, tools=tools), timeout=_CHAT_TIMEOUT_S)
+        except BudgetExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001
             last = exc
     raise last if last else RuntimeError("chat failed")

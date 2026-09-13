@@ -115,7 +115,7 @@ def test_unverified_says_nobody_checked_rather_than_naming_a_limit():
     assert "nobody has checked" in reason
 
 
-def test_the_reason_blames_arslan_not_the_users_model():
+def test_the_reason_blames_arslan_not_the_users_model(monkeypatch):
     """A user told "your model does not support tools" goes shopping for a
     different subscription to fix OUR gap. The affected provider's models can
     call tools perfectly well; Arslan does not send them.
@@ -123,7 +123,10 @@ def test_the_reason_blames_arslan_not_the_users_model():
     Anthropic left this list in G1 — it now transmits tools, so it has no reason
     string any more. A reason exists to explain something that will NOT run;
     keeping a stale one would surface it beside a capability that now does."""
-    for provider in ("gemini",):
+    monkeypatch.setitem(fit.NATIVE_TOOL_CALLS, "test-unsupported", fit.UNSUPPORTED)
+    monkeypatch.setitem(fit.REASONS, "test-unsupported",
+                        "Arslan does not transmit tools on this path; tools will not be called.")
+    for provider in ("test-unsupported",):
         reason = fit.tool_calling_reason(provider)
         assert "Arslan" in reason, reason
         assert "will not be called" in reason
@@ -131,12 +134,9 @@ def test_the_reason_blames_arslan_not_the_users_model():
 
 def test_capabilities_are_annotated_and_never_left_blank():
     caps = [{"key": "playwright"}, {"key": "some-skill", "needs_tool_calls": False}]
-    # gemini, not anthropic: this test is about the MECHANISM (never leave a
-    # capability unannotated), so it needs a provider that genuinely still drops
-    # tools. Anthropic was that example until G1 made it work.
-    out = fit.assess("gemini", caps)
+    out = fit.assess("unknown-provider", caps)
     assert {c["key"]: c["fitness"] for c in out} == {
-        "playwright": fit.UNSUPPORTED,
+        "playwright": fit.UNVERIFIED,
         # a prompt-injected skill does not need the tool transport, so the gap
         # does not apply to it — marking everything unsupported would be its own
         # dishonesty
@@ -168,8 +168,7 @@ async def test_the_registry_endpoint_reports_the_gap(monkeypatch):
     from server.services import settings_service
 
     async def fake_settings(session):
-        # see above — the endpoint test needs a provider with a live gap
-        return {"llm_provider": "gemini"}
+        return {"llm_provider": "unknown-provider"}
 
     monkeypatch.setattr(settings_service, "get_settings", fake_settings)
 
@@ -185,8 +184,8 @@ async def test_the_registry_endpoint_reports_the_gap(monkeypatch):
             return _Result()
 
     out = await registry_api.get_registry(session=_Session())
-    assert out.tool_calling == fit.UNSUPPORTED
-    assert out.tool_calling_note and "Arslan" in out.tool_calling_note
+    assert out.tool_calling == fit.UNVERIFIED
+    assert out.tool_calling_note and "nobody has checked" in out.tool_calling_note
 
 
 @pytest.mark.asyncio

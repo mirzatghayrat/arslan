@@ -17,6 +17,8 @@ _detail: ContextVar[dict[tuple[str | None, str | None], dict] | None] = ContextV
 def report(tokens: int) -> None:
     """Add a token count to the active bucket (no-op when none is active)."""
     bucket = _sink.get()
+    from arslan.execution_budget import charge_tokens
+    charge_tokens(tokens)
     if bucket is not None:
         bucket.append(int(tokens))
 
