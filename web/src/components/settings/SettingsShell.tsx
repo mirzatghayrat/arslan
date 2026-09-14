@@ -100,8 +100,8 @@ export default function SettingsShell({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row flex-1">
-      <aside data-testid="settings-sidebar" className="w-full lg:w-60 xl:w-64 lg:shrink-0 bg-sidebar/60 border-b lg:border-b-0 lg:border-r border-border p-5 flex flex-col">
+    <div className="flex flex-col md:flex-row flex-1">
+      <aside data-testid="settings-sidebar" className="w-full md:w-52 lg:w-60 xl:w-64 md:shrink-0 bg-sidebar/60 border-b md:border-b-0 md:border-r border-border p-5 flex flex-col">
         <div className="flex items-center gap-3 mb-7 mt-2" data-tauri-drag-region="deep">
           <img src="/arslan-mark.png" alt="" className="w-9 h-9 object-contain arslan-mark" draggable={false} />
           <span className="text-xl font-semibold">Arslan</span>
@@ -121,14 +121,14 @@ export default function SettingsShell({
 
         <nav
           aria-label={t('settings.navRegion')}
-          className="flex flex-row lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0"
+          className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0"
         >
           {groups.map(({ group, sections }) => (
             <React.Fragment key={group.id}>
               {/* Group headings are hidden while filtering: with two of seven
                   entries left, three headings are more chrome than content. */}
               {!matches && (
-                <div className="hidden lg:block px-3 pt-4 pb-1.5 text-[10px] font-sans font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                <div className="hidden md:block px-3 pt-4 pb-1.5 text-[10px] font-sans font-medium uppercase tracking-[0.1em] text-muted-foreground">
                   {t(group.labelKey)}
                 </div>
               )}
@@ -142,7 +142,7 @@ export default function SettingsShell({
             </p>
           )}
         </nav>
-        {onBack && <button type="button" data-testid="settings-back" onClick={onBack} className="mt-6 lg:mt-auto flex items-center gap-3 px-3 pt-8 pb-2 text-sm text-muted-foreground hover:text-foreground">
+        {onBack && <button type="button" data-testid="settings-back" onClick={onBack} className="mt-6 md:mt-auto flex items-center gap-3 px-3 pt-8 pb-2 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="w-4 h-4" />{t('settings.backToWorkspace')}
         </button>}
       </aside>
