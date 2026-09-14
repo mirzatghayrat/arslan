@@ -51,6 +51,9 @@ by calling this the complete personalization gate.
 The final matcher/context/multi-turn/scoped-turn run passed **132 tests** in
 63.54 seconds. Earlier expanded scope/restore/style/worker coverage passed 153
 tests, and the resume/entry/tool/locality regression passed 53 tests; these sets
-overlap and are not added together. Ruff and whitespace checks passed. The same
-source still needs a complete frozen regression before release; focused results
-alone do not update the older complete-run evidence in W17.
+overlap and are not added together. Ruff and whitespace checks passed. A complete
+frozen backend run on clean `bec04286` then passed **4,701 tests, with 14 skips
+and 19 warnings in 440.60 seconds**. The isolated report is
+`/tmp/arslan-memory-relevance-regression.sfva4B/backend.xml`; skips, warnings and
+remaining product gates are recorded in W17. This is engineering evidence, not
+real-model acceptance or release approval.

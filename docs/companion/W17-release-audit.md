@@ -5,7 +5,16 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-Latest complete backend run: clean `43649d7e` (including normalized knowledge
+Latest complete backend run: clean `bec04286` (including local relevance
+filtering and task-query binding), **4,701 passed, 14 skipped, 19 warnings in
+440.60 seconds**. Report:
+`/tmp/arslan-memory-relevance-regression.sfva4B/backend.xml`. This again used a
+scrubbed environment, isolated HOME/data and disabled live models. Skip categories
+remain unchanged; the aiosqlite guard recorded 85 closed-loop deliveries. Source
+remained frozen through completion. Frontend source is unchanged from the last
+complete 1,820-test/build run.
+
+Previous complete backend run: clean `43649d7e` (including normalized knowledge
 images and multi-turn runtime bindings), **4,610 passed, 14 skipped, 20 warnings
 in 411.59 seconds**. Report:
 `/tmp/arslan-companion-final-regression.dOUHnb/backend.xml`. The environment was
@@ -26,8 +35,9 @@ live UI verification is still unavailable.
 Subsequent relevance work addresses that reproduction with a local lexical
 filter, task-query binding and host-request regressions in six locales. Its scope
 and remaining semantic/FTS limitations are recorded in `memory-relevance.md`.
-Until a new frozen full run is recorded, the complete result above still applies
-only to `43649d7e`, not to the subsequent relevance changes.
+The latest frozen run above now covers those changes. Lexical matching still has
+semantic and arbitrary-paraphrase limitations; this is not the entire real-model
+personalization gate.
 
 Source `4bb3aa00` was clean when the complete Python suite started. The run used
 a new temporary HOME/data directory, a scrubbed environment, a synthetic secret,
@@ -78,7 +88,8 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `43649d7e` full backend passes; unchanged frontend's full tests/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
+| Complete engineering regression | Clean `bec04286` full backend passes; unchanged frontend's full tests/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
+| Context evidence UI | Backend receipt endpoint exists, but TaskPanel/companion API client do not expose it | Task-scoped receipt display, selected-vs-delivered semantics, deleted/revised references, six-locale and live UI checks |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |
