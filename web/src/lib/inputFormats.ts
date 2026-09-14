@@ -1,4 +1,4 @@
-import registry from "../../../server/resources/input_formats.json";
+import registry from "./input_formats.json";
 
 export const INPUT_FORMATS = registry;
 export const INPUT_ACCEPT = [...registry.text, ...registry.document, ...registry.spreadsheet,

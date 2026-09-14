@@ -33,7 +33,7 @@ datas = []
 datas += [(os.path.join(ROOT, "server", "resources", "artifact_inspector.py"), "server/resources")]
 datas += [(os.path.join(ROOT, "server", "resources", "browser_reader.cjs"), "server/resources")]
 datas += [(os.path.join(ROOT, "server", "resources", "browser_reader_policy.cjs"), "server/resources")]
-datas += [(os.path.join(ROOT, "server", "resources", "input_formats.json"), "server/resources")]
+datas += [(os.path.join(ROOT, "web", "src", "lib", "input_formats.json"), "server/resources")]
 binaries = []
 
 # `server` is NOT in the built wheel (pyproject's hatch wheel target packages

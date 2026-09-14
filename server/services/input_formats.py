@@ -8,7 +8,11 @@ import re
 import zipfile
 from xml.etree import ElementTree as ET
 
-REGISTRY = json.loads((Path(__file__).resolve().parent.parent / "resources/input_formats.json").read_text())
+_SERVER = Path(__file__).resolve().parent.parent
+_REGISTRY_PATH = _SERVER / "resources/input_formats.json"
+if not _REGISTRY_PATH.exists():
+    _REGISTRY_PATH = _SERVER.parent / "web/src/lib/input_formats.json"
+REGISTRY = json.loads(_REGISTRY_PATH.read_text())
 MAX_TEXT = 200_000
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
       "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
