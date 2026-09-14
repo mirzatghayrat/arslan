@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field, model_validator
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 
 from arslan.companion.contracts import Contract
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite
@@ -164,12 +164,71 @@ async def conversation_context(conversation_id: str, repo=Depends(_repository)):
 
 
 @router.get("/conversations/{conversation_id}/context/receipts")
-async def context_receipts(conversation_id: str, limit: int = Query(20, ge=1, le=100), repo=Depends(_repository)):
+async def context_receipts(conversation_id: str, limit: int = Query(20, ge=1, le=100),
+                           task_id: str | None = Query(None, min_length=1, max_length=200),
+                           before_id: str | None = Query(None, min_length=1, max_length=200),
+                           repo=Depends(_repository)):
     from server.db.models import ContextReceiptRecord
-    rows = (await repo.db.execute(select(ContextReceiptRecord).where(
+    statement = select(ContextReceiptRecord).where(
         ContextReceiptRecord.owner_id == USER.owner_id, ContextReceiptRecord.conversation_id == conversation_id,
-    ).order_by(ContextReceiptRecord.created_at.desc()).limit(limit))).scalars().all()
-    return [{"receipt": row.receipt, "created_at": row.created_at.isoformat() + "Z"} for row in rows]
+    )
+    if task_id is not None:
+        statement = statement.where(ContextReceiptRecord.task_id == task_id)
+    if before_id is not None:
+        cursor = await repo.db.scalar(statement.where(ContextReceiptRecord.id == before_id))
+        if cursor is None:
+            raise HTTPException(404, detail={"code": "context_receipt_not_found"})
+        statement = statement.where(or_(ContextReceiptRecord.created_at < cursor.created_at,
+            and_(ContextReceiptRecord.created_at == cursor.created_at, ContextReceiptRecord.id < cursor.id)))
+    rows = (await repo.db.execute(statement.order_by(
+        ContextReceiptRecord.created_at.desc(), ContextReceiptRecord.id.desc()).limit(limit))).scalars().all()
+    result = []
+    for row in rows:
+        receipt = dict(row.receipt) if isinstance(row.receipt, dict) else {}
+        # Old/foreign producers may have attached titles to memory references.
+        # Resolve text only via the deletion-aware, version-bound review route.
+        if isinstance(receipt.get("used"), list):
+            receipt["used"] = [
+                {key: item[key] for key in ("id", "kind", "revision") if key in item}
+                if isinstance(item, dict) and item.get("kind") == "memory" else item
+                for item in receipt["used"]]
+        result.append({"id": row.id, "receipt": receipt, "created_at": row.created_at.isoformat() + "Z"})
+    return result
+
+
+@router.get("/conversations/{conversation_id}/context/receipts/{receipt_id}/memories/{entry_id}")
+async def receipt_memory(conversation_id: str, receipt_id: str, entry_id: str, repo=Depends(_repository)):
+    """Resolve the recorded version on explicit review, never from a cached title.
+
+    The receipt stays metadata-only. Deletion or a missing/cross-owner revision
+    wins over any historical reference; no content is reconstructed from it.
+    """
+    from server.db.models import ContextReceiptRecord, MemoryRevision
+    row = await repo.db.scalar(select(ContextReceiptRecord).where(
+        ContextReceiptRecord.id == receipt_id, ContextReceiptRecord.owner_id == USER.owner_id,
+        ContextReceiptRecord.conversation_id == conversation_id))
+    if row is None:
+        raise HTTPException(404, detail={"code": "context_receipt_not_found"})
+    refs = row.receipt.get("used", []) if isinstance(row.receipt, dict) else []
+    refs = refs if isinstance(refs, list) else []
+    ref = next((item for item in refs if isinstance(item, dict)
+                and item.get("kind") == "memory" and item.get("id") == entry_id), None)
+    if ref is None or type(ref.get("revision")) is not int or ref["revision"] < 1:
+        raise HTTPException(404, detail={"code": "context_memory_not_found"})
+    entry = await repo.db.scalar(select(MemoryEntry).where(
+        MemoryEntry.id == entry_id, MemoryEntry.owner_id == USER.owner_id))
+    result = {"id": entry_id, "recorded_version": ref["revision"], "current_version": None,
+              "entry_status": None, "status": "unavailable", "content": None}
+    if entry is None:
+        return result
+    result.update(current_version=entry.version, entry_status=entry.status)
+    if entry.status == "deleted":
+        return {**result, "status": "deleted"}
+    revision = await repo.db.scalar(select(MemoryRevision).where(
+        MemoryRevision.entry_id == entry_id, MemoryRevision.version == ref["revision"]))
+    if revision is None or revision.content is None:
+        return result
+    return {**result, "status": "available", "content": revision.content}
 
 
 @router.put("/conversations/{conversation_id}/context")

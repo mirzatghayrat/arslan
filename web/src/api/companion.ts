@@ -75,6 +75,26 @@ export interface MemoryRevision {
   id: string; version: number; content: string | null; change_reason: string; created_at: string;
   style_reference?: StyleReference | null;
 }
+export type ContextFilterReason = "scope" | "permission" | "deleted" | "inactive" | "sensitive" | "irrelevant" | "budget";
+export interface ContextReceiptRecord {
+  id: string;
+  created_at: string;
+  receipt: {
+    id: string; task_id: string; run_id: string;
+    memory_mode: "normal" | "disabled" | "temporary";
+    used: { id: string; kind: string; revision: number }[];
+    filter_reasons: ContextFilterReason[];
+    estimated_tokens: number;
+    cloud_use: "not_sent" | "approved";
+    local_only_used: boolean;
+  };
+}
+export interface ContextMemoryReview {
+  id: string; recorded_version: number; current_version: number | null;
+  entry_status: MemoryStatus | null;
+  status: "available" | "deleted" | "unavailable";
+  content: string | null;
+}
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
 const projectBody = ({ name, kind, summary, workspace_ref, collection_ids, app_binding }: ProjectInput): ProjectInput =>
   ({ name, kind, summary, workspace_ref, collection_ids, app_binding });
@@ -99,6 +119,11 @@ export const companionApi = {
     `/memory/proposals/${id}/resolve`, json("POST", { accept, sensitive_acknowledged: sensitive,
       use_policy: cloud ? "cloud_allowed" : "local_only" })),
   context: (conversationId: string) => request<ConversationContext>(`/conversations/${encodeURIComponent(conversationId)}/context`),
+  contextReceipts: (conversationId: string, taskId: string, beforeId?: string) => request<ContextReceiptRecord[]>(
+    `/conversations/${encodeURIComponent(conversationId)}/context/receipts?task_id=${encodeURIComponent(taskId)}&limit=20`
+    + (beforeId ? `&before_id=${encodeURIComponent(beforeId)}` : "")),
+  contextMemory: (conversationId: string, receiptId: string, entryId: string) => request<ContextMemoryReview>(
+    `/conversations/${encodeURIComponent(conversationId)}/context/receipts/${encodeURIComponent(receiptId)}/memories/${encodeURIComponent(entryId)}`),
   saveContext: (context: ConversationContext, changes: Partial<ConversationContext>) => {
     const { conversation_id, version, ...settings } = { ...context, ...changes };
     return request<ConversationContext>(`/conversations/${encodeURIComponent(conversation_id)}/context`,

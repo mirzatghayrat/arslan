@@ -11,8 +11,11 @@ filtering and task-query binding), **4,701 passed, 14 skipped, 19 warnings in
 `/tmp/arslan-memory-relevance-regression.sfva4B/backend.xml`. This again used a
 scrubbed environment, isolated HOME/data and disabled live models. Skip categories
 remain unchanged; the aiosqlite guard recorded 85 closed-loop deliveries. Source
-remained frozen through completion. Frontend source is unchanged from the last
-complete 1,820-test/build run.
+remained frozen through completion. The later task-memory evidence UI passed a
+complete frontend run of 237 files / 1,829 tests in 18.32 seconds and a production
+build in 3.06 seconds. Its backend API/repository/context regression passed 55
+tests. The full backend run above predates those API additions; see
+`memory-evidence-ui.md` for scoped evidence.
 
 Previous complete backend run: clean `43649d7e` (including normalized knowledge
 images and multi-turn runtime bindings), **4,610 passed, 14 skipped, 20 warnings
@@ -89,7 +92,7 @@ notarization was performed. These source checks do not verify a distributable ap
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
 | Complete engineering regression | Clean `bec04286` full backend passes; unchanged frontend's full tests/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
-| Context evidence UI | Backend receipt endpoint exists, but TaskPanel/companion API client do not expose it | Task-scoped receipt display, selected-vs-delivered semantics, deleted/revised references, six-locale and live UI checks |
+| Context evidence UI | TaskPanel now exposes task-scoped receipt history and explicit version review; deleted text is withheld; six-locale component and isolated browser checks pass | Real desktop/task integration and packaged runtime verification; see `memory-evidence-ui.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |
