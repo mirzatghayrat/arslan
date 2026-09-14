@@ -382,6 +382,7 @@
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
+    "deck_slides": "{{slides}} slides",
     "chart_done": "Chart generated",
     "search_q": "Searching “{{q}}”",
     "search_fail_rate": "Search is rate-limited — waiting before trying again",
@@ -1063,7 +1064,7 @@
       "missing": "Missing files",
       "orphaned": "Orphaned files"
     },
-    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## 决策规则)",
+    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## Decision Rules)",
     "import": {
       "subtitle": "Standard SKILL.md files, imported verbatim — license-gated.",
       "repo_placeholder": "owner/repo",
@@ -1097,8 +1098,8 @@
       "description": "Description",
       "descriptionHint": "one-line description",
       "body": "SKILL.md body",
-      "bodyHint": "Needs frontmatter + ## Trigger + ## 决策规则 (decision rules — the heading itself is the literal contract). Max 15 KB.",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
+      "bodyHint": "Needs frontmatter, ## Trigger, and ## Decision Rules sections. Max 15 KB.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
     },
     "list": {
       "title": "Candidates ({{count}})",

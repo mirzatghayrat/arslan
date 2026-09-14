@@ -166,7 +166,7 @@ async def _dispatch(tool_key: str, *, conversation_id: str, budget: dict | None)
     return await tool_loop._dispatch_tool(
         tool_key, {"url": "https://example.test/x"}, "{}",
         resolve_tools=resolve,
-        emit=frames.append, tool_timeout_s=5, tool_trace=None, convo=[],
+        emit=frames.append, tool_timeout_s=5, tool_trace=[], convo=[],
         conversation_id=conversation_id, log_events=False, fetch_budget=budget)
 
 

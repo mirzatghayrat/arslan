@@ -508,9 +508,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         refusal = await _check_fetch_budget(
             tool_key, conversation_id=conversation_id, budget=fetch_budget)
         if refusal is not None:
-            emit({"type": "tool_result", "tool": tool_key, "ok": False,
-                  "summary": refusal["error"]})
-            return refusal
+            return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
+                                       assistant_content, convo,
+                                       mcp_fail_counts=mcp_fail_counts)
 
     # T1 workspace writes (P1b): ONE grant per session, not per file. The unit
     # differs from run_command deliberately — a user approving "Arslan may write
@@ -1412,7 +1412,9 @@ async def run_native(
                 await _dispatch_tool(
                     name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
-                    confirm_command=confirm_command, mcp_fail_counts=mcp_fail_counts,
+                    confirm_command=confirm_command,
+                    confirm_workspace_write=confirm_workspace_write,
+                    confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
                     log_events=log_events, fetch_budget=fetch_budget, caller=caller)
             if provider_content:

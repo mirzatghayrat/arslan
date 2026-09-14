@@ -381,7 +381,8 @@
     "done": "Done",
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
-    "deck_done": "PPTX generated · {{slides}} slides",
+    "deck_done": "PPTX erstellt · {{slides}} Folien",
+    "deck_slides": "{{slides}} Folien",
     "chart_done": "Chart generated",
     "search_q": "Suche nach „{{q}}“",
     "search_fail_rate": "Die Suche ist ratenbegrenzt — kurze Pause vor dem nächsten Versuch",
@@ -1063,7 +1064,7 @@
       "missing": "Fehlende Dateien",
       "orphaned": "Verwaiste Dateien"
     },
-    "skill_body_label": "SKILL.md-Inhalt (muss ## Trigger und ## 决策规则 enthalten)",
+    "skill_body_label": "SKILL.md-Inhalt (muss ## Trigger und ## Decision Rules enthalten)",
     "import": {
       "subtitle": "Standard-SKILL.md, wortgetreu importiert — lizenzgeprüft.",
       "repo_placeholder": "owner/repo",
@@ -1097,8 +1098,8 @@
       "description": "Beschreibung",
       "descriptionHint": "einzeilige Beschreibung",
       "body": "SKILL.md-Inhalt",
-      "bodyHint": "Braucht Frontmatter + ## Trigger + ## 决策规则 (Entscheidungsregeln — die Überschrift selbst ist der Vertrag). Max. 15 KB.",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
+      "bodyHint": "Benötigt Metadaten sowie ## Trigger und ## Decision Rules (Entscheidungsregeln). Max. 15 KB.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
     },
     "list": {
       "title": "Kandidaten ({{count}})",

@@ -9,7 +9,7 @@ import fr from "./locales/fr.json";
 import ja from "./locales/ja.json";
 import zh from "./locales/zh.json";
 
-const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
+export const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
 export type Lang = (typeof SUPPORTED_LANGUAGES)[number];
 
 void i18n
@@ -25,6 +25,8 @@ void i18n
       fr: { translation: fr },
     },
     fallbackLng: "en",
+    supportedLngs: [...SUPPORTED_LANGUAGES],
+    load: "languageOnly",
     interpolation: { escapeValue: false },
     detection: { order: ["localStorage", "navigator"], caches: ["localStorage"] },
   });

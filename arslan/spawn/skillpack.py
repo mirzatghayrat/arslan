@@ -1,7 +1,8 @@
 """SkillPack — the skill-pack format contract (P0).
 
 A spawn's deliverable is a *skill-pack*: a ``SKILL.md`` (YAML frontmatter + a
-Markdown body that must carry ``## Trigger`` and ``## 决策规则`` sections) plus
+Markdown body that must carry ``## Trigger`` and ``## Decision Rules`` sections,
+with the legacy Chinese decision heading also accepted) plus
 cross-platform CLI scripts and a declarative credentials manifest. This module
 defines the parsed model and section helpers; directory-level validation lives
 in :func:`validate_skillpack` (see ``validate.py``).
@@ -18,7 +19,16 @@ from pydantic import BaseModel, Field
 from arslan.spawn.quality import CheckResult
 
 #: Markdown sections every skill-pack body must carry (spec §4.2).
-REQUIRED_SECTIONS = ("Trigger", "决策规则")
+REQUIRED_SECTIONS = ("Trigger", "Decision Rules")
+
+
+def has_body_section(body: str, title: str) -> bool:
+    """Match canonical headings while preserving legacy Chinese skill packs."""
+    aliases = {"Decision Rules", "决策规则"} if title in {"Decision Rules", "决策规则"} else {title}
+    return any(
+        line.strip().startswith("#") and line.strip().lstrip("#").strip() in aliases
+        for line in body.splitlines()
+    )
 
 
 class CredentialSpec(BaseModel):
@@ -59,12 +69,7 @@ class SkillPack(BaseModel):
 
     def has_section(self, title: str) -> bool:
         """True when the body contains a Markdown heading equal to ``title``."""
-        for line in self.body.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                if stripped.lstrip("#").strip() == title:
-                    return True
-        return False
+        return has_body_section(self.body, title)
 
 
 def _split_frontmatter(text: str) -> tuple[str, str]:

@@ -1,9 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import DeckDownloadCard from '../components/DeckDownloadCard';
+import i18n from '../i18n';
 
 describe('DeckDownloadCard', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
     (URL as unknown as { createObjectURL: unknown }).createObjectURL = vi.fn(() => 'blob:x');
     (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn();
   });
@@ -14,7 +16,7 @@ describe('DeckDownloadCard', () => {
     render(<DeckDownloadCard filename="AI 2026.pptx" bytesB64={bytesB64} slides={7} />);
     expect(screen.getByText(/AI 2026\.pptx · 7 slides/)).toBeTruthy();
 
-    fireEvent.click(screen.getByTitle(/download \.pptx/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Download file' }));
     const createUrl = URL.createObjectURL as unknown as ReturnType<typeof vi.fn>;
     expect(createUrl).toHaveBeenCalledTimes(1);
     // it built a real Blob with the PPTX mime type

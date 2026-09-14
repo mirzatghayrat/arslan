@@ -381,7 +381,8 @@
     "done": "Done",
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
-    "deck_done": "PPTX generated · {{slides}} slides",
+    "deck_done": "PPTX を生成しました · {{slides}} 枚",
+    "deck_slides": "{{slides}} 枚",
     "chart_done": "Chart generated",
     "search_q": "「{{q}}」を検索中",
     "search_fail_rate": "検索がレート制限中です — 少し待って再試行します",
@@ -1063,7 +1064,7 @@
       "missing": "欠落ファイル",
       "orphaned": "孤立ファイル"
     },
-    "skill_body_label": "SKILL.md 本文(## Trigger と ## 决策规则 を含む必要があります)",
+    "skill_body_label": "SKILL.md 本文（## Trigger と ## Decision Rules が必要です）",
     "import": {
       "subtitle": "標準 SKILL.md をそのまま取り込み — ライセンス審査あり。",
       "repo_placeholder": "owner/repo",
@@ -1097,8 +1098,8 @@
       "description": "説明",
       "descriptionHint": "1行の説明",
       "body": "SKILL.md 本文",
-      "bodyHint": "frontmatter + ## Trigger + ## 决策规则(決定ルール — 見出しはこの表記が契約)が必要。最大 15 KB。",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
+      "bodyHint": "メタデータと ## Trigger、## Decision Rules（判断ルール）の見出しが必要です。最大 15 KB。",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
     },
     "list": {
       "title": "候補（{{count}}）",

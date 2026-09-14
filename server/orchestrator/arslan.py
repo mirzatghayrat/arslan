@@ -1086,7 +1086,7 @@ async def _handle_answer_body(
 
     async def _dispatch(user_content):
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
-        # no text-protocol narration-as-answer bug). Spawns stay on run() until migrated.
+        # no text-protocol narration-as-answer bug). Experts use the same native loop.
         return await tool_loop.run_native(
             system=system,
             user_content=user_content,

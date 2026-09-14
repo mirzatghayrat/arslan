@@ -1,4 +1,5 @@
 import { Presentation, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * DeckDownloadCard — renders a downloadable .pptx artifact from the backend render_deck tool.
@@ -25,6 +26,7 @@ export default function DeckDownloadCard({
   bytesB64: string;
   slides: number;
 }) {
+  const { t } = useTranslation();
   const download = () => {
     const url = URL.createObjectURL(b64ToBlob(bytesB64, PPTX_MIME));
     const a = document.createElement('a');
@@ -39,12 +41,13 @@ export default function DeckDownloadCard({
     <div className="tool-chart flex items-center gap-2.5 max-w-md border border-border-strong bg-background/60 rounded-lg px-3 py-2.5 mt-2">
       <Presentation className="w-4 h-4 text-primary shrink-0" />
       <span className="text-[11.5px] text-foreground font-medium flex-1 truncate">
-        {filename} · {slides} slides
+        {filename} · {t('activity.deck_slides', { slides })}
       </span>
       <button
         type="button"
         onClick={download}
-        title="Download .pptx"
+        title={t('files.download')}
+        aria-label={t('files.download')}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-colors text-[10.5px] font-mono"
       >
         <Download className="w-3 h-3" /> .pptx
