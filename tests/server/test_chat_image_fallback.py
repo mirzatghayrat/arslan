@@ -271,7 +271,7 @@ async def test_when_local_reading_finds_nothing_the_user_gets_the_advice(db, mon
     assert errors, events
     msg = errors[0]["message"]
     assert "deserialize" not in msg, f"raw provider JSON reached the user: {msg!r}"
-    assert "vision" in msg.lower() or "images" in msg.lower(), msg
+    assert "vision" in msg.lower() or "image" in msg.lower(), msg
 
 
 async def _en():

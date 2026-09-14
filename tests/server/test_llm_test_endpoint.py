@@ -258,13 +258,13 @@ def _http_error(status: int, body: str):
         # The case that sent the user hunting for a new key: the key is valid,
         # its CAP is spent. 403 — the status the old branch swallowed.
         (403, '{"error":{"message":"Key limit exceeded","code":403}}',
-         "额度上限", "要求 API key"),
+         "usage limit", "unauthenticated request"),
         # Same fault, the other status providers use for it.
         (402, '{"error":{"message":"key limit exceeded"}}',
-         "额度上限", "要求 API key"),
+         "usage limit", "unauthenticated request"),
         # A region block is not an auth problem either — 403 again.
         (403, '{"error":{"message":"Model not available in your region"}}',
-         "地区", "要求 API key"),
+         "region", "unauthenticated request"),
         # A genuinely invalid key still reads as a key problem.
         (401, '{"error":{"message":"Invalid API key provided"}}',
          "key", None),
@@ -294,7 +294,7 @@ async def test_the_reason_matches_the_real_fault(
 
 
 @pytest.mark.asyncio
-async def test_a_request_that_never_left_is_not_blamed_on_the_key(client, monkeypatch):
+async def test_a_transport_failure_is_not_blamed_on_the_key(client, monkeypatch):
     """A proxy/VPN failure must not read as a key refusal — the same ordering
     rule llm_errors applies for the chat path."""
     import httpx
@@ -309,9 +309,8 @@ async def test_a_request_that_never_left_is_not_blamed_on_the_key(client, monkey
         "base_url": "https://openrouter.ai/api/v1", "api_key": "sk-or-abc123",
     })
     error = r.json()["error"] or ""
-    assert "没能连上" in error, f"got: {error}"
-    # NB: the correct message mentions the key in order to RULE IT OUT ("不是 key
-    # 的问题"), so absence-of-"key" would be the wrong assertion. What must not
-    # appear is the auth verdict — the one that sends someone to replace a key.
-    assert "拒绝了 API key" not in error, f"blamed the key for a transport fault: {error}"
-    assert "要求 API key" not in error, f"blamed the key for a transport fault: {error}"
+    assert "connection to the provider failed" in error, f"got: {error}"
+    assert "does not establish an API key problem" in error
+    assert "whether the provider processed the request" in error
+    assert "rejected this API key" not in error
+    assert "unauthenticated request" not in error

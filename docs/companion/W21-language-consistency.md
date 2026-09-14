@@ -187,3 +187,26 @@ Verification:
   full W21/RC acceptance remain outstanding.
 - Final complete frontend rerun: 236 files / 1,820 tests passed in 18.15 seconds;
   production build passed in 2.97 seconds, with the existing bundle-size warning.
+
+## Runtime service-error checkpoint
+
+Recognized context, transport, key-limit, region, balance, authentication and rate
+errors now follow the saved UI language on host/expert chat and connection tests.
+Image-schema refusal and missing-expert notices use the same six-language policy.
+Unknown external diagnostics remain untouched; no model is called to translate.
+Classifier precedence, error codes and missing-expert early-return boundaries are
+preserved. Expert errors now share the host's recognized provider explanations.
+
+Transport wording no longer asserts that the request never arrived or that the
+key cannot be at fault: read timeouts and interrupted connections cannot prove
+processing status. Generic key-limit advice points to the provider dashboard,
+without inventing an OpenRouter account or directing the user to increase spend.
+Keyless 401/403 copy asks about key requirements and permissions, without claiming
+every 403 proves that a key is required. No automatic retries were introduced.
+
+The initial combined focused regression passed 117 tests, including all six saved
+languages and existing OCR fallback/error-classification contracts. Seven further
+guards cover unknown diagnostic passthrough and provider-neutral limit advice.
+The final combined rerun passed all 124 tests; targeted lint and whitespace checks
+also passed. The only warning was the existing Starlette/httpx deprecation.
+This source checkpoint does not complete live-layout or final release acceptance.

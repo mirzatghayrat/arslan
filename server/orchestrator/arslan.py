@@ -11,7 +11,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from server.orchestrator import llm_errors, vision_errors
+from server.orchestrator import llm_errors
 from server.services import ocr_fallback
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Feedback
@@ -48,6 +48,7 @@ from server.services import (
 from server.services.llm_factory import build_adapter
 from server.services.task_context import scoped_dispatch, scoped_turn
 from server.services.task_repository import TaskError
+from server.services import runtime_messages
 
 logger = logging.getLogger(__name__)
 
@@ -569,7 +570,7 @@ async def handle_user_message(
         except Exception as exc:  # noqa: BLE001
             logger.warning("_classify_followup raised (surfacing as error): %s", exc)
             emit({"type": "error", "code": "LLM_ERROR",
-                  "message": llm_errors.explain(str(exc)) or str(exc), "recoverable": True})
+                  "message": await llm_errors.explain_current(str(exc)) or str(exc), "recoverable": True})
             return
         if kind == "confirm":
             await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
@@ -613,7 +614,7 @@ async def handle_user_message(
     except Exception as exc:  # noqa: BLE001
         logger.warning("router.route raised (surfacing as error): %s", exc)
         emit({"type": "error", "code": "LLM_ERROR",
-              "message": llm_errors.explain(str(exc)) or str(exc), "recoverable": True})
+              "message": await llm_errors.explain_current(str(exc)) or str(exc), "recoverable": True})
         return
 
     # 3. persist + announce extracted facts (transparency note)
@@ -1153,7 +1154,7 @@ async def _handle_answer_body(
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
                 emit({"type": "error", "code": "LLM_ERROR",
-                      "message": llm_errors.explain(str(retry_exc)) or str(retry_exc),
+                      "message": await llm_errors.explain_current(str(retry_exc)) or str(retry_exc),
                       "recoverable": True})
                 return
         else:
@@ -1162,9 +1163,7 @@ async def _handle_answer_body(
             # billing/auth/rate family, and the raw text is what survives when
             # neither recognises the fault — never an invented diagnosis.
             emit({"type": "error", "code": "LLM_ERROR",
-                  "message": (vision_errors.explain(str(exc), had_images=bool(images))
-                              or llm_errors.explain(str(exc))
-                              or str(exc)),
+                  "message": await llm_errors.explain_current(str(exc), had_images=bool(images)) or str(exc),
                   "recoverable": True})
             return
     # PA-3: the model asked for a structured user choice — ask_user_choice is a
@@ -2098,7 +2097,8 @@ async def _dispatch_spawn(  # noqa: ANN001
         # crash the turn. Surface a recoverable in-chat error instead.
         logger.warning("_dispatch_spawn: spawn_id=%s not found — skipping dispatch", spawn_id)
         emit({"type": "error", "code": "SPAWN_NOT_FOUND",
-              "message": "That assistant is no longer available.", "recoverable": True})
+              "message": runtime_messages.render("expert_unavailable", await runtime_messages.selected_locale()),
+              "recoverable": True})
         return
     recorder = await run_recorder.RunRecorder.start(
         conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
@@ -2173,7 +2173,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                     # other error keeps its original text, because mislabelling a
                     # rate limit as a vision problem sends the user off changing
                     # models over an unrelated fault.
-                    _msg = vision_errors.explain(str(exc), had_images=bool(images)) or str(exc)
+                    _msg = await llm_errors.explain_current(str(exc), had_images=bool(images)) or str(exc)
                     tee({"type": "error", "code": "SPAWN_ERROR", "message": _msg, "recoverable": True})
                     _usage = usage_sink.detail()
                     _prompt = run_trace.prompt()
@@ -2370,7 +2370,9 @@ async def record_deliverable_verdict(
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
     if spawn_name is None:
         logger.warning("record_deliverable_verdict: unknown spawn_id=%s", spawn_id)
-        emit({"type": "error", "code": "INVALID_INPUT", "message": "unknown spawn", "recoverable": True})
+        emit({"type": "error", "code": "INVALID_INPUT",
+              "message": runtime_messages.render("expert_unavailable", await runtime_messages.selected_locale()),
+              "recoverable": True})
         return
 
     # Fetch the deliverable message and compute elapsed seconds
@@ -2451,7 +2453,9 @@ async def finalize_refinement(
     (from its direct-chat), posted back to the main thread by the user."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
     if spawn_name is None:
-        emit({"type": "error", "code": "INVALID_INPUT", "message": "unknown spawn", "recoverable": True})
+        emit({"type": "error", "code": "INVALID_INPUT",
+              "message": runtime_messages.render("expert_unavailable", await runtime_messages.selected_locale()),
+              "recoverable": True})
         return
     new_id = await memory.add_message(
         conversation_id, "spawn_summary", content, display_content=content, spawn_id=spawn_id
@@ -2479,7 +2483,9 @@ async def confirm_sandbox_merge(
     Returns the new message id, or None if the spawn is unknown."""
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
     if spawn_name is None:
-        emit({"type": "error", "code": "INVALID_INPUT", "message": "unknown spawn", "recoverable": True})
+        emit({"type": "error", "code": "INVALID_INPUT",
+              "message": runtime_messages.render("expert_unavailable", await runtime_messages.selected_locale()),
+              "recoverable": True})
         return None
     display = f"**✓ {summary}**\n\n{content}" if summary else content
     new_id = await memory.add_message(

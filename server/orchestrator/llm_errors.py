@@ -35,9 +35,8 @@ _REGION = re.compile(
 _AUTH = re.compile(r"401|unauthorized|invalid[_ ]api[_ ]key|authentication", re.I)
 _RATE = re.compile(r"429|too many requests|rate.?limit", re.I)
 _CONTEXT = re.compile(r"context[_ ]length|maximum context", re.I)
-# The request never reached the provider at all. Kept to failures of the
-# TRANSPORT, not of anything the provider said — a server that answers, even
-# with a refusal, is not this.
+# Connection failures, including interruptions after sending. These errors do
+# not establish whether the provider processed the request.
 _TRANSPORT = re.compile(
     r"\bssl\b|certificate[_ ]verify|handshake|"
     r"connect(ion)?\s*(error|refused|reset|aborted|timed?\s*out)|"
@@ -48,51 +47,50 @@ _TRANSPORT = re.compile(
     re.I)
 
 
-def explain(raw_error: str) -> str | None:
-    """A short, actionable sentence, or None when we do not recognise the fault."""
+def classify(raw_error: str) -> str | None:
+    """Recognized category only; unknown diagnostics are not reinterpreted."""
     raw = raw_error or ""
     if not raw.strip():
         return None
 
     # Context length first: it co-occurs with token counts that read like money.
     if _CONTEXT.search(raw):
-        return ("这轮对话太长,超过了这个模型的上下文上限。"
-                "开一个新会话,或换一个上下文更大的模型。")
+        return "context"
 
-    # Transport first: nothing the provider says can be in a message it never
-    # sent. Putting this later would let a stray "401" inside a proxy's error
-    # page be read as an auth refusal — which is exactly the wrong direction,
-    # because it sends someone to replace a key that was never the problem.
+    # Transport first: a stray "401" inside a proxy's connection error should
+    # not become an authentication verdict. Delivery status remains unknown.
     if _TRANSPORT.search(raw):
-        return ("没能连上这个 provider——请求根本没送出去,不是 key 的问题。"
-                "多半是网络、代理或 VPN:确认它们在工作,或把这个 provider 的域名设成直连。")
+        return "transport"
 
     # A key cap answers with BOTH 402 and 403 depending on the provider, so this
     # is checked before either of them rather than nested inside one.
     if _KEY_LIMIT.search(raw):
-        return ("这把 API key 设了额度上限,已经触顶——账户里可能还有余额。"
-                "去 openrouter.ai/settings/keys 调高或去掉这把 key 的上限,"
-                "或换一把没有上限的 key。")
+        return "key_limit"
 
     if _REGION.search(raw):
-        return ("这个模型在你所在的地区不可用(provider 按出口 IP 判断),"
-                "和 key、余额都无关。换一个没有地区限制的模型,"
-                "或让流量从支持的地区出去。")
+        return "region"
 
     if _PAYMENT.search(raw):
-        if _KEY_LIMIT.search(raw):
-            # The distinction worth drawing: the account may be funded and this
-            # still fails, because the cap is on the key.
-            return ("这把 API key 设了额度上限,已经触顶——账户里可能还有余额。"
-                    "去 openrouter.ai/settings/keys 调高或去掉这把 key 的上限,"
-                    "或换一把没有上限的 key。")
-        return "这个模型的账户余额不足,去 provider 后台充值后再试。"
+        return "payment"
 
     if _AUTH.search(raw):
-        return ("这个 provider 拒绝了 API key(无效、过期或权限不足)。"
-                "去设置里换一把新的 key。")
+        return "auth"
 
     if _RATE.search(raw):
-        return "provider 限流了(请求太频繁)。稍等一会儿再试,或换一个模型分担。"
+        return "rate"
 
     return None
+
+
+def explain(raw_error: str, *, locale="zh") -> str | None:
+    """Legacy synchronous default; production uses an explicit UI locale."""
+    from server.services.provider_error_messages import render
+    category = classify(raw_error)
+    return render(category, locale) if category else None
+
+
+async def explain_current(raw_error: str, *, had_images=False) -> str | None:
+    from server.services.runtime_messages import selected_locale
+    from server.orchestrator import vision_errors
+    locale = await selected_locale()
+    return vision_errors.explain(raw_error, had_images=had_images, locale=locale) or explain(raw_error, locale=locale)
