@@ -52,6 +52,12 @@ acceptance. Worker runs do not receive an automatic judge verdict.
 - Type checking and production web build passed. Full regression results are
   recorded after verifying the frozen commit, not inferred from these checks.
 
+Frozen commit `2e9342b6`: backend **4,298 passed, 14 skipped** (380.05s),
+frontend **1,718 passed across 221 files** (16.78s). The initial full run exposed
+three obsolete toolset-count assertions after adding collaboration; the corrected
+frozen rerun passed. The backend emitted 21 existing warnings and the observable
+aiosqlite teardown guard caught 62 closed-loop deliveries without changing outcomes.
+
 ## Remaining gates
 
 Artifact-specific acceptance and bounded repair are W10. Privileged broker/OS
