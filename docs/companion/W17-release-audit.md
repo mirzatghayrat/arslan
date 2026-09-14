@@ -5,6 +5,24 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+Latest complete backend run: clean `43649d7e` (including normalized knowledge
+images and multi-turn runtime bindings), **4,610 passed, 14 skipped, 20 warnings
+in 411.59 seconds**. Report:
+`/tmp/arslan-companion-final-regression.dOUHnb/backend.xml`. The environment was
+scrubbed, HOME/data isolated and live models disabled. Skip categories are
+unchanged; the aiosqlite guard recorded 56 closed-loop deliveries. Warning
+categories include deprecated TestClient transport, existing async markers,
+SQLAlchemy connection cleanup/schema cycles and deliberate teardown diagnostics.
+No source edits occurred during the run. Frontend source is unchanged since the
+full 1,820-test/build result below.
+
+A separate isolated in-memory reproduction on this source confirmed M08-02's
+remaining relevance defect: the arithmetic query `What is 2 + 2?` still receives
+the confirmed preference `For design work use orange minimalist layouts.` with
+no `irrelevant` filter reason. Green engineering tests do not override this
+observed acceptance failure. The Mac was checked again and remains locked, so
+live UI verification is still unavailable.
+
 Source `4bb3aa00` was clean when the complete Python suite started. The run used
 a new temporary HOME/data directory, a scrubbed environment, a synthetic secret,
 disabled secret-file bootstrap, and `ARSLAN_LIVE_LLM=0`. No production application
@@ -54,7 +72,7 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `59d5ba62` full backend/frontend runs pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
+| Complete engineering regression | Clean `43649d7e` full backend passes; unchanged frontend's full tests/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |
