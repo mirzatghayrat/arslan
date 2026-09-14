@@ -80,8 +80,8 @@ def test_the_fixture_pdf_really_has_no_text_layer():
     assertions would be asserting about a code path that never ran.
     """
     data = _blank_pdf([_PAGE_A])
-    assert ingest._pdf_text_layer(data).strip() == ""
-    assert len(ingest._pdf_text_layer(data).strip()) < ingest._OCR_MIN_CHARS
+    assert ingest._pdf_text_layer(data).located_text == ""
+    assert not ingest._pdf_text_layer(data).has_text
 
 
 def test_ocr_pdf_rasterizes_every_page_in_order_at_the_configured_dpi(monkeypatch):
@@ -105,7 +105,15 @@ def test_ocr_pdf_rasterizes_every_page_in_order_at_the_configured_dpi(monkeypatc
     # satisfied by rendering the same page twice.
     assert seen[0] != seen[1]
     # The recognized text of every page is joined into the result.
-    assert "page-1" in text and "page-2" in text
+    assert text == "[page 1]\npage-1\n\n[page 2]\npage-2"
+
+
+def test_ocr_source_pages_do_not_renumber_or_fabricate_empty_content(monkeypatch):
+    values = iter(["first", "", "last"])
+    monkeypatch.setattr("pytesseract.image_to_string", lambda img, **kw: next(values))
+    assert ingest._ocr_pdf(_blank_pdf([_PAGE_A] * 3)) == "[page 1]\nfirst\n\n[page 3]\nlast"
+    monkeypatch.setattr("pytesseract.image_to_string", lambda img, **kw: " \n ")
+    assert ingest._ocr_pdf(_blank_pdf([_PAGE_A] * 3)) == ""
 
 
 def test_whatever_the_rasterizer_returns_is_normalized_to_rgb(monkeypatch):
@@ -178,7 +186,7 @@ def _extract_with_text_layer(monkeypatch, layer_text: str) -> tuple[str, bool]:
     from server.services import ocr_vision
 
     monkeypatch.setattr(ocr_vision, "is_available", lambda: False)
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: layer_text)
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer((layer_text,)))
     monkeypatch.setattr(ingest, "_ocr_pdf", _tripwire)
     return ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])), ran
 
@@ -194,7 +202,7 @@ def test_ocr_runs_only_when_the_text_layer_is_too_short(monkeypatch):
     rich = "x" * (ingest._OCR_MIN_CHARS + 1)
     result_rich, ran_rich = _extract_with_text_layer(monkeypatch, rich)
     assert ran_rich is False, "a PDF that already has text must not be rasterized"
-    assert result_rich == rich
+    assert result_rich == f"[page 1]\n{rich}"
 
     result_empty, ran_empty = _extract_with_text_layer(monkeypatch, "")
     assert ran_empty is True, "a PDF with no text layer must fall back to OCR"
@@ -212,9 +220,9 @@ def test_ocr_output_is_discarded_when_it_finds_nothing(monkeypatch):
     dropping that guard would silently replace a 5-character text layer with
     "" — a regression invisible to every other test here.
     """
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "short")
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer(("short",)))
     monkeypatch.setattr(ingest, "_ocr_pdf", lambda data: "   \n  ")
-    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == "short"
+    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == "[page 1]\nshort"
 
 
 def test_the_threshold_holds_on_the_system_recogniser_path(monkeypatch):
@@ -235,11 +243,11 @@ def test_the_threshold_holds_on_the_system_recogniser_path(monkeypatch):
     monkeypatch.setattr(ingest, "_ocr_pdf_pages_locally", _spy)
 
     rich = "x" * (ingest._OCR_MIN_CHARS + 1)
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: rich)
-    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == rich
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer((rich,)))
+    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == f"[page 1]\n{rich}"
     assert calls == [], "a PDF that already has text was rasterized anyway"
 
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "")
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer(("",)))
     out = ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A]))
     assert "read by the system recogniser" in out
     assert calls == [1]
@@ -257,7 +265,7 @@ def test_a_scan_the_recogniser_cannot_read_falls_through_instead_of_shadowing(
     monkeypatch.setattr(ocr_vision, "is_available", lambda: True)
     monkeypatch.setattr(ocr_fallback, "read_locally",
                         lambda data, ui_language=None: ("", ocr_vision.NO_TEXT))
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "short")
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer(("short",)))
     monkeypatch.setattr(ingest, "_ocr_pdf", lambda data: "")
 
-    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == "short"
+    assert ingest._extract_file("doc.pdf", _blank_pdf([_PAGE_A])) == "[page 1]\nshort"

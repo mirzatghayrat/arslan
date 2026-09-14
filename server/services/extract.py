@@ -45,8 +45,8 @@ async def extract_text(
     else:
         raise ValueError("provide url or file data")
 
-    # Package paragraph locators must survive attachment delivery verbatim.
-    if compress and not (data is not None and (filename or "").lower().endswith(".docx")):
+    # Source page/paragraph locators must survive attachment delivery verbatim.
+    if compress and not (data is not None and (filename or "").lower().endswith((".docx", ".pdf"))):
         text = await ingest._compress(text)
 
     limit = settings.attach_extract_char_limit

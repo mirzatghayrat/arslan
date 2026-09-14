@@ -114,3 +114,28 @@ a real in-memory python-docx package with body and table text, malformed/entity/
 alternate-encoding rejection, bounded truncation, nested textboxes and compression
 bypass. Existing Starlette deprecation and aiosqlite teardown-guard diagnostics
 remain. No user document, external URL or model was accessed by these tests.
+
+## PDF page-source follow-up
+
+PDF text-layer extraction now retains each original page separately before
+formatting `[page N]` locators. Blank pages do not renumber later text. The OCR
+threshold counts only stripped source text, never locator labels or blank-page
+separators: even many blank pages around two characters still take the existing
+OCR fallback. An all-blank result remains empty, and failed/empty OCR retains the
+short source text with its original page locator. Optional tesseract output now
+uses the same original-page convention. Native OCR and vision page paths already
+carried page numbers and keep their existing routing/caps.
+
+Ephemeral PDF extraction bypasses optional compression to preserve page locators.
+Knowledge ingestion receives the located text; separately requested compression
+and later chunking still do not guarantee preserved locators. These are physical
+PDF page indexes, not printed page labels, table reconstruction or visual-layout
+understanding. Mixed text/scan documents still use the existing whole-document
+text threshold and are not certified for complete per-page visual understanding.
+PDF parsing resource isolation/deadlines are unchanged by this work.
+
+The final eight-file PDF/Word/format/ingest/extract/API regression passed 129 tests
+in 6.02 seconds, including real pypdf-generated text/blank/text fixtures, OCR
+page-order/empty-output cases, threshold discrimination, persisted-input wiring and
+compression bypass. Targeted lint and whitespace checks passed; existing warning
+and teardown diagnostics remain. No real user PDF or model was used.

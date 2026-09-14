@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from dataclasses import dataclass
 
 from sqlalchemy import text as sa_text
 
@@ -29,10 +30,24 @@ def _strip_private(text: str) -> str:
     return _PRIVATE_RE.sub("", text or "")
 
 
-def _pdf_text_layer(data: bytes) -> str:
+@dataclass(frozen=True)
+class PDFTextLayer:
+    pages: tuple[str, ...]
+
+    @property
+    def has_text(self) -> bool:
+        # Neither locators nor empty-page separators count as source text.
+        return sum(len(page.strip()) for page in self.pages) >= _OCR_MIN_CHARS
+
+    @property
+    def located_text(self) -> str:
+        return "\n\n".join(f"[page {index}]\n{page}" for index, page in enumerate(self.pages, 1) if page.strip())
+
+
+def _pdf_text_layer(data: bytes) -> PDFTextLayer:
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+    return PDFTextLayer(tuple(page.extract_text() or "" for page in reader.pages))
 
 
 def _ocr_pdf(data: bytes) -> str:
@@ -73,7 +88,7 @@ def _ocr_pdf(data: bytes) -> str:
                     out.append(pytesseract.image_to_string(img))
         finally:
             doc.close()
-        return "\n".join(out)
+        return PDFTextLayer(tuple(out)).located_text
     except Exception as exc:  # noqa: BLE001 — OCR is best-effort
         logger.warning("OCR failed: %s", exc)
         return ""
@@ -320,8 +335,8 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
     if name.endswith(".txt") or name.endswith(".md"):
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):
-        text = _pdf_text_layer(data)
-        if len(text.strip()) < _OCR_MIN_CHARS:
+        layer = _pdf_text_layer(data)
+        if not layer.has_text:
             if ocr_vision.is_available():
                 pages = _ocr_pdf_pages_locally(data, ui_language, ocr_languages)
                 if pages:
@@ -335,7 +350,7 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
                 ocr = ""
             if ocr.strip():
                 return ocr
-        return text
+        return layer.located_text
     if name.endswith(".docx"):
         text, truncated = read_structured(filename, data)
         return text + ('\n{"extraction_truncated": true}' if truncated else "")
@@ -451,9 +466,9 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
     if filename.lower().endswith(".pdf"):
         # A PDF with a text layer is read for free by pypdf — rasterising it
         # would burn image tokens on something already available as text.
-        text = _pdf_text_layer(data)
-        if len(text.strip()) >= _OCR_MIN_CHARS:
-            return await ingest_text(spawn_id, filename, text,
+        layer = _pdf_text_layer(data)
+        if layer.has_text:
+            return await ingest_text(spawn_id, filename, layer.located_text,
                                      collection_id=collection_id, compress=compress)
         # No text layer ⇒ a scan. Rasterise under the cap and let the model read
         # the pages, saying plainly when only part of the document was read.

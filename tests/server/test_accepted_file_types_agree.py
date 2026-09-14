@@ -98,7 +98,7 @@ def test_every_declared_extension_reaches_its_real_dispatch_branch(monkeypatch, 
         return expected, "ok"
     monkeypatch.setattr(input_formats, "read_structured", structured)
     monkeypatch.setattr(input_formats, "video_metadata", video)
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: called.append("document") or expected)
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: called.append("document") or ingest.PDFTextLayer((expected,)))
     monkeypatch.setattr(docx, "Document", lambda data: called.append("document") or SimpleNamespace(paragraphs=[SimpleNamespace(text=expected)]))
     monkeypatch.setattr(lxml.html, "fromstring", lambda data: called.append("document") or SimpleNamespace(text_content=lambda: expected))
     monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: True)

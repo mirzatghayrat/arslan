@@ -79,7 +79,7 @@ async def test_no_text_layer_goes_to_the_vision_path_not_ocr(memdb, monkeypatch)
 
 async def test_text_layer_pdf_skips_ocr(memdb, monkeypatch):
     sid = await _spawn(memdb)
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "real text layer content here, plenty of it")
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer(("real text layer content here, plenty of it",)))
     called = {"ocr": False}
     monkeypatch.setattr(ingest, "_ocr_pdf", lambda data: (called.__setitem__("ocr", True) or "x"))
     await ingest.ingest_file(sid, "doc.pdf", b"%PDF-fake")
@@ -88,7 +88,7 @@ async def test_text_layer_pdf_skips_ocr(memdb, monkeypatch):
 
 async def test_ocr_error_falls_back_to_text_layer(memdb, monkeypatch):
     sid = await _spawn(memdb)
-    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: "")
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: ingest.PDFTextLayer(("",)))
     def boom(data): raise RuntimeError("tesseract missing")
     monkeypatch.setattr(ingest, "_ocr_pdf", boom)
     n = await ingest.ingest_file(sid, "scan.pdf", b"%PDF-fake")
