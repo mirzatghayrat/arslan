@@ -46,10 +46,18 @@ function ProjectEditor({ project, onClose, onSaved }: { project?: Project; onClo
             collection_ids: e.target.checked ? [...row.collection_ids, collection.id] : row.collection_ids.filter(id => id !== collection.id),
           }))} />{collection.name}</label>)}
       </fieldset>
-      {draft.kind === "software" && <div className="grid gap-3 sm:grid-cols-2">{(["app_id", "bundle_id"] as const).map(key => <label key={key}>
-        {t(key === "app_id" ? "companion.appId" : "companion.bundleId")}<input className={`${inputClass} mt-1`} value={draft.app_binding?.[key] ?? ""}
+      {draft.kind === "software" && <div className="grid gap-3 sm:grid-cols-2">{(["app_id", "bundle_id", "version_id"] as const).map(key => <label key={key}>
+        {t(key === "app_id" ? "companion.appId" : key === "version_id" ? "companion.appVersionId" : "companion.bundleId")}<input className={`${inputClass} mt-1`} value={draft.app_binding?.[key] ?? ""}
           onChange={e => setDraft(row => ({ ...row, app_binding: { app_id: null, bundle_id: null, ...row.app_binding, [key]: e.target.value || null } }))} />
-      </label>)}</div>}
+      </label>)}
+        <label>{t("companion.appPlatform")}<select className={`${inputClass} mt-1`} value={draft.app_binding?.platform ?? ""}
+          onChange={e => setDraft(row => ({ ...row, app_binding: { app_id: null, bundle_id: null, ...row.app_binding,
+            platform: (e.target.value || null) as NonNullable<ProjectInput["app_binding"]>["platform"] } }))}>
+          <option value="">{t("companion.appPlatformUnset")}</option>
+          <option value="IOS">iOS</option><option value="MAC_OS">macOS</option><option value="TV_OS">tvOS</option><option value="VISION_OS">visionOS</option>
+        </select></label>
+        <p className="text-xs text-muted-foreground sm:col-span-2">{t("companion.ascDisabled")}</p>
+      </div>}
       {error && <p role="alert" className="text-destructive">{t(error)}</p>}
       <div className="flex justify-end gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={onClose}>{t("companion.cancel")}</button>
         <button className={primaryClass} disabled={busy || !draft.name.trim()}>{t("companion.save")}</button></div>

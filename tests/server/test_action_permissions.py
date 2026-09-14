@@ -35,12 +35,15 @@ async def setup_action(execution_db, tool="asc.draft.update"):
         # Synthetic broker attestation. Production has no activation path yet.
         row = await repo.db.get(CompanionConnection, connection["id"])
         row.status = "connected"
+        project = await repo.db.get(Project, "project")
+        project.app_binding = {"app_id": "123", "version_id": "v1", "platform": "IOS",
+                               "bundle_id": "com.example.app", "connection_id": connection["id"]}
         await repo.db.flush()
         action_row = await repo.db.get(TaskAction, action["id"])
         return dict(owner_id="local", task_id="task", attempt_id=attempt, action_id=action["id"],
                     connection_id=connection["id"], confirmation_ref=str(uuid4()),
                     approved_diff_hash=action_row.intent_hash,
-                    approved_target_hash=target_hash({"app_id": "123", "version_id": "v1"}))
+                    approved_target_hash=target_hash(project.app_binding))
 
 
 async def issue(data):

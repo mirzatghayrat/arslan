@@ -36,7 +36,8 @@ export interface ProjectInput {
   summary: string;
   workspace_ref: string | null;
   collection_ids: number[];
-  app_binding: { app_id: string | null; bundle_id: string | null; connection_id?: string | null } | null;
+  app_binding: { app_id: string | null; bundle_id: string | null; connection_id?: string | null;
+    version_id?: string | null; platform?: "IOS" | "MAC_OS" | "TV_OS" | "VISION_OS" | null } | null;
 }
 export interface Project extends ProjectInput {
   id: string;

@@ -92,6 +92,20 @@ describe("memory controls", () => {
 });
 
 describe("project controls", () => {
+  it("stores an explicit App version and shows the account-access gate", async () => {
+    vi.spyOn(api, "listCollections").mockResolvedValue([]);
+    const save = vi.spyOn(companionApi, "editProject").mockResolvedValue(project);
+    render(<ProjectsSection onStart={async () => {}} />);
+    fireEvent.click(await screen.findByText("companion.edit"));
+    fireEvent.change(screen.getByLabelText("companion.appId"), { target: { value: "123" } });
+    fireEvent.change(screen.getByLabelText("companion.bundleId"), { target: { value: "com.example.app" } });
+    fireEvent.change(screen.getByLabelText("companion.appVersionId"), { target: { value: "version-1" } });
+    fireEvent.change(screen.getByLabelText("companion.appPlatform"), { target: { value: "IOS" } });
+    expect(screen.getByText("companion.ascDisabled")).toBeVisible();
+    fireEvent.click(screen.getByText("companion.save"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][1].app_binding).toMatchObject({ app_id: "123", bundle_id: "com.example.app", version_id: "version-1", platform: "IOS" });
+  });
   it("starts the chosen active project and includes archived projects in its query", async () => {
     const start = vi.fn().mockResolvedValue(undefined);
     render(<ProjectsSection onStart={start} />);

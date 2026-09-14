@@ -23,6 +23,17 @@ async def test_auth_and_no_credential_fields(api):
     assert response.status_code == 422
 
 
+async def test_asc_capabilities_and_exact_project_target_without_account_access(api):
+    caps = await api.get("/api/v1/connections/app-store-connect/capabilities")
+    assert caps.status_code == 200 and not caps.json()["local"]["read_account"]
+    target = {"app_id": "123", "bundle_id": "com.example.app", "version_id": "version-1", "platform": "IOS"}
+    response = await api.post("/api/v1/projects", json={"name": "App", "kind": "software", "app_binding": target})
+    assert response.status_code == 201
+    assert all(response.json()["app_binding"][key] == value for key, value in target.items())
+    response = await api.post("/api/v1/projects", json={"name": "App", "app_binding": {**target, "version_id": "../other"}})
+    assert response.status_code == 422
+
+
 async def test_conversation_settings_are_versioned_and_fail_closed(api):
     base = "/api/v1/conversations/new-conversation/context"
     initial = (await api.get(base)).json()

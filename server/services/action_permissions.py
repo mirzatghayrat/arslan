@@ -84,6 +84,15 @@ class ActionPermissions:
         if (project is None or project.owner_id != owner_id or project.status != "active"
                 or project.version != task.project_version):
             raise TaskError("grant_project_stale")
+        from pydantic import ValidationError
+        from server.connectors.app_store_connect.contracts import AppTarget
+        binding = project.app_binding or {}
+        if binding.get("connection_id") != connection.id:
+            raise TaskError("grant_connection_binding_mismatch")
+        try:
+            AppTarget.model_validate({key: binding.get(key) for key in ("app_id", "version_id", "platform", "bundle_id")})
+        except ValidationError as exc:
+            raise TaskError("grant_target_missing") from exc
         if (action is None or action.task_id != task.id or action.attempt_id != attempt_id
                 or action.spec_revision != task.spec_revision or action.status != "prepared"
                 or action.tool_key not in APPROVABLE_ACTIONS):

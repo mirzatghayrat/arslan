@@ -42,6 +42,8 @@ class AppBinding(Contract):
     app_id: Annotated[str, Field(pattern=r"^[0-9]{1,30}$")] | None = None
     bundle_id: Annotated[str, Field(min_length=1, max_length=200)] | None = None
     connection_id: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    version_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9-]{1,100}$")] | None = None
+    platform: Literal["IOS", "MAC_OS", "TV_OS", "VISION_OS"] | None = None
     # Only metadata and opaque connection reference; no private key or token.
 
 
@@ -56,7 +58,7 @@ class ProjectInput(Contract):
     @model_validator(mode="after")
     def no_credentials(self):
         from arslan.companion.content_policy import contains_credential
-        if any(contains_credential(value) for value in (self.name, self.summary, self.workspace_ref or "")):
+        if contains_credential(self.model_dump_json()):
             raise ValueError("credentials_not_project_metadata")
         return self
 
@@ -87,6 +89,12 @@ async def _validate_collections(repo, identifiers):
         existing = set((await repo.db.execute(select(Collection.id).where(Collection.id.in_(identifiers)))).scalars())
         if existing != set(identifiers):
             raise HTTPException(422, detail={"code": "project_collection_not_found"})
+
+
+@router.get("/connections/app-store-connect/capabilities")
+async def asc_capabilities():
+    from server.connectors.app_store_connect.contracts import capabilities
+    return capabilities()
 
 
 @router.get("/projects")
