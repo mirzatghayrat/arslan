@@ -46,7 +46,7 @@ async def test_stale_confirm_does_not_dispatch(monkeypatch):
     events = []
     await arslan.confirm_and_execute("conv", 7, events.append)
     assert not dispatched                              # no ghost EXECUTE
-    assert any(e["type"] == "message" and "提案" in e["content"] for e in events)
+    assert any(e["type"] == "message" and "proposal" in e["content"] for e in events)
 
 
 async def test_refusal_never_carried_as_direction(monkeypatch):

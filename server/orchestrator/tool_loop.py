@@ -181,12 +181,15 @@ def _is_deferral_stub(text: str) -> bool:
 
 
 
-def _fallback_message(user_content: str) -> str:
+def _fallback_message(user_content: str, *, locale=None) -> str:
     """Honest last-resort answer when even the salvage attempt won't produce prose. Language
     inferred from the request so a Chinese user doesn't get an English apology (or vice-versa).
     Wording is deliberately PER-TURN ("这一轮") — a live incident showed 'session exhausted'
     phrasing poisons later turns: the model reads it in history and role-plays permanent
     exhaustion even though every dispatch starts with a fresh budget."""
+    from server.services import runtime_messages
+    if locale is not None:
+        return runtime_messages.render("round_incomplete", locale)
     cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
     if cjk:
         # User-facing copy: NO internal mechanics. "工具调用次数用完" confused a live tester
@@ -217,17 +220,21 @@ def _evidence_digest(tool_trace: list, *, max_items: int = 8, snippet: int = 240
     return "\n".join(lines)[:total]
 
 
-def _fallback_with_digest(user_content: str, tool_trace: list) -> str:
+def _fallback_with_digest(user_content: str, tool_trace: list, *, locale=None) -> str:
     """Fallback message + whatever evidence this round actually gathered. The 【阶段性发现】
     marker matters: arslan._looks_like_refusal treats a marked message as substantive
     (carried forward), not as a refusal to be dropped."""
-    base = _fallback_message(user_content)
+    base = _fallback_message(user_content, locale=locale)
     digest = _evidence_digest(tool_trace)
     if not digest:
         return base
-    cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
-    header = ("【阶段性发现】(本轮已查到的资料,尚未成稿)" if cjk
-              else "[Findings so far] (gathered this round, not yet written up)")
+    if locale is not None:
+        from server.services import runtime_messages
+        header = runtime_messages.render("findings_header", locale)
+    else:
+        cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
+        header = ("【阶段性发现】(本轮已查到的资料,尚未成稿)" if cjk
+                  else "[Findings so far] (gathered this round, not yet written up)")
     return f"{header}\n{digest}\n\n{base}"
 
 
@@ -954,7 +961,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
     findings digest only if even this refuses."""
     digest = _clean_findings(tool_trace)
     if not digest.strip():
-        return _fallback_with_digest(user_content, tool_trace)
+        from server.services import runtime_messages
+        return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
     # Synthesis may run on a dedicated stronger model (DeepSeek synthesizes weakly). Use it ONLY
     # when configured; otherwise keep the tool-loop adapter `a`.
     try:
@@ -984,7 +992,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         if isinstance(exc, TaskError):
             raise
         pass
-    return _fallback_with_digest(user_content, tool_trace)
+    from server.services import runtime_messages
+    return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
 
 
 _CHAT_TIMEOUT_S = 75.0  # per model call — DeepSeek's API can be slow and occasionally stalls.
@@ -1037,9 +1046,12 @@ async def _salvage_plain(a, system: str, user_content: str) -> str | None:
     return None
 
 
-def _chat_miss_message(user_content: str) -> str:
+def _chat_miss_message(user_content: str, *, locale=None) -> str:
     """Gentle honest miss for a chat turn that produced nothing usable — distinct from the research
     'reply 继续' nudge (there is no work in progress to continue here)."""
+    if locale is not None:
+        from server.services import runtime_messages
+        return runtime_messages.render("chat_miss", locale)
     cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
     return ("抱歉,我刚没接住你的意思——能再说一次或换个说法吗?" if cjk
             else "Sorry, I didn't quite catch that — could you say it another way?")
@@ -1326,13 +1338,16 @@ async def run_native(
         #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
         #     lie. Salvage a direct plain-text answer instead.
         if (not final_text) or _embeds_protocol(final_text) or deferred or claimed:
+            from server.services import runtime_messages
+            notice_locale = await runtime_messages.selected_locale()
             if tool_trace:
                 final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
             else:
                 final_text = (await _salvage_plain(a, system, user_content)
-                              or _chat_miss_message(user_content))
+                              or _chat_miss_message(user_content, locale=notice_locale))
             if _unverified_claim(final_text, tool_trace, wired_keys):
-                final_text = _fallback_with_digest(user_content, tool_trace) if tool_trace else _chat_miss_message(user_content)
+                final_text = (_fallback_with_digest(user_content, tool_trace, locale=notice_locale)
+                              if tool_trace else _chat_miss_message(user_content, locale=notice_locale))
         if acceptance_runtime is not None:
             from server.services import task_validation
             report = await task_validation.validate_output(acceptance_runtime, final_text, tool_trace, model_adapter=a)

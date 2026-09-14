@@ -1,5 +1,37 @@
 # W21 — six-language consistency (in progress)
 
+## Deterministic runtime notices
+
+Seven product-owned notices now have complete six-language copy: stale proposal,
+unfinished round, findings header, empty-answer clarification, and three honest
+correction templates. `runtime_messages` selects the active task's pinned locale,
+or reads only the saved language setting outside a task. Unknown/unavailable
+settings fall back to English; cancellation propagates. Legacy language labels
+and regional codes use the same normalized language in new task specs and notices.
+No secret setting is read to choose language, and concurrent tasks do not share
+a mutable locale. Existing resynthesis calls receive the selected notice locale;
+this adds no translation model call.
+
+All production fallback call sites pass the selected language, including visual
+input failures. User/source text and model-authored prose are not translated.
+The direct synchronous legacy helper defaults remain compatible. Findings and
+unfinished-message recognition cover all six generated forms and old Chinese /
+English markers; none of those labels grants authority or starts another run.
+
+The adjacent run passed 138 tests in 39.90 seconds. Subsequent legacy-task and
+storage/cancellation cases brought the focused catalog to 31 tests (5.42 seconds).
+The final shared-marker follow-up passed 40 runtime/continuation tests in 5.45
+seconds. Targeted lint and whitespace checks pass. Earlier failures were five
+tests expecting unconditional Chinese defaults (updated to the new default while
+preserving behavioral assertions) and a new incomplete runtime test double
+missing `closed` (fixed in the fixture, not by weakening runtime checks).
+
+This is not all runtime localization or a fresh full regression. Known next
+items include missing-expert errors, provider-error explanations and image-error
+copy. External diagnostics must retain their meaning, not be silently turned
+into a guessed local diagnosis. Full release-source regression and packaged UI
+acceptance remain outstanding.
+
 ## Real-browser settings follow-up
 
 The isolated `companion_smoke_app` harness was run with the production frontend,

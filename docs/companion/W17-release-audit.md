@@ -5,6 +5,11 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+Subsequent deterministic-runtime localization is covered by scoped tests in W21,
+not by the frozen backend result below. It changes product notices and locale
+normalization, not account permissions or release status. Remaining service-error
+copy is still being audited before another final-source regression.
+
 Latest complete backend run: clean `4906f9c3`, including deletion-aware history,
 task-only sources and replaced-summary dependencies: **4,767 passed, 14 skipped,
 20 warnings in 451.36 seconds**. Source remained frozen throughout. Report:

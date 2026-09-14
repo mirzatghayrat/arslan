@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
+from server.services import runtime_messages
 
 logger = logging.getLogger(__name__)
 
@@ -82,12 +83,8 @@ def _correction_user(full_text: str, spawn_name: str | None) -> str:
     )
 
 
-def _fallback_template(spawn_name: str | None) -> str:
-    if spawn_name:
-        return (f"更正:我刚才说交给 {spawn_name} 处理并不属实——本回合我没有派发任何任务,"
-                f"上面的内容是我自己作答的。需要真的交给 {spawn_name},直接点名它即可。")
-    return ("更正:本回合我没有派发任何任务,也没有任何东西正在后台运行——"
-            "上面的内容是我自己作答的。")
+def _fallback_template(spawn_name: str | None, locale="zh") -> str:
+    return runtime_messages.render("named_correction" if spawn_name else "correction", locale, name=spawn_name)
 
 
 async def correct(full_text: str, *, spawn_name: str | None = None,
@@ -103,18 +100,20 @@ async def correct(full_text: str, *, spawn_name: str | None = None,
     snippet = find_promise(full_text, spawn_name, check_generic=check_generic)
     if snippet is None:
         return None
+    locale = await runtime_messages.selected_locale()
     try:
         from server.orchestrator import tool_loop
         adapter = tool_loop._get_adapter()
         a = await adapter if hasattr(adapter, "__await__") else adapter
-        resp = await a.chat(_CORRECTION_SYS, _correction_user(full_text, spawn_name))
+        resp = await a.chat(_CORRECTION_SYS + f"\nWrite this product notice in locale {locale}.",
+                            _correction_user(full_text, spawn_name))
         candidate = (getattr(resp, "content", None) or "").strip()
         if candidate and find_promise(candidate, spawn_name) is None:
             return {"correction": candidate, "pattern": snippet, "corrected": True}
         logger.warning("promise correction re-synthesis also promised — using template")
     except Exception as exc:  # noqa: BLE001 — correction must never break the turn
         logger.warning("promise correction re-synthesis failed (using template): %s", exc)
-    return {"correction": _fallback_template(spawn_name), "pattern": snippet,
+    return {"correction": _fallback_template(spawn_name, locale), "pattern": snippet,
             "corrected": False}
 
 
@@ -174,14 +173,10 @@ def _zero_tool_correction_user(full_text: str) -> str:
     )
 
 
-def _zero_tool_fallback_template() -> str:
+def _zero_tool_fallback_template(locale="zh") -> str:
     # NOTE: deliberately avoids every trigger phrase (no 已生成/正在/稍等/deck-noun/搜索),
     # so the template itself never re-trips _zero_tool_fabrication.
-    return (
-        "更正:我没有配备相应工具,无法自己产出这个文件或数据。刚才那段“已完成/已交付”的说法"
-        "并不属实——本回合没有真正做出任何东西,也没有把任务交给谁。需要真的做出来,"
-        "请改用配备相应能力的分身。"
-    )
+    return runtime_messages.render("no_tools_correction", locale)
 
 
 async def correct_zero_tool(full_text: str, *, spawn_name: str | None = None) -> dict | None:
@@ -193,15 +188,17 @@ async def correct_zero_tool(full_text: str, *, spawn_name: str | None = None) ->
     snippet = _zero_tool_fabrication(full_text, spawn_name)
     if snippet is None:
         return None
+    locale = await runtime_messages.selected_locale()
     try:
         from server.orchestrator import tool_loop
         adapter = tool_loop._get_adapter()
         a = await adapter if hasattr(adapter, "__await__") else adapter
-        resp = await a.chat(_ZERO_TOOL_CORRECTION_SYS, _zero_tool_correction_user(full_text))
+        resp = await a.chat(_ZERO_TOOL_CORRECTION_SYS + f"\nWrite this product notice in locale {locale}.",
+                            _zero_tool_correction_user(full_text))
         candidate = (getattr(resp, "content", None) or "").strip()
         if candidate and _zero_tool_fabrication(candidate, spawn_name) is None:
             return {"correction": candidate, "pattern": snippet, "corrected": True}
         logger.warning("zero-tool correction re-synthesis also fabricated — using template")
     except Exception as exc:  # noqa: BLE001 — correction must never break the turn
         logger.warning("zero-tool correction re-synthesis failed (using template): %s", exc)
-    return {"correction": _zero_tool_fallback_template(), "pattern": snippet, "corrected": False}
+    return {"correction": _zero_tool_fallback_template(locale), "pattern": snippet, "corrected": False}

@@ -94,7 +94,7 @@ async def test_correct_zero_tool_templates_when_resynthesis_refabricates(monkeyp
     out = await promise_guard.correct_zero_tool(DECK_FAB)
     assert out is not None
     assert out["corrected"] is False
-    assert "更正" in out["correction"]
+    assert "Correction" in out["correction"]
     # the template itself must not re-trip the guard (no promise / claim language)
     assert promise_guard.correct_zero_tool  # sanity
     from server.orchestrator import tool_loop as tl
@@ -115,7 +115,7 @@ async def test_correct_zero_tool_fail_open_on_llm_error(monkeypatch):
     out = await promise_guard.correct_zero_tool(DECK_FAB)
     assert out is not None
     assert out["corrected"] is False
-    assert "更正" in out["correction"]
+    assert "Correction" in out["correction"]
 
 
 # ---------------------------------------------------------------------------

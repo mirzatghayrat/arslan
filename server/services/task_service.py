@@ -375,7 +375,8 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
     budget = current_budget() or Budget()
     async with db_session.AsyncSessionLocal() as db:
         locale = await db.scalar(select(Setting.value).where(Setting.key == "language")) or "en"
-    locale = locale.split("-")[0] if locale.split("-")[0] in {"en", "zh", "ja", "es", "de", "fr"} else "en"
+    from server.services.runtime_messages import normalize
+    locale = normalize(locale)
     spec = TaskSpec.model_validate({
         "id": ctx.task_id, "scope": {"kind": "task", "owner_id": ctx.owner_id,
                                     "project_id": ctx.project_id, "task_id": ctx.task_id},

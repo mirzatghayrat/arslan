@@ -59,12 +59,9 @@ _MISSING_ELAPSED_SECONDS = 999.0
 
 # Historical digest labels remain recognizable when reading old results. They
 # are never a control signal or authorization to launch another execution.
-_DIGEST_MARKERS = ("【阶段性发现】", "[Findings so far]")
-
-
 def _has_findings_digest(text: str) -> bool:
-    t = text or ""
-    return any(m in t for m in _DIGEST_MARKERS)
+    from server.services import runtime_messages
+    return runtime_messages.has_findings(text)
 
 
 def _is_cjk(text: str) -> bool:
@@ -2317,9 +2314,10 @@ def _looks_like_refusal(text: str) -> bool:
     ends with the continue prompt — dropping it would restart research from zero on every
     continuation (the 3-rounds-of-identical-searches incident). It must be carried forward."""
     t = text or ""
-    if "【阶段性发现】" in t or "[Findings so far]" in t:
+    from server.services import runtime_messages
+    if _has_findings_digest(t):
         return False
-    return bool(_REFUSAL_RE.search(t))
+    return runtime_messages.is_round_incomplete(t) or bool(_REFUSAL_RE.search(t))
 
 
 async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSink) -> None:
@@ -2338,8 +2336,9 @@ async def confirm_and_execute(conversation_id: str, spawn_id: int, emit: EventSi
     direction = ((pending or {}).get("direction") or "").strip()
     if not direction:
         # Stale confirm (button re-clicked after the proposal was consumed, or no proposal).
+        from server.services import runtime_messages
         emit({"type": "message", "message_id": None, "role": "arslan",
-              "content": "这个提案已经执行过了(或没有待执行的提案)。直接告诉我接下来要做什么就好。"})
+              "content": runtime_messages.render("proposal_handled", await runtime_messages.selected_locale())})
         emit({"type": "stream_end", "message_id": None})
         return
     proposed = await dispatcher.last_spawn_output(spawn_id)
