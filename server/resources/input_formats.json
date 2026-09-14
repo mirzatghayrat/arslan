@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "max_bytes": 31457280,
+  "text": ["txt", "md", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "ini", "log", "py", "js", "ts", "tsx", "jsx", "rs", "go", "java", "c", "cpp", "h", "hpp", "css", "scss", "xml", "svg", "sh", "sql", "rb", "swift", "kt", "dart", "ipynb"],
+  "document": ["pdf", "docx", "html", "htm"],
+  "spreadsheet": ["xlsx"],
+  "presentation": ["pptx"],
+  "image": ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif"],
+  "video": ["mp4", "mov", "webm", "mkv", "m4v"]
+}

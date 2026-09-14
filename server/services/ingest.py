@@ -261,6 +261,16 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
     # reader here, it is the only one. Running it is therefore not the "both
     # tiers at once" that decision ①A forbids.
     name = (filename or "").lower()
+    from server.services.input_formats import kind, read_structured, video_metadata
+    category = kind(filename)
+    if category in {"text", "spreadsheet", "presentation"} and not name.endswith((".txt", ".md")):
+        text, truncated = read_structured(filename, data)
+        if truncated:
+            text += '\n{"extraction_truncated": true}'
+        return text
+    if category == "video":
+        import json
+        return json.dumps(video_metadata(filename, data), ensure_ascii=False, indent=2)
     if name.endswith(".txt") or name.endswith(".md"):
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):

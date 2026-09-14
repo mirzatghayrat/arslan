@@ -6,6 +6,7 @@ import type { EvolveEstimate, KnowledgeSource } from "../api/client.types";
 import type { MemoryEntry } from "../api/companion";
 import CompanionDialog, { buttonClass } from "./companion/CompanionDialog";
 import { companionError } from "./companion/errors";
+import { INPUT_ACCEPT } from "../lib/inputFormats";
 
 type Preference = { content: string; entry?: MemoryEntry };
 function preferenceRows(response: { preferences: string[]; entries?: MemoryEntry[] }): Preference[] {
@@ -213,7 +214,7 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
             <button disabled={busy} onClick={addText}>{t("spawn.add_text")}</button>
             <label className="kb-add__file">
               {t("spawn.upload_file")}
-              <input type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
+              <input type="file" accept={INPUT_ACCEPT} style={{ display: "none" }}
                      onChange={(e) => { const f = e.target.files?.[0]; if (f) addFile(f); }} />
             </label>
           </div>

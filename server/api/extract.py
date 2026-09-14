@@ -6,12 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from server.api.media_type import is_multipart_form
 from server.auth import require_auth
 from server.services import extract
+from server.services.input_formats import REGISTRY, InputError, kind
 
 router = APIRouter(prefix="/api/v1", tags=["extract"], dependencies=[Depends(require_auth)])
 
 
+@router.get("/input-formats")
+async def input_formats() -> dict:
+    import shutil
+    return {**REGISTRY, "video_metadata_available": bool(shutil.which("ffprobe")),
+            "video_frames": False, "video_transcription": False, "video_visual_understanding": False,
+            "spreadsheet_formulas": "cached_values_only", "presentation": REGISTRY["presentation"],
+            "presentation_visual_understanding": False}
+
+
 @router.post("/extract")
 async def post_extract(request: Request) -> dict:
+    category = None
     try:
         # Ask the question the way Starlette's form parser answers it — a substring
         # test on the raw header disagrees with it (see server/api/media_type.py).
@@ -20,7 +31,10 @@ async def post_extract(request: Request) -> dict:
             upload = form.get("file")
             if upload is None:
                 raise HTTPException(400, "file required")
-            data = await upload.read()
+            data = await upload.read(REGISTRY["max_bytes"] + 1)
+            if len(data) > REGISTRY["max_bytes"]:
+                raise InputError("inputs.limit")
+            category = kind(upload.filename or "")
             compress = str(form.get("compress", "")).lower() in ("1", "true", "yes")
             text, truncated = await extract.extract_text(
                 filename=upload.filename, data=data, compress=compress
@@ -35,6 +49,8 @@ async def post_extract(request: Request) -> dict:
             )
     except HTTPException:
         raise
+    except InputError as exc:
+        raise HTTPException(400, {"code": str(exc)}) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"text": text, "chars": len(text), "truncated": truncated}
+    return {"text": text, "chars": len(text), "truncated": truncated, "input_kind": category}

@@ -649,7 +649,11 @@ export const api = {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     const resp = await fetch(`${BASE}/extract`, { method: "POST", body: form, headers });
-    if (!resp.ok) { let detail = `HTTP ${resp.status}`; try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ } throw new ApiError(detail, resp.status); }
+    if (!resp.ok) {
+      let detail: unknown = `HTTP ${resp.status}`;
+      try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ }
+      throw new ApiError(typeof detail === "string" ? detail : `HTTP ${resp.status}`, resp.status, detail);
+    }
     return (await resp.json()) as { text: string; chars: number; truncated: boolean };
   },
   // ── Second Brain: shared knowledge collections (layer A) ──────────────────────

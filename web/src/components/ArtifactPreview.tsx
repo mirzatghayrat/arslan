@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { StoredArtifact } from "../api/client.types";
 import ArtifactDownloads from "./ArtifactDownloads";
+import { INPUT_FORMATS } from "../lib/inputFormats";
 
 export default function ArtifactPreview({ file, visible = true }: { file: StoredArtifact; visible?: boolean }) {
   const { t } = useTranslation();
@@ -33,7 +34,7 @@ export default function ArtifactPreview({ file, visible = true }: { file: Stored
       if (media[extension]) {
         objectUrl = URL.createObjectURL(new Blob([bytes], { type: media[extension][1] }));
         if (active) { setKind(media[extension][0]); setUrl(objectUrl); }
-      } else if (/^(txt|md|csv|tsv|json|jsonl|yaml|yml|toml|ini|log|py|js|ts|tsx|jsx|rs|go|java|c|cpp|h|css|html|htm|svg|xml|sh|sql)$/.test(extension)) {
+      } else if ([...INPUT_FORMATS.text, "html", "htm"].includes(extension)) {
         const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
         if (active) { setKind("text"); setText(content.slice(0, 100000)); setTruncated(content.length > 100000); }
       } else {

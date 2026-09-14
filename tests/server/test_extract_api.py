@@ -78,6 +78,23 @@ async def test_extract_file_upload(client, monkeypatch):
     assert r.json()["text"] == "hello attachment"
 
 
+async def test_input_matrix_and_code_extraction(client):
+    matrix = await client.get("/api/v1/input-formats")
+    assert matrix.status_code == 200
+    assert "xlsx" in matrix.json()["spreadsheet"]
+    assert matrix.json()["video_visual_understanding"] is False
+    result = await client.post("/api/v1/extract", files={"file": ("sample.ts", b"const a = 1;", "text/plain")})
+    assert result.status_code == 200
+    assert result.json()["text"] == "const a = 1;"
+    assert result.json()["input_kind"] == "text"
+
+
+async def test_invalid_extended_input_has_structured_error(client):
+    result = await client.post("/api/v1/extract", files={"file": ("sample.xlsx", b"bad", "application/octet-stream")})
+    assert result.status_code == 400
+    assert result.json()["detail"] == {"code": "inputs.invalid"}
+
+
 # These tests skip themselves from INSIDE the body (no decorator to hang a mark
 # on), so the selection marker is added here explicitly. It does not replace the
 # in-body skip — that skip is why they pass off macOS; the marker is how a macOS

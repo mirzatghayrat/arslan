@@ -3,6 +3,7 @@ import { fileToImagePayload, type ImagePayload } from "../lib/imagePayload";
 import { Plus, X, Loader2, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
+import { INPUT_ACCEPT, INPUT_FORMATS, documentInputSupported, inputKind } from "../lib/inputFormats";
 import type { MessageAttachment } from "../types";
 
 /**
@@ -41,15 +42,15 @@ export interface Attachment {
   /** The downscaled base64 the model actually receives. Present ⇒ this image
    *  rides the turn as a real image block, not as OCR'd text. */
   image?: ImagePayload;
+  inputKind?: string;
 }
 
 /** Accept list for the native picker: existing doc types + images. */
-const ATTACH_ACCEPT = ".pdf,.docx,.txt,.md,.html,.htm,image/*";
-const DOC_EXT = /\.(pdf|docx|txt|md|html?)$/i;
+const ATTACH_ACCEPT = INPUT_ACCEPT;
 /** Per-message budget, borrowed from Kimi/DeepSeek (surface caps on reject). */
 const MAX_ATTACHMENTS = 9;
 /** 30 MB/file, matching the Claude reference in the design doc. */
-const MAX_FILE_BYTES = 30 * 1024 * 1024;
+const MAX_FILE_BYTES = INPUT_FORMATS.max_bytes;
 /** Explicit-scheme URLs with a TLD-like dot. Bare domains are intentionally NOT
  *  auto-detected (too ambiguous with filenames/prose). */
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+\.[a-z][^\s<>"'`]*/gi;
@@ -107,7 +108,7 @@ export function useComposerAttach(
   );
 
   const isImage = (f: File) =>
-    f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(f.name);
+    !/\.svg$/i.test(f.name) && (f.type.startsWith("image/") || inputKind(f.name) === "image");
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -157,7 +158,7 @@ export function useComposerAttach(
           commit(current);
           continue;
         }
-        if (!DOC_EXT.test(file.name)) {
+        if (!documentInputSupported(file.name)) {
           setError(t("attach.unsupported", { name: file.name }));
           continue;
         }
@@ -166,12 +167,14 @@ export function useComposerAttach(
           const r = await api.extractAttachmentFile(file, compress);
           const next = [
             ...current,
-            { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const },
+            { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const, inputKind: inputKind(file.name) },
           ];
           current = next;
           commit(next);
         } catch (e) {
-          setError(String((e as Error).message ?? e));
+          const detail = e && typeof e === "object" && "detail" in e ? e.detail : null;
+          const code = detail && typeof detail === "object" && "code" in detail ? String(detail.code) : "";
+          setError(t(["inputs.limit", "inputs.invalid", "inputs.encoding", "inputs.unsupported", "inputs.videoToolMissing"].includes(code) ? code : "inputs.failed"));
         } finally {
           setBusy(false);
         }
@@ -329,7 +332,7 @@ export function AttachChips({
                 : a.ocr === "pending"
                   ? `· ${t("attach.image_ocr_wait")}`
                   : `· ${t("attach.image_unsendable")}`
-              : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}`}
+              : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}${a.inputKind === "video" ? ` · ${t("inputs.videoMetadataOnly")}` : a.inputKind === "spreadsheet" ? ` · ${t("inputs.cachedValues")}` : a.inputKind === "presentation" ? ` · ${t("inputs.slideTextOnly")}` : ""}`}
           </span>
           <button
             type="button"

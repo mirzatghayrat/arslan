@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from server.config import settings
 from server.services import ingest
+from server.services.input_formats import kind, read_structured, video_metadata
 
 
 async def extract_text(
@@ -13,6 +14,7 @@ async def extract_text(
     url: str | None = None, compress: bool = False,
 ) -> tuple[str, bool]:
     """Return (text, truncated). Raises ValueError on fetch failure / private URL."""
+    source_truncated = False
     if url:
         # 🔒 SSRF: only via the guarded WebExtractExecutor (per-hop host revalidation).
         from server.registry.executors import EXECUTORS
@@ -26,10 +28,19 @@ async def extract_text(
         # languages on the same file depending on which door it came through.
         from server.services import ocr_fallback
 
-        text = ingest._extract_file(
-            filename or "file", data,
-            ui_language=await ocr_fallback.current_ui_language(),
-            ocr_languages=await ocr_fallback.current_ocr_languages())
+        category = kind(filename or "")
+        if category in {"text", "spreadsheet", "presentation"} and not (filename or "").lower().endswith((".txt", ".md")):
+            import asyncio
+            text, source_truncated = await asyncio.to_thread(read_structured, filename or "file", data)
+        elif category == "video":
+            import asyncio
+            import json
+            text = json.dumps(await asyncio.to_thread(video_metadata, filename or "file", data), ensure_ascii=False, indent=2)
+        else:
+            text = ingest._extract_file(
+                filename or "file", data,
+                ui_language=await ocr_fallback.current_ui_language(),
+                ocr_languages=await ocr_fallback.current_ocr_languages())
     else:
         raise ValueError("provide url or file data")
 
@@ -39,4 +50,4 @@ async def extract_text(
     limit = settings.attach_extract_char_limit
     if len(text) > limit:
         return text[:limit], True
-    return text, False
+    return text, source_truncated
