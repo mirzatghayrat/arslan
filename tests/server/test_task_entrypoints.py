@@ -15,7 +15,7 @@ def active_context(monkeypatch):
     monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))
     async def load(cid, **kwargs):
         return pc.TaskMemoryContext(task_id="entry-task", run_id="initial", conversation_id=cid,
-                                    no_learning=True)
+                                    no_learning=True, query=kwargs.get("retrieval_query") or kwargs.get("user_message", ""))
     monkeypatch.setattr(task_context, "load", load)
 
 
@@ -23,6 +23,8 @@ async def test_direct_expert_entry_persists_driver_and_resumes_same_budget(execu
     calls = []
     @task_context.scoped_dispatch
     async def expert(cid, spawn_id, brief, emit, **kwargs):
+        assert pc.current().query == brief
+        assert pc.current().explicit_save_digest is None
         calls.append((spawn_id, brief, budget().id, budget().tool_calls, pc.current().no_learning))
         budget().tool()
         task_service.current().pause_reason = "task_no_progress"

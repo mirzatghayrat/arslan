@@ -42,9 +42,9 @@ async def test_positive_negative_references_are_project_scoped_and_versioned(pro
         assert updated["version"] == 2 and b["style_reference"]["polarity"] == "negative"
         history = await repo.history(a["id"])
         assert len(history) == 2 and history[1]["style_reference"]["source_ref"] == "reference.png"
-    a_context = await pc.assemble(context=pc.TaskMemoryContext(task_id="a", run_id="a", project_id="project-a", model_is_local=True))
-    b_context = await pc.assemble(context=pc.TaskMemoryContext(task_id="b", run_id="b", project_id="project-b", model_is_local=True))
-    global_context = await pc.assemble(context=pc.TaskMemoryContext(task_id="g", run_id="g", model_is_local=True))
+    a_context = await pc.assemble("design", context=pc.TaskMemoryContext(task_id="a", run_id="a", project_id="project-a", model_is_local=True))
+    b_context = await pc.assemble("design", context=pc.TaskMemoryContext(task_id="b", run_id="b", project_id="project-b", model_is_local=True))
+    global_context = await pc.assemble("design", context=pc.TaskMemoryContext(task_id="g", run_id="g", model_is_local=True))
     assert "more spacing" in a_context.text and "Avoid blue" not in a_context.text
     assert "Avoid blue" in b_context.text and "more spacing" not in b_context.text
     assert '"polarity": "negative"' in b_context.text and "reference.png" in b_context.text
@@ -58,7 +58,7 @@ async def test_tentative_interpretation_is_not_used_until_user_reviews_it(projec
         assert entry["status"] == "proposed"
         with pytest.raises(MemoryError, match="memory_confirmation_required"):
             await repo.set_status(entry["id"], entry["version"], "active", USER)
-    context = pc.TaskMemoryContext(task_id="a", run_id="a", project_id="project-a", model_is_local=True)
+    context = pc.TaskMemoryContext(task_id="a", run_id="a", project_id="project-a", model_is_local=True, query="design")
     assert "blue" not in (await pc.assemble(context=context)).text
     async with projects() as db:
         proposal_id = await db.scalar(select(MemoryProposal.id))

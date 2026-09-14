@@ -43,6 +43,24 @@ def test_explicit_save_parser_is_narrow_and_binds_content():
         "Remember that I prefer diagrams")
 
 
+async def test_headless_query_never_grants_explicit_save_authority(execution_db):
+    instruction = "Remember: use concise reports"
+    ctx = await task_context.load("headless", user_message="", retrieval_query=instruction)
+    assert ctx.query == instruction
+    assert ctx.explicit_save_digest is None and ctx.explicit_save_ref is None
+    assert not ctx.allow_global_save
+
+
+async def test_worker_fallback_query_is_its_brief_not_parent_request():
+    from server.services import personal_context as pc
+    @task_context.scoped_worker
+    async def worker(*, spawn_id, task_brief):
+        assert pc.current().query == task_brief
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", query="Parent design request")):
+        await worker(spawn_id=1, task_brief="Write a code patch")
+        assert pc.current().query == "Parent design request"
+
+
 async def test_local_only_history_cannot_be_laundered_through_a_later_cloud_turn(execution_db, monkeypatch):
     from server.services import llm_factory
     async with execution_db() as db:

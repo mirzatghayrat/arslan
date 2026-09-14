@@ -42,7 +42,7 @@ async def test_extraction_cannot_claim_manual_authority(active_memory):
 async def test_legacy_prompt_helper_obeys_trusted_task_scope(active_memory):
     await memory.add_manual_fact("Use compact answers")
     assert await memory.facts_text(include_sensitive=True) == ""
-    with pc.bind(pc.TaskMemoryContext(task_id="task-a", run_id="run-a", model_is_local=True)):
+    with pc.bind(pc.TaskMemoryContext(task_id="task-a", run_id="run-a", model_is_local=True, query="Answer the question")):
         assert "Use compact answers" in await memory.facts_text()
     with pc.bind(pc.TaskMemoryContext(task_id="task-a", run_id="run-a", no_memory=True)):
         assert await memory.facts_text(include_sensitive=True) == ""

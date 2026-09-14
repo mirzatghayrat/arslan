@@ -23,6 +23,12 @@ no `irrelevant` filter reason. Green engineering tests do not override this
 observed acceptance failure. The Mac was checked again and remains locked, so
 live UI verification is still unavailable.
 
+Subsequent relevance work addresses that reproduction with a local lexical
+filter, task-query binding and host-request regressions in six locales. Its scope
+and remaining semantic/FTS limitations are recorded in `memory-relevance.md`.
+Until a new frozen full run is recorded, the complete result above still applies
+only to `43649d7e`, not to the subsequent relevance changes.
+
 Source `4bb3aa00` was clean when the complete Python suite started. The run used
 a new temporary HOME/data directory, a scrubbed environment, a synthetic secret,
 disabled secret-file bootstrap, and `ARSLAN_LIVE_LLM=0`. No production application

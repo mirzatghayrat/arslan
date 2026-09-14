@@ -419,6 +419,9 @@ async def resume_turn(task_id: str, expected_version: int, conversation_id: str,
     ctx = await task_context.load(conversation_id)
     value, progress, ctx, driver = await prepare_resume(task_id, expected_version, conversation_id, ctx)
     spec = TaskSpec.model_validate(value["spec"])
+    # Retrieval can use the original task text without recreating its old
+    # explicit-save authority. load() above intentionally received no user text.
+    ctx = replace(ctx, query=spec.instruction)
     # Reference-only recovery: never treat a prior model's output as fresh user
     # authority. Already-completed writes are also fenced in the action journal.
     extra = ("The user explicitly resumed this same task. Continue from its saved progress. "

@@ -33,16 +33,24 @@ def context(**kwargs):
     return pc.TaskMemoryContext(task_id="task-test", run_id="run-test", model_is_local=True, **kwargs)
 
 
-async def test_scope_filter_precedes_ranking_and_budget(memories):
-    await create("Global preference")
-    await create("Matched project", scope="project", scope_id="project-a")
+async def test_scope_filter_precedes_ranking_and_budget(memories, monkeypatch):
+    await create("Global preference needle")
+    await create("Matched project needle", scope="project", scope_id="project-a")
     await create("Wrong project needle", scope="project", scope_id="project-b")
     await create("Wrong expert needle", scope="expert", scope_id="expert-b")
-    await create("Matched expert", scope="expert", scope_id="expert-a")
+    await create("Matched expert needle", scope="expert", scope_id="expert-a")
+    scored = []
+    original_score = pc.memory_relevance.score
+    def score(query, content, **kwargs):
+        assert "Wrong" not in content
+        scored.append(content)
+        return original_score(query, content, **kwargs)
+    monkeypatch.setattr(pc.memory_relevance, "score", score)
     result = await pc.assemble("needle", context=context(project_id="project-a", expert_id="expert-a"))
     assert "Global preference" in result.text and "Matched project" in result.text
     assert "Matched expert" in result.text and "Wrong" not in result.text
     assert len(result.receipt.used) == 3
+    assert len(scored) == 3
     assert result.receipt.estimated_tokens <= 1200
 
 
@@ -60,7 +68,7 @@ async def test_ineligible_memory_never_enters_context(memories, field, value):
     async with memories() as db:
         await db.execute(update(MemoryEntry).where(MemoryEntry.id == row["id"]).values(**{field: value}))
         await db.commit()
-    result = await pc.assemble(context=context(allow_sensitive=True))
+    result = await pc.assemble("Excluded content", context=context(allow_sensitive=True))
     assert result.text == "" and result.receipt.used == ()
 
 
@@ -68,8 +76,8 @@ async def test_cloud_requires_task_and_entry_permission(memories):
     await create("Local only")
     await create("Cloud eligible", use_policy="cloud_allowed")
     ctx = replace(context(), model_is_local=False)
-    assert (await pc.assemble(context=ctx)).text == ""
-    result = await pc.assemble(context=replace(ctx, cloud_memory_allowed=True))
+    assert (await pc.assemble("Cloud eligible local", context=ctx)).text == ""
+    result = await pc.assemble("Cloud eligible local", context=replace(ctx, cloud_memory_allowed=True))
     assert "Cloud eligible" in result.text and "Local only" not in result.text
     assert result.receipt.cloud_use == "approved"
 
@@ -77,17 +85,17 @@ async def test_cloud_requires_task_and_entry_permission(memories):
 async def test_no_memory_and_temporary_are_hard_gates(memories):
     await create("Stored content")
     for ctx in (context(no_memory=True), context(temporary=True)):
-        result = await pc.assemble(context=ctx)
+        result = await pc.assemble("Stored content", context=ctx)
         assert result.text == "" and not result.receipt.used
     assert await pc.assemble() is None
     # Disabling learning does not disable retrieval.
-    assert "Stored content" in (await pc.assemble(context=context(no_learning=True))).text
+    assert "Stored content" in (await pc.assemble("Stored content", context=context(no_learning=True))).text
 
 
 async def test_sensitive_requires_explicit_access(memories):
     await create("Personal sensitive preference", sensitivity="sensitive", sensitive_acknowledged=True)
-    assert (await pc.assemble(context=context())).text == ""
-    assert "Personal sensitive" in (await pc.assemble(context=context(allow_sensitive=True))).text
+    assert (await pc.assemble("Personal sensitive", context=context())).text == ""
+    assert "Personal sensitive" in (await pc.assemble("Personal sensitive", context=context(allow_sensitive=True))).text
 
 
 async def test_archived_project_is_not_retrieved(memories):
@@ -95,16 +103,41 @@ async def test_archived_project_is_not_retrieved(memories):
     async with memories() as db:
         await db.execute(update(Project).where(Project.id == "project-a").values(status="archived"))
         await db.commit()
-    assert (await pc.assemble(context=context(project_id="project-a"))).text == ""
+    assert (await pc.assemble("Archived content", context=context(project_id="project-a"))).text == ""
 
 
 async def test_budget_never_slices_fact_or_receipt(memories):
-    await create("x " * 2000)
+    await create("Oversize " * 800)
     await create("Short fact")
-    result = await pc.assemble(context=context(), limit_tokens=100)
-    assert "Short fact" in result.text and "x x" not in result.text
+    result = await pc.assemble("Short fact oversize", context=context(), limit_tokens=100)
+    assert "Short fact" in result.text and "Oversize Oversize" not in result.text
     assert len(result.receipt.used) == 1
     assert result.receipt.filter_reasons == ("budget",)
+
+
+async def test_empty_query_is_not_an_implicit_browse_all(memories):
+    await create("Design reports with orange headings")
+    result = await pc.assemble(context=context())
+    assert result.text == "" and result.receipt.used == ()
+    assert result.receipt.filter_reasons == ("irrelevant",)
+
+
+async def test_explicit_inventory_still_obeys_scope_and_privacy(memories):
+    await create("Design reports with orange headings")
+    await create("B-only item", scope="project", scope_id="project-b")
+    await create("Sensitive item", sensitivity="sensitive", sensitive_acknowledged=True)
+    result = await pc.assemble("Show my preferences", context=context(project_id="project-a"))
+    assert "orange headings" in result.text and len(result.receipt.used) == 1
+    assert "B-only" not in result.text and "Sensitive" not in result.text
+
+
+async def test_current_task_query_is_fallback_but_explicit_query_wins(memories):
+    await create("Use concise reports")
+    ctx = context(query="Prepare a report")
+    assert "concise reports" in (await pc.assemble(context=ctx)).text
+    result = await pc.assemble("What is 2 + 2?", context=ctx)
+    assert result.text == "" and result.receipt.filter_reasons == ("irrelevant",)
+    assert "Prepare a report" not in result.receipt.model_dump_json()
 
 
 async def test_contextvars_do_not_leak_between_tasks_or_workers():

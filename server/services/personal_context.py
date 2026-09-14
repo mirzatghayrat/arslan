@@ -8,7 +8,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import datetime
 import json
-import re
 from uuid import uuid4
 
 from sqlalchemy import and_, or_, select
@@ -16,6 +15,7 @@ from pydantic import ValidationError
 
 from arslan.companion.contracts import ContextReceipt, ResourceRef
 from arslan.companion.memory import MemoryActor
+from arslan.companion import memory_relevance
 from arslan.companion.design import StyleReference
 from arslan.context_budget import estimate_tokens
 from server.db import session as db_session
@@ -45,6 +45,8 @@ class TaskMemoryContext:
     allow_sensitive: bool = False
     source_message_id: int | None = None
     source_run_id: int | None = None
+    # Transient current-task text, never stored in a ContextReceipt.
+    query: str = ""
     explicit_save_ref: str | None = None
     explicit_save_digest: str | None = None
     allow_global_save: bool = False
@@ -112,15 +114,6 @@ async def record(result: PersonalContext):
         await db.commit()
 
 
-def _terms(value: str) -> set[str]:
-    # Local lexical ranking; matching is not an authorization decision.
-    value = value.casefold()
-    words = set(re.findall(r"[^\W_]{2,}", value))
-    words.update(value[i:i + 2] for i in range(len(value) - 1)
-                 if "\u3400" <= value[i] <= "\u9fff" and "\u3400" <= value[i + 1] <= "\u9fff")
-    return words
-
-
 async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
                    limit_tokens: int = 1200) -> PersonalContext | None:
     ctx = context or current()
@@ -162,9 +155,14 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
         )
         # Permission filtering precedes every ranking and token-budget operation.
         rows = (await db.execute(statement)).all()
-    terms = _terms(query)
-    ranked = sorted(rows, key=lambda pair: (
-        -len(terms & _terms(pair[1].content)),
+    effective_query = query or ctx.query
+    terms = memory_relevance.terms(effective_query)
+    browse = memory_relevance.browse_requested(effective_query)
+    scores = {entry.id: 1 if browse else memory_relevance.score(terms, revision.content, kind=entry.kind)
+              for entry, revision in rows}
+    irrelevant = any(not value for value in scores.values())
+    ranked = sorted((pair for pair in rows if scores[pair[0].id] > 0), key=lambda pair: (
+        -scores[pair[0].id],
         -(pair[0].updated_at.timestamp() if pair[0].updated_at else 0), pair[0].id,
     ))
     chosen, refs = [], []
@@ -195,7 +193,8 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
     rendered = header + "\n".join(chosen) if chosen else ""
     return PersonalContext(rendered, receipt.model_copy(update={
         "used": tuple(refs), "estimated_tokens": estimate_tokens(rendered),
-        "filter_reasons": tuple(( ["budget"] if excluded else []) + ( ["inactive"] if inactive_reference else [])),
+        "filter_reasons": tuple(( ["budget"] if excluded else []) + ( ["inactive"] if inactive_reference else [])
+                                + (["irrelevant"] if irrelevant else [])),
         "cloud_use": "approved" if refs and not ctx.model_is_local else "not_sent",
         "local_only_used": local_only_used,
     }))

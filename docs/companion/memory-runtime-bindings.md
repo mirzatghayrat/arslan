@@ -1,7 +1,7 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` adds 16 synthetic runtime cases
-covering aspects of 18 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 29 synthetic runtime cases
+covering aspects of 20 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
@@ -30,6 +30,7 @@ their separate API/UI tests are not replaced by these cases.
 | M05-01/04 | Advancing the context-selection clock changes effective/expired eligibility in subsequent host requests | Version-specific source revalidation and historical factual interpretation |
 | M06-01/02 | Paused/deleted content is absent from later host requests; pause preserves history and can be restored | Vector/index rebuild, old summaries and backup restoration (separate tests exist; not covered here) |
 | M07-07 | Local-only memory stays stored but is absent from a synthetic cloud-destination request, even with task-level cloud permission | Sensitive-item acknowledgement UI and a real network capture |
+| M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 
 ## Known remaining coverage and implementation gaps
 
@@ -38,13 +39,11 @@ appropriate runtime boundary. Do not count existing single-operation tests as
 complete scenario coverage. Model behavior needs separate authorized evaluation;
 scripted answers above are not evidence of quality or uncertainty calibration.
 
-`personal_context.assemble` currently ranks eligible entries by lexical overlap
-but does not reject unrelated zero-overlap entries; empty-query `facts_text`
-also cannot establish task relevance. Project/owner/privacy/expiry filtering is
-independent and tested, but M03-06 and M08-02's irrelevant-memory exclusion is not
-proved by this implementation. A relevance fix must preserve useful cross-language
-preferences and distinguish universal rules from task-specific references; simply
-dropping all zero-token-overlap memories is not a justified complete solution.
+The earlier zero-overlap injection bug now has a local relevance filter and
+actual host-request regressions. See `memory-relevance.md` for the implementation,
+explicit inventory behavior and lexical/cross-language limitations. The sampled
+M03-06/M08-02 cases are now bound; this is not evidence that every paraphrase or
+universal/domain-specific preference has been classified correctly.
 
 These tests use an isolated temporary database, a synthetic configured model and
 no real credentials. No model/network calls, account changes, publication or

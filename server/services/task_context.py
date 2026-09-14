@@ -40,7 +40,7 @@ def precise_text_request(message: str) -> bool:
     ))
 
 
-async def load(conversation_id: str, *, user_message="") -> pc.TaskMemoryContext:
+async def load(conversation_id: str, *, user_message="", retrieval_query: str | None = None) -> pc.TaskMemoryContext:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(ConversationContext, conversation_id)
         from server.services.llm_factory import memory_models_are_local
@@ -61,6 +61,7 @@ async def load(conversation_id: str, *, user_message="") -> pc.TaskMemoryContext
     digest = explicit_save_digest(user_message)
     return pc.TaskMemoryContext(
         task_id=identity, run_id=f"turn-{identity}", conversation_id=conversation_id,
+        query=user_message if retrieval_query is None else retrieval_query,
         owner_id=row.owner_id if row else "local", project_id=row.project_id if row else None,
         model_is_local=model_is_local,
         no_memory=bool(row.no_memory) if row else False,
@@ -111,6 +112,8 @@ def scoped_worker(function):
     @wraps(function)
     async def wrapped(*args, **kwargs):
         with pc.for_worker(str(kwargs["spawn_id"])):
+            if pc.current() is not None:
+                pc._current.set(replace(pc.current(), query=kwargs.get("task_brief") or ""))
             if pc.current() is not None and kwargs.get("run_id") is not None:
                 pc._current.set(replace(pc.current(), run_id=f"run:{kwargs['run_id']}",
                                         source_run_id=kwargs["run_id"]))
@@ -124,7 +127,8 @@ async def execute_entry(conversation_id, instruction, emit, body, *, driver=None
     from server.services import task_service
     if task_service.current() is not None or not await is_active():
         return await body(emit)
-    ctx = pc.current() or await load(conversation_id, user_message="" if headless else instruction)
+    ctx = pc.current() or await load(conversation_id, user_message="" if headless else instruction,
+                                   retrieval_query=instruction)
     if ctx.temporary:
         from arslan.companion.memory import MemoryError
         raise MemoryError("temporary_tools_unavailable")

@@ -13,7 +13,7 @@ from server.services.memory_restore import apply_pending_guard_sync, mark_restor
 USER = MemoryActor(origin="user")
 
 
-def memory(content="Remembered preference"):
+def memory(content="Remembered preference: blue headings"):
     return MemoryWrite(content=content, scope=MemoryScope(kind="global"), use_policy="cloud_allowed")
 
 
@@ -27,7 +27,7 @@ async def test_restore_quarantines_revisions_revokes_cloud_and_suppresses_old_so
         db.add(ArslanMessage(id=301, conversation_id="old", role="user", content="Original conversation"))
         db.add(ArslanSummary(conversation_id="old", summary="Derived memory", up_to_message_id=301))
         await db.commit()
-    ctx = pc.TaskMemoryContext(task_id="t", run_id="r", model_is_local=True)
+    ctx = pc.TaskMemoryContext(task_id="t", run_id="r", model_is_local=True, query="blue headings")
     assert "Remembered preference" in (await pc.assemble(context=ctx)).text
     async with execution_db.kw["bind"].begin() as connection:
         result = await connection.run_sync(mark_restored_sync)

@@ -279,3 +279,35 @@ async def test_effective_time_changes_later_task_context(runtime, monkeypatch, f
     assert (content in second[0]["system"]) is (field == "valid_from")
     async with repository() as repo:
         assert (await repo.history(entry["id"]))[0]["content"] == content
+
+
+@pytest.mark.parametrize("query", [
+    "What is 2 + 2?", "2加2等于多少？", "2 + 2 は何ですか？", "¿Cuánto es 2 + 2?",
+    "Was ist 2 + 2?", "Combien font 2 + 2 ?", "Write a code patch.",
+])
+async def test_unrelated_memory_is_absent_from_actual_next_host_request(runtime, execution_db, query):
+    # M08-02 and M03-06: not merely hidden from the recall tool's results.
+    content = ("For reports use concise conclusions." if query == "Write a code patch."
+               else "For design work use orange minimalist layouts.")
+    await runtime("save-design", f"Remember: {content}", save=content)
+    later = await runtime("unrelated", query)
+    assert content not in later[0]["system"]
+    async with execution_db() as db:
+        receipt = await db.scalar(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "unrelated"))
+    assert receipt.receipt["used"] == []
+    assert "irrelevant" in receipt.receipt["filter_reasons"]
+    # Exclusion is task-local, not deletion or permanent memory disablement.
+    related = await runtime("related", "Prepare a report." if query == "Write a code patch." else "Design a new layout.")
+    assert content in related[0]["system"]
+
+
+@pytest.mark.parametrize("query", [
+    "Prepare a report", "准备一份报告", "レポートを書いて", "Prepara un informe",
+    "Erstelle einen Bericht", "Prépare un rapport",
+])
+async def test_english_report_preference_reaches_related_task_in_each_locale(runtime, query):
+    content = "I prefer concise English reports."
+    await runtime("save-report", f"Remember: {content}", save=content)
+    later = await runtime("related-report", query)
+    assert content in later[0]["system"]
