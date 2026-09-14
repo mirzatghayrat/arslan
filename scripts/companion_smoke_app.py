@@ -34,6 +34,14 @@ async def local_only_send(self, request, *args, **kwargs):
 
 httpx.AsyncClient.send = local_only_send
 
+if os.environ.get("ARSLAN_SMOKE_BROWSER_RUNTIME"):
+    from server.services import managed_browser
+    browser_runtime = Path(os.environ["ARSLAN_SMOKE_BROWSER_RUNTIME"])
+    if (not browser_runtime.resolve().is_relative_to(Path("/tmp").resolve())
+            or not browser_runtime.name.startswith("arslan-reader-runtime.")):
+        raise RuntimeError("Browser smoke runtime must be isolated temporary data")
+    managed_browser.runtime_root = lambda: browser_runtime
+
 original_lifespan = app.router.lifespan_context
 
 

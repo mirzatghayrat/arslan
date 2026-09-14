@@ -78,6 +78,8 @@ async def cancel(task_id: str, expected_version: int | None = None) -> dict:
     else:
         value = await persist()
     # Durable cancellation is committed before touching process-local handles.
+    from server.services import browser_reader
+    await browser_reader.cancel_task(task_id)
     task = _active.get(task_id)
     if task is not None and not task.done() and not task.cancelling():
         task.cancel()

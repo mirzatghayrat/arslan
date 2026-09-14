@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, PanelRightOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { StoredArtifact } from '../api/client.types';
+import { openArtifact } from '../lib/workDock';
 
-export default function ArtifactDownloads({ files }: { files?: StoredArtifact[] }) {
+export default function ArtifactDownloads({ files, preview = true }: { files?: StoredArtifact[]; preview?: boolean }) {
   const { t } = useTranslation();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,14 +32,15 @@ export default function ArtifactDownloads({ files }: { files?: StoredArtifact[] 
   }
 
   return <div className="space-y-2" data-testid="artifact-downloads">
-    {files.map(file => <button key={file.filename} type="button" disabled={pending !== null}
+    {files.map(file => <div key={file.filename} className="flex gap-2"><button type="button" disabled={pending !== null}
       onClick={() => download(file)}
       className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-left hover:bg-surface disabled:opacity-50"
       title={`${t('files.download')} · SHA-256 ${file.sha256}`}>
       <Download size={14} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate">{file.title}</span>
       <span className="text-muted-foreground">{Math.max(1, Math.ceil(file.bytes / 1024))} KB</span>
-    </button>)}
+    </button>{preview && <button type="button" className="rounded-lg border border-border p-2 hover:bg-surface" aria-label={t('dock.preview')}
+      onClick={() => openArtifact(file)}><PanelRightOpen size={16} /></button>}</div>)}
     {error && <p role="alert" className="text-danger">{error}</p>}
   </div>;
 }

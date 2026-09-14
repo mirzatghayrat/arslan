@@ -14,6 +14,7 @@ from server.auth import require_auth
 from server.db import session as db_session
 from server.db.models import Run
 from server.services import host_run, managed_browser, artifact_store
+from server.services import browser_reader
 from server.services.browser_proxy import validate_url
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -113,8 +114,60 @@ async def get_visit(run_id: int):
                 "artifacts": artifact_store.list_artifacts(run_id)}
 
 
+class ReaderCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    conversation_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    task_id: str | None = Field(default=None, max_length=200)
+
+
+async def _reader_scope(conversation_id: str, task_id: str | None):
+    if task_id is not None:
+        from server.db.models import CompanionTask
+        async with db_session.AsyncSessionLocal() as db:
+            task = await db.get(CompanionTask, task_id)
+            if task is None or task.owner_id != "local" or task.conversation_id != conversation_id:
+                raise HTTPException(404, detail={"code": "browser.task_not_found"})
+            if task.cancel_requested or task.phase == "cancelled":
+                await browser_reader.cancel_task(task_id)
+                raise HTTPException(409, detail={"code": "browser.session_closed"})
+
+
+@router.post("/browser/sessions", status_code=201)
+async def reader_create(body: ReaderCreate):
+    await _reader_scope(body.conversation_id, body.task_id)
+    try:
+        session = await browser_reader.create(body.conversation_id, body.task_id)
+    except browser_reader.ReaderError as exc:
+        raise HTTPException(409, detail={"code": exc.code}) from None
+    except (OSError, ValueError, TimeoutError):
+        raise HTTPException(503, detail={"code": "browser.runtime_failed"}) from None
+    return {"session_id": session.id, "conversation_id": session.conversation_id, "task_id": session.task_id,
+            "mode": "isolated_read_only"}
+
+
+@router.post("/browser/sessions/{session_id}/actions")
+async def reader_action(session_id: str, body: browser_reader.ReaderAction):
+    session = browser_reader.sessions.get(session_id)
+    if session is None or session.owner_id != "local":
+        raise HTTPException(404, detail={"code": "browser.session_closed"})
+    await _reader_scope(session.conversation_id, session.task_id)
+    try:
+        return await session.act(body)
+    except browser_reader.ReaderError as exc:
+        raise HTTPException(409, detail={"code": exc.code}) from None
+
+
+@router.delete("/browser/sessions/{session_id}", status_code=204)
+async def reader_close(session_id: str):
+    session = browser_reader.sessions.get(session_id)
+    if session is not None and session.owner_id == "local":
+        await session.close()
+        browser_reader.sessions.pop(session_id, None)
+
+
 async def shutdown():
     tasks = list(_tasks)
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    await browser_reader.shutdown()

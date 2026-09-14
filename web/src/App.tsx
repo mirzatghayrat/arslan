@@ -54,7 +54,7 @@ import { companionApi, type Project } from './api/companion';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
-import BrowserPanel from './components/BrowserPanel';
+import WorkDock from './components/WorkDock';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
@@ -189,6 +189,7 @@ export default function App() {
   // ── Stage B: Orchestrator chat live WS ─────────────────────────────────────
   // The store holds all thread items; we derive UI messages from it.
   const arslanItems = useArslanStore((s) => s.items);
+  const dockTaskFrame = useArslanStore((s) => s.taskState);
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
@@ -978,8 +979,8 @@ export default function App() {
               <button
                 data-testid="browser-indicator"
                 onClick={() => setShowBrowser(true)}
-                title={t('browser.title')}
-                aria-label={t('browser.title')}
+                title={t('dock.title')}
+                aria-label={t('dock.title')}
                 className="flex items-center px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary"
               >
                 <Globe className="w-3.5 h-3.5" />
@@ -1292,7 +1293,11 @@ export default function App() {
         {/* Diagnostics rail is a CONVERSATION panel — only show it on the orchestrator
             chat + spawn direct chat. On Settings/Ledger/Capabilities it has no relevant
             context (and would leak the chat-only "Spawns Pipeline"), so hide it. */}
-        {showControlPanel && !isThreadEmpty && !activeThread.temporary && (activeSection === 'arslan' || activeSection === 'spawn') && (
+        <WorkDock open={showBrowser} onOpen={() => setShowBrowser(true)} onClose={() => setShowBrowser(false)}
+          conversationId={activeSection === 'spawn' && activeSpawn ? `spawn-${activeSpawn.id}` : activeThreadId}
+          taskId={activeSection !== 'spawn' && dockTaskFrame?.conversation_id === activeThreadId ? dockTaskFrame.task_id : null}
+          temporary={activeSection !== 'spawn' && Boolean(activeThread.temporary)} />
+        {showControlPanel && !showBrowser && !isThreadEmpty && !activeThread.temporary && (activeSection === 'arslan' || activeSection === 'spawn') && (
           <aside className="w-80 border-l border-border bg-sidebar flex flex-col justify-between h-full select-none relative z-20 animate-slide-in-right overflow-y-auto">
             {/* Top diagnostic state */}
             <div className="p-5 border-b border-border/50 space-y-4">
@@ -1772,7 +1777,6 @@ export default function App() {
         </div>
       )}
 
-      <BrowserPanel open={showBrowser} onClose={() => setShowBrowser(false)} />
       {/* Transient toast (distill confirmation / failure). */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">

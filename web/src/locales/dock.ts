@@ -1,0 +1,55 @@
+const en = {
+  title: "Work panel", tabs: "Open work tabs", browser: "Browser", newBrowser: "New browser tab", close: "Close panel", closeTab: "Close tab", resize: "Resize work panel",
+  empty: "Keep your conversation beside a webpage or saved deliverable.", tabLimit: "Close a tab before opening another (maximum 8).",
+  boundConversation: "Conversation", currentConversation: "Current conversation", otherConversation: "Another conversation", staticPreview: "Browser setup and static preview",
+  readerLimits: "Isolated browsing: follow links and scroll. Sign-in, forms, uploads and non-GET requests are disabled. Navigation still contacts websites. Sessions close after 15 minutes.",
+  openPage: "Enter a public HTTPS address to start. Restored tabs do not reopen websites automatically.", setupRequired: "Set up the pinned browser using the setup link below first.",
+  error: "The browser could not complete this action. Check the connection or start a new session.", stale: "This page view changed. Refresh before following that link.",
+  back: "Back", forward: "Forward", refresh: "Refresh", scrollUp: "Scroll up", scrollDown: "Scroll down", stop: "Stop and close session", links: "Page links ({{count}})", pageText: "Extracted page text",
+  preview: "Open in work panel", fileLimits: "Read-only preview. Code and HTML are displayed as text, never executed. Media playback does not imply transcription or visual understanding.",
+  previewUnavailable: "Preview is unavailable, the file changed, or its codec is unsupported. You can still try downloading the saved file.", truncated: "Only the beginning of this file is shown.",
+};
+type Messages = { [K in keyof typeof en]: string };
+export const dockMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messages> = {
+  en,
+  zh: {
+    title:"工作面板",tabs:"已打开的工作标签",browser:"浏览器",newBrowser:"新建浏览器标签",close:"关闭面板",closeTab:"关闭标签",resize:"调整工作面板宽度",
+    empty:"在对话旁查看网页或已保存的交付物。",tabLimit:"请先关闭一个标签，最多可打开 8 个。",boundConversation:"所属对话",currentConversation:"当前对话",otherConversation:"其他对话",staticPreview:"浏览器安装与静态预览",
+    readerLimits:"隔离浏览：支持链接跳转和滚动，不开放登录、表单、上传或非 GET 请求。导航仍会访问网站。会话在 15 分钟后关闭。",
+    openPage:"输入公开 HTTPS 地址开始。恢复的标签不会自动重新访问网站。",setupRequired:"请先通过下方安装入口准备固定版本的浏览器。",
+    error:"浏览器未能完成操作，请检查连接或新建会话。",stale:"页面视图已变化，请刷新后再打开该链接。",back:"后退",forward:"前进",refresh:"刷新",scrollUp:"向上滚动",scrollDown:"向下滚动",stop:"停止并关闭会话",links:"页面链接（{{count}}）",pageText:"提取的网页文字",
+    preview:"在工作面板中打开",fileLimits:"只读预览。代码和 HTML 只显示文本，不会执行。媒体可播放不代表已转写或理解画面。",previewUnavailable:"无法预览、文件已变化或编码不受支持。你仍可尝试下载已保存文件。",truncated:"这里只显示文件的开头部分。",
+  },
+  ja: {
+    title:"作業パネル",tabs:"開いている作業タブ",browser:"ブラウザ",newBrowser:"ブラウザタブを追加",close:"パネルを閉じる",closeTab:"タブを閉じる",resize:"作業パネルの幅を変更",
+    empty:"会話の横でウェブページや保存済みの成果物を確認できます。",tabLimit:"新しいタブを開く前に既存のタブを閉じてください（最大 8 個）。",boundConversation:"会話",currentConversation:"現在の会話",otherConversation:"別の会話",staticPreview:"ブラウザの設定と静的プレビュー",
+    readerLimits:"分離された閲覧環境です。リンクの移動とスクロールに対応します。ログイン、フォーム、アップロード、GET 以外のリクエストは無効です。移動時はサイトに接続します。15 分後に終了します。",
+    openPage:"公開 HTTPS アドレスを入力してください。復元したタブは自動でサイトに接続しません。",setupRequired:"まず下の設定リンクから固定バージョンのブラウザを準備してください。",
+    error:"操作を完了できませんでした。接続を確認するか、新しいセッションを開始してください。",stale:"ページの表示が変わりました。更新してからリンクを開いてください。",back:"戻る",forward:"進む",refresh:"更新",scrollUp:"上へスクロール",scrollDown:"下へスクロール",stop:"停止してセッションを閉じる",links:"ページのリンク（{{count}}）",pageText:"抽出したページ本文",
+    preview:"作業パネルで開く",fileLimits:"読み取り専用です。コードと HTML はテキスト表示のみで実行しません。メディアの再生は文字起こしや映像理解を意味しません。",previewUnavailable:"プレビュー不可、ファイル変更、または未対応のコーデックです。保存済みファイルのダウンロードは試せます。",truncated:"ファイルの先頭部分のみ表示しています。",
+  },
+  es: {
+    title:"Panel de trabajo",tabs:"Pestañas de trabajo abiertas",browser:"Navegador",newBrowser:"Nueva pestaña de navegador",close:"Cerrar panel",closeTab:"Cerrar pestaña",resize:"Cambiar ancho del panel",
+    empty:"Consulta una página o un entregable guardado junto a la conversación.",tabLimit:"Cierra una pestaña antes de abrir otra (máximo 8).",boundConversation:"Conversación",currentConversation:"Conversación actual",otherConversation:"Otra conversación",staticPreview:"Configurar navegador y vista estática",
+    readerLimits:"Navegación aislada: enlaces y desplazamiento. Sin inicio de sesión, formularios, cargas ni solicitudes distintas de GET. Navegar sí contacta con sitios web. Las sesiones duran 15 minutos.",
+    openPage:"Introduce una dirección HTTPS pública. Las pestañas restauradas no vuelven a abrir sitios automáticamente.",setupRequired:"Prepara primero la versión fijada del navegador mediante el enlace inferior.",
+    error:"No se pudo completar la acción. Comprueba la conexión o inicia otra sesión.",stale:"La vista cambió. Actualiza antes de seguir ese enlace.",back:"Atrás",forward:"Adelante",refresh:"Actualizar",scrollUp:"Desplazar arriba",scrollDown:"Desplazar abajo",stop:"Detener y cerrar sesión",links:"Enlaces de la página ({{count}})",pageText:"Texto extraído de la página",
+    preview:"Abrir en el panel de trabajo",fileLimits:"Vista de solo lectura. El código y HTML se muestran como texto y nunca se ejecutan. Reproducir medios no implica transcribirlos ni comprender las imágenes.",previewUnavailable:"Vista no disponible, archivo cambiado o códec incompatible. Aún puedes intentar descargar el archivo guardado.",truncated:"Solo se muestra el comienzo del archivo.",
+  },
+  de: {
+    title:"Arbeitsbereich",tabs:"Offene Arbeitstabs",browser:"Browser",newBrowser:"Neuer Browser-Tab",close:"Bereich schließen",closeTab:"Tab schließen",resize:"Breite des Arbeitsbereichs ändern",
+    empty:"Webseiten oder gespeicherte Ergebnisse neben dem Gespräch ansehen.",tabLimit:"Vor einem weiteren Tab einen schließen (höchstens 8).",boundConversation:"Gespräch",currentConversation:"Aktuelles Gespräch",otherConversation:"Anderes Gespräch",staticPreview:"Browser-Einrichtung und statische Vorschau",
+    readerLimits:"Isoliertes Browsen mit Links und Scrollen. Anmeldung, Formulare, Uploads und andere Anfragen als GET sind deaktiviert. Navigation kontaktiert weiterhin Websites. Sitzungen enden nach 15 Minuten.",
+    openPage:"Öffentliche HTTPS-Adresse eingeben. Wiederhergestellte Tabs öffnen Websites nicht automatisch.",setupRequired:"Zuerst über den Link unten die festgelegte Browserversion einrichten.",
+    error:"Aktion nicht abgeschlossen. Verbindung prüfen oder eine neue Sitzung starten.",stale:"Die Seitenansicht hat sich geändert. Vor dem Öffnen des Links aktualisieren.",back:"Zurück",forward:"Vor",refresh:"Aktualisieren",scrollUp:"Nach oben scrollen",scrollDown:"Nach unten scrollen",stop:"Stoppen und Sitzung schließen",links:"Seitenlinks ({{count}})",pageText:"Extrahierter Seitentext",
+    preview:"Im Arbeitsbereich öffnen",fileLimits:"Schreibgeschützte Vorschau. Code und HTML erscheinen als Text und werden nie ausgeführt. Medienwiedergabe bedeutet keine Transkription oder Bildinterpretation.",previewUnavailable:"Vorschau nicht verfügbar, Datei geändert oder Codec nicht unterstützt. Die gespeicherte Datei kann weiterhin heruntergeladen werden.",truncated:"Nur der Anfang dieser Datei wird angezeigt.",
+  },
+  fr: {
+    title:"Panneau de travail",tabs:"Onglets de travail ouverts",browser:"Navigateur",newBrowser:"Nouvel onglet de navigateur",close:"Fermer le panneau",closeTab:"Fermer l’onglet",resize:"Redimensionner le panneau",
+    empty:"Consultez une page ou un livrable enregistré à côté de la conversation.",tabLimit:"Fermez un onglet avant d’en ouvrir un autre (8 maximum).",boundConversation:"Conversation",currentConversation:"Conversation actuelle",otherConversation:"Autre conversation",staticPreview:"Configuration du navigateur et aperçu statique",
+    readerLimits:"Navigation isolée : liens et défilement. Connexion, formulaires, téléversements et requêtes autres que GET sont désactivés. La navigation contacte les sites. Les sessions se ferment après 15 minutes.",
+    openPage:"Saisissez une adresse HTTPS publique. Les onglets restaurés ne rouvrent pas automatiquement les sites.",setupRequired:"Préparez d’abord la version fixée du navigateur via le lien ci-dessous.",
+    error:"L’action n’a pas abouti. Vérifiez la connexion ou démarrez une nouvelle session.",stale:"La vue a changé. Actualisez avant de suivre ce lien.",back:"Retour",forward:"Suivant",refresh:"Actualiser",scrollUp:"Défiler vers le haut",scrollDown:"Défiler vers le bas",stop:"Arrêter et fermer la session",links:"Liens de la page ({{count}})",pageText:"Texte extrait de la page",
+    preview:"Ouvrir dans le panneau de travail",fileLimits:"Aperçu en lecture seule. Le code et le HTML sont affichés comme texte, jamais exécutés. Lire un média n’implique ni transcription ni compréhension des images.",previewUnavailable:"Aperçu indisponible, fichier modifié ou codec non pris en charge. Vous pouvez toujours essayer de télécharger le fichier enregistré.",truncated:"Seul le début du fichier est affiché.",
+  },
+};
