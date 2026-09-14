@@ -40,7 +40,7 @@ describe('OrchestratorChat attach', () => {
     // Paste a URL straight into the composer → auto-extract via the SSRF-hardened path (no button)
     const msgInput = screen.getByPlaceholderText(/placeholder_chat/i);
     fireEvent.paste(msgInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
-    await screen.findByLabelText('remove-attachment');
+    await screen.findByLabelText('ui.removeAttachment');
     fireEvent.change(msgInput, { target: { value: 'summarise' } });
     const form = msgInput.closest('form');
     if (form) fireEvent.submit(form);
@@ -99,7 +99,7 @@ describe('OrchestratorChat hero attach (empty state)', () => {
     render(<OrchestratorChat {...base} chatHistory={[]} onSendMessage={spy} />);
     const heroInput = screen.getByPlaceholderText(/placeholder_empty/i);
     fireEvent.paste(heroInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
-    await screen.findByLabelText('remove-attachment');
+    await screen.findByLabelText('ui.removeAttachment');
     fireEvent.change(heroInput, { target: { value: 'summarise' } });
     fireEvent.keyDown(heroInput, { key: 'Enter' });   // hero sends via Enter (no <form>)
     await waitFor(() => expect(spy).toHaveBeenCalledWith('summarise', {

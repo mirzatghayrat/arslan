@@ -42,11 +42,7 @@ interface McpServersProps {
  * Tools are locked by default. Renders ONLY plain text — never server-supplied HTML.
  */
 export default function McpServers({ prefill }: McpServersProps = {}) {
-  // 🔴 This panel is otherwise ENGLISH-ONLY — every string below is a literal,
-  // which is why its empty state reads the same in all six languages. Not fixed
-  // here (it would swamp this change); `t` is wired so the strings this round
-  // ADDS do not join the pile.
-  const { t } = useTranslation();
+  const { t: tr } = useTranslation();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [query, setQuery] = useState("");
   const [tools, setTools] = useState<Record<number, McpTool[]>>({});
@@ -173,12 +169,12 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
           return;
         }
         if (st.state === "error") {
-          setOauthError(st.error || "authorization failed");
+          setOauthError(st.error || tr("connectionsUI.authFailed"));
           return;
         }
         await new Promise((r) => setTimeout(r, 2000));
       }
-      setOauthError("authorization timed out — the browser tab may still be waiting");
+      setOauthError(tr("connectionsUI.authTimeout"));
     } catch (e) {
       setOauthError(e instanceof Error ? e.message : String(e));
     }
@@ -276,7 +272,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
       <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
         <Plug className="w-4.5 h-4.5 text-primary" />
         <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">
-          MCP Servers
+          {tr("connectionsUI.servers")}
         </h3>
       </div>
 
@@ -293,7 +289,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
       {/* Server list */}
       {servers.length === 0 ? (
         <p className="text-[11px] text-subtle-foreground font-sans">
-          No MCP servers registered. Add one below to discover and wire external tools.
+          {tr("connectionsUI.none")}
         </p>
       ) : (
         <>
@@ -309,7 +305,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
           // everything must not look like an empty library.
           <p className="text-[11px] text-subtle-foreground font-sans"
              data-testid="mcp-filter-empty">
-            {t("capabilities.filter.no_match")}
+            {tr("capabilities.filter.no_match")}
           </p>
         ) : (
         <ul className="space-y-4">
@@ -320,7 +316,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                 key={s.id}
                 className="bg-surface/40 border border-border/60 rounded-xl p-4 space-y-3"
               >
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-foreground font-sans truncate">
@@ -335,7 +331,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                               : "bg-surface-raised text-subtle-foreground"
                         }`}
                       >
-                        {s.status}
+                        {tr(`connectionsUI.${["registered", "connected", "connecting", "error", "disconnected"].includes(s.status) ? s.status : "unknown"}`)}
                       </span>
                     </div>
                     <p className="text-[10px] text-subtle-foreground font-mono mt-0.5 truncate">
@@ -365,7 +361,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                         onClick={() => authorizeOauth(s.id)}
                         className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-warning/20 hover:bg-warning/30 text-warning transition-all disabled:opacity-50"
                       >
-                        Authorize
+                        {tr("connectionsUI.authorize")}
                       </button>
                     )}
                     <button
@@ -374,7 +370,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                       onClick={() => connect(s.id)}
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50"
                     >
-                      <Zap className="w-3 h-3" /> Connect
+                      <Zap className="w-3 h-3" /> {tr("connectionsUI.connect")}
                     </button>
                     <button
                       type="button"
@@ -382,13 +378,13 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                       onClick={() => reconnect(s.id)}
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold font-sans uppercase rounded-lg bg-surface-raised hover:bg-surface text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
                     >
-                      <RefreshCw className="w-3 h-3" /> Reconnect
+                      <RefreshCw className="w-3 h-3" /> {tr("connectionsUI.reconnect")}
                     </button>
                     <button
                       type="button"
                       disabled={busy}
                       onClick={() => remove(s.id)}
-                      aria-label="delete server"
+                      aria-label={tr("connectionsUI.deleteServer")}
                       className="p-1.5 rounded-lg text-subtle-foreground hover:text-danger hover:bg-danger/10 transition-all disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -408,7 +404,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                       onChange={(e) => toggleServerHost(s.id, e.target.checked)}
                       className="w-3.5 h-3.5 accent-primary"
                     />
-                    Allow Arslan (all tools)
+                    {tr("connectionsUI.allowHost")}
                   </label>
                   <label className="flex items-center gap-2 text-[11px] text-muted-foreground font-sans select-none">
                     <input
@@ -419,7 +415,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                       onChange={(e) => expose(s.id, e.target.checked)}
                       className="w-3.5 h-3.5 accent-primary"
                     />
-                    Allow for spawns (auto-wires read-only tools)
+                    {tr("connectionsUI.allowExperts")}
                   </label>
                 </div>
 
@@ -440,9 +436,9 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                               ? "bg-success/15 text-success"
                               : "bg-surface-raised text-subtle-foreground"
                           }`}
-                          title="Suggested tier (heuristic hint)"
+                          title={tr("connectionsUI.suggestTitle")}
                         >
-                          suggest: {t.suggested_tier}
+                          {tr("connectionsUI.suggest", { tier: tr(`connectionsUI.${t.suggested_tier === "safe" ? "safe" : "orchestrator"}`) })}
                         </span>
                         <div className="flex items-center gap-2 ml-auto">
                           <select
@@ -451,11 +447,11 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                             onChange={(e) =>
                               wire(s.id, t, e.target.value, t.status === "wired")
                             }
-                            aria-label={`tier for ${t.name}`}
+                            aria-label={tr("connectionsUI.tierFor", { name: t.name })}
                             className="bg-surface border border-border-strong rounded-md px-2 py-1 text-[10px] text-foreground font-mono focus:outline-none focus:border-primary"
                           >
-                            <option value="orchestrator">orchestrator</option>
-                            <option value="safe">safe</option>
+                            <option value="orchestrator">{tr("connectionsUI.orchestrator")}</option>
+                            <option value="safe">{tr("connectionsUI.safe")}</option>
                           </select>
                           <label className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono select-none">
                             <input
@@ -465,7 +461,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
                               onChange={(e) => wire(s.id, t, t.tier, e.target.checked)}
                               className="w-3.5 h-3.5 accent-primary"
                             />
-                            wire
+                            {tr("connectionsUI.wire")}
                           </label>
                         </div>
                       </li>
@@ -483,12 +479,12 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
       {/* Add-server form */}
       <div className="space-y-3 pt-4 border-t border-border/50">
         <h4 className="text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
-          Register an MCP server
+          {tr("connectionsUI.register")}
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             className={inputCls}
-            placeholder="Label (e.g. filesystem)"
+            placeholder={tr("connectionsUI.label")} aria-label={tr("connectionsUI.label")}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             autoComplete="off"
@@ -497,16 +493,16 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
             className={inputCls}
             value={transport}
             onChange={(e) => setTransport(e.target.value as "stdio" | "http")}
-            aria-label="transport"
+            aria-label={tr("connectionsUI.transport")}
           >
-            <option value="stdio">stdio (local process)</option>
-            <option value="http">http (streamable)</option>
+            <option value="stdio">{tr("connectionsUI.stdio")}</option>
+            <option value="http">{tr("connectionsUI.http")}</option>
           </select>
         </div>
         {transport === "http" ? (
           <input
             className={inputCls}
-            placeholder="URL (e.g. https://api.example.com/mcp)"
+            placeholder={tr("connectionsUI.url")} aria-label={tr("connectionsUI.url")}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             autoComplete="off"
@@ -515,14 +511,14 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
           <>
             <input
               className={inputCls}
-              placeholder="Command (e.g. npx)"
+              placeholder={tr("connectionsUI.command")} aria-label={tr("connectionsUI.command")}
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               autoComplete="off"
             />
             <input
               className={inputCls}
-              placeholder="Args (space-separated, e.g. -y @modelcontextprotocol/server-everything)"
+              placeholder={tr("connectionsUI.args")} aria-label={tr("connectionsUI.args")}
               value={argsText}
               onChange={(e) => setArgsText(e.target.value)}
               autoComplete="off"
@@ -531,20 +527,20 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
         )}
         <div className="space-y-2">
           <span className="block text-[10px] text-subtle-foreground font-mono uppercase tracking-wide">
-            {transport === "http" ? "Headers" : "Environment variables"}
+            {tr(transport === "http" ? "connectionsUI.headers" : "connectionsUI.environment")}
           </span>
           {envRows.map((r, i) => (
             <div key={i} className="flex items-center gap-2">
               <input
                 className={inputCls}
-                placeholder="KEY"
+                placeholder={tr("connectionsUI.key")} aria-label={tr("connectionsUI.key")}
                 value={r.k}
                 onChange={(e) => setEnvRow(i, { k: e.target.value })}
                 autoComplete="off"
               />
               <input
                 className={inputCls}
-                placeholder="value"
+                placeholder={tr("connectionsUI.value")} aria-label={tr("connectionsUI.value")}
                 type="password"
                 value={r.v}
                 onChange={(e) => setEnvRow(i, { v: e.target.value })}
@@ -552,7 +548,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
               />
               <button
                 type="button"
-                aria-label="remove env row"
+                aria-label={tr("connectionsUI.removeRow")}
                 onClick={() =>
                   setEnvRows((rows) => (rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows))
                 }
@@ -567,7 +563,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
             onClick={() => setEnvRows((rows) => [...rows, { k: "", v: "" }])}
             className="flex items-center gap-1 text-[10px] text-primary hover:text-primary-hover font-mono transition-colors"
           >
-            <Plus className="w-3 h-3" /> {transport === "http" ? "Add header" : "Add env var"}
+            <Plus className="w-3 h-3" /> {tr(transport === "http" ? "connectionsUI.addHeader" : "connectionsUI.addEnvironment")}
           </button>
         </div>
         <button
@@ -576,7 +572,7 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
           onClick={addServer}
           className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Plus className="w-4 h-4" /> Add server
+          <Plus className="w-4 h-4" /> {tr("connectionsUI.addServer")}
         </button>
       </div>
     </div>

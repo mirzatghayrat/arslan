@@ -10,8 +10,9 @@ import type { TaskSummary } from "../api/tasks";
 import OngoingTasks from "./companion/OngoingTasks";
 import EmptyState from "./EmptyState";
 import { useDismissable } from "../hooks/useDismissable";
+import { threadDisplayTitle } from "../lib/threadTitles";
 
-interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean }
+interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean }
 interface SidebarProps {
   threads: ArslanThread[]; activeThreadId: string; onSelectThread: (id: string) => void; onAddThread: () => void;
   spawns: Spawn[]; activeSpawnChatId: string; onSelectSpawnChat: (id: string) => void;
@@ -56,7 +57,7 @@ export default function Sidebar(props: SidebarProps) {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
       }} className={rowClass(active)}>
       {active && marker}<MessageSquare size={14} className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+      <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread, t)}</span>
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
         onDistill={onDistillThread} onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread} />}
     </div>;

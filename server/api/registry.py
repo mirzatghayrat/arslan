@@ -21,6 +21,7 @@ from server.registry.service import (
 )
 from server.schemas import RegistryOut, SkillPackOut, ToolOut, ToolsetOut
 from server.services import code_sandbox
+from server.registry.display import toolset_display_keys
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
         toolsets=[
             ToolsetOut(
                 key=t.key, name=t.name, description=t.description, tier=t.tier,
+                **toolset_display_keys(t.key, t.name, t.description),
                 status=t.status,
                 # assignable = functional, not just catalogued (>=1 safe wired tool)
                 assignable=toolset_is_assignable(
@@ -68,6 +70,7 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
                                        for x in by_ts.get(t.key, []))),
                 tools=by_ts.get(t.key, []),
                 degraded=(t.key == "code_sandbox" and py_degraded),
+                warning_code=("unsandboxed_python" if (t.key == "code_sandbox" and py_degraded) else None),
                 warning=("run_python 正在无沙箱裸跑(ARSLAN_ALLOW_UNSANDBOXED_PY=1):无隔离,"
                          "代码以完整主机权限运行" if (t.key == "code_sandbox" and py_degraded) else None),
             )

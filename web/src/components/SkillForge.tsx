@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatUiDate } from "../lib/localeFormatting";
 import { Hammer, RefreshCcw, Plus, X, Check, Rocket, FlaskConical, Archive, AlertTriangle } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { CuratorFlag, SkillCandidate, SpawnSummary } from "../api/client.types";
@@ -28,7 +29,7 @@ function statusBadgeCls(status: string): string {
 }
 
 export default function SkillForge() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [candidates, setCandidates] = useState<SkillCandidate[]>([]);
   const [spawns, setSpawns] = useState<SpawnSummary[]>([]);
   const [listError, setListError] = useState<string | null>(null);
@@ -238,7 +239,7 @@ export default function SkillForge() {
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="My Method"
+              placeholder={t('ui.skillNameExample')}
               autoComplete="off"
               className={`${inputCls} font-sans`}
             />
@@ -249,7 +250,7 @@ export default function SkillForge() {
               type="text"
               value={form.category}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              placeholder="research"
+              placeholder={t('ui.categoryExample')}
               autoComplete="off"
               className={`${inputCls} font-mono`}
             />
@@ -359,7 +360,7 @@ export default function SkillForge() {
                     </div>
                     <p className="text-[11px] text-subtle-foreground mt-0.5">{c.description}</p>
                     <p className="text-[9px] font-mono text-subtle-foreground mt-1">
-                      {c.category} · {c.source} · {new Date(c.created_at).toLocaleDateString()}
+                      {c.category} · {c.source} · {formatUiDate(c.created_at, i18n?.resolvedLanguage)}
                     </p>
                   </div>
                   {promoted && (

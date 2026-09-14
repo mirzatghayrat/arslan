@@ -337,7 +337,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
                     {llmProviders.map((p) => (
                       <option key={p.key} value={p.key}>
                         {p.label}
-                        {p.native ? " (Native)" : ""}
+                        {p.native ? ` (${t('ui.native')})` : ""}
                       </option>
                     ))}
                   </select>

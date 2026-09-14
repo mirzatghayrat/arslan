@@ -187,7 +187,7 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
       {loadErr ? (
         <div className="text-[11px] text-warning" role="alert" data-testid="note-load-error">{loadErr}</div>
       ) : note == null ? (
-        <div className="text-[11px] text-subtle-foreground">loading…</div>
+        <div className="text-[11px] text-subtle-foreground">{tr('ui.loading')}</div>
       ) : (
         <>
           <div ref={wikilinkAnchorRef} className="note-editor__textarea-wrap">

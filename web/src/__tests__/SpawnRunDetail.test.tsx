@@ -18,7 +18,7 @@ describe("SpawnRunDetail", () => {
     const onBack = vi.fn();
     render(<SpawnRunDetail spawnId={1} spawnName="Bad" onBack={onBack} onSelectRun={() => {}} />);
     await screen.findByText(/do it/);
-    fireEvent.click(screen.getByText(/Diagnostics/));
+    fireEvent.click(screen.getByText(/ui.diagnostics/));
     expect(onBack).toHaveBeenCalled();
   });
 });

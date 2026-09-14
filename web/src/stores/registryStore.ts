@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api } from "../api/client";
+import { useTranslation } from "react-i18next";
+import { catalogText } from "../lib/catalogDisplay";
 
 /**
  * Real capability display-name map, loaded once from the backend registry
@@ -13,6 +15,7 @@ import { api } from "../api/client";
  */
 interface RegistryNamesState {
   names: Record<string, string>;
+  nameKeys: Record<string, string>;
   loaded: boolean;
   loading: boolean;
   loadRegistry: () => Promise<void>;
@@ -20,6 +23,7 @@ interface RegistryNamesState {
 
 export const useRegistryStore = create<RegistryNamesState>((set, get) => ({
   names: {},
+  nameKeys: {},
   loaded: false,
   loading: false,
   loadRegistry: async () => {
@@ -29,13 +33,15 @@ export const useRegistryStore = create<RegistryNamesState>((set, get) => ({
     try {
       const cat = await api.getRegistry();
       const names: Record<string, string> = {};
+      const nameKeys: Record<string, string> = {};
       for (const ts of cat.toolsets) {
         if (ts.key && ts.name) names[ts.key] = ts.name;
+        if (ts.key && ts.name_key) nameKeys[ts.key] = ts.name_key;
       }
       for (const sk of cat.skills) {
         if (sk.key && sk.name) names[sk.key] = sk.name;
       }
-      set({ names, loaded: true, loading: false });
+      set({ names, nameKeys, loaded: true, loading: false });
     } catch {
       // Leave names empty and loaded=false so a later mount can retry; never
       // substitute fabricated names.
@@ -49,6 +55,8 @@ export const useRegistryStore = create<RegistryNamesState>((set, get) => ({
  * when unknown. Use for every equipped-capability chip.
  */
 export function useCapabilityLabel(): (key: string) => string {
+  const { t } = useTranslation();
   const names = useRegistryStore((s) => s.names);
-  return (key: string) => names[key] ?? key;
+  const nameKeys = useRegistryStore((s) => s.nameKeys);
+  return (key: string) => catalogText(t, nameKeys[key], names[key] ?? key);
 }

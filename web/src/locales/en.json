@@ -755,7 +755,7 @@
     "brand_subtitle": "One Becomes Many",
     "capabilities": "Capabilities",
     "complete_chat": "Complete",
-    "complete_confirm": "Completing this chat will distill the conversation into long-term memory and archive it. The spawn will still remember everything next time. Continue?",
+    "complete_confirm": "Completing this chat will summarize it into long-term memory and archive it. Continue?",
     "new_chat": "New chat",
     "thread_menu": "Conversation actions",
     "distill": "Distill",
@@ -776,7 +776,7 @@
     "greeting_afternoon": "Good afternoon",
     "greeting_evening": "Good evening",
     "greeting_named": "{{greeting}}, {{name}}",
-    "sandbox_label": "Interactive Spawner Sandbox:",
+    "sandbox_label": "Conversation workspace",
     "placeholder_empty": "Describe a task, paste a doc, or drop a link — I'll orchestrate the right spawns.",
     "placeholder_chat": "Ask Arslan to orchestrate a task for your spawns...",
     "presets_label": "Quick starts",
@@ -1018,7 +1018,7 @@
       "mcp": {
         "title": "Suggested launch command (review & edit)",
         "add": "Add as MCP server",
-        "added": "Added to the MCP panel (locked) — connect it in the MCPS tab."
+        "added": "MCP server added and locked. Review and connect it in Connections & permissions."
       },
       "note": {
         "title": "Reference note (review & edit)",
@@ -1032,10 +1032,10 @@
       "manifest": {
         "title": "Author-shipped config",
         "add": "Add this server",
-        "added": "Server added — connect it in MCPS",
+        "added": "Server added — connect it in Connections & permissions.",
         "import_skill": "Import skill",
         "imported": "Skill imported",
-        "expose_hint": "The author suggests enabling “Allow for spawns” for this server (MCPS tab) — your call.",
+        "expose_hint": "The author suggests enabling access for experts in Connections & permissions. This is a suggestion, not authorization.",
         "error": "Plugin manifest invalid"
       },
       "overview_label": "What this is"

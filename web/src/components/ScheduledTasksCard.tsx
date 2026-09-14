@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatUiDateTime } from "../lib/localeFormatting";
 import { ChevronRight, Plus, CalendarClock } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type {
@@ -64,13 +65,8 @@ function fmtInterval(s: number): string {
   return s % 3600 === 0 ? `${s / 3600}h` : `${Math.round(s / 60)}m`;
 }
 
-function fmtWhen(iso: string | null): string {
-  if (!iso) return "—";
-  const d = parseUtc(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-  });
+function fmtWhen(iso: string | null, language?: string): string {
+  return iso ? formatUiDateTime(iso, language) || "—" : "—";
 }
 
 const INTERVAL_PRESETS = [
@@ -244,7 +240,7 @@ function TaskForm({
 
       <div className="sched-form__row">
         <span className="sched-form__label">{t("scheduled.col.cadence")}</span>
-        <div className="diag-catalog__range" role="radiogroup" aria-label="schedule kind">
+        <div className="diag-catalog__range" role="radiogroup" aria-label={t('ui.scheduleKind')}>
           {kindBtn("interval", t("scheduled.form.kind_interval"))}
           {kindBtn("cron", t("scheduled.form.kind_cron"))}
         </div>
@@ -318,7 +314,7 @@ interface Props {
 }
 
 export default function ScheduledTasksCard({ onOpenRun }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [tasks, setTasks] = useState<ScheduledTaskDto[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -588,7 +584,7 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                                       : r.outcome === "ok" ? t("scheduled.outcome.ok")
                                       : t("scheduled.outcome.error")}
                                   </td>
-                                  <td className="usage-card__num">{fmtWhen(r.started_at)}</td>
+                                  <td className="usage-card__num">{fmtWhen(r.started_at, i18n?.resolvedLanguage)}</td>
                                   <td title={r.reason ?? undefined}>
                                     {r.reason ? (r.reason.length > 120 ? `${r.reason.slice(0, 120)}…` : r.reason) : "—"}
                                   </td>

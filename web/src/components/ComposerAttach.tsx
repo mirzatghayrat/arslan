@@ -336,7 +336,7 @@ export function AttachChips({
           </span>
           <button
             type="button"
-            aria-label="remove-attachment"
+            aria-label={t('ui.removeAttachment')}
             onClick={() => onRemove(i)}
           >
             <X className="w-3 h-3" />

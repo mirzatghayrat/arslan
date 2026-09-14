@@ -134,19 +134,19 @@ describe("Capabilities page structure and legacy feature reachability", () => {
     expect(screen.getByRole("button", { name: /capabilities\.chips\.registered/ })).toBeInTheDocument();
     // Both sections visible by default (all)
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
-    expect(await screen.findByText("MCP Servers")).toBeInTheDocument();
+    expect(await screen.findByText("connectionsUI.servers")).toBeInTheDocument();
     // registered → presets section hidden, server list stays
     fireEvent.click(screen.getByRole("button", { name: /capabilities\.chips\.registered/ }));
     expect(screen.queryByText("capabilities.sections.recommended_mcp")).not.toBeInTheDocument();
-    expect(screen.getByText("MCP Servers")).toBeInTheDocument();
+    expect(screen.getByText("connectionsUI.servers")).toBeInTheDocument();
     // recommended → server list hidden, presets stay
     fireEvent.click(recommendedChip);
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
-    expect(screen.queryByText("MCP Servers")).not.toBeInTheDocument();
+    expect(screen.queryByText("connectionsUI.servers")).not.toBeInTheDocument();
     // all → both back
     fireEvent.click(screen.getByRole("button", { name: /capabilities\.chips\.all/ }));
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
-    expect(screen.getByText("MCP Servers")).toBeInTheDocument();
+    expect(screen.getByText("connectionsUI.servers")).toBeInTheDocument();
   });
 
   it("SKILLS tab contains the rehomed Import-skills form + registry catalog", async () => {
@@ -171,7 +171,7 @@ describe("Capabilities page structure and legacy feature reachability", () => {
     render(<Capabilities />);
     fireEvent.click(screen.getByRole("button", { name: "capabilities.tabs.saved" }));
     // SavedCandidates renders "Refresh list" button
-    expect(await screen.findByRole("button", { name: /refresh list/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "connectionsUI.refreshList" })).toBeInTheDocument();
   });
 
   it("page scrolls as a whole (overflow-y-auto shell)", () => {

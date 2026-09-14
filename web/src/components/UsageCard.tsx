@@ -37,7 +37,7 @@ export default function UsageCard() {
     <div className="usage-card" data-testid="usage-card">
       <div className="usage-card__head">
         <h3 className="usage-card__title">{t("usage.title")}</h3>
-        <div className="diag-catalog__range" role="tablist" aria-label="usage range">
+        <div className="diag-catalog__range" role="tablist" aria-label={t('ui.range')}>
           {RANGES.map((r) => (
             <button
               key={r}

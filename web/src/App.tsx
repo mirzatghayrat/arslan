@@ -65,10 +65,13 @@ import type { ImagePayload } from './lib/imagePayload';
 import { useDismissable } from './hooks/useDismissable';
 import DiscardChangesBar from './components/DiscardChangesBar';
 import { createSpawnDirty } from './lib/dirty';
+import { threadDisplayTitle } from './lib/threadTitles';
+import { formatUiTime } from './lib/localeFormatting';
 
 interface ArslanThread {
   id: string;
   title: string;
+  defaultTitle?: boolean;
   history: Message[];
   memberSpawnIds?: string[];
   archived?: boolean;
@@ -326,7 +329,7 @@ export default function App() {
         (msg, reply) => api.generateTitle(msg, reply, capturedThreadId),
         (tid, title) => {
           setThreads((prev) =>
-            prev.map((t) => (t.id === tid ? { ...t, title } : t)),
+            prev.map((t) => (t.id === tid ? { ...t, title, defaultTitle: undefined } : t)),
           );
         },
       );
@@ -592,6 +595,7 @@ export default function App() {
     const newThread: ArslanThread = {
       id: threadId,
       title: 'New Session',
+      defaultTitle: true,
       memberSpawnIds: [],
       history: []
     };
@@ -652,6 +656,7 @@ export default function App() {
         const fresh: ArslanThread = {
           id: `thread-${Date.now()}`,
           title: 'New Session',
+      defaultTitle: true,
           memberSpawnIds: [],
           history: [],
         };
@@ -689,6 +694,7 @@ export default function App() {
         const fresh: ArslanThread = {
           id: `thread-${Date.now()}`,
           title: 'New Session',
+      defaultTitle: true,
           memberSpawnIds: [],
           history: [],
         };
@@ -724,7 +730,7 @@ export default function App() {
             }
           }
 
-          return { ...t, history: newHistory, title: updatedTitle };
+          return { ...t, history: newHistory, title: updatedTitle, defaultTitle: updatedTitle === t.title ? t.defaultTitle : undefined };
         }
         return t;
       });
@@ -762,7 +768,7 @@ export default function App() {
       senderName: 'Arslan',
       senderAvatar: '🦁',
       text: `⚡ **New Agent Synthesized Successfully:** Active slot allocated to **${newSpawn.name}** [${newSpawn.domain}]. Default standard equipment tools mapped to spawn scope. Custom configurations are editable inside the Spawns Ledger.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage)
     };
 
     setThreads(prevThreads => prevThreads.map(t => {
@@ -931,8 +937,8 @@ export default function App() {
                   <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
                   <span className="text-[11px] font-mono text-foreground font-bold truncate">
                     {activeSection === 'arslan'
-                      ? activeThread.title
-                      : (activeSpawn?.name || 'Direct Chat')}
+                      ? threadDisplayTitle(activeThread, t)
+                      : (activeSpawn?.name || t('ui.directChat'))}
                   </span>
                 </>
               ) : (
@@ -1569,7 +1575,7 @@ export default function App() {
                     type="text"
                     required
                     value={newSpawnName}
-                    placeholder="e.g., CrimsonWriter"
+                    placeholder={t('ui.expertNameExample')}
                     onChange={(e) => setNewSpawnName(e.target.value)}
                     className="w-full bg-background border border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring/20 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
                   />
@@ -1578,7 +1584,7 @@ export default function App() {
                   <label className="block text-[10px] font-mono text-muted-foreground uppercase tracking-wider">{t('modal.avatar_emoji')}</label>
                   <div className="flex items-center gap-3 bg-background border border-border-strong rounded-xl px-3.5 py-2">
                     <SpawnAvatar seed={newSpawnName || 'new spawn'} size={36} />
-                    <span className="text-[10px] text-subtle-foreground font-mono">Auto-generated from name</span>
+                    <span className="text-[10px] text-subtle-foreground font-mono">{t('ui.autoName')}</span>
                   </div>
                 </div>
               </div>

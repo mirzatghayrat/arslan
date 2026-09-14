@@ -3,6 +3,7 @@ import {
   Send, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatUiTime } from '../lib/localeFormatting';
 import MatrixSpinner from './MatrixSpinner';
 import { Message, MessageAttachment, Spawn } from '../types';
 import { useCapabilityLabel } from '../stores/registryStore';
@@ -47,7 +48,7 @@ export default function SpawnDirectChat({
   refineDeliverable,
   onFinalize,
 }: SpawnDirectChatProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const refineAttachName = t('spawn_chat.refine_attach_name');
   const capabilityLabel = useCapabilityLabel();
   const displayName = useProfileStore((s) => s.displayName);
@@ -222,7 +223,7 @@ export default function SpawnDirectChat({
           senderName: spawn.name,
           senderAvatar: spawn.avatarEmoji,
           text: `⚠️ ${m.detail ?? m.message ?? 'An error occurred.'}`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
         };
         setMessages(prev => [...prev, errMsg]);
         break;
@@ -238,7 +239,7 @@ export default function SpawnDirectChat({
             name: m.spawn_name ?? t('spawn.knowledge_panel'),
             chunks: m.chunks,
           }),
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
         }]);
         break;
       }
@@ -266,7 +267,7 @@ export default function SpawnDirectChat({
       senderName: userSenderName,
       senderAvatar: '🦁',
       text: inputValue,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
       ...(display.length ? { attachments: display } : {}),
     };
 
@@ -436,7 +437,7 @@ export default function SpawnDirectChat({
                           <MatrixSpinner size={14} className="text-primary" />
                           <span className="flex items-center gap-1">
                             {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
-                            {msg.toolActivity.toolName} completed:
+                            {msg.toolActivity.toolName} {t('ui.completed')}
                           </span>
                         </div>
                         <p className="text-foreground text-[10.5px] whitespace-pre-line border-l-2 border-primary pl-3 py-1 bg-foreground/[0.01]">
@@ -516,7 +517,7 @@ export default function SpawnDirectChat({
 
                 {msg.toolActivity && (
                   <div className="mt-3 border border-primary/40 p-2 text-[11px] bg-background">
-                    <div className="text-warning mb-1">STDOUT RESULT &gt; {msg.toolActivity.toolName}</div>
+                    <div className="text-warning mb-1">{t('ui.stdout')} &gt; {msg.toolActivity.toolName}</div>
                     <p className="text-foreground">{msg.toolActivity.outputSummary}</p>
                     {/* 🔒 SECURITY: artifactChart/artifactSvg are populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
                     {msg.toolActivity?.artifactChart && (

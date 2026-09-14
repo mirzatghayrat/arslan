@@ -85,7 +85,7 @@ describe('SpawnDirectChat', () => {
     // Paste a URL straight into the composer → auto-extract via the SSRF-hardened path (no button)
     const msgInput = screen.getByPlaceholderText(/spawn_chat/i);
     fireEvent.paste(msgInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
-    await screen.findByLabelText('remove-attachment');  // chip present
+    await screen.findByLabelText('ui.removeAttachment');  // chip present
     fireEvent.change(msgInput, { target: { value: 'summarise' } });
     const form = msgInput.closest('form');
     if (form) fireEvent.submit(form);

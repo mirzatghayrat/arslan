@@ -114,7 +114,7 @@ export default function BrainEntryDetail(
           {loadErr}
         </div>
       ) : entry == null ? (
-        <div className="text-[11px] text-subtle-foreground">loading…</div>
+        <div className="text-[11px] text-subtle-foreground">{t('ui.loading')}</div>
       ) : (
         <>
           <div className="text-[10.5px] text-subtle-foreground font-mono mb-2">

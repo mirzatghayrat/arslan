@@ -755,7 +755,7 @@
     "brand_subtitle": "一变多",
     "capabilities": "能力库",
     "complete_chat": "完结",
-    "complete_confirm": "完结会把这次对话蒸馏成长期偏好后归档收起；重开仍记得。继续？",
+    "complete_confirm": "完结会将这次对话总结到长期记忆并归档。继续？",
     "new_chat": "新会话",
     "thread_menu": "对话操作",
     "distill": "蒸馏",
@@ -776,7 +776,7 @@
     "greeting_afternoon": "下午好",
     "greeting_evening": "晚上好",
     "greeting_named": "{{greeting}},{{name}}",
-    "sandbox_label": "交互式分身沙盒：",
+    "sandbox_label": "对话工作区",
     "placeholder_empty": "描述任务、粘贴文档或发送链接——我来编排合适的分身。",
     "placeholder_chat": "让 Arslan 为你的分身编排任务...",
     "presets_label": "快速开始",
@@ -1018,7 +1018,7 @@
       "mcp": {
         "title": "建议启动命令（可检查修改）",
         "add": "添加为 MCP 服务器",
-        "added": "已加入 MCP 面板（锁定）——请在 MCP 标签页连接。"
+        "added": "MCP 服务器已添加并锁定，请在“连接与权限”中审核和连接。"
       },
       "note": {
         "title": "参考笔记（可检查修改）",
@@ -1032,10 +1032,10 @@
       "manifest": {
         "title": "作者自带配置",
         "add": "添加此服务器",
-        "added": "已添加——去 MCPS 里连接它",
+        "added": "已添加服务器，请在“连接与权限”中连接。",
         "import_skill": "导入技能",
         "imported": "技能已导入",
-        "expose_hint": "作者建议为该服务器开启「Allow for spawns」(MCPS 页)——由你决定。",
+        "expose_hint": "作者建议在“连接与权限”中允许专家使用。这只是建议，不代表授权。",
         "error": "插件清单无效"
       },
       "overview_label": "这是什么"

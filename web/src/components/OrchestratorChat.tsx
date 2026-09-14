@@ -8,6 +8,7 @@ import {
   ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
@@ -127,7 +128,7 @@ export default function OrchestratorChat({
   shellPolicy = 'ask_all',
   onShellPolicyChange,
 }: OrchestratorChatProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
   // What the recogniser should EXPECT to hear. Its own setting first, because
   // the language someone speaks is not the language their interface is in —
@@ -416,7 +417,7 @@ export default function OrchestratorChat({
       senderName: displayName.trim() || t('common.you'),
       senderAvatar: '🦁',
       text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
       ...(display.length ? { attachments: display } : {}),
     };
     setChatHistory(prev => [...prev, userMsg]);
@@ -506,9 +507,7 @@ export default function OrchestratorChat({
                       : 'border-border bg-surface/40 hover:border-border-strong text-muted-foreground hover:text-foreground'
                   }`}
                   title={
-                    isOpen
-                      ? `${spawn.name} sandbox open — click to ${isSplitActive ? 'close' : 'view'}`
-                      : `Open ${spawn.name} sandbox`
+                    t(isOpen ? (isSplitActive ? 'ui.closeSandbox' : 'ui.viewSandbox') : 'ui.openSandbox', { name: spawn.name })
                   }
                 >
                   {statusIndicator}
@@ -726,7 +725,7 @@ export default function OrchestratorChat({
                           [<SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5 inline-block" />] {msg.senderName.toUpperCase()}
                         </span>
                         <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
-                          {msg.sender.toUpperCase()}
+                          {t(msg.sender === 'user' ? 'common.you' : msg.sender === 'arslan' ? 'app.name' : 'ui.expert')}
                         </span>
                       </div>
                     </div>
@@ -745,7 +744,7 @@ export default function OrchestratorChat({
                       <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none arslan-mark" draggable={false} />
                       <span className="font-bold text-foreground">{msg.senderName}</span>
                       <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
-                        Orchestrator
+                        {t('nav.arslan')}
                       </span>
                     </div>
                     <div className="pl-5">
@@ -771,7 +770,7 @@ export default function OrchestratorChat({
                     <div className="flex items-center gap-1.5 select-none">
                       <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
                       <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
-                        {t('app.name')} Orchestrator
+                        {t('app.name')} {t('nav.arslan')}
                       </span>
                     </div>
                     <div className="px-4 py-3 text-[12.5px] leading-relaxed relative bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40">
@@ -821,12 +820,12 @@ export default function OrchestratorChat({
                         )}
                         {isArslan ? (
                           <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
-                            {t('app.name')} Orchestrator
+                            {t('app.name')} {t('nav.arslan')}
                           </span>
                         ) : (
                           <div className="flex items-center gap-1">
                             <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">
-                              Spawn Core
+                              {t('ui.expert')}
                             </span>
                           </div>
                         )}
@@ -857,7 +856,7 @@ export default function OrchestratorChat({
                         <div className="mt-3.5 pt-3 border-t border-border/50 flex items-center gap-2.5 text-[11px] font-mono bg-surface/50 p-2 rounded-lg border border-border-strong">
                           <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
                           <div className="flex items-center gap-1 text-muted-foreground">
-                            <span>Workflow context routed to</span>
+                            <span>{t('ui.routedTo')}</span>
                             <span className="text-primary font-semibold flex items-center gap-0.5">
                               <CornerDownRight className="w-3 h-3 inline-block" />
                               {msg.routedTo.spawnName}
@@ -878,7 +877,7 @@ export default function OrchestratorChat({
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-bold text-foreground font-sans">{msg.spawnIntro.name}</h4>
-                              <span className="text-[9px] bg-primary/15 text-primary font-mono px-2 py-0.5 rounded font-bold uppercase tracking-widest">Introduced</span>
+                              <span className="text-[9px] bg-primary/15 text-primary font-mono px-2 py-0.5 rounded font-bold uppercase tracking-widest">{t('ui.introduced')}</span>
                             </div>
                             <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{msg.spawnIntro.domain}</p>
                           </div>
@@ -954,7 +953,7 @@ export default function OrchestratorChat({
                               {msg.escalation.status === 'refused' && t('orchestrator.escalation_refused')}
                             </span>
                             <span className="text-[9px] bg-background/30 font-mono px-2 py-0.5 rounded">
-                              From: {msg.escalation.spawnName}
+                              {t('ui.from')} {msg.escalation.spawnName}
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground font-sans leading-relaxed">{msg.escalation.issue}</p>
@@ -1067,7 +1066,7 @@ export default function OrchestratorChat({
                         [<SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5 inline-block" />] {msg.senderName.toUpperCase()}
                       </span>
                       <span className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary">
-                        {msg.sender.toUpperCase()}
+                        {t(msg.sender === 'user' ? 'common.you' : msg.sender === 'arslan' ? 'app.name' : 'ui.expert')}
                       </span>
                       {msg.refinedFrom != null && (
                         <span className="text-[10px] px-2 py-0.5 bg-success/20 text-success">{t('orchestrator.refined_badge')}</span>
@@ -1086,7 +1085,7 @@ export default function OrchestratorChat({
                   {/* Routed branch block */}
                   {msg.routedTo && (
                     <div className="mt-3 p-2 bg-primary/5 border-2 border-primary text-[11px] text-primary uppercase font-bold flex items-center gap-1.5 shadow-[2px_2px_0px_black]">
-                      <span>≫ DELEGATING THREAD DIRECTLY TO {msg.routedTo.spawnName.toUpperCase()}</span>
+                      <span>{t('ui.delegate', { name: msg.routedTo.spawnName })}</span>
                     </div>
                   )}
 
@@ -1094,21 +1093,21 @@ export default function OrchestratorChat({
                   {msg.spawnIntro && (
                     <div className="mt-4 border-2 border-primary bg-background p-3 space-y-2 text-[11px]">
                       <div className="flex items-center gap-2 font-bold text-primary">
-                        <span>SPAWN CREATION INDEX: {msg.spawnIntro.name.toUpperCase()}</span>
+                        <span>{t('ui.expertCreated', { name: msg.spawnIntro.name })}</span>
                       </div>
-                      <p className="text-muted-foreground text-[10px]">DOMAIN: {msg.spawnIntro.domain.toUpperCase()}</p>
+                      <p className="text-muted-foreground text-[10px]">{t('ui.domain', { domain: msg.spawnIntro.domain })}</p>
 
                       <div className="pt-2 border-t border-border space-y-1">
-                        <span className="text-subtle-foreground font-bold">EQUIPPED CAPABILITIES:</span>
+                        <span className="text-subtle-foreground font-bold">{t('orchestrator.equipped_capabilities')}</span>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {msg.spawnIntro.tools.map(toolId => (
                             <span key={toolId} className="px-2 py-0.5 bg-background text-muted-foreground">
-                              [TOOL] {toolId.toUpperCase()}
+                              [{t('capabilities.tabs.tools')}] {toolId.toUpperCase()}
                             </span>
                           ))}
                           {msg.spawnIntro.skills.map(skillId => (
                             <span key={skillId} className="px-2 py-0.5 bg-background text-primary">
-                              [SKILL] {skillId.toUpperCase()}
+                              [{t('capabilities.hero.kind.skill')}] {skillId.toUpperCase()}
                             </span>
                           ))}
                         </div>
@@ -1136,13 +1135,13 @@ export default function OrchestratorChat({
                   {msg.escalation && (
                     <div className="mt-4 border-2 border-danger bg-background p-3 text-[11px]">
                       <div className="text-danger font-bold uppercase select-none pb-2 flex justify-between">
-                        <span>⚠️ EXTREME PRIORITY ESCALATION INDEX ⚠️</span>
-                        <span>{msg.escalation.status.toUpperCase()}</span>
+                        <span>{t('ui.escalation')}</span>
+                        <span>{t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving', resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[msg.escalation.status] ?? 'ui.escalation')}</span>
                       </div>
                       <p className="text-muted-foreground font-semibold">{msg.escalation.issue.toUpperCase()}</p>
                       {msg.escalation.resolutionMessage && (
                         <div className="mt-2 bg-danger/20 text-danger p-2 border border-danger">
-                          LOG REJECTION DETAILED STATEMENT: {msg.escalation.resolutionMessage.toUpperCase()}
+                          {t('ui.resolution')} {msg.escalation.resolutionMessage.toUpperCase()}
                         </div>
                       )}
                     </div>
@@ -1255,12 +1254,12 @@ export default function OrchestratorChat({
                     <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
                     {isArslan && (
                       <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
-                        Orchestrator
+                        {t('nav.arslan')}
                       </span>
                     )}
                     {!isArslan && !isUser && (
                       <span className="text-[9px] bg-background text-primary px-2 py-0.5 rounded font-mono uppercase">
-                        Spawn • Core
+                        {t('ui.expert')}
                       </span>
                     )}
                   </div>
@@ -1273,7 +1272,7 @@ export default function OrchestratorChat({
                   {/* Linear clean route badge */}
                   {msg.routedTo && (
                     <div className="text-[10px] text-subtle-foreground font-mono flex items-center gap-1.5 pl-5">
-                      <span className="text-subtle-foreground">→ Routed process to:</span>
+                      <span className="text-subtle-foreground">→ {t('ui.routedTo')}</span>
                       <span className="text-primary hover:underline font-bold select-none cursor-pointer">
                         {msg.routedTo.spawnName}
                       </span>
@@ -1286,9 +1285,9 @@ export default function OrchestratorChat({
                       <div className="border border-border bg-background rounded-lg p-3 space-y-2.5 max-w-xl">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-foreground text-[11px]">{msg.spawnIntro.name} Spawn Registry</span>
+                            <span className="font-bold text-foreground text-[11px]">{t('ui.expertEntry', { name: msg.spawnIntro.name })}</span>
                           </div>
-                          <span className="text-[9px] bg-surface text-muted-foreground px-2 py-0.5 rounded font-mono">active</span>
+                          <span className="text-[9px] bg-surface text-muted-foreground px-2 py-0.5 rounded font-mono">{t('ui.active')}</span>
                         </div>
                         <div className="text-[10px] text-subtle-foreground">{t('orchestrator.capabilities_matrix')}</div>
                         <div className="flex flex-wrap gap-1">
@@ -1329,7 +1328,7 @@ export default function OrchestratorChat({
                       <div className="border border-danger/40 bg-danger/5 border-l-2 border-l-danger rounded-r-lg p-3 max-w-xl">
                         <div className="flex items-center gap-1 text-[10.5px] text-danger font-mono font-bold uppercase select-none">
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>Escalation Exception - Spawn Access Lockout ({msg.escalation.status})</span>
+                          <span>{t('ui.accessBlocked', { status: t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving', resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[msg.escalation.status] ?? 'ui.escalation') })}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{msg.escalation.issue}</p>
                         {msg.escalation.resolutionMessage && (
@@ -1416,13 +1415,13 @@ export default function OrchestratorChat({
             <div className="flex items-start gap-2 px-3 py-2.5 bg-danger/10 border border-danger/30 rounded-2xl rounded-tl-none max-w-2xl">
               <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
               <div className="flex flex-col gap-1 min-w-0">
-                <span className="text-[11px] text-danger font-semibold">{t('chat.llm_error_title', 'Model error')}</span>
+                <span className="text-[11px] text-danger font-semibold">{t('ui.modelError')}</span>
                 <span className="text-[11px] text-danger/80 font-mono break-words">{taskErrorKey(llmError) ? t(taskErrorKey(llmError)!) : llmError}</span>
               </div>
               <button
                 onClick={clearLlmError}
                 className="ml-auto shrink-0 p-0.5 rounded hover:bg-danger/20 text-danger/60 hover:text-danger transition-colors"
-                aria-label="Dismiss error"
+                aria-label={t('errors.dismiss')}
               >
                 <X className="w-3 h-3" />
               </button>

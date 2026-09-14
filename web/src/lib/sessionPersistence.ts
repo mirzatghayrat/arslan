@@ -20,6 +20,7 @@
 export interface PersistedThread {
   id: string;
   title: string;
+  defaultTitle?: boolean;
   history: [];
   memberSpawnIds?: string[];
   archived?: boolean;
@@ -49,6 +50,7 @@ export const SESSION_KEY = "arslan.session";
 interface ThreadLike {
   id: string;
   title: string;
+  defaultTitle?: boolean;
   history?: unknown[];
   memberSpawnIds?: string[];
   archived?: boolean;
@@ -68,6 +70,7 @@ export function persistThreads(
     const slim: PersistedThread[] = threads.filter(t => !t.temporary).map((t) => ({
       id: t.id,
       title: t.title,
+      ...(t.defaultTitle === true && t.title === "New Session" ? { defaultTitle: true } : {}),
       history: [],
       ...(t.memberSpawnIds ? { memberSpawnIds: t.memberSpawnIds } : {}),
       ...(t.archived ? { archived: true } : {}),
@@ -90,6 +93,7 @@ export function makeFreshThread(now: number = Date.now()): PersistedThread {
   return {
     id: `thread-${now}`,
     title: "New Session",
+    defaultTitle: true,
     history: [],
     memberSpawnIds: [],
   };
@@ -110,12 +114,13 @@ export function restoreThreads(): RestoredThreads {
       if (Array.isArray(parsed)) {
         threads = parsed
           .filter(
-            (t): t is { id: string; title: string; memberSpawnIds?: string[]; archived?: boolean } =>
+            (t): t is { id: string; title: string; defaultTitle?: boolean; memberSpawnIds?: string[]; archived?: boolean } =>
               !!t && typeof t.id === "string" && typeof t.title === "string",
           )
           .map((t) => ({
             id: t.id,
             title: t.title,
+            ...(t.defaultTitle === true && t.title === "New Session" ? { defaultTitle: true } : {}),
             history: [] as [],
             ...(Array.isArray(t.memberSpawnIds)
               ? { memberSpawnIds: t.memberSpawnIds }
@@ -206,7 +211,9 @@ export function mergeServerConversations<T extends ThreadLike>(
     // Rebuilding it would replace `history` with [] — and for the thread the
     // user is currently looking at, that is the visible conversation going
     // blank. Only threads the client has never heard of are constructed here.
-    if (local) return { ...local, title: local.title || c.title || "New Session" };
+    if (local) return local.defaultTitle && c.title && c.title !== "New Session"
+      ? { ...local, title: c.title, defaultTitle: undefined }
+      : { ...local, title: local.title || c.title || "New Session" };
     return {
       id: c.conversation_id,
       title: c.title || "New Session",

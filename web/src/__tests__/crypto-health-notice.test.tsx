@@ -25,6 +25,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import en from "../locales/en.json";
+import { uiMessages } from "../locales/ui";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -32,7 +33,7 @@ vi.mock("react-i18next", () => ({
       const hit = key.split(".").reduce<unknown>(
         (node, part) =>
           node && typeof node === "object" ? (node as Record<string, unknown>)[part] : undefined,
-        en as unknown,
+        { ...en, ui: uiMessages.en } as unknown,
       );
       if (typeof hit !== "string" || !hit.trim()) throw new Error(`missing locale string: ${key}`);
       return hit;

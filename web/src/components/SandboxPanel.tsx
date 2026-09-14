@@ -116,10 +116,10 @@ export default function SandboxPanel({ spawn, sessionId, seed, conversationId, o
           <SpawnAvatar seed={spawn.name} size={28} />
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-bold text-foreground">{spawn.name}</span>
-            <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono font-bold uppercase">Sandbox</span>
+            <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono font-bold uppercase">{t('ui.sandbox')}</span>
           </div>
         </div>
-        <button onClick={discard} className="p-1 text-muted-foreground hover:text-foreground bg-surface border border-border/80 rounded" title="Close"><X className="w-4 h-4" /></button>
+        <button onClick={discard} className="p-1 text-muted-foreground hover:text-foreground bg-surface border border-border/80 rounded" title={t('common.close')} aria-label={t('common.close')}><X className="w-4 h-4" /></button>
       </div>
 
       {seed && (

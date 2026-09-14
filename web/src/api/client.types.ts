@@ -17,10 +17,11 @@ export interface Equipment {
 export interface RegistryTool { key: string; description: string; tier: string; status: string; }
 export interface RegistryToolset {
   key: string; name: string; description: string; tier: string; status: string;
+  name_key?: string | null; description_key?: string | null;
   assignable: boolean; tools: RegistryTool[];
   /** P0-1 决定①b: run-time degradation (e.g. run_python running UNSANDBOXED via the escape
    * valve). When true, the capability page badges the toolset with `warning`. */
-  degraded?: boolean; warning?: string | null;
+  degraded?: boolean; warning?: string | null; warning_code?: string | null;
 }
 export interface RegistrySkill {
   key: string; name: string; category: string; description: string;

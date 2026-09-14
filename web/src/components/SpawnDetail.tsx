@@ -177,7 +177,7 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     <div className="spawn-detail" data-testid="spawn-detail">
       <header className="spawn-detail__head">
         <span className="spawn-detail__title">{spawnName}</span>
-        <button className="spawn-detail__close" onClick={onClose} aria-label="close">✕</button>
+        <button className="spawn-detail__close" onClick={onClose} aria-label={t('common.close')}>✕</button>
       </header>
 
       {error && <div className="spawn-detail__error" role="alert">{error}</div>}

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CapabilityCatalog from "../components/CapabilityCatalog";
 
@@ -40,6 +40,18 @@ beforeEach(() => {
 const chipBtn = (re: RegExp) => screen.getByRole("button", { name: re });
 
 describe("CapabilityCatalog — usable-first availability chips", () => {
+  it("localizes a structured warning and retains unknown diagnostic text", async () => {
+    m.getRegistry.mockResolvedValue({ ...CATALOG, toolsets: [
+      { ...CATALOG.toolsets[0], degraded: true, warning_code: "unsandboxed_python", warning: "legacy warning text" },
+      { ...CATALOG.toolsets[0], key: "custom", name: "Custom", degraded: true, warning_code: "custom_warning", warning: "External diagnostic" },
+    ] });
+    render(<CapabilityCatalog kind="tools" />);
+    expect(await screen.findByText("ui.unsandboxedPython")).toBeInTheDocument();
+    expect(screen.getByTestId("toolset-degraded-web")).toHaveAttribute("title", "ui.unsandboxedPython");
+    expect(screen.queryByText("legacy warning text")).not.toBeInTheDocument();
+    expect(screen.getByText("External diagnostic")).toBeInTheDocument();
+  });
+
   it("tools: default 可用 chip shows only assignable toolsets (hollow + orchestrator hidden)", async () => {
     render(<CapabilityCatalog kind="tools" />);
     expect(await screen.findByText("Web Tools")).toBeInTheDocument();
@@ -83,9 +95,9 @@ describe("CapabilityCatalog — usable-first availability chips", () => {
     expect(screen.getByText("Discord")).toBeInTheDocument();
     expect(screen.getByText("Shell")).toBeInTheDocument();
     expect(screen.queryByText("Ghost")).not.toBeInTheDocument();
-    expect(screen.getByText("assignable")).toBeInTheDocument();
-    expect(screen.getByText("catalog")).toBeInTheDocument();
-    expect(screen.getByText("orchestrator/registered")).toBeInTheDocument();
+    expect(screen.getByText("ui.assignable")).toBeInTheDocument();
+    expect(screen.getByText("ui.catalogOnly")).toBeInTheDocument();
+    expect(within(screen.getByText("Shell").parentElement!).getByText("capabilities.chips.arslan_only")).toBeInTheDocument();
   });
 
   it("skills: default 可用 chip shows only assignable skills; category chips filter within usable", async () => {

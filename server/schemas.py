@@ -352,6 +352,8 @@ class ToolsetOut(BaseModel):
     key: str
     name: str
     description: str
+    name_key: str | None = None
+    description_key: str | None = None
     tier: str
     status: str
     assignable: bool
@@ -360,6 +362,7 @@ class ToolsetOut(BaseModel):
     # escape valve). Lets the capability page badge the toolset. Default False = normal.
     degraded: bool = False
     warning: str | None = None
+    warning_code: str | None = None
 
 
 class SkillPackOut(BaseModel):

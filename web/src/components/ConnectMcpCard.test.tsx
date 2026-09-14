@@ -1,9 +1,11 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { describe, test, expect, vi, afterEach } from 'vitest';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
+import i18n from '../i18n';
 import { applyConnectMcp } from './ConnectMcpCard';
 import * as mcpApi from '../api/mcp';
 
 afterEach(() => vi.restoreAllMocks());
+beforeEach(() => { void i18n.changeLanguage('en'); });
 
 // ── applyConnectMcp: the load-bearing per-tier apply chain ─────────────────────
 
@@ -45,7 +47,7 @@ describe('applyConnectMcp', () => {
     const res = await applyConnectMcp({ label: 'X', transport: 'stdio', command: 'c', args: [], url: null, env: {} });
     expect(res.ok).toBe(false);
     expect(res.stage).toBe('connect');              // where it stopped
-    expect(res.message).toMatch(/Settings/);         // where to fix
+    expect(res.message).toMatch(/Connections & permissions/);         // where to fix
   });
 
   test('add failure reports stage "add" with an actionable message', async () => {
@@ -53,7 +55,7 @@ describe('applyConnectMcp', () => {
     const res = await applyConnectMcp({ label: 'X', transport: 'stdio', command: 'c', args: [], url: null, env: {} });
     expect(res.ok).toBe(false);
     expect(res.stage).toBe('add');
-    expect(res.message).toMatch(/Settings/);
+    expect(res.message).toMatch(/Connections & permissions/);
   });
 
   test('expose failure reports stage "expose" and still carries the serverId', async () => {
@@ -64,7 +66,7 @@ describe('applyConnectMcp', () => {
     expect(res.ok).toBe(false);
     expect(res.stage).toBe('expose');
     expect(res.serverId).toBe(11);
-    expect(res.message).toMatch(/Settings/);
+    expect(res.message).toMatch(/Connections & permissions/);
   });
 
   test('a wire failure mid-loop returns a stage "wire" failure, not a throw', async () => {
@@ -83,7 +85,7 @@ describe('applyConnectMcp', () => {
     expect(res.ok).toBe(false);
     expect(res.stage).toBe('wire');
     expect(res.serverId).toBe(13);
-    expect(res.message).toMatch(/Settings/);
+    expect(res.message).toMatch(/Connections & permissions/);
   });
 
   test('secret values reach addMcpServer only — never appear on wireMcpTool/connectMcpServer calls', async () => {
@@ -190,7 +192,7 @@ describe('ConnectMcpCard', () => {
       />,
     );
     fireEvent.click(screen.getByTestId('connect-mcp-connect'));
-    expect(await screen.findByText(/needs review in Settings/)).toBeInTheDocument();
+    expect(await screen.findByText(/needs review in Connections & permissions/)).toBeInTheDocument();
     expect(screen.queryByText(/ready/)).not.toBeInTheDocument();
   });
 
@@ -205,7 +207,7 @@ describe('ConnectMcpCard', () => {
       />,
     );
     fireEvent.click(screen.getByTestId('connect-mcp-connect'));
-    expect(await screen.findByText(/retry in Settings/)).toBeInTheDocument();
+    expect(await screen.findByText(/Check the token and installed command in Connections & permissions/)).toBeInTheDocument();
   });
 
   test('wire failure unsticks the card from "Connecting…" and shows the wire message', async () => {
@@ -224,7 +226,7 @@ describe('ConnectMcpCard', () => {
       />,
     );
     fireEvent.click(screen.getByTestId('connect-mcp-connect'));
-    expect(await screen.findByText(/couldn't finish wiring/i)).toBeInTheDocument();
+    expect(await screen.findByText(/tool setup is incomplete/i)).toBeInTheDocument();
     // Not stuck: the button no longer reads "Connecting…" and onApplied fired.
     expect(screen.queryByText(/Connecting…/)).not.toBeInTheDocument();
     expect(onApplied).toHaveBeenCalledWith(expect.objectContaining({ ok: false, stage: 'wire' }));

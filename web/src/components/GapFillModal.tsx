@@ -201,7 +201,7 @@ export default function GapFillModal({ kind, gap, onDone }: Props) {
               className="gap-fill-modal__input"
               value={mcpDraft.transport}
               onChange={(e) => setMcpDraft((p) => ({ ...p, transport: e.target.value }))}
-              aria-label="transport"
+              aria-label={t('connectionsUI.transport')}
             >
               <option value="stdio">stdio</option>
               <option value="http">http</option>
@@ -212,7 +212,7 @@ export default function GapFillModal({ kind, gap, onDone }: Props) {
                 value={mcpDraft.url}
                 onChange={(e) => setMcpDraft((p) => ({ ...p, url: e.target.value }))}
                 placeholder="https://…/mcp"
-                aria-label="url"
+                aria-label={t('connectionsUI.url')}
               />
             ) : (
               <>
@@ -221,14 +221,14 @@ export default function GapFillModal({ kind, gap, onDone }: Props) {
                   value={mcpDraft.command}
                   onChange={(e) => setMcpDraft((p) => ({ ...p, command: e.target.value }))}
                   placeholder="npx"
-                  aria-label="command"
+                  aria-label={t('connectionsUI.command')}
                 />
                 <input
                   className="gap-fill-modal__input"
                   value={mcpDraft.args}
                   onChange={(e) => setMcpDraft((p) => ({ ...p, args: e.target.value }))}
                   placeholder="-y @scope/server"
-                  aria-label="args"
+                  aria-label={t('connectionsUI.args')}
                 />
               </>
             )}

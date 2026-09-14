@@ -253,8 +253,8 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       <header className="run-replay__head">
         <span className="run-replay__icon" aria-hidden>⟲</span>
         <span className="run-replay__title">{t("replay.title")}</span>
-        <span className="run-replay__sub">run #{run.id} · {run.spawnName ?? ""}</span>
-        <button className="run-replay__close" onClick={onClose} aria-label="close">✕</button>
+        <span className="run-replay__sub">{t('ui.run', { id: run.id })} · {run.spawnName ?? ""}</span>
+        <button className="run-replay__close" onClick={onClose} aria-label={t('common.close')}>✕</button>
       </header>
 
       <p className="run-replay__usermsg">{run.userMessage}</p>
@@ -276,7 +276,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
           <div className="kpi__value kpi__value--text">{run.model ?? "—"}</div>
         </div>
         <div className="kpi">
-          <div className="kpi__label">tokens</div>
+          <div className="kpi__label">{t('usage.col.tokens')}</div>
           <div className="kpi__value">{tokensNode}</div>
         </div>
         <div className="kpi">

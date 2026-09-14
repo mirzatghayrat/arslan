@@ -1,3 +1,5 @@
+import i18n from "../i18n";
+beforeEach(() => { void i18n.changeLanguage("en"); });
 /**
  * Server-level equipment (user ruling 2026-08-18): connect = usable by Arslan.
  *
@@ -8,7 +10,7 @@
  * instead of a hardcoded false.
  */
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const servers = vi.fn();
 const setHost = vi.fn(async (..._a: unknown[]) => ({ ok: true }));

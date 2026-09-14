@@ -78,6 +78,15 @@ describe("useDebouncedSettingsSave", () => {
     vi.useRealTimers();
   });
 
+  it("flushes a language choice immediately without carrying an unblurred secret", async () => {
+    const { result, onPersisted } = setupHook();
+    act(() => result.current.editKeyField("githubToken", "synthetic-unblurred-secret"));
+    await act(async () => result.current.flushField({ language: "de" }));
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ language: "de" });
+    expect(onPersisted).toHaveBeenCalledWith({ language: "de" });
+  });
+
   it("collapses rapid non-key changes into exactly ONE debounced PUT with the merged body", async () => {
     const { result } = setupHook();
     act(() => {

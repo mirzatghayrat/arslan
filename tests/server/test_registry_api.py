@@ -13,6 +13,8 @@ async def test_registry_lists_catalog_with_assignable_flags(client):
     skills = {s["key"]: s for s in body["skills"]}
 
     assert toolsets["web_search_scraping"]["assignable"] is True
+    assert toolsets["web_search_scraping"]["name_key"] == "catalogUI.web_search_scraping.name"
+    assert toolsets["web_search_scraping"]["description_key"] == "catalogUI.web_search_scraping.description"
     assert toolsets["session_search"]["assignable"] is False        # no wired tool yet
     assert toolsets["session_search"]["tier"] == "safe"             # listed, transparent
     assert skills["claude-code"]["assignable"] is False             # orchestrator tier
@@ -31,11 +33,13 @@ async def test_registry_badges_code_sandbox_when_unsandboxed(client, monkeypatch
     body = (await client.get("/api/v1/registry")).json()
     cs = {t["key"]: t for t in body["toolsets"]}["code_sandbox"]
     assert cs["degraded"] is True and cs["warning"]
+    assert cs["warning_code"] == "unsandboxed_python"
 
     monkeypatch.setattr(code_sandbox, "unsandboxed_active", lambda: False)
     body = (await client.get("/api/v1/registry")).json()
     cs = {t["key"]: t for t in body["toolsets"]}["code_sandbox"]
     assert cs["degraded"] is False and cs["warning"] is None
+    assert cs["warning_code"] is None
 
 
 @pytest.mark.asyncio
