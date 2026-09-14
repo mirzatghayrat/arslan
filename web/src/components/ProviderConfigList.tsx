@@ -13,7 +13,7 @@ import {
   testProviderConfig,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Loader2, FlaskConical, ChevronDown, Plus } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronDown, Plus, AlertCircle } from 'lucide-react';
 import type { SelectOption } from './Select';
 import ProviderCard from './settings/ProviderCard';
 import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
@@ -21,6 +21,7 @@ import RoutingStrategyCard from './settings/RoutingStrategyCard';
 import { purgeCapabilityOverrides } from './settings/CapabilityBadges';
 import { formatRelativeTime } from './settings/relativeTime';
 import { providerStatus, type LiveTest } from '../lib/providerStatus';
+import { maskSecretForDisplay } from '../lib/maskSecretForDisplay';
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -31,6 +32,8 @@ interface ProviderConfigListProps {
   strategy?: string;
   /** Called when the user picks a different strategy. */
   onStrategyChange?: (strategy: string) => void;
+  /** Show the overview first; details open when a model is selected. */
+  startCollapsed?: boolean;
 }
 
 /** P3: quick-pick base_url templates for the custom OpenAI-compatible
@@ -61,6 +64,7 @@ export default function ProviderConfigList({
   onConfigsChange,
   strategy = 'single',
   onStrategyChange,
+  startCollapsed = false,
 }: ProviderConfigListProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<number | null>(null);
@@ -78,6 +82,7 @@ export default function ProviderConfigList({
   // Master-detail selection: which saved config's detail pane is shown. Default
   // to the primary config, else the first, else null (draft-only / empty).
   const [selectedId, setSelectedId] = useState<number | null>(() => {
+    if (startCollapsed) return -1;
     const primary = providerConfigs.find((c) => c.is_primary);
     return primary?.id ?? providerConfigs[0]?.id ?? null;
   });
@@ -113,6 +118,8 @@ export default function ProviderConfigList({
   // while active, so leave selection untouched then.
   useEffect(() => {
     if (draft) return;
+    // -1 is an intentional collapsed list, not a stale config id.
+    if (selectedId === -1) return;
     if (selectedId != null && providerConfigs.some((c) => c.id === selectedId)) return;
     const primary = providerConfigs.find((c) => c.is_primary);
     setSelectedId(primary?.id ?? providerConfigs[0]?.id ?? null);
@@ -325,8 +332,12 @@ export default function ProviderConfigList({
     const cleared = invalidates
       ? { last_health: null, last_health_at: null, last_health_detail: null }
       : {};
+    // The request needs the real key; shared/renderable state must never get it.
+    const displayPatch = field === 'api_key'
+      ? { ...patch, api_key: maskSecretForDisplay(value) }
+      : patch;
     const optimistic = providerConfigs.map((c) =>
-      c.id === config.id ? { ...c, ...patch, ...cleared } : c,
+      c.id === config.id ? { ...c, ...displayPatch, ...cleared } : c,
     );
     onConfigsChange(optimistic);
     // Clear test status since config changed
@@ -664,9 +675,42 @@ export default function ProviderConfigList({
   const selectedModelCaps = selectedConfig
     ? optionsForRow(selectedConfig).find((m) => m.id === selectedConfig.model)?.capabilities ?? []
     : [];
+  const primaryConfig = providerConfigs.find((config) => config.is_primary);
+  const primaryFailed = primaryConfig && statusFor(primaryConfig).status === 'failed';
 
   return (
     <div className="space-y-4">
+      {primaryFailed && (
+        <div data-testid="provider-primary-warning" className="flex items-start gap-3 rounded-xl bg-danger/5 border border-danger/20 p-4">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-danger" aria-hidden />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">{t('settings.defaultNeedsAttention')}</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('settings.defaultNeedsAttentionBody')}</p>
+          </div>
+          <button type="button" data-testid="provider-review-primary"
+            onClick={() => setSelectedId(primaryConfig.id)} disabled={draft !== null}
+            className="text-xs font-medium text-primary hover:underline shrink-0 py-0.5 disabled:opacity-40">
+            {t('settings.reviewDefault')}
+          </button>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="text-xs text-muted-foreground">{t('settings.modelCount', { count: providerConfigs.length })}</span>
+        <div className="flex items-center gap-2">
+          {providerConfigs.length > 0 && (
+            <button type="button" data-testid="provider-test-all" onClick={handleTestAll} disabled={testAllBusy}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:bg-surface rounded-lg disabled:opacity-50">
+              {testAllBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}
+              {t('settings.btnTestAll')}
+            </button>
+          )}
+          <button type="button" data-testid="provider-add-model" onClick={openDraft}
+            disabled={draft !== null || llmProviders.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary border border-primary/30 hover:bg-primary/5 rounded-lg disabled:opacity-50">
+            <Plus className="w-3.5 h-3.5" />{t('settings.btnAddModel')}
+          </button>
+        </div>
+      </div>
       {/* One column of cards; the selected one expands its fields inline. */}
       <div className="flex flex-col gap-2.5">
         {providerConfigs.map((config, idx) => (
@@ -735,7 +779,8 @@ export default function ProviderConfigList({
 
         {/* Draft (add-new) form as its own card at the end of the list. */}
         {draft && (
-          <div data-testid="provider-draft-card" className="bg-surface border border-dashed border-primary/40 rounded-xl px-4 py-4">
+          <div data-testid="provider-draft-card" className="bg-surface border border-primary/30 rounded-xl p-4">
+            <h3 className="text-sm font-semibold mb-4">{t('settings.btnAddModel')}</h3>
             <ProviderDetailPane
               llmProviders={llmProviders}
               providerSelectOptions={providerSelectOptions}
@@ -796,37 +841,7 @@ export default function ProviderConfigList({
           </div>
         )}
 
-        <button
-          type="button"
-          data-testid="provider-add-model"
-          onClick={openDraft}
-          disabled={draft !== null || llmProviders.length === 0}
-          className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-mono font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-xl transition-colors disabled:opacity-50"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          {t('settings.btnAddModel')}
-        </button>
       </div>
-
-      {/* Test all button (batch level-2 usability test across saved configs) */}
-      {providerConfigs.length > 0 && (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            data-testid="provider-test-all"
-            onClick={handleTestAll}
-            disabled={testAllBusy}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-medium text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-xl transition-colors disabled:opacity-50"
-          >
-            {testAllBusy ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <FlaskConical className="w-3.5 h-3.5" />
-            )}
-            {t('settings.btnTestAll')}
-          </button>
-        </div>
-      )}
 
       {/* ── Provider capability comparison table ── */}
       {catalog.length > 0 && (

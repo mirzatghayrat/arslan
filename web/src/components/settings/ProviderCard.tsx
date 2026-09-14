@@ -49,8 +49,8 @@ export default function ProviderCard({
       data-testid={`provider-card-${index}`}
       data-selected={selected ? 'true' : 'false'}
       className={[
-        'bg-surface border rounded-xl overflow-hidden transition-colors',
-        selected ? 'border-primary/50 ring-1 ring-primary/15' : 'border-border hover:border-primary/30',
+        'bg-surface border rounded-xl transition-colors',
+        selected ? 'border-primary/35 shadow-sm' : 'border-border hover:border-primary/30',
       ].join(' ')}
     >
       <button
@@ -58,32 +58,31 @@ export default function ProviderCard({
         data-testid={`provider-card-row-${index}`}
         data-selected={selected ? 'true' : 'false'}
         aria-expanded={selected}
+        aria-controls={`provider-details-${config.id}`}
         onClick={() => onSelect(config.id)}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left cursor-pointer"
+        className="w-full flex items-center gap-3 px-4 py-4 text-left cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
-        <Cpu className="w-4 h-4 text-subtle-foreground flex-shrink-0" />
+        <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-background text-muted-foreground shrink-0"><Cpu className="w-4 h-4" /></span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-[13px] font-mono font-semibold text-foreground truncate">
+            <span className="text-sm font-sans font-semibold text-foreground truncate">
               {label}
             </span>
             {config.is_primary && (
-              <span className="text-primary text-[11px] flex-shrink-0" title={t('settings.primary')}>
-                ★
+              <span className="inline-flex items-center gap-1 text-primary bg-primary/8 rounded-md px-1.5 py-0.5 text-[10px] flex-shrink-0" title={t('settings.primary')}>
+                <span aria-hidden>★</span><span>{t('settings.primary')}</span>
               </span>
             )}
           </div>
-          <span className="block text-[11px] font-mono text-subtle-foreground truncate mt-0.5">
+          <span className="block text-xs font-mono text-muted-foreground truncate mt-1">
             {config.model}
           </span>
         </div>
 
-        <ProviderStatusPill status={status.status} testId={`provider-status-${index}`} />
-        {status.at && (
-          <span className="text-[9px] font-mono text-subtle-foreground hidden sm:inline">
-            {formatRelativeTime(status.at, t)}
-          </span>
-        )}
+        <span className="flex flex-col items-end gap-1 shrink-0">
+          <ProviderStatusPill status={status.status} testId={`provider-status-${index}`} />
+          {status.at && <span className="text-[10px] text-muted-foreground hidden sm:inline">{formatRelativeTime(status.at, t)}</span>}
+        </span>
         <ChevronRight
           className={`w-3.5 h-3.5 text-subtle-foreground flex-shrink-0 transition-transform ${
             selected ? 'rotate-90' : ''
@@ -97,14 +96,14 @@ export default function ProviderCard({
       {status.status === 'failed' && status.reason && (
         <p
           data-testid={`provider-reason-${index}`}
-          className="mx-4 mb-3 -mt-1 px-3 py-2 rounded-lg bg-danger/5 border border-danger/20 text-[11px] leading-relaxed text-danger font-sans"
+          className="mx-4 mb-3 -mt-1 pl-3 py-1 border-l-2 border-danger/40 text-xs leading-relaxed text-danger font-sans"
         >
           {status.reason}
         </p>
       )}
 
       {selected && children && (
-        <div className="border-t border-border bg-background/40 px-4 py-4">{children}</div>
+        <div id={`provider-details-${config.id}`} className="border-t border-border/70 px-4 pb-4 pt-4">{children}</div>
       )}
     </div>
   );

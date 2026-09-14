@@ -77,6 +77,55 @@ beforeEach(() => {
 });
 
 describe("saved-config API-key field", () => {
+  it("opens in overview mode when requested and reveals details on selection", async () => {
+    const user = userEvent.setup();
+    render(<ProviderConfigList startCollapsed llmProviders={providers} providerConfigs={[
+      { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "", is_primary: true },
+    ]} onConfigsChange={vi.fn()} />);
+    expect(screen.queryByTestId("provider-detail-pane")).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("provider-card-row-0"));
+    expect(screen.getByTestId("provider-detail-pane")).toBeInTheDocument();
+  });
+  it("never publishes a newly entered secret into config state or visible text, even while saving", async () => {
+    const secret = "synthetic-only-new-secret-9876";
+    mockUpdateProviderConfig.mockReturnValue(new Promise(() => {}));
+    const observed = vi.fn();
+    function Harness() {
+      const [configs, setConfigs] = useState<ProviderConfig[]>([
+        { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "de...cd", key_status: "set", is_primary: true },
+      ]);
+      return <ProviderConfigList llmProviders={providers} providerConfigs={configs}
+        onConfigsChange={(next) => { observed(next); setConfigs(next); }} />;
+    }
+    render(<Harness />);
+    const key = screen.getByTestId("provider-config-key-0");
+    fireEvent.change(key, { target: { value: secret } });
+    fireEvent.blur(key);
+    await waitFor(() => expect(mockUpdateProviderConfig).toHaveBeenCalledWith(1, expect.objectContaining({ api_key: secret })));
+    expect(JSON.stringify(observed.mock.calls)).not.toContain(secret);
+    expect(document.body.textContent).not.toContain(secret);
+    expect(screen.getByTestId("provider-config-key-masked-0")).toHaveTextContent("9876");
+  });
+
+  it("defensively masks an unexpected plaintext value from outside the component", () => {
+    const secret = "synthetic-only-external-secret-5678";
+    render(<ProviderConfigList llmProviders={providers} providerConfigs={[
+      { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: secret, key_status: "set", is_primary: true },
+    ]} onConfigsChange={vi.fn()} />);
+    expect(document.body.textContent).not.toContain(secret);
+    expect(screen.getByTestId("provider-config-key-masked-0")).toHaveTextContent("5678");
+  });
+
+  it("keeps a model card collapsed after clicking its selected row", async () => {
+    const user = userEvent.setup();
+    render(<ProviderConfigList llmProviders={providers} providerConfigs={[
+      { id: 1, label: "A", provider: "deepseek", model: "deepseek-chat", base_url: "", api_key: "", is_primary: true },
+    ]} onConfigsChange={vi.fn()} />);
+    await user.click(screen.getByTestId("provider-card-row-0"));
+    expect(screen.getByTestId("provider-card-row-0")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("provider-detail-pane")).not.toBeInTheDocument();
+  });
+
   it("undecryptable key shows the honest reason, not the generic requires-key prompt", () => {
     const configs: ProviderConfig[] = [
       // Backend masks an undecryptable key to "" and flags key_status.

@@ -39,7 +39,7 @@ export default function ProviderStatusPill({
     <span
       data-testid={testId}
       data-status={status}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-medium whitespace-nowrap ${STYLES[status]}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-sans font-medium whitespace-nowrap ${STYLES[status]}`}
     >
       {status === 'testing' ? (
         <Loader2 className="w-2.5 h-2.5 animate-spin" />

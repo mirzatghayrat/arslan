@@ -81,10 +81,10 @@ export default function SettingsShell({
         aria-current={active ? 'page' : undefined}
         onClick={() => onSectionChange(s.id)}
         className={[
-          'flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left shrink-0',
-          'whitespace-nowrap transition-colors select-none',
+          'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left shrink-0',
+          'whitespace-nowrap transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
           active
-            ? 'bg-primary/10 text-primary border border-primary/30'
+            ? 'bg-primary/10 text-primary border border-transparent'
             : 'text-muted-foreground hover:text-foreground hover:bg-surface/60 border border-transparent',
         ].join(' ')}
       >
@@ -92,7 +92,7 @@ export default function SettingsShell({
         <span className="flex flex-col leading-tight">
           <span className="text-[12px] font-medium font-sans">{t(s.labelKey)}</span>
           {s.hintKey && (
-            <span className="text-[9px] font-sans text-subtle-foreground">{t(s.hintKey)}</span>
+            <span className="mt-1 text-[10px] leading-snug font-sans text-muted-foreground whitespace-normal hidden xl:block">{t(s.hintKey)}</span>
           )}
         </span>
       </button>
@@ -100,10 +100,10 @@ export default function SettingsShell({
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-6">
-      <div className="md:w-56 md:shrink-0">
+    <div className="flex flex-col lg:flex-row gap-5 lg:gap-7 items-start">
+      <div className="w-full lg:w-44 xl:w-48 lg:shrink-0 lg:sticky lg:top-0">
         <label className="sr-only" htmlFor="settings-search">{t('settings.searchPlaceholder')}</label>
-        <div className="flex items-center gap-1.5 border border-border rounded-xl px-2.5 py-1.5 mb-3">
+        <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-3 py-2 mb-3 focus-within:border-primary/50">
           <Search className="w-3.5 h-3.5 text-subtle-foreground shrink-0" aria-hidden />
           <input
             id="settings-search"
@@ -111,20 +111,20 @@ export default function SettingsShell({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('settings.searchPlaceholder')}
-            className="w-full bg-transparent text-[11px] font-sans text-foreground placeholder-subtle-foreground focus:outline-none"
+            className="w-full min-w-0 bg-transparent text-xs font-sans text-foreground placeholder-subtle-foreground focus:outline-none"
           />
         </div>
 
         <nav
           aria-label={t('settings.navRegion')}
-          className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0"
+          className="flex flex-row lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0"
         >
           {groups.map(({ group, sections }) => (
             <React.Fragment key={group.id}>
               {/* Group headings are hidden while filtering: with two of seven
                   entries left, three headings are more chrome than content. */}
               {!matches && (
-                <div className="hidden md:block px-3 pt-3 pb-1 text-[9px] font-mono uppercase tracking-[0.14em] text-subtle-foreground">
+                <div className="hidden lg:block px-3 pt-4 pb-1.5 text-[10px] font-sans font-medium uppercase tracking-[0.1em] text-muted-foreground">
                   {t(group.labelKey)}
                 </div>
               )}
@@ -140,7 +140,7 @@ export default function SettingsShell({
         </nav>
       </div>
 
-      <div data-testid="settings-content" className="flex-1 min-w-0 space-y-8">
+      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6">
         {children[activeSection]}
       </div>
     </div>

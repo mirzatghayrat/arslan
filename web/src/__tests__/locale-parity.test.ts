@@ -248,7 +248,8 @@ describe("locale parity", () => {
     //               replying marker (Task 6).
     // Durable file downloads add three messages, translated in all six locales.
     // Task recipes add 40 translated controls and execution states.
-    expect(enKeys).toHaveLength(1499);
+    // Settings clarity adds nine translated labels and connection-status hints.
+    expect(enKeys).toHaveLength(1508);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

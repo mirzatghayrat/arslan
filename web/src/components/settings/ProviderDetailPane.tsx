@@ -14,16 +14,19 @@
 
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Star, Trash2, Loader2, FlaskConical, MoreHorizontal } from 'lucide-react';
+import { Star, Trash2, Loader2, FlaskConical, MoreHorizontal, ChevronRight, LockKeyhole } from 'lucide-react';
 import type { ModelInfo, ProviderOption, ProviderConfig } from '../../api/client.types';
 import Select from '../Select';
 import type { SelectOption } from '../Select';
 import ModelCombobox from '../ModelCombobox';
 import CapabilityBadges from './CapabilityBadges';
 import ToolTransportWarning from './ToolTransportWarning';
+import { maskSecretForDisplay } from '../../lib/maskSecretForDisplay';
 
 const INPUT_CLS =
-  'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
+  'w-full bg-background border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg px-3 py-2.5 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono';
+
+const LABEL_CLS = 'block mb-1.5 text-xs font-medium font-sans text-muted-foreground';
 
 /** Draft state for the add-new flow (owned by the container as state). */
 export interface DraftConfig {
@@ -108,10 +111,11 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
     return (
       <div
         data-testid="provider-detail-pane"
-        className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3 items-start bg-surface border border-primary/30 rounded-xl px-4 py-4"
+        className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 items-start"
       >
         {/* Provider select */}
         <div className="min-w-0">
+          <span className={LABEL_CLS}>{t('settings.providerLabel')}</span>
           <Select
             value={draft.provider}
             onChange={props.onDraftProviderChange}
@@ -126,6 +130,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
 
         {/* Model combobox (static seed options until the config is saved) */}
         <div className="min-w-0">
+          <span className={LABEL_CLS}>{t('settings.modelLabel')}</span>
           <ModelCombobox
             data-testid="provider-draft-model"
             value={draft.model}
@@ -152,8 +157,12 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
 
         {/* API key */}
         <div className="sm:col-span-2 min-w-0">
+          <label htmlFor="provider-draft-key" className={LABEL_CLS}>{t('settings.labelConfigApiKey')}</label>
           <input
+            id="provider-draft-key"
             type="password"
+            autoComplete="new-password"
+            spellCheck={false}
             value={draft.api_key}
             onChange={(e) => props.onDraftApiKeyChange(e.target.value)}
             placeholder={t('settings.labelConfigApiKey')}
@@ -222,10 +231,11 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
   return (
     <div
       data-testid="provider-detail-pane"
-      className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3 items-start bg-surface border border-border rounded-xl px-4 py-4"
+      className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 items-start"
     >
       {/* Provider select */}
       <div className="min-w-0">
+        <label htmlFor={`provider-config-provider-${index}`} className={LABEL_CLS}>{t('settings.providerLabel')}</label>
         <Select
           data-testid={`provider-config-provider-${index}`}
           id={`provider-config-provider-${index}`}
@@ -240,6 +250,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
 
       {/* Model combobox (dynamic catalog, lazy-fetched on first focus) */}
       <div className="min-w-0" onFocus={props.onModelFocus}>
+        <span className={LABEL_CLS}>{t('settings.modelLabel')}</span>
         <ModelCombobox
           data-testid={`provider-config-model-${index}`}
           value={config.model}
@@ -265,37 +276,7 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             </a>
           </p>
         )}
-        {/* Spans BOTH grid columns: the chips were wrapping onto a second row
-            because they lived inside one half of a 2-column grid. That is what
-            made this block read as cramped. */}
-        <div className="sm:col-span-2 min-w-0">
-        <CapabilityBadges
-          configId={config.id}
-          model={config.model}
-          capabilities={props.modelCapabilities}
-          onOverride={props.onCapabilityOverride}
-        />
-        </div>
       </div>
-
-      {/* Base URL (non-native providers only) — saved on blur */}
-      {!native && (
-        <div className="sm:col-span-2 min-w-0">
-          <input
-            type="text"
-            ref={(el) => {
-              props.registerBaseUrlRef(config.id, el);
-            }}
-            data-testid={`provider-config-baseurl-${index}`}
-            value={config.base_url}
-            onChange={(e) => props.onBaseUrlChange(config, e.target.value)}
-            onBlur={(e) => props.onBaseUrlBlur(config, e.target.value)}
-            placeholder={baseUrlFor(config.provider) || t('settings.labelBaseUrl')}
-            aria-label={t('settings.labelBaseUrl')}
-            className={INPUT_CLS}
-          />
-        </div>
-      )}
 
       {/* API key — a FRESH-ENTRY field, deliberately decoupled from the masked
           server value. The input starts empty (local draft) and commits the
@@ -304,6 +285,10 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           undecryptable key (ARSLAN_SECRET_KEY changed) never reads as a plain
           "requires API key". */}
       <div className="sm:col-span-2 min-w-0">
+        <div className="flex items-center justify-between gap-3 mb-1.5">
+          <label htmlFor={`provider-config-key-${index}`} className="text-xs font-medium text-muted-foreground">{t('settings.labelConfigApiKey')}</label>
+          <LockKeyhole className="w-3.5 h-3.5 text-muted-foreground" aria-hidden />
+        </div>
         {/* The backend has always sent a masked form of the stored key
             (mask_secret → "sk-…1a4f"); the UI dropped it and showed an empty
             password box, which reads as "nothing configured here" — the most
@@ -311,17 +296,20 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         {config.key_status === 'set' && !props.apiKeyDraft && config.api_key && (
           <div
             data-testid={`provider-config-key-masked-${index}`}
-            className="mb-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground"
+            className="mb-2 flex flex-wrap items-center gap-2 text-xs font-mono text-muted-foreground"
           >
-            <span className="tracking-wider">{config.api_key}</span>
+            <span className="tracking-wider">{maskSecretForDisplay(config.api_key)}</span>
             <span className="text-subtle-foreground">·</span>
-            <span className="text-[10px] text-subtle-foreground">
+            <span className="text-xs font-sans text-muted-foreground">
               {t('settings.keyTypeToReplace')}
             </span>
           </div>
         )}
         <input
+          id={`provider-config-key-${index}`}
           type="password"
+          autoComplete="new-password"
+          spellCheck={false}
           data-testid={`provider-config-key-${index}`}
           value={props.apiKeyDraft}
           onChange={(e) => props.onApiKeyDraftChange(config, e.target.value)}
@@ -344,6 +332,45 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
           </p>
         )}
       </div>
+
+      {/* Infrequent connection details remain available, without competing with
+          the model and key on every visit. Custom endpoints need them upfront. */}
+      <details
+        key={`${config.id}:${config.provider}`}
+        open={config.provider === 'custom' ? true : undefined}
+        data-testid={`provider-config-advanced-${index}`}
+        className="sm:col-span-2 group/connection border-t border-border/70 pt-3"
+      >
+        <summary className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer list-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded">
+          <ChevronRight className="w-3.5 h-3.5 transition-transform group-open/connection:rotate-90" aria-hidden />
+          {t('settings.connectionAdvanced')}
+        </summary>
+        <div className="space-y-4 pt-4">
+          {!native && (
+            <div className="min-w-0">
+              <label htmlFor={`provider-config-baseurl-${index}`} className={LABEL_CLS}>{t('settings.labelBaseUrl')}</label>
+              <input
+                id={`provider-config-baseurl-${index}`}
+                type="text"
+                ref={(el) => props.registerBaseUrlRef(config.id, el)}
+                data-testid={`provider-config-baseurl-${index}`}
+                value={config.base_url}
+                onChange={(e) => props.onBaseUrlChange(config, e.target.value)}
+                onBlur={(e) => props.onBaseUrlBlur(config, e.target.value)}
+                placeholder={baseUrlFor(config.provider) || t('settings.labelBaseUrl')}
+                aria-label={t('settings.labelBaseUrl')}
+                className={INPUT_CLS}
+              />
+            </div>
+          )}
+          <div>
+            <CapabilityBadges configId={config.id} model={config.model}
+              capabilities={props.modelCapabilities} onOverride={props.onCapabilityOverride} />
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{t('settings.capabilityDisplayNote')}</p>
+          </div>
+          {props.configCustomExtras}
+        </div>
+      </details>
 
       {/* Actions, as one row across the full width rather than three loose grid
           cells. Test is the only thing anyone comes here to press, so it is the
@@ -438,8 +465,6 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         </div>
       </div>
 
-      {/* P3: custom-provider extras (hint / quick-pick chips / compat note) */}
-      {props.configCustomExtras}
     </div>
   );
 }

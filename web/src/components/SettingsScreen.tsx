@@ -7,7 +7,7 @@ import { api } from '../api/client';
 import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import {
-  Sliders, Check, Loader2,
+  Check, Loader2,
   Info, AlertCircle, WifiOff
 } from 'lucide-react';
 import ProviderConfigList from './ProviderConfigList';
@@ -99,12 +99,13 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   const sections: Partial<Record<SettingsSectionId, React.ReactNode>> = {
     // Providers — the multi-model LLM provider list (embedding moved to memory).
     models: (
-      <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-        <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-          <Sliders className="w-4.5 h-4.5 text-primary" />
-          <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionLlmConfig')}</h3>
+      <section className="space-y-5" aria-labelledby="settings-models-title">
+        <div className="space-y-1">
+          <h2 id="settings-models-title" className="text-lg font-semibold text-foreground font-sans">{t('settings.navModels')}</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">{t('settings.modelsDescription')}</p>
         </div>
         <ProviderConfigList
+          startCollapsed
           llmProviders={llmProviders}
           providerConfigs={providerConfigs}
           onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
@@ -113,7 +114,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
             saveField({ llmStrategy: s as AppSettings['llmStrategy'] })
           }
         />
-      </div>
+      </section>
     ),
 
     // Model roles — which task uses which model. Its own section rather than part
@@ -243,20 +244,17 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
-      {/* Decorative Blur Ambient Lights */}
-      <div className="absolute bottom-0 left-1/4 w-[30rem] h-[30rem] bg-primary/[0.01] blur-[120px] rounded-full pointer-events-none"></div>
-
+    <div className="flex-1 overflow-y-auto bg-background px-4 py-6 lg:px-7 select-none relative">
       {/* Header bar */}
-      <div className="mb-8">
+      <div className="mb-6 max-w-6xl">
         {/* Was a hardcoded English string naming the Diagnostics screen — wrong
             twice over: untranslatable, and describing a different page than the
             one it sat on. The old wording is deliberately not quoted here: the
             guard for this greps the source, and unlike the backend's AST guard
             it cannot tell a comment from a rendered string. A strict guard that
             costs one reworded comment is the better trade. */}
-        <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('settings.pageTitle')}</h1>
-        <p className="text-xs text-subtle-foreground font-sans mt-1">
+        <h1 className="sr-only">{t('settings.pageTitle')}</h1>
+        <p className="text-xs text-muted-foreground font-sans mt-1.5 leading-relaxed">
           {t('settings.headerLore')}
         </p>
       </div>
@@ -276,7 +274,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
       )}
 
-      <div className="max-w-6xl space-y-8">
+      <div className="max-w-6xl space-y-6">
         <SettingsShell activeSection={activeSection} onSectionChange={setActiveSection}>
           {sections}
         </SettingsShell>

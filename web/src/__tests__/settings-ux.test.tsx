@@ -95,6 +95,33 @@ const twoConfigs: ProviderConfig[] = [
 
 const oneConfig: ProviderConfig[] = [twoConfigs[0]];
 
+describe("settings clarity", () => {
+  it("surfaces a failed default without silently selecting another provider or running a test", async () => {
+    const user = userEvent.setup();
+    render(<ProviderConfigList llmProviders={providers} providerConfigs={[
+      { ...twoConfigs[0], last_health: "failed", last_health_detail: "Synthetic rejected credential" },
+      { ...twoConfigs[1], last_health: "ok" },
+    ]} onConfigsChange={vi.fn()} />);
+    expect(screen.getByTestId("provider-primary-warning")).toHaveTextContent("settings.defaultNeedsAttention");
+    await user.click(screen.getByTestId("provider-card-row-1"));
+    await user.click(screen.getByTestId("provider-review-primary"));
+    expect(screen.getByTestId("provider-card-row-0")).toHaveAttribute("aria-expanded", "true");
+    expect(mockSetPrimaryProviderConfig).not.toHaveBeenCalled();
+    expect(mockTestProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it("keeps common fields visible and connection details collapsed without removing them", () => {
+    render(<ProviderConfigList llmProviders={providers} providerConfigs={oneConfig} onConfigsChange={vi.fn()} />);
+    const advanced = screen.getByTestId("provider-config-advanced-0");
+    expect(advanced).not.toHaveAttribute("open");
+    expect(advanced).toContainElement(screen.getByTestId("provider-config-baseurl-0"));
+    expect(screen.getByTestId("provider-config-key-0")).toBeVisible();
+    expect(screen.getByTestId("provider-config-model-0")).toBeVisible();
+    expect(screen.getByText("settings.providerLabel")).toBeVisible();
+    expect(screen.getByText("settings.modelLabel")).toBeVisible();
+  });
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetCatalog.mockResolvedValue([]);

@@ -129,8 +129,8 @@ describe("SettingsScreen", () => {
 
   it("renders the multi-config provider list section heading", () => {
     renderSettings();
-    // ProviderConfigList is rendered inside the card whose heading key is 'settings.sectionLlmConfig'
-    expect(screen.getByText("settings.sectionLlmConfig")).toBeInTheDocument();
+    // The section is named in plain language, with no extra nested LLM card.
+    expect(screen.getByRole("heading", { name: "settings.navModels" })).toBeInTheDocument();
   });
 
   // ── Kept fields must still be present ─────────────────────────────────────────
@@ -176,7 +176,7 @@ describe("SettingsScreen", () => {
     // The memory section's distill toggle is mounted from first paint…
     expect(document.getElementById("settings-distill-toggle")).not.toBeNull();
     // …while the default 'providers' section is not.
-    expect(screen.queryByText("settings.sectionLlmConfig")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "settings.navModels" })).toBeNull();
   });
 
   it("shows the offline banner when backendStatus is offline", () => {
