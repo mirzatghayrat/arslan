@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Circle,
+  Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Circle, ArrowLeft,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -19,6 +19,7 @@ const ICONS: Record<string, LucideIcon> = {
 interface SettingsShellProps {
   activeSection: SettingsSectionId;
   onSectionChange: (id: SettingsSectionId) => void;
+  onBack?: () => void;
   /** Section id → rendered card(s). */
   children: Partial<Record<SettingsSectionId, React.ReactNode>>;
 }
@@ -46,6 +47,7 @@ interface SettingsShellProps {
 export default function SettingsShell({
   activeSection,
   onSectionChange,
+  onBack,
   children,
 }: SettingsShellProps) {
   const { t } = useTranslation();
@@ -81,27 +83,29 @@ export default function SettingsShell({
         aria-current={active ? 'page' : undefined}
         onClick={() => onSectionChange(s.id)}
         className={[
-          'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left shrink-0',
+          'relative flex items-center gap-3 rounded-lg px-3 py-3 text-left shrink-0',
           'whitespace-nowrap transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
           active
             ? 'bg-primary/10 text-primary border border-transparent'
             : 'text-muted-foreground hover:text-foreground hover:bg-surface/60 border border-transparent',
         ].join(' ')}
       >
+        {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />}
         <Icon className="w-4 h-4 shrink-0" />
         <span className="flex flex-col leading-tight">
-          <span className="text-[12px] font-medium font-sans">{t(s.labelKey)}</span>
-          {s.hintKey && (
-            <span className="mt-1 text-[10px] leading-snug font-sans text-muted-foreground whitespace-normal hidden xl:block">{t(s.hintKey)}</span>
-          )}
+          <span className="text-sm font-medium font-sans">{t(s.labelKey)}</span>
         </span>
       </button>
     );
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-5 lg:gap-7 items-start">
-      <div className="w-full lg:w-44 xl:w-48 lg:shrink-0 lg:sticky lg:top-0">
+    <div className="flex flex-col lg:flex-row flex-1">
+      <aside data-testid="settings-sidebar" className="w-full lg:w-60 xl:w-64 lg:shrink-0 bg-sidebar/60 border-b lg:border-b-0 lg:border-r border-border p-5 flex flex-col">
+        <div className="flex items-center gap-3 mb-7 mt-2" data-tauri-drag-region="deep">
+          <img src="/arslan-mark.png" alt="" className="w-9 h-9 object-contain arslan-mark" draggable={false} />
+          <span className="text-xl font-semibold">Arslan</span>
+        </div>
         <label className="sr-only" htmlFor="settings-search">{t('settings.searchPlaceholder')}</label>
         <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-3 py-2 mb-3 focus-within:border-primary/50">
           <Search className="w-3.5 h-3.5 text-subtle-foreground shrink-0" aria-hidden />
@@ -138,9 +142,12 @@ export default function SettingsShell({
             </p>
           )}
         </nav>
-      </div>
+        {onBack && <button type="button" data-testid="settings-back" onClick={onBack} className="mt-6 lg:mt-auto flex items-center gap-3 px-3 pt-8 pb-2 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="w-4 h-4" />{t('settings.backToWorkspace')}
+        </button>}
+      </aside>
 
-      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6">
+      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6 p-6 lg:p-8 xl:px-10">
         {children[activeSection]}
       </div>
     </div>

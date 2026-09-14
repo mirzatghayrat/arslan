@@ -249,7 +249,8 @@ describe("locale parity", () => {
     // Durable file downloads add three messages, translated in all six locales.
     // Task recipes add 40 translated controls and execution states.
     // Settings clarity adds nine translated labels and connection-status hints.
-    expect(enKeys).toHaveLength(1508);
+    // Dedicated desktop settings shell adds six labels in all six locales.
+    expect(enKeys).toHaveLength(1514);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

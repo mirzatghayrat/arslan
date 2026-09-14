@@ -54,6 +54,13 @@ const shell = (active: SettingsSectionId, onChange = vi.fn()) =>
   );
 
 describe("SettingsShell", () => {
+  it("provides a single settings sidebar with a working return action", async () => {
+    const onBack = vi.fn();
+    render(<SettingsShell activeSection="models" onSectionChange={vi.fn()} onBack={onBack}>{CHILDREN}</SettingsShell>);
+    expect(screen.getAllByTestId("settings-sidebar")).toHaveLength(1);
+    await userEvent.click(screen.getByTestId("settings-back"));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
   it("exposes eight sections in nav order, with no placeholders", () => {
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual(IDS);
     // Discriminating: renaming a placeholder rather than deleting it would keep

@@ -350,8 +350,9 @@ describe("(E) Test all batch button", () => {
 
     await waitFor(() => {
       // Every card's pill flips to "working" — the one vocabulary, everywhere.
-      const pills = screen.getAllByText("settings.statusOk");
-      expect(pills.length).toBe(2);
+      expect(screen.getByTestId("provider-status-0")).toHaveAttribute("data-status", "ok");
+      expect(screen.getByTestId("provider-status-1")).toHaveAttribute("data-status", "ok");
+      expect(screen.getByTestId("provider-default-summary")).toHaveTextContent("settings.statusOk");
     });
   });
 
@@ -375,7 +376,8 @@ describe("(E) Test all batch button", () => {
       // The reason is on the card itself, collapsed or not: someone scanning to
       // find out why nothing works should not have to open each one.
       expect(screen.getAllByText(/Invalid API key/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText("settings.statusFailed")).toBeInTheDocument();
+      expect(screen.getByTestId("provider-status-0")).toHaveAttribute("data-status", "failed");
+      expect(screen.getByTestId("provider-default-summary")).toHaveTextContent("settings.statusFailed");
       expect(screen.getByText("settings.statusOk")).toBeInTheDocument();
     });
   });

@@ -410,6 +410,12 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "backToWorkspace": "Back to workspace",
+    "defaultModel": "Default model",
+    "modelsPrivateHint": "Select a model to edit. Saved keys stay hidden.",
+    "taskRouting": "Task routing",
+    "advancedConnections": "Advanced connections",
+    "editModel": "Edit",
     "navRegion": "Settings sections",
     "navSearch": "Search & Tools",
     "navAppearance": "Appearance & Language",

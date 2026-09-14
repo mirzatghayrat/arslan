@@ -81,8 +81,8 @@ describe("provider card list", () => {
     // model ids visible in the list
     expect(screen.getByText("deepseek-chat")).toBeInTheDocument();
     expect(screen.getByText("qwen-max")).toBeInTheDocument();
-    // exactly one primary star (the primary config)
-    expect(screen.getByText("★")).toBeInTheDocument();
+    // Exactly one readable primary badge (the primary config).
+    expect(screen.getByTitle("settings.primary")).toHaveTextContent("settings.primary");
   });
 
   it("selects the primary config by default and shows its detail", () => {

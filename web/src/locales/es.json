@@ -410,6 +410,12 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "backToWorkspace": "Volver al espacio de trabajo",
+    "defaultModel": "Modelo predeterminado",
+    "modelsPrivateHint": "Selecciona un modelo para editarlo. Las claves guardadas permanecen ocultas.",
+    "taskRouting": "Enrutamiento de tareas",
+    "advancedConnections": "Conexiones avanzadas",
+    "editModel": "Editar",
     "navRegion": "Secciones de ajustes",
     "navSearch": "Búsqueda y herramientas",
     "navAppearance": "Apariencia e idioma",

@@ -49,8 +49,8 @@ export default function ProviderCard({
       data-testid={`provider-card-${index}`}
       data-selected={selected ? 'true' : 'false'}
       className={[
-        'bg-surface border rounded-xl transition-colors',
-        selected ? 'border-primary/35 shadow-sm' : 'border-border hover:border-primary/30',
+        'border-b border-border transition-colors',
+        selected ? 'bg-surface/40' : 'hover:bg-surface/30',
       ].join(' ')}
     >
       <button
@@ -60,9 +60,9 @@ export default function ProviderCard({
         aria-expanded={selected}
         aria-controls={`provider-details-${config.id}`}
         onClick={() => onSelect(config.id)}
-        className="w-full flex items-center gap-3 px-4 py-4 text-left cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="w-full flex items-center gap-4 px-3 py-5 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
-        <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-background text-muted-foreground shrink-0"><Cpu className="w-4 h-4" /></span>
+        <span className="flex items-center justify-center w-10 h-10 text-primary/80 shrink-0"><Cpu className="w-6 h-6" /></span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-sans font-semibold text-foreground truncate">
@@ -70,7 +70,7 @@ export default function ProviderCard({
             </span>
             {config.is_primary && (
               <span className="inline-flex items-center gap-1 text-primary bg-primary/8 rounded-md px-1.5 py-0.5 text-[10px] flex-shrink-0" title={t('settings.primary')}>
-                <span aria-hidden>★</span><span>{t('settings.primary')}</span>
+                <span>{t('settings.primary')}</span>
               </span>
             )}
           </div>
@@ -83,6 +83,7 @@ export default function ProviderCard({
           <ProviderStatusPill status={status.status} testId={`provider-status-${index}`} />
           {status.at && <span className="text-[10px] text-muted-foreground hidden sm:inline">{formatRelativeTime(status.at, t)}</span>}
         </span>
+        <span className="hidden sm:inline-flex border border-border rounded-lg px-5 py-1.5 text-xs text-foreground ml-3">{t('settings.editModel')}</span>
         <ChevronRight
           className={`w-3.5 h-3.5 text-subtle-foreground flex-shrink-0 transition-transform ${
             selected ? 'rotate-90' : ''

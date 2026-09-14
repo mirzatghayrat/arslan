@@ -410,6 +410,12 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "backToWorkspace": "Retour à l’espace de travail",
+    "defaultModel": "Modèle par défaut",
+    "modelsPrivateHint": "Sélectionnez un modèle à modifier. Les clés enregistrées restent masquées.",
+    "taskRouting": "Routage des tâches",
+    "advancedConnections": "Connexions avancées",
+    "editModel": "Modifier",
     "navRegion": "Sections des paramètres",
     "navSearch": "Recherche et outils",
     "navAppearance": "Apparence et langue",

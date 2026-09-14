@@ -13,7 +13,8 @@ import {
   testProviderConfig,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Loader2, FlaskConical, ChevronDown, Plus, AlertCircle } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronDown, Plus, AlertCircle, Info, Network, Sliders } from 'lucide-react';
+import ProviderStatusPill from './settings/ProviderStatusPill';
 import type { SelectOption } from './Select';
 import ProviderCard from './settings/ProviderCard';
 import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
@@ -679,7 +680,23 @@ export default function ProviderConfigList({
   const primaryFailed = primaryConfig && statusFor(primaryConfig).status === 'failed';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 id="settings-models-title" className="text-2xl font-semibold tracking-tight">{t('settings.navModels')}</h2>
+          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{t('settings.modelsDescription')}</p>
+        </div>
+        <button type="button" data-testid="provider-add-model" onClick={openDraft}
+          disabled={draft !== null || llmProviders.length === 0}
+          className="flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 rounded-lg disabled:opacity-50">
+          <Plus className="w-4 h-4" />{t('settings.btnAddModel')}
+        </button>
+      </div>
+      {primaryConfig && <div data-testid="provider-default-summary" className="flex flex-wrap items-center gap-5 rounded-lg border border-border bg-surface/40 px-5 py-4">
+        <span className="text-sm text-muted-foreground">{t('settings.defaultModel')}</span>
+        <span className="text-sm font-medium">{primaryConfig.label || primaryConfig.provider}</span>
+        <ProviderStatusPill status={statusFor(primaryConfig).status} />
+      </div>}
       {primaryFailed && (
         <div data-testid="provider-primary-warning" className="flex items-start gap-3 rounded-xl bg-danger/5 border border-danger/20 p-4">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-danger" aria-hidden />
@@ -694,25 +711,8 @@ export default function ProviderConfigList({
           </button>
         </div>
       )}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-xs text-muted-foreground">{t('settings.modelCount', { count: providerConfigs.length })}</span>
-        <div className="flex items-center gap-2">
-          {providerConfigs.length > 0 && (
-            <button type="button" data-testid="provider-test-all" onClick={handleTestAll} disabled={testAllBusy}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:bg-surface rounded-lg disabled:opacity-50">
-              {testAllBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}
-              {t('settings.btnTestAll')}
-            </button>
-          )}
-          <button type="button" data-testid="provider-add-model" onClick={openDraft}
-            disabled={draft !== null || llmProviders.length === 0}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary border border-primary/30 hover:bg-primary/5 rounded-lg disabled:opacity-50">
-            <Plus className="w-3.5 h-3.5" />{t('settings.btnAddModel')}
-          </button>
-        </div>
-      </div>
       {/* One column of cards; the selected one expands its fields inline. */}
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col border-t border-border">
         {providerConfigs.map((config, idx) => (
           <ProviderCard
             key={config.id}
@@ -843,6 +843,30 @@ export default function ProviderConfigList({
 
       </div>
 
+      <p className="flex items-center gap-2 text-xs text-muted-foreground"><Info className="w-4 h-4 shrink-0" />{t('settings.modelsPrivateHint')}</p>
+
+      <details className="border-y border-border group/routing" open={startCollapsed ? undefined : true}>
+        <summary className="flex items-center gap-3 py-5 cursor-pointer list-none text-sm">
+          <Network className="w-4 h-4 text-muted-foreground" />{t('settings.taskRouting')}
+          <span className="text-xs text-muted-foreground">{t(`settings.strategyOptions.${strategy}`)}</span>
+          <ChevronDown className="w-4 h-4 ml-auto -rotate-90 group-open/routing:rotate-0" />
+        </summary>
+        <div className="pb-5"><RoutingStrategyCard
+          strategy={strategy} onStrategyChange={onStrategyChange} configCount={providerConfigs.length}
+          onSuggestPrimary={handleSuggest} suggestBusy={suggestBusy} suggestion={suggestion}
+          onUseThis={handleUseThis} useThisBusy={suggestion ? busy === suggestion.id : false}
+        /></div>
+      </details>
+      <details className="border-b border-border group/advanced">
+        <summary className="flex items-center gap-3 pb-5 cursor-pointer list-none text-sm">
+          <Sliders className="w-4 h-4 text-muted-foreground" />{t('settings.advancedConnections')}
+          <ChevronDown className="w-4 h-4 ml-auto -rotate-90 group-open/advanced:rotate-0" />
+        </summary>
+        {providerConfigs.length > 0 && <button type="button" data-testid="provider-test-all" onClick={handleTestAll} disabled={testAllBusy}
+          className="mb-4 flex items-center gap-2 px-3 py-2 text-xs border border-border rounded-lg disabled:opacity-50">
+          {testAllBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}{t('settings.btnTestAll')}
+        </button>}
+
       {/* ── Provider capability comparison table ── */}
       {catalog.length > 0 && (
         <div className="pt-2 border-t border-border/40">
@@ -904,19 +928,7 @@ export default function ProviderConfigList({
         </div>
       )}
 
-      {/* Routing strategy sits BELOW the model configuration now: it is the
-          question you answer AFTER there is more than one model, and having
-          it first pushed the thing everyone actually came here for down. */}
-      <RoutingStrategyCard
-        strategy={strategy}
-        onStrategyChange={onStrategyChange}
-        configCount={providerConfigs.length}
-        onSuggestPrimary={handleSuggest}
-        suggestBusy={suggestBusy}
-        suggestion={suggestion}
-        onUseThis={handleUseThis}
-        useThisBusy={suggestion ? busy === suggestion.id : false}
-      />
+      </details>
 
     </div>
   );

@@ -37,9 +37,10 @@ interface SettingsScreenProps {
   /** Automation points at Diagnostics for scheduled tasks and usage — the two
    *  placeholder nav entries it replaced did the same, but as dead tabs. */
   onOpenDiagnostics?: () => void;
+  onBack?: () => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenDiagnostics }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenDiagnostics, onBack }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
@@ -100,10 +101,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     // Providers — the multi-model LLM provider list (embedding moved to memory).
     models: (
       <section className="space-y-5" aria-labelledby="settings-models-title">
-        <div className="space-y-1">
-          <h2 id="settings-models-title" className="text-lg font-semibold text-foreground font-sans">{t('settings.navModels')}</h2>
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">{t('settings.modelsDescription')}</p>
-        </div>
         <ProviderConfigList
           startCollapsed
           llmProviders={llmProviders}
@@ -244,9 +241,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-background px-4 py-6 lg:px-7 select-none relative">
+    <div className="flex-1 overflow-y-auto bg-background select-none relative">
       {/* Header bar */}
-      <div className="mb-6 max-w-6xl">
+      <div className="sr-only">
         {/* Was a hardcoded English string naming the Diagnostics screen — wrong
             twice over: untranslatable, and describing a different page than the
             one it sat on. The old wording is deliberately not quoted here: the
@@ -274,14 +271,14 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
       )}
 
-      <div className="max-w-6xl space-y-6">
-        <SettingsShell activeSection={activeSection} onSectionChange={setActiveSection}>
+      <div className="min-h-full flex flex-col">
+        <SettingsShell activeSection={activeSection} onSectionChange={setActiveSection} onBack={onBack}>
           {sections}
         </SettingsShell>
 
         {/* Footer status bar — the global auto-save indicator (no Save button:
             settings persist instantly per field). */}
-        <div className="flex select-none items-center gap-1.5 pt-4 border-t border-border/60 text-[10.5px] font-mono text-subtle-foreground">
+        <div className="flex select-none items-center gap-1.5 p-3 border-t border-border/60 text-[10.5px] font-sans text-subtle-foreground">
           {saveStatus === 'error' ? (
             <>
               <AlertCircle className="w-4 h-4 text-danger" />

@@ -115,7 +115,7 @@ describe("ProviderConfigList", () => {
     expect(screen.getByTestId("provider-config-primary-1")).toBeInTheDocument();
   });
 
-  it("marks the primary row with a star indicator", () => {
+  it("marks the primary row with a readable default badge", () => {
     const onUpdate = vi.fn();
     render(
       <ProviderConfigList
@@ -124,8 +124,7 @@ describe("ProviderConfigList", () => {
         onConfigsChange={onUpdate}
       />
     );
-    // The primary row should show a ★ character
-    expect(screen.getByText("★")).toBeInTheDocument();
+    expect(screen.getByTitle("settings.primary")).toHaveTextContent("settings.primary");
   });
 
   it("shows an Add model button", () => {

@@ -821,7 +821,7 @@ export default function App() {
       <UpdatePill />
 
       {/* Sidebar with macOS window decorations */}
-      <Sidebar
+      {activeSection !== 'settings' && <Sidebar
         threads={threads}
         activeThreadId={activeThreadId}
         onSelectThread={(id) => {
@@ -868,7 +868,7 @@ export default function App() {
         onDeleteThread={handleDeleteThread}
         backendStatus={backendStatus}
               dispatchedSpawnIds={dispatchedSpawnIds}
-      />
+      />}
 
       {/* Main Workspace Frame container with glass window feel */}
       {/* min-w-0: without it a flex child refuses to shrink below its content's
@@ -886,6 +886,7 @@ export default function App() {
               inside; Tauri's drag script skips real controls on its own. */}
           <div data-tauri-drag-region="deep" data-testid="workspace-bar"
             className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+            {activeSection === 'settings' && <span className="absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground pointer-events-none">Arslan</span>}
             {/* The label is a CONVERSATION thing, so it appears only there.
                 The BAR itself stays on every section, and that is not tidiness:
                 it carries data-tauri-drag-region, and it is the only region the
@@ -914,13 +915,13 @@ export default function App() {
                    So the strip stops being EMPTY instead: each section's own
                    title moves up into it, which is what made the space read as
                    dead in the first place. */
-                <span className="text-[11px] font-mono text-foreground font-bold truncate">
+                <span className={`text-[11px] font-mono text-foreground font-bold truncate ${activeSection === 'settings' ? 'invisible' : ''}`}>
                   {t(`nav.${activeSection}`)}
                 </span>
               )}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
 
 
               {/* Toggle Diagnostic Rail button — only where the rail can appear */}
@@ -1258,6 +1259,7 @@ export default function App() {
                 providerConfigs={providerConfigs}
                 onProviderConfigsChange={setProviderConfigs}
                 onOpenDiagnostics={() => setActiveSection('diagnosis')}
+                onBack={() => setActiveSection('arslan')}
               />
             )}
           </div>
