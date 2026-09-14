@@ -5,7 +5,15 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-Latest complete combined run: clean `4595994d` (including task-memory evidence
+Latest complete backend run: clean `4fd004ca` (including scoped current-revision
+FTS), **4,718 passed, 14 skipped, 18 warnings in 447.84 seconds**. Report:
+`/tmp/arslan-fts-regression.EtxGKm/backend.xml`. Scrubbed environment, isolated
+HOME/data, disabled live models and frozen source were retained. The aiosqlite
+guard recorded 78 closed-loop deliveries. Frontend source is unchanged from the
+complete 1,829-test/typecheck/build result below. This is not desktop, real-model
+or release-candidate acceptance.
+
+Previous complete combined run: clean `4595994d` (including task-memory evidence
 review), **4,704 passed, 14 skipped, 19 warnings in 451.57 seconds**. Report:
 `/tmp/arslan-evidence-regression.LvwKlO/backend.xml`. The run used a scrubbed
 environment, isolated HOME/data and disabled live models; the aiosqlite guard
@@ -107,7 +115,7 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `4595994d` full backend and frontend tests/typecheck/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
+| Complete engineering regression | Clean `4fd004ca` full backend passes; unchanged frontend's full tests/typecheck/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
 | Context evidence UI | TaskPanel now exposes task-scoped receipt history and explicit version review; deleted text is withheld; six-locale component and isolated browser checks pass | Real desktop/task integration and packaged runtime verification; see `memory-evidence-ui.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |

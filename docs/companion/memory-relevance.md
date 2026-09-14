@@ -77,6 +77,11 @@ No production fixture or permission behavior was weakened to obtain that result.
 The complete 4,704-test backend result in W17 predates FTS integration, so a new
 full frozen run remains required for this source. Frontend source is unchanged.
 
+That frozen follow-up on clean `4fd004ca` completed with **4,718 passed, 14 skipped,
+18 warnings in 447.84 seconds**. Report: `/tmp/arslan-fts-regression.EtxGKm/backend.xml`.
+Source stayed unchanged throughout; live models were disabled and HOME/data were
+isolated. The existing skipped real-model cases are not successful evaluations.
+
 The final matcher/context/multi-turn/scoped-turn run passed **132 tests** in
 63.54 seconds. Earlier expanded scope/restore/style/worker coverage passed 153
 tests, and the resume/entry/tool/locality regression passed 53 tests; these sets
