@@ -1,5 +1,37 @@
 # W21 — six-language consistency (in progress)
 
+## Real-browser settings follow-up
+
+The isolated `companion_smoke_app` harness was run with the production frontend,
+real migrations/settings API, temporary HOME/data and a synthetic model. HTTP
+outside loopback was disabled in the harness and browser requests were restricted
+to its exact origin. No installed browser profile or application data was used.
+
+All six languages passed select language → immediate Back → reload → reopen
+settings at 1100/600×800 in explicitly selected light/dark modes (24 cases).
+Post-fix departure took 66–140 ms; the real API and reopened selector retained
+the chosen language. No page exceptions or document-width overflow occurred.
+The first pass changed the browser's color preference without changing Arslan's
+saved default-dark choice, so it was not accepted as light-mode evidence; the
+corrected run clicks the product's mode control and checks the DOM theme.
+
+Visual review prompted a stronger label-bound check, which failed on the old
+English desktop navigation: its 197-pixel button had 202 pixels of scroll width.
+Desktop navigation labels now wrap within their buttons; narrow navigation stays
+a horizontal chip row. The strengthened 24-case run passed, and all 24 final
+screenshots were inspected in `/tmp/arslan-companion-ui-locale.VkcSof/fixed`.
+The test driver is `/tmp/arslan-companion-ui-locale.VkcSof/locale.cjs`; it is a
+temporary harness, not a tool for modifying production settings.
+
+Complete frontend regression: 237 files / 1,835 tests in 20.68 seconds; typecheck
+and build (6.65 seconds) pass. After that run, a responsive-class regression was
+added; the focused settings/language selection passed 15 tests in 0.913 seconds.
+The class assertion protects the implementation, while real Chromium supplies
+layout evidence. Existing warning categories remain. This closes the earlier
+browser-level rapid-departure check, not all W21 workflows or packaged desktop
+acceptance. Runtime deterministic messages still need six-language work (for
+example stale proposal confirmation and fallback corrections).
+
 Starting commit: `3db2f857` (W16 navigation). This is an implementation checkpoint,
 not release-candidate sign-off.
 

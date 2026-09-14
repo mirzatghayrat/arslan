@@ -84,7 +84,7 @@ export default function SettingsShell({
         onClick={() => onSectionChange(s.id)}
         className={[
           'relative flex items-center gap-3 rounded-lg px-3 py-3 text-left shrink-0',
-          'whitespace-nowrap transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+          'whitespace-nowrap md:whitespace-normal transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
           active
             ? 'bg-primary/10 text-primary border border-transparent'
             : 'text-muted-foreground hover:text-foreground hover:bg-surface/60 border border-transparent',
@@ -92,7 +92,7 @@ export default function SettingsShell({
       >
         {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />}
         <Icon className="w-4 h-4 shrink-0" />
-        <span className="flex flex-col leading-tight">
+        <span className="flex min-w-0 flex-col leading-tight md:break-words">
           <span className="text-sm font-medium font-sans">{t(s.labelKey)}</span>
         </span>
       </button>

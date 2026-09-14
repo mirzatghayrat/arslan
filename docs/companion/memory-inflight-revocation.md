@@ -86,5 +86,7 @@ Focused tests cover actual host HTTP serialization after deletion
 and deletion during the first request with personal-memory dependencies removed
 to isolate the history fence, task-only provenance and summary row-ID reuse. The preceding adjacent run passed 83 tests in
 67.98 seconds (before adding those two host cases); the new source has not yet
-completed a frozen full regression. Broad source-write suppression remains an
-audit item; this is not release acceptance.
+completed a frozen full regression at that checkpoint. The subsequent frozen
+`4906f9c3` run passed 4,767 tests, 14 skips and 20 warnings in 451.36 seconds;
+the targeted history/in-flight selection passed 28 tests. Broad source-write
+suppression remains an audit item; this is not release acceptance.

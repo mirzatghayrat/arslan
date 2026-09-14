@@ -54,6 +54,14 @@ const shell = (active: SettingsSectionId, onChange = vi.fn()) =>
   );
 
 describe("SettingsShell", () => {
+  it("allows desktop labels to wrap while preserving compact mobile chips", () => {
+    shell("appearance");
+    for (const id of IDS) {
+      const button = screen.getByTestId(`settings-nav-${id}`);
+      expect(button).toHaveClass("whitespace-nowrap", "md:whitespace-normal");
+      expect(button.querySelector("span.flex")).toHaveClass("min-w-0", "md:break-words");
+    }
+  });
   it("provides a single settings sidebar with a working return action", async () => {
     const onBack = vi.fn();
     render(<SettingsShell activeSection="models" onSectionChange={vi.fn()} onBack={onBack}>{CHILDREN}</SettingsShell>);

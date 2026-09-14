@@ -5,15 +5,25 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-Follow-up `91ef91e0` implements deletion-aware retained history and compaction
-inputs, plus transient history-dependency admission checks. Subsequent checks
-also cover task-only source resolution and summary row-ID reuse. The original
-retained-source diagnostic below describes the earlier source, not the current
-implementation. Eight focused history cases and the existing in-flight suite
-are the targeted gates; a new frozen full regression is pending. See
-`memory-inflight-revocation.md` for the exact behavior and limits.
+Latest complete backend run: clean `4906f9c3`, including deletion-aware history,
+task-only sources and replaced-summary dependencies: **4,767 passed, 14 skipped,
+20 warnings in 451.36 seconds**. Source remained frozen throughout. Report:
+`/tmp/arslan-revocation-corrected.OBwX4u/history-backend.xml`. The same scrubbed
+environment and isolated HOME/data/synthetic secret controls below were used;
+the aiosqlite guard recorded 67 closed-loop deliveries. The preceding targeted
+history/in-flight selection passed 28 tests in 3.81 seconds.
 
-Latest complete backend run: clean `5250e62b` (in-flight memory dependencies and
+The subsequent frontend-only settings-label wrap fix passed all 237 files /
+**1,835 tests** in 20.68 seconds, TypeScript checking and production build in
+6.65 seconds. A later added responsive-style regression plus language tests
+passed all 15 tests in 0.913 seconds. This later test is not included in 1,835.
+Real headless Chromium against the isolated production API/harness passed 24
+language-change/Back/reload checks at 1100/600×800, in explicit light/dark modes.
+Every post-fix screenshot was inspected. See W21 for the detected label overflow,
+test boundaries and artifact paths. No account/model call, installation or
+publication occurred; locked-Mac packaged desktop acceptance remains pending.
+
+Previous complete backend run: clean `5250e62b` (in-flight memory dependencies and
 snapshot writeback fences), **4,759 passed, 14 skipped, 19 warnings in 451.15
 seconds**. Report: `/tmp/arslan-revocation-corrected.OBwX4u/backend.xml`. Source
 remained frozen. The run used a scrubbed environment, isolated HOME and
@@ -174,8 +184,8 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `5250e62b` full backend and 1,835-test frontend/typecheck/build pass as recorded above | Fix confirmed retained-source context/summary defect, then repeat for release source |
-| Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass; in-flight withdrawal and snapshot fences implemented | Real desktop and packaged runtime verification, historical scope snapshots, retained-source withdrawal; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
+| Complete engineering regression | Clean `4906f9c3` full backend; subsequent frontend-only wrap fix has complete frontend/typecheck/build evidence above | Repeat on final release source after remaining implementation gates |
+| Context evidence UI | Task-scoped receipt history, version review and provider-bound counters; in-flight withdrawal, snapshot fences and retained-source filtering implemented | Real desktop and packaged runtime verification, historical scope snapshots and complete scenario evaluation; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |
