@@ -109,6 +109,12 @@ class TaskRuntime:
         self.validation_results = ()
         self.validation_report = None
         self.memory_dependencies = {}
+        self.history_dependencies = {}
+
+    def register_history(self, conversation_id, message_ids, summary_ids):
+        messages, summaries = self.history_dependencies.setdefault(conversation_id, (set(), set()))
+        messages.update(message_ids)
+        summaries.update(summary_ids)
 
     def register_memory(self, scope, refs):
         self.memory_dependencies.setdefault(scope, set()).update(
@@ -116,10 +122,15 @@ class TaskRuntime:
 
     async def check_memory(self):
         snapshot = tuple((scope, tuple(refs)) for scope, refs in self.memory_dependencies.items())
-        if not snapshot:
+        history = tuple((cid, tuple(messages), tuple(summaries))
+                        for cid, (messages, summaries) in self.history_dependencies.items())
+        if not snapshot and not history:
             return
         try:
             valid = await personal_context.dependencies_current(snapshot)
+            if valid and history:
+                from server.services import memory_history
+                valid = await memory_history.dependencies_current(history)
         except Exception:
             raise TaskError("task_memory_check_failed") from None
         if not valid:

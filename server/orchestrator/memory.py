@@ -12,6 +12,7 @@ from arslan.context_budget import clip as clip_context, estimate_tokens
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ArslanSummary, UserFact
 from server.services.llm_factory import build_adapter
+from server.services.memory_history import eligible_messages
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,7 @@ async def assemble_working_context(conversation_id: str) -> dict:
         summ = await _latest_summary(db, conversation_id)
         cutoff = summ.up_to_message_id if summ else 0
         rows = await db.execute(
-            select(ArslanMessage)
-            .where(ArslanMessage.conversation_id == conversation_id)
+            eligible_messages(conversation_id)
             .where(ArslanMessage.id > cutoff)
             .order_by(ArslanMessage.id)
         )
@@ -101,15 +101,21 @@ async def assemble_working_context(conversation_id: str) -> dict:
     summary = clip_context(original_summary, max(1, budget // 2))
     remaining = budget - estimate_tokens(summary)
     bounded = []
-    for message in reversed(history):
+    used_ids = []
+    for source, message in reversed(list(zip(msgs, history))):
         content = clip_context(message["content"], remaining)
         if content:
             bounded.append({**message, "content": content})
+            used_ids.append(source.id)
             remaining -= estimate_tokens(content)
         if remaining <= 0 or content != message["content"]:
             break
     bounded.reverse()
     truncated = summary != original_summary or bounded != history
+    from server.services import task_service
+    runtime = task_service.current()
+    if runtime is not None:
+        runtime.register_history(conversation_id, used_ids, [summ.id] if summ and summary else [])
     return {"summary": summary, "history": bounded, "truncated": truncated,
             "budget_mode": "estimated_text_tokens"}
 
@@ -126,8 +132,7 @@ async def maybe_compact(conversation_id: str) -> None:
             summ = await _latest_summary(db, conversation_id)
             cutoff = summ.up_to_message_id if summ else 0
             rows = await db.execute(
-                select(ArslanMessage)
-                .where(ArslanMessage.conversation_id == conversation_id)
+                eligible_messages(conversation_id)
                 .where(ArslanMessage.id > cutoff)
                 .order_by(ArslanMessage.id)
             )
