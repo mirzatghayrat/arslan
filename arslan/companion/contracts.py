@@ -48,6 +48,8 @@ class ResourceRef(Contract):
     revision: PositiveInt
     sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
     locator: Annotated[str, Field(max_length=500)] | None = None
+    title: Annotated[str, Field(max_length=240)] | None = None
+    logical_key: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
 
 
 class BudgetSpec(Contract):
@@ -83,6 +85,19 @@ class ValidationRule(Contract):
             raise ValueError("minimum exceeds maximum")
         if self.kind == "image_dimensions" and self.width is None and self.height is None:
             raise ValueError("image dimensions require width or height")
+        fields = {
+            "text": {"equals", "contains", "minimum", "maximum"},
+            "json": {"equals", "contains"},
+            "artifact": {"target", "minimum", "maximum"},
+            "image_dimensions": {"target", "width", "height", "minimum", "maximum"},
+            "research_sources": {"target", "minimum", "maximum"},
+            "code_build": {"target", "argv", "equals", "contains"},
+            "code_test": {"target", "argv", "equals", "contains"},
+            "language": {"locale"}, "layout": {"target"}, "remote_readback": {"target", "equals", "locale"},
+        }[self.kind]
+        for name in ("target", "equals", "contains", "minimum", "maximum", "width", "height", "locale", "argv"):
+            if name not in fields and getattr(self, name) not in (None, ()):
+                raise ValueError(f"{name} is not supported by {self.kind} validation")
         return self
 
 

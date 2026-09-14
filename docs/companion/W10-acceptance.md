@@ -44,7 +44,16 @@ non-critical text-language criterion, but that is labelled a model assessment.
 
 ## File and UI boundaries
 
-Stored files have stable artifact IDs. Proposed local artifact links are resolved
+Stored files have stable artifact IDs and host-assigned logical revision keys.
+Workspace writes/edits preserve the intended contents before applying the write;
+failure to preserve the snapshot prevents that mutation. The snapshot is not a
+claim that the workspace remains unchanged afterward. A later verified revision
+can supersede an intermediate file with the same logical key; the prior record
+remains visible as replaced. Explicitly linking the old file keeps it in the
+required deliverable set, so a corrupt old file cannot be hidden by a new one.
+Historical files without lineage are not guessed into a replacement relationship.
+
+Proposed local artifact links are resolved
 only against Runs owned by this task/specification. A foreign URL with an
 artifact-shaped path does not gain access. Invalid file candidates are not
 revealed as working download links after repairs stop; a trusted localized
@@ -71,9 +80,19 @@ Seatbelt subprocess parsed a JSON fixture. Offline UI checks used isolated data,
 synthetic models and loopback-only networking; failed checks removed acceptance
 controls and retained an explicit resume option.
 
-Remaining W10 integration: artifact revision/supersession during file repair,
-workspace-written deliverable registration, and report/acceptance coverage over
-all entry paths. W13 supplies typed ASC readback; W14 claim/source support; W15
+The frozen foundation (`d6324a25`) ran 4,334 passing backend tests, 14 skips,
+with one failure in the explicit macOS-test population manifest after adding the
+new parser test. The manifest and CI count were updated together to include that
+actual macOS case; this is not a claim of a new Linux execution measurement.
+Subsequent deliverable-revision tests covered corrupt/missing intermediates,
+explicit old links, write/edit snapshot ownership, and budget failure before a
+workspace mutation. Frontend foundation regression passed all 1,720 tests.
+The subsequent local run exercised **41 macOS-only tests with zero skips**,
+**125 task/recipe entry-point tests**, and **100 focused artifact/task tests**.
+The six-language UI regression remained at **1,720 passing tests**. A new full
+frozen rerun covers the combined revision-registration and marker changes.
+
+Remaining cross-package integration: W13 supplies typed ASC readback; W14 claim/source support; W15
 visual-review inputs; W20 broad file/media inspection and XLSX runtime support.
 These are not certified by the current parser or by a model score. Full frozen
 regression and release-package execution are recorded separately; this is not a

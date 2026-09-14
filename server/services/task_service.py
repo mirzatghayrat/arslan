@@ -186,7 +186,8 @@ class TaskRuntime:
                         and url.startswith("/api/v1/runs/") and len(url) <= 500):
                     try:
                         refs.append(ResourceRef(id=item.get("id") or f"artifact:{digest}", kind="artifact", revision=1,
-                                                sha256=digest, locator=url))
+                                                sha256=digest, locator=url, title=item.get("title"),
+                                                logical_key=item.get("logical_key")))
                     except ValueError:
                         pass
         async with self.lock:
@@ -240,11 +241,12 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                     output = saved if isinstance(saved, str) else ""
                 if (not runtime.saw_error and not runtime.pause_reason and (runtime.validation_report is None or
                         runtime.validation_report["output_sha256"] != hashlib.sha256(output.encode()).hexdigest())):
-                    await task_validation.validate_output(runtime, output, [])
+                    async with asyncio.timeout(budget.remaining_seconds()):
+                        await task_validation.validate_output(runtime, output, [])
                 validation_failed = runtime.validation_report is not None and bool(task_validation.failures(runtime.validation_report))
                 verified = (bool(runtime.validation_results) and any(item.evaluator != "model" for item in runtime.validation_results)
                     and all(item.status in {"passed", "not_applicable"} for item in runtime.validation_results)
-                    and all(item["status"] == "passed" for item in (runtime.validation_report or {}).get("artifacts", [])))
+                    and all(item["status"] in {"passed", "not_applicable"} for item in (runtime.validation_report or {}).get("artifacts", [])))
                 succeeded = verified and not (runtime.saw_error or runtime.pause_reason or runtime.reconciliation_required)
                 checks_missing = (any(item.evaluator != "human" and item.status in {"not_run", "unverified"}
                     for item in runtime.validation_results) or
@@ -274,7 +276,8 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                 if row.phase != "cancelled":
                     final = await repo.finish(runtime.task_id, runtime.attempt_id,
                         phase="waiting_user" if code in {"task_reconciliation_required", "task_budget_exhausted",
-                            "task_no_progress", "task_input_required"} else "failed", reason=code)
+                            "task_no_progress", "task_input_required"} else "failed", reason=code,
+                        results=runtime.validation_results)
                 else:
                     final = await repo.present(row)
             emit(_state_frame(final))

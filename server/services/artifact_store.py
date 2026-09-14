@@ -30,9 +30,11 @@ def safe_filename(run_id: int, filename: str) -> bool:
             and not filename.endswith(".manifest.json"))
 
 
-def store_bytes(run_id: int, title: str, data: bytes) -> dict:
+def store_bytes(run_id: int, title: str, data: bytes, *, logical_key: str | None = None) -> dict:
     if run_id <= 0 or len(data) > MAX_FILE_BYTES:
         raise ValueError("invalid artifact owner or oversized file")
+    if logical_key is not None and (not isinstance(logical_key, str) or re.fullmatch(r"[a-f0-9]{64}", logical_key) is None):
+        raise ValueError("invalid artifact logical identity")
     from arslan.execution_budget import current
     budget = current()
     if budget is not None:
@@ -47,6 +49,7 @@ def store_bytes(run_id: int, title: str, data: bytes) -> dict:
         "id": f"artifact:{filename}",
         "kind": "file", "run_id": run_id, "filename": filename, "title": title[:240],
         "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+        "logical_key": logical_key or hashlib.sha256(("generated:" + title).encode()).hexdigest(),
         "media_type": mimetypes.guess_type(basename)[0] or "application/octet-stream",
         "url": f"/api/v1/runs/{run_id}/artifacts/{filename}",
     }
@@ -154,9 +157,18 @@ def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:
                     raise ValueError("artifact_too_large")
                 return value
         metadata = json.loads(read(filename + ".manifest.json", 16_384))
-        if (not isinstance(metadata, dict) or metadata.get("run_id") != run_id
+        if (not isinstance(metadata, dict) or type(metadata.get("run_id")) is not int or metadata.get("run_id") != run_id
                 or metadata.get("filename") != filename):
             raise ValueError("artifact_manifest_mismatch")
+        if (type(metadata.get("bytes")) is not int or not isinstance(metadata.get("sha256"), str)
+                or re.fullmatch(r"[a-f0-9]{64}", metadata["sha256"]) is None
+                or not isinstance(metadata.get("title"), str) or len(metadata["title"]) > 240
+                or metadata.get("id", f"artifact:{filename}") != f"artifact:{filename}"
+                or metadata.get("url") != f"/api/v1/runs/{run_id}/artifacts/{filename}"):
+            raise ValueError("artifact_manifest_invalid")
+        logical = metadata.get("logical_key")
+        if logical is not None and (not isinstance(logical, str) or re.fullmatch(r"[a-f0-9]{64}", logical) is None):
+            raise ValueError("artifact_manifest_invalid")
         data = read(filename, MAX_FILE_BYTES)
         if metadata.get("bytes") != len(data) or metadata.get("sha256") != hashlib.sha256(data).hexdigest():
             raise ValueError("artifact_integrity_mismatch")

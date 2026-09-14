@@ -7,11 +7,20 @@ const baseMessages = {
   fr: { title: "Vérifications et livrables", intro: "L’analyse confirme la structure, pas la qualité visuelle ni l’exactitude. Les vérifications non effectuées restent visibles.", passed: "Réussie", failed: "Échouée", not_run: "Non effectuée", not_applicable: "Sans objet", unverified: "Non vérifiée", deterministic: "Vérification automatique", human: "Votre vérification", model: "Évaluation du modèle", artifacts: "Livrables", open: "Ouvrir le fichier enregistré", failedReason: "Certaines vérifications ont échoué. Consultez les preuves et le travail restant avant de continuer.", changedReason: "Un fichier enregistré a changé ou n’est plus disponible. Vérifiez-le à nouveau avant d’accepter.", details: "Détails techniques" },
 } as const;
 
-export const validationMessages = {
+const stateMessages = {
   en: { ...baseMessages.en, notRunReason: "Required checks have not run. Review the missing verifier or evidence before continuing; this result is not accepted." },
   zh: { ...baseMessages.zh, notRunReason: "必要检查尚未执行。请先查看缺少的验证器或证据，再决定是否继续；本次结果尚未验收。" },
   ja: { ...baseMessages.ja, notRunReason: "必要な検証が未実施です。続行前に不足する検証機能や証拠を確認してください。結果は未承認です。" },
   es: { ...baseMessages.es, notRunReason: "Faltan comprobaciones necesarias. Revisa el verificador o las pruebas que faltan antes de continuar; el resultado no está aceptado." },
   de: { ...baseMessages.de, notRunReason: "Erforderliche Prüfungen wurden nicht ausgeführt. Prüfe fehlende Prüffunktionen oder Belege vor dem Fortsetzen; das Ergebnis ist nicht abgenommen." },
   fr: { ...baseMessages.fr, notRunReason: "Des vérifications requises n’ont pas été effectuées. Consultez les outils ou preuves manquants avant de continuer ; le résultat n’est pas accepté." },
+} as const;
+
+export const validationMessages = {
+  en: { ...stateMessages.en, unknownFile: "Unverified file", superseded: "Replaced by a newer version" },
+  zh: { ...stateMessages.zh, unknownFile: "未验证文件", superseded: "已由新版本替换" },
+  ja: { ...stateMessages.ja, unknownFile: "未検証のファイル", superseded: "新しい版に置き換え済み" },
+  es: { ...stateMessages.es, unknownFile: "Archivo sin verificar", superseded: "Sustituido por una versión nueva" },
+  de: { ...stateMessages.de, unknownFile: "Nicht geprüfte Datei", superseded: "Durch eine neuere Version ersetzt" },
+  fr: { ...stateMessages.fr, unknownFile: "Fichier non vérifié", superseded: "Remplacé par une version plus récente" },
 } as const;

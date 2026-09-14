@@ -320,6 +320,8 @@ class TaskRepository:
         from server.services import artifact_store, task_validation
         report = await task_validation.latest_report(self, row)
         for artifact in (report or {}).get("artifacts", []):
+            if artifact["status"] == "not_applicable" and artifact.get("superseded_by"):
+                continue
             if artifact["status"] == "failed":
                 raise TaskError("task_validation_failed")
             try:

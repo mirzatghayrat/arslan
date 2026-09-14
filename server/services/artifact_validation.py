@@ -58,15 +58,19 @@ async def inspect_bytes(data: bytes, suffix: str) -> dict:
         return {"status": "not_run", "code": "artifact_parser_unavailable"}
 
 
-async def validate(run_id: int, filename: str, *, expected_hash: str | None = None) -> dict:
+async def validate(run_id: int, filename: str, *, expected_hash: str | None = None,
+                   title: str | None = None, logical_key: str | None = None) -> dict:
     identity = f"artifact:{filename}"
     base = {"id": identity, "run_id": run_id, "filename": filename,
-            "url": f"/api/v1/runs/{run_id}/artifacts/{filename}"}
+            "url": f"/api/v1/runs/{run_id}/artifacts/{filename}", "title": title, "logical_key": logical_key}
     try:
         metadata, data = artifact_store.read_owned(run_id, filename)
     except (OSError, ValueError, TypeError):
         return {**base, "status": "failed", "code": "artifact_missing_or_changed"}
     base.update({"sha256": metadata["sha256"], "bytes": len(data), "title": metadata.get("title", filename)})
+    if logical_key is not None and metadata.get("logical_key") != logical_key:
+        return {**base, "status": "failed", "code": "artifact_identity_mismatch"}
+    base["logical_key"] = metadata.get("logical_key")
     if expected_hash is not None and expected_hash != metadata["sha256"]:
         return {**base, "status": "failed", "code": "artifact_hash_mismatch"}
     if not data:

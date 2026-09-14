@@ -65,6 +65,15 @@ def test_build_checks_match_exact_admitted_command_and_actual_value():
     assert task_validation.evaluate(assertion, "", [], [wrong_command])["status"] == "not_run"
 
 
+def test_rule_fields_cannot_be_silently_ignored_and_artifact_count_is_checked():
+    with pytest.raises(ValueError, match="not supported"):
+        check("text", target="file-that-was-never-read.txt", equals="answer")
+    with pytest.raises(ValueError, match="not supported"):
+        check("artifact", contains=["text-that-was-never-read"])
+    artifact = {"id": "one", "filename": "one.txt", "status": "passed"}
+    assert task_validation.evaluate(check("artifact", minimum=2), "", [artifact], [])["status"] == "failed"
+
+
 @pytest.mark.parametrize("suffix,data,status", [
     (".txt", b"", "failed"), (".json", b"{broken", "failed"),
     (".png", b"not PNG", "failed"), (".pdf", b"not PDF", "failed"),
@@ -293,3 +302,42 @@ async def test_final_wrapper_cannot_replace_an_already_checked_output(execution_
     async with repository() as repo:
         task = await repo.get("validate-task")
         assert task.phase == "waiting_user" and task.results[0]["status"] == "failed"
+
+
+@pytest.mark.parametrize("old_state,explicit_old", [("corrupt", False), ("missing", False), ("corrupt", True)])
+async def test_repaired_artifact_revisions_preserve_history_without_hiding_explicit_links(
+        execution_db, monkeypatch, tmp_path, old_state, explicit_old):
+    monkeypatch.setattr(artifact_store, "root", lambda: tmp_path / "artifacts")
+    async def parser(data, suffix):
+        try:
+            return inspect(data, suffix)
+        except Exception:
+            return {"status": "failed", "code": "artifact_parse_failed"}
+    monkeypatch.setattr(artifact_validation, "inspect_bytes", parser)
+    async def body(emit):
+        async def host(sink):
+            saved = []
+            runtime = task_service.current()
+            for index, data in enumerate((b"broken JSON", b'{"value":1}')):
+                async def execute():
+                    artifact = artifact_store.store_bytes(execution_context.current_run_id(), "result.json", data)
+                    saved.append(artifact)
+                    return {"ok": True, "artifact": artifact}
+                await runtime.execute_tool("run_python", {"fixture_revision": index}, execute)
+            if old_state == "missing":
+                (artifact_store.root() / saved[0]["filename"]).unlink()
+            output = f"[Repaired file]({saved[1]['url']})"
+            if explicit_old:
+                output += f"\n[Also deliver the old file]({saved[0]['url']})"
+            return output
+        return await host_run.execute("validation", "fixture", emit, host)
+    await run_contract([check("artifact", target="result.json")], body)
+    async with repository() as repo:
+        task = await repo.get("validate-task")
+        report = await task_validation.latest_report(repo, task)
+        assert len(report["artifacts"]) == 2
+        if explicit_old:
+            assert task.phase == "waiting_user" and report["artifacts"][0]["status"] == "failed"
+        else:
+            assert task.phase == "succeeded" and report["artifacts"][0]["status"] == "not_applicable"
+            assert report["artifacts"][0]["superseded_by"] == report["artifacts"][1]["id"]

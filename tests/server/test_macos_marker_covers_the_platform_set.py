@@ -37,6 +37,10 @@ TESTS = pathlib.Path(__file__).parents[1]
 EXPECTED_FILES: dict[str, int] = {
     "server/test_code_sandbox.py": 14,
     "server/test_artifact_store.py": 1,
+    # 2026-09-15: fixed artifact parser actually runs inside Seatbelt. The new
+    # case passed on macOS and explicitly skips when sys.platform != darwin.
+    # This is an appended boundary case, not a new full Linux measurement.
+    "server/test_task_validation.py": 1,
     "server/test_ocr_vision.py": 5,
     "server/test_command_sandbox_net.py": 3,
     "server/test_skill_script_failclosed.py": 3,
@@ -56,7 +60,7 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 40
+EXPECTED_TOTAL = 41
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5
 

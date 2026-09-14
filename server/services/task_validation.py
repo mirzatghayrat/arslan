@@ -49,11 +49,15 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict]) -> dict
         except (ValueError, RecursionError):
             passed = False
     elif rule.kind in {"artifact", "image_dimensions"}:
-        selected = [item for item in artifacts if rule.target is None or rule.target in {
-            item["id"], item["filename"], item.get("title")}]
+        selected = [item for item in artifacts if item["status"] != "not_applicable" and (rule.target is None or rule.target in {
+            item["id"], item["filename"], item.get("title")})]
         if any(item["status"] == "not_run" for item in selected):
             return {**base, "status": "not_run", "code": "artifact_check_not_run"}
         passed = bool(selected) and all(item["status"] == "passed" for item in selected)
+        if rule.minimum is not None:
+            passed = passed and len(selected) >= rule.minimum
+        if rule.maximum is not None:
+            passed = passed and len(selected) <= rule.maximum
         if rule.kind == "image_dimensions":
             passed = passed and all((rule.width is None or item.get("width") == rule.width) and
                 (rule.height is None or item.get("height") == rule.height) for item in selected)
@@ -97,25 +101,43 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
             attempts = (await repo.db.scalars(select(TaskAttempt).where(TaskAttempt.task_id == task.id,
                 TaskAttempt.spec_revision == task.spec_revision))).all()
             owned_runs = {run_id for attempt in attempts for run_id in attempt.run_ids}
-    references = {ref.locator: ref.sha256 for ref in runtime.progress.artifacts if ref.locator}
+    references = {ref.locator: {"expected_hash": ref.sha256, "title": ref.title, "logical_key": ref.logical_key}
+                  for ref in runtime.progress.artifacts if ref.locator}
+    explicit = set()
     for match in _FOREIGN.finditer(text):
-        references.setdefault(unquote(match[0]), None)
+        explicit.add(unquote(match[0]))
+        references.setdefault(unquote(match[0]), {})
     local_text = _FOREIGN.sub("", text)
     for match in _LINK.finditer(local_text):
-        references.setdefault(unquote(match[1]), None)
+        explicit.add(unquote(match[1]))
+        references.setdefault(unquote(match[1]), {})
     for match in _BARE.finditer(_LINK.sub("", local_text)):
-        references.setdefault(unquote(match[0]), None)
+        explicit.add(unquote(match[0]))
+        references.setdefault(unquote(match[0]), {})
     artifacts = []
-    for locator, digest in list(references.items())[:32]:
+    for locator, expected in list(references.items())[:32]:
         current_budget().check()
         match = _ARTIFACT.fullmatch(locator)
         if not match or int(match[1]) not in owned_runs:
             artifacts.append({"id": "unowned:" + hashlib.sha256(locator.encode()).hexdigest(),
                               "filename": match[2][:220] if match else "", "status": "failed", "code": "artifact_scope_denied"})
             continue
-        artifacts.append(await artifact_validation.validate(int(match[1]), match[2], expected_hash=digest))
+        artifacts.append(await artifact_validation.validate(int(match[1]), match[2], **expected))
     if len(references) > 32:
         artifacts.append({"id": "artifact-limit", "filename": "", "status": "failed", "code": "artifact_check_limit"})
+    # Checkpoint order is execution order. A later verified revision can replace
+    # an intermediate output with the same host-assigned logical identity. An
+    # explicitly linked old file remains a requested deliverable and is checked.
+    latest = {}
+    for artifact in artifacts:
+        key = artifact.get("logical_key")
+        if key and artifact["status"] == "passed":
+            latest[key] = artifact
+    for artifact in artifacts:
+        replacement = latest.get(artifact.get("logical_key"))
+        if replacement is not None and replacement is not artifact and artifact.get("url") not in explicit:
+            if artifacts.index(replacement) > artifacts.index(artifact):
+                artifact.update(status="not_applicable", code="artifact_superseded", superseded_by=replacement["id"])
     checks = [evaluate(check, text, artifacts, trace) for check in spec.acceptance]
     if model_adapter is not None and not any(item["status"] == "failed" for item in [*checks, *artifacts]):
         from server.orchestrator.tool_loop import _chat_retry
