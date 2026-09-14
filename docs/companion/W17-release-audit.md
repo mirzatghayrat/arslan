@@ -15,6 +15,12 @@ TypeScript checking passed and the production build passed in 3.01 seconds.
 Existing skip/warning categories remain; this is not real-model or desktop
 acceptance. The Mac was checked again and remained locked.
 
+Subsequent FTS integration now consults the existing local index after complete
+permission filtering and validates current-revision content. Its combined
+200-test regression passes; `memory-relevance.md` records the boundaries and
+initial failures. The frozen 4,704-test result above predates this change and
+must not be attributed to the later source without another complete run.
+
 Previous complete backend run: clean `bec04286` (including local relevance
 filtering and task-query binding), **4,701 passed, 14 skipped, 19 warnings in
 440.60 seconds**. Report:

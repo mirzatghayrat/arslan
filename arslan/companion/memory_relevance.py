@@ -1,4 +1,4 @@
-"""Local lexical fallback for memory relevance; never a permission decision.
+"""Local FTS query terms and lexical supplement; never a permission decision.
 
 No model, network or downloaded index is required. Small multilingual aliases
 cover common work nouns; this is not a semantic translator or a claim that every
@@ -94,3 +94,14 @@ def score(query_terms: frozenset[str], content: str, *, kind: str = "preference"
     if kind == "style_rule":
         content_terms = content_terms | {"topic:design"}
     return len(query_terms & content_terms)
+
+
+def fts_expression(query_terms: frozenset[str]) -> str:
+    """Bounded literal FTS5 terms, never user-supplied query operators.
+
+    Topic aliases are handled by the multilingual lexical supplement; the
+    persisted index contains original content, not synthetic topic tokens.
+    """
+    literals = sorted(term for term in query_terms
+                      if not term.startswith("topic:") and 1 < len(term) <= 128)[:64]
+    return " OR ".join('"' + term.replace('"', '""') + '"' for term in literals)

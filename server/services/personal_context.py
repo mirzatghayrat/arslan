@@ -10,7 +10,7 @@ from datetime import datetime
 import json
 from uuid import uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, bindparam, or_, select, text
 from pydantic import ValidationError
 
 from arslan.companion.contracts import ContextReceipt, ResourceRef
@@ -114,6 +114,36 @@ async def record(result: PersonalContext):
         await db.commit()
 
 
+async def _indexed_matches(db, rows, query_terms: frozenset[str]) -> set[str]:
+    """Consult FTS only after the caller's complete permission/scope filtering.
+
+    Return IDs, not indexed bodies or global-corpus ranking. The index must
+    still agree with the exact approved current revision. Schema-only prepared
+    stores have no index and retain the lexical fallback.
+    """
+    expression = memory_relevance.fts_expression(query_terms)
+    if not rows or not expression:
+        return set()
+    exists = await db.scalar(text(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_entries_fts'"))
+    if not exists:
+        return set()
+    approved = {entry.id: revision.id for entry, revision in rows}
+    statement = text("""
+        SELECT f.entry_id, r.id FROM memory_entries_fts AS f
+        JOIN memory_entries AS e ON e.id=f.entry_id
+        JOIN memory_revisions AS r ON r.id=e.current_revision_id AND r.entry_id=e.id
+        WHERE memory_entries_fts MATCH :query AND f.entry_id IN :allowed
+          AND f.content=r.content
+    """).bindparams(bindparam("allowed", expanding=True))
+    result = set()
+    identities = list(approved)
+    for start in range(0, len(identities), 200):
+        matches = await db.execute(statement, {"query": expression, "allowed": identities[start:start + 200]})
+        result.update(entry_id for entry_id, revision_id in matches if approved[entry_id] == revision_id)
+    return result
+
+
 async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
                    limit_tokens: int = 1200) -> PersonalContext | None:
     ctx = context or current()
@@ -127,6 +157,9 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
     if not ctx.model_is_local and not ctx.cloud_memory_allowed:
         return PersonalContext("", receipt.model_copy(update={"filter_reasons": ("permission",)}))
     now = datetime.utcnow()
+    effective_query = query or ctx.query
+    terms = memory_relevance.terms(effective_query)
+    browse = memory_relevance.browse_requested(effective_query)
     scopes = [and_(MemoryEntry.scope_kind == "global", MemoryEntry.scope_id.is_(None))]
     async with db_session.AsyncSessionLocal() as db:
         # Archived/missing/cross-owner projects must not donate context, even if a
@@ -155,10 +188,9 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
         )
         # Permission filtering precedes every ranking and token-budget operation.
         rows = (await db.execute(statement)).all()
-    effective_query = query or ctx.query
-    terms = memory_relevance.terms(effective_query)
-    browse = memory_relevance.browse_requested(effective_query)
-    scores = {entry.id: 1 if browse else memory_relevance.score(terms, revision.content, kind=entry.kind)
+        indexed = set() if browse else await _indexed_matches(db, rows, terms)
+    scores = {entry.id: 1 if browse else max(int(entry.id in indexed),
+              memory_relevance.score(terms, revision.content, kind=entry.kind))
               for entry, revision in rows}
     irrelevant = any(not value for value in scores.values())
     ranked = sorted((pair for pair in rows if scores[pair[0].id] > 0), key=lambda pair: (

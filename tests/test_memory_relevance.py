@@ -1,6 +1,6 @@
 import pytest
 
-from arslan.companion.memory_relevance import browse_requested, score, terms
+from arslan.companion.memory_relevance import browse_requested, fts_expression, score, terms
 
 
 @pytest.mark.parametrize("query", [
@@ -54,3 +54,10 @@ def test_explicit_inventory_is_distinct_from_ordinary_search(query):
                                       "¿Cómo me llamo?", "Wie heiße ich?", "Comment je m'appelle ?"])
 def test_personal_identity_queries_can_retrieve_name(query):
     assert score(terms(query), "My name is Mirzat") > 0
+
+
+def test_fts_expression_is_bounded_literal_and_omits_synthetic_topics():
+    expression = fts_expression(frozenset({'report', 'a" OR "b', 'topic:report', 'x' * 129}))
+    assert expression == '"a"" OR ""b" OR "report"'
+    assert fts_expression(frozenset()) == ""
+    assert len(fts_expression(frozenset(f"word{i}" for i in range(200))).split(" OR ")) == 64
