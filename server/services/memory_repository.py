@@ -18,6 +18,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import OperationalError
 
 from arslan.companion.content_policy import normalized_memory
+from arslan.companion.design import reference_data
 from arslan.companion.memory import MemoryActor, MemoryError, MemoryScope, MemoryWrite, decide_write, naive_utc
 from server.db import session as db_session
 from server.db.models import (
@@ -176,6 +177,10 @@ class MemoryRepository:
             MemoryEntry.normalized_hash == digest, MemoryEntry.status != "deleted",
         ).order_by(MemoryEntry.created_at).limit(1))
         if duplicate is not None:
+            if write.style_reference:
+                previous = await self.db.get(MemoryRevision, duplicate.current_revision_id)
+                if (previous.structured_value or {}).get("style_reference") != reference_data(write.style_reference):
+                    raise MemoryError("style_reference_conflict")
             if decision.status == "active" and duplicate.status != "active":
                 return await self.revise(duplicate.id, duplicate.version, write, actor)
             return await self.present(duplicate, deduplicated=True)
@@ -205,7 +210,7 @@ class MemoryRepository:
         await self.db.flush()
         self.db.add(MemoryRevision(
             id=revision_id, entry_id=entry_id, version=1, content=write.content.strip(),
-            structured_value={"topic": write.topic}, previous_version=None, change_reason="created",
+            structured_value={"topic": write.topic, "style_reference": reference_data(write.style_reference)}, previous_version=None, change_reason="created",
         ))
         await self.db.flush()
         await self._source(entry, revision_id, actor)
@@ -235,13 +240,20 @@ class MemoryRepository:
             raise MemoryError("memory_deleted")
         if entry.version != expected_version:
             raise MemoryError("memory_version_conflict")
+        previous = await self.db.get(MemoryRevision, entry.current_revision_id)
+        reference = (previous.structured_value or {}).get("style_reference")
+        if "style_reference" not in write.model_fields_set:
+            if reference:
+                if write.kind != "style_rule" or write.scope.kind != "project":
+                    raise MemoryError("style_reference_project_required")
+                write = MemoryWrite.model_validate({**write.model_dump(), "style_reference": reference})
         decision = decide_write(write, actor)
         await self._scope_exists(write.scope, actor)
         digest = await self._not_suppressed(write, actor)
         scope_changed = (entry.scope_kind, entry.scope_id) != (write.scope.kind, write.scope.id)
         if scope_changed and not (actor.origin == "user" and confirm_scope_change):
             raise MemoryError("memory_scope_confirmation_required")
-        if decision.status != "active":
+        if decision.status != "active" or (actor.origin != "user" and reference != reference_data(write.style_reference)):
             proposal_id = await self._proposal(entry, actor, write.model_dump(mode="json"))
             return {"proposal_id": proposal_id, "status": "proposed", "target_id": entry.id,
                     "target_version": entry.version}
@@ -264,7 +276,7 @@ class MemoryRepository:
             raise MemoryError("memory_version_conflict")
         self.db.add(MemoryRevision(
             id=revision_id, entry_id=entry_id, version=version, content=write.content.strip(),
-            structured_value={"topic": write.topic}, previous_version=expected_version, change_reason="user_confirmed",
+            structured_value={"topic": write.topic, "style_reference": reference_data(write.style_reference)}, previous_version=expected_version, change_reason="user_confirmed",
         ))
         await self.db.flush()
         await self._source(entry, revision_id, actor)
@@ -296,9 +308,12 @@ class MemoryRepository:
                         "scope": {"kind": entry.scope_kind, "id": entry.scope_id},
                         "sensitivity": entry.sensitivity if entry.sensitivity != "secret" else "unknown",
                         "topic": (revision.structured_value or {}).get("topic"),
+                        "style_reference": (revision.structured_value or {}).get("style_reference"),
                         "valid_from": _iso(entry.valid_from), "review_at": _iso(entry.review_at),
                         "expires_at": _iso(entry.expires_at)}
             data.update(sensitive_acknowledged=sensitive_acknowledged, use_policy=use_policy)
+            if data.get("style_reference"):
+                data["style_reference"] = {**data["style_reference"], "interpretation": "confirmed"}
             write = MemoryWrite.model_validate(data)
             if decide_write(write, actor).status != "active":
                 raise MemoryError("sensitive_confirmation_required")
@@ -358,6 +373,7 @@ class MemoryRepository:
             "revision_id": entry.current_revision_id,
             "content": revision.content if revision and entry.status != "deleted" else None,
             "topic": (revision.structured_value or {}).get("topic") if revision else None,
+            "style_reference": (revision.structured_value or {}).get("style_reference") if revision and entry.status != "deleted" else None,
             "sensitivity": entry.sensitivity, "use_policy": entry.use_policy,
             "confirmation_kind": entry.confirmation_kind, "confirmed_at": _iso(entry.confirmed_at),
             "valid_from": _iso(entry.valid_from), "review_at": _iso(entry.review_at),
@@ -385,6 +401,7 @@ class MemoryRepository:
             MemoryRevision.entry_id == entry_id,
         ).order_by(MemoryRevision.version.desc()))).scalars().all()
         return [{"id": row.id, "version": row.version, "content": row.content,
+                 "style_reference": (row.structured_value or {}).get("style_reference"),
                  "change_reason": row.change_reason, "created_at": _iso(row.created_at)}
                 for row in revisions if entry.status != "deleted"]
 

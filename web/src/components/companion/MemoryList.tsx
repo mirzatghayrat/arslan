@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { companionApi, type MemoryEntry, type MemoryProposal, type MemoryRevision, type Project } from "../../api/companion";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 import MemoryEditor from "./MemoryEditor";
+import StyleReferenceView from "./StyleReferenceView";
 import { companionError } from "./errors";
 
 function ReviewProposal({ proposal, scopeLabel, onClose, onSaved }: {
@@ -28,6 +29,7 @@ function ReviewProposal({ proposal, scopeLabel, onClose, onSaved }: {
       {proposal.candidate && <div><h3 className="mb-1 text-muted-foreground">{t("companion.current")}</h3><p className="whitespace-pre-wrap rounded-lg bg-foreground/5 p-3">{proposal.entry.content}</p></div>}
       <div><h3 className="mb-1 text-muted-foreground">{t("companion.suggested")}</h3><p className="whitespace-pre-wrap rounded-lg border border-primary/30 p-3">{proposal.candidate?.content ?? proposal.entry.content}</p></div>
       <p>{t("companion.scope")}: {scopeLabel}</p>
+      <StyleReferenceView reference={proposal.candidate ? proposal.candidate.style_reference : proposal.entry.style_reference} />
       {sensitive && <label className="flex items-start gap-2"><input type="checkbox" checked={ack} onChange={event => setAck(event.target.checked)} />{t("companion.sensitiveAck")}</label>}
       <label className="flex items-start gap-2"><input type="checkbox" checked={cloud} onChange={event => setCloud(event.target.checked)} />{t("companion.cloud")}</label>
       <p className="text-xs text-muted-foreground">{t("companion.cloudHint")}</p>
@@ -57,6 +59,7 @@ function MemoryHistory({ entry, onClose }: { entry: MemoryEntry; onClose: () => 
         <div className="mb-2 flex justify-between gap-2 text-xs text-muted-foreground"><span>{t("companion.version", { version: row.version })}</span>
           <time dateTime={row.created_at}>{new Date(row.created_at).toLocaleString(i18n.resolvedLanguage)}</time></div>
         <p className="whitespace-pre-wrap break-words text-sm">{row.content}</p>
+        <StyleReferenceView reference={row.style_reference} />
       </li>)}</ol>}
   </CompanionDialog>;
 }
@@ -185,6 +188,7 @@ export default function MemoryList() {
         <button className={`${buttonClass} border-destructive/40 text-destructive`} disabled={busy} onClick={() => void change(() => companionApi.deleteMemory(dialog.entry))}>{t("companion.remove")}</button></div>
     </CompanionDialog>}
     {dialog?.kind === "source" && <CompanionDialog title={t("companion.source")} onClose={() => setDialog(null)}>
+      <StyleReferenceView reference={dialog.entry.style_reference} />
       <ul className="space-y-3">{dialog.entry.sources.map(source => <li key={source.id} className="rounded-lg border border-border p-3 text-sm">
         <p>{sourceName(source.kind)}</p><dl className="mt-2 space-y-1 break-all text-xs text-muted-foreground">{Object.entries(source.reference).map(([key, value]) => <div key={key}><dt className="inline">{key}: </dt><dd className="inline">{String(value)}</dd></div>)}</dl>
       </li>)}</ul>

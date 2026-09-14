@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, Field, model_validator
 
 from arslan.companion.content_policy import contains_credential, normalized_memory
 from arslan.companion.contracts import Contract, Identifier
+from arslan.companion.design import StyleReference
 
 
 class MemoryError(ValueError):
@@ -34,6 +35,7 @@ class MemoryWrite(Contract):
     use_policy: Literal["local_only", "cloud_allowed"] = "local_only"
     sensitive_acknowledged: bool = False
     topic: Annotated[str, Field(max_length=100)] | None = None
+    style_reference: StyleReference | None = None
     valid_from: AwareDatetime | None = None
     review_at: AwareDatetime | None = None
     expires_at: AwareDatetime | None = None
@@ -42,6 +44,8 @@ class MemoryWrite(Contract):
     def usable_content(self):
         if not self.content.strip():
             raise ValueError("memory content must not be blank")
+        if self.style_reference and (self.kind != "style_rule" or self.scope.kind != "project"):
+            raise ValueError("style_reference_project_required")
         if self.expires_at and self.valid_from and self.expires_at <= self.valid_from:
             raise ValueError("memory expiry must follow effective time")
         return self
@@ -80,7 +84,7 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
         raise MemoryError("invalid_memory_actor")
     if actor.no_learning or actor.temporary:
         raise MemoryError("learning_disabled")
-    if contains_credential(write.content):
+    if contains_credential(write.content) or (write.style_reference and contains_credential(write.style_reference.model_dump_json())):
         raise MemoryError("credentials_not_memory")
     if write.scope.kind == "task":
         raise MemoryError("task_state_is_not_long_term_memory")
@@ -97,7 +101,7 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
         sensitive = "sensitive"
     if re.search(r"\b(?:birthday|diagnosis|medical|passport|salary|bank account|home address)\b"
                  r"|(?:生日|诊断|病史|身份证|护照|工资|银行账户|家庭住址|精确位置)",
-                 write.content, re.IGNORECASE):
+                 write.content + (write.style_reference.model_dump_json() if write.style_reference else ""), re.IGNORECASE):
         sensitive = "sensitive"
     import hashlib
     content_digest = hashlib.sha256(normalized_memory(write.content).encode()).hexdigest()
@@ -107,6 +111,10 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
         and (write.scope.kind != "global" or actor.allow_global_save)
     )
     if sensitive != "normal" and not (actor.origin == "user" and write.sensitive_acknowledged):
+        user_confirmation = False
+    # Existing host explicit-save digests bind text only, not this new evidence.
+    # Require a user review rather than letting an inferred reference ride along.
+    if write.style_reference and (actor.origin != "user" or write.style_reference.interpretation != "confirmed"):
         user_confirmation = False
     return WriteDecision(
         status="active" if user_confirmation else "proposed",

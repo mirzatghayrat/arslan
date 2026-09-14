@@ -2,6 +2,13 @@ import { request } from "./client";
 
 export type MemoryScope = { kind: "global" | "project" | "domain" | "expert"; id: string | null };
 export type MemoryStatus = "proposed" | "active" | "paused" | "superseded" | "expired" | "deleted" | "quarantined";
+export interface StyleReference {
+  source_kind: "file" | "url" | "library" | "artifact";
+  source_ref: string;
+  polarity: "positive" | "negative";
+  rationale: string;
+  interpretation: "tentative" | "confirmed";
+}
 export interface MemoryWrite {
   content: string;
   kind: "preference" | "project_fact" | "style_rule" | "experience";
@@ -10,6 +17,7 @@ export interface MemoryWrite {
   use_policy: "local_only" | "cloud_allowed";
   sensitive_acknowledged?: boolean;
   topic?: string | null;
+  style_reference?: StyleReference | null;
   valid_from?: string | null;
   review_at?: string | null;
   expires_at?: string | null;
@@ -65,6 +73,7 @@ export interface MemoryProposal {
 }
 export interface MemoryRevision {
   id: string; version: number; content: string | null; change_reason: string; created_at: string;
+  style_reference?: StyleReference | null;
 }
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
 const projectBody = ({ name, kind, summary, workspace_ref, collection_ids, app_binding }: ProjectInput): ProjectInput =>

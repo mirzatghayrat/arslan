@@ -7,6 +7,8 @@ export function companionError(error: unknown): string {
     if (["credentials_not_memory", "credentials_not_project_metadata", "credentials_not_method_data"].includes(error.message)) return "companion.credentialError";
     if (error.message === "conversation_running") return "companion.runningSettings";
     if (error.message.includes("version_conflict")) return "companion.conflict";
+    if (error.message === "style_reference_conflict") return "design.referenceConflict";
+    if (error.message === "style_reference_project_required") return "design.scopeHint";
     if (error.message.includes("confirmation") || error.message.includes("restricted")) return "companion.reviewRequired";
   }
   return "companion.failure";
