@@ -16,3 +16,18 @@ class TaskProgressExecutor:
             return await task_service.progress_for_current(run_id)
         except TaskError as exc:
             return {"ok": False, "error_code": exc.code}
+
+
+class DelegateWorkExecutor:
+    key = "delegate_work"
+
+    async def execute(self, args: dict) -> dict:
+        from pydantic import ValidationError
+        from server.orchestrator.arslan import _arslan_tools
+        from server.services import task_workers
+        try:
+            return await task_workers.delegate(task_workers.Batch.model_validate(args), _arslan_tools)
+        except ValidationError:
+            return {"ok": False, "error_code": "invalid_worker_arguments"}
+        except TaskError as exc:
+            return {"ok": False, "error_code": exc.code}

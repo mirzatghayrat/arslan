@@ -1799,6 +1799,12 @@ async def _arslan_tools() -> list[dict]:
         tools.append({"key": "task_progress", "description":
                       "Read this task's saved progress and owned prior outputs after interruption or context compaction. "
                       "Optional run_id selects one prior execution. This never authorizes repeating a write."})
+    if current_task() is not None and "delegate_work" in EXECUTORS:
+        tools.append({"key": "delegate_work", "description":
+            "Use only for independent subtasks or isolated review that materially helps the current request. "
+            "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
+            "Provide minimal context and an explicit read-only tool subset. Workers cannot delegate, change memory or write files. "
+            "Results remain unverified; synthesize and validate them in the host. Do not use for simple questions."})
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
     # the turn and _handle_answer emits the clarify_options card). Registered here so
     # Arslan's answer path can offer real choice buttons instead of a text counter-question.

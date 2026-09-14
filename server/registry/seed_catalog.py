@@ -18,6 +18,13 @@ from __future__ import annotations
 # and tools: list of (key, description, tier, status) tuples.
 TOOLSETS: list[dict] = [
     {
+        "key": "task_collaboration", "name": "Task Collaboration",
+        "description": "Task-local, read-only professional collaboration. Shared budget; no recursive delegation.",
+        "tier": "orchestrator", "status": "wired",
+        "tools": [("delegate_work", "Assign independent bounded subtasks to temporary collaborators.",
+                   "orchestrator", "wired")],
+    },
+    {
         "key": "task_recovery", "name": "Task Recovery",
         "description": "Inspect saved progress and prior outputs of the current task only.",
         "tier": "orchestrator", "status": "wired",

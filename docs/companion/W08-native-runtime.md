@@ -18,6 +18,7 @@
 - TypeScript type checking passed. Full immutable-snapshot Python and frontend regression results are recorded after their completion.
 - Frontend full regression: 1,715 tests across 220 files passed.
 - First immutable Python run: 4,230 passed, 14 skipped; 45 failures and 8 setup errors came from omitting the synthetic encryption key in the detached checkout. One obsolete auto-continuation expectation also failed and was migrated to explicit user continuation. The corrected environment and expectation are rerun, not counted as a green full suite.
+- Corrected immutable snapshot `2a5a7946`: **4,284 passed, 14 skipped**, 18 warnings, 379.51 seconds. A synthetic test-only encryption key was supplied explicitly. The existing aiosqlite teardown guard reported 50 closed-loop deliveries; no test result was affected. Reports: `w08b-frozen.log` and `w08b-frozen.xml` in the isolated verification output directory.
 - All fixtures are synthetic and isolated from real credentials, accounts and installed app data. These tests do not establish live paid-model quality or external-service availability.
 
 ## Boundaries

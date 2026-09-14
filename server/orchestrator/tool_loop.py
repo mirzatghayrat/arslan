@@ -471,6 +471,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         safe_call = json.dumps({"tool": tool_key, "args": {}}, ensure_ascii=False)
         return _record_tool_result(tool_key, {}, result, emit, tool_trace, safe_call, convo,
                                    mcp_fail_counts=mcp_fail_counts)
+    from server.services.task_workers import current as current_worker
+    worker = current_worker()
+    if worker is not None:
+        from server.services.task_service import current as current_task
+        task = current_task()
+        if task is None or task.task_id != worker.task_id or tool_key not in worker.allowed_tools:
+            return _record_tool_result(tool_key, {}, {"ok": False, "external": False,
+                "code": "worker_tool_scope_denied", "error": "This collaborator cannot use that tool."},
+                emit, tool_trace, json.dumps({"tool": tool_key, "args": {}}), convo)
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
 
@@ -666,10 +675,14 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         _ct = tool_caller.set_caller(caller) if caller is not None else None
         try:
             from server.services.task_service import current as current_task
+            from server.services.task_repository import TaskError
             async def execute():
-                return await asyncio.wait_for(executor.execute(args), timeout=tool_timeout_s)
+                timeout = budget.remaining_seconds() if tool_key == "delegate_work" and budget else tool_timeout_s
+                return await asyncio.wait_for(executor.execute(args), timeout=timeout)
             runtime = current_task()
             result = await runtime.execute_tool(tool_key, args, execute) if runtime else await execute()
+        except (BudgetExceeded, TaskError):
+            raise
         except TimeoutError:
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
         except Exception as exc:  # noqa: BLE001
@@ -696,6 +709,16 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
+    "delegate_work": {"type": "object", "properties": {"jobs": {
+        "type": "array", "minItems": 1, "maxItems": 4, "items": {
+            "type": "object", "properties": {
+                "method": {"type": "string", "enum": ["research", "apple-growth", "product-design"]},
+                "objective": {"type": "string", "maxLength": 4000},
+                "context": {"type": "string", "maxLength": 8000},
+                "tools": {"type": "array", "maxItems": 2, "items": {
+                    "type": "string", "enum": ["web_search", "web_extract"]}}},
+            "required": ["method", "objective"], "additionalProperties": False}}},
+        "required": ["jobs"], "additionalProperties": False},
     "task_progress": {"type": "object", "properties": {"run_id": {"type": "integer", "minimum": 1}},
                       "additionalProperties": False},
     "web_search": {"type": "object",
@@ -1066,6 +1089,7 @@ async def run_native(
     has_images: bool = False,
     adapter_override=None,
     stream_without_tools: bool = False,
+    progress_lane=None,
 ) -> dict:
     """Canonical native tool loop. Same signature and core return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -1087,7 +1111,7 @@ async def run_native(
     from arslan.execution_budget import current as current_budget
     from server.services.task_service import current as current_task
     budget = current_budget()
-    runtime = current_task()
+    runtime = progress_lane or current_task()
     policy = ProgressPolicy(seen=set(runtime.progress.loop_fingerprints) if runtime else set())
     request_ceiling = max(0, budget.limits.model_requests - budget.model_requests)
     stop_reason = None

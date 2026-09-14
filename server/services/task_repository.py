@@ -23,7 +23,7 @@ from arslan.companion.contracts import (
 from arslan.execution_budget import Budget
 from server.db import session as db_session
 from server.db.models import (
-    CompanionTask, Project, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
+    CompanionTask, Project, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision, TaskWorker,
 )
 
 
@@ -298,6 +298,8 @@ class TaskRepository:
         if attempt:
             attempt.status, attempt.ended_at = "cancelled", datetime.utcnow()
         await self._mark_uncertain(row.id)
+        await self.db.execute(update(TaskWorker).where(TaskWorker.task_id == row.id,
+            TaskWorker.status.in_(("queued", "running"))).values(status="cancelled", ended_at=datetime.utcnow()))
         return await self.present(row)
 
     async def accept_review(self, task_id: str, expected_version: int, *, owner_id="local") -> dict:
@@ -434,4 +436,6 @@ class TaskRepository:
             attempt = await self.db.get(TaskAttempt, row.attempt_id)
             if attempt:
                 attempt.status, attempt.ended_at = "interrupted", datetime.utcnow()
+        await self.db.execute(update(TaskWorker).where(TaskWorker.status.in_(("queued", "running")))
+                              .values(status="interrupted", ended_at=datetime.utcnow()))
         return len(rows)

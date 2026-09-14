@@ -330,7 +330,7 @@ class RunRecorder:
                     # stay kind='scheduled' end-to-end (the corpus filters key on kind=='live',
                     # so clobbering it back to 'live' here would leak scheduled runs into the
                     # evolution corpus). The `or "live"` keeps the unset-column re-affirmation.
-                    terminal = ("failed" if error_kind else "completed") if self.kind in {"host", "recipe", "recipe_step"} else "recorded"
+                    terminal = ("failed" if error_kind else "completed") if self.kind in {"host", "recipe", "recipe_step", "worker"} else "recorded"
                     run.status = status_override or ("replayed" if replay else terminal)
                     run.kind = "replay" if replay else (run.kind or "live")
                     run.epoch = 1
@@ -340,7 +340,7 @@ class RunRecorder:
                     # so the run row carries the full text for RunReplay. Plain
                     # live runs still do NOT persist it (storage discipline —
                     # their output lives in the reachable conversation).
-                    if replay or status_override is not None or run.kind in {"scheduled", "host", "recipe", "recipe_step"}:
+                    if replay or status_override is not None or run.kind in {"scheduled", "host", "recipe", "recipe_step", "worker"}:
                         run.final_output = full_output
                     else:
                         run.final_output = None  # Completed live output is in its linked message.
@@ -391,7 +391,7 @@ class RunRecorder:
         from server.services.task_service import current as current_task
         if current_task() is not None:
             current_task().record_run_output(self.run_id)
-        if replay or status_override is not None or self.kind in {"host", "recipe", "recipe_step"}:
+        if replay or status_override is not None or self.kind in {"host", "recipe", "recipe_step", "worker"}:
             # replay → paired gate; cancelled/interrupted → never scored. This also skips
             # the evolution_watcher nudge below — harmless, since a cancelled run creates
             # no scored run, so the nudge would be a guaranteed no-op.

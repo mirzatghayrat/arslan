@@ -10,6 +10,7 @@ import ja from "./locales/ja.json";
 import zh from "./locales/zh.json";
 import { companionMessages } from "./locales/companion";
 import { taskMessages } from "./locales/tasks";
+import { methodMessages } from "./locales/methods";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
 export type Lang = (typeof SUPPORTED_LANGUAGES)[number];
@@ -19,12 +20,12 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: { ...en, companion: companionMessages.en, tasks: taskMessages.en } },
-      zh: { translation: { ...zh, companion: companionMessages.zh, tasks: taskMessages.zh } },
-      ja: { translation: { ...ja, companion: companionMessages.ja, tasks: taskMessages.ja } },
-      es: { translation: { ...es, companion: companionMessages.es, tasks: taskMessages.es } },
-      de: { translation: { ...de, companion: companionMessages.de, tasks: taskMessages.de } },
-      fr: { translation: { ...fr, companion: companionMessages.fr, tasks: taskMessages.fr } },
+      en: { translation: { ...en, companion: companionMessages.en, tasks: taskMessages.en, methods: methodMessages.en } },
+      zh: { translation: { ...zh, companion: companionMessages.zh, tasks: taskMessages.zh, methods: methodMessages.zh } },
+      ja: { translation: { ...ja, companion: companionMessages.ja, tasks: taskMessages.ja, methods: methodMessages.ja } },
+      es: { translation: { ...es, companion: companionMessages.es, tasks: taskMessages.es, methods: methodMessages.es } },
+      de: { translation: { ...de, companion: companionMessages.de, tasks: taskMessages.de, methods: methodMessages.de } },
+      fr: { translation: { ...fr, companion: companionMessages.fr, tasks: taskMessages.fr, methods: methodMessages.fr } },
     },
     fallbackLng: "en",
     supportedLngs: [...SUPPORTED_LANGUAGES],

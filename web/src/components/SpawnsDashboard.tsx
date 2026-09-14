@@ -10,6 +10,7 @@ import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import EmptyState, { EmptyStateAction } from "./EmptyState";
 import RecipePanel from "./RecipePanel";
+import ProfessionalMethods from "./companion/ProfessionalMethods";
 
 interface SpawnsDashboardProps {
   spawns: Spawn[];
@@ -41,13 +42,14 @@ export default function SpawnsDashboard({
   const capabilityLabel = useCapabilityLabel();
   const [detailSpawnId, setDetailSpawnId] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
+  const [showMethods, setShowMethods] = useState(false);
   return (
     <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
       {/* Decorative Top Lights */}
       <div className="absolute top-0 right-1/4 w-[35rem] h-[35rem] bg-primary/[0.02] blur-[120px] rounded-full pointer-events-none"></div>
 
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('ledger.title')}</h1>
@@ -63,6 +65,8 @@ export default function SpawnsDashboard({
         {/* Buttons right: Spawn Creator & Card Style Variator */}
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
           <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:border-primary"
+            onClick={() => setShowMethods(value => !value)} aria-expanded={showMethods}>{t("methods.title")}</button>
+          <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:border-primary"
             onClick={() => setShowRecipes(v => !v)} aria-expanded={showRecipes}>{t("recipes.title")}</button>
           {/* Create spawn handler */}
           <button
@@ -77,6 +81,7 @@ export default function SpawnsDashboard({
 
       {/* Spawns Grid Render */}
       {showRecipes && <RecipePanel spawns={spawns} />}
+      {showMethods && <ProfessionalMethods />}
       {spawns.length === 0 ? (
         backendStatus === 'offline' ? (
           <EmptyState icon={WifiOff} tone="danger" testId="empty-spawn-ledger-offline"

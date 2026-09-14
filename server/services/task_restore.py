@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import insert, select, update
 
-from server.db.models import CompanionTask, TaskAction, TaskAttempt, TaskEvent
+from server.db.models import CompanionTask, TaskAction, TaskAttempt, TaskEvent, TaskWorker
 
 
 def quarantine_sync(connection):
@@ -38,3 +38,6 @@ def quarantine_sync(connection):
     if "task_actions" in tables:
         connection.execute(update(TaskAction).where(TaskAction.status.in_(("prepared", "in_flight"))).values(
             status="uncertain", version=TaskAction.version + 1, updated_at=now))
+    if "task_workers" in tables:
+        connection.execute(update(TaskWorker).where(TaskWorker.status.in_(("queued", "running"))).values(
+            status="interrupted", ended_at=now))

@@ -6,6 +6,7 @@ import { useArslanStore } from "../../stores/arslanStore";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 import { companionError, taskErrorKey } from "./errors";
 import RunReplay from "../RunReplay";
+import TaskWorkers from "./TaskWorkers";
 
 export function taskReason(reason: string | null) {
   return taskErrorKey(reason ?? "") ?? "tasks.reviewIntro";
@@ -138,6 +139,7 @@ export default function TaskPanel({ conversationId, onResume }: {
           <p className="whitespace-pre-wrap break-words rounded-lg bg-foreground/5 p-3">{detail.spec.instruction}</p>
           <p className="font-medium">{t(`tasks.${detail.state.phase}`)}</p>
           <p className="text-xs leading-relaxed text-muted-foreground">{t(taskReason(detail.pause_reason))}</p>
+          <TaskWorkers workers={detail.workers ?? []} onOpenRun={id => { setOpen(false); setReplayRunId(id); }} />
           <div className="rounded-lg border border-border p-3"><h3 className="mb-2 font-medium">{t("tasks.budget")}</h3>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">{([
               ["model_requests", "requests"], ["tool_calls", "tools"], ["tokens", "tokens"], ["wall_seconds", "seconds"],

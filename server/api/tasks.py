@@ -8,7 +8,7 @@ from sqlalchemy import select
 from arslan.companion.content_policy import contains_credential
 from arslan.companion.contracts import Contract, ResourceRef, TaskSpec
 from server.auth import require_auth
-from server.db.models import CompanionTask, TaskAction, TaskAttempt
+from server.db.models import CompanionTask, TaskAction, TaskAttempt, TaskWorker
 from server.services import task_service
 from server.services.task_repository import TaskError, identity, repository
 
@@ -63,7 +63,11 @@ async def task_detail(task_id: str, repo=Depends(task_repository)):
                                      .order_by(TaskAttempt.number))).scalars().all()
     actions = (await repo.db.execute(select(TaskAction).where(TaskAction.task_id == row.id)
                                     .order_by(TaskAction.created_at, TaskAction.id))).scalars().all()
+    from server.services.task_workers import present as present_worker
+    workers = (await repo.db.scalars(select(TaskWorker).where(TaskWorker.task_id == row.id)
+                                    .order_by(TaskWorker.created_at, TaskWorker.id))).all()
     return {**await repo.present(row), "checkpoint": await repo.latest_checkpoint(row.id),
+            "workers": [present_worker(worker) for worker in workers],
             "attempts": [{"id": attempt.id, "number": attempt.number, "status": attempt.status,
                           "run_ids": attempt.run_ids} for attempt in attempts],
             "actions": [{"id": action.id, "version": action.version, "tool_key": action.tool_key,

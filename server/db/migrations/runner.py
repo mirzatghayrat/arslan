@@ -72,6 +72,7 @@ from .versions._0048_memory_proposals_v2 import upgrade_sync as _m0048
 from .versions._0049_conversation_context import upgrade_sync as _m0049
 from .versions._0050_run_privacy import upgrade_sync as _m0050
 from .versions._0051_companion_tasks import upgrade_sync as _m0051
+from .versions._0052_task_workers import upgrade_sync as _m0052
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -121,6 +122,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0049", _m0049),
     ("0050", _m0050),
     ("0051", _m0051),
+    ("0052", _m0052),
 ]
 
 
