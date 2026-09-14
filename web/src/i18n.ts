@@ -18,7 +18,7 @@ import { workspaceMessages } from "./locales/workspace";
 import { connectionMessages } from "./locales/connections";
 import { uiMessages } from "./locales/ui";
 import { designMessages } from "./locales/design";
-import { catalogMessages } from "./locales/catalog";
+import { catalogDisplayMessages as catalogMessages } from "./locales/catalog";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
 export type Lang = (typeof SUPPORTED_LANGUAGES)[number];

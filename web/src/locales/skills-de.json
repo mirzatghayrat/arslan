@@ -1,0 +1,222 @@
+{
+  "skill-creator": {
+    "name": "Fähigkeiten erstellen",
+    "description": "Einen wiederverwendbaren Ablauf als hochwertige SKILL.md-Datei aufbereiten."
+  },
+  "writing-skills": {
+    "name": "Fähigkeiten prüfen",
+    "description": "Ausgangslage testen, Fähigkeit schreiben und Lücken vor der Abnahme schließen."
+  },
+  "brainstorming": {
+    "name": "Ideen erkunden",
+    "description": "Eine Idee schrittweise mit jeweils einer Frage zum Entwurf entwickeln; Umsetzung erst nach Freigabe."
+  },
+  "receiving-code-review": {
+    "name": "Review-Hinweise bewerten",
+    "description": "Rückmeldungen aus Code-Reviews vor Änderungen technisch überprüfen."
+  },
+  "resolving-merge-conflicts": {
+    "name": "Merge-Konflikte lösen",
+    "description": "Die Absichten beider Seiten nachvollziehen, Konflikte abstimmen, prüfen und Merge oder Rebase abschließen."
+  },
+  "domain-modeling": {
+    "name": "Domänenmodellierung",
+    "description": "Ein gemeinsames Glossar in CONTEXT.md und knappe Architekturentscheidungen pflegen."
+  },
+  "sector-overview": {
+    "name": "Branchenüberblick",
+    "description": "Marktgröße, Wachstum, Struktur, Wertschöpfung, Treiber, Wettbewerb und Bewertung untersuchen."
+  },
+  "competitive-analysis": {
+    "name": "Wettbewerbsanalyse",
+    "description": "Branchenkennzahlen, Mitbewerber, Positionierung, Vorteile und strategische Folgen vergleichen."
+  },
+  "comps-analysis": {
+    "name": "Vergleichsunternehmen analysieren",
+    "description": "Vergleichsunternehmen und einheitliche Bewertungsmultiplikatoren auswählen und Ausreißer kennzeichnen."
+  },
+  "idea-generation": {
+    "name": "Anlageideen recherchieren",
+    "description": "Anlagestile und Themen prüfen und eine Auswahlliste mit Thesen und Risiken erstellen."
+  },
+  "deck-authoring": {
+    "name": "Präsentationen erzählen",
+    "description": "Eine gestaltete HTML-Präsentation mit einer Aussage pro Folie erstellen; bearbeitbare PPTX über render_deck auf ausdrücklichen Wunsch."
+  },
+  "internal-comms": {
+    "name": "Interne Kommunikation",
+    "description": "Updates, Newsletter, FAQ sowie Status- und Vorfallberichte im Unternehmensformat verfassen."
+  },
+  "brand-guidelines": {
+    "name": "Markenrichtlinien",
+    "description": "Einheitliche Farben und Typografie anwenden; Anthropic dient als Markenreferenz."
+  },
+  "frontend-design": {
+    "name": "Visuelles Oberflächendesign",
+    "description": "Eigenständige Farbpaletten, Typografie und Layouts mit begründeten gestalterischen Entscheidungen entwickeln."
+  },
+  "theme-factory": {
+    "name": "Gestaltungsthemen erstellen",
+    "description": "Vorgegebene Farb- und Schriftkombinationen anwenden oder ein neues Thema erstellen."
+  },
+  "canvas-design": {
+    "name": "Statische visuelle Kunst",
+    "description": "Originelle Plakat- oder Kunstkonzepte mit etwa 90 % Bild und 10 % Text entwickeln."
+  },
+  "algorithmic-art": {
+    "name": "Algorithmische Kunst",
+    "description": "Generative p5.js-Kunst mit gesetztem Startwert und reproduzierbarem Zufall erstellen."
+  },
+  "claude-code": {
+    "name": "Claude Code",
+    "description": "Programmieraufgaben an das Kommandozeilenwerkzeug Claude Code delegieren."
+  },
+  "codex": {
+    "name": "OpenAI Codex",
+    "description": "Programmieraufgaben an das Kommandozeilenwerkzeug OpenAI Codex delegieren."
+  },
+  "opencode": {
+    "name": "OpenCode",
+    "description": "Programmieraufgaben an das Kommandozeilenwerkzeug OpenCode delegieren."
+  },
+  "architecture-diagram": {
+    "name": "Architekturdiagramme",
+    "description": "SVG-Architekturdiagramme in HTML erstellen."
+  },
+  "ascii-art": {
+    "name": "ASCII-Kunst",
+    "description": "Bilder aus ASCII-Textzeichen erstellen."
+  },
+  "baoyu-infographic": {
+    "name": "Infografiken",
+    "description": "Infografiken mit 21 Layouts und 21 Stilen gestalten."
+  },
+  "claude-design": {
+    "name": "Einzelne HTML-Entwürfe",
+    "description": "Einmalige HTML-Ergebnisse wie Landingpages und Präsentationen erstellen."
+  },
+  "design-md": {
+    "name": "Designspezifikationen",
+    "description": "Designtoken-Spezifikationen in DESIGN.md schreiben und prüfen."
+  },
+  "designed-html-report": {
+    "name": "Gestaltete HTML-Berichte",
+    "description": "Längere Berichte, Briefings oder Vorschläge als einzelne HTML-Datei mit Designsystem statt als reines Markdown erstellen."
+  },
+  "excalidraw": {
+    "name": "Excalidraw-Diagramme",
+    "description": "Handgezeichnet wirkende Diagramme als Excalidraw-JSON erstellen."
+  },
+  "humanizer": {
+    "name": "Natürlich schreiben",
+    "description": "Formelhafte KI-Formulierungen entfernen und eine natürliche Stimme entwickeln."
+  },
+  "p5js": {
+    "name": "p5.js-Skizzen",
+    "description": "Visuelle Skizzen mit p5.js erstellen."
+  },
+  "pretext": {
+    "name": "Textlayout-Demos",
+    "description": "HTML-Demos für DOM-freies Textlayout und kinetische Typografie erstellen."
+  },
+  "sketch": {
+    "name": "Schnelle Oberflächenentwürfe",
+    "description": "Zwei oder drei verwerfbare HTML-Mockup-Varianten erproben."
+  },
+  "songwriting-and-ai-music": {
+    "name": "Lieder und Musik-Prompts",
+    "description": "Lieder schreiben und Prompts für Suno vorbereiten."
+  },
+  "github-auth": {
+    "name": "GitHub-Authentifizierung",
+    "description": "GitHub-Authentifizierung einrichten; verarbeitet Zugangsdaten."
+  },
+  "github-code-review": {
+    "name": "GitHub-Code-Review",
+    "description": "Pull-Request-Differenzen prüfen; Kommentare benötigen privilegierte Arslan-Werkzeuge."
+  },
+  "github-issues": {
+    "name": "GitHub-Issues",
+    "description": "Issues erstellen und einordnen; schreibt ins Repository."
+  },
+  "github-pr-workflow": {
+    "name": "GitHub-Pull-Requests",
+    "description": "Den Pull-Request-Lebenszyklus verwalten; verändert den Repository-Zustand."
+  },
+  "github-repo-management": {
+    "name": "GitHub-Repositories",
+    "description": "Klonen, Forks und Releases verwalten; verändert den Repository-Zustand."
+  },
+  "youtube-content": {
+    "name": "YouTube-Zusammenfassungen",
+    "description": "YouTube-Transkripte in Zusammenfassungen und Beitragsfolgen umwandeln."
+  },
+  "arxiv": {
+    "name": "arXiv-Recherche",
+    "description": "Forschungsarbeiten auf arXiv suchen."
+  },
+  "blogwatcher": {
+    "name": "Blogs und Feeds beobachten",
+    "description": "Blogs und RSS-Feeds überwachen."
+  },
+  "llm-wiki": {
+    "name": "Verknüpfte Wissensbasis",
+    "description": "Eine verlinkte Markdown-Wissensbasis aufbauen und abfragen."
+  },
+  "research-paper-writing": {
+    "name": "Forschungsarbeiten schreiben",
+    "description": "Arbeiten zu maschinellem Lernen für NeurIPS, ICML und ähnliche Konferenzen verfassen."
+  },
+  "verification-before-completion": {
+    "name": "Abschlussprüfung",
+    "description": "Prüfungen ausführen und Ergebnisse lesen, bevor etwas als erledigt, behoben oder bestanden gilt."
+  },
+  "finishing-a-development-branch": {
+    "name": "Entwicklungszweig abschließen",
+    "description": "Tests prüfen, dann Merge, Pull Request, Behalten oder Verwerfen wählen; Entscheidung umsetzen und Arbeitsbaum aufräumen."
+  },
+  "mcp-builder": {
+    "name": "MCP-Server entwerfen",
+    "description": "MCP-Werkzeuge, Benennung, Fehlermeldungen und Bewertungen gestalten."
+  },
+  "webapp-testing": {
+    "name": "Webanwendungen testen",
+    "description": "Mit Playwright vor dem Handeln prüfen und bei Bedarf auf Netzwerkruhe warten."
+  },
+  "codebase-audit": {
+    "name": "Codebasis prüfen",
+    "description": "Code untersuchen und Risiken einstufen; nur lesen und planen."
+  },
+  "node-inspect-debugger": {
+    "name": "Node.js-Debugging",
+    "description": "Node.js über CDP debuggen; verbindet sich mit Prozessen und führt Code aus."
+  },
+  "plan": {
+    "name": "Planung",
+    "description": "Einen Markdown-Plan schreiben, ohne ihn auszuführen."
+  },
+  "python-debugpy": {
+    "name": "Python-Debugging",
+    "description": "Python mit debugpy debuggen; verbindet sich mit Prozessen und führt Code aus."
+  },
+  "requesting-code-review": {
+    "name": "Code-Review anfordern",
+    "description": "Den Arbeitsstand klar einordnen und Review-Maßnahmen nach Schweregrad priorisieren."
+  },
+  "simplify-code": {
+    "name": "Code vereinfachen",
+    "description": "Drei Agenten zum Aufräumen einsetzen; verändert Quelldateien."
+  },
+  "spike": {
+    "name": "Erkundungsprototypen",
+    "description": "Verwerfbare Experimente ausführen, um technische Fragen zu klären."
+  },
+  "systematic-debugging": {
+    "name": "Systematisches Debugging",
+    "description": "Grundursachen in vier Phasen untersuchen; ausschließlich Analyse."
+  },
+  "test-driven-development": {
+    "name": "Testgetriebene Entwicklung",
+    "description": "Mit Tests entwickeln; führt Tests aus und schreibt Code."
+  }
+}

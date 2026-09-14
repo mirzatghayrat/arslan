@@ -21,7 +21,7 @@ from server.registry.service import (
 )
 from server.schemas import RegistryOut, SkillPackOut, ToolOut, ToolsetOut
 from server.services import code_sandbox
-from server.registry.display import toolset_display_keys
+from server.registry.display import skill_display_keys, toolset_display_keys
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ async def get_registry(session: AsyncSession = Depends(get_session)) -> Registry
         skills=[
             SkillPackOut(
                 key=s.key, name=s.name, category=s.category, description=s.description,
+                **skill_display_keys(s.key, s.name, s.description),
                 tier=s.tier, status=s.status,
                 # assignable = has a real method body (no-body entries are catalog-only)
                 assignable=skill_is_assignable(s.tier, s.status, s.body),

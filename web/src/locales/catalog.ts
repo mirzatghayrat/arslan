@@ -1,4 +1,6 @@
 // Display copy only: tool identifiers and model-facing schemas remain unchanged.
+import { skillCatalogMessages, skillCategoryMessages } from "./skillCatalog";
+
 export const catalogMessages = {
   en: {
     task_collaboration: { name: "Task collaboration", description: "Read-only collaboration within the current task, sharing its budget without recursive delegation." },
@@ -84,4 +86,13 @@ export const catalogMessages = {
     second_brain: { name: "Mémoire", description: "Rechercher et mettre à jour la mémoire. Les changements destructifs nécessitent votre confirmation." },
     skill_authoring: { name: "Création de compétences", description: "Transformer une méthode réutilisable en compétence candidate, à examiner avant activation." },
   },
+};
+
+export const catalogDisplayMessages = {
+  en: { ...catalogMessages.en, skills: skillCatalogMessages.en, skillCategories: skillCategoryMessages.en },
+  zh: { ...catalogMessages.zh, skills: skillCatalogMessages.zh, skillCategories: skillCategoryMessages.zh },
+  ja: { ...catalogMessages.ja, skills: skillCatalogMessages.ja, skillCategories: skillCategoryMessages.ja },
+  es: { ...catalogMessages.es, skills: skillCatalogMessages.es, skillCategories: skillCategoryMessages.es },
+  de: { ...catalogMessages.de, skills: skillCatalogMessages.de, skillCategories: skillCategoryMessages.de },
+  fr: { ...catalogMessages.fr, skills: skillCatalogMessages.fr, skillCategories: skillCategoryMessages.fr },
 };

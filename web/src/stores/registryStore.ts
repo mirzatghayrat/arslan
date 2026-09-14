@@ -40,6 +40,7 @@ export const useRegistryStore = create<RegistryNamesState>((set, get) => ({
       }
       for (const sk of cat.skills) {
         if (sk.key && sk.name) names[sk.key] = sk.name;
+        if (sk.key && sk.name_key) nameKeys[sk.key] = sk.name_key;
       }
       set({ names, nameKeys, loaded: true, loading: false });
     } catch {

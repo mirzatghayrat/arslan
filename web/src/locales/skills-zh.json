@@ -1,0 +1,222 @@
+{
+  "skill-creator": {
+    "name": "技能创建",
+    "description": "将可复用的方法整理成高质量的 SKILL.md。"
+  },
+  "writing-skills": {
+    "name": "技能编写验证",
+    "description": "先测基线，再编写技能并补齐漏洞，验证后验收。"
+  },
+  "brainstorming": {
+    "name": "创意探索",
+    "description": "逐个问题将想法发展成设计，获得确认后再实施。"
+  },
+  "receiving-code-review": {
+    "name": "审查意见评估",
+    "description": "先从技术上验证代码审查意见，再实施修改。"
+  },
+  "resolving-merge-conflicts": {
+    "name": "合并冲突解决",
+    "description": "追溯双方意图，协调冲突并验证，完成合并或变基。"
+  },
+  "domain-modeling": {
+    "name": "领域建模",
+    "description": "在 CONTEXT.md 中维护统一术语表，并记录简明架构决策。"
+  },
+  "sector-overview": {
+    "name": "行业概览",
+    "description": "研究市场规模、增长、结构、价值链、驱动因素、竞争与估值。"
+  },
+  "competitive-analysis": {
+    "name": "竞争分析",
+    "description": "比较行业指标、同行、市场定位、竞争优势及战略影响。"
+  },
+  "comps-analysis": {
+    "name": "可比公司分析",
+    "description": "选择同行并采用一致的估值倍数，明确标记异常值。"
+  },
+  "idea-generation": {
+    "name": "投资思路研究",
+    "description": "按投资风格和主题筛选机会，列出核心判断与风险。"
+  },
+  "deck-authoring": {
+    "name": "演示叙事设计",
+    "description": "制作每页一个核心观点的 HTML 演示；明确要求时通过 render_deck 输出可编辑 PPTX。"
+  },
+  "internal-comms": {
+    "name": "内部沟通",
+    "description": "按公司格式编写进展更新、简报、常见问题及状态或事件报告。"
+  },
+  "brand-guidelines": {
+    "name": "品牌规范",
+    "description": "应用一致的配色与字体，以 Anthropic 品牌作为参考。"
+  },
+  "frontend-design": {
+    "name": "界面视觉设计",
+    "description": "设计有辨识度的配色、字体与布局，并说明创意选择的依据。"
+  },
+  "theme-factory": {
+    "name": "主题设计",
+    "description": "为产物应用预设的颜色与字体主题，或创建新主题。"
+  },
+  "canvas-design": {
+    "name": "静态视觉艺术",
+    "description": "创作原创海报或艺术方案，约 90% 视觉、10% 文字。"
+  },
+  "algorithmic-art": {
+    "name": "算法艺术",
+    "description": "使用带种子的可复现随机性创作 p5.js 生成艺术。"
+  },
+  "claude-code": {
+    "name": "Claude Code",
+    "description": "将编程任务交给 Claude Code 命令行工具。"
+  },
+  "codex": {
+    "name": "OpenAI Codex",
+    "description": "将编程任务交给 OpenAI Codex 命令行工具。"
+  },
+  "opencode": {
+    "name": "OpenCode",
+    "description": "将编程任务交给 OpenCode 命令行工具。"
+  },
+  "architecture-diagram": {
+    "name": "架构图",
+    "description": "制作 HTML 中的 SVG 架构图。"
+  },
+  "ascii-art": {
+    "name": "字符画",
+    "description": "使用 ASCII 文本字符创作图案。"
+  },
+  "baoyu-infographic": {
+    "name": "信息图",
+    "description": "使用 21 种布局和 21 种风格设计信息图。"
+  },
+  "claude-design": {
+    "name": "单文件 HTML 设计",
+    "description": "制作落地页、演示文稿等一次性 HTML 产物。"
+  },
+  "design-md": {
+    "name": "设计规范",
+    "description": "编写并验证 DESIGN.md 设计令牌规范。"
+  },
+  "designed-html-report": {
+    "name": "设计版 HTML 报告",
+    "description": "将长篇报告、简报或方案制作成自带设计系统的单文件 HTML，而非纯 Markdown。"
+  },
+  "excalidraw": {
+    "name": "Excalidraw 图表",
+    "description": "制作手绘风格的 Excalidraw JSON 图表。"
+  },
+  "humanizer": {
+    "name": "自然表达",
+    "description": "去除模式化的 AI 措辞，形成自然的表达风格。"
+  },
+  "p5js": {
+    "name": "p5.js 视觉草图",
+    "description": "使用 p5.js 创作视觉草图。"
+  },
+  "pretext": {
+    "name": "文字排版演示",
+    "description": "制作不依赖 DOM 的文字布局与动态排版 HTML 演示。"
+  },
+  "sketch": {
+    "name": "快速界面草图",
+    "description": "探索两到三个可丢弃的 HTML 界面方案。"
+  },
+  "songwriting-and-ai-music": {
+    "name": "词曲与音乐提示",
+    "description": "创作歌曲并编写 Suno 提示词。"
+  },
+  "github-auth": {
+    "name": "GitHub 身份验证",
+    "description": "配置 GitHub 身份验证，涉及凭据。"
+  },
+  "github-code-review": {
+    "name": "GitHub 代码审查",
+    "description": "审查拉取请求差异；发布评论需要 Arslan 的特权工具。"
+  },
+  "github-issues": {
+    "name": "GitHub 问题管理",
+    "description": "创建并分流问题，会写入仓库。"
+  },
+  "github-pr-workflow": {
+    "name": "GitHub 拉取请求",
+    "description": "管理拉取请求生命周期，会改变仓库状态。"
+  },
+  "github-repo-management": {
+    "name": "GitHub 仓库管理",
+    "description": "克隆、派生仓库及管理发布，会改变仓库状态。"
+  },
+  "youtube-content": {
+    "name": "YouTube 内容摘要",
+    "description": "将 YouTube 字幕转成摘要和系列帖子。"
+  },
+  "arxiv": {
+    "name": "arXiv 论文检索",
+    "description": "在 arXiv 上搜索研究论文。"
+  },
+  "blogwatcher": {
+    "name": "博客与订阅监测",
+    "description": "监测博客及 RSS 订阅。"
+  },
+  "llm-wiki": {
+    "name": "关联知识库",
+    "description": "建立并查询互相链接的 Markdown 知识库。"
+  },
+  "research-paper-writing": {
+    "name": "研究论文写作",
+    "description": "编写面向 NeurIPS、ICML 等会议的机器学习论文。"
+  },
+  "verification-before-completion": {
+    "name": "完成前验证",
+    "description": "声称完成、修复或通过之前，先运行检查并阅读结果。"
+  },
+  "finishing-a-development-branch": {
+    "name": "开发分支收尾",
+    "description": "验证测试后选择合并、提拉取请求、保留或丢弃，执行选择并清理工作树。"
+  },
+  "mcp-builder": {
+    "name": "MCP 服务器设计",
+    "description": "设计 MCP 工具、命名、错误信息与评估。"
+  },
+  "webapp-testing": {
+    "name": "网页应用测试",
+    "description": "使用 Playwright，先检查再操作，并在适用时等待网络空闲。"
+  },
+  "codebase-audit": {
+    "name": "代码库审计",
+    "description": "检查代码并评估风险，仅阅读与规划。"
+  },
+  "node-inspect-debugger": {
+    "name": "Node.js 调试",
+    "description": "通过 CDP 调试 Node.js，会连接进程并执行代码。"
+  },
+  "plan": {
+    "name": "任务规划",
+    "description": "编写 Markdown 计划，不执行计划。"
+  },
+  "python-debugpy": {
+    "name": "Python 调试",
+    "description": "使用 debugpy 调试 Python，会连接进程并执行代码。"
+  },
+  "requesting-code-review": {
+    "name": "代码审查请求",
+    "description": "提供清晰的工作成果上下文，按严重程度安排审查行动。"
+  },
+  "simplify-code": {
+    "name": "代码精简",
+    "description": "通过三个代理清理代码，会修改源文件。"
+  },
+  "spike": {
+    "name": "探索性原型",
+    "description": "运行可丢弃的实验，回答技术问题。"
+  },
+  "systematic-debugging": {
+    "name": "系统性调试",
+    "description": "采用四阶段根因分析，仅进行分析。"
+  },
+  "test-driven-development": {
+    "name": "测试驱动开发",
+    "description": "以测试推动开发，会运行测试并编写代码。"
+  }
+}

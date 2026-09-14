@@ -370,6 +370,8 @@ class SkillPackOut(BaseModel):
     name: str
     category: str
     description: str
+    name_key: str | None = None
+    description_key: str | None = None
     tier: str
     status: str
     assignable: bool

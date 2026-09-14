@@ -1,0 +1,222 @@
+{
+  "skill-creator": {
+    "name": "Création de compétences",
+    "description": "Transformez une méthode réutilisable en un fichier SKILL.md de qualité."
+  },
+  "writing-skills": {
+    "name": "Validation des compétences",
+    "description": "Testez la situation initiale, rédigez la compétence et corrigez ses lacunes avant validation."
+  },
+  "brainstorming": {
+    "name": "Exploration d’idées",
+    "description": "Développez une idée en conception, une question à la fois, avec approbation avant réalisation."
+  },
+  "receiving-code-review": {
+    "name": "Évaluation des retours de revue",
+    "description": "Vérifiez techniquement les remarques de revue de code avant de modifier."
+  },
+  "resolving-merge-conflicts": {
+    "name": "Résolution des conflits",
+    "description": "Retracez les intentions des deux côtés, conciliez les conflits, vérifiez et terminez la fusion ou le rebasage."
+  },
+  "domain-modeling": {
+    "name": "Modélisation du domaine",
+    "description": "Tenez un glossaire commun dans CONTEXT.md et des décisions d’architecture concises."
+  },
+  "sector-overview": {
+    "name": "Panorama sectoriel",
+    "description": "Étudiez taille, croissance, structure, chaînes de valeur, moteurs, concurrence et valorisation du marché."
+  },
+  "competitive-analysis": {
+    "name": "Analyse concurrentielle",
+    "description": "Comparez indicateurs sectoriels, entreprises, positionnement, avantages et conséquences stratégiques."
+  },
+  "comps-analysis": {
+    "name": "Analyse des comparables",
+    "description": "Sélectionnez des entreprises et des multiples de valorisation cohérents, en signalant les valeurs atypiques."
+  },
+  "idea-generation": {
+    "name": "Recherche d’idées d’investissement",
+    "description": "Explorez styles et thèmes d’investissement, puis listez des candidats avec arguments et risques."
+  },
+  "deck-authoring": {
+    "name": "Narration de présentation",
+    "description": "Créez une présentation HTML conçue avec une idée par diapositive ; PPTX modifiable via render_deck sur demande explicite."
+  },
+  "internal-comms": {
+    "name": "Communication interne",
+    "description": "Rédigez bilans, lettres d’information, FAQ et rapports de situation ou d’incident au format de l’entreprise."
+  },
+  "brand-guidelines": {
+    "name": "Charte de marque",
+    "description": "Appliquez des couleurs et une typographie cohérentes, avec la marque Anthropic comme référence."
+  },
+  "frontend-design": {
+    "name": "Conception visuelle d’interfaces",
+    "description": "Concevez palettes, typographie et mises en page distinctives avec des choix créatifs justifiés."
+  },
+  "theme-factory": {
+    "name": "Création de thèmes",
+    "description": "Appliquez des thèmes de couleurs et de polices prédéfinis ou créez-en un nouveau."
+  },
+  "canvas-design": {
+    "name": "Art visuel statique",
+    "description": "Concevez des affiches ou œuvres originales avec environ 90 % de visuel et 10 % de texte."
+  },
+  "algorithmic-art": {
+    "name": "Art algorithmique",
+    "description": "Créez de l’art génératif p5.js avec un aléatoire reproductible fondé sur une graine."
+  },
+  "claude-code": {
+    "name": "Claude Code",
+    "description": "Déléguez la programmation à l’outil en ligne de commande Claude Code."
+  },
+  "codex": {
+    "name": "OpenAI Codex",
+    "description": "Déléguez la programmation à l’outil en ligne de commande OpenAI Codex."
+  },
+  "opencode": {
+    "name": "OpenCode",
+    "description": "Déléguez la programmation à l’outil en ligne de commande OpenCode."
+  },
+  "architecture-diagram": {
+    "name": "Diagrammes d’architecture",
+    "description": "Créez des diagrammes d’architecture SVG dans du HTML."
+  },
+  "ascii-art": {
+    "name": "Art ASCII",
+    "description": "Créez des illustrations avec des caractères ASCII."
+  },
+  "baoyu-infographic": {
+    "name": "Infographies",
+    "description": "Concevez des infographies avec 21 mises en page et 21 styles."
+  },
+  "claude-design": {
+    "name": "Conception HTML ponctuelle",
+    "description": "Créez des livrables HTML ponctuels, tels que pages d’accueil et présentations."
+  },
+  "design-md": {
+    "name": "Spécifications de design",
+    "description": "Rédigez et validez les spécifications de jetons de design dans DESIGN.md."
+  },
+  "designed-html-report": {
+    "name": "Rapports HTML mis en forme",
+    "description": "Créez rapports, synthèses ou propositions longs dans un seul HTML doté d’un système de design, plutôt qu’en simple Markdown."
+  },
+  "excalidraw": {
+    "name": "Diagrammes Excalidraw",
+    "description": "Créez des diagrammes à l’aspect dessiné à la main en JSON Excalidraw."
+  },
+  "humanizer": {
+    "name": "Écriture naturelle",
+    "description": "Retirez les formulations artificielles répétitives et développez une voix naturelle."
+  },
+  "p5js": {
+    "name": "Esquisses p5.js",
+    "description": "Créez des esquisses visuelles avec p5.js."
+  },
+  "pretext": {
+    "name": "Démonstrations typographiques",
+    "description": "Créez des démonstrations HTML de composition de texte sans DOM et de typographie cinétique."
+  },
+  "sketch": {
+    "name": "Maquettes rapides d’interface",
+    "description": "Explorez deux ou trois variantes de maquettes HTML jetables."
+  },
+  "songwriting-and-ai-music": {
+    "name": "Chansons et prompts musicaux",
+    "description": "Écrivez des chansons et préparez des prompts pour Suno."
+  },
+  "github-auth": {
+    "name": "Authentification GitHub",
+    "description": "Configurez l’authentification GitHub ; implique des identifiants."
+  },
+  "github-code-review": {
+    "name": "Revue de code GitHub",
+    "description": "Examinez les différences des demandes de fusion ; publier des commentaires exige les outils privilégiés d’Arslan."
+  },
+  "github-issues": {
+    "name": "Tickets GitHub",
+    "description": "Créez et classez les tickets ; écrit dans le dépôt."
+  },
+  "github-pr-workflow": {
+    "name": "Demandes de fusion GitHub",
+    "description": "Gérez le cycle des demandes de fusion ; modifie l’état du dépôt."
+  },
+  "github-repo-management": {
+    "name": "Dépôts GitHub",
+    "description": "Clonez, créez des forks et gérez les versions ; modifie l’état du dépôt."
+  },
+  "youtube-content": {
+    "name": "Résumés YouTube",
+    "description": "Transformez les transcriptions YouTube en résumés et fils de publications."
+  },
+  "arxiv": {
+    "name": "Recherche arXiv",
+    "description": "Recherchez des articles scientifiques sur arXiv."
+  },
+  "blogwatcher": {
+    "name": "Suivi des blogs et flux",
+    "description": "Surveillez les blogs et les flux RSS."
+  },
+  "llm-wiki": {
+    "name": "Base de connaissances liée",
+    "description": "Construisez et interrogez une base de connaissances Markdown interconnectée."
+  },
+  "research-paper-writing": {
+    "name": "Rédaction scientifique",
+    "description": "Rédigez des articles d’apprentissage automatique pour NeurIPS, ICML et des conférences similaires."
+  },
+  "verification-before-completion": {
+    "name": "Vérification avant clôture",
+    "description": "Exécutez les vérifications et lisez leurs résultats avant d’annoncer une tâche terminée, corrigée ou validée."
+  },
+  "finishing-a-development-branch": {
+    "name": "Clôture de branche",
+    "description": "Vérifiez les tests, puis choisissez fusion, demande de fusion, conservation ou abandon ; appliquez le choix et nettoyez l’arbre de travail."
+  },
+  "mcp-builder": {
+    "name": "Conception de serveurs MCP",
+    "description": "Concevez outils MCP, noms, messages d’erreur et évaluations."
+  },
+  "webapp-testing": {
+    "name": "Tests d’applications web",
+    "description": "Utilisez Playwright pour inspecter avant d’agir et attendez l’inactivité réseau lorsque cela convient."
+  },
+  "codebase-audit": {
+    "name": "Audit de code",
+    "description": "Inspectez le code et classez les risques ; lecture et planification uniquement."
+  },
+  "node-inspect-debugger": {
+    "name": "Débogage Node.js",
+    "description": "Déboguez Node.js via CDP ; se connecte aux processus et exécute du code."
+  },
+  "plan": {
+    "name": "Planification",
+    "description": "Rédigez un plan Markdown sans l’exécuter."
+  },
+  "python-debugpy": {
+    "name": "Débogage Python",
+    "description": "Déboguez Python avec debugpy ; se connecte aux processus et exécute du code."
+  },
+  "requesting-code-review": {
+    "name": "Demande de revue de code",
+    "description": "Présentez clairement le travail et hiérarchisez les actions selon leur gravité."
+  },
+  "simplify-code": {
+    "name": "Simplification du code",
+    "description": "Utilisez trois agents pour nettoyer le code ; modifie les fichiers source."
+  },
+  "spike": {
+    "name": "Prototypes exploratoires",
+    "description": "Exécutez des expériences jetables pour répondre à des questions techniques."
+  },
+  "systematic-debugging": {
+    "name": "Débogage systématique",
+    "description": "Analysez les causes racines en quatre phases ; analyse uniquement."
+  },
+  "test-driven-development": {
+    "name": "Développement piloté par les tests",
+    "description": "Développez par les tests ; exécute des tests et écrit du code."
+  }
+}

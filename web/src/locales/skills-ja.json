@@ -1,0 +1,222 @@
+{
+  "skill-creator": {
+    "name": "スキル作成",
+    "description": "再利用できる手法を高品質な SKILL.md にまとめます。"
+  },
+  "writing-skills": {
+    "name": "スキル執筆の検証",
+    "description": "基準となるテストを実施し、スキルを書き、抜け穴を修正して検証します。"
+  },
+  "brainstorming": {
+    "name": "アイデアの検討",
+    "description": "一度に一つの質問で案を設計へ発展させ、承認後に実装します。"
+  },
+  "receiving-code-review": {
+    "name": "レビュー意見の評価",
+    "description": "コードレビューの指摘を技術的に検証してから変更します。"
+  },
+  "resolving-merge-conflicts": {
+    "name": "マージ競合の解消",
+    "description": "双方の意図を調べ、競合を調整・検証し、マージやリベースを完了します。"
+  },
+  "domain-modeling": {
+    "name": "ドメインモデリング",
+    "description": "CONTEXT.md の共通用語集と簡潔なアーキテクチャ決定を管理します。"
+  },
+  "sector-overview": {
+    "name": "業界概観",
+    "description": "市場規模、成長、構造、価値連鎖、要因、競争、評価を調査します。"
+  },
+  "competitive-analysis": {
+    "name": "競合分析",
+    "description": "業界指標、同業他社、位置付け、強み、戦略上の意味を比較します。"
+  },
+  "comps-analysis": {
+    "name": "類似企業比較",
+    "description": "比較企業と一貫した評価倍率を選び、外れ値を明示します。"
+  },
+  "idea-generation": {
+    "name": "投資アイデア調査",
+    "description": "投資スタイルやテーマから候補を絞り、根拠とリスクを整理します。"
+  },
+  "deck-authoring": {
+    "name": "プレゼンテーション構成",
+    "description": "1枚に1つの要点を持つ HTML 資料を作成し、明示的な依頼時は render_deck で編集可能な PPTX を出力します。"
+  },
+  "internal-comms": {
+    "name": "社内コミュニケーション",
+    "description": "会社の形式に沿って進捗、ニュースレター、FAQ、状況・インシデント報告を作成します。"
+  },
+  "brand-guidelines": {
+    "name": "ブランドガイドライン",
+    "description": "Anthropic のブランドを参考に、一貫した色と書体を適用します。"
+  },
+  "frontend-design": {
+    "name": "画面のビジュアル設計",
+    "description": "配色、書体、レイアウトを個性的に設計し、創造的な選択の根拠を示します。"
+  },
+  "theme-factory": {
+    "name": "テーマ作成",
+    "description": "既存の配色・書体テーマを成果物に適用するか、新しいテーマを作成します。"
+  },
+  "canvas-design": {
+    "name": "静的ビジュアルアート",
+    "description": "視覚要素約90%、文字約10%の独創的なポスターや作品を構想します。"
+  },
+  "algorithmic-art": {
+    "name": "アルゴリズムアート",
+    "description": "シード付きの再現可能な乱数で p5.js の生成アートを作成します。"
+  },
+  "claude-code": {
+    "name": "Claude Code",
+    "description": "Claude Code のコマンドラインツールにコーディングを委任します。"
+  },
+  "codex": {
+    "name": "OpenAI Codex",
+    "description": "OpenAI Codex のコマンドラインツールにコーディングを委任します。"
+  },
+  "opencode": {
+    "name": "OpenCode",
+    "description": "OpenCode のコマンドラインツールにコーディングを委任します。"
+  },
+  "architecture-diagram": {
+    "name": "構成図",
+    "description": "HTML 内に SVG のアーキテクチャ図を作成します。"
+  },
+  "ascii-art": {
+    "name": "アスキーアート",
+    "description": "ASCII 文字を使ったアートを作成します。"
+  },
+  "baoyu-infographic": {
+    "name": "インフォグラフィック",
+    "description": "21種類のレイアウトと21種類のスタイルで情報図を設計します。"
+  },
+  "claude-design": {
+    "name": "単一 HTML デザイン",
+    "description": "ランディングページやプレゼンテーションなど、単発の HTML 成果物を作成します。"
+  },
+  "design-md": {
+    "name": "デザイン仕様",
+    "description": "DESIGN.md のデザイントークン仕様を作成・検証します。"
+  },
+  "designed-html-report": {
+    "name": "デザイン付き HTML レポート",
+    "description": "長い報告書、概要、提案を、単なる Markdown ではなくデザイン体系付きの単一 HTML にまとめます。"
+  },
+  "excalidraw": {
+    "name": "Excalidraw 図",
+    "description": "手描き風の図を Excalidraw JSON として作成します。"
+  },
+  "humanizer": {
+    "name": "自然な文章",
+    "description": "定型的な AI 表現を取り除き、自然な語り口に整えます。"
+  },
+  "p5js": {
+    "name": "p5.js スケッチ",
+    "description": "p5.js でビジュアルスケッチを作成します。"
+  },
+  "pretext": {
+    "name": "文字組みデモ",
+    "description": "DOM に依存しない文字配置と動く文字表現の HTML デモを作成します。"
+  },
+  "sketch": {
+    "name": "簡易画面モックアップ",
+    "description": "使い捨ての HTML 画面案を2〜3種類試作します。"
+  },
+  "songwriting-and-ai-music": {
+    "name": "作詞作曲と音楽プロンプト",
+    "description": "曲を作り、Suno 向けのプロンプトを準備します。"
+  },
+  "github-auth": {
+    "name": "GitHub 認証",
+    "description": "GitHub 認証を設定します。認証情報を扱います。"
+  },
+  "github-code-review": {
+    "name": "GitHub コードレビュー",
+    "description": "プルリクエストの差分を確認します。コメント投稿には Arslan の特権ツールが必要です。"
+  },
+  "github-issues": {
+    "name": "GitHub 課題管理",
+    "description": "課題を作成・分類します。リポジトリへの書き込みを伴います。"
+  },
+  "github-pr-workflow": {
+    "name": "GitHub プルリクエスト",
+    "description": "プルリクエストの流れを管理します。リポジトリの状態を変更します。"
+  },
+  "github-repo-management": {
+    "name": "GitHub リポジトリ管理",
+    "description": "複製、フォーク、リリース管理を行います。リポジトリの状態を変更します。"
+  },
+  "youtube-content": {
+    "name": "YouTube 内容要約",
+    "description": "YouTube の文字起こしを要約や連続投稿にまとめます。"
+  },
+  "arxiv": {
+    "name": "arXiv 論文検索",
+    "description": "arXiv の研究論文を検索します。"
+  },
+  "blogwatcher": {
+    "name": "ブログ・フィード監視",
+    "description": "ブログや RSS フィードを監視します。"
+  },
+  "llm-wiki": {
+    "name": "リンク型ナレッジベース",
+    "description": "相互リンクした Markdown の知識ベースを構築・検索します。"
+  },
+  "research-paper-writing": {
+    "name": "研究論文執筆",
+    "description": "NeurIPS や ICML などに向けた機械学習論文を執筆します。"
+  },
+  "verification-before-completion": {
+    "name": "完了前の検証",
+    "description": "完了・修正済み・合格と報告する前に検証を実行し、結果を読みます。"
+  },
+  "finishing-a-development-branch": {
+    "name": "開発ブランチの完了",
+    "description": "テスト後にマージ、プルリクエスト、保持、破棄から選択し、実行して作業ツリーを整理します。"
+  },
+  "mcp-builder": {
+    "name": "MCP サーバー設計",
+    "description": "MCP ツール、命名、エラーメッセージ、評価を設計します。"
+  },
+  "webapp-testing": {
+    "name": "ウェブアプリテスト",
+    "description": "Playwright で操作前に調査し、必要に応じてネットワークの待機状態を待ちます。"
+  },
+  "codebase-audit": {
+    "name": "コードベース監査",
+    "description": "コードとリスクを調査します。読み取りと計画のみです。"
+  },
+  "node-inspect-debugger": {
+    "name": "Node.js デバッグ",
+    "description": "CDP で Node.js を調査します。プロセスへの接続とコード実行を伴います。"
+  },
+  "plan": {
+    "name": "計画作成",
+    "description": "Markdown の計画を作成し、実行はしません。"
+  },
+  "python-debugpy": {
+    "name": "Python デバッグ",
+    "description": "debugpy で Python を調査します。プロセスへの接続とコード実行を伴います。"
+  },
+  "requesting-code-review": {
+    "name": "コードレビュー依頼",
+    "description": "成果物の背景を明確にし、深刻度に応じてレビュー後の対応を整理します。"
+  },
+  "simplify-code": {
+    "name": "コード簡素化",
+    "description": "3つのエージェントでコードを整理します。ソースファイルを変更します。"
+  },
+  "spike": {
+    "name": "探索用プロトタイプ",
+    "description": "技術的な疑問に答えるため、使い捨ての実験を実行します。"
+  },
+  "systematic-debugging": {
+    "name": "体系的デバッグ",
+    "description": "4段階で根本原因を分析します。分析のみです。"
+  },
+  "test-driven-development": {
+    "name": "テスト駆動開発",
+    "description": "テストを軸に開発し、テスト実行とコード記述を行います。"
+  }
+}

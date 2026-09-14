@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RegistryCatalog } from "../api/client.types";
+import { catalogText } from "../lib/catalogDisplay";
 
 export type PickKind = "tool" | "mcp" | "skill";
 
@@ -44,14 +45,14 @@ export default function RegistryPicker({ kind, selected, onPick, onClose }: Prop
     if (kind === "skill") {
       items = cat.skills
         .filter((s) => s.assignable === true)
-        .map((s) => ({ key: s.key, name: s.name, description: s.description }));
+        .map((s) => ({ key: s.key, name: catalogText(t, s.name_key, s.name), description: catalogText(t, s.description_key, s.description) }));
     } else {
       const assignable = cat.toolsets.filter((ts) => ts.assignable === true);
       const partition =
         kind === "mcp"
           ? assignable.filter((ts) => ts.key.startsWith("mcp_"))
           : assignable.filter((ts) => !ts.key.startsWith("mcp_"));
-      items = partition.map((ts) => ({ key: ts.key, name: ts.name ?? ts.key, description: ts.description }));
+      items = partition.map((ts) => ({ key: ts.key, name: catalogText(t, ts.name_key, ts.name ?? ts.key), description: catalogText(t, ts.description_key, ts.description) }));
     }
   }
 

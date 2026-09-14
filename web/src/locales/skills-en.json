@@ -1,0 +1,222 @@
+{
+  "skill-creator": {
+    "name": "Skill creation",
+    "description": "Package a reusable method as a high-quality SKILL.md."
+  },
+  "writing-skills": {
+    "name": "Skill authoring tests",
+    "description": "Test a baseline, write the skill, and close loopholes before accepting it."
+  },
+  "brainstorming": {
+    "name": "Idea exploration",
+    "description": "Develop an idea into a design, one question at a time, with approval before implementation."
+  },
+  "receiving-code-review": {
+    "name": "Review feedback evaluation",
+    "description": "Verify code-review feedback technically before implementing changes."
+  },
+  "resolving-merge-conflicts": {
+    "name": "Merge conflict resolution",
+    "description": "Trace both sides' intent, reconcile conflicts, verify, and finish the merge or rebase."
+  },
+  "domain-modeling": {
+    "name": "Domain modeling",
+    "description": "Maintain a shared domain glossary in CONTEXT.md and concise architecture decisions."
+  },
+  "sector-overview": {
+    "name": "Sector overview",
+    "description": "Research market size, growth, structure, value chains, drivers, competition, and valuation."
+  },
+  "competitive-analysis": {
+    "name": "Competitive analysis",
+    "description": "Compare industry metrics, peers, positioning, advantages, and strategic implications."
+  },
+  "comps-analysis": {
+    "name": "Comparable-company analysis",
+    "description": "Select peers and consistent valuation multiples, with outliers clearly flagged."
+  },
+  "idea-generation": {
+    "name": "Investment idea research",
+    "description": "Screen investment themes and styles; build a shortlist with thesis points and risks."
+  },
+  "deck-authoring": {
+    "name": "Presentation storytelling",
+    "description": "Create a designed HTML deck with one idea per slide; editable PPTX via render_deck on explicit request."
+  },
+  "internal-comms": {
+    "name": "Internal communications",
+    "description": "Write company-format updates, newsletters, FAQs, and status or incident reports."
+  },
+  "brand-guidelines": {
+    "name": "Brand guidelines",
+    "description": "Apply consistent colors and typography, using Anthropic's brand as a reference."
+  },
+  "frontend-design": {
+    "name": "Interface visual design",
+    "description": "Design distinctive palettes, typography, and layouts with a justified creative choice."
+  },
+  "theme-factory": {
+    "name": "Theme creation",
+    "description": "Apply preset color and font themes to artifacts, or create a new theme."
+  },
+  "canvas-design": {
+    "name": "Static visual art",
+    "description": "Create original poster or artwork concepts with about 90% visuals and 10% text."
+  },
+  "algorithmic-art": {
+    "name": "Algorithmic art",
+    "description": "Create p5.js generative art with seeded, reproducible randomness."
+  },
+  "claude-code": {
+    "name": "Claude Code",
+    "description": "Delegate coding to the Claude Code command-line tool."
+  },
+  "codex": {
+    "name": "OpenAI Codex",
+    "description": "Delegate coding to the OpenAI Codex command-line tool."
+  },
+  "opencode": {
+    "name": "OpenCode",
+    "description": "Delegate coding to the OpenCode command-line tool."
+  },
+  "architecture-diagram": {
+    "name": "Architecture diagrams",
+    "description": "Create SVG architecture diagrams in HTML."
+  },
+  "ascii-art": {
+    "name": "ASCII art",
+    "description": "Create text-based ASCII artwork."
+  },
+  "baoyu-infographic": {
+    "name": "Infographics",
+    "description": "Design infographics using 21 layouts and 21 styles."
+  },
+  "claude-design": {
+    "name": "Single-file HTML design",
+    "description": "Create one-off HTML artifacts such as landing pages and presentations."
+  },
+  "design-md": {
+    "name": "Design specifications",
+    "description": "Write and validate DESIGN.md design-token specifications."
+  },
+  "designed-html-report": {
+    "name": "Designed HTML reports",
+    "description": "Create long-form reports, briefs, or proposals as a single HTML file with a design system, not plain Markdown."
+  },
+  "excalidraw": {
+    "name": "Excalidraw diagrams",
+    "description": "Create hand-drawn-style diagrams as Excalidraw JSON."
+  },
+  "humanizer": {
+    "name": "Natural writing",
+    "description": "Remove formulaic AI phrasing and develop a natural voice."
+  },
+  "p5js": {
+    "name": "p5.js sketches",
+    "description": "Create visual sketches with p5.js."
+  },
+  "pretext": {
+    "name": "Text layout demos",
+    "description": "Create DOM-free text-layout and kinetic-typography HTML demos."
+  },
+  "sketch": {
+    "name": "Quick interface mockups",
+    "description": "Explore two or three disposable HTML mockup variants."
+  },
+  "songwriting-and-ai-music": {
+    "name": "Songwriting and music prompts",
+    "description": "Write songs and prepare prompts for Suno."
+  },
+  "github-auth": {
+    "name": "GitHub authentication",
+    "description": "Set up GitHub authentication; involves credentials."
+  },
+  "github-code-review": {
+    "name": "GitHub code review",
+    "description": "Review pull-request diffs; posting comments requires Arslan's privileged tools."
+  },
+  "github-issues": {
+    "name": "GitHub issues",
+    "description": "Create and triage issues; writes to the repository."
+  },
+  "github-pr-workflow": {
+    "name": "GitHub pull requests",
+    "description": "Manage the pull-request lifecycle; changes repository state."
+  },
+  "github-repo-management": {
+    "name": "GitHub repositories",
+    "description": "Clone, fork, and manage releases; changes repository state."
+  },
+  "youtube-content": {
+    "name": "YouTube content summaries",
+    "description": "Turn YouTube transcripts into summaries and post threads."
+  },
+  "arxiv": {
+    "name": "arXiv research",
+    "description": "Search for research papers on arXiv."
+  },
+  "blogwatcher": {
+    "name": "Blog and feed monitoring",
+    "description": "Monitor blogs and RSS feeds."
+  },
+  "llm-wiki": {
+    "name": "Linked knowledge base",
+    "description": "Build and query an interlinked Markdown knowledge base."
+  },
+  "research-paper-writing": {
+    "name": "Research paper writing",
+    "description": "Write machine-learning papers for venues such as NeurIPS and ICML."
+  },
+  "verification-before-completion": {
+    "name": "Completion verification",
+    "description": "Run checks and read their results before claiming a task is done, fixed, or passing."
+  },
+  "finishing-a-development-branch": {
+    "name": "Development branch completion",
+    "description": "Verify tests, then choose merge, pull request, keep, or discard; execute the choice and clean up the worktree."
+  },
+  "mcp-builder": {
+    "name": "MCP server design",
+    "description": "Design MCP tools, names, error messages, and evaluations."
+  },
+  "webapp-testing": {
+    "name": "Web application testing",
+    "description": "Use Playwright to inspect before acting and wait for network-idle when appropriate."
+  },
+  "codebase-audit": {
+    "name": "Codebase audit",
+    "description": "Inspect code and classify risks; read and plan only."
+  },
+  "node-inspect-debugger": {
+    "name": "Node.js debugging",
+    "description": "Debug Node.js through CDP; attaches to processes and executes code."
+  },
+  "plan": {
+    "name": "Planning",
+    "description": "Write a Markdown plan without executing it."
+  },
+  "python-debugpy": {
+    "name": "Python debugging",
+    "description": "Debug Python with debugpy; attaches to processes and executes code."
+  },
+  "requesting-code-review": {
+    "name": "Code review requests",
+    "description": "Prepare clear work-product context and prioritize review actions by severity."
+  },
+  "simplify-code": {
+    "name": "Code simplification",
+    "description": "Use three agents to clean up code; modifies source files."
+  },
+  "spike": {
+    "name": "Exploratory prototypes",
+    "description": "Run disposable experiments to answer technical questions."
+  },
+  "systematic-debugging": {
+    "name": "Systematic debugging",
+    "description": "Use four-phase root-cause analysis; analysis only."
+  },
+  "test-driven-development": {
+    "name": "Test-driven development",
+    "description": "Develop through tests; runs tests and writes code."
+  }
+}

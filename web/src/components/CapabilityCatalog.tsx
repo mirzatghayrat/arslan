@@ -210,7 +210,10 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
   // Category chips filter WITHIN the active availability set; text narrows
   // inside that again, so the three controls compose instead of competing.
   const inChip = chip === "all" ? skills : groups[chip];
-  const pool = filterItems(inChip, query);
+  const pool = filterItems(inChip.map(item => ({ ...item,
+    name: catalogText(t, item.name_key, item.name),
+    description: catalogText(t, item.description_key, item.description),
+  })), query);
   const byCategory = new Map<string, RegistrySkill[]>();
   for (const s of pool) {
     const cat = s.category ?? "";
@@ -241,7 +244,7 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
         <FilterChips
           chips={[
             { id: "all", label: t("capabilities.chips.all"), count: pool.length },
-            ...categories.map((cat) => ({ id: cat, label: cat || "—", count: byCategory.get(cat)!.length })),
+            ...categories.map((cat) => ({ id: cat, label: cat ? catalogText(t, `catalogUI.skillCategories.${cat}`, cat) : "—", count: byCategory.get(cat)!.length })),
           ]}
           active={activeCat}
           onSelect={setCatChip}
@@ -259,7 +262,7 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
       )}
       {visibleCategories.map((cat) => (
         <div key={cat}>
-          <div className={subHeader}>{cat} ({byCategory.get(cat)!.length})</div>
+          <div className={subHeader}>{catalogText(t, `catalogUI.skillCategories.${cat}`, cat)} ({byCategory.get(cat)!.length})</div>
           <div className="space-y-2">
             {byCategory.get(cat)!.map((s) => (
               <SkillRow key={s.key} s={s} />

@@ -49,9 +49,42 @@ not release-candidate sign-off.
 
 ## Remaining gates
 
-1. Finish product-owned built-in skill/catalog descriptions and structured runtime
-   service error coverage. Do not translate user-imported skill text blindly.
+1. Finish remaining product-owned recommended-connector descriptions and structured
+   runtime service error coverage. Do not translate user-imported skill text blindly.
 2. Verify all six locales in the live UI, including rapid language change → Back →
    reload, generated titles, narrow/wide layouts, light/dark themes and errors.
 3. Complete W20 video understanding evidence, W15 workflow evidence and the W17
    release audit. W21 remains open until the actual scope is verified.
+
+## Built-in skills checkpoint
+
+All 55 seeded skills now have display names and descriptions in all six languages
+(660 nonempty fields), with localized labels for the 11 built-in categories.
+Brand names, filenames and protocol identifiers remain literal. Permission and
+execution caveats are retained in the localized descriptions; capability tiers,
+assignability, stored metadata, skill bodies and model-facing identifiers are
+unchanged. These descriptions summarize the skill method, not a claim that an
+unavailable integration is wired.
+
+The registry emits each skill display key only while its corresponding source
+field exactly matches the seed. User-edited fields and unknown/imported entries
+retain their text independently. The capability catalog searches localized labels
+and summaries while keeping key-based search. Equipped labels update on language
+change. The quick picker and expert editor now resolve display hints for both
+skills and toolsets, while selection still passes stable keys. Unknown category
+labels fall back to their source value.
+
+Evidence:
+
+- Backend coverage compares every language's exact key set against the actual
+  `SKILLS` catalog, checks per-field ownership and verifies hints through the API.
+- Registry seeding/service/honesty/display regressions: 63 passed, 1 existing
+  allowlist skip. Targeted Python lint and whitespace checks passed.
+- Real-i18n component coverage renders every translated skill field in all six
+  languages, exercises translated-description and stable-key search, preserves
+  custom text, verifies picker IDs/disabled selections and in-place equipped-label
+  language changes. Focused catalog tests: 20 passed; TypeScript passed.
+- Complete frontend regression: 235 files / 1,802 tests passed in 18.46 seconds.
+  Production build passed in 2.95 seconds; existing bundle-size warnings remain.
+- Actual browser layout checks and the overall six-language release gate remain
+  pending; automated rendering alone does not prove visual quality.
