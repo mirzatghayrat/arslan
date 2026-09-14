@@ -1156,6 +1156,7 @@ export default function App() {
                 <ConnectMcpCard
                   callId={pendingConnectMcp.callId}
                   label={pendingConnectMcp.label}
+                  labelKey={pendingConnectMcp.labelKey}
                   transport={pendingConnectMcp.transport}
                   command={pendingConnectMcp.command}
                   args={pendingConnectMcp.argv}

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plug, FolderOpen, X, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { addMcpServer, connectMcpServer, exposeMcpServer, wireMcpTool } from '../api/mcp';
 import type { McpConnectorEnvVar, McpTool } from '../api/client.types';
+import { catalogText } from '../lib/catalogDisplay';
 
 /** Input to the apply chain: everything addMcpServer needs, PLUS the credential
  *  VALUES the user typed into this card's password fields (never sent over WS). */
@@ -117,6 +118,7 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
 export interface ConnectMcpCardProps {
   callId: string;
   label: string;
+  labelKey?: string;
   transport: string;
   command: string;
   /** Raw argv from the propose_connect_mcp frame — NEVER mutated in place. */
@@ -144,6 +146,7 @@ export interface ConnectMcpCardProps {
 export default function ConnectMcpCard({
   callId,
   label,
+  labelKey,
   transport,
   command,
   args,
@@ -167,7 +170,7 @@ export default function ConnectMcpCard({
   async function handleConnect() {
     if (busy) return;
     if (pathMissing) {
-      setPathError(t('connectionsUI.pathFirst'));
+      setPathError('path_required');
       return;
     }
     setPathError(null);
@@ -193,12 +196,16 @@ export default function ConnectMcpCard({
     >
       <div className="flex items-center gap-2">
         <Plug className="w-4 h-4 text-primary" />
-        <h3 className="text-sm font-bold text-foreground">{label}</h3>
+        <h3 className="text-sm font-bold text-foreground">{catalogText(t, labelKey, label)}</h3>
       </div>
       <p className="text-[11px] text-subtle-foreground font-mono truncate">
         {transport === 'http' ? `http · ${url ?? ''}` : `${command} ${args.join(' ')}`}
       </p>
-      {prerequisites ? <p className="text-[11px] text-muted-foreground">{prerequisites}</p> : null}
+      {prerequisites ? <p className="text-[11px] text-muted-foreground">{
+        envKeys.length > 0 && prerequisites === `Needs: ${envKeys.map(e => e.name).join(', ')}`
+          ? `${t('connectionsUI.needsKey')}: ${envKeys.map(e => e.name).join(', ')}`
+          : prerequisites
+      }</p> : null}
 
       {envKeys.length > 0 && (
         <div className="space-y-3">
@@ -211,7 +218,7 @@ export default function ConnectMcpCard({
                 {e.name}
               </label>
               <p className="text-[11px] text-muted-foreground">
-                {e.description}
+                {catalogText(t, e.description_key, e.description)}
                 {e.get_it_url ? (
                   <>
                     {' '}
@@ -263,7 +270,7 @@ export default function ConnectMcpCard({
               className="flex-1 bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-md px-2 py-1 text-[10.5px] text-foreground font-mono placeholder-subtle-foreground"
             />
           </div>
-          {pathError ? <p className="text-[10.5px] text-danger">{pathError}</p> : null}
+          {pathError ? <p className="text-[10.5px] text-danger">{t('connectionsUI.pathFirst')}</p> : null}
         </div>
       )}
 

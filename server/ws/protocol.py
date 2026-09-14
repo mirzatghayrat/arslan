@@ -279,7 +279,8 @@ def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
                         command: str, argv: list[str], url: str | None,
                         env_keys: list[dict], prerequisites: str = "",
                         requires_path: bool = False,
-                        path_placeholder: str | None = None) -> dict[str, Any]:
+                        path_placeholder: str | None = None,
+                        label_key: str | None = None) -> dict[str, Any]:
     """Arslan proposes connecting a preset MCP server. Emitting this frame connects
     NOTHING — the frontend renders a confirm card; the user reviews prerequisites, enters
     any required credentials (in the card's password fields, NEVER here), and the apply
@@ -288,9 +289,11 @@ def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
     card must collect in a PLAIN TEXT field (not a secret) and append to `argv` client-side
     before connecting."""
     return {"type": "propose_connect_mcp", "call_id": call_id, "key": key, "label": label,
+            **({"label_key": label_key} if label_key else {}),
             "transport": transport, "command": command, "argv": argv, "url": url,
             "env_keys": [{"name": str(e["name"]), "description": str(e.get("description", "")),
-                          "get_it_url": str(e.get("get_it_url", "")), "paid": bool(e.get("paid", False))}
+                          "get_it_url": str(e.get("get_it_url", "")), "paid": bool(e.get("paid", False)),
+                          **({"description_key": e["description_key"]} if isinstance(e.get("description_key"), str) else {})}
                          for e in env_keys],
             "prerequisites": prerequisites,
             "requires_path": requires_path,

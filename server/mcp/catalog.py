@@ -151,7 +151,16 @@ def _one_click(c: dict) -> bool:
 
 
 def list_connectors() -> list[dict]:
-    return [{**c, "one_click": _one_click(c)} for c in CONNECTORS]
+    return [_display_connector(c) for c in CONNECTORS]
+
+
+def _display_connector(c: dict) -> dict:
+    # UI hints only. Keep command, permissions, credential names and source copy
+    # unchanged; make nested copies so consumers cannot mutate the preset.
+    prefix = f"catalogUI.connectors.{c['key']}"
+    return {**c, "one_click": _one_click(c), "label_key": f"{prefix}.name",
+            "description_key": f"{prefix}.description", "args": list(c["args"]),
+            "env": [{**e, "description_key": f"{prefix}.credentials.{e['name']}"} for e in c["env"]]}
 
 
 def find_connector(query: str) -> dict | None:
@@ -162,5 +171,5 @@ def find_connector(query: str) -> dict | None:
         return None
     for c in CONNECTORS:
         if q == c["key"].lower() or q == c["label"].lower():
-            return {**c, "one_click": _one_click(c)}
+            return _display_connector(c)
     return None

@@ -729,10 +729,8 @@ async def handle_user_message(
         # NEXT BUILD (conversation-driven MCP, Task 3): the router named a connector
         # ("connect my GitHub"). Deterministic — no LLM: find_connector is an exact
         # key/label match against the static catalog, so either the confirm card or
-        # the honest redirect below needs no generation. NOTE: find_connector returns
-        # a shallow copy sharing its nested env/args LISTS with the module-level
-        # CONNECTORS data (server/mcp/catalog.py) — never mutate conn["env"] /
-        # conn["args"] in place; only read from them here.
+        # the honest redirect below needs no generation. Returned argv and credential
+        # metadata are copies; display hints never change connection arguments.
         from server.mcp import catalog
         conn = catalog.find_connector(result.connector_query or "")
         if conn is None:
@@ -753,6 +751,7 @@ async def handle_user_message(
             prereq = ("Needs: " + ", ".join(e["name"] for e in conn["env"])) if conn["env"] else ""
             emit(protocol.propose_connect_mcp(
                 call_id=str(uuid.uuid4()), key=conn["key"], label=conn["label"],
+                label_key=conn.get("label_key"),
                 transport=conn["transport"], command=conn["command"], argv=conn["args"],
                 url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq,
                 requires_path=conn["requires_path"], path_placeholder=conn.get("path_placeholder")))

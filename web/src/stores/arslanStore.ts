@@ -49,6 +49,7 @@ interface ArslanState {
     callId: string;
     key: string;
     label: string;
+    labelKey?: string;
     transport: string;
     command: string;
     argv: string[];
@@ -853,6 +854,7 @@ function makeActions(set: SetState, get: GetState) {
               callId: frame.call_id,
               key: frame.key,
               label: frame.label,
+              ...(frame.label_key ? { labelKey: frame.label_key } : {}),
               transport: frame.transport,
               command: frame.command,
               argv: frame.argv,

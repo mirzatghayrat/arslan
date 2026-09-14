@@ -565,6 +565,7 @@ export type ArslanServerMessage =
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
   // local path the card must collect in a PLAIN TEXT field and append to argv itself.
   | { type: "propose_connect_mcp"; call_id: string; key: string; label: string; transport: string;
+      label_key?: string;
       command: string; argv: string[]; url: string | null; env_keys: McpConnectorEnvVar[];
       prerequisites: string; requires_path: boolean; path_placeholder: string | null }
   // Honest, tier-aware result after a connect card completed — counts are ALWAYS
@@ -1121,6 +1122,7 @@ export interface McpTool {
 export interface McpConnectorEnvVar {
   name: string;
   description: string;
+  description_key?: string | null;
   get_it_url: string;
   paid: boolean;
 }
@@ -1137,6 +1139,8 @@ export interface McpConnector {
    *  only fail or a form collecting a key no service will issue. */
   auth: 'none' | 'static_key' | 'oauth';
   label: string;
+  label_key?: string | null;
+  description_key?: string | null;
   transport: string;
   command: string;
   args: string[];

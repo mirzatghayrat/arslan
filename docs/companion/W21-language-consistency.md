@@ -49,8 +49,8 @@ not release-candidate sign-off.
 
 ## Remaining gates
 
-1. Finish remaining product-owned recommended-connector descriptions and structured
-   runtime service error coverage. Do not translate user-imported skill text blindly.
+1. Finish structured runtime service error and deterministic chat-message coverage.
+   Do not translate user-imported skill text or unknown external diagnostics blindly.
 2. Verify all six locales in the live UI, including rapid language change → Back →
    reload, generated titles, narrow/wide layouts, light/dark themes and errors.
 3. Complete W20 video understanding evidence, W15 workflow evidence and the W17
@@ -88,3 +88,38 @@ Evidence:
   Production build passed in 2.95 seconds; existing bundle-size warnings remain.
 - Actual browser layout checks and the overall six-language release gate remain
   pending; automated rendering alone does not prove visual quality.
+
+## Recommended connectors checkpoint
+
+The ten static MCP presets now provide six-language display names/descriptions and
+the two credential prerequisites. REST catalog and chat proposals carry UI-only
+keys. Connection commands, arguments, authentication categories, credential names,
+links and permission tiers remain unchanged. The catalog returns independent
+argument and credential-metadata copies. Chat frames continue to exclude credential
+values; only display metadata was added to the existing whitelist.
+
+The recommended list and chat confirmation card resolve those keys with source
+fallback for old or unknown data. The generated prerequisite prefix and path errors
+follow the current language; arbitrary prerequisite text remains untouched. A failed
+catalog read is now visibly unknown/error with a read-only retry, rather than looking
+like an empty recommendation list. Missing-runtime hints update on language change
+while preserving the original external diagnostic.
+
+Inspection also found that the old installed check used the final argument as a
+package fallback. For Playwright, that was `--sandbox`, so an unrelated command with
+the same flag could appear as the preset. Matching now requires command, transport,
+and the full preset argument prefix, including pinned version and private-browser
+flags. This only changes display matching; it never connects or installs a server.
+
+Verification:
+
+- Connector catalog/auth/router/confirmation/protocol regressions: 54 passed.
+- Focused frontend connector/confirmation tests: 49 passed before the additional
+  prerequisite-prefix assertion. All six languages, immutable action inputs,
+  password-field names, three false-positive installed cases, exact matching,
+  immediate path-error language change and fetch retry are covered.
+- TypeScript, targeted Python lint and whitespace checks passed. No real connector,
+  account, model, download or credential was used. Actual UI layout inspection and
+  full W21/RC acceptance remain outstanding.
+- Final complete frontend rerun: 236 files / 1,820 tests passed in 18.15 seconds;
+  production build passed in 2.97 seconds, with the existing bundle-size warning.

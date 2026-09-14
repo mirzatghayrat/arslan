@@ -1,5 +1,6 @@
 // Display copy only: tool identifiers and model-facing schemas remain unchanged.
 import { skillCatalogMessages, skillCategoryMessages } from "./skillCatalog";
+import connectorCatalog from "./connectorCatalog.json";
 
 export const catalogMessages = {
   en: {
@@ -89,10 +90,10 @@ export const catalogMessages = {
 };
 
 export const catalogDisplayMessages = {
-  en: { ...catalogMessages.en, skills: skillCatalogMessages.en, skillCategories: skillCategoryMessages.en },
-  zh: { ...catalogMessages.zh, skills: skillCatalogMessages.zh, skillCategories: skillCategoryMessages.zh },
-  ja: { ...catalogMessages.ja, skills: skillCatalogMessages.ja, skillCategories: skillCategoryMessages.ja },
-  es: { ...catalogMessages.es, skills: skillCatalogMessages.es, skillCategories: skillCategoryMessages.es },
-  de: { ...catalogMessages.de, skills: skillCatalogMessages.de, skillCategories: skillCategoryMessages.de },
-  fr: { ...catalogMessages.fr, skills: skillCatalogMessages.fr, skillCategories: skillCategoryMessages.fr },
+  en: { ...catalogMessages.en, skills: skillCatalogMessages.en, skillCategories: skillCategoryMessages.en, connectors: connectorCatalog.en },
+  zh: { ...catalogMessages.zh, skills: skillCatalogMessages.zh, skillCategories: skillCategoryMessages.zh, connectors: connectorCatalog.zh },
+  ja: { ...catalogMessages.ja, skills: skillCatalogMessages.ja, skillCategories: skillCategoryMessages.ja, connectors: connectorCatalog.ja },
+  es: { ...catalogMessages.es, skills: skillCatalogMessages.es, skillCategories: skillCategoryMessages.es, connectors: connectorCatalog.es },
+  de: { ...catalogMessages.de, skills: skillCatalogMessages.de, skillCategories: skillCategoryMessages.de, connectors: connectorCatalog.de },
+  fr: { ...catalogMessages.fr, skills: skillCatalogMessages.fr, skillCategories: skillCategoryMessages.fr, connectors: connectorCatalog.fr },
 };

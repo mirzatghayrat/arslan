@@ -1,0 +1,290 @@
+{
+  "en": {
+    "fetch": {
+      "name": "Web fetch",
+      "description": "Fetch a URL and convert its content to readable Markdown."
+    },
+    "memory": {
+      "name": "Memory server",
+      "description": "Store a persistent knowledge graph locally through an external MCP server."
+    },
+    "sequential-thinking": {
+      "name": "Sequential thinking",
+      "description": "Provide a structured framework for step-by-step reasoning."
+    },
+    "time": {
+      "name": "Time",
+      "description": "Read the current time and convert between time zones."
+    },
+    "filesystem": {
+      "name": "Filesystem",
+      "description": "Read and write files in a directory you choose. Requires a local path."
+    },
+    "git": {
+      "name": "Git",
+      "description": "Read, search and commit a local Git repository. Requires its path."
+    },
+    "everything": {
+      "name": "MCP reference server",
+      "description": "Sample tools for testing MCP connections."
+    },
+    "brave-search": {
+      "name": "Brave Search",
+      "description": "Search the web through the Brave Search API.",
+      "credentials": {
+        "BRAVE_API_KEY": "A Brave Search API key."
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "description": "Access GitHub repositories, issues and pull requests.",
+      "credentials": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "A GitHub personal access token, classic or fine-grained."
+      }
+    },
+    "playwright": {
+      "name": "Playwright",
+      "description": "Read pages through accessibility data; click and type after permission. Uses a private browser profile without your signed-in accounts."
+    }
+  },
+  "zh": {
+    "fetch": {
+      "name": "网页提取",
+      "description": "获取网址内容并转换为易读的 Markdown。"
+    },
+    "memory": {
+      "name": "记忆服务",
+      "description": "通过外部 MCP 服务在本地持久保存知识图谱。"
+    },
+    "sequential-thinking": {
+      "name": "逐步思考",
+      "description": "提供结构化的逐步推理框架。"
+    },
+    "time": {
+      "name": "时间",
+      "description": "查询当前时间并转换时区。"
+    },
+    "filesystem": {
+      "name": "文件系统",
+      "description": "读写你选择的目录中的文件，需要本地路径。"
+    },
+    "git": {
+      "name": "Git",
+      "description": "读取、搜索并提交本地 Git 仓库，需要仓库路径。"
+    },
+    "everything": {
+      "name": "MCP 示例服务",
+      "description": "提供示例工具，用于测试 MCP 连接。"
+    },
+    "brave-search": {
+      "name": "Brave Search",
+      "description": "通过 Brave Search API 搜索网页。",
+      "credentials": {
+        "BRAVE_API_KEY": "Brave Search API 密钥。"
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "description": "访问 GitHub 仓库、问题及拉取请求。",
+      "credentials": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "GitHub 个人访问令牌，可使用经典版或细粒度令牌。"
+      }
+    },
+    "playwright": {
+      "name": "Playwright",
+      "description": "通过无障碍信息阅读网页，获准后点击和输入。使用独立的私密浏览器配置，不包含你已登录的账号。"
+    }
+  },
+  "ja": {
+    "fetch": {
+      "name": "ウェブ取得",
+      "description": "URL の内容を取得し、読みやすい Markdown に変換します。"
+    },
+    "memory": {
+      "name": "メモリサーバー",
+      "description": "外部 MCP サーバーを通じて、知識グラフをローカルに永続保存します。"
+    },
+    "sequential-thinking": {
+      "name": "段階的思考",
+      "description": "段階的な推論のための構造化された枠組みを提供します。"
+    },
+    "time": {
+      "name": "時刻",
+      "description": "現在時刻を調べ、タイムゾーン間で変換します。"
+    },
+    "filesystem": {
+      "name": "ファイルシステム",
+      "description": "選択したディレクトリ内のファイルを読み書きします。ローカルパスが必要です。"
+    },
+    "git": {
+      "name": "Git",
+      "description": "ローカル Git リポジトリの読み取り、検索、コミットを行います。リポジトリのパスが必要です。"
+    },
+    "everything": {
+      "name": "MCP 参照サーバー",
+      "description": "MCP 接続のテスト用にサンプルツールを提供します。"
+    },
+    "brave-search": {
+      "name": "Brave Search",
+      "description": "Brave Search API でウェブを検索します。",
+      "credentials": {
+        "BRAVE_API_KEY": "Brave Search API キー。"
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "description": "GitHub のリポジトリ、課題、プルリクエストにアクセスします。",
+      "credentials": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "GitHub の個人用アクセストークン（従来型またはきめ細かな権限型）。"
+      }
+    },
+    "playwright": {
+      "name": "Playwright",
+      "description": "アクセシビリティ情報でページを読み、許可後にクリックや入力を行います。ログイン済みアカウントを含まない専用のプライベートプロファイルを使います。"
+    }
+  },
+  "es": {
+    "fetch": {
+      "name": "Obtención de páginas",
+      "description": "Obtiene el contenido de una URL y lo convierte en Markdown legible."
+    },
+    "memory": {
+      "name": "Servidor de memoria",
+      "description": "Guarda un grafo de conocimiento persistente localmente mediante un servidor MCP externo."
+    },
+    "sequential-thinking": {
+      "name": "Pensamiento secuencial",
+      "description": "Ofrece un marco estructurado para razonar paso a paso."
+    },
+    "time": {
+      "name": "Hora",
+      "description": "Consulta la hora actual y convierte entre zonas horarias."
+    },
+    "filesystem": {
+      "name": "Sistema de archivos",
+      "description": "Lee y escribe archivos en el directorio que elijas. Requiere una ruta local."
+    },
+    "git": {
+      "name": "Git",
+      "description": "Lee, busca y crea commits en un repositorio Git local. Requiere su ruta."
+    },
+    "everything": {
+      "name": "Servidor MCP de referencia",
+      "description": "Herramientas de ejemplo para probar conexiones MCP."
+    },
+    "brave-search": {
+      "name": "Brave Search",
+      "description": "Busca en la web mediante la API de Brave Search.",
+      "credentials": {
+        "BRAVE_API_KEY": "Una clave de la API de Brave Search."
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "description": "Accede a repositorios, incidencias y solicitudes de incorporación de GitHub.",
+      "credentials": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "Un token de acceso personal de GitHub, clásico o de permisos específicos."
+      }
+    },
+    "playwright": {
+      "name": "Playwright",
+      "description": "Lee páginas mediante datos de accesibilidad; hace clic y escribe tras obtener permiso. Usa un perfil privado sin tus cuentas con sesión iniciada."
+    }
+  },
+  "de": {
+    "fetch": {
+      "name": "Webseiten abrufen",
+      "description": "Eine URL abrufen und ihren Inhalt in lesbares Markdown umwandeln."
+    },
+    "memory": {
+      "name": "Speicherserver",
+      "description": "Über einen externen MCP-Server einen dauerhaften Wissensgraphen lokal speichern."
+    },
+    "sequential-thinking": {
+      "name": "Schrittweises Denken",
+      "description": "Einen strukturierten Rahmen für schrittweise Schlussfolgerungen bereitstellen."
+    },
+    "time": {
+      "name": "Uhrzeit",
+      "description": "Die aktuelle Uhrzeit abfragen und zwischen Zeitzonen umrechnen."
+    },
+    "filesystem": {
+      "name": "Dateisystem",
+      "description": "Dateien in einem ausgewählten Verzeichnis lesen und schreiben. Ein lokaler Pfad ist erforderlich."
+    },
+    "git": {
+      "name": "Git",
+      "description": "Ein lokales Git-Repository lesen, durchsuchen und Commits erstellen. Sein Pfad ist erforderlich."
+    },
+    "everything": {
+      "name": "MCP-Referenzserver",
+      "description": "Beispielwerkzeuge zum Testen von MCP-Verbindungen."
+    },
+    "brave-search": {
+      "name": "Brave Search",
+      "description": "Das Web über die Brave-Search-API durchsuchen.",
+      "credentials": {
+        "BRAVE_API_KEY": "Ein API-Schlüssel für Brave Search."
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "description": "Auf GitHub-Repositories, Issues und Pull Requests zugreifen.",
+      "credentials": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "Ein persönlicher GitHub-Zugriffstoken, klassisch oder mit fein abgestuften Rechten."
+      }
+    },
+    "playwright": {
+      "name": "Playwright",
+      "description": "Seiten über Barrierefreiheitsdaten lesen; nach Freigabe klicken und tippen. Nutzt ein privates Browserprofil ohne deine angemeldeten Konten."
+    }
+  },
+  "fr": {
+    "fetch": {
+      "name": "Récupération de pages",
+      "description": "Récupère le contenu d’une URL et le convertit en Markdown lisible."
+    },
+    "memory": {
+      "name": "Serveur de mémoire",
+      "description": "Conserve localement un graphe de connaissances persistant via un serveur MCP externe."
+    },
+    "sequential-thinking": {
+      "name": "Raisonnement séquentiel",
+      "description": "Fournit un cadre structuré pour raisonner étape par étape."
+    },
+    "time": {
+      "name": "Heure",
+      "description": "Consulte l’heure actuelle et convertit les fuseaux horaires."
+    },
+    "filesystem": {
+      "name": "Système de fichiers",
+      "description": "Lit et écrit les fichiers du dossier choisi. Nécessite un chemin local."
+    },
+    "git": {
+      "name": "Git",
+      "description": "Lit, recherche et crée des commits dans un dépôt Git local. Nécessite son chemin."
+    },
+    "everything": {
+      "name": "Serveur MCP de référence",
+      "description": "Outils d’exemple pour tester les connexions MCP."
+    },
+    "brave-search": {
+      "name": "Brave Search",
+      "description": "Recherche sur le web via l’API Brave Search.",
+      "credentials": {
+        "BRAVE_API_KEY": "Une clé de l’API Brave Search."
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "description": "Accède aux dépôts, tickets et demandes de fusion GitHub.",
+      "credentials": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "Un jeton d’accès personnel GitHub, classique ou à permissions fines."
+      }
+    },
+    "playwright": {
+      "name": "Playwright",
+      "description": "Lit les pages via les données d’accessibilité ; clique et saisit après autorisation. Utilise un profil privé sans vos comptes déjà connectés."
+    }
+  }
+}
