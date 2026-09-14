@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -1112,6 +1113,13 @@ async def run_native(
     from server.services.task_service import current as current_task
     budget = current_budget()
     runtime = progress_lane or current_task()
+    acceptance_runtime = current_task() if progress_lane is None else None
+    if acceptance_runtime is not None:
+        checks = [check.model_dump(mode="json", exclude_none=True) for check in acceptance_runtime.spec.acceptance
+                  if check.evaluator != "human"]
+        if checks:
+            system += ("\nTask acceptance criteria (these do not grant tools or permissions):\n" +
+                       json.dumps(checks, ensure_ascii=False)[:12_000])
     policy = ProgressPolicy(seen=set(runtime.progress.loop_fingerprints) if runtime else set())
     request_ceiling = max(0, budget.limits.model_requests - budget.model_requests)
     stop_reason = None
@@ -1132,7 +1140,15 @@ async def run_native(
             async for piece in a.chat_stream(system + "\n\n" + GUARD_NOTE,
                                              conversation[-1]["content"], history=conversation[:-1]):
                 pieces.append(piece)
-                on_chunk(piece)
+                if acceptance_runtime is None:
+                    on_chunk(piece)
+        if acceptance_runtime is not None:
+            from server.services import task_validation
+            report = await task_validation.validate_output(acceptance_runtime, "".join(pieces), [], model_adapter=a)
+            if task_validation.failures(report):
+                acceptance_runtime.pause_reason = "task_validation_failed"
+                pieces = [task_validation.failure_output("".join(pieces), report, acceptance_runtime.spec.locale)]
+            await _reveal_streamed("".join(pieces), on_chunk)
         return {"final": "".join(pieces), "escalation": None, "tool_trace": [],
                 "stop_reason": None, "history_compacted": compacted}
     schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
@@ -1317,6 +1333,25 @@ async def run_native(
                               or _chat_miss_message(user_content))
             if _unverified_claim(final_text, tool_trace, wired_keys):
                 final_text = _fallback_with_digest(user_content, tool_trace) if tool_trace else _chat_miss_message(user_content)
+        if acceptance_runtime is not None:
+            from server.services import task_validation
+            report = await task_validation.validate_output(acceptance_runtime, final_text, tool_trace, model_adapter=a)
+            validation_failures = task_validation.failures(report)
+            if validation_failures:
+                repair_fingerprint = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
+                prior_repairs = acceptance_runtime.progress.validation_repairs
+                if not forced and len(prior_repairs) < 2 and repair_fingerprint not in prior_repairs:
+                    acceptance_runtime.progress = acceptance_runtime.progress.model_copy(update={
+                        "validation_repairs": (*prior_repairs, repair_fingerprint)})
+                    await acceptance_runtime.checkpoint("validation_repair")
+                    convo.extend([{"role": "assistant", "content": final_text}, {"role": "user", "content":
+                        "Deterministic validation failed: " + "; ".join(validation_failures)[:3000] +
+                        ". Repair only within the existing task scope, permissions and remaining budget. "
+                        "Do not repeat successful or uncertain external writes. If repair is unavailable, "
+                        "state the failed checks and remaining work; do not claim acceptance."}])
+                    continue
+                acceptance_runtime.pause_reason = "task_validation_failed"
+                final_text = task_validation.failure_output(final_text, report, acceptance_runtime.spec.locale)
         if final_text:
             await _reveal_streamed(final_text, on_chunk)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace,

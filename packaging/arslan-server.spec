@@ -30,6 +30,7 @@ ROOT = os.path.dirname(PACKAGING)
 
 hiddenimports = []
 datas = []
+datas += [(os.path.join(ROOT, "server", "resources", "artifact_inspector.py"), "server/resources")]
 binaries = []
 
 # `server` is NOT in the built wheel (pyproject's hatch wheel target packages

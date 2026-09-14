@@ -62,16 +62,44 @@ class BudgetSpec(Contract):
         return Limits(**self.model_dump(exclude={"schema_version"}))
 
 
+class ValidationRule(Contract):
+    """Bounded declarative assertions, never code, paths or execution authority."""
+    kind: Literal["text", "json", "artifact", "image_dimensions", "research_sources",
+                  "code_build", "code_test", "language", "layout", "remote_readback"]
+    target: Annotated[str, Field(max_length=240)] | None = None
+    equals: Annotated[str, Field(max_length=20_000)] | None = None
+    contains: tuple[Annotated[str, Field(min_length=1, max_length=2000)], ...] = Field(default=(), max_length=32)
+    minimum: Annotated[int, Field(ge=0, le=1_000_000, strict=True)] | None = None
+    maximum: Annotated[int, Field(ge=0, le=1_000_000, strict=True)] | None = None
+    width: Annotated[int, Field(gt=0, le=32_768, strict=True)] | None = None
+    height: Annotated[int, Field(gt=0, le=32_768, strict=True)] | None = None
+    locale: Locale | None = None
+    argv: tuple[Annotated[str, Field(max_length=2000)], ...] | None = Field(default=None, max_length=64)
+    when: Literal["always", "artifacts_present"] = "always"
+
+    @model_validator(mode="after")
+    def bounded_range(self):
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ValueError("minimum exceeds maximum")
+        if self.kind == "image_dimensions" and self.width is None and self.height is None:
+            raise ValueError("image dimensions require width or height")
+        return self
+
+
 class AcceptanceCheck(Contract):
     id: Identifier
     description: Annotated[str, Field(min_length=1, max_length=2000)]
     evaluator: Literal["deterministic", "human", "model"]
     critical: bool = False
+    rule: ValidationRule | None = None
 
     @model_validator(mode="after")
     def critical_is_not_model_only(self):
         if self.critical and self.evaluator == "model":
             raise ValueError("critical acceptance needs deterministic or human verification")
+        if self.evaluator == "model" and self.rule is not None and self.rule.kind in {
+            "artifact", "image_dimensions", "research_sources", "code_build", "code_test", "remote_readback"}:
+            raise ValueError("factual checks need deterministic or human verification")
         return self
 
 
@@ -83,7 +111,7 @@ class TaskSpec(Contract):
     locale: Locale
     memory_mode: Literal["normal", "disabled", "temporary"] = "normal"
     inputs: tuple[ResourceRef, ...] = ()
-    acceptance: tuple[AcceptanceCheck, ...] = Field(min_length=1)
+    acceptance: tuple[AcceptanceCheck, ...] = Field(min_length=1, max_length=64)
     budget: BudgetSpec = Field(default_factory=BudgetSpec)
 
     @model_validator(mode="after")
@@ -98,13 +126,14 @@ class TaskSpec(Contract):
 
 class CheckResult(Contract):
     check_id: Identifier
-    status: Literal["passed", "failed", "unverified"]
+    # `unverified` remains readable for historical records; new checks use not_run.
+    status: Literal["passed", "failed", "not_run", "not_applicable", "unverified"]
     evaluator: Literal["deterministic", "human", "model"]
     evidence: tuple[ResourceRef, ...] = ()
 
     @model_validator(mode="after")
     def verdict_has_evidence(self):
-        if self.status != "unverified" and not self.evidence:
+        if self.status in {"passed", "failed", "not_applicable"} and not self.evidence:
             raise ValueError("a verdict requires evidence references")
         return self
 
@@ -131,7 +160,10 @@ class TaskState(Contract):
                 raise ValueError("unexpected evaluator")
         if self.phase == "succeeded" and (
             actual.keys() != expected.keys()
-            or any(result.status != "passed" for result in actual.values())
+            or all(check.evaluator == "model" for check in expected.values())
+            or any(result.status != "passed" and not (
+                result.status == "not_applicable" and not expected[key].critical and expected[key].rule is not None
+                and expected[key].rule.when == "artifacts_present") for key, result in actual.items())
         ):
             raise ValueError("success requires all acceptance checks to pass")
         return self

@@ -45,7 +45,7 @@ def stage(destination: Path) -> None:
                         "-r", str(requirements)], cwd=temp, env=env, check=True)
         # -I and a different cwd expose accidental build-tree/venv dependencies.
         subprocess.run([str(python), "-I", "-c",
-                        "import sys, pathlib, ssl, sqlite3, numpy, pandas, matplotlib; "
+                        "import sys, pathlib, ssl, sqlite3, numpy, pandas, matplotlib, pypdf, docx, pptx; "
                         "matplotlib.use('Agg'); import matplotlib.pyplot as p; "
                         "assert pathlib.Path(sys.prefix).resolve() == pathlib.Path(sys.argv[1]).resolve(); "
                         "assert pandas.DataFrame({'x':[1,2]}).x.sum() == 3; "

@@ -219,4 +219,5 @@ line-length = 100
 [dependency-groups]
 # Exported from uv.lock into the standalone desktop compute runtime at build time.
 # Never installed over the frozen server or downloaded on a packaged user's first run.
-sandbox = ["numpy>=1.26", "pandas>=2.2", "matplotlib>=3.9"]
+sandbox = ["numpy>=1.26", "pandas>=2.2", "matplotlib>=3.9",
+           "pypdf>=6.16.1", "python-docx>=1.1", "python-pptx>=0.6.23"]

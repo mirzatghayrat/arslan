@@ -11,7 +11,7 @@ export interface TaskSummary {
   spec: { id: string; revision: number; instruction: string; locale: string;
     acceptance: { id: string; description: string; evaluator: "human" | "model" | "deterministic" }[] };
   state: { task_id: string; spec_revision: number; run_id: string; sequence: number; phase: TaskPhase;
-    checkpoint_ref: string | null; results: { check_id: string; status: "passed" | "failed" | "unverified"; evaluator: string; evidence: TaskRef[] }[] };
+    checkpoint_ref: string | null; results: { check_id: string; status: "passed" | "failed" | "unverified" | "not_run" | "not_applicable"; evaluator: string; evidence: TaskRef[] }[] };
   budget: { id: string; used: Record<string, number>; limits: Record<string, number>; stop_reason: string | null };
 }
 export interface TaskAction {
@@ -20,6 +20,10 @@ export interface TaskAction {
   evidence: TaskRef[]; error_code: string | null;
 }
 export interface TaskDetail extends TaskSummary {
+  validation?: { spec_revision: number; attempt_id: string; output_sha256: string;
+    checks: { check_id: string; status: string; evaluator: string; code: string }[];
+    artifacts: { id: string; filename: string; title?: string; run_id?: number; url?: string;
+      status: string; code: string; sha256?: string; bytes?: number }[] } | null;
   workers?: TaskWorker[];
   checkpoint: { progress: { completed_steps: string[]; artifacts: TaskRef[]; pending_actions: string[] } } | null;
   attempts: { id: string; number: number; status: string; run_ids: number[] }[];

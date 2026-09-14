@@ -5,6 +5,7 @@ import { tasksApi, type TaskDetail } from "../../api/tasks";
 import { taskMessages } from "../../locales/tasks";
 import { initialArslanState, useArslanStore } from "../../stores/arslanStore";
 import TaskPanel from "./TaskPanel";
+import { validationMessages } from "../../locales/validation";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: "en" } }),
@@ -28,6 +29,28 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("task controls", () => {
+  it("keeps failed and unperformed checks visible and blocks acceptance", async () => {
+    const checked: TaskDetail = { ...task, pause_reason: "task_validation_failed", validation: {
+      spec_revision: 1, attempt_id: "attempt", output_sha256: "a".repeat(64),
+      checks: [{ check_id: "review", evaluator: "human", status: "not_run", code: "human_review_required" }],
+      artifacts: [{ id: "artifact:broken", filename: "broken.pdf", status: "failed", code: "artifact_parse_failed" }],
+    }, state: { ...task.state, results: [{ check_id: "review", evaluator: "human", status: "not_run", evidence: [] }] } };
+    vi.mocked(tasksApi.list).mockResolvedValue([checked]);
+    vi.spyOn(tasksApi, "detail").mockResolvedValue(checked);
+    render(<TaskPanel conversationId="conversation" onResume={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /tasks.taskStatus/ }));
+    expect(await screen.findByText("validation.failedReason")).toBeInTheDocument();
+    expect(screen.getByText(/validation.human.*validation.not_run/)).toBeInTheDocument();
+    expect(screen.getByText("validation.failed")).toBeInTheDocument();
+    expect(screen.getByText("artifact:broken")).toBeInTheDocument();
+    expect(screen.queryByText("tasks.accept")).not.toBeInTheDocument();
+  });
+
+  it("translates validation states in all six interface languages", () => {
+    const keys = Object.keys(validationMessages.en).sort();
+    expect(Object.keys(validationMessages).sort()).toEqual(["de", "en", "es", "fr", "ja", "zh"]);
+    for (const messages of Object.values(validationMessages)) expect(Object.keys(messages).sort()).toEqual(keys);
+  });
   it("requires an explicit review before accepting and works under Strict Mode", async () => {
     const accepted = { ...task, version: 5, pause_reason: null, state: { ...task.state, sequence: 4, phase: "succeeded" as const } };
     useArslanStore.getState().handleFrame({ type: "task_state", task_id: "task", conversation_id: "conversation",

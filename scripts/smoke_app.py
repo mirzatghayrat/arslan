@@ -35,6 +35,11 @@ class _SmokeAdapter:
 
     async def chat(self, system, user, history=None, tools=None, temperature=0.7):  # noqa: ANN001
         from arslan.models import LLMResponse
+        if os.environ.get("ARSLAN_SMOKE_VALIDATION") == "1":
+            self._broken_fixture = getattr(self, "_broken_fixture", False) or "UI_BROKEN_FILE" in str(user)
+            if self._broken_fixture:
+                return LLMResponse(content="[Synthetic missing file](/api/v1/runs/999/artifacts/run_999_missing.pdf)",
+                                   tool_calls=[], usage={})
         if os.environ.get("ARSLAN_SMOKE_COLLABORATION") == "1":
             if "temporary collaborator on one bounded subtask" in system:
                 return LLMResponse(content='{"result":"已核对合成参考材料，未访问真实账号或外部服务。","remaining_work":[]}',

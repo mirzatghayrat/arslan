@@ -44,6 +44,7 @@ def store_bytes(run_id: int, title: str, data: bytes) -> dict:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
     metadata = {
+        "id": f"artifact:{filename}",
         "kind": "file", "run_id": run_id, "filename": filename, "title": title[:240],
         "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
         "media_type": mimetypes.guess_type(basename)[0] or "application/octet-stream",
@@ -130,3 +131,35 @@ def list_artifacts(run_id: int) -> list[dict]:
         except (OSError, ValueError, TypeError):
             continue
     return out
+
+
+def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:
+    """Read a bounded manifest/file pair through one no-follow directory handle.
+
+    The caller must establish Run ownership; a filename alone is not authority.
+    Metadata is cross-checked against actual bytes, not accepted as a verdict.
+    """
+    if not safe_filename(run_id, filename):
+        raise ValueError("artifact_reference_invalid")
+    directory = os.open(root(), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        def read(name, limit):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            with os.fdopen(fd, "rb") as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                    raise ValueError("artifact_not_regular_or_too_large")
+                value = stream.read(limit + 1)
+                if len(value) > limit:
+                    raise ValueError("artifact_too_large")
+                return value
+        metadata = json.loads(read(filename + ".manifest.json", 16_384))
+        if (not isinstance(metadata, dict) or metadata.get("run_id") != run_id
+                or metadata.get("filename") != filename):
+            raise ValueError("artifact_manifest_mismatch")
+        data = read(filename, MAX_FILE_BYTES)
+        if metadata.get("bytes") != len(data) or metadata.get("sha256") != hashlib.sha256(data).hexdigest():
+            raise ValueError("artifact_integrity_mismatch")
+        return metadata, data
+    finally:
+        os.close(directory)

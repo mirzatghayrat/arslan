@@ -6,6 +6,7 @@ this service automatically; a resume must be an explicit, versioned user action.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -91,6 +92,7 @@ async def recover_interrupted() -> int:
 class TaskRuntime:
     def __init__(self, value: dict, emit: Callable[[dict], None], progress: Progress | None = None):
         self.task_id = value["state"]["task_id"]
+        self.spec = TaskSpec.model_validate(value["spec"])
         self.attempt_id = value["state"]["run_id"]
         self.emit = emit
         self.progress = progress or Progress()
@@ -102,6 +104,8 @@ class TaskRuntime:
         self.closed = False
         self.pause_reason: str | None = None
         self.worker_slots = asyncio.Semaphore(2)
+        self.validation_results = ()
+        self.validation_report = None
 
     async def checkpoint(self, reason: str, *, retain_stopped=False):
         if self.closed:
@@ -181,7 +185,7 @@ class TaskRuntime:
                 if (isinstance(digest, str) and len(digest) == 64 and isinstance(url, str)
                         and url.startswith("/api/v1/runs/") and len(url) <= 500):
                     try:
-                        refs.append(ResourceRef(id=f"artifact:{digest}", kind="artifact", revision=1,
+                        refs.append(ResourceRef(id=item.get("id") or f"artifact:{digest}", kind="artifact", revision=1,
                                                 sha256=digest, locator=url))
                     except ValueError:
                         pass
@@ -227,12 +231,34 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                     final = await repo.cancel(runtime.task_id)
             else:
                 await runtime.checkpoint("attempt_output")
+                from server.services import task_validation
+                output = result if isinstance(result, str) else result.get("final") if isinstance(result, dict) else None
+                if not isinstance(output, str):
+                    async with db_session.AsyncSessionLocal() as db:
+                        saved = await db.scalar(select(Run.final_output).where(Run.id.in_(runtime.run_ids),
+                            Run.kind != "worker").order_by(Run.id.desc()).limit(1))
+                    output = saved if isinstance(saved, str) else ""
+                if (not runtime.saw_error and not runtime.pause_reason and (runtime.validation_report is None or
+                        runtime.validation_report["output_sha256"] != hashlib.sha256(output.encode()).hexdigest())):
+                    await task_validation.validate_output(runtime, output, [])
+                validation_failed = runtime.validation_report is not None and bool(task_validation.failures(runtime.validation_report))
+                verified = (bool(runtime.validation_results) and any(item.evaluator != "model" for item in runtime.validation_results)
+                    and all(item.status in {"passed", "not_applicable"} for item in runtime.validation_results)
+                    and all(item["status"] == "passed" for item in (runtime.validation_report or {}).get("artifacts", [])))
+                succeeded = verified and not (runtime.saw_error or runtime.pause_reason or runtime.reconciliation_required)
+                checks_missing = (any(item.evaluator != "human" and item.status in {"not_run", "unverified"}
+                    for item in runtime.validation_results) or
+                    (bool(runtime.validation_results) and all(item.evaluator == "model" for item in runtime.validation_results)) or
+                    (not any(item.evaluator == "human" for item in runtime.validation_results) and
+                     any(item["status"] == "not_run" for item in (runtime.validation_report or {}).get("artifacts", []))))
                 async with repository() as repo:
                     final = await repo.finish(runtime.task_id, runtime.attempt_id,
-                        phase="waiting_user" if runtime.pause_reason or not runtime.saw_error or runtime.reconciliation_required else "failed",
-                        reason="task_reconciliation_required" if runtime.reconciliation_required else
+                        phase="succeeded" if succeeded else "waiting_user" if runtime.pause_reason or not runtime.saw_error or runtime.reconciliation_required else "failed",
+                        results=runtime.validation_results,
+                        reason=None if succeeded else "task_reconciliation_required" if runtime.reconciliation_required else
                                runtime.pause_reason if runtime.pause_reason else
-                               "execution_failed" if runtime.saw_error else "acceptance_review_required")
+                               "execution_failed" if runtime.saw_error else "task_validation_failed" if validation_failed else
+                               "task_checks_not_run" if checks_missing else "acceptance_review_required")
             emit(_state_frame(final))
             return result
         except asyncio.CancelledError:

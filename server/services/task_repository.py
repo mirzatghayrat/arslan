@@ -40,6 +40,7 @@ class Progress(Contract):
     pending_actions: tuple[Identifier, ...] = Field(default=(), max_length=1000)
     continuation_ref: ResourceRef | None = None
     loop_fingerprints: tuple[Identifier, ...] = Field(default=(), max_length=256)
+    validation_repairs: tuple[Identifier, ...] = Field(default=(), max_length=2)
 
 
 def identity() -> str:
@@ -309,8 +310,24 @@ class TaskRepository:
         if row.phase != "waiting_user" or row.pause_reason != "acceptance_review_required":
             raise TaskError("task_not_awaiting_acceptance")
         spec = await self.spec(row)
-        if any(check.evaluator != "human" for check in spec.acceptance):
+        previous = {result.check_id: result for result in map(CheckResult.model_validate, row.results)}
+        if not any(check.evaluator == "human" for check in spec.acceptance) or any(
+            check.evaluator != "human" and (check.id not in previous or not (
+                previous[check.id].status == "passed" or (previous[check.id].status == "not_applicable"
+                    and not check.critical and check.rule is not None and check.rule.when == "artifacts_present")))
+            for check in spec.acceptance):
             raise TaskError("task_deterministic_checks_required")
+        from server.services import artifact_store, task_validation
+        report = await task_validation.latest_report(self, row)
+        for artifact in (report or {}).get("artifacts", []):
+            if artifact["status"] == "failed":
+                raise TaskError("task_validation_failed")
+            try:
+                metadata, _ = artifact_store.read_owned(artifact["run_id"], artifact["filename"])
+                if metadata["sha256"] != artifact.get("sha256"):
+                    raise ValueError("changed")
+            except (KeyError, OSError, ValueError, TypeError) as exc:
+                raise TaskError("task_artifact_changed") from exc
         if await self.db.scalar(select(TaskAction.id).where(
                 TaskAction.task_id == row.id, TaskAction.effect != "read",
                 TaskAction.status.in_(("prepared", "in_flight", "uncertain"))).limit(1)):
@@ -319,7 +336,7 @@ class TaskRepository:
         proof = ResourceRef(id=review_id, kind="document", revision=1,
                             locator=f"/api/v1/tasks/{row.id}/events?after={row.sequence}")
         results = tuple(CheckResult(check_id=check.id, evaluator="human", status="passed", evidence=(proof,))
-                        for check in spec.acceptance)
+                        if check.evaluator == "human" else previous[check.id] for check in spec.acceptance)
         TaskState(task_id=row.id, spec_revision=row.spec_revision, run_id=row.attempt_id,
                   sequence=row.sequence + 1, phase="succeeded", results=results,
                   updated_at=datetime.now(timezone.utc)).validated_for(spec)

@@ -7,6 +7,7 @@ import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./Compan
 import { companionError, taskErrorKey } from "./errors";
 import RunReplay from "../RunReplay";
 import TaskWorkers from "./TaskWorkers";
+import TaskValidation from "./TaskValidation";
 
 export function taskReason(reason: string | null) {
   return taskErrorKey(reason ?? "") ?? "tasks.reviewIntro";
@@ -140,6 +141,7 @@ export default function TaskPanel({ conversationId, onResume }: {
           <p className="font-medium">{t(`tasks.${detail.state.phase}`)}</p>
           <p className="text-xs leading-relaxed text-muted-foreground">{t(taskReason(detail.pause_reason))}</p>
           <TaskWorkers workers={detail.workers ?? []} onOpenRun={id => { setOpen(false); setReplayRunId(id); }} />
+          <TaskValidation task={detail} />
           <div className="rounded-lg border border-border p-3"><h3 className="mb-2 font-medium">{t("tasks.budget")}</h3>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">{([
               ["model_requests", "requests"], ["tool_calls", "tools"], ["tokens", "tokens"], ["wall_seconds", "seconds"],
@@ -168,7 +170,8 @@ export default function TaskPanel({ conversationId, onResume }: {
               onClick={() => void perform(() => tasksApi.reconcile(detail.spec.id, review, applied!, note.trim()))}>{t("tasks.recordReview")}</button>
           </fieldset>}
           {detail.state.phase === "waiting_user" && detail.pause_reason === "acceptance_review_required" && !unresolved.length &&
-            detail.spec.acceptance.every(check => check.evaluator === "human") && <div className="space-y-3">
+            detail.spec.acceptance.some(check => check.evaluator === "human") &&
+            detail.spec.acceptance.every(check => check.evaluator === "human" || detail.state.results.some(result => result.check_id === check.id && ["passed", "not_applicable"].includes(result.status))) && <div className="space-y-3">
               <label className="flex items-start gap-2"><input type="checkbox" checked={ack} disabled={busy} onChange={event => setAck(event.target.checked)} />{t("tasks.acceptAck")}</label>
               <button className={primaryClass} disabled={busy || !ack} onClick={() => void perform(() => tasksApi.accept(detail))}>{t("tasks.accept")}</button>
             </div>}

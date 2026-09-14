@@ -64,9 +64,11 @@ async def task_detail(task_id: str, repo=Depends(task_repository)):
     actions = (await repo.db.execute(select(TaskAction).where(TaskAction.task_id == row.id)
                                     .order_by(TaskAction.created_at, TaskAction.id))).scalars().all()
     from server.services.task_workers import present as present_worker
+    from server.services.task_validation import latest_report
     workers = (await repo.db.scalars(select(TaskWorker).where(TaskWorker.task_id == row.id)
                                     .order_by(TaskWorker.created_at, TaskWorker.id))).all()
     return {**await repo.present(row), "checkpoint": await repo.latest_checkpoint(row.id),
+            "validation": await latest_report(repo, row),
             "workers": [present_worker(worker) for worker in workers],
             "attempts": [{"id": attempt.id, "number": attempt.number, "status": attempt.status,
                           "run_ids": attempt.run_ids} for attempt in attempts],

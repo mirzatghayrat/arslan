@@ -13,6 +13,9 @@ export function companionError(error: unknown): string {
 }
 
 export function taskErrorKey(code: string): string | null {
+  if (code === "task_validation_failed") return "validation.failedReason";
+  if (code === "task_artifact_changed") return "validation.changedReason";
+  if (code === "task_checks_not_run") return "validation.notRunReason";
   if (code === "process_interrupted") return "tasks.interrupted";
   if (code === "backup_restore_review_required") return "tasks.restored";
   if (code === "task_reconciliation_required") return "tasks.uncertain";
