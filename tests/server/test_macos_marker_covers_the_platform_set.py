@@ -43,6 +43,8 @@ EXPECTED_FILES: dict[str, int] = {
     "server/test_task_validation.py": 1,
     "server/test_ocr_vision.py": 5,
     "server/test_command_sandbox_net.py": 3,
+    # Added 2026-09-15: actual command filesystem read/write/symlink denial.
+    "server/test_command_sandbox.py": 1,
     "server/test_skill_script_failclosed.py": 3,
     "server/test_ocr_fallback.py": 3,
     "server/test_skill_import.py": 1,
@@ -60,7 +62,7 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 41
+EXPECTED_TOTAL = 42
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5
 

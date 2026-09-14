@@ -90,7 +90,9 @@ workspace mutation. Frontend foundation regression passed all 1,720 tests.
 The subsequent local run exercised **41 macOS-only tests with zero skips**,
 **125 task/recipe entry-point tests**, and **100 focused artifact/task tests**.
 The six-language UI regression remained at **1,720 passing tests**. A new full
-frozen rerun covers the combined revision-registration and marker changes.
+frozen rerun at `c13668f6` covered the combined revision-registration and marker changes:
+**4,341 passed, 14 skipped, 19 warnings in 484.27 seconds**. The aiosqlite teardown
+guard recorded 69 closed-loop deliveries without changing test outcomes.
 
 Remaining cross-package integration: W13 supplies typed ASC readback; W14 claim/source support; W15
 visual-review inputs; W20 broad file/media inspection and XLSX runtime support.

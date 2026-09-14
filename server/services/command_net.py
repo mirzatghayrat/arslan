@@ -1,8 +1,8 @@
-"""Host-side orchestration for a NETWORK shell command (git/gh over HTTPS). Reads the workspace
-repo's remotes + current branch and the GitHub token ON THE HOST, runs the deterministic pre-flight
+"""Host-side orchestration for an UNAUTHENTICATED network command (git/gh over HTTPS).
+Reads the workspace repo's remotes + current branch, runs the deterministic pre-flight
 gates (host allowlist, push-branch), then spins a single-command credential-injecting proxy and runs
-the command in the sandbox pointed at that proxy. The real token stays here — it seeds the proxy and
-is NEVER placed in the sandbox env or filesystem.
+the command in the sandbox pointed at that proxy. Automatic credential acquisition is disabled:
+the in-process proxy has not met the independent OS-isolation release gate.
 
 Follow-up (not v1): the workspace UX — a network command runs with cwd = a single workspace dir;
 `clone`/`ls-remote` (URL-based) work regardless, but "clone then push in the cloned subdir" needs a
@@ -29,7 +29,7 @@ def _workspace() -> Path:
 
 
 async def _run_host(*cmd: str, timeout: float = 10.0) -> str:
-    """Run a read-only helper (git config read / gh auth token) ON THE HOST (unsandboxed). Best-
+    """Run a read-only git metadata helper ON THE HOST (unsandboxed). Best-
     effort — returns stdout or "" on any failure."""
     proc = None
     try:
@@ -64,11 +64,6 @@ async def _current_branch(workspace: Path) -> str:
     return (await _run_host("git", "-C", str(workspace), "rev-parse", "--abbrev-ref", "HEAD")).strip()
 
 
-async def _github_token() -> str | None:
-    tok = (await _run_host("gh", "auth", "token")).strip()
-    return tok or None
-
-
 async def run_network_command(command: str, argv: list) -> dict:
     """Pre-flight + proxy + sandboxed run for a network git/gh command. Returns command_sandbox's
     result dict, or {ok: False, error} when a gate refuses."""
@@ -84,10 +79,11 @@ async def run_network_command(command: str, argv: list) -> dict:
     if command == "git" and not command_policy.push_targets_current_branch(argv, branch):
         return {"ok": False, "error": f"只允许 push 当前分支({branch or '未知'}),拒绝推任意 ref"}
 
-    token = await _github_token()
     ca = command_ca.LocalCA(_data_dir() / "shell_ca")
     ca_path = str(ca.dir / "ca.crt")
-    proxy = await command_proxy.start_proxy(allow_hosts=remote_hosts, inject_token=token, ca=ca)
+    # No environment flag or compatibility fallback may re-enable host credentials.
+    # This loopback server lacks authenticated peers and Keychain access isolation.
+    proxy = await command_proxy.start_proxy(allow_hosts=remote_hosts, inject_token=None, ca=ca)
     try:
         purl = f"http://127.0.0.1:{proxy.port}"
         env = {
@@ -97,6 +93,7 @@ async def run_network_command(command: str, argv: list) -> dict:
             "GH_TOKEN": "proxied",       # dummy so gh sends an Authorization the proxy then swaps
         }
         return await command_sandbox.run_command(
-            command, argv, proxy_port=proxy.port, cwd=str(workspace), extra_env=env)
+            command, argv, proxy_port=proxy.port, cwd=str(workspace), extra_env=env,
+            read_files=(Path(ca_path),))
     finally:
         await proxy.close()

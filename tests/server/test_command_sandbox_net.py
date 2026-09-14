@@ -74,7 +74,7 @@ async def test_run_command_local_path_unchanged(monkeypatch):
     monkeypatch.setattr(command_sandbox.asyncio, "create_subprocess_exec", _fake_exec)
     await command_sandbox.run_command("git", ["status"])
     # default deny-all-network profile, no proxy allowance, ephemeral cwd, no proxy env
-    assert any(isinstance(a, str) and "(deny network*)" in a and "remote tcp" not in a
+    assert any(isinstance(a, str) and "(deny default)" in a and "remote tcp" not in a
                for a in seen["cmd"])
     assert seen["cwd"] == seen["env"]["HOME"]  # ephemeral tmp is both cwd and HOME
     assert "HTTPS_PROXY" not in seen["env"]
