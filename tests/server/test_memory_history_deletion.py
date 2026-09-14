@@ -3,7 +3,7 @@ import json
 
 import httpx
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 
 from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
 from server.db.models import ArslanMessage, ArslanSummary, MemorySuppression, ProviderConfig
@@ -119,3 +119,36 @@ async def test_unrelated_suppression_does_not_revoke_history(execution_db):
             entry_id="deleted", cutoff_at=datetime.utcnow() + timedelta(seconds=1)))
         await db.commit()
     assert await memory_history.dependencies_current((("retained", (mid,), ()),))
+
+
+async def test_task_only_source_resolves_retained_conversation(selected, execution_db):
+    from server.services.task_repository import repository as tasks
+    from tests.server.test_task_repository import spec
+    cid = "task-source-history"
+    async with tasks() as repo:
+        await repo.create(spec("source-task"), cid)
+    mid = await memory.add_message(cid, "user", "Use violet headings.")
+    async with repository() as repo:
+        entry = await repo.create(MemoryWrite(content="Use violet headings.", scope=MemoryScope(kind="global")),
+            MemoryActor(origin="user", task_id="source-task"))
+        await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
+    assert not await memory_history.dependencies_current(((cid, (mid,), ()),))
+    assert not (await memory.assemble_working_context(cid))["history"]
+    new = await memory.add_message(cid, "user", "Prepare a new report.")
+    assert await memory_history.dependencies_current(((cid, (new,), ()),))
+
+
+async def test_recreated_summary_id_does_not_validate_cached_deleted_summary(execution_db):
+    now = datetime.utcnow()
+    async with execution_db() as db:
+        db.add(ArslanSummary(id=1, conversation_id="summary", summary="Old source",
+                            up_to_message_id=1, updated_at=now))
+        await db.commit()
+    snapshot = (("summary", (), ((1, now),)),)
+    assert await memory_history.dependencies_current(snapshot)
+    async with execution_db() as db:
+        await db.execute(delete(ArslanSummary))
+        db.add(ArslanSummary(id=1, conversation_id="summary", summary="New safe source",
+                            up_to_message_id=2, updated_at=now + timedelta(seconds=1)))
+        await db.commit()
+    assert not await memory_history.dependencies_current(snapshot)

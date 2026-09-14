@@ -115,7 +115,8 @@ async def assemble_working_context(conversation_id: str) -> dict:
     from server.services import task_service
     runtime = task_service.current()
     if runtime is not None:
-        runtime.register_history(conversation_id, used_ids, [summ.id] if summ and summary else [])
+        runtime.register_history(conversation_id, used_ids,
+                                 [(summ.id, summ.updated_at)] if summ and summary else [])
     return {"summary": summary, "history": bounded, "truncated": truncated,
             "budget_mode": "estimated_text_tokens"}
 

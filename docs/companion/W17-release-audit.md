@@ -5,6 +5,14 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+Follow-up `91ef91e0` implements deletion-aware retained history and compaction
+inputs, plus transient history-dependency admission checks. Subsequent checks
+also cover task-only source resolution and summary row-ID reuse. The original
+retained-source diagnostic below describes the earlier source, not the current
+implementation. Eight focused history cases and the existing in-flight suite
+are the targeted gates; a new frozen full regression is pending. See
+`memory-inflight-revocation.md` for the exact behavior and limits.
+
 Latest complete backend run: clean `5250e62b` (in-flight memory dependencies and
 snapshot writeback fences), **4,759 passed, 14 skipped, 19 warnings in 451.15
 seconds**. Report: `/tmp/arslan-revocation-corrected.OBwX4u/backend.xml`. Source
@@ -27,13 +35,14 @@ secret-file bootstrap still isolated it from production data. Correcting the
 environment made the eight backup tests pass without product changes; the
 complete corrected run above is the relevant engineering result.
 
-A separate production-host/serialized-HTTP diagnostic still confirms an
-acceptance defect on this source: after deletion, a retained source message in
+A separate production-host/serialized-HTTP diagnostic confirmed an
+acceptance defect on `5250e62b`: after deletion, a retained source message in
 the same conversation enters a later request; compaction begun after deletion
 can also derive the preference again. Existing suppression records are not yet
-applied to working-history/compaction input. The two diagnostic passes in
+applied to working-history/compaction input on that source. The two diagnostic passes in
 `/tmp/arslan-revocation-corrected.OBwX4u/test_deleted_source_diagnostic.py` prove
-the bad behavior, not successful acceptance. This remains a release blocker.
+the bad behavior, not successful acceptance. The follow-up fix requires its own
+complete regression before closing this engineering gate.
 
 Previous complete backend run: clean `1d1be3c4` (including provider request evidence),
 **4,739 passed, 14 skipped, 18 warnings in 444.62 seconds**. Report:

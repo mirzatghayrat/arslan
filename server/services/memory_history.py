@@ -2,7 +2,7 @@
 from sqlalchemy import String, and_, cast, exists, or_, select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, ArslanSummary, MemorySuppression
+from server.db.models import ArslanMessage, ArslanSummary, CompanionTask, MemorySuppression
 
 
 def eligible_messages(conversation_id):
@@ -13,8 +13,15 @@ def eligible_messages(conversation_id):
              MemorySuppression.source_id == cast(ArslanMessage.id, String)),
         and_(MemorySuppression.source_kind == "run_id",
              MemorySuppression.source_id == cast(ArslanMessage.run_id, String)),
-        and_(MemorySuppression.source_kind == "conversation_id",
-             MemorySuppression.source_id == ArslanMessage.conversation_id,
+        and_(or_(
+             and_(MemorySuppression.source_kind == "conversation_id",
+                  MemorySuppression.source_id == ArslanMessage.conversation_id),
+             and_(MemorySuppression.source_kind == "task_id", exists(
+                 select(CompanionTask.id).where(
+                     CompanionTask.id == MemorySuppression.source_id,
+                     CompanionTask.conversation_id == ArslanMessage.conversation_id
+                 ).correlate(MemorySuppression, ArslanMessage))),
+             ),
              or_(ArslanMessage.timestamp.is_(None),
                  ArslanMessage.timestamp <= MemorySuppression.cutoff_at)),
     )))
@@ -34,9 +41,9 @@ async def dependencies_current(snapshot):
                 if found != set(batch):
                     return False
             if summary_ids:
-                found = set((await db.scalars(select(ArslanSummary.id).where(
+                found = set((await db.execute(select(ArslanSummary.id, ArslanSummary.updated_at).where(
                     ArslanSummary.conversation_id == conversation_id,
-                    ArslanSummary.id.in_(summary_ids)))).all())
+                    ArslanSummary.id.in_([identity for identity, _ in summary_ids])))).all())
                 if found != set(summary_ids):
                     return False
     return True

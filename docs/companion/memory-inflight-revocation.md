@@ -72,17 +72,19 @@ The follow-up diagnostic proved a separate post-deletion input gap. Working
 context and new compaction now share a deletion-aware message query: exact
 message/run sources are excluded; a conversation source excludes messages at or
 before its deletion cutoff (unknown timestamps fail closed). This conservative
-conversation cutoff covers derived replies without exact provenance. Subsequent
+conversation cutoff covers derived replies without exact provenance. Task-only
+sources resolve the saved task's conversation and use the same cutoff. Subsequent
 new messages remain eligible, and display/storage history is not removed.
 
-Live attempts also register used message and summary IDs, without bodies, in the
+Live attempts also register used message IDs and summary ID/update-time pairs, without bodies, in the
 shared task registry. Model/tool admission rechecks these dependencies, so a
 deletion after assembly cannot reuse cached history even when no personal-memory
-reference was selected. Summary removal revokes a cached summary dependency.
+reference was selected. Summary removal or replacement revokes a cached summary
+dependency, including SQLite row-ID reuse after the old summary is deleted.
 
-Six focused tests pass, including actual host HTTP serialization after deletion
+Focused tests cover actual host HTTP serialization after deletion
 and deletion during the first request with personal-memory dependencies removed
-to isolate the history fence. The preceding adjacent run passed 83 tests in
+to isolate the history fence, task-only provenance and summary row-ID reuse. The preceding adjacent run passed 83 tests in
 67.98 seconds (before adding those two host cases); the new source has not yet
-completed a frozen full regression. Task-only provenance and broad source-write
-suppression remain audit items; this is not release acceptance.
+completed a frozen full regression. Broad source-write suppression remains an
+audit item; this is not release acceptance.
