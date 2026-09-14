@@ -21,6 +21,12 @@ estimate. Errors use generic localized copy, not raw backend diagnostics.
 
 ## Evidence
 
+- Final frozen source `4595994d`: complete backend **4,704 passed, 14 skipped,
+  19 warnings in 451.57 seconds**; complete frontend **237 files / 1,829 passed
+  in 18.82 seconds**, TypeScript checking and production build (3.01 seconds)
+  passed. Isolated backend report: `/tmp/arslan-evidence-regression.LvwKlO/backend.xml`.
+  This supersedes the scoped-only limitation below; it does not certify live
+  models or desktop integration. No source edits occurred during the run.
 - Backend API, repository and context regression: 55 passed, one existing
   TestClient deprecation warning, 2.97 seconds. Includes task/cursor/auth isolation,
   actual revision lookup, deletion, missing revision and cross-owner cases.
@@ -44,6 +50,5 @@ estimate. Errors use generic localized copy, not raw backend diagnostics.
 These are source/component checks, not a real desktop task evaluation. The Mac
 was locked during this work. Packaged runtime, actual task-to-panel integration,
 real-model behavior and the broader W17 release gates remain unverified. The
-latest complete backend run predates the new API routes; the scoped regression
-must not be presented as a new full-backend result. No installation was replaced,
+complete backend result above covers the new API routes. No installation was replaced,
 no real account/model was used, and nothing was published.

@@ -5,7 +5,17 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-Latest complete backend run: clean `bec04286` (including local relevance
+Latest complete combined run: clean `4595994d` (including task-memory evidence
+review), **4,704 passed, 14 skipped, 19 warnings in 451.57 seconds**. Report:
+`/tmp/arslan-evidence-regression.LvwKlO/backend.xml`. The run used a scrubbed
+environment, isolated HOME/data and disabled live models; the aiosqlite guard
+recorded 59 closed-loop deliveries. Source remained frozen throughout. On the
+same commit, all 237 frontend files / **1,829 tests** passed in 18.82 seconds,
+TypeScript checking passed and the production build passed in 3.01 seconds.
+Existing skip/warning categories remain; this is not real-model or desktop
+acceptance. The Mac was checked again and remained locked.
+
+Previous complete backend run: clean `bec04286` (including local relevance
 filtering and task-query binding), **4,701 passed, 14 skipped, 19 warnings in
 440.60 seconds**. Report:
 `/tmp/arslan-memory-relevance-regression.sfva4B/backend.xml`. This again used a
@@ -91,7 +101,7 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `bec04286` full backend passes; unchanged frontend's full tests/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
+| Complete engineering regression | Clean `4595994d` full backend and frontend tests/typecheck/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
 | Context evidence UI | TaskPanel now exposes task-scoped receipt history and explicit version review; deleted text is withheld; six-locale component and isolated browser checks pass | Real desktop/task integration and packaged runtime verification; see `memory-evidence-ui.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
