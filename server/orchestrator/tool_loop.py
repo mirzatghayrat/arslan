@@ -1,10 +1,4 @@
-"""Bounded mini agent-loop, spawn-agnostic (Phase 1 of the capability/MCP layer).
-
-Output protocol per step (model replies with ONE of):
-  plain text                                      -> final answer
-  {"tool": "<key>", "args": {...}}                -> tool call
-  {"escalate": {"kind","need","context"}}         -> end turn, raise to caller
-"""
+"""Budget-governed native execution and shared tool/evidence safety boundaries."""
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +8,9 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
+
+from arslan.execution_budget import BudgetExceeded, governed
+from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
@@ -25,10 +22,6 @@ from server.services.llm_factory import build_adapter
 if TYPE_CHECKING:
     from server.orchestrator.tool_caller import ToolCaller
 
-# P4 tuning: 5 was too tight for real research turns (the finance-primer live run burned
-# 4 searches + 1 extract + 1 chart and hit the forced step). 8 gives long tasks headroom
-# while a runaway loop stays bounded; the budget-exhausted salvage guard still backstops.
-MAX_TOOL_CALLS = 8
 TOOL_TIMEOUT_S = 20.0
 
 # The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
@@ -37,18 +30,6 @@ TOOL_TIMEOUT_S = 20.0
 _WORKSPACE_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 
 
-_PROTOCOL = (
-    "\n\nTOOL PROTOCOL: To use a tool, reply with ONLY this JSON and nothing else — NO text "
-    "before or after it, not even '好的' / 'let me search'; the JSON object must be the ENTIRE "
-    "message: "
-    '{{"tool": "<name>", "args": {{...}}}}. Available tools:\n{tool_lines}\n'
-    "To escalate a missing capability or missing data, reply with ONLY: "
-    '{{"escalate": {{"kind": "data" or "capability", "need": "<what outcome you need>", '
-    '"context": "<why>"}}}} — describe the OUTCOME you need, never an operation to run.\n'
-    "If a tool reports it is not configured, tell the user plainly and answer with what you know.\n"
-    "Otherwise reply with your final answer as normal text.\n\n"
-    f"{GUARD_NOTE}"
-)
 
 ResolveTools = Callable[[], Awaitable[list[dict]]]
 ConfirmCommand = Callable[[str, list], Awaitable[bool]]
@@ -197,31 +178,6 @@ def _is_deferral_stub(text: str) -> bool:
     t = (text or "").strip()
     return len(t) < _DEFERRAL_MAX and _promises_action(t)
 
-
-def _is_protocol_json(text: str) -> bool:
-    """True if `text` IS a tool/escalate protocol object (a whole-message tool call/escalation),
-    rather than prose. INVARIANT: such JSON must never be surfaced to the user as an answer —
-    it means the model emitted a tool call where prose was required (typically the forced
-    'answer now' step, or a malformed/truncated tool call the parser couldn't dispatch)."""
-    s = (text or "").lstrip()
-    if not s.startswith("{"):
-        return False
-    obj = first_json_object(s) or parse_json_object(s)
-    if isinstance(obj, dict) and (obj.get("tool") or isinstance(obj.get("escalate"), dict)):
-        return True
-    # unparseable but clearly a protocol fragment (e.g. a stream cut off mid tool call)
-    head = s[:160]
-    return '"tool"' in head or '"escalate"' in head
-
-
-# Appended to the system prompt for the one text-only salvage attempt (below). The model has
-# already ignored 'answer now, text only' at least once, so this is maximally explicit.
-_SALVAGE_SYS = (
-    "\n\nYou have NO tools left and cannot call any tool. Reply with your FINAL answer as plain "
-    "text ONLY. Do NOT output JSON, a tool call, or an escalation of any kind. Use the TOOL "
-    "RESULTs already in this conversation; if the data is incomplete, say so briefly and give "
-    "your best answer with what you have."
-)
 
 
 def _fallback_message(user_content: str) -> str:
@@ -494,10 +450,16 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     run_command is special: it requires per-command user confirmation via the injected
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default)."""
-    from arslan.execution_budget import current
+    from arslan.execution_budget import BudgetExceeded, current
     budget = current()
     if budget is not None:
-        budget.tool()
+        try:
+            budget.tool()
+        except BudgetExceeded:
+            from server.services.task_service import current as current_task
+            if current_task():
+                current_task().pause_reason = "task_budget_exhausted"
+            raise
     from arslan.execution_checkpoint import save
     await save("tool_admitted")
     # Screen before emitting argument previews or recording traces. The durable
@@ -728,239 +690,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     return out
 
 
-async def run(
-    *,
-    system: str,
-    user_content: str,
-    history: list[dict],
-    emit: Callable[[dict], None],
-    on_chunk: Callable[[str], None],
-    resolve_tools: ResolveTools,
-    allow_escalation: bool = True,
-    max_tool_calls: int = MAX_TOOL_CALLS,
-    tool_timeout_s: float = TOOL_TIMEOUT_S,
-    force_tools: bool = False,
-    confirm_command: ConfirmCommand | None = None,
-    confirm_workspace_write=None,
-    confirm_schedule=None,
-) -> dict:
-    """Run the loop. Returns {"final": str|None, "escalation": dict|None, "tool_trace": list}.
-    Exactly one of final/escalation is non-None. resolve_tools() returns the currently
-    live tool descriptors [{"key","description"}] — re-awaited per call so grants can expire.
 
-    PB-3 note: the MCP consecutive-failure degrade hint is wired in run_native ONLY —
-    every production path (Arslan answer path + spawn_loop) runs run_native; this legacy
-    text-protocol loop survives for its regression tests and stays byte-identical."""
-    adapter = _get_adapter()
-    a = await adapter if hasattr(adapter, "__await__") else adapter
-
-    wired = await resolve_tools()
-    tool_lines = "\n".join(f"- {t['key']}: {t['description']}" for t in wired) or "- (none live)"
-    system = system + _PROTOCOL.format(tool_lines=tool_lines)
-
-    convo = list(history) + [{"role": "user", "content": user_content}]
-    tool_trace: list[dict] = []
-    fired: set[str] = set()          # tool keys actually executed this run
-    forced_retry: set[str] = set()   # tools we've already forced a retry for (bound the loop)
-    promise_retries = 0              # forward-promise nudges issued this run (bounded below)
-    wired_keys = {t["key"] for t in wired}
-
-    # Proactive deterministic forcing (spawn path only): when force_tools=True and the
-    # classifier says the task needs web_search, run it ourselves before the model's first
-    # turn — no model dependence. Only web_search is force-run (its call is a deterministic
-    # {"query": ...} we can build from the task); other tools still go through the model.
-    if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
-        from server.services import tool_intent
-        try:
-            intent = await tool_intent.classify(user_content, sorted(wired_keys))
-        except Exception:  # noqa: BLE001
-            intent = None
-        if intent is not None and intent.needs and intent.tool == "web_search":
-            q = (intent.query or user_content)[:400]
-            await _dispatch_tool("web_search", {"query": q},
-                                 json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
-                                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
-                                 tool_trace=tool_trace, convo=convo)
-            fired.add("web_search")
-
-    for step in range(max_tool_calls + 1):
-        forced = step == max_tool_calls
-        sys_now = system if not forced else (
-            system + "\n\nTool budget exhausted: answer now with what you have. Text only."
-        )
-        raw = ""
-        shown = 0  # chars already forwarded to on_chunk — never includes a '{'-led tool/escalate JSON
-        async for piece in a.chat_stream(sys_now, convo[-1]["content"], history=convo[:-1]):
-            raw += piece
-            if not raw.lstrip():
-                continue                           # still only whitespace; keep accumulating
-            # Structural separation (no first-char guessing): stream visible prose ONLY up to the
-            # first '{'. Any tool/escalate JSON — even when the model prepends prose like '好的我去搜'
-            # — is buffered from the '{' onward and never shown. parse_json_object (below) rescues an
-            # embedded object, so the tool still fires; the raw JSON just never reaches the user.
-            brace = raw.find("{")
-            visible_end = brace if brace != -1 else len(raw)
-            if visible_end > shown:
-                on_chunk(raw[shown:visible_end])
-                shown = visible_end
-        content = raw.strip()
-        # first_json_object extracts the FIRST balanced {...} (handles prose + multiple objects,
-        # e.g. '好我去搜{tool a}{tool b}' → dispatch tool a now, the rest on a later step).
-        parsed = first_json_object(content) or parse_json_object(content)
-
-        if not forced and isinstance(parsed, dict) and isinstance(parsed.get("escalate"), dict):
-            if not allow_escalation:
-                convo.append({"role": "assistant", "content": content})
-                convo.append({"role": "user",
-                              "content": "Escalation is not available right now; answer "
-                                         "with what you have."})
-                continue
-            esc = parsed["escalate"]
-            return {"final": None, "tool_trace": tool_trace,
-                    "escalation": {"kind": str(esc.get("kind") or "data"),
-                                   "need": str(esc.get("need") or "").strip(),
-                                   "context": str(esc.get("context") or "").strip()}}
-
-        if not forced and isinstance(parsed, dict) and parsed.get("tool"):
-            tool_key = str(parsed["tool"])
-            args = parsed.get("args") if isinstance(parsed.get("args"), dict) else {}
-            await _dispatch_tool(tool_key, args, content, resolve_tools=resolve_tools,
-                                 emit=emit, tool_timeout_s=tool_timeout_s,
-                                 tool_trace=tool_trace, convo=convo,
-                                 confirm_command=confirm_command,
-                        confirm_workspace_write=confirm_workspace_write,
-                        confirm_schedule=confirm_schedule)
-            fired.add(tool_key)
-            continue
-
-        # A complete HTML document IN the reply IS the deliverable (HTML-first decks/
-        # reports). Any "you claimed but didn't do it" retry would make the model re-answer
-        # and the shorter second turn would REPLACE the doc as the persisted final — live
-        # incident: a 7-slide HTML deck streamed fine, then a guard reprompt wiped it from
-        # history. With the doc present, claims about it are true: skip all reactive guards.
-        has_html_doc = "<!doctype html" in content.lower() and "</html>" in content.lower()
-
-        # Reactive hallucination guard: the model claims a tool result it never produced this run,
-        # or draws a chart as Markdown code instead of calling render_chart.
-        if not forced and not has_html_doc:
-            claimed = None
-            reprompt = None
-            chart_free = ("render_chart" in wired_keys and "render_chart" not in fired
-                          and "render_chart" not in forced_retry)
-            if _claims_chart(content) and chart_free:
-                claimed = "render_chart"
-                reprompt = (
-                    "You claimed to have produced a chart, but you did NOT actually call render_chart "
-                    "this turn — so there is no chart. Emit ONLY the render_chart tool JSON now, or "
-                    "answer honestly WITHOUT claiming you made a chart.")
-            elif _draws_chart_fence(content) and chart_free:
-                claimed = "render_chart"
-                reprompt = (
-                    "You drew a chart as a Markdown code block (```mermaid xychart/pie or ```chart). "
-                    "The user CANNOT see that as a real chart — it shows as raw code. Emit ONLY the "
-                    "render_chart tool JSON now with this SAME data (args: {type, x:[labels], "
-                    "series:[{name, values:[numbers]}]}); do NOT draw charts in markdown/mermaid.")
-            elif (_claims_deck(content) and "render_deck" in wired_keys
-                    and "render_deck" not in fired and "render_deck" not in forced_retry):
-                claimed = "render_deck"
-                reprompt = (
-                    "You claimed the PPTX/deck was generated, but you did NOT actually call "
-                    "render_deck this turn — so there is NO file and nothing to download. Emit ONLY "
-                    "the render_deck tool JSON now (slides=[{layout, ...}]), or answer honestly "
-                    "WITHOUT claiming a deck was produced.")
-            elif _claims_deck(content) and "render_deck" not in wired_keys \
-                    and "deck_honesty" not in forced_retry:
-                # No deck tool at all — the claim is a pure fabrication. Force honesty
-                # ("deck_honesty" is a pseudo-key that just bounds this retry to once).
-                claimed = "deck_honesty"
-                reprompt = (
-                    "You claimed a PPTX/deck was produced, but you DO NOT have a deck tool — no "
-                    "file exists and none can be made here. Answer honestly: say you cannot "
-                    "produce a PPT file yourself, deliver the content as structured text, and "
-                    "suggest asking an agent equipped with the Deck/PPTX capability. Respond in "
-                    "the user's language. NEVER claim a file was generated.")
-            elif (_claims_search(content) and "web_search" in wired_keys
-                    and "web_search" not in fired and "web_search" not in forced_retry):
-                claimed = "web_search"
-                reprompt = (
-                    "You claimed to have searched, but you did NOT actually call web_search this turn "
-                    "— so there is no result. Emit ONLY the web_search tool JSON now, or answer "
-                    "honestly WITHOUT claiming you used a tool.")
-            if claimed:
-                forced_retry.add(claimed)
-                convo.append({"role": "assistant", "content": content})
-                convo.append({"role": "user", "content": reprompt})
-                continue
-
-        # Forward-promise guard: the model ended its turn PROMISING a tool action ("数据正在路上",
-        # "马上为您绘制", "现在让我获取…", "STEP 2: 调取…", "let me search") but emitted NO tool call —
-        # so nothing ran and the user is left waiting on a promise. Only nag when a wired tool is still
-        # unused (pure-chat spawns are never pushed to use tools), and at most twice per run (a single
-        # nudge isn't enough for a model that narrates step-by-step before acting).
-        if (not forced and not has_html_doc and promise_retries < 2
-                and (wired_keys - fired) and _promises_action(content)):
-            promise_retries += 1
-            convo.append({"role": "assistant", "content": content})
-            convo.append({"role": "user", "content":
-                "You ended your turn PROMISING to do something ('正在路上' / '马上为您…' / 'STEP N: 调用…' "
-                "/ 'let me search') but emitted NO tool call — so nothing actually ran and the user is left "
-                "waiting on a promise. Do it NOW: emit ONLY the tool JSON to run it this turn, OR give your "
-                "COMPLETE final answer with no promise of future action."})
-            continue
-
-        # INVARIANT (root-cause guard): the model may end its turn — especially the forced
-        # 'answer now' step — emitting a tool/escalate JSON instead of prose (deepseek does this
-        # after a web_extract timeout). The stream loop above withheld everything from the first
-        # '{', so nothing has been shown yet. NEVER surface raw protocol JSON as the answer: make
-        # ONE text-only salvage attempt, then fall back to an honest message. Covers web_extract
-        # and every other tool, on any step, incl. malformed/truncated tool calls the parser
-        # couldn't dispatch. (Prose-then-JSON never trips this: _is_protocol_json needs the
-        # message to START with the object, and such prose already streamed via `shown`.)
-        if _is_protocol_json(content):
-            salvage = ""
-            async for piece in a.chat_stream(sys_now + _SALVAGE_SYS, convo[-1]["content"],
-                                             history=convo[:-1]):
-                salvage += piece
-            salvage = salvage.strip()
-            final_text = (salvage if salvage and not _is_protocol_json(salvage)
-                          else _fallback_with_digest(user_content, tool_trace))
-            on_chunk(final_text)
-            return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
-
-        # plain text = final answer (parsed was not a dispatchable tool/escalate)
-        if isinstance(parsed, dict):
-            # The model emitted a real JSON object that we did NOT dispatch (a non-tool dict, or
-            # extra/garbled tool blobs after the first). It is protocol output, not prose — drop
-            # it from BOTH display and the persisted final. The answer is the prose before it
-            # (already streamed up to the first '{').
-            brace = raw.find("{")
-            final_text = raw[:brace].strip() if brace != -1 else content
-            if not final_text:
-                # nothing but a JSON object and no prose → show it rather than an empty reply
-                final_text = content
-                if shown < len(raw):
-                    on_chunk(raw[shown:])
-        else:
-            # no valid JSON object: any '{' was ordinary prose → flush the unshown remainder
-            if shown < len(raw):
-                on_chunk(raw[shown:])
-            final_text = content
-        return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
-
-    raise AssertionError("unreachable")  # forced branch always returns
-
-
-# ---------------------------------------------------------------------------
-# Native tool-calling loop (run_native)
-# ---------------------------------------------------------------------------
-# Root-cause fix (spec: 2026-07-05-arslan-native-toolcall-loop-design.md): the old run()
-# drives the model over a hand-rolled text protocol ("reply with ONLY JSON") and regex-parses
-# the reply. DeepSeek prepends narration ("让我继续查…") which (1) leaks into the message and
-# (2) gets mistaken for the final answer, ending the turn empty. Native tool-calling returns
-# `content` (narration) and `tool_calls` (structured action) as SEPARATE fields on LLMResponse,
-# so narration can NEVER be confused with the answer.
-#
-# This lives ALONGSIDE run() — run() and its 38 tests are untouched.
+# Native tool-calling is the sole production execution loop.
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
@@ -1089,12 +820,6 @@ _NATIVE_EFFICIENCY = (
     "line — never keep searching in circles."
 )
 
-# Framework-level convergence cap: after this many web_searches in one turn, further searches are
-# refused and the model is pushed to extract a source or answer. Deterministic — it makes even a
-# fumble-prone model stop the snippet spiral. (web_extract does not count; extracting IS the goal.)
-_SEARCH_CAP = 3
-
-
 _PERMISSIVE_PARAMS = {"type": "object", "properties": {}, "additionalProperties": True}
 
 
@@ -1184,6 +909,20 @@ def _clean_findings(tool_trace: list, *, limit: int = 4000) -> str:
     return "\n".join(lines)[:limit]
 
 
+def _unverified_claim(text: str, tool_trace: list, wired_keys: set[str]) -> str | None:
+    """Claims are not receipts. Check this before displaying a proposed answer."""
+    if "<!doctype html" in text.lower() and "</html>" in text.lower():
+        return None
+    succeeded = {step.get("tool") for step in tool_trace if (step.get("result") or {}).get("ok")}
+    if _claims_deck(text) and "render_deck" not in succeeded:
+        return "render_deck"
+    if (_claims_chart(text) or (_draws_chart_fence(text) and "render_chart" in wired_keys)) and "render_chart" not in succeeded:
+        return "render_chart"
+    if _claims_search(text) and "web_search" not in succeeded:
+        return "web_search"
+    return None
+
+
 async def _synthesize_from_findings(a, system: str, user_content: str, tool_trace: list) -> str:
     """Forced-step / salvage synthesis. Instead of asking the model to answer from the messy
     tool-loop convo (which DeepSeek resists — it keeps wanting to search), hand it its OWN gathered
@@ -1214,7 +953,12 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         s = (resp.content or "").strip()
         if s and not _embeds_protocol(s) and not _is_deferral_stub(s):
             return s
-    except Exception:  # noqa: BLE001
+    except BudgetExceeded:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        from server.services.task_repository import TaskError
+        if isinstance(exc, TaskError):
+            raise
         pass
     return _fallback_with_digest(user_content, tool_trace)
 
@@ -1223,19 +967,23 @@ _CHAT_TIMEOUT_S = 75.0  # per model call — DeepSeek's API can be slow and occa
 
 
 async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
-    """One retry on a stalled/failed model call. DeepSeek's API occasionally hangs (a whole turn
-    then produces nothing); a single retry recovers most transient stalls. Framework-general
-    reliability — any BYOK provider can be flaky, so the loop shouldn't dead-hang on one bad call."""
+    """One bounded retry for known transient transport failures, never for denial."""
     last: Exception | None = None
     from arslan.execution_budget import BudgetExceeded
-    for _ in range(2):
+    for attempt in range(2):
         try:
             return await asyncio.wait_for(
                 a.chat(system, user, history=history, tools=tools), timeout=_CHAT_TIMEOUT_S)
         except BudgetExceeded:
+            from server.services.task_service import current as current_task
+            if current_task():
+                current_task().pause_reason = "task_budget_exhausted"
             raise
         except Exception as exc:  # noqa: BLE001
             last = exc
+            if exception_kind(exc) != FailureKind.RETRYABLE or attempt:
+                raise
+            await asyncio.sleep(0.2)
     raise last if last else RuntimeError("chat failed")
 
 
@@ -1253,9 +1001,14 @@ async def _salvage_plain(a, system: str, user_content: str) -> str | None:
     try:
         resp = await _chat_retry(a, system + _PLAIN_ANSWER_SYS, user_content, history=[], tools=None)
         s = (resp.content or "").strip()
-        if s and not _embeds_protocol(s):
+        if s and not _embeds_protocol(s) and not _is_deferral_stub(s) and not getattr(resp, "tool_calls", None):
             return s
-    except Exception:  # noqa: BLE001
+    except BudgetExceeded:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        from server.services.task_repository import TaskError
+        if isinstance(exc, TaskError):
+            raise
         pass
     return None
 
@@ -1291,6 +1044,7 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
             await asyncio.sleep(delay)
 
 
+@governed
 async def run_native(
     *,
     system: str,
@@ -1300,7 +1054,7 @@ async def run_native(
     on_chunk: Callable[[str], None],
     resolve_tools: ResolveTools,
     allow_escalation: bool = True,
-    max_tool_calls: int = MAX_TOOL_CALLS,
+    max_tool_calls: int | None = None,
     tool_timeout_s: float = TOOL_TIMEOUT_S,
     force_tools: bool = False,
     confirm_command: ConfirmCommand | None = None,
@@ -1310,36 +1064,63 @@ async def run_native(
     log_events: bool = True,
     caller: ToolCaller | None = None,
     has_images: bool = False,
+    adapter_override=None,
+    stream_without_tools: bool = False,
 ) -> dict:
-    """Native tool-calling twin of run(). Same signature, same return shape
+    """Canonical native tool loop. Same signature and core return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
 
     Each step calls adapter.chat(..., tools=schemas) → LLMResponse{content, tool_calls}:
-      - tool_calls non-empty → dispatch each (gated, exactly like run()); content is narration
+      - tool_calls non-empty → dispatch each through the shared gate; content is narration
         ONLY, never surfaced as the answer; continue.
       - escalate tool call → return {"escalation": {...}} (when allow_escalation).
       - no tool_calls → content IS the final answer; stream it and return.
-      - forced step (step == max_tool_calls) → call with tools=None so the model MUST answer in
-        prose from accumulated tool results — guaranteeing a non-empty synthesized answer.
+      - no progress or no remaining tools → one text-only synthesis if request budget permits.
+
+    Production calls use the shared task budget, with no fixed eight-round cap.
+    max_tool_calls is an optional explicit compatibility ceiling, never a default.
     """
     # The vision slot needs to know whether this turn carries an image, and this
     # signature is the only place that fact is available — hence a parameter rather
     # than something guessed further down.
-    a = await _adapter_for_turn(has_images=has_images)
+    a = adapter_override if adapter_override is not None else await _adapter_for_turn(has_images=has_images)
+    from arslan.execution_budget import current as current_budget
+    from server.services.task_service import current as current_task
+    budget = current_budget()
+    runtime = current_task()
+    policy = ProgressPolicy(seen=set(runtime.progress.loop_fingerprints) if runtime else set())
+    request_ceiling = max(0, budget.limits.model_requests - budget.model_requests)
+    stop_reason = None
+    history_compacted = False
+    if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 0):
+        raise ValueError("max_tool_calls must be a non-negative explicit ceiling")
 
     wired = await resolve_tools()
     wired_keys = {t["key"] for t in wired}
+    if stream_without_tools:
+        if wired or allow_escalation:
+            raise ValueError("plain streaming requires an explicitly empty tool set")
+        conversation, compacted = bounded_history(list(history) + [{"role": "user", "content": user_content}])
+        pieces = []
+        # Partial streams are never replayed automatically. Provider admission,
+        # cancellation and the enclosing task-wide timeout are the same boundary.
+        async with asyncio.timeout(min(_CHAT_TIMEOUT_S, budget.remaining_seconds())):
+            async for piece in a.chat_stream(system + "\n\n" + GUARD_NOTE,
+                                             conversation[-1]["content"], history=conversation[:-1]):
+                pieces.append(piece)
+                on_chunk(piece)
+        return {"final": "".join(pieces), "escalation": None, "tool_trace": [],
+                "stop_reason": None, "history_compacted": compacted}
     schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
     # _NATIVE_EFFICIENCY = research discipline; GUARD_NOTE = injection defense (wrapped tool/web
     # content is untrusted DATA, not instructions) — same guard the old loop carried.
     system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD_NOTE
 
-    # convo mirrors run()'s message list: history + tool result turns are appended via
+    # History and tool result turns are appended via
     # _record_tool_result (assistant turn + framed "TOOL RESULT for X" user turn), so tool
     # outputs re-enter context IDENTICALLY to the old loop.
     convo: list[dict] = list(history) + [{"role": "user", "content": user_content}]
     tool_trace: list[dict] = []
-    searches_done = 0  # web_search count this turn — capped at _SEARCH_CAP to force convergence
     # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
     # run_native invocation — one invocation = one turn — so a new turn starts at zero by
     # construction; nothing persists or is shared. mcp_hint_logged bounds the observability
@@ -1354,7 +1135,7 @@ async def run_native(
     # it per tool call and the cap would never bind.
     fetch_budget: dict[str, int] = {}
 
-    # force_tools (spawn proactive web_search): deterministic pre-run, mirrors run().
+    # Deterministic pre-search uses the same admission and progress boundaries.
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
         from server.services import tool_intent
         try:
@@ -1363,22 +1144,38 @@ async def run_native(
             intent = None
         if intent is not None and intent.needs and intent.tool == "web_search":
             q = (intent.query or user_content)[:400]
-            await _dispatch_tool(
+            result = await _dispatch_tool(
                 "web_search", {"query": q},
                 json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
                 resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
                 tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
-            confirm_workspace_write=confirm_workspace_write,
-            confirm_schedule=confirm_schedule,
+                confirm_workspace_write=confirm_workspace_write,
+                confirm_schedule=confirm_schedule,
                 mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
                 conversation_id=conversation_id, log_events=log_events,
                 fetch_budget=fetch_budget, caller=caller)
-            searches_done += 1
+            policy.observe("web_search", {"query": q}, result)
 
-    for step in range(max_tool_calls + 1):
-        forced = step == max_tool_calls
+    for step in range(request_ceiling):
+        budget.check()
+        if budget.model_requests >= budget.limits.model_requests:
+            if runtime:
+                runtime.pause_reason = "task_budget_exhausted"
+            budget.stop("model_requests")
+        forced = (policy.stopped or budget.tool_calls >= budget.limits.tool_calls or
+                  (max_tool_calls is not None and step >= max_tool_calls))
+        if forced:
+            stop_reason = "task_no_progress" if policy.stopped else "task_budget_exhausted"
+            if runtime:
+                runtime.pause_reason = stop_reason
         sys_now = system if not forced else (
-            system + "\n\nTool budget exhausted: answer now with what you have. Text only.")
+            system + ("\n\nRepeated actions made no progress. Explain what was verified and what is blocked. Text only."
+                      if policy.stopped else "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
+        convo, compacted = bounded_history(convo)
+        history_compacted = history_compacted or compacted
+        if history_compacted:
+            sys_now += ("\nEarlier conversation turns were compacted. Saved task progress and owned outputs "
+                        "remain available through task_progress. Do not repeat completed effects.")
         # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
         # prose from the accumulated TOOL RESULTs — never an empty turn.
         resp = await _chat_retry(a, sys_now, convo[-1]["content"],
@@ -1400,8 +1197,13 @@ async def run_native(
                             "escalation": {"kind": str(args.get("kind") or "data"),
                                            "need": str(args.get("need") or "").strip(),
                                            "context": str(args.get("context") or "").strip()}}
-                # assistant_content is a JSON string of the call so trace/convo read like run().
+                # A neutral trace record, not a prompt-level execution protocol.
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
+                if policy.stopped:
+                    _record_tool_result(name, {}, {"ok": False, "external": False,
+                        "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
+                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
+                    continue
                 # PA-3 terminal tool: a VALID ask_user_choice call ends the turn — the
                 # caller emits the clarify_options card and waits for the user's click.
                 # Gated on the RESOLVED toolset so loops that don't wire it (spawns)
@@ -1409,24 +1211,16 @@ async def run_native(
                 if name == "ask_user_choice" and "ask_user_choice" in wired_keys:
                     clarify, err = _parse_clarify_args(args)
                     if err is not None:
-                        _record_tool_result(
+                        result = _record_tool_result(
                             name, args, {"ok": False, "external": False, "error": err},
                             emit, tool_trace, assistant_content, convo)
+                        policy.observe(name, args, result)
                         continue
+                    if runtime:
+                        runtime.pause_reason = "task_input_required"
                     return {"final": None, "escalation": None, "clarify": clarify,
                             "tool_trace": tool_trace}
-                # Convergence cap: after _SEARCH_CAP searches, refuse more web_search and push the
-                # model to extract a source or answer — deterministically ends the snippet spiral.
-                if name == "web_search":
-                    if searches_done >= _SEARCH_CAP:
-                        nudge = {"ok": False, "external": False,
-                                 "error": (f"search limit reached ({_SEARCH_CAP} searches). Do NOT "
-                                           "search again — web_extract the most authoritative source "
-                                           "you already found, or answer now with what you have.")}
-                        _record_tool_result(name, args, nudge, emit, tool_trace, assistant_content, convo)
-                        continue
-                    searches_done += 1
-                await _dispatch_tool(
+                result = await _dispatch_tool(
                     name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
                     confirm_command=confirm_command,
@@ -1434,6 +1228,11 @@ async def run_native(
                     confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
                     log_events=log_events, fetch_budget=fetch_budget, caller=caller)
+                policy.observe(name, args, result)
+                if runtime:
+                    runtime.progress = runtime.progress.model_copy(update={
+                        "loop_fingerprints": tuple(sorted(policy.seen))[-256:]})
+                    await runtime.checkpoint("loop_progress")
             if provider_content:
                 # Native Gemini needs the original model parts (including opaque
                 # signatures) followed by functionResponse parts, not a textified
@@ -1461,8 +1260,20 @@ async def run_native(
         # (esp. on the forced step) may ignore "answer now" and instead narrate or write a TEXT
         # tool-call in its content. Never surface that. Salvage once with a hard no-tools prompt,
         # then synthesize from the accumulated TOOL RESULTs so we NEVER end empty or with a fake
-        # tool-call. (Ports run()'s salvage; the native content field made the leak rarer, not gone.)
-        final_text = (resp.content or "").strip()
+        # tool-call. Native content separation alone does not prevent malformed output.
+        # Even a provider ignoring tools=None still marks narration with tool_calls.
+        # Never turn that narration into a final answer on a forced synthesis step.
+        final_text = "" if tool_calls else (resp.content or "").strip()
+        claimed = _unverified_claim(final_text, tool_trace, wired_keys)
+        deferred = _is_deferral_stub(final_text)
+        if not forced and (claimed or (deferred and wired_keys)):
+            policy.observe("answer_validation", {}, {"ok": False, "code": "unverified_answer"})
+            convo.extend([{"role": "assistant", "content": final_text}, {"role": "user", "content":
+                (f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
+                 "The proposed answer only promises future action. ") +
+                "Use an available native tool if needed, or give an honest answer stating the limitation. "
+                "Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text."}])
+            continue
         # A clean answer is prose. Reject content that is / embeds a tool-call or escalate object
         # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or a
         # SHORT deferral stub that promises action without delivering. A long, substantive answer is
@@ -1474,14 +1285,19 @@ async def run_native(
         #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
         #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
         #     lie. Salvage a direct plain-text answer instead.
-        if (not final_text) or _embeds_protocol(final_text) or _is_deferral_stub(final_text):
+        if (not final_text) or _embeds_protocol(final_text) or deferred or claimed:
             if tool_trace:
                 final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
             else:
                 final_text = (await _salvage_plain(a, system, user_content)
-                              or final_text or _chat_miss_message(user_content))
+                              or _chat_miss_message(user_content))
+            if _unverified_claim(final_text, tool_trace, wired_keys):
+                final_text = _fallback_with_digest(user_content, tool_trace) if tool_trace else _chat_miss_message(user_content)
         if final_text:
             await _reveal_streamed(final_text, on_chunk)
-        return {"final": final_text, "escalation": None, "tool_trace": tool_trace}
+        return {"final": final_text, "escalation": None, "tool_trace": tool_trace,
+                "stop_reason": stop_reason, "history_compacted": history_compacted}
 
-    raise AssertionError("unreachable")  # forced branch always returns
+    if runtime:
+        runtime.pause_reason = "task_budget_exhausted"
+    budget.stop("model_requests")

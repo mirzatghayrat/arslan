@@ -7,6 +7,8 @@ from collections.abc import Callable
 
 from sqlalchemy import select
 
+from arslan.execution_budget import governed
+
 from server.db import session as db_session
 from server.db.models import ChatMessage, MCPServer, Spawn
 from server.orchestrator import memory, spawn_loop
@@ -458,11 +460,14 @@ async def _run_model(
     # where a tool-less spawn could fabricate "已生成PPT并交付" / "正在生成中,稍等" unchecked.
     adapter = _get_adapter()
     a = await adapter if hasattr(adapter, "__await__") else adapter
-    full = ""
-    async for piece in a.chat_stream(system, user_content, history=history):
-        full += piece
-        if on_chunk is not None:
-            on_chunk(piece)
+    async def no_tools():
+        return []
+    from server.orchestrator import tool_loop
+    out = await tool_loop.run_native(system=system, user_content=user_content, history=history,
+        emit=emit or (lambda event: None), on_chunk=on_chunk or (lambda text: None),
+        resolve_tools=no_tools, allow_escalation=False, adapter_override=a, stream_without_tools=True,
+        conversation_id=conversation_id, log_events=not replay)
+    full = out["final"] or ""
     full = await _apply_zero_tool_honesty(full, spawn.name, conversation_id, on_chunk,
                                           log_events=not replay)
     return full, None
@@ -577,6 +582,7 @@ def with_images(brief: str, images: list[dict] | None) -> str | list[dict]:
     return blocks
 
 
+@governed
 @scoped_worker
 async def dispatch(
     conversation_id: str,
@@ -627,7 +633,7 @@ async def dispatch(
     Design: current_turn and wired are computed once here and shared between the
     equipment block builder and the spawn_loop call, avoiding duplicate DB queries.
     Equipment is fetched first (cheap); wired is skipped entirely for unequipped
-    spawns (zero-tool path uses legacy chat_stream, byte-identical to pre-loop).
+    spawns (zero-tool streaming shares the same budget-governed runtime).
     """
     spawn = await _load_spawn(spawn_id)
     if spawn is None:

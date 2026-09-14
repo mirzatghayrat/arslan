@@ -87,7 +87,7 @@ async def test_claimed_pptx_without_render_deck_forces_retry(monkeypatch):
         "抱歉，刚才的说法不准确——文件并不存在。需要的话请再确认一次。",
     ])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="出个deck", history=[],
+    out = await tool_loop.run_native(system="S", user_content="出个deck", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_deck"))
     # the false claim was intercepted; the honest correction is what survives
@@ -114,7 +114,7 @@ async def test_claimed_deck_without_tool_forces_honesty(monkeypatch):
         "抱歉，我并没有真的产出文件——以上只是文字大纲。此类文件需要具备 Deck 能力的分身。",
     ])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="出个PPT", history=[],
+    out = await tool_loop.run_native(system="S", user_content="出个PPT", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))   # no render_deck wired
     assert "并没有真的产出文件" in out["final"]
@@ -129,7 +129,7 @@ async def test_html_doc_reply_is_never_reprompted(monkeypatch):
            "body{margin:0}</style></head><body><section>slide</section></body></html>")
     adapter = _ScriptedAdapter([doc, "SECOND TURN MUST NEVER HAPPEN"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="做个演示", history=[],
+    out = await tool_loop.run_native(system="S", user_content="做个演示", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_deck"))   # deck wired, unfired
     assert "<!DOCTYPE html" in out["final"]

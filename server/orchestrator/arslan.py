@@ -46,7 +46,7 @@ from server.services import (
     staffing_gather,
 )
 from server.services.llm_factory import build_adapter
-from server.services.task_context import scoped_turn
+from server.services.task_context import scoped_dispatch, scoped_turn
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +56,8 @@ EventSink = Callable[[dict], None]
 # Treated as "slow" by speed_weight in evolution leveling.
 _MISSING_ELAPSED_SECONDS = 999.0
 
-# Auto-continue budget: how many extra rounds Arslan may automatically run per user
-# turn when a round ends with a 【阶段性发现】/[Findings so far] digest (tool budget
-# exhausted but evidence carried forward). Threaded as a per-dispatch parameter —
-# NEVER module-global mutable state (concurrent conversations must not share it).
-MAX_AUTO_CONTINUES = 2
-
-# Markers written by tool_loop._fallback_with_digest. Their presence means the round
-# made real progress but ran out of tool budget — safe (and worth it) to auto-continue.
-# The bare no-evidence fallback carries NO marker and must never auto-continue
-# (zero progress → looping would just burn tokens).
+# Historical digest labels remain recognizable when reading old results. They
+# are never a control signal or authorization to launch another execution.
 _DIGEST_MARKERS = ("【阶段性发现】", "[Findings so far]")
 
 
@@ -2060,6 +2052,7 @@ async def _handle_escalation(  # noqa: ANN001
 
 
 @governed
+@scoped_dispatch
 async def _dispatch_spawn(  # noqa: ANN001
     conversation_id,
     spawn_id,
@@ -2073,20 +2066,12 @@ async def _dispatch_spawn(  # noqa: ANN001
     route_ms: int | None = None,
     attached_context: str | None = None, images: list[dict] | None = None,
     announce: bool = True,
-    _auto_continues: int = MAX_AUTO_CONTINUES,
-    _continuation: bool = False,
 ) -> None:
-    """Run one spawn turn, recording it as a Run for replay + evaluation.
+    """Run one expert attempt under the shared native execution policy.
 
-    _auto_continues: remaining automatic re-dispatches for THIS user turn (threaded
-    through the recursion — no shared/module state). When a round ends with a
-    findings digest and budget remains, the same spawn is re-dispatched on the same
-    direction; the digest message is already in its history, so the next round
-    builds on the evidence instead of the user having to type 继续.
-
-    _continuation: True only on those auto-continue re-dispatches (E1). The recorder
-    marks the Run so the judge scores completion against this round's incremental
-    goal — a middle round judged against the FULL request skews completion down."""
+    Model-authored output and historical digest labels never trigger recursion.
+    The task runtime owns progress, remaining budget and explicit resumption.
+    """
     spawn_name = await dispatcher.get_spawn_name(spawn_id)
     if spawn_name is None:
         # The spawn no longer exists (deleted mid-conversation, or a stale id from any
@@ -2100,7 +2085,6 @@ async def _dispatch_spawn(  # noqa: ANN001
     recorder = await run_recorder.RunRecorder.start(
         conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
         user_message=user_message or task_brief, route_ms=route_ms,
-        continuation=_continuation,
         # T11: recorded so build_corpus can keep this run out of the exam. An
         # image lives for one turn (③A), so a replay arm could never see it.
         has_images=bool(images),
@@ -2121,12 +2105,12 @@ async def _dispatch_spawn(  # noqa: ANN001
             # bare system line, not Arslan speaking.)
             newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
             # Routing brief: restate the need + @-mention each involved spawn (grounded in the
-            # real roster). Built only on the FIRST round of a user turn — auto-continue rounds
-            # re-emit the routing frame for the UI pulse but must not repeat the announcement.
+            # real roster). A dispatch produces one announcement; loop continuation is
+            # owned by the task runtime, never inferred from output text.
             # `announce=False` when the brief was ALREADY shown before an invite card (accepted
             # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
             announcement = None
-            if announce and _auto_continues == MAX_AUTO_CONTINUES:
+            if announce:
                 announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
             tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
                  **({"announcement": announcement} if announcement else {})})
@@ -2145,9 +2129,8 @@ async def _dispatch_spawn(  # noqa: ANN001
         # _dispatch_spawn, so opening the scope here means route_to/redo/refine/confirm_direction/
         # roster_invite-accept/confirm_create (which call dispatch_spawn/dispatch_routed/
         # confirm_and_execute WITHOUT a turn-level scope) all capture their own model/provider/
-        # tokens automatically. Per-Run scoping ALSO kills the turn-cumulative double-count: an
-        # auto-continue re-dispatch (the recursive call below, OUTSIDE this block) opens its own
-        # fresh scope, so each Run's finalize reads only its own usage — never the prior round's.
+        # tokens automatically. Per-Run scoping prevents cumulative double-counting:
+        # each explicit dispatch reads only its own usage, never a prior Run's.
         # An escalation re-dispatch stays INSIDE this same block, so its usage folds into the SAME
         # Run, which is correct (one escalation resolution = one Run).
         # run_trace.collecting() spans the dispatch call (and any escalation re-dispatch) AND
@@ -2265,31 +2248,6 @@ async def _dispatch_spawn(  # noqa: ANN001
         tee({"type": "stream_end", "message_id": out["summary_message_id"],
              "usage": usage_frame,
              **({"artifact": out["artifact"]} if out.get("artifact") else {})})
-
-        # Auto-continue: a round that ended with a findings digest made real progress but ran
-        # out of tool budget — never park it on "回复'继续'" while budget remains. The digest
-        # message was already emitted above (the user sees the progress); re-dispatch the SAME
-        # spawn on the SAME direction so the next round builds on the carried evidence. The
-        # bare no-evidence fallback has no marker and never re-dispatches. After the final
-        # auto-continue, a still-digest-ending message is kept as-is (its 回复'继续' tail is
-        # then honest — the user can continue manually).
-        # (Recursion stays INSIDE _run_turn: each recursive _dispatch_spawn registers its
-        # OWN run+task, so every round is cancellable under its own run_id. Cancel routing:
-        # a PARENT-run_id cancel delegates into the child task and PROPAGATES back out at
-        # the child's awaiter — cancelling()>0 on THIS task — so the parent does NOT
-        # resume; only a direct CHILD-run_id cancel is swallowed by the child's awaiter,
-        # and then the parent _run_turn resumes normally right here. LOAD-BEARING: the
-        # recursion must remain _run_turn's LAST statement — any statement placed after
-        # it would run in that post-child-cancel state.)
-        if _auto_continues > 0 and _has_findings_digest(out.get("full_output") or ""):
-            emit({"type": "auto_continue", "spawn_id": spawn_id, "spawn_name": spawn_name,
-                  "remaining": _auto_continues - 1})
-            await _dispatch_spawn(
-                conversation_id, spawn_id, task_brief, emit,
-                mode=mode, user_message=user_message, attached_context=attached_context, images=images,
-                _auto_continues=_auto_continues - 1,
-                _continuation=True,
-            )
 
     # S3-M1: the turn runs as its OWN task so POST /runs/{id}/cancel can target it via
     # run_registry. A user cancel is already fully handled inside _run_turn

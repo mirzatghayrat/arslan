@@ -116,3 +116,46 @@ def scoped_worker(function):
                                         source_run_id=kwargs["run_id"]))
             return await function(*args, **kwargs)
     return wrapped
+
+
+async def execute_entry(conversation_id, instruction, emit, body, *, driver=None,
+                        task_id=None, headless=False):
+    """Bind non-chat entry points without deriving new consent from saved text."""
+    from server.services import task_service
+    if task_service.current() is not None or not await is_active():
+        return await body(emit)
+    ctx = pc.current() or await load(conversation_id, user_message="" if headless else instruction)
+    if ctx.temporary:
+        from arslan.companion.memory import MemoryError
+        raise MemoryError("temporary_tools_unavailable")
+    if task_id:
+        ctx = replace(ctx, task_id=task_id)
+    if headless:
+        ctx = replace(ctx, explicit_save_digest=None, explicit_save_ref=None, allow_global_save=False)
+    async def function(_conversation, _instruction, sink):
+        return await body(sink)
+    with pc.bind(ctx):
+        if task_id:
+            from server.db.models import CompanionTask
+            async with db_session.AsyncSessionLocal() as db:
+                existing = await db.get(CompanionTask, task_id)
+            if existing is not None:
+                return await task_service.resume_entry(task_id, existing.version, conversation_id,
+                    instruction, emit, body, ctx=ctx, driver=driver)
+        return await task_service.run_turn(function, conversation_id, instruction, emit, _driver=driver)
+
+
+def scoped_dispatch(function):
+    @wraps(function)
+    async def wrapped(conversation_id, spawn_id, task_brief, emit, *args, **kwargs):
+        async def body(sink):
+            return await function(conversation_id, spawn_id, task_brief, sink, *args, **kwargs)
+        instruction = kwargs.get("user_message") or task_brief
+        refinement = kwargs.get("instruction")
+        if refinement and refinement != instruction:
+            instruction = f"{instruction}\n\nRequested refinement:\n{refinement}"
+        if task_brief and task_brief not in instruction:
+            instruction = f"Task brief:\n{task_brief}\n\nUser request:\n{instruction}"
+        return await execute_entry(conversation_id, instruction, emit, body,
+                                   driver={"kind": "expert", "id": spawn_id})
+    return wrapped

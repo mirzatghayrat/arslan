@@ -56,6 +56,10 @@ external writes, real credentials, installed-app replacement or publishing.
   run. The affected fetch-budget and task-service tests passed on stable files:
   21 passed, including the new pre-preview/trace credential-redaction regression.
   Subsequent full runs must hold source files unchanged until completion.
+- Final immutable-checkpoint run (`8fc967af`, detached temporary checkout):
+  **4,261 passed, 14 skipped**, 19 warnings, 357.79 seconds. The imported app/module
+  paths were checked to point to that frozen checkout. Log and JUnit evidence are
+  `w07-frozen.log` / `w07-frozen.xml` in the isolated test output directory.
 - Real browser QA over the built frontend and real local API verified: answer →
   pending human review; checkbox required for acceptance; actual Run replay;
   persisted task selection after reload; uncertain effect blocks resume; neither

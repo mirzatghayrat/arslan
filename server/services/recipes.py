@@ -100,11 +100,44 @@ async def mark_interrupted() -> int:
 
 @governed
 async def execute(execution_id: int) -> None:
+    from server.services import task_context, task_service
+    from server.services.task_repository import TaskError
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(RecipeExecution, execution_id)
+        if row is None:
+            raise TaskError("recipe_execution_missing")
+        instruction, version_id = row.input, row.recipe_id
+    async def body(sink):
+        result = await _execute_body(execution_id)
+        async with db_session.AsyncSessionLocal() as db:
+            row = await db.get(RecipeExecution, execution_id)
+            if row.status == "waiting_approval" and task_service.current():
+                task_service.current().pause_reason = "task_input_required"
+        return result
+    try:
+        return await task_context.execute_entry(f"recipe-{execution_id}", instruction,
+            run_registry.make_emit(f"recipe-{execution_id}"), body,
+            driver={"kind": "recipe", "id": execution_id, "version_id": version_id},
+            task_id=f"recipe-task:{execution_id}", headless=True)
+    except TaskError as exc:
+        async with db_session.AsyncSessionLocal() as db:
+            row = await db.get(RecipeExecution, execution_id)
+            if row is not None and row.status != "completed":
+                row.status, row.error = "interrupted", exc.code
+                await db.commit()
+        raise
+
+
+async def _execute_body(execution_id: int) -> None:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(RecipeExecution, execution_id)
         recipe = await db.get(RecipeVersion, row.recipe_id)
         spec, input_text = Spec.model_validate(recipe.spec), row.input
         state = copy.deepcopy(row.checkpoint or {})
+    from server.services import task_service
+    runtime = task_service.current()
+    if runtime:
+        state["task_id"] = runtime.task_id
     nodes = state.setdefault("steps", {s.key: {"status": "pending"} for s in spec.steps})
     approved = set(state.get("approved", []))
     lock = asyncio.Lock()
@@ -134,6 +167,8 @@ async def execute(execution_id: int) -> None:
         def emit(event):
             if event.get("type") == "stream_start":
                 node["run_id"] = event["run_id"]
+            if runtime:
+                runtime.capture(event)
         async def body(sink):
             await save()  # Record the child Run id before any model or tool work.
             result = await dispatcher.dispatch(
@@ -144,6 +179,9 @@ async def execute(execution_id: int) -> None:
             )
             if result.get("escalation"):
                 raise RuntimeError("step requires capabilities or input not available to this recipe")
+            if runtime and runtime.pause_reason:
+                from server.services.task_repository import TaskError
+                raise TaskError(runtime.pause_reason)
             return result.get("full_output", "")
         try:
             output = await host_run.execute(cid, brief, emit, body, kind="recipe_step", name=step.name)
@@ -183,7 +221,7 @@ async def execute(execution_id: int) -> None:
     def parent_emit(event):
         if event.get("type") == "stream_start":
             state["run_id"] = event["run_id"]
-        run_registry.make_emit(cid)(event)
+        (runtime.capture if runtime else run_registry.make_emit(cid))(event)
     try:
         result = await host_run.execute(cid, input_text, parent_emit, body, kind="recipe", name=spec.name)
         if result is None:

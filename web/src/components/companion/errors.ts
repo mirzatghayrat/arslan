@@ -17,6 +17,8 @@ export function taskErrorKey(code: string): string | null {
   if (code === "backup_restore_review_required") return "tasks.restored";
   if (code === "task_reconciliation_required") return "tasks.uncertain";
   if (code === "task_budget_exhausted") return "tasks.budgetExhausted";
+  if (code === "task_no_progress") return "tasks.noProgress";
+  if (code === "task_input_required") return "tasks.inputRequired";
   if (code === "task_local_model_required") return "tasks.localRequired";
   if (code === "task_project_changed") return "tasks.projectChanged";
   if (code === "conversation_local_history") return "tasks.localHistory";

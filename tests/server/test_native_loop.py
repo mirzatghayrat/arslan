@@ -301,9 +301,8 @@ async def test_final_answer_is_revealed_progressively(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_search_cap_forces_convergence(monkeypatch):
-    # Framework-general: however many searches the model requests, the executor runs at most
-    # _SEARCH_CAP times — the rest are refused with a nudge to extract/answer. Ends the spiral.
+async def test_repeated_evidence_forces_convergence_not_a_fixed_search_count(monkeypatch):
+    # Rephrasing a query without obtaining new evidence is not progress.
     calls = {"n": 0}
     class _Stub:
         async def execute(self, args):
@@ -317,5 +316,6 @@ async def test_search_cap_forces_convergence(monkeypatch):
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     r = await tool_loop.run_native(system="s", user_content="research a topic", history=[],
         emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=_resolve, max_tool_calls=8)
-    assert calls["n"] <= tool_loop._SEARCH_CAP           # real searches capped
+    assert calls["n"] == 5
+    assert r["stop_reason"] == "task_no_progress"
     assert "final answer" in (r["final"] or "")

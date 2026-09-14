@@ -15,6 +15,8 @@ const en = {
   resumeNotStarted: "No start confirmation received. Refresh the status before trying again.",
   executionFailed: "Execution stopped. Review the saved progress before deciding whether to resume.",
   localHistory: "This conversation contains local-only memory. Use a local model here, or start a new conversation for a cloud model.",
+  noProgress: "Repeated actions did not add new evidence. Review the saved results and adjust the request before resuming.",
+  inputRequired: "More information is needed. Answer the question in the conversation before continuing.",
 };
 type Messages = { [Key in keyof typeof en]: string };
 export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messages> = {
@@ -33,6 +35,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     projectChanged:"当前对话的项目已改变。请切回此任务的项目，或新建任务。",resumeNotStarted:"尚未收到开始执行的确认，请刷新状态后再决定是否重试。",
     executionFailed:"执行已停止，请先查看已保存的进度，再决定是否继续。",
     localHistory:"此对话包含仅限本地使用的记忆。请使用本地模型，或新建对话使用云端模型。",
+    noProgress:"重复操作没有带来新的证据。请先查看已保存的结果，调整要求后再继续。",
+    inputRequired:"还需要补充信息。请先在对话中回答问题，再继续。",
   },
   ja: {
     openAttempt:"実行 {{number}} を表示",noAutomaticScore:"自動採点は行っていません",
@@ -48,6 +52,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     projectChanged:"会話のプロジェクトが変わりました。元のプロジェクトに戻すか、新しいタスクを開始してください。",resumeNotStarted:"開始の確認を受信していません。再試行する前に状態を更新してください。",
     executionFailed:"実行が停止しました。保存された進捗を確認してから再開を判断してください。",
     localHistory:"この会話にはローカル専用の記憶が含まれます。ローカルモデルを使うか、クラウドモデル用に新しい会話を開始してください。",
+    noProgress:"操作を繰り返しても新しい根拠が得られませんでした。保存された結果を確認し、依頼を調整してから再開してください。",
+    inputRequired:"追加情報が必要です。会話内の質問に回答してから続けてください。",
   },
   es: {
     openAttempt:"Ver intento {{number}}",noAutomaticScore:"Sin puntuación automática",
@@ -63,6 +69,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     projectChanged:"El proyecto de la conversación cambió. Restaura el proyecto de la tarea o inicia una nueva.",resumeNotStarted:"No se recibió confirmación de inicio. Actualiza el estado antes de volver a intentarlo.",
     executionFailed:"La ejecución se detuvo. Revisa el progreso guardado antes de decidir si reanudarla.",
     localHistory:"Esta conversación contiene memoria de uso exclusivamente local. Usa un modelo local o inicia otra conversación para un modelo en la nube.",
+    noProgress:"Las acciones repetidas no aportaron nuevas pruebas. Revisa los resultados guardados y ajusta la solicitud antes de reanudar.",
+    inputRequired:"Se necesita más información. Responde a la pregunta en la conversación antes de continuar.",
   },
   de: {
     openAttempt:"Versuch {{number}} ansehen",noAutomaticScore:"Nicht automatisch bewertet",
@@ -78,6 +86,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     projectChanged:"Das Projekt der Unterhaltung wurde geändert. Stelle das Aufgabenprojekt wieder her oder starte eine neue Aufgabe.",resumeNotStarted:"Keine Startbestätigung erhalten. Aktualisiere den Status vor einem erneuten Versuch.",
     executionFailed:"Die Ausführung wurde gestoppt. Prüfe den gespeicherten Fortschritt, bevor du sie fortsetzt.",
     localHistory:"Diese Unterhaltung enthält nur lokal freigegebene Erinnerungen. Nutze ein lokales Modell oder starte eine neue Unterhaltung für ein Cloud-Modell.",
+    noProgress:"Wiederholte Aktionen lieferten keine neuen Belege. Prüfe die gespeicherten Ergebnisse und passe die Anfrage vor dem Fortsetzen an.",
+    inputRequired:"Weitere Angaben sind nötig. Beantworte zuerst die Frage in der Unterhaltung.",
   },
   fr: {
     openAttempt:"Voir la tentative {{number}}",noAutomaticScore:"Aucune évaluation automatique",
@@ -93,5 +103,7 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     projectChanged:"Le projet de la conversation a changé. Rétablissez celui de la tâche ou démarrez-en une nouvelle.",resumeNotStarted:"Aucune confirmation de démarrage reçue. Actualisez l’état avant de réessayer.",
     executionFailed:"L’exécution s’est arrêtée. Vérifiez l’avancement enregistré avant de décider de reprendre.",
     localHistory:"Cette conversation contient des souvenirs réservés à un usage local. Utilisez un modèle local ou ouvrez une nouvelle conversation pour un modèle cloud.",
+    noProgress:"Les actions répétées n’ont apporté aucun nouvel élément. Vérifiez les résultats enregistrés et ajustez la demande avant de reprendre.",
+    inputRequired:"Des informations supplémentaires sont nécessaires. Répondez à la question dans la conversation avant de continuer.",
   },
 };

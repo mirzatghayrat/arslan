@@ -39,6 +39,7 @@ class Progress(Contract):
     artifacts: tuple[ResourceRef, ...] = Field(default=(), max_length=1000)
     pending_actions: tuple[Identifier, ...] = Field(default=(), max_length=1000)
     continuation_ref: ResourceRef | None = None
+    loop_fingerprints: tuple[Identifier, ...] = Field(default=(), max_length=256)
 
 
 def identity() -> str:

@@ -193,27 +193,37 @@ async def test_the_throat_refuses_past_the_budget(monkeypatch):
 # ── is the gate actually WIRED? ────────────────────────────────────────────────────
 
 
-def test_run_native_creates_a_per_run_budget_and_threads_it_to_every_dispatch():
-    """🔴 A budget nothing passes is a no-op dressed as a safety feature.
-
-    I shipped exactly that in my first pass: `fetch_budget` existed on _dispatch_tool,
-    the gate read it, eight occurrences in production code — and ZERO call sites passed
-    it, so no real run ever reached the cap while the commit message said fetches were
-    capped. Same shape as the previous round's blocker (helper tested, real path not).
-
-    run_native is the only production tool loop (the legacy run() survives for its own
-    regression tests; its docstring says so). This asserts the dict is created in
-    run_native's per-invocation locals — NOT deeper, or it would reset per tool call and
-    the cap would never bind — and passed at BOTH dispatch sites, including the
-    force_tools proactive web_search that fires before the step loop.
-    """
-    import inspect
-
-    src = inspect.getsource(tool_loop.run_native)
-    assert "fetch_budget: dict[str, int] = {}" in src, (
-        "run_native must own the per-run allowance")
-    assert src.count("fetch_budget=fetch_budget") == 2, (
-        f"expected both dispatch sites to thread the budget, found "
-        f"{src.count('fetch_budget=fetch_budget')} — the proactive web_search counts too")
-    # created before the proactive search, or that fetch escapes the allowance
-    assert src.index("fetch_budget: dict[str, int] = {}") < src.index("fetch_budget=fetch_budget")
+async def test_run_native_creates_a_per_run_budget_and_threads_it_to_every_dispatch(monkeypatch):
+    """Drive both dispatch sites: proactive search spends the same allowance as extraction."""
+    from unittest.mock import AsyncMock
+    from arslan.models import LLMResponse
+    from server.services import tool_intent
+    effects = []
+    class Executor:
+        async def execute(self, arguments):
+            effects.append(arguments)
+            return {"ok": True, "external": False, "text": "Synthetic evidence"}
+    class Adapter:
+        def __init__(self):
+            self.calls = 0
+        async def chat(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMResponse(usage={}, content="", tool_calls=[{
+                    "id": "extract", "type": "function", "function": {
+                        "name": "web_extract", "arguments": {"url": "https://fixture.invalid"}}}])
+            return LLMResponse(usage={}, content="One fixture verified; extraction limit reached.")
+    async def resolve():
+        return [{"key": name, "description": "synthetic"} for name in ("web_search", "web_extract")]
+    monkeypatch.setattr(tool_loop, "LIVE_FETCH_BUDGET", 1)
+    monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)
+    monkeypatch.setattr(tool_intent, "classify", AsyncMock(return_value=tool_intent.ToolIntent(True, "web_search", "fixture")))
+    monkeypatch.setitem(tool_loop.EXECUTORS, "web_search", Executor())
+    monkeypatch.setitem(tool_loop.EXECUTORS, "web_extract", Executor())
+    for _ in range(2):
+        result = await tool_loop.run_native(system="s", user_content="Read fixture", history=[],
+            resolve_tools=resolve, emit=lambda event: None, on_chunk=lambda text: None, force_tools=True)
+        assert result["tool_trace"][0]["result"]["ok"]
+        assert not result["tool_trace"][1]["result"]["ok"]
+        assert "budget" in result["tool_trace"][1]["result"]["error"]
+    assert effects == [{"query": "fixture"}, {"query": "fixture"}]
