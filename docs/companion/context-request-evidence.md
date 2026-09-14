@@ -75,4 +75,6 @@ warnings in 444.62 seconds**. Report:
 `/tmp/arslan-request-evidence-regression.bdRjdP/backend.xml`. A separate isolated
 diagnostic confirmed that deletion between two model requests still allows the
 old block through the reused system prompt. The counters correctly observe it;
-they do not prevent it. W17 retains that acceptance failure explicitly.
+they do not prevent it. The follow-up mandatory admission and snapshot-writeback
+fences are documented in `memory-inflight-revocation.md`; the counters remain
+observability only, not the policy enforcement mechanism.

@@ -123,6 +123,20 @@ class PersonalContext:
     receipt: ContextReceipt
 
 
+@dataclass(frozen=True)
+class MemoryReadScope:
+    owner_id: str
+    project_id: str | None
+    domain_id: str | None
+    expert_id: str | None
+    model_is_local: bool
+    allow_sensitive: bool
+
+    @classmethod
+    def from_context(cls, ctx):
+        return cls(*(getattr(ctx, field) for field in cls.__dataclass_fields__))
+
+
 async def record(result: PersonalContext):
     ctx = current()
     if ctx is None or ctx.temporary or not ctx.conversation_id:
@@ -134,6 +148,10 @@ async def record(result: PersonalContext):
             receipt=result.receipt.model_dump(mode="json")))
         await db.commit()
     if result.text and any(ref.kind == "memory" for ref in result.receipt.used):
+        from server.services import task_service
+        runtime = task_service.current()
+        if runtime is not None and runtime.task_id == ctx.task_id:
+            runtime.register_memory(MemoryReadScope.from_context(ctx), result.receipt.used)
         # Transient exact text is discarded with this task/run scope. It is not
         # another persistent copy and cannot be attributed to a different task.
         _registered.set((*_registered.get(), _RegisteredReceipt(_identity(ctx), result.receipt.id, result.text)))
@@ -252,35 +270,61 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
     effective_query = query or ctx.query
     terms = memory_relevance.terms(effective_query)
     browse = memory_relevance.browse_requested(effective_query)
-    scopes = [and_(MemoryEntry.scope_kind == "global", MemoryEntry.scope_id.is_(None))]
     async with db_session.AsyncSessionLocal() as db:
-        # Archived/missing/cross-owner projects must not donate context, even if a
-        # stale conversation setting still refers to them.
-        if ctx.project_id:
-            project = await db.get(Project, ctx.project_id)
-            if project and project.owner_id == ctx.owner_id and project.status == "active":
-                scopes.append(and_(MemoryEntry.scope_kind == "project", MemoryEntry.scope_id == ctx.project_id))
-        for kind, identity in (("domain", ctx.domain_id), ("expert", ctx.expert_id)):
-            if identity:
-                scopes.append(and_(MemoryEntry.scope_kind == kind, MemoryEntry.scope_id == identity))
-        allowed_sensitivity = ("normal", "sensitive") if ctx.allow_sensitive else ("normal",)
-        statement = select(MemoryEntry, MemoryRevision).join(
-            MemoryRevision, and_(MemoryRevision.id == MemoryEntry.current_revision_id,
-                                 MemoryRevision.entry_id == MemoryEntry.id),
-        ).where(
-            MemoryEntry.owner_id == ctx.owner_id,
-            MemoryEntry.status == "active", MemoryEntry.confirmed_at.is_not(None),
-            MemoryEntry.confirmation_kind.is_not(None), MemoryEntry.superseded_by.is_(None),
-            MemoryEntry.sensitivity.in_(allowed_sensitivity),
-            MemoryEntry.use_policy.in_(("local_only", "cloud_allowed") if ctx.model_is_local else ("cloud_allowed",)),
-            or_(MemoryEntry.valid_from.is_(None), MemoryEntry.valid_from <= now),
-            or_(MemoryEntry.expires_at.is_(None), MemoryEntry.expires_at > now),
-            or_(MemoryEntry.review_at.is_(None), MemoryEntry.review_at > now),
-            MemoryRevision.content.is_not(None), or_(*scopes),
-        )
+        statement = await _eligible_statement(db, ctx, now)
         # Permission filtering precedes every ranking and token-budget operation.
         rows = (await db.execute(statement)).all()
         indexed = set() if browse else await _indexed_matches(db, rows, terms)
+    return _render(rows, indexed, browse, terms, limit_tokens, receipt, ctx)
+
+
+async def _eligible_statement(db, ctx, now):
+    scopes = [and_(MemoryEntry.scope_kind == "global", MemoryEntry.scope_id.is_(None))]
+    # Archived/missing/cross-owner projects must not donate context, even if a
+    # stale conversation setting still refers to them.
+    if ctx.project_id:
+        project = await db.get(Project, ctx.project_id)
+        if project and project.owner_id == ctx.owner_id and project.status == "active":
+            scopes.append(and_(MemoryEntry.scope_kind == "project", MemoryEntry.scope_id == ctx.project_id))
+    for kind, identity in (("domain", ctx.domain_id), ("expert", ctx.expert_id)):
+        if identity:
+            scopes.append(and_(MemoryEntry.scope_kind == kind, MemoryEntry.scope_id == identity))
+    allowed_sensitivity = ("normal", "sensitive") if ctx.allow_sensitive else ("normal",)
+    statement = select(MemoryEntry, MemoryRevision).join(
+        MemoryRevision, and_(MemoryRevision.id == MemoryEntry.current_revision_id,
+                             MemoryRevision.entry_id == MemoryEntry.id,
+                             MemoryRevision.version == MemoryEntry.version),
+    ).where(
+        MemoryEntry.owner_id == ctx.owner_id,
+        MemoryEntry.status == "active", MemoryEntry.confirmed_at.is_not(None),
+        MemoryEntry.confirmation_kind.is_not(None), MemoryEntry.superseded_by.is_(None),
+        MemoryEntry.sensitivity.in_(allowed_sensitivity),
+        MemoryEntry.use_policy.in_(("local_only", "cloud_allowed") if ctx.model_is_local else ("cloud_allowed",)),
+        or_(MemoryEntry.valid_from.is_(None), MemoryEntry.valid_from <= now),
+        or_(MemoryEntry.expires_at.is_(None), MemoryEntry.expires_at > now),
+        or_(MemoryEntry.review_at.is_(None), MemoryEntry.review_at > now),
+        MemoryRevision.content.is_not(None), or_(*scopes),
+    )
+    return statement
+
+
+async def dependencies_current(dependencies):
+    """Revalidate exact selected versions without retrieving or persisting bodies."""
+    async with db_session.AsyncSessionLocal() as db:
+        for scope, refs in dependencies:
+            statement = await _eligible_statement(db, scope, datetime.utcnow())
+            identities = tuple(identity for identity, _ in refs)
+            found = set()
+            for start in range(0, len(identities), 200):
+                rows = await db.execute(statement.with_only_columns(MemoryEntry.id, MemoryEntry.version).where(
+                    MemoryEntry.id.in_(identities[start:start + 200])))
+                found.update(tuple(row) for row in rows)
+            if not set(refs).issubset(found):
+                return False
+    return True
+
+
+def _render(rows, indexed, browse, terms, limit_tokens, receipt, ctx):
     scores = {entry.id: 1 if browse else max(int(entry.id in indexed),
               memory_relevance.score(terms, revision.content, kind=entry.kind))
               for entry, revision in rows}

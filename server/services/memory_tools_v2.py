@@ -30,6 +30,9 @@ async def recall(args, caller):
     hits = [{"kind": "memory", "content": result.text,
              "references": [ref.model_dump(mode="json") for ref in result.receipt.used]}] if (
                  result.text and args.get("kind") in {None, "fact", "learning", "preference"}) else []
+    if hits:
+        with pc.bind(ctx):
+            await pc.record(result)
     if query and args.get("kind") in {None, "material"}:
         from server.services import knowledge
         with pc.bind(ctx):

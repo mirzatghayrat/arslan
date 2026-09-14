@@ -1,4 +1,6 @@
 const en = {
+  memoryChanged: "Memory used by this task changed or is no longer available. Review the saved progress, then resume with current memory.",
+  memoryCheckFailed: "Memory permissions could not be checked. No further request or action was started. Try resuming after the issue is resolved.",
   openAttempt: "View attempt {{number}}", noAutomaticScore: "Not automatically scored",
   taskStatus: "Task status", chooseTask: "Choose a task", goal: "Request", reviewIntro: "Completion is based on checks or your review, not on the model saying it is done.",
   queued: "Ready", running: "Working", waiting_user: "Needs your review", verifying: "Checking", succeeded: "Accepted", failed: "Stopped with an error", cancelled: "Cancelled",
@@ -22,6 +24,8 @@ type Messages = { [Key in keyof typeof en]: string };
 export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messages> = {
   en,
   zh: {
+    memoryChanged:"此任务使用的记忆已改变或不可用。请查看已保存的进度，再使用当前记忆继续。",
+    memoryCheckFailed:"无法检查记忆权限，未启动后续请求或操作。问题解决后可继续任务。",
     openAttempt:"查看第 {{number}} 次执行",noAutomaticScore:"未进行自动评分",
     taskStatus:"任务状态",chooseTask:"选择任务",goal:"请求",reviewIntro:"完成状态以检查结果或你的验收为依据，不以模型自称完成为依据。",
     queued:"准备就绪",running:"执行中",waiting_user:"待你复核",verifying:"检查中",succeeded:"已验收",failed:"执行出错",cancelled:"已取消",
@@ -39,6 +43,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     inputRequired:"还需要补充信息。请先在对话中回答问题，再继续。",
   },
   ja: {
+    memoryChanged:"このタスクで使用した記憶が変更されたか、利用できなくなりました。保存済みの進捗を確認し、現在の記憶で再開してください。",
+    memoryCheckFailed:"記憶の権限を確認できませんでした。後続のリクエストや操作は開始していません。問題の解決後に再開してください。",
     openAttempt:"実行 {{number}} を表示",noAutomaticScore:"自動採点は行っていません",
     taskStatus:"タスクの状態",chooseTask:"タスクを選択",goal:"依頼",reviewIntro:"完了は検証結果またはあなたの確認で決まります。モデルの完了宣言だけでは決まりません。",
     queued:"準備完了",running:"実行中",waiting_user:"確認待ち",verifying:"検証中",succeeded:"確認済み",failed:"エラーで停止",cancelled:"キャンセル済み",
@@ -56,6 +62,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     inputRequired:"追加情報が必要です。会話内の質問に回答してから続けてください。",
   },
   es: {
+    memoryChanged:"La memoria usada por esta tarea cambió o ya no está disponible. Revisa el progreso guardado y reanuda con la memoria actual.",
+    memoryCheckFailed:"No se pudieron comprobar los permisos de memoria. No se inició ninguna solicitud ni acción posterior. Reanuda cuando se resuelva el problema.",
     openAttempt:"Ver intento {{number}}",noAutomaticScore:"Sin puntuación automática",
     taskStatus:"Estado de la tarea",chooseTask:"Elegir tarea",goal:"Solicitud",reviewIntro:"La finalización depende de las comprobaciones o de tu revisión, no de que el modelo diga que terminó.",
     queued:"Lista",running:"En curso",waiting_user:"Requiere tu revisión",verifying:"Verificando",succeeded:"Aceptada",failed:"Detenida por un error",cancelled:"Cancelada",
@@ -73,6 +81,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     inputRequired:"Se necesita más información. Responde a la pregunta en la conversación antes de continuar.",
   },
   de: {
+    memoryChanged:"Der von dieser Aufgabe genutzte Speicher wurde geändert oder ist nicht mehr verfügbar. Prüfe den gespeicherten Fortschritt und setze die Aufgabe mit dem aktuellen Speicher fort.",
+    memoryCheckFailed:"Die Speicherberechtigungen konnten nicht geprüft werden. Es wurden keine weiteren Anfragen oder Aktionen gestartet. Setze die Aufgabe nach Behebung des Problems fort.",
     openAttempt:"Versuch {{number}} ansehen",noAutomaticScore:"Nicht automatisch bewertet",
     taskStatus:"Aufgabenstatus",chooseTask:"Aufgabe auswählen",goal:"Anfrage",reviewIntro:"Der Abschluss richtet sich nach Prüfungen oder deiner Abnahme, nicht nach der Fertigmeldung des Modells.",
     queued:"Bereit",running:"In Arbeit",waiting_user:"Deine Prüfung erforderlich",verifying:"Wird geprüft",succeeded:"Abgenommen",failed:"Mit Fehler gestoppt",cancelled:"Abgebrochen",
@@ -90,6 +100,8 @@ export const taskMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messa
     inputRequired:"Weitere Angaben sind nötig. Beantworte zuerst die Frage in der Unterhaltung.",
   },
   fr: {
+    memoryChanged:"La mémoire utilisée par cette tâche a changé ou n’est plus disponible. Vérifiez la progression enregistrée, puis reprenez avec la mémoire actuelle.",
+    memoryCheckFailed:"Impossible de vérifier les autorisations de mémoire. Aucune requête ni action supplémentaire n’a été lancée. Reprenez une fois le problème résolu.",
     openAttempt:"Voir la tentative {{number}}",noAutomaticScore:"Aucune évaluation automatique",
     taskStatus:"État de la tâche",chooseTask:"Choisir une tâche",goal:"Demande",reviewIntro:"La fin d’une tâche repose sur des vérifications ou votre validation, pas sur une déclaration du modèle.",
     queued:"Prête",running:"En cours",waiting_user:"Votre vérification est requise",verifying:"Vérification en cours",succeeded:"Validée",failed:"Arrêtée sur une erreur",cancelled:"Annulée",

@@ -47,6 +47,7 @@ from server.services import (
 )
 from server.services.llm_factory import build_adapter
 from server.services.task_context import scoped_dispatch, scoped_turn
+from server.services.task_repository import TaskError
 
 logger = logging.getLogger(__name__)
 
@@ -1131,6 +1132,8 @@ async def _handle_answer_body(
 
     try:
         result = await _dispatch(llm_user)
+    except TaskError:
+        raise
     except Exception as exc:  # noqa: BLE001
         # THE MODEL WOULD NOT LOOK AT THE PICTURE. Two things used to go wrong
         # here and both were invisible from this file: the raw provider JSON
@@ -1149,6 +1152,8 @@ async def _handle_answer_body(
             try:
                 result = await _dispatch(build_user_blocks(
                     f"{user_message}\n\n{recovered}", attached_context, None))
+            except TaskError:
+                raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
                 emit({"type": "error", "code": "LLM_ERROR",
                       "message": llm_errors.explain(str(retry_exc)) or str(retry_exc),

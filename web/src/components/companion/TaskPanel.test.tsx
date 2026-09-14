@@ -29,6 +29,26 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("task controls", () => {
+  it.each([
+    ["task_memory_changed", "tasks.memoryChanged"],
+    ["task_memory_check_failed", "tasks.memoryCheckFailed"],
+  ])("shows %s as a reviewable pause requiring explicit resume", async (reason, key) => {
+    const paused: TaskDetail = { ...task, pause_reason: reason };
+    vi.mocked(tasksApi.list).mockResolvedValue([paused]);
+    vi.spyOn(tasksApi, "detail").mockResolvedValue(paused);
+    const resume = vi.fn();
+    render(<TaskPanel conversationId="conversation" onResume={resume} />);
+    fireEvent.click(await screen.findByRole("button", { name: /tasks.taskStatus/ }));
+    expect(await screen.findByText(key)).toBeInTheDocument();
+    expect(screen.queryByText("tasks.accept")).not.toBeInTheDocument();
+    expect(resume).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("tasks.resume"));
+    expect(resume).toHaveBeenCalledOnce();
+    for (const messages of Object.values(taskMessages)) {
+      expect(messages.memoryChanged.length).toBeGreaterThan(20);
+      expect(messages.memoryCheckFailed.length).toBeGreaterThan(20);
+    }
+  });
   it("keeps failed and unperformed checks visible and blocks acceptance", async () => {
     const checked: TaskDetail = { ...task, pause_reason: "task_validation_failed", validation: {
       spec_revision: 1, attempt_id: "attempt", output_sha256: "a".repeat(64),

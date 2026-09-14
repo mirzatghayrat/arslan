@@ -16,7 +16,10 @@ Despite this green engineering run, an isolated real-host/serialized-HTTP
 reproduction confirmed a deletion defect: deleting an injected memory after the
 first model request does not remove it from the reused system prompt in the
 second request. The diagnostic uses synthetic HTTP only and is not a successful
-acceptance test. In-flight revalidation remains a release blocker until fixed.
+acceptance test. The follow-up implements mandatory task revalidation and
+deletion-fenced snapshot writes, with real-host regression and explicit-resume
+checks in `memory-inflight-revocation.md`. A full frozen run is pending for that
+new source; the older green result must not be attributed to these changes.
 
 Previous complete backend run: clean `4fd004ca` (including scoped current-revision
 FTS), **4,718 passed, 14 skipped, 18 warnings in 447.84 seconds**. Report:
@@ -132,8 +135,8 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `1d1be3c4` full backend and 1,833-test frontend/typecheck/build pass as recorded above | Repeat for subsequent release source; green tests do not override the confirmed in-flight deletion defect |
-| Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass | Real desktop and packaged runtime verification, historical scope snapshots, in-flight revalidation; see `context-request-evidence.md` |
+| Complete engineering regression | Clean `1d1be3c4` full backend and 1,833-test frontend/typecheck/build pass as recorded above | Complete frozen regression for in-flight withdrawal changes and subsequent release source |
+| Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass; in-flight withdrawal and snapshot fences implemented | Real desktop and packaged runtime verification, historical scope snapshots, complete withdrawal regression; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |

@@ -118,8 +118,11 @@ async def maybe_compact(conversation_id: str) -> None:
     """If the post-cutoff working text exceeds the char budget, fold older messages
     into a rolling summary. On any failure, leave the thread un-compacted (never drop)."""
     try:
+        from sqlalchemy import insert, literal
+        from server.services import memory_snapshot_guard
         # NOTE: read-then-write is not serialized; safe for v1's single sequential user.
         async with db_session.AsyncSessionLocal() as db:
+            snapshot_token = await memory_snapshot_guard.capture(db)
             summ = await _latest_summary(db, conversation_id)
             cutoff = summ.up_to_message_id if summ else 0
             rows = await db.execute(
@@ -150,22 +153,23 @@ async def maybe_compact(conversation_id: str) -> None:
         from server.services import usage_ledger
 
         async with usage_ledger.scope("memory", conversation_id):
+            if not await memory_snapshot_guard.is_current(snapshot_token):
+                return
             new_summary = await _summarize(adapter, f"{prior}\n{body}".strip())
 
             # Bound the rolling summary itself (C1): if it exceeds the cap, compress it
             # once more, then hard-truncate as a guaranteed floor so context can't grow.
             if estimate_tokens(new_summary) > _summary_token_cap():
+                if not await memory_snapshot_guard.is_current(snapshot_token):
+                    return
                 new_summary = await _summarize(adapter, new_summary)
                 new_summary = clip_context(new_summary, _summary_token_cap())
 
         async with db_session.AsyncSessionLocal() as db:
-            db.add(
-                ArslanSummary(
-                    conversation_id=conversation_id,
-                    summary=new_summary,
-                    up_to_message_id=new_cutoff,
-                )
-            )
+            await db.execute(insert(ArslanSummary).from_select(
+                ["conversation_id", "summary", "up_to_message_id"],
+                select(literal(conversation_id), literal(new_summary), literal(new_cutoff))
+                .where(memory_snapshot_guard.unchanged(snapshot_token))))
             await db.commit()
     except Exception:  # noqa: BLE001 - degrade gracefully, keep full thread
         logger.warning("compaction failed for %s; keeping full thread", conversation_id, exc_info=True)

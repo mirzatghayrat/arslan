@@ -24,6 +24,8 @@ export function taskErrorKey(code: string): string | null {
   if (code === "task_budget_exhausted") return "tasks.budgetExhausted";
   if (code === "task_no_progress") return "tasks.noProgress";
   if (code === "task_input_required") return "tasks.inputRequired";
+  if (code === "task_memory_changed") return "tasks.memoryChanged";
+  if (code === "task_memory_check_failed") return "tasks.memoryCheckFailed";
   if (code === "task_local_model_required") return "tasks.localRequired";
   if (code === "task_project_changed") return "tasks.projectChanged";
   if (code === "conversation_local_history") return "tasks.localHistory";

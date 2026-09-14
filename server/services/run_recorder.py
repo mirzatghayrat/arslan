@@ -17,11 +17,12 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import update
+from sqlalchemy import case, update
 
 from arslan.llm import usage_sink
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, RunStep
+from server.services import memory_snapshot_guard
 
 RUN_RAW_CAP = 2000   # per-tool args_full / result_raw truncation cap
 RUN_ERR_CAP = 2000   # error_text truncation cap
@@ -63,7 +64,8 @@ def is_continuation(run_id: int) -> bool:
 class RunRecorder:
     def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
                  spawn_name: str | None = None, continuation: bool = False,
-                 spawn_id: int | None = None, kind: str = "live") -> None:
+                 spawn_id: int | None = None, kind: str = "live",
+                 memory_snapshot_token: tuple[str, int] | None = None) -> None:
         self.run_id = run_id
         self.started_at = started_at
         self.route_ms = route_ms
@@ -71,6 +73,7 @@ class RunRecorder:
         self.continuation = continuation
         self.spawn_id = spawn_id
         self.kind = kind
+        self.memory_snapshot_token = memory_snapshot_token
         self._events: list[tuple[datetime, dict]] = []
         # Two-flag finalize latch (review I1 + residual): _finalizing blocks true
         # re-entrancy from entry; _finalized flips only AFTER the commit landed, so a
@@ -103,6 +106,7 @@ class RunRecorder:
         no_learning = unscoped or bool(privacy and (privacy.no_learning or privacy.temporary
                                        or not privacy.cloud_memory_allowed or privacy.model_is_local))
         async with db_session.AsyncSessionLocal() as db:
+            snapshot_token = await memory_snapshot_guard.capture(db)
             run = Run(
                 conversation_id=conversation_id,
                 spawn_id=spawn_id,
@@ -134,7 +138,7 @@ class RunRecorder:
         from server.services.task_service import current as current_task
         if current_task() is not None:
             await current_task().link_run(run_id)
-        return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id, kind)
+        return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id, kind, snapshot_token)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
         def _emit(ev: dict) -> None:
@@ -351,8 +355,12 @@ class RunRecorder:
                     run.tokens_estimated = tokens_estimated
                     run.error_kind = error_kind
                     run.error_text = (error_text[:RUN_ERR_CAP] if error_text else None)
-                    run.system_prompt = system_prompt
-                    run.injected_kb = injected_kb
+                    # Evaluate in the UPDATE itself: a deletion committed after
+                    # start must not be undone by this in-flight recorder's final
+                    # write. Store identity also protects against replacement.
+                    snapshot_allowed = memory_snapshot_guard.unchanged(self.memory_snapshot_token)
+                    run.system_prompt = case((snapshot_allowed, system_prompt), else_=None)
+                    run.injected_kb = case((snapshot_allowed, injected_kb), else_=None)
                     run.injected_kb_sources = injected_kb_sources
                     from arslan.execution_budget import current
                     budget = current()

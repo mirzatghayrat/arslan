@@ -108,6 +108,22 @@ class TaskRuntime:
         self.worker_slots = asyncio.Semaphore(2)
         self.validation_results = ()
         self.validation_report = None
+        self.memory_dependencies = {}
+
+    def register_memory(self, scope, refs):
+        self.memory_dependencies.setdefault(scope, set()).update(
+            (ref.id, ref.revision) for ref in refs if ref.kind == "memory")
+
+    async def check_memory(self):
+        snapshot = tuple((scope, tuple(refs)) for scope, refs in self.memory_dependencies.items())
+        if not snapshot:
+            return
+        try:
+            valid = await personal_context.dependencies_current(snapshot)
+        except Exception:
+            raise TaskError("task_memory_check_failed") from None
+        if not valid:
+            raise TaskError("task_memory_changed")
 
     async def checkpoint(self, reason: str, *, retain_stopped=False):
         if self.closed:
@@ -117,6 +133,8 @@ class TaskRuntime:
             return  # The root finally retains charged counters during cancellation.
         if reason == "before_model" and self.reconciliation_required:
             raise TaskError("task_reconciliation_required")
+        if reason == "before_model":
+            await self.check_memory()
         budget = current_budget()
         if budget is None:
             raise TaskError("task_budget_missing")
@@ -153,6 +171,7 @@ class TaskRuntime:
     async def execute_tool(self, tool_key: str, arguments: dict, execute: Callable[[], Awaitable[dict]]) -> dict:
         if self.reconciliation_required:
             raise TaskError("task_reconciliation_required")
+        await self.check_memory()
         effect = "read" if tool_key in _READ_TOOLS else "local_write" if tool_key in _LOCAL_WRITE_TOOLS else "external_write"
         async with self.lock:
             async with repository() as repo:
@@ -278,7 +297,8 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                 if row.phase != "cancelled":
                     final = await repo.finish(runtime.task_id, runtime.attempt_id,
                         phase="waiting_user" if code in {"task_reconciliation_required", "task_budget_exhausted",
-                            "task_no_progress", "task_input_required"} else "failed", reason=code,
+                            "task_no_progress", "task_input_required", "task_memory_changed",
+                            "task_memory_check_failed"} else "failed", reason=code,
                         results=runtime.validation_results)
                 else:
                     final = await repo.present(row)
