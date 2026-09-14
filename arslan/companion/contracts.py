@@ -180,11 +180,14 @@ class ContextReceipt(Contract):
     filter_reasons: tuple[Literal["scope", "permission", "deleted", "inactive", "sensitive", "irrelevant", "budget"], ...] = ()
     estimated_tokens: NonnegativeInt = 0
     cloud_use: Literal["not_sent", "approved"] = "not_sent"
+    local_only_used: bool = False
 
     @model_validator(mode="after")
     def no_memory_when_disabled(self):
         if self.memory_mode in {"disabled", "temporary"} and any(ref.kind == "memory" for ref in self.used):
             raise ValueError("memory is excluded from disabled/temporary tasks")
+        if self.local_only_used and (self.memory_mode != "normal" or self.cloud_use == "approved"):
+            raise ValueError("local-only memory cannot be part of a cloud or disabled receipt")
         return self
 
 

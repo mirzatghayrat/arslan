@@ -43,7 +43,7 @@ function buildRunMarkdown(run: UiRun, t: TFn): string {
       lines.push(t("replay.md_dim", { label: d.label, score: Math.round(d.score * 10) / 10, comment: d.comment }));
     }
   } else {
-    lines.push(t("replay.scoring"));
+    lines.push(t(run.noLearning || isTerminalRunStatus(run.status) ? "tasks.noAutomaticScore" : "replay.scoring"));
   }
   if (run.injectedKbSources?.length) {
     lines.push("");
@@ -111,7 +111,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       const ui = toUiRun(await api.getRun(runId), t);
       if (cancelledRef.current) return;
       setRun(ui);
-      if (!isTerminalRunStatus(ui.status)) {
+      if (!isTerminalRunStatus(ui.status) && !(ui.noLearning && ui.status === "recorded")) {
         timer.current = setTimeout(load, pollMs);
       }
     } catch (e) {
@@ -489,7 +489,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
         ) : run.status === "completed" || run.status === "failed" ? (
           <p className="run-replay__pending">{t('files.unscored')}</p>
         ) : (
-          <p className="run-replay__pending">{t("replay.scoring")}</p>
+          <p className="run-replay__pending">{t(run.noLearning || isTerminalRunStatus(run.status) ? "tasks.noAutomaticScore" : "replay.scoring")}</p>
         )}
       </section>
 

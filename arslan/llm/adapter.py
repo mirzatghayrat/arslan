@@ -107,6 +107,8 @@ class LLMAdapter:
             model=self.model,
             provider=self.report_provider,
         )
+        from arslan.execution_checkpoint import save
+        await save("after_model")
         return resp
 
     async def chat_stream(
@@ -156,6 +158,8 @@ class LLMAdapter:
                     model=self.model,
                     provider=self.report_provider,
                 )
+            from arslan.execution_checkpoint import save
+            await save("after_model")
 
     # ------------------------------------------------------------------
     # Private helpers

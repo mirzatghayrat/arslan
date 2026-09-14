@@ -95,6 +95,8 @@ class OpenAIProvider(BaseLLMProvider):
         payload = self._payload(messages, tools, temperature)
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
+        from arslan.execution_checkpoint import save
+        await save("before_model")
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -183,6 +185,8 @@ class OpenAIProvider(BaseLLMProvider):
         self._last_stream_usage = None  # reset per attempt — no stale carry-over
         from arslan.execution_budget import model_request
         payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
+        from arslan.execution_checkpoint import save
+        await save("before_model")
         async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
             async with client.stream(
                 "POST",

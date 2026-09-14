@@ -59,6 +59,48 @@ class Budget:
         self.artifact_bytes = 0
         self.stop_reason: str | None = None
 
+    @classmethod
+    def from_snapshot(cls, snapshot: dict, *, limits: Limits | None = None) -> Budget:
+        """Restore charged work, never reset it or silently widen its ceiling.
+
+        Downtime is not execution time. The elapsed execution recorded before a
+        crash remains charged; every new live interval starts at that offset.
+        Token overrun is legal here because accounting is post-response.
+        """
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("used"), dict):
+            raise ValueError("invalid execution budget snapshot")
+        saved = snapshot.get("limits")
+        if not isinstance(saved, dict) or set(saved) != set(asdict(Limits())):
+            raise ValueError("invalid execution budget limits")
+        for key, value in saved.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError("invalid execution budget limit")
+            if key != "wall_seconds" and not isinstance(value, int):
+                raise ValueError("budget counters require integer limits")
+        ceiling = Limits(**saved)
+        if limits is not None:
+            ceiling = Limits(**{key: min(value, getattr(limits, key)) for key, value in saved.items()})
+        budget = cls(ceiling)
+        identity = snapshot.get("id")
+        if not isinstance(identity, str) or not identity or len(identity) > 200:
+            raise ValueError("invalid execution budget identity")
+        budget.id = identity
+        used = snapshot["used"]
+        for key in ("model_requests", "tool_calls", "tokens", "artifact_bytes", "wall_seconds"):
+            value = used.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError("invalid execution budget usage")
+            if key != "wall_seconds":
+                if not isinstance(value, int):
+                    raise ValueError("budget counters require integers")
+                setattr(budget, key, value)
+        budget.started = time.monotonic() - used["wall_seconds"]
+        reason = snapshot.get("stop_reason")
+        if reason is not None and reason not in {"model_requests", "tool_calls", "tokens", "artifact_bytes", "wall_seconds"}:
+            raise ValueError("invalid execution budget stop reason")
+        budget.stop_reason = reason
+        return budget
+
     def remaining_seconds(self) -> float:
         return max(0.0, self.limits.wall_seconds - (time.monotonic() - self.started))
 
@@ -125,6 +167,8 @@ def detached_context():
     """Background maintenance gets its own budget, not a completed user's counter."""
     context = copy_context()
     context.run(_current.set, None)
+    from arslan.execution_checkpoint import clear_in
+    clear_in(context)
     return context
 
 

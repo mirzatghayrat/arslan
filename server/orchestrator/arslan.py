@@ -1802,6 +1802,11 @@ async def _arslan_tools() -> list[dict]:
     tools = [{"key": k, "description": desc[k]}
              for k in ("web_search", "web_extract", "render_chart", "recall", "remember")
              if k in EXECUTORS]
+    from server.services.task_service import current as current_task
+    if current_task() is not None and "task_progress" in EXECUTORS:
+        tools.append({"key": "task_progress", "description":
+                      "Read this task's saved progress and owned prior outputs after interruption or context compaction. "
+                      "Optional run_id selects one prior execution. This never authorizes repeating a write."})
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
     # the turn and _handle_answer emits the clarify_options card). Registered here so
     # Arslan's answer path can offer real choice buttons instead of a text counter-question.

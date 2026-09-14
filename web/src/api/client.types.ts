@@ -523,6 +523,7 @@ export interface ArslanHistoryRow {
 
 // Server -> client frames on /ws/arslan
 export type ArslanServerMessage =
+  | import("./tasks").TaskFrame
   | { type: "history"; messages: ArslanHistoryRow[] }
   | { type: "proposal"; spawn_id: number; spawn_name: string | null }
   | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
@@ -644,6 +645,7 @@ export interface RunEvaluationDto {
 }
 
 export interface RunDto {
+  no_learning?: boolean;
   id: number;
   conversation_id: string;
   spawn_id: number | null;

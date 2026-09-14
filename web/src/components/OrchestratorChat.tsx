@@ -22,6 +22,7 @@ import WorkingPulse from './WorkingPulse';
 import LiveActivity from './LiveActivity';
 import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
+import { taskErrorKey } from './companion/errors';
 import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
 import { clampEndpointSilenceMs } from '../api/adapters';
@@ -1416,7 +1417,7 @@ export default function OrchestratorChat({
               <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="text-[11px] text-danger font-semibold">{t('chat.llm_error_title', 'Model error')}</span>
-                <span className="text-[11px] text-danger/80 font-mono break-words">{llmError}</span>
+                <span className="text-[11px] text-danger/80 font-mono break-words">{taskErrorKey(llmError) ? t(taskErrorKey(llmError)!) : llmError}</span>
               </div>
               <button
                 onClick={clearLlmError}

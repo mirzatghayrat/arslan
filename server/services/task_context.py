@@ -45,6 +45,18 @@ async def load(conversation_id: str, *, user_message="") -> pc.TaskMemoryContext
         row = await db.get(ConversationContext, conversation_id)
         from server.services.llm_factory import memory_models_are_local
         model_is_local = await memory_models_are_local(db)
+        if not model_is_local and not (row and row.temporary):
+            from sqlalchemy import text
+            local_history = await db.scalar(text("""
+                SELECT 1 FROM context_receipts WHERE conversation_id=:cid AND owner_id=:owner
+                AND (json_extract(receipt,'$.local_only_used')=1
+                  OR (json_type(receipt,'$.local_only_used') IS NULL
+                      AND json_extract(receipt,'$.cloud_use')='not_sent'
+                      AND json_array_length(receipt,'$.used')>0)) LIMIT 1
+            """), {"cid": conversation_id, "owner": row.owner_id if row else "local"})
+            if local_history:
+                from arslan.companion.memory import MemoryError
+                raise MemoryError("conversation_local_history")
     identity = str(uuid4())
     digest = explicit_save_digest(user_message)
     return pc.TaskMemoryContext(
@@ -81,7 +93,8 @@ def scoped_turn(function):
             if pc.current().temporary:
                 from server.services.temporary_turn import execute
                 return await execute(conversation_id, user_message, *args, **kwargs)
-            return await function(conversation_id, user_message, *args, **kwargs)
+            from server.services.task_service import run_turn
+            return await run_turn(function, conversation_id, user_message, *args, **kwargs)
         if not await is_active():
             return await function(conversation_id, user_message, *args, **kwargs)
         ctx = await load(conversation_id, user_message=user_message)
@@ -89,7 +102,8 @@ def scoped_turn(function):
             if ctx.temporary:
                 from server.services.temporary_turn import execute
                 return await execute(conversation_id, user_message, *args, **kwargs)
-            return await function(conversation_id, user_message, *args, **kwargs)
+            from server.services.task_service import run_turn
+            return await run_turn(function, conversation_id, user_message, *args, **kwargs)
     return wrapped
 
 

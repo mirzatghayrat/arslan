@@ -498,6 +498,17 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     budget = current()
     if budget is not None:
         budget.tool()
+    from arslan.execution_checkpoint import save
+    await save("tool_admitted")
+    # Screen before emitting argument previews or recording traces. The durable
+    # task journal also screens, but that later boundary cannot protect UI/logs.
+    from arslan.companion.content_policy import contains_credential_data
+    if contains_credential_data(args):
+        result = {"ok": False, "external": False, "code": "credentials_not_tool_data",
+                  "error": "Credentials cannot be passed as ordinary tool arguments. Use an approved connection."}
+        safe_call = json.dumps({"tool": tool_key, "args": {}}, ensure_ascii=False)
+        return _record_tool_result(tool_key, {}, result, emit, tool_trace, safe_call, convo,
+                                   mcp_fail_counts=mcp_fail_counts)
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
 
@@ -692,7 +703,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         from server.orchestrator import tool_caller
         _ct = tool_caller.set_caller(caller) if caller is not None else None
         try:
-            result = await asyncio.wait_for(executor.execute(args), timeout=tool_timeout_s)
+            from server.services.task_service import current as current_task
+            async def execute():
+                return await asyncio.wait_for(executor.execute(args), timeout=tool_timeout_s)
+            runtime = current_task()
+            result = await runtime.execute_tool(tool_key, args, execute) if runtime else await execute()
         except TimeoutError:
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
         except Exception as exc:  # noqa: BLE001
@@ -950,6 +965,8 @@ async def run(
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
+    "task_progress": {"type": "object", "properties": {"run_id": {"type": "integer", "minimum": 1}},
+                      "additionalProperties": False},
     "web_search": {"type": "object",
                    "properties": {"query": {"type": "string"}},
                    "required": ["query"]},

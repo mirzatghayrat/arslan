@@ -80,6 +80,8 @@ interface ArslanState {
   // stream_start's run_id — both host and spawn runs). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
   activeRunId: number | null;
+  taskState: import("../api/tasks").TaskFrame | null;
+  taskSequences: Record<string, number>;
   // The Web Speech speaker owes the engine at least one utterance end. Conversation
   // mode mutes the microphone while this is true.
   speaking: boolean;
@@ -210,6 +212,8 @@ function initialData() {
     lastFrameAt: null as number | null,
     stalled: false,
     activeRunId: null as number | null,
+    taskState: null as import("../api/tasks").TaskFrame | null,
+    taskSequences: {} as Record<string, number>,
     speaking: false,
   };
 }
@@ -362,6 +366,10 @@ function makeActions(set: SetState, get: GetState) {
         };
       };
       switch (frame.type) {
+        case "task_state":
+          if ((state.taskSequences[frame.task_id] ?? -1) >= frame.sequence) break;
+          set({ taskState: frame, taskSequences: { ...state.taskSequences, [frame.task_id]: frame.sequence } });
+          break;
         case "history": {
           const items: ArslanThreadItem[] = frame.messages.map(rowToItem);
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);

@@ -469,6 +469,7 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDe
     return RunDetailOut(
         artifacts=artifact_store.list_artifacts(run_id),
         run=RunOut(
+            no_learning=bool(run.no_learning),
             execution_budget=run.execution_budget,
             id=run.id, conversation_id=run.conversation_id, spawn_id=run.spawn_id,
             spawn_name=run.spawn_name, user_message=run.user_message, total_ms=run.total_ms,
@@ -496,6 +497,11 @@ async def cancel_run(run_id: int, db: AsyncSession = Depends(get_session)) -> di
     The registry is process-local: a live run is only cancellable in the process
     executing it. When the registry misses, the DB row disambiguates 404 vs 409.
     """
+    from server.services import task_service
+    task_id = task_service.task_for_run(run_id)
+    if task_id is not None:
+        await task_service.cancel(task_id)
+        return {"ok": True}
     if run_registry.cancel(run_id):
         return {"ok": True}
     run = await db.get(Run, run_id)
@@ -522,6 +528,8 @@ async def rescore_run(run_id: int, db: AsyncSession = Depends(get_session)) -> d
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
+    if run.no_learning:
+        raise HTTPException(status_code=409, detail={"code": "run_learning_disabled"})
     if run.kind not in ("live", "scheduled"):
         raise HTTPException(status_code=409,
                             detail="only live/scheduled runs can be rescored")

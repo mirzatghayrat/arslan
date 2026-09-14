@@ -18,6 +18,13 @@ from __future__ import annotations
 # and tools: list of (key, description, tier, status) tuples.
 TOOLSETS: list[dict] = [
     {
+        "key": "task_recovery", "name": "Task Recovery",
+        "description": "Inspect saved progress and prior outputs of the current task only.",
+        "tier": "orchestrator", "status": "wired",
+        "tools": [("task_progress", "Read the current task's saved progress and owned prior outputs.",
+                   "orchestrator", "wired")],
+    },
+    {
         "key": "web_search_scraping",
         "name": "Web Search & Scraping",
         "description": "web_search, web_extract — live web data in.",

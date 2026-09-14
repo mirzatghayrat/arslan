@@ -164,6 +164,11 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
     if run_registry.active_for(conversation_id) or turn_journal.active(conversation_id):
         raise HTTPException(409, detail={"code": "conversation_running"})
+    from server.db.models import CompanionTask
+    if await repo.db.scalar(select(CompanionTask.id).where(
+            CompanionTask.conversation_id == conversation_id, CompanionTask.owner_id == USER.owner_id,
+            CompanionTask.phase.in_(("running", "verifying"))).limit(1)):
+        raise HTTPException(409, detail={"code": "conversation_running"})
     if body.project_id:
         project = await repo.db.get(Project, body.project_id)
         if project is None or project.owner_id != USER.owner_id or project.status != "active":

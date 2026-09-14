@@ -41,3 +41,24 @@ def test_explicit_save_parser_is_narrow_and_binds_content():
     assert task_context.explicit_save_digest("Do not remember this") is None
     assert task_context.explicit_save_digest("Remember that I prefer examples") != task_context.explicit_save_digest(
         "Remember that I prefer diagrams")
+
+
+async def test_local_only_history_cannot_be_laundered_through_a_later_cloud_turn(execution_db, monkeypatch):
+    from server.services import llm_factory
+    async with execution_db() as db:
+        db.add(ContextReceiptRecord(id="local-receipt", conversation_id="private-history",
+            task_id="old-task", run_id="old-run", receipt={"memory_mode": "normal", "cloud_use": "not_sent",
+                "local_only_used": True, "used": [{"kind": "memory", "id": "local-memory", "revision": 1}]}))
+        await db.commit()
+    async def cloud(db):
+        return False
+    monkeypatch.setattr(llm_factory, "memory_models_are_local", cloud)
+    from arslan.companion.memory import MemoryError
+    import pytest
+    with pytest.raises(MemoryError, match="conversation_local_history"):
+        await task_context.load("private-history", user_message="Continue with the cloud model")
+    assert not (await task_context.load("new-conversation")).model_is_local
+    async def local(db):
+        return True
+    monkeypatch.setattr(llm_factory, "memory_models_are_local", local)
+    assert (await task_context.load("private-history")).model_is_local

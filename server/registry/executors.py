@@ -17,6 +17,7 @@ from pathlib import Path
 from server import config
 from server.db.session import AsyncSessionLocal
 from server.registry.memory_executors import RecallExecutor, RememberExecutor
+from server.registry.task_tools import TaskProgressExecutor
 # Module-qualified on purpose. `from net_pin import net_pin._fetch_text` binds the name HERE at
 # import time, so a test patching net_pin._fetch_text would never reach this caller —
 # the seam has to stay at the definition site. _BlockedHost is the exception: it is
@@ -735,7 +736,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
-    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(),
+    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), TaskProgressExecutor(),
     # Workspace file tools (P1). Registered here; whether Arslan is OFFERED them
     # depends on a configured workspace — see _arslan_tools.
     ReadFileExecutor(), ListDirExecutor(), SearchFilesExecutor(),

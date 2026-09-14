@@ -148,6 +148,7 @@ export interface UiRunDimension {
 }
 
 export interface UiRun {
+  noLearning?: boolean;
   artifacts?: import('./api/client.types').StoredArtifact[];
   id: number;
   spawnName: string | null;

@@ -49,6 +49,7 @@ import EvalDock from './components/EvalDock';
 import MemorySection from './components/companion/MemorySection';
 import ProjectsSection from './components/companion/ProjectsSection';
 import ConversationControls from './components/companion/ConversationControls';
+import TaskPanel from './components/companion/TaskPanel';
 import { companionApi, type Project } from './api/companion';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
@@ -1166,6 +1167,8 @@ export default function App() {
               <ConversationControls key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
                 onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
                   ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
+              {!activeThread?.temporary && <TaskPanel key={`task:${activeThreadId}`} conversationId={activeThreadId}
+                onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
               <OrchestratorChat
                 key={`chat:${activeThreadId}`}
                 chatHistory={orchestratorChatHistory}

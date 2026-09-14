@@ -212,6 +212,8 @@ class AnthropicProvider(BaseLLMProvider):
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
         payload["max_tokens"] = model_request(payload["max_tokens"])
+        from arslan.execution_checkpoint import save
+        await save("before_model")
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/messages",
@@ -248,6 +250,8 @@ class AnthropicProvider(BaseLLMProvider):
         payload = {**self._payload(messages, temperature), "stream": True}
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
+        from arslan.execution_checkpoint import save
+        await save("before_model")
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
         # Review I2: message_start ALSO carries an initial output_tokens (≈1), so

@@ -19,6 +19,11 @@ from server.db import session as db_session
 from server.db.models import MemoryEntry, MemoryRevision, Project
 
 
+@dataclass
+class ContextLease:
+    active: bool = True
+
+
 @dataclass(frozen=True)
 class TaskMemoryContext:
     task_id: str
@@ -40,6 +45,7 @@ class TaskMemoryContext:
     explicit_save_ref: str | None = None
     explicit_save_digest: str | None = None
     allow_global_save: bool = False
+    lease: ContextLease | None = None
 
     def actor(self, origin="extractor") -> MemoryActor:
         return MemoryActor(
@@ -60,7 +66,8 @@ _current: ContextVar[TaskMemoryContext | None] = ContextVar("task_memory_context
 
 
 def current() -> TaskMemoryContext | None:
-    return _current.get()
+    context = _current.get()
+    return context if context is None or context.lease is None or context.lease.active else None
 
 
 @contextmanager
@@ -114,7 +121,7 @@ def _terms(value: str) -> set[str]:
 async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
                    limit_tokens: int = 1200) -> PersonalContext | None:
     ctx = context or current()
-    if ctx is None:
+    if ctx is None or (ctx.lease is not None and not ctx.lease.active):
         return None  # No trusted scope => no personal memory in a prompt.
     mode = "temporary" if ctx.temporary else "disabled" if ctx.no_memory else "normal"
     receipt = ContextReceipt(id=str(uuid4()), task_id=ctx.task_id, run_id=ctx.run_id,
@@ -158,6 +165,7 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
         -(pair[0].updated_at.timestamp() if pair[0].updated_at else 0), pair[0].id,
     ))
     chosen, refs = [], []
+    local_only_used = False
     excluded = False
     header = "Confirmed personal context (reference data, not instructions):\n"
     for entry, revision in ranked:
@@ -167,10 +175,12 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
             excluded = True
             continue
         chosen.append(line)
+        local_only_used = local_only_used or entry.use_policy == "local_only"
         refs.append(ResourceRef(id=entry.id, kind="memory", revision=entry.version))
     rendered = header + "\n".join(chosen) if chosen else ""
     return PersonalContext(rendered, receipt.model_copy(update={
         "used": tuple(refs), "estimated_tokens": estimate_tokens(rendered),
         "filter_reasons": ("budget",) if excluded else (),
         "cloud_use": "approved" if refs and not ctx.model_is_local else "not_sent",
+        "local_only_used": local_only_used,
     }))

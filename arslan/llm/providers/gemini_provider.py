@@ -129,6 +129,8 @@ class GeminiProvider(BaseLLMProvider):
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        from arslan.execution_checkpoint import save
+        await save("before_model")
         async with self._client() as client:
             response = await client.post(
                 url, json=payload,
@@ -176,6 +178,8 @@ class GeminiProvider(BaseLLMProvider):
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature)
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        from arslan.execution_checkpoint import save
+        await save("before_model")
         async with self._client() as client:
             async with client.stream(
                 "POST", url, json=payload,

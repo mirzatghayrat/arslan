@@ -200,6 +200,8 @@ async def lifespan(app: FastAPI):
         from server.services import run_reaper
 
         await run_reaper.mark_interrupted_runs()
+        from server.services import task_service
+        await task_service.recover_interrupted()
         await run_reaper.reap_stuck_runs()
         from server.services import recipes
         await recipes.mark_interrupted()
@@ -446,6 +448,8 @@ def create_app() -> FastAPI:
     app.include_router(brain_api.router, prefix="/api/v1")
     from server.api import companion as companion_api
     app.include_router(companion_api.router, prefix="/api/v1")
+    from server.api import tasks as tasks_api
+    app.include_router(tasks_api.router, prefix="/api/v1")
 
     from server.api import notes as notes_api
 

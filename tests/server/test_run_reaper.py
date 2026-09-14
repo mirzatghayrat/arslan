@@ -153,6 +153,18 @@ async def test_rescore_scored_run_still_accepted(client, monkeypatch):
     assert enqueued == [run_id]
 
 
+async def test_rescore_private_run_is_rejected_without_scheduling(client, monkeypatch):
+    enqueued = _capture_scheduling(monkeypatch)
+    run_id = await _seed_run_via_client(client, status="recorded")
+    async with client.db_maker() as db:
+        row = await db.get(Run, run_id)
+        row.no_learning = True
+        await db.commit()
+    response = await client.post(f"/api/v1/runs/{run_id}/rescore")
+    assert response.status_code == 409
+    assert enqueued == []
+
+
 async def test_rescore_scheduled_run_accepted(client, monkeypatch):
     """Task-2 review S5: scheduled runs are judge-scored like live ones (the reaper
     already covers both) — rescoring a score_failed scheduled run must enqueue."""

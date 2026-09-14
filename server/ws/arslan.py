@@ -208,8 +208,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         injected `confirm_command`, which OWNS ws.receive itself (see below) only
         while a command is pending — so there is never a blocked receiver to cancel,
         and the outer loop cleanly resumes receiving once orchestration finishes."""
+        from server.services.task_repository import TaskError
+        from arslan.companion.memory import MemoryError
+        from arslan.execution_budget import BudgetExceeded
         try:
             await coro
+        except (TaskError, MemoryError, BudgetExceeded) as exc:
+            code = exc.code if isinstance(exc, (TaskError, MemoryError)) else "task_budget_exhausted"
+            await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
         finally:
             await queue.join()
 
@@ -467,6 +473,23 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 for m in await _history(conversation_id):
                     if m["message_id"] > last_id:
                         await ws.send_json(protocol.message(m["message_id"], m["content"], m["role"]))
+                continue
+
+            if msg_type == "resume_task":
+                from server.services import task_service
+                from server.services.task_repository import TaskError
+                from arslan.execution_budget import BudgetExceeded
+                task_id, version = data.get("task_id"), data.get("expected_version")
+                if not isinstance(task_id, str) or not isinstance(version, int) or isinstance(version, bool) or version < 1:
+                    await ws.send_json(protocol.error("INVALID_TASK_RESUME", "invalid_task_resume", recoverable=True))
+                    continue
+                try:
+                    await run_with_confirm_frames(task_service.resume_turn(
+                        task_id, version, conversation_id, emit, confirm_command=confirm_command,
+                        confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule))
+                except (TaskError, BudgetExceeded) as exc:
+                    code = exc.code if isinstance(exc, TaskError) else "task_budget_exhausted"
+                    await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
                 continue
 
             if msg_type == "confirm_create":

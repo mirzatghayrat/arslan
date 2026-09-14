@@ -35,7 +35,8 @@ def _default_schedule(run_id: int) -> None:
     """Fire-and-forget judge scoring (overridable in tests)."""
     from server.services import run_eval_service
 
-    from arslan.execution_budget import detached_context, governed
+    from arslan.execution_budget import governed
+    from server.services.task_service import detached_context
     asyncio.create_task(governed(run_eval_service.score)(run_id), context=detached_context())
 
 
@@ -130,6 +131,9 @@ class RunRecorder:
             run_id = run.id
         if continuation:
             _continuation_run_ids.add(run_id)
+        from server.services.task_service import current as current_task
+        if current_task() is not None:
+            await current_task().link_run(run_id)
         return cls(run_id, started, route_ms, spawn_name, continuation, spawn_id, kind)
 
     def tee(self, emit: Callable[[dict], None]) -> Callable[[dict], None]:
@@ -384,6 +388,9 @@ class RunRecorder:
             # clearing _finalizing is then inert.)
             self._finalizing = False
             raise
+        from server.services.task_service import current as current_task
+        if current_task() is not None:
+            current_task().record_run_output(self.run_id)
         if replay or status_override is not None or self.kind in {"host", "recipe", "recipe_step"}:
             # replay → paired gate; cancelled/interrupted → never scored. This also skips
             # the evolution_watcher nudge below — harmless, since a cancelled run creates

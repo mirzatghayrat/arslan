@@ -500,6 +500,7 @@ class RunEvaluationOut(BaseModel):
 
 
 class RunOut(BaseModel):
+    no_learning: bool = False
     execution_budget: dict | None = None
     id: int
     conversation_id: str

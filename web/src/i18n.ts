@@ -9,6 +9,7 @@ import fr from "./locales/fr.json";
 import ja from "./locales/ja.json";
 import zh from "./locales/zh.json";
 import { companionMessages } from "./locales/companion";
+import { taskMessages } from "./locales/tasks";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
 export type Lang = (typeof SUPPORTED_LANGUAGES)[number];
@@ -18,12 +19,12 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: { ...en, companion: companionMessages.en } },
-      zh: { translation: { ...zh, companion: companionMessages.zh } },
-      ja: { translation: { ...ja, companion: companionMessages.ja } },
-      es: { translation: { ...es, companion: companionMessages.es } },
-      de: { translation: { ...de, companion: companionMessages.de } },
-      fr: { translation: { ...fr, companion: companionMessages.fr } },
+      en: { translation: { ...en, companion: companionMessages.en, tasks: taskMessages.en } },
+      zh: { translation: { ...zh, companion: companionMessages.zh, tasks: taskMessages.zh } },
+      ja: { translation: { ...ja, companion: companionMessages.ja, tasks: taskMessages.ja } },
+      es: { translation: { ...es, companion: companionMessages.es, tasks: taskMessages.es } },
+      de: { translation: { ...de, companion: companionMessages.de, tasks: taskMessages.de } },
+      fr: { translation: { ...fr, companion: companionMessages.fr, tasks: taskMessages.fr } },
     },
     fallbackLng: "en",
     supportedLngs: [...SUPPORTED_LANGUAGES],

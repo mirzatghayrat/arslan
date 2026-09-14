@@ -72,6 +72,8 @@ def mark_restored_sync(connection) -> dict:
         if cached:
             connection.exec_driver_sql(f"UPDATE runs SET {','.join(column + '=NULL' for column in cached)}")
     result = apply_pending_guard_sync(connection)
+    from server.services.task_restore import quarantine_sync
+    quarantine_sync(connection)
     return {"restore_id": restore_id, "review_required": True, **result}
 
 
