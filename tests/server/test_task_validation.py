@@ -49,7 +49,9 @@ def test_source_count_requires_successful_open_not_search_or_model_urls():
     assertion = check("research_sources", minimum=1, target="https://fixture.invalid")
     search = {"tool": "web_search", "args": {"url": "https://fixture.invalid"}, "result": {"ok": True}}
     assert task_validation.evaluate(assertion, "I opened https://fixture.invalid", [], [search])["status"] == "failed"
-    opened = {**search, "tool": "web_extract"}
+    from arslan.companion.research import receipt
+    opened = {**search, "tool": "web_extract", "result": {"ok": True, "url": "https://fixture.invalid", "text": "Body",
+        "source": receipt("https://fixture.invalid", "Body", truncated=False).model_dump(mode="json")}}
     assert task_validation.evaluate(assertion, "", [], [opened])["status"] == "passed"
     assert task_validation.evaluate(assertion, "", [], [{**opened, "result": {"ok": False}}])["status"] == "failed"
 

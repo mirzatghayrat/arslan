@@ -62,14 +62,21 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict]) -> dict
             passed = passed and all((rule.width is None or item.get("width") == rule.width) and
                 (rule.height is None or item.get("height") == rule.height) for item in selected)
     elif rule.kind == "research_sources":
-        opened = {item.get("args", {}).get("url") for item in trace
-                  if item.get("tool") == "web_extract" and (item.get("result") or {}).get("ok") is True
-                  and isinstance(item.get("args", {}).get("url"), str)}
+        from arslan.companion.research import admitted_sources
+        opened = {source.url for source, _ in admitted_sources(trace).values()}
         passed = len(opened) >= (rule.minimum if rule.minimum is not None else 1)
         if rule.maximum is not None:
             passed = passed and len(opened) <= rule.maximum
         if rule.target is not None:
             passed = passed and rule.target in opened
+    elif rule.kind == "research_evidence":
+        from pydantic import ValidationError
+        from arslan.companion.research import ResearchEvidence, inspect_evidence
+        try:
+            result = inspect_evidence(ResearchEvidence.model_validate_json(text), trace)
+        except ValidationError:
+            return {**base, "status": "failed", "code": "research_evidence_invalid"}
+        return {**base, **result}
     elif rule.kind in {"code_build", "code_test"}:
         if rule.target is None or rule.argv is None:
             return {**base, "status": "not_run", "code": "command_contract_required"}

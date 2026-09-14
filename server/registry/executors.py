@@ -215,7 +215,10 @@ class WebExtractExecutor:
             return {"ok": False, "error": f"fetch failed: {category}{_STEER}"}
         if not text:
             return {"ok": False, "error": f"no extractable text{_STEER}"}
-        return {"ok": True, "url": url, "text": text[:net_pin._EXTRACT_CHAR_LIMIT]}
+        from arslan.companion.research import receipt
+        extracted = text[:net_pin._EXTRACT_CHAR_LIMIT]
+        return {"ok": True, "url": url, "text": extracted,
+                "source": receipt(url, extracted, truncated=len(text) > len(extracted)).model_dump(mode="json")}
 
 
 class ListMyCapabilitiesExecutor:

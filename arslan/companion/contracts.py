@@ -66,7 +66,7 @@ class BudgetSpec(Contract):
 
 class ValidationRule(Contract):
     """Bounded declarative assertions, never code, paths or execution authority."""
-    kind: Literal["text", "json", "artifact", "image_dimensions", "research_sources",
+    kind: Literal["text", "json", "artifact", "image_dimensions", "research_sources", "research_evidence",
                   "code_build", "code_test", "language", "layout", "remote_readback"]
     target: Annotated[str, Field(max_length=240)] | None = None
     equals: Annotated[str, Field(max_length=20_000)] | None = None
@@ -91,6 +91,7 @@ class ValidationRule(Contract):
             "artifact": {"target", "minimum", "maximum"},
             "image_dimensions": {"target", "width", "height", "minimum", "maximum"},
             "research_sources": {"target", "minimum", "maximum"},
+            "research_evidence": set(),
             "code_build": {"target", "argv", "equals", "contains"},
             "code_test": {"target", "argv", "equals", "contains"},
             "language": {"locale"}, "layout": {"target"}, "remote_readback": {"target", "equals", "locale"},
@@ -113,7 +114,7 @@ class AcceptanceCheck(Contract):
         if self.critical and self.evaluator == "model":
             raise ValueError("critical acceptance needs deterministic or human verification")
         if self.evaluator == "model" and self.rule is not None and self.rule.kind in {
-            "artifact", "image_dimensions", "research_sources", "code_build", "code_test", "remote_readback"}:
+            "artifact", "image_dimensions", "research_sources", "research_evidence", "code_build", "code_test", "remote_readback"}:
             raise ValueError("factual checks need deterministic or human verification")
         return self
 
