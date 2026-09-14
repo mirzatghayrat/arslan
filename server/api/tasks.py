@@ -47,10 +47,12 @@ async def revise_task(task_id: str, body: Revision, repo=Depends(task_repository
 
 @router.get("/tasks")
 async def list_tasks(conversation_id: str | None = None, limit: int = Query(20, ge=1, le=100),
-                     offset: int = Query(0, ge=0), repo=Depends(task_repository)):
+                     offset: int = Query(0, ge=0), active_only: bool = False, repo=Depends(task_repository)):
     query = select(CompanionTask).where(CompanionTask.owner_id == "local")
     if conversation_id is not None:
         query = query.where(CompanionTask.conversation_id == conversation_id)
+    if active_only:
+        query = query.where(CompanionTask.phase.in_(("queued", "running", "waiting_user", "verifying")))
     rows = (await repo.db.execute(query.order_by(CompanionTask.created_at.desc(), CompanionTask.id)
                                   .limit(limit).offset(offset))).scalars().all()
     return [await repo.present(row) for row in rows]

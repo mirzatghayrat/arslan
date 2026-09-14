@@ -55,6 +55,10 @@ import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import WorkDock from './components/WorkDock';
+import ConnectionsSection from './components/companion/ConnectionsSection';
+import type { SettingsSectionId } from './components/settings/sectionRegistry';
+import type { McpPrefill } from './components/ToolHubDiscover';
+import { restoreExpertChats, saveExpertChats } from './lib/expertChats';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
@@ -82,6 +86,10 @@ export default function App() {
 // Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'
   const [activeSection, setActiveSection] = useState<Section>('arslan');
   const [showBrowser, setShowBrowser] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | undefined>();
+  const [connectionPrefill, setConnectionPrefill] = useState<McpPrefill | undefined>();
+  const [expertChatIds, setExpertChatIds] = useState(restoreExpertChats);
+  useEffect(() => { saveExpertChats(expertChatIds); }, [expertChatIds]);
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -828,6 +836,25 @@ export default function App() {
   const currentCaps = getContextCapabilities();
   // All orchestrator threads now use the live WS; history comes from the store.
   const isThreadEmpty = activeSection === 'arslan' && orchestratorChatHistory.length === 0;
+  function selectConversation(id: string) {
+    const nav = threadNavAction(activeThreadId, id);
+    if (nav.endPrevious) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
+    if (nav.resetStore) useArslanStore.getState().resetForNewConversation();
+    if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
+    setActiveThreadId(id); setActiveSection('arslan'); setPanelView('default');
+  }
+  function openConnections(prefill?: McpPrefill) {
+    setConnectionPrefill(prefill); setActiveSection('connections'); setPanelView('default');
+  }
+  function openExpertChat(id: string) {
+    setExpertChatIds(old => [id, ...old.filter(value => value !== id)]);
+    setActiveSpawnChatId(id); setActiveSection('spawn'); setPanelView('default');
+  }
+  const experts = <SpawnsDashboard embedded spawns={spawns} selectedSpawnId={selectedSpawnId}
+    setSelectedSpawnId={setSelectedSpawnId} onEditEquipment={handleEditSpawnEquipment}
+    onCreateSpawnClick={() => setStudio({ mode: 'create' })}
+    onOpenDirectChat={openExpertChat}
+    setSpawns={setSpawns} setThreads={setThreads} activeThreadId={activeThreadId} backendStatus={backendStatus} />;
 
   return (
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">
@@ -838,41 +865,28 @@ export default function App() {
       {activeSection !== 'settings' && <Sidebar
         threads={threads}
         activeThreadId={activeThreadId}
-        onSelectThread={(id) => {
-          // The reset below is only safe when a `history` frame is guaranteed to
-          // follow, and one only follows when the socket URL changes — i.e. when
-          // the id actually changes. Re-selecting the ACTIVE thread (what you do
-          // coming back from another view) changes nothing, so wiping the store
-          // left the chat blank until a real switch reconnected it. Decision and
-          // tests live in lib/threadNav.ts.
-          const nav = threadNavAction(activeThreadId, id);
-          // Signal the OLD conversation ended (backend may background-distill prefs).
-          // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
-          if (nav.endPrevious) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
-          // Reset store first so stale items from the previous conversation are
-          // cleared before the new conversation_id's WS connects and sends its
-          // `history` frame.
-          if (nav.resetStore) useArslanStore.getState().resetForNewConversation();
-          if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
-          setActiveThreadId(id);
-          setActiveSection('arslan');
-          setPanelView('default');
+        onSelectThread={selectConversation}
+        onOpenTask={task => {
+          setThreads(old => old.some(thread => thread.id === task.conversation_id)
+            ? old.map(thread => thread.id === task.conversation_id ? { ...thread, archived: false } : thread)
+            : [...old, { id: task.conversation_id, title: task.spec.instruction.slice(0, 80), history: [] }]);
+          selectConversation(task.conversation_id);
         }}
         onAddThread={() => handleAddArslanThread()}
         spawns={spawns}
+        expertChatIds={expertChatIds}
         activeSpawnChatId={activeSpawnChatId}
-        onSelectSpawnChat={(id) => {
-          setActiveSpawnChatId(id);
-          setActiveSection('spawn');
-          setPanelView('default');
-        }}
+        onSelectSpawnChat={openExpertChat}
         activeSection={activeSection}
         onChangeSection={(section) => {
+          if (section === 'settings') setSettingsInitialSection(undefined);
+          if (section === 'connections') setConnectionPrefill(undefined);
           setActiveSection(section);
           setPanelView('default');
         }}
         onCompleteChat={async (id) => {
           await api.completeChat(Number(id));
+          setExpertChatIds(old => old.filter(value => value !== id));
           // Refetch spawn list so hasActiveChat reflects the completed state
           const freshSpawns = await api.listSpawns();
           setSpawns(freshSpawns.map(toUiSpawn));
@@ -931,7 +945,7 @@ export default function App() {
                    title moves up into it, which is what made the space read as
                    dead in the first place. */
                 <span className={`text-[11px] font-mono text-foreground font-bold truncate ${activeSection === 'settings' ? 'invisible' : ''}`}>
-                  {t(`nav.${activeSection}`)}
+                  {t(`nav.${activeSection === 'ledger' ? 'capabilities' : activeSection}`)}
                 </span>
               )}
             </div>
@@ -1238,30 +1252,14 @@ export default function App() {
               />
             )}
 
-            {activeSection === 'ledger' && panelView === 'default' && (
-              <SpawnsDashboard
-                spawns={spawns}
-                selectedSpawnId={selectedSpawnId}
-                setSelectedSpawnId={setSelectedSpawnId}
-                onEditEquipment={handleEditSpawnEquipment}
-                onCreateSpawnClick={() => setStudio({ mode: 'create' })}
-                onOpenDirectChat={(spawnId) => {
-                  setActiveSpawnChatId(spawnId);
-                  setActiveSection('spawn');
-                  setPanelView('default');
-                }}
-                setSpawns={setSpawns}
-                setThreads={setThreads}
-                activeThreadId={activeThreadId}
-                backendStatus={backendStatus}
-              />
-            )}
-
-            {activeSection === 'capabilities' && (
+            {(activeSection === 'capabilities' || activeSection === 'ledger') && (
               // The primary config is the one that answers; falling back to the
               // first is for the window before a primary is assigned, not a
               // guess about which one runs.
               <Capabilities
+                experts={experts}
+                initialTab={activeSection === 'ledger' ? 'experts' : undefined}
+                onOpenConnections={openConnections}
                 provider={
                   (providerConfigs.find((c) => c.is_primary) ?? providerConfigs[0])?.provider
                 }
@@ -1270,11 +1268,16 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
+            {activeSection === 'connections' && <ConnectionsSection prefill={connectionPrefill}
+              provider={(providerConfigs.find(config => config.is_primary) ?? providerConfigs[0])?.provider} onOpenSettings={section => {
+              setSettingsInitialSection(section); setActiveSection('settings');
+            }} />}
 
             {activeSection === 'diagnosis' && <DiagnosisView onGoToChat={() => setActiveSection('arslan')} />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
+                initialSection={settingsInitialSection}
                 settings={settings}
                 setSettings={setSettings}
                 llmProviders={llmProviders}

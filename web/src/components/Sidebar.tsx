@@ -1,468 +1,142 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import type { Section } from "../lib/sections";
-import {
-  MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
-  Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
-  ChevronDown, ChevronUp, Boxes, Orbit, HeartPulse, Archive, FolderOpen
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { useTranslation } from 'react-i18next';
-import { Spawn } from '../types';
-import { SpawnAvatar } from './SpawnAvatar';
-import ThreadRowMenu from './ThreadRowMenu';
-import type { BackendStatus } from '../hooks/useBackendStatus';
+import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, Boxes, Network, Archive, FolderOpen, Plug, Activity } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { Spawn } from "../types";
+import { SpawnAvatar } from "./SpawnAvatar";
+import ThreadRowMenu from "./ThreadRowMenu";
+import type { BackendStatus } from "../hooks/useBackendStatus";
+import type { TaskSummary } from "../api/tasks";
+import OngoingTasks from "./companion/OngoingTasks";
 import EmptyState from "./EmptyState";
 import { useDismissable } from "../hooks/useDismissable";
 
-interface ArslanThread {
-  id: string;
-  title: string;
-  archived?: boolean;
-  temporary?: boolean;
-}
-
+interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean }
 interface SidebarProps {
-  threads: ArslanThread[];
-  activeThreadId: string;
-  onSelectThread: (id: string) => void;
-  onAddThread: () => void;
-  spawns: Spawn[];
-  activeSpawnChatId: string;
-  onSelectSpawnChat: (id: string) => void;
-
-  // Outer global view states
-  activeSection: Section;
-  onChangeSection: (section: Section) => void;
-
-  /** Called when the user completes (完结) a direct chat with a spawn */
+  threads: ArslanThread[]; activeThreadId: string; onSelectThread: (id: string) => void; onAddThread: () => void;
+  spawns: Spawn[]; activeSpawnChatId: string; onSelectSpawnChat: (id: string) => void;
+  activeSection: Section; onChangeSection: (section: Section) => void;
   onCompleteChat: (id: string) => void;
-
-  /** Conversation-row overflow actions (Distill / Archive / Delete + unarchive). */
-  onDistillThread: (id: string) => void;
-  onArchiveThread: (id: string) => void;
-  onUnarchiveThread: (id: string) => void;
-  onDeleteThread: (id: string) => void;
-
-  /** Real backend reachability signal from useBackendStatus */
-  backendStatus: BackendStatus;
-
-  /** Spawn ids THIS conversation has dispatched to (decision (a)). Everything
-   *  else that happens to be running is shown collapsed rather than hidden —
-   *  "not part of this session" and "not there" must not look alike. */
-  dispatchedSpawnIds: Set<number>;
+  onDistillThread: (id: string) => void; onArchiveThread: (id: string) => void;
+  onUnarchiveThread: (id: string) => void; onDeleteThread: (id: string) => void;
+  backendStatus: BackendStatus; dispatchedSpawnIds: Set<number>;
+  onOpenTask?: (task: TaskSummary) => void;
+  expertChatIds?: string[];
 }
-
-export default function Sidebar({
-  threads,
-  activeThreadId,
-  onSelectThread,
-  onAddThread,
-  spawns,
-  activeSpawnChatId,
-  onSelectSpawnChat,
-  activeSection,
-  onChangeSection,
-  onCompleteChat,
-  onDistillThread,
-  onArchiveThread,
-  onUnarchiveThread,
-  onDeleteThread,
-  backendStatus,
-  dispatchedSpawnIds,
-}: SidebarProps) {
+export default function Sidebar(props: SidebarProps) {
+  const { threads, activeThreadId, onSelectThread, onAddThread, spawns, activeSpawnChatId, onSelectSpawnChat,
+    activeSection, onChangeSection, onCompleteChat, onDistillThread, onArchiveThread, onUnarchiveThread,
+    onDeleteThread, backendStatus, dispatchedSpawnIds, onOpenTask, expertChatIds } = props;
   const { t } = useTranslation();
-  const [isMetricsExpanded, setIsMetricsExpanded] = useState(true);
-  const [picking, setPicking] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  // Class fix (floating-element sweep). Dismissal only, and NOT a portal:
-  // this picker is in normal flow — it pushes the spawn list down rather than
-  // floating over it — so there is no clipping ancestor and nothing to escape.
-  // It shares the other half of the bug though: no outside-click, no Escape,
-  // so it stayed open until the "+" was pressed again.
-  const { anchorRef: pickerAnchorRef, floatingRef: pickerPanelRef } =
-    useDismissable<HTMLDivElement, HTMLDivElement>(picking, () => setPicking(false));
-
-  const activeThreads = threads.filter((th) => !th.archived);
-  const archivedThreads = threads.filter((th) => th.archived);
-
-  // Decision (a): "this session's spawns" means the ones THIS conversation
-  // dispatched to. `hasActiveChat` answers a different question — whether a
-  // direct chat was ever opened — and using it made a spawn you talked to once
-  // look like part of today's work.
-  //
-  // The rest are COLLAPSED, not dropped. A spawn that is running but belongs to
-  // another conversation still exists, and a sidebar that simply omits it would
-  // read as "nothing else is happening".
-  const inSession = (s: Spawn) => dispatchedSpawnIds.has(Number(s.id));
-  const sessionSpawns = spawns.filter(inSession);
-  const otherRunning = spawns.filter((s) => s.hasActiveChat && !inSession(s));
-
-  // Shared renderer for a conversation row (active + archived sections).
-  const renderThreadRow = (thread: ArslanThread, isArchived: boolean) => {
-    const isActive = activeSection === 'arslan' && activeThreadId === thread.id;
-    return (
-      <div
-        key={thread.id}
-        id={`active-thread-btn-${thread.id}`}
-        role="button"
-        tabIndex={0}
-        onClick={() => {
-          onSelectThread(thread.id);
-          onChangeSection('arslan');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            onSelectThread(thread.id);
-            onChangeSection('arslan');
-          }
-        }}
-        className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left cursor-pointer group border-l-2 border-transparent ${
-          isActive
-            ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground shadow-sm shadow-primary/5'
-            : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]'
-        }`}
-      >
-        {/* The selected marker is a STRAIGHT bar, drawn over the row rather
-            than as its left border. A border on a rounded-lg element follows
-            the corner radius, which is what made the old indicator read as a
-            crescent. The transparent border stays on both states so the text
-            does not shift by 2px when a row is selected. */}
-        {isActive && <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />}
-        <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-muted-foreground'}`} />
-        <span className="truncate flex-1 pr-1 font-sans">{thread.title}</span>
-        {!thread.temporary && <ThreadRowMenu
-          threadId={thread.id}
-          archived={isArchived}
-          onDistill={onDistillThread}
-          onArchive={onArchiveThread}
-          onUnarchive={onUnarchiveThread}
-          onDelete={onDeleteThread}
-        />}
-      </div>
-    );
-  };
-
-  return (
-    <aside className="w-64 bg-sidebar/95 border-r border-border flex flex-col justify-between select-none h-full relative z-40">
-      {/* Top Portion of the Sidebar */}
-      <div className="flex-1 flex flex-col min-h-0">
-        
-        {/* Window chrome strip. Deliberately empty on the left: in the
-            packaged shell the REAL macOS traffic lights float here
-            (titleBarStyle Overlay in desktop/src-tauri) — no decorative
-            fake buttons. data-tauri-drag-region="deep" makes this strip and
-            the brand header below it the window's drag handle (the overlay
-            title bar has no native strip left to grab); it is inert in a
-            plain browser. */}
-        {/* The strip is now EMPTY, and its height is load-bearing rather than
-            decorative: the real traffic lights are placed at logical (13, 16)
-            by desktop/src-tauri/src/lib.rs, so a strip that collapsed to its
-            padding (28px) would leave them sitting on the brand header and
-            would shrink the only region the window can be dragged by. 41px is
-            the height this strip already had with the build tag in it — kept
-            deliberately so removing the text changes nothing but the text. */}
-        <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="flex items-center px-5 h-[41px] flex-shrink-0" />
-
-        {/* Brand Header */}
-        <div data-tauri-drag-region="deep" className="px-5 py-3 mb-6 flex items-center gap-3 flex-shrink-0">
-          <img src="/arslan-mark.png" alt={t('app.name')} className="w-9 h-9 object-contain flex-shrink-0 select-none arslan-mark" draggable={false} />
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h1 className="font-sans font-bold text-foreground text-sm tracking-tight">
-                {t('app.name')}
-              </h1>
-            </div>
-            <p className="text-[9px] text-subtle-foreground font-mono tracking-tight mt-0.5">
-              {t('sidebar.brand_subtitle')}
-            </p>
-          </div>
+  const [picking, setPicking] = useState(false);
+  const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(picking, () => setPicking(false));
+  const activeThreads = threads.filter(thread => !thread.archived);
+  const archivedThreads = threads.filter(thread => thread.archived);
+  // User-opened expert chats are peers of normal conversations. Temporary task
+  // workers are not added here; their existing task-owned panel remains the home.
+  const directChats = expertChatIds ? expertChatIds.flatMap(id => spawns.filter(spawn => spawn.id === id)) : spawns.filter(spawn => spawn.hasActiveChat);
+  const directIds = new Set(directChats.map(spawn => spawn.id));
+  // Keep legacy work discoverable during migration, including work in another
+  // conversation. Do not mistake "once dispatched" for "currently running".
+  const legacyWork = spawns.filter(spawn => !directIds.has(spawn.id) &&
+    (spawn.hasActiveChat || spawn.status === "working" || dispatchedSpawnIds.has(Number(spawn.id))));
+  const navClass = (active: boolean) => `w-full flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-left text-xs transition-colors ${active
+    ? "border-primary bg-primary/10 text-foreground" : "border-transparent text-muted-foreground hover:bg-foreground/[0.03] hover:text-foreground"}`;
+  const rowClass = (active: boolean) => `relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left cursor-pointer group border-l-2 border-transparent ${active
+    ? "bg-gradient-to-r from-primary/15 to-transparent text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]"}`;
+  const marker = <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />;
+  function openThread(id: string) { onSelectThread(id); onChangeSection("arslan"); }
+  function openExpert(id: string) { onSelectSpawnChat(id); onChangeSection("spawn"); }
+  function renderThread(thread: ArslanThread, archived: boolean) {
+    const active = activeSection === "arslan" && activeThreadId === thread.id;
+    return <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
+      onClick={() => openThread(thread.id)} onKeyDown={event => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
+      }} className={rowClass(active)}>
+      {active && marker}<MessageSquare size={14} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+      {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
+        onDistill={onDistillThread} onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread} />}
+    </div>;
+  }
+  function renderExpert(spawn: Spawn, direct: boolean) {
+    const active = activeSection === "spawn" && activeSpawnChatId === spawn.id;
+    return <div key={spawn.id} id={`active-spawn-chat-btn-${spawn.id}`} role="button" tabIndex={0}
+      onClick={() => openExpert(spawn.id)} onKeyDown={event => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openExpert(spawn.id); }
+      }} className={rowClass(active)}>
+      {active && marker}<SpawnAvatar seed={spawn.name} size={20} />
+      <span className="min-w-0 flex-1 truncate">{spawn.name}</span>
+      {spawn.status === "working" && <Activity size={13} className="shrink-0 text-warning" aria-label={t("tasks.running")} />}
+      {direct && <button aria-label={t("sidebar.complete_chat")} title={t("sidebar.complete_chat")}
+        onClick={event => { event.stopPropagation(); if (window.confirm(t("sidebar.complete_confirm"))) onCompleteChat(spawn.id); }}
+        className="rounded px-1 text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100">
+        {t("sidebar.complete_chat")}</button>}
+    </div>;
+  }
+  return <aside className="relative z-40 flex h-full w-56 shrink-0 select-none flex-col border-r border-border bg-sidebar/95 lg:w-64">
+    <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="h-[41px] shrink-0" />
+    <div data-tauri-drag-region="deep" className="flex shrink-0 items-center gap-3 px-5 pb-5">
+      <img src="/arslan-mark.png" alt="Arslan" className="arslan-mark h-9 w-9 object-contain" draggable={false} />
+      <div><h1 className="text-sm font-semibold">Arslan</h1><p className="mt-0.5 text-[9px] text-subtle-foreground">{t("sidebar.brand_subtitle")}</p></div>
+    </div>
+    <div className="flex min-h-0 flex-1 flex-col px-2">
+      <button id="btn-add-arslan-thread-primary" onClick={onAddThread} className={navClass(false)}>
+        <Plus size={15} /><span>{t("workspace.newConversation")}</span>
+      </button>
+      <nav aria-label={t("workspace.navigation")} className="mt-2 shrink-0 space-y-1">
+        <button id="nav-btn-conversations-deck" onClick={() => onChangeSection("arslan")} className={navClass(activeSection === "arslan" || activeSection === "spawn")}>
+          <MessageSquare size={15} /><span>{t("workspace.conversations")}</span></button>
+        <button id="nav-btn-projects-deck" onClick={() => onChangeSection("projects")} className={navClass(activeSection === "projects")}>
+          <FolderOpen size={15} /><span>{t("companion.projects")}</span></button>
+        <button id="nav-btn-brain-deck" onClick={() => onChangeSection("brain")} className={navClass(activeSection === "brain")}>
+          <Network size={15} /><span>{t("companion.memory")}</span></button>
+        <button id="nav-btn-capabilities-deck" onClick={() => onChangeSection("capabilities")} className={navClass(activeSection === "capabilities" || activeSection === "ledger")}>
+          <Boxes size={15} /><span>{t("sidebar.capabilities")}</span></button>
+      </nav>
+      <section aria-label={t("workspace.recentConversations")} className="mt-4 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-3">
+        <div className="mb-2 flex items-center justify-between px-3 text-xs text-muted-foreground">
+          <span>{t("workspace.recentConversations")}</span>
+          <button ref={anchorRef} title={t("sidebar.new_chat")} aria-label={t("sidebar.new_chat")} aria-expanded={picking} onClick={() => setPicking(value => !value)}><Plus size={14} /></button>
         </div>
-
-        {/* Main Content Area — each list scrolls INSIDE its module so ACTIVE CHATS can
-            never push ACTIVE SPAWNS out of view (they used to share one outer scroll). */}
-        <div className="flex-1 overflow-hidden px-2 pb-4 space-y-6 flex flex-col min-h-0">
-          
-          {/* MODULE 1: CONTROL DECK (Toolbar, New Chat/Session, Portals) */}
-          <div className="space-y-1.5 flex-shrink-0">
-            <button
-              id="btn-add-arslan-thread-primary"
-              onClick={onAddThread}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left text-muted-foreground hover:text-foreground hover:bg-primary/5 border-l-2 border-transparent hover:border-l-2 hover:border-primary/50 group"
-            >
-              <Plus className="w-3.5 h-3.5 text-subtle-foreground shrink-0 group-hover:text-primary transition-transform group-hover:scale-110" />
-              <span className="truncate font-sans font-medium">{t('sidebar.new_session')}</span>
+        {picking && <div ref={floatingRef} className="mb-2 max-h-32 overflow-y-auto rounded-lg border border-border p-1">
+          {spawns.map(spawn => <button key={spawn.id} onClick={() => { setPicking(false); openExpert(spawn.id); }}
+            className="block w-full truncate rounded px-3 py-2 text-left text-xs hover:bg-primary/5">{spawn.name}</button>)}
+          {!spawns.length && <EmptyState size="inline" testId="empty-sidebar-spawns"
+            title={t('sidebar.no_spawns')} body={t('sidebar.no_spawns_desc')} />}
+        </div>}
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {activeThreads.map(thread => renderThread(thread, false))}
+          {directChats.map(spawn => renderExpert(spawn, true))}
+          {archivedThreads.length > 0 && <div className="mt-2 border-t border-border/40 pt-2">
+            <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground">
+              <Archive size={13} /><span className="flex-1">{t("sidebar.archived_section")} ({archivedThreads.length})</span>
+              {archivedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
-
-            {/* Quick Portal Shortcuts (Listed vertically for consistent list style) */}
-            <div className="space-y-1">
-              <button id="nav-btn-projects-deck" onClick={() => onChangeSection('projects')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left border-l-2 ${activeSection === 'projects'
-                  ? 'bg-primary/10 text-foreground border-primary' : 'text-muted-foreground hover:bg-foreground/[0.02] border-transparent'}`}>
-                <FolderOpen className="w-3.5 h-3.5 shrink-0" /><span>{t('companion.projects')}</span>
-              </button>
-              {/* Spawns Ledger */}
-              <button
-                id="nav-btn-ledger-deck"
-                onClick={() => onChangeSection('ledger')}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
-                  activeSection === 'ledger'
-                    ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <LayoutGrid className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'ledger' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">{t('sidebar.spawns_ledger')}</span>
-                </div>
-                <span className="text-[8px] bg-primary/10 text-primary font-mono font-bold px-2 py-0.5 rounded shrink-0">
-                  {spawns.length}
-                </span>
-              </button>
-
-              {/* Capabilities */}
-              <button
-                id="nav-btn-capabilities-deck"
-                onClick={() => onChangeSection('capabilities')}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
-                  activeSection === 'capabilities'
-                    ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Boxes className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'capabilities' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">{t('sidebar.capabilities')}</span>
-                </div>
-              </button>
-
-              {/* Second Brain — full-screen knowledge orrery */}
-              <button
-                id="nav-btn-brain-deck"
-                onClick={() => onChangeSection('brain')}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
-                  activeSection === 'brain'
-                    ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Orbit className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'brain' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">{t('companion.memory')}</span>
-                </div>
-              </button>
-
-              {/* Diagnosis View — standalone full-width catalog→spawn→run drill-down */}
-              <button
-                id="nav-btn-diagnosis-deck"
-                onClick={() => onChangeSection('diagnosis')}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all text-left ${
-                  activeSection === 'diagnosis'
-                    ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <HeartPulse className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'diagnosis' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">{t('nav.diagnosis')}</span>
-                </div>
-              </button>
-
-            </div>
-          </div>
-
-          {/* MODULE 2: AGENT CONVERSATIONS — flexes to fill, its own inner scroll */}
-          <div className="border-t border-border/40 pt-4.5 flex flex-col min-h-0 flex-1">
-            {/* Header section with counts and spacing */}
-            <div className="px-3 mb-2.5 select-none flex items-center justify-between">
-              <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
-                {t('sidebar.active_chats')}
-              </span>
-              <span className="text-[8.5px] text-primary font-mono bg-primary/10 rounded px-2 py-0.5 select-none font-bold">
-                {t('sidebar.chats_count', { count: activeThreads.length })}
-              </span>
-            </div>
-
-            <div className="space-y-1 pr-1 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-              {activeThreads.map((thread) => renderThreadRow(thread, false))}
-
-              {/* Collapsible "Archived" section — client-side archived threads. */}
-              {archivedThreads.length > 0 && (
-                <div className="pt-2 mt-1 border-t border-border/40">
-                  <button
-                    id="btn-toggle-archived-threads"
-                    onClick={() => setArchivedOpen((o) => !o)}
-                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[9.5px] font-mono text-subtle-foreground hover:text-foreground uppercase tracking-widest font-bold transition-all"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Archive className="w-3 h-3" />
-                      {t('sidebar.archived_section')}
-                      <span className="text-primary">({archivedThreads.length})</span>
-                    </span>
-                    {archivedOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  {archivedOpen && (
-                    <div className="space-y-1 mt-1">
-                      {archivedThreads.map((thread) => renderThreadRow(thread, true))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* MODULE 3: ACTIVE SPAWNS — pinned below chats, own capped inner scroll */}
-          <div className="border-t border-border/40 pt-4.5 flex flex-col min-h-0 flex-shrink-0">
-            <div className="px-3 mb-2.5 select-none flex items-center justify-between">
-              <span className="text-[9.5px] font-mono text-subtle-foreground font-bold uppercase tracking-widest flex items-center gap-1.5">
-                {t('sidebar.active_spawns')}
-              </span>
-              <div className="flex items-center gap-1">
-                <span className="text-[9.5px] text-success font-mono bg-success/10 rounded px-2 py-0.5 select-none font-bold">
-                  {t('sidebar.live_count', { count: sessionSpawns.length })}
-                </span>
-                <button
-                  ref={(el) => { pickerAnchorRef.current = el?.parentElement as HTMLDivElement | null; }}
-                  title={t('sidebar.new_chat')}
-                  aria-label={t('sidebar.new_chat')}
-                  onClick={() => setPicking((p) => !p)}
-                  className="w-5 h-5 flex items-center justify-center rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-all text-xs font-bold"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Picker dropdown: all spawns to start a new direct chat */}
-            {picking && (
-              <div ref={pickerPanelRef} className="mx-2 mb-2 bg-background border border-border rounded-lg shadow-lg overflow-hidden">
-                {spawns.map((spawn) => (
-                  <button
-                    key={spawn.id}
-                    onClick={() => {
-                      setPicking(false);
-                      onSelectSpawnChat(spawn.id);
-                      onChangeSection('spawn');
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-sans text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all text-left"
-                  >
-                    <SpawnAvatar seed={spawn.name} size={16} />
-                    <span className="truncate">{spawn.name}</span>
-                  </button>
-                ))}
-                {spawns.length === 0 && (
-                  <div className="px-3">
-                    <EmptyState size="inline" testId="empty-sidebar-spawns"
-                      title={t('sidebar.no_spawns')} body={t('sidebar.no_spawns_desc')} />
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1 pr-1 max-h-[32vh] overflow-y-auto scrollbar-thin">
-              {sessionSpawns.map((spawn) => {
-                const isActive = activeSection === 'spawn' && activeSpawnChatId === spawn.id;
-                return (
-                  <div
-                    key={spawn.id}
-                    id={`active-spawn-chat-btn-${spawn.id}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      onSelectSpawnChat(spawn.id);
-                      onChangeSection('spawn');
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        onSelectSpawnChat(spawn.id);
-                        onChangeSection('spawn');
-                      }
-                    }}
-                    className={`relative w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-sans tracking-wide transition-all cursor-pointer group border-l-2 border-transparent ${
-                      isActive
-                        ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]'
-                    }`}
-                  >
-                    {/* Same straight marker as the thread rows above — see the
-                        comment there for why this is not a left border. */}
-                    {isActive && <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />}
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <SpawnAvatar seed={spawn.name} size={22} />
-                      <span className="truncate flex-1 font-sans">{spawn.name}</span>
-                      <span className="text-[8.5px] font-mono bg-primary/15 text-primary rounded px-2 py-0.5 flex-shrink-0 font-extrabold select-none">
-                        L.{Math.max(1, Math.floor(spawn.totalTasks / 10) + 1)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 pl-2">
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        spawn.status === 'working' ? 'bg-warning animate-pulse' : 'bg-success/80'
-                      }`} />
-                      <button
-                        title={t('sidebar.complete_chat')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (window.confirm(t('sidebar.complete_confirm'))) {
-                            onCompleteChat(spawn.id);
-                          }
-                        }}
-                        className="opacity-0 group-hover:opacity-100 text-[9px] font-mono text-subtle-foreground hover:text-warning transition-all px-1 py-0.5 rounded hover:bg-warning/10"
-                      >
-                        {t('sidebar.complete_chat')}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
+            {archivedOpen && archivedThreads.map(thread => renderThread(thread, true))}
+          </div>}
         </div>
+      </section>
+      {onOpenTask && <div className="shrink-0 border-t border-border/50"><OngoingTasks onOpen={onOpenTask} /></div>}
+      {legacyWork.length > 0 && <details className="mb-2 shrink-0 border-t border-border/50 pt-2">
+        <summary className="cursor-pointer px-3 text-xs text-muted-foreground">{t("workspace.legacyWork")} ({legacyWork.length})</summary>
+        <div className="mt-2 max-h-32 overflow-y-auto">{legacyWork.map(spawn => renderExpert(spawn, false))}</div>
+      </details>}
+    </div>
+    <footer className="shrink-0 space-y-1 border-t border-border/60 p-3">
+      <button id="nav-btn-connections-footer" onClick={() => onChangeSection("connections")} className={navClass(activeSection === "connections")}>
+        <Plug size={15} /><span>{t("workspace.connections")}</span></button>
+      <button id="nav-btn-settings-footer" onClick={() => onChangeSection("settings")} className={navClass(activeSection === "settings" || activeSection === "diagnosis")}>
+        <Settings2 size={15} /><span>{t("nav.settings")}</span></button>
+      <div className="flex items-center justify-between px-3 pt-2 text-[10px] text-muted-foreground">
+        <span>{t("workspace.service")}</span><span className={backendStatus === "online" ? "text-success" : backendStatus === "offline" ? "text-danger" : ""}>
+          {t(backendStatus === "checking" ? "common.connecting" : backendStatus === "online" ? "common.online" : "common.offline")}
+        </span>
       </div>
-
-      {/* System Resource Metrics Footer */}
-      <div className="p-4 border-t border-border/60 bg-background select-none space-y-3">
-        {/* System Settings Button (Moved to footer) */}
-        <button
-          id="nav-btn-settings-footer"
-          onClick={() => onChangeSection('settings')}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.8 rounded-lg text-xs font-sans tracking-wide transition-all text-left group/settings-foot ${
-            activeSection === 'settings'
-              ? 'bg-gradient-to-r from-primary/15 to-transparent text-foreground border-l-2 border-primary'
-              : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02] border-l-2 border-transparent'
-          }`}
-        >
-          <Settings2 className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${activeSection === 'settings' ? 'text-primary' : 'text-subtle-foreground group-hover/settings-foot:text-muted-foreground'}`} />
-          <span className="truncate font-sans font-medium">{t('sidebar.system_settings')}</span>
-        </button>
-
-        <div className="border-t border-border/40 pt-3">
-          {/* DAEMON CORE — wired to real backend health signal */}
-          <div className="flex items-center justify-between text-[10px] font-mono text-subtle-foreground uppercase tracking-widest select-none">
-            <span className="flex items-center gap-1.5">
-              <span>{t('sidebar.daemon_core')}</span>
-            </span>
-            {backendStatus === 'checking' && (
-              <span className="flex items-center gap-1 text-subtle-foreground">
-                <span className="w-1.5 h-1.5 rounded-full bg-subtle-foreground animate-pulse"></span>
-                {t('common.connecting')}
-              </span>
-            )}
-            {backendStatus === 'online' && (
-              <span className="flex items-center gap-1 text-success">
-                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
-                {t('common.online')}
-              </span>
-            )}
-            {backendStatus === 'offline' && (
-              <span className="flex items-center gap-1 text-danger">
-                <span className="w-1.5 h-1.5 rounded-full bg-danger"></span>
-                {t('common.offline')}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
+    </footer>
+  </aside>;
 }

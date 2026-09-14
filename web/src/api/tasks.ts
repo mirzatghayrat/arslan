@@ -36,6 +36,7 @@ export interface TaskWorker {
 }
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 export const tasksApi = {
+  active: (offset = 0) => request<TaskSummary[]>(`/tasks?active_only=true&limit=20&offset=${offset}`),
   list: (conversationId: string, offset = 0) => request<TaskSummary[]>(`/tasks?conversation_id=${encodeURIComponent(conversationId)}&limit=20&offset=${offset}`),
   detail: (id: string) => request<TaskDetail>(`/tasks/${encodeURIComponent(id)}`),
   cancel: (task: TaskSummary) => request<TaskSummary>(`/tasks/${encodeURIComponent(task.spec.id)}/cancel`, json({})),

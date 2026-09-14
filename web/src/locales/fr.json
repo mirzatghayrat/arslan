@@ -8,6 +8,7 @@
     "tagline": "Créez vos propres spawns d'IA"
   },
   "nav": {
+    "connections": "Connexions et droits",
     "projects": "Projets",
     "dashboard": "Tableau de bord",
     "spawns": "Spawns",

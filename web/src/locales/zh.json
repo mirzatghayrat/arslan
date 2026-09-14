@@ -8,6 +8,7 @@
     "tagline": "打造你专属的 AI 分身"
   },
   "nav": {
+    "connections": "连接与权限",
     "projects": "项目",
     "dashboard": "仪表盘",
     "spawns": "分身",

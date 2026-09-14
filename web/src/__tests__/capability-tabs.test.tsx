@@ -11,4 +11,13 @@ describe("CapabilityTabs", () => {
     fireEvent.click(screen.getByRole("tab", { name: "MCPs" }));
     expect(onChange).toHaveBeenCalledWith("mcps");
   });
+  it("supports roving keyboard focus", () => {
+    const onChange = vi.fn();
+    render(<CapabilityTabs active="tools" onChange={onChange} tabs={[{ id: "tools", label: "Tools" }, { id: "skills", label: "Skills" }]} />);
+    const tools = screen.getByRole("tab", { name: "Tools" });
+    expect(tools).toHaveAttribute("tabindex", "0");
+    fireEvent.keyDown(tools, { key: "End" });
+    expect(onChange).toHaveBeenCalledWith("skills");
+    expect(screen.getByRole("tab", { name: "Skills" })).toHaveFocus();
+  });
 });

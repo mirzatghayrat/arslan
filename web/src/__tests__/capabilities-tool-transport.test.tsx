@@ -88,7 +88,8 @@ describe("the Capability Library says when equipping will have no effect", () =>
     // where it sits in the DOM.
     render(<Capabilities provider="unknown-provider" />);
     expect(screen.getByTestId("tool-transport-warning")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /MCPs/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Tools/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Connections & permissions/i }));
     await waitFor(() =>
       expect(screen.getByTestId("tool-transport-warning")).toBeInTheDocument());
   });

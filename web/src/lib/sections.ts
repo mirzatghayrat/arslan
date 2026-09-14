@@ -19,6 +19,7 @@ export const SECTIONS = [
   "capabilities",
   "brain",
   "diagnosis",
+  "connections",
   "settings",
 ] as const;
 

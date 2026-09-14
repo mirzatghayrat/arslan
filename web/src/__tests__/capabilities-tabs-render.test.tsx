@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+vi.mock("../api/professionalMethods", () => ({ professionalMethodsApi: { list: vi.fn(async () => []) } }));
 
 // i18n passthrough
 vi.mock("react-i18next", () => ({
@@ -84,18 +85,17 @@ beforeEach(() => {
   (catalog.getMcpCatalog as ReturnType<typeof vi.fn>).mockResolvedValue(CATALOG_FIXTURE);
 });
 
-describe("Capabilities page structure (one tab bar, Discover first)", () => {
-  it("renders one tab bar with all six tabs, Discover first", () => {
-    render(<Capabilities />);
+describe("Capabilities page structure and legacy feature reachability", () => {
+  it("renders four primary tabs when the expert workspace is supplied", () => {
+    render(<Capabilities experts={<div>Expert workspace</div>} />);
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((el) => el.textContent)).toEqual([
-      "capabilities.tabs.discover",
+      "workspace.experts",
+      "workspace.skillsWorkflows",
       "capabilities.tabs.tools",
-      "capabilities.tabs.skills",
-      "capabilities.tabs.forge",
-      "capabilities.tabs.mcps",
-      "capabilities.tabs.saved",
+      "capabilities.tabs.discover",
     ]);
+    expect(screen.getByText("Expert workspace")).toBeInTheDocument();
   });
 
   it("DISCOVER is the default tab and holds the Tool-Hub hero (input + Research)", () => {
@@ -114,9 +114,10 @@ describe("Capabilities page structure (one tab bar, Discover first)", () => {
     expect(screen.getByPlaceholderText("capabilities.hero.placeholder")).toBeInTheDocument();
   });
 
-  it("MCPS tab contains the rehomed Recommended one-click section", async () => {
+  it("legacy embedded connection entry still reaches recommended connectors", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.mcps" }));
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
     // RecommendedMcp preset cards render inside the tab
     expect(await screen.findByText("Memory")).toBeInTheDocument();
@@ -124,7 +125,8 @@ describe("Capabilities page structure (one tab bar, Discover first)", () => {
 
   it("MCPS chips filter between the presets section and the server list; all resets", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.mcps" }));
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
     // Chip row derived from real data: both counts are fetched (presets via GET /mcp/catalog,
     // registered servers via GET /mcp/servers) — wait for the async catalog fetch to resolve.
     const recommendedChip = screen.getByRole("button", { name: /capabilities\.chips\.recommended/ });
@@ -149,24 +151,25 @@ describe("Capabilities page structure (one tab bar, Discover first)", () => {
 
   it("SKILLS tab contains the rehomed Import-skills form + registry catalog", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.skills" }));
+    fireEvent.click(screen.getByRole("tab", { name: "workspace.skillsWorkflows" }));
     expect(screen.getByText("capabilities.sections.import_skills")).toBeInTheDocument();
     // SkillImportPanel's owner/repo scan input
     expect(screen.getByPlaceholderText("capabilities.import.repo_placeholder")).toBeInTheDocument();
   });
 
-  it("SKILL FORGE tab shows the two-entry-modes header + candidate list", async () => {
+  it("Create skill opens the original forge without a separate primary tab", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.forge" }));
+    fireEvent.click(screen.getByRole("tab", { name: "workspace.skillsWorkflows" }));
+    fireEvent.click(screen.getByRole("button", { name: "workspace.createSkill" }));
     expect(screen.getByText("forge.modes.title")).toBeInTheDocument();
     expect(screen.getByText("forge.modes.a_title")).toBeInTheDocument();
     expect(screen.getByText("forge.modes.b_title")).toBeInTheDocument();
     expect(await screen.findByText("forge.list.empty")).toBeInTheDocument();
   });
 
-  it("clicking Saved tab shows SavedCandidates content", async () => {
+  it("Saved is a Discover filter and retains SavedCandidates content", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.saved" }));
+    fireEvent.click(screen.getByRole("button", { name: "capabilities.tabs.saved" }));
     // SavedCandidates renders "Refresh list" button
     expect(await screen.findByRole("button", { name: /refresh list/i })).toBeInTheDocument();
   });
@@ -175,5 +178,13 @@ describe("Capabilities page structure (one tab bar, Discover first)", () => {
     const { container } = render(<Capabilities />);
     const scrollContainer = container.querySelector(".overflow-y-auto");
     expect(scrollContainer).not.toBeNull();
+  });
+
+  it("the current app connection entry uses the dedicated permissions page", () => {
+    const open = vi.fn();
+    render(<Capabilities onOpenConnections={open} />);
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
+    expect(open).toHaveBeenCalledOnce();
   });
 });

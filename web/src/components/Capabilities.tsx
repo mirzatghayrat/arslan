@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Zap, FileDown } from "lucide-react";
 import CapabilityTabs from "./CapabilityTabs";
@@ -13,8 +13,9 @@ import FilterChips from "./FilterChips";
 import ToolTransportWarning from "./settings/ToolTransportWarning";
 import { getMcpCatalog } from "../api/catalog";
 import { listMcpServers } from "../api/mcp";
+import ProfessionalMethods from "./companion/ProfessionalMethods";
 
-type CapTab = "discover" | "tools" | "skills" | "forge" | "mcps" | "saved";
+type CapTab = "experts" | "discover" | "tools" | "skills" | "forge" | "mcps" | "saved";
 type McpChip = "all" | "recommended" | "registered";
 
 // Capability Library page: one tab bar at the top
@@ -26,9 +27,12 @@ type McpChip = "all" | "recommended" | "registered";
  *  will have an effect. Passed in rather than fetched here: App already holds
  *  the configs, and a second fetch would give this page its own opinion of which
  *  provider is primary. */
-export default function Capabilities({ provider }: { provider?: string | null } = {}) {
+export default function Capabilities({ provider, experts, initialTab, onOpenConnections }: {
+  provider?: string | null; experts?: ReactNode; initialTab?: CapTab; onOpenConnections?: (prefill?: McpPrefill) => void;
+} = {}) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<CapTab>("discover");
+  const [tab, setTab] = useState<CapTab>(initialTab ?? (experts ? "experts" : "discover"));
+  useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const [mcpPrefill, setMcpPrefill] = useState<McpPrefill | null>(null);
   // Bumped when an MCP is added/connected elsewhere (dossier, recommended list) so the
   // McpServers list remounts and picks the new server up.
@@ -80,27 +84,39 @@ export default function Capabilities({ provider }: { provider?: string | null } 
         ) : null}
 
         <CapabilityTabs
-          active={tab}
+          active={tab === "forge" ? "skills" : tab === "saved" ? "discover" : tab === "mcps" ? "tools" : tab}
           onChange={(id) => setTab(id as CapTab)}
           tabs={[
-            { id: "discover", label: t("capabilities.tabs.discover") },
+            ...(experts ? [{ id: "experts", label: t("workspace.experts") }] : []),
+            { id: "skills", label: t("workspace.skillsWorkflows") },
             { id: "tools", label: t("capabilities.tabs.tools") },
-            { id: "skills", label: t("capabilities.tabs.skills") },
-            { id: "forge", label: t("capabilities.tabs.forge") },
-            { id: "mcps", label: t("capabilities.tabs.mcps") },
-            { id: "saved", label: t("capabilities.tabs.saved") },
+            { id: "discover", label: t("capabilities.tabs.discover") },
           ]}
         />
+
+        {tab === "experts" && experts}
+        {(tab === "discover" || tab === "saved") && <FilterChips active={tab} onSelect={id => setTab(id as CapTab)} chips={[
+          { id: "discover", label: t("capabilities.chips.all") }, { id: "saved", label: t("capabilities.tabs.saved") },
+        ]} />}
 
         {/* Discover: the Tool-Hub hero (centered search input + RESEARCH → dossier) */}
         {tab === "discover" && (
           <ToolHubDiscover onMcpAdded={() => setMcpRefreshKey((k) => k + 1)} />
         )}
 
-        {tab === "tools" && <CapabilityCatalog kind="tools" />}
+        {tab === "tools" && <><div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4 text-sm">
+          <p className="text-muted-foreground">{t("workspace.toolsConnectionsHint")}</p>
+          <button className="text-primary underline" onClick={() => onOpenConnections ? onOpenConnections() : setTab("mcps")}>{t("workspace.connections")}</button>
+        </div><CapabilityCatalog kind="tools" /></>}
+
+        {(tab === "skills" || tab === "forge") && <div className="mb-5 flex justify-end">
+          <button className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary" onClick={() => setTab(tab === "forge" ? "skills" : "forge")}>
+            {t(tab === "forge" ? "workspace.backToSkills" : "workspace.createSkill")}</button>
+        </div>}
 
         {tab === "skills" && (
           <div className="space-y-8">
+            <ProfessionalMethods />
             <section className="bg-surface/40 border border-border-strong rounded-2xl p-5">
               <div className={sectionLabel}>
                 <FileDown className="w-3 h-3 text-primary" />
@@ -146,7 +162,7 @@ export default function Capabilities({ provider }: { provider?: string | null } 
         )}
 
         {tab === "saved" && (
-          <SavedCandidates onPrefillMcp={(p) => { prefillMcp(p); setTab("mcps"); }} />
+          <SavedCandidates onPrefillMcp={(p) => { if (onOpenConnections) onOpenConnections(p); else { prefillMcp(p); setTab("mcps"); } }} />
         )}
       </div>
     </div>

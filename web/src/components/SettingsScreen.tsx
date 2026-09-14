@@ -211,6 +211,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (
+      <div className="space-y-4">
+      {onOpenDiagnostics && <button className="rounded-lg border border-border px-4 py-2 text-sm text-primary" onClick={onOpenDiagnostics}>{t('nav.diagnosis')}</button>}
       <AdvancedSection
         telemetry={localSettings.telemetry}
         onTelemetryChange={(v) => saveField({ telemetry: v })}
@@ -237,6 +239,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         spawnMode={localSettings.spawnMode}
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />
+      </div>
     ),
   };
 

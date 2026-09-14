@@ -24,6 +24,7 @@ interface SpawnsDashboardProps {
   setThreads?: React.Dispatch<React.SetStateAction<any[]>>;
   activeThreadId?: string;
   backendStatus?: BackendStatus;
+  embedded?: boolean;
 }
 
 export default function SpawnsDashboard({
@@ -37,6 +38,7 @@ export default function SpawnsDashboard({
   setThreads,
   activeThreadId,
   backendStatus,
+  embedded = false,
 }: SpawnsDashboardProps) {
   const { t } = useTranslation();
   const capabilityLabel = useCapabilityLabel();
@@ -44,7 +46,7 @@ export default function SpawnsDashboard({
   const [showRecipes, setShowRecipes] = useState(false);
   const [showMethods, setShowMethods] = useState(false);
   return (
-    <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
+    <div className={`flex-1 overflow-y-auto bg-background ${embedded ? "p-0" : "p-8"} select-none relative`}>
       {/* Decorative Top Lights */}
       <div className="absolute top-0 right-1/4 w-[35rem] h-[35rem] bg-primary/[0.02] blur-[120px] rounded-full pointer-events-none"></div>
 
@@ -52,13 +54,10 @@ export default function SpawnsDashboard({
       <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('ledger.title')}</h1>
-            <span className="text-[10px] bg-primary/10 text-primary font-mono font-semibold px-2 py-0.5 rounded-full uppercase">
-              {spawns.length} Spawns
-            </span>
+            <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('workspace.experts')}</h1>
           </div>
           <p className="text-xs text-subtle-foreground font-sans mt-1">
-            {t('ledger.subtitle')}
+            {t('workspace.expertsHint')}
           </p>
         </div>
 
@@ -74,7 +73,7 @@ export default function SpawnsDashboard({
             onClick={onCreateSpawnClick}
             className="px-3 py-1.5 bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1 shadow-lg shadow-[var(--color-primary)]/15"
           >
-            <span>+</span> {t('ledger.synthesize_spawn')}
+            <Plus size={14} />{t('workspace.createExpert')}
           </button>
         </div>
       </div>
@@ -103,7 +102,6 @@ export default function SpawnsDashboard({
       ) : (
         <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {spawns.map(spawn => {
-            const spawnLevel = Math.max(1, Math.floor(spawn.totalTasks / 10) + 1);
             return (
                 <div
                   key={spawn.id}
@@ -144,7 +142,7 @@ export default function SpawnsDashboard({
                           ? 'bg-danger'
                           : 'bg-info'
                       }`} />
-                      {spawn.status}
+                      {t(`workspace.${spawn.status}`)}
                     </span>
                   </div>
 
@@ -177,7 +175,7 @@ export default function SpawnsDashboard({
                       ))}
                       {spawn.tools.length + spawn.skills.length > 4 && (
                         <span className="text-[10px] text-subtle-foreground font-mono px-1">
-                          +{spawn.tools.length + spawn.skills.length - 4} more
+                          {t('workspace.moreItems', { count: spawn.tools.length + spawn.skills.length - 4 })}
                         </span>
                       )}
                     </div>

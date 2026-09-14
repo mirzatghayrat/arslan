@@ -8,6 +8,7 @@
     "tagline": "Build your own AI spawns"
   },
   "nav": {
+    "connections": "Connections & permissions",
     "projects": "Projects",
     "dashboard": "Dashboard",
     "spawns": "Spawns",

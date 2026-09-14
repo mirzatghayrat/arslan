@@ -8,6 +8,7 @@
     "tagline": "Erstelle deine eigenen KI-Spawns"
   },
   "nav": {
+    "connections": "Verbindungen & Rechte",
     "projects": "Projekte",
     "dashboard": "Dashboard",
     "spawns": "Spawns",

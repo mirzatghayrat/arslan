@@ -8,6 +8,7 @@
     "tagline": "あなただけの AI スポーンを作ろう"
   },
   "nav": {
+    "connections": "接続と権限",
     "projects": "プロジェクト",
     "dashboard": "ダッシュボード",
     "spawns": "スポーン",

@@ -83,3 +83,12 @@ async def test_cancel_is_durable_and_does_not_claim_execution_resumed(api):
     # Reading or reconnecting to events has no execution side effect.
     assert (await api.get("/api/v1/tasks/api-task/events")).status_code == 200
     assert (await api.get("/api/v1/tasks/api-task")).json()["state"]["phase"] == "cancelled"
+
+
+async def test_global_ongoing_list_excludes_terminal_tasks(api):
+    initial = await seed()
+    rows = (await api.get("/api/v1/tasks?active_only=true")).json()
+    assert [row["spec"]["id"] for row in rows] == ["api-task"]
+    await api.post("/api/v1/tasks/api-task/cancel", json={"expected_version": initial["version"]})
+    assert (await api.get("/api/v1/tasks?active_only=true")).json() == []
+    assert len((await api.get("/api/v1/tasks")).json()) == 1
