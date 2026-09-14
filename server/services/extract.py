@@ -29,7 +29,8 @@ async def extract_text(
         from server.services import ocr_fallback
 
         category = kind(filename or "")
-        if category in {"text", "spreadsheet", "presentation"} and not (filename or "").lower().endswith((".txt", ".md")):
+        if ((category in {"text", "spreadsheet", "presentation"} and not (filename or "").lower().endswith((".txt", ".md")))
+                or (filename or "").lower().endswith(".docx")):
             import asyncio
             text, source_truncated = await asyncio.to_thread(read_structured, filename or "file", data)
         elif category == "video":
@@ -44,7 +45,8 @@ async def extract_text(
     else:
         raise ValueError("provide url or file data")
 
-    if compress:
+    # Package paragraph locators must survive attachment delivery verbatim.
+    if compress and not (data is not None and (filename or "").lower().endswith(".docx")):
         text = await ingest._compress(text)
 
     limit = settings.attach_extract_char_limit

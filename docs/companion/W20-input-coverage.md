@@ -90,3 +90,27 @@ regression remains required.
 Implementation references: [Pillow image operations](https://pillow.readthedocs.io/en/stable/reference/Image.html),
 [orientation handling](https://pillow.readthedocs.io/en/stable/handbook/concepts.html#orientation)
 and [file lifecycle](https://pillow.readthedocs.io/en/stable/reference/open_files.html).
+
+## Word source-locator follow-up
+
+DOCX now uses the existing bounded OOXML reader rather than only
+`Document.paragraphs`, which omitted table text. Body paragraphs, table-cell
+paragraphs and nested textbox paragraphs are extracted in XML document order,
+with `word/document.xml#paragraph=N` locators. Empty paragraphs count toward
+positions; nested textbox text is not duplicated in its containing paragraph.
+Tabs and line breaks survive. Field instructions are not executed; visible field
+results are merely stored text, not recalculated values. External relationships
+are never fetched. Existing archive/XML/input/output bounds apply to DOCX too.
+
+Ephemeral extraction runs this reader off the request loop and bypasses optional
+model compression for DOCX so its source locators are not rewritten. The knowledge
+ingestion path shares extraction; its separately requested later compression and
+chunking still do not promise preserved source locators. This is body XML text,
+not rendered page numbering, layout/graphics understanding, headers, footers,
+footnotes or comments. Richer PDF locators remain outstanding.
+
+The focused Word/format/extract/API/ingest/OCR regression passed 46 tests, including
+a real in-memory python-docx package with body and table text, malformed/entity/
+alternate-encoding rejection, bounded truncation, nested textboxes and compression
+bypass. Existing Starlette deprecation and aiosqlite teardown-guard diagnostics
+remain. No user document, external URL or model was accessed by these tests.

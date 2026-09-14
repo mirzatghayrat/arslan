@@ -337,9 +337,8 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
                 return ocr
         return text
     if name.endswith(".docx"):
-        import docx  # python-docx
-        document = docx.Document(io.BytesIO(data))
-        return "\n".join(p.text for p in document.paragraphs)
+        text, truncated = read_structured(filename, data)
+        return text + ('\n{"extraction_truncated": true}' if truncated else "")
     if name.endswith((".html", ".htm")):
         import lxml.html  # available in the venv
         try:

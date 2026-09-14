@@ -15,6 +15,7 @@ if not _REGISTRY_PATH.exists():
 REGISTRY = json.loads(_REGISTRY_PATH.read_text())
 MAX_TEXT = 200_000
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+      "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
       "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 
 
@@ -45,6 +46,8 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
     if len(data) > REGISTRY["max_bytes"]:
         raise InputError("inputs.limit")
     category = kind(filename)
+    if Path(filename).suffix.lower() == ".docx":
+        category = "word"
     if category == "text":
         try:
             text = data.decode("utf-8-sig")
@@ -53,7 +56,7 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
         if "\x00" in text:
             raise InputError("inputs.encoding")
         return text[:MAX_TEXT], len(text) > MAX_TEXT
-    if category not in {"spreadsheet", "presentation"}:
+    if category not in {"spreadsheet", "presentation", "word"}:
         raise InputError("inputs.unsupported")
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
@@ -76,7 +79,38 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
                 lines.append(line)
                 total += len(line) + 1
 
-            if category == "spreadsheet":
+            if category == "word":
+                name = "word/document.xml"
+                body = _xml(archive, name).find("w:body", NS)
+                if body is None:
+                    raise InputError("inputs.invalid")
+                # Document order includes table-cell paragraphs. These are XML
+                # paragraph positions, not rendered pages or layout claims.
+                for index, paragraph in enumerate(body.iter(f"{{{NS['w']}}}p"), 1):
+                    parts = []
+
+                    def own_nodes(parent):
+                        pending = list(reversed(parent))
+                        while pending:
+                            child = pending.pop()
+                            # Textbox paragraphs get their own locator below.
+                            if child.tag != f"{{{NS['w']}}}p":
+                                yield child
+                                pending.extend(reversed(child))
+
+                    for node in own_nodes(paragraph):
+                        if node.tag == f"{{{NS['w']}}}t":
+                            parts.append(node.text or "")
+                        elif node.tag == f"{{{NS['w']}}}tab":
+                            parts.append("\t")
+                        elif node.tag in {f"{{{NS['w']}}}br", f"{{{NS['w']}}}cr"}:
+                            parts.append("\n")
+                    value = "".join(parts)
+                    if value.strip():
+                        add(f"{name}#paragraph={index}", value)
+                    if truncated:
+                        break
+            elif category == "spreadsheet":
                 strings: list[str] = []
                 if "xl/sharedStrings.xml" in archive.namelist():
                     strings = ["".join(node.itertext()) for node in _xml(archive, "xl/sharedStrings.xml").findall("s:si", NS)]
