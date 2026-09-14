@@ -187,6 +187,23 @@ notarization was performed. These source checks do not verify a distributable ap
 
 ## Requirement evidence still needed
 
+Latest frozen backend checkpoint: clean `a8c00020`, after runtime-error locales and
+Word table/source-locator extraction, completed **4,838 passed, 2 failed, 14 skipped,
+19 warnings in 464.13 seconds**. Report:
+`/tmp/arslan-companion-regression.lXHbJn/companion-backend.xml`.
+The run used a new temporary HOME/data, scrubbed environment, synthetic secret,
+disabled secret-file bootstrap and `ARSLAN_LIVE_LLM=0`; source remained unchanged.
+The aiosqlite teardown guard recorded 72 closed-loop deliveries.
+
+Both failures were stale copy assertions: provider-health persistence demanded
+Chinese key-limit wording despite the default English UI, and expert vision
+refusal demanded `vision support` instead of the new `image support` wording.
+Their actionability/routing/raw-error protections remain; the health test now also
+checks that the account may still have a balance. After updating those two tests,
+the six-file health/expert/locale/provider/chat regression passed **95 tests** in
+5.01 seconds. Targeted lint and whitespace checks passed. This focused repair is
+not a new all-green frozen full run, nor real-model or packaged acceptance.
+
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
 | Complete engineering regression | Clean `4906f9c3` full backend; subsequent frontend-only wrap fix has complete frontend/typecheck/build evidence above | Repeat on final release source after remaining implementation gates |
