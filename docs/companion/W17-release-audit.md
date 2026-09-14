@@ -5,7 +5,37 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-Latest complete backend run: clean `1d1be3c4` (including provider request evidence),
+Latest complete backend run: clean `5250e62b` (in-flight memory dependencies and
+snapshot writeback fences), **4,759 passed, 14 skipped, 19 warnings in 451.15
+seconds**. Report: `/tmp/arslan-revocation-corrected.OBwX4u/backend.xml`. Source
+remained frozen. The run used a scrubbed environment, isolated HOME and
+`ARSLAN_DATA_DIR`, a synthetic `ARSLAN_SECRET_KEY`, disabled secret-file bootstrap
+and `ARSLAN_LIVE_LLM=0`. The aiosqlite teardown guard recorded 74 closed-loop
+deliveries. All 237 frontend files / **1,835 tests** passed in 18.94 seconds;
+TypeScript checking and production build (2.98 seconds) passed. Existing warning
+and skip categories remain. Both new pause states passed six-locale 900/480×720
+headless layout checks; all 24 screenshots in
+`/tmp/arslan-memory-layout.DCmfvI` were visually inspected. This is not desktop
+acceptance; the Mac remains locked.
+
+The first full attempt had incorrectly unprefixed test environment variables.
+Encrypted-storage tests correctly refused the missing synthetic key. After
+diagnosis, that invalid run was interrupted with 2,079 passes, 29 failures,
+8 setup errors and 13 skips; its partial report is
+`/tmp/arslan-revocation-regression.HOEuPq/backend.xml`. Temporary HOME and disabled
+secret-file bootstrap still isolated it from production data. Correcting the
+environment made the eight backup tests pass without product changes; the
+complete corrected run above is the relevant engineering result.
+
+A separate production-host/serialized-HTTP diagnostic still confirms an
+acceptance defect on this source: after deletion, a retained source message in
+the same conversation enters a later request; compaction begun after deletion
+can also derive the preference again. Existing suppression records are not yet
+applied to working-history/compaction input. The two diagnostic passes in
+`/tmp/arslan-revocation-corrected.OBwX4u/test_deleted_source_diagnostic.py` prove
+the bad behavior, not successful acceptance. This remains a release blocker.
+
+Previous complete backend run: clean `1d1be3c4` (including provider request evidence),
 **4,739 passed, 14 skipped, 18 warnings in 444.62 seconds**. Report:
 `/tmp/arslan-request-evidence-regression.bdRjdP/backend.xml`. Isolated HOME/data,
 scrubbed environment, disabled live models and frozen source were retained; the
@@ -135,8 +165,8 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `1d1be3c4` full backend and 1,833-test frontend/typecheck/build pass as recorded above | Complete frozen regression for in-flight withdrawal changes and subsequent release source |
-| Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass; in-flight withdrawal and snapshot fences implemented | Real desktop and packaged runtime verification, historical scope snapshots, complete withdrawal regression; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
+| Complete engineering regression | Clean `5250e62b` full backend and 1,835-test frontend/typecheck/build pass as recorded above | Fix confirmed retained-source context/summary defect, then repeat for release source |
+| Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass; in-flight withdrawal and snapshot fences implemented | Real desktop and packaged runtime verification, historical scope snapshots, retained-source withdrawal; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |

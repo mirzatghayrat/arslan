@@ -59,3 +59,15 @@ and complete frozen regression results belong in W17. TaskPanel's nine component
 tests pass with the repository's established Node web-storage setting. These
 checks do not prove all 60 memory scenarios, historical scope snapshots,
 real-model behavior, packaged desktop behavior or release readiness.
+
+The frozen follow-up on `5250e62b` passed 4,759 backend tests, 14 skips and 19
+warnings in 451.15 seconds. All 1,835 frontend tests, typechecking and build pass;
+both pause states passed 24 six-locale/wide-and-narrow isolated browser checks,
+with every screenshot visually inspected. W17 records the reports and an earlier
+invalid environment attempt separately.
+
+An additional diagnostic still proves a distinct deletion gap: working context
+does not yet consult source-suppression records, so retained old messages can
+enter later requests and compaction begun after deletion. The in-flight epoch
+fence does not solve that stable post-deletion input path. This requirement is
+not accepted until those inputs respect the deletion ledger.
