@@ -4,6 +4,11 @@ This is **not** the existing 30-test engineering acceptance suite and does not c
 
 The initial catalog deliberately says `real_inputs_pending`. Actual project inputs, immutable input hashes and authorization must be supplied before `real_frozen` is valid. Visible task families are not secret holdout inputs: development and holdout input sets must be independently sourced and frozen before tuning. Memory scenarios currently have `specification_pending_runtime_binding`; validating their JSON does not mean the memory policy passes them.
 
+Partial cross-turn runtime bindings now exist in `tests/server/test_memory_multiturn_runtime.py`.
+See [the evidence and limitations matrix](../../docs/companion/memory-runtime-bindings.md):
+these inspect actual host prompts and receipts with a synthetic adapter, not real
+model answer quality. They do not mark the 60-scenario catalog completed.
+
 The initial split reserves 20 development and 10 holdout families before runtime implementation. Holdout IDs: R03/R06/R08, A03/A07/A10, D03/D06/D08, C04. Their real materials are still pending; seeing a task description is not access to a frozen holdout input. Do not feed holdout outcomes into automatic optimization.
 
 ## Evidence and scoring

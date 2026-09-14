@@ -56,7 +56,7 @@ notarization was performed. These source checks do not verify a distributable ap
 | --- | --- | --- |
 | Complete engineering regression | Clean `59d5ba62` full backend/frontend runs pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
-| 60 multi-turn memory scenarios | All 60 remain `specification_pending_runtime_binding` | Runtime-bound cross-turn checks, with output-behavior limitations distinguished from repository/context tests |
+| 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |
 | W12/W13 ASC | Offline read/diff/reconciliation contracts only | Authorized exact App/version integration and real draft-write/readback evidence; no submission/publication authorization inferred |
 | W15 design/media | Project style references and gated media library; precise editing unsupported | Runnable design workflow evidence, reference/output review, approved available backend for D07; unsupported stays in denominator |
