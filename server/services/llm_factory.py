@@ -4,8 +4,36 @@ from __future__ import annotations
 from arslan.llm.adapter import LLMAdapter
 from arslan.llm.presets import expand_preset
 from arslan.llm import routing
+from arslan.llm.locality import local_model
 from server.db import session as db_session
 from server.services import provider_config_service, settings_service
+
+
+def _guard_memory_destination(provider: str, base_url: str):
+    from server.services.personal_context import current
+    context = current()
+    if context and context.model_is_local and not local_model(provider, base_url):
+        # A settings edit must not reroute an already-assembled local-only prompt
+        # to a cloud model halfway through its turn (including synthesis slots).
+        raise ValueError("local_memory_model_changed")
+
+
+async def memory_models_are_local(db) -> bool:
+    """No key decryption or network probe. Mixed/unknown configurations fail closed.
+
+    Every saved slot/role can potentially be used during a turn. Requiring all
+    configured models to be local is conservative until role-specific execution
+    envelopes can certify a narrower set.
+    """
+    from sqlalchemy import select
+    from server.db.models import ProviderConfig, Setting
+    rows = (await db.execute(select(ProviderConfig.provider, ProviderConfig.base_url))).all()
+    if rows:
+        return all(local_model(provider, url or "") for provider, url in rows)
+    legacy = dict((await db.execute(select(Setting.key, Setting.value).where(
+        Setting.key.in_(("llm_provider", "llm_base_url")),
+    ))).all())
+    return local_model(legacy.get("llm_provider") or "", legacy.get("llm_base_url") or "")
 
 
 def _require_model(model: str, config_provider: str) -> str:
@@ -35,6 +63,7 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
         language = cfg.get("language") or None
         chosen = routing.select(role, strategy, configs, language) or next(
             (c for c in configs if c["is_primary"]), configs[0])
+        _guard_memory_destination(chosen["provider"], chosen["base_url"] or "")
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
     return LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
@@ -76,6 +105,7 @@ async def build_slot_adapter(slot: str) -> LLMAdapter | None:
             return None
         for c in await provider_config_service.list_configs(db):
             if str(c.get("id")) == sid:
+                _guard_memory_destination(c["provider"], c.get("base_url") or "")
                 key = await provider_config_service.get_decrypted_key(db, c["id"])
                 provider, model, base_url = expand_preset(
                     c["provider"], c["model"], c.get("base_url") or "")
@@ -97,6 +127,7 @@ async def build_synthesis_adapter() -> LLMAdapter | None:
             return None
         for c in await provider_config_service.list_configs(db):
             if str(c.get("id")) == sid:
+                _guard_memory_destination(c["provider"], c.get("base_url") or "")
                 key = await provider_config_service.get_decrypted_key(db, c["id"])
                 provider, model, base_url = expand_preset(
                     c["provider"], c["model"], c.get("base_url") or "")
@@ -111,6 +142,7 @@ async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
     config_provider = cfg.get("llm_provider") or "openai"
     model = cfg.get("llm_model") or ""
     base_url = cfg.get("llm_base_url") or ""
+    _guard_memory_destination(config_provider, base_url)
     provider, model, base_url = expand_preset(config_provider, model, base_url)
     return LLMAdapter(provider, _require_model(model, config_provider), api_key=api_key,
                       base_url=base_url, report_provider=config_provider)

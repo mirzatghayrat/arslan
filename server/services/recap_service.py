@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 async def log_event(conversation_id: str | None, kind: str, ref: dict | None, summary: str) -> None:
+    from server.services.personal_context import current
+    if current() is not None and current().temporary:
+        return
     if not conversation_id:
         return
     try:

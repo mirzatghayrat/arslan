@@ -529,7 +529,7 @@ export type ArslanServerMessage =
   | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
   // run_id (S3-M1): present only on recorded (spawn) runs — the cancel target for
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
-  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number }
+  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
@@ -545,6 +545,7 @@ export type ArslanServerMessage =
   | {
       type: "stream_end";
       message_id: number | null;
+      temporary?: boolean;
       run_id?: number;
       usage?: StreamUsage;
       artifact?: { kind: string; filename?: string; title?: string; bytes?: number;

@@ -3,7 +3,7 @@ import type { Section } from "../lib/sections";
 import {
   MessageSquare, LayoutGrid, Settings, Cpu, Layers, HardDrive,
   Paintbrush, Plus, HelpCircle, Network, Terminal, Settings2,
-  ChevronDown, ChevronUp, Boxes, Orbit, HeartPulse, Archive
+  ChevronDown, ChevronUp, Boxes, Orbit, HeartPulse, Archive, FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +18,7 @@ interface ArslanThread {
   id: string;
   title: string;
   archived?: boolean;
+  temporary?: boolean;
 }
 
 interface SidebarProps {
@@ -129,14 +130,14 @@ export default function Sidebar({
         {isActive && <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />}
         <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-muted-foreground'}`} />
         <span className="truncate flex-1 pr-1 font-sans">{thread.title}</span>
-        <ThreadRowMenu
+        {!thread.temporary && <ThreadRowMenu
           threadId={thread.id}
           archived={isArchived}
           onDistill={onDistillThread}
           onArchive={onArchiveThread}
           onUnarchive={onUnarchiveThread}
           onDelete={onDeleteThread}
-        />
+        />}
       </div>
     );
   };
@@ -168,11 +169,8 @@ export default function Sidebar({
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="font-sans font-bold text-foreground text-sm tracking-tight">
-                {t('app.name')} Orchestrator
+                {t('app.name')}
               </h1>
-              <span className="text-[8px] bg-primary/10 text-primary px-1 py-0.2 rounded font-mono font-medium border border-primary/20 uppercase">
-                Host
-              </span>
             </div>
             <p className="text-[9px] text-subtle-foreground font-mono tracking-tight mt-0.5">
               {t('sidebar.brand_subtitle')}
@@ -197,6 +195,11 @@ export default function Sidebar({
 
             {/* Quick Portal Shortcuts (Listed vertically for consistent list style) */}
             <div className="space-y-1">
+              <button id="nav-btn-projects-deck" onClick={() => onChangeSection('projects')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left border-l-2 ${activeSection === 'projects'
+                  ? 'bg-primary/10 text-foreground border-primary' : 'text-muted-foreground hover:bg-foreground/[0.02] border-transparent'}`}>
+                <FolderOpen className="w-3.5 h-3.5 shrink-0" /><span>{t('companion.projects')}</span>
+              </button>
               {/* Spawns Ledger */}
               <button
                 id="nav-btn-ledger-deck"
@@ -244,7 +247,7 @@ export default function Sidebar({
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Orbit className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'brain' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">{t('nav.secondBrain')}</span>
+                  <span className="truncate font-sans font-medium">{t('companion.memory')}</span>
                 </div>
               </button>
 
@@ -260,7 +263,7 @@ export default function Sidebar({
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <HeartPulse className={`w-3.5 h-3.5 flex-shrink-0 ${activeSection === 'diagnosis' ? 'text-primary' : 'text-subtle-foreground'}`} />
-                  <span className="truncate font-sans font-medium">Diagnostics</span>
+                  <span className="truncate font-sans font-medium">{t('nav.diagnosis')}</span>
                 </div>
               </button>
 

@@ -661,7 +661,7 @@ async def list_proposals(
     # request into thousands of queries. The response stays a JSON ARRAY — making it
     # an object would break every existing consumer.
     rows = (await session.execute(
-        select(MemoryProposal).where(MemoryProposal.status == status)
+        select(MemoryProposal).where(MemoryProposal.status == status, MemoryProposal.kind != "memory_v2")
         .order_by(MemoryProposal.id).limit(max(1, min(limit, 500))).offset(max(0, offset))
     )).scalars().all()
 
@@ -979,6 +979,14 @@ async def accept_proposal(
     if p.status != "pending":
         raise HTTPException(status_code=409,
                             detail=f"proposal {pid} already resolved (status={p.status})")
+
+    from server.services.memory_repository import is_active
+    if await is_active(session) and p.table_name != "notes":
+        # Old cards have no target revision and can contain whole-array replaces.
+        # Keep their audit record, but never interpret a stale card as approval of
+        # the current unified memory contents.
+        raise HTTPException(409, detail={"code": "versioned_memory_review_required",
+                                        "proposal_id": pid, "entry_id": p.target_entry_id})
 
     human_prov = {"source_kind": "human", "via": "proposal", "proposal_id": pid}
 

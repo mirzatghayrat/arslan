@@ -323,10 +323,14 @@ class FactIn(BaseModel):
 class FactUpdate(BaseModel):
     content: str | None = None
     sensitive: bool | None = None
+    expected_version: int | None = None
 
 
 class FactOut(BaseModel):
     id: int
+    entry_id: str | None = None
+    version: int | None = None
+    status: str | None = None
     content: str
     source: str
     sensitive: bool
@@ -982,10 +986,13 @@ class SkillCandidateOut(BaseModel):
 
 class PreferencesOut(BaseModel):
     preferences: list[str] = []
+    entries: list[dict] = []
 
 
 class PreferenceDeleteIn(BaseModel):
     fact: str
+    entry_id: str | None = None
+    expected_version: int | None = None
 
 
 # --- S3-M3 cost visibility (Task 5) ----------------------------------------

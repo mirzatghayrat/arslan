@@ -226,13 +226,18 @@ export default function OrchestratorChat({
   // (drafts are session-scoped, and persisting every keystroke to disk buys
   // nothing) and NOT a re-render source (read once on mount).
   const draftKey = conversationId ?? 'main';
-  const [inputValue, _setInputValue] = useState(() => composerDrafts.get(draftKey) ?? '');
+  const temporary = activeThread?.temporary === true;
+  const [inputValue, _setInputValue] = useState(() => temporary ? '' : composerDrafts.get(draftKey) ?? '');
   const setInputValue = useCallback((v: string) => {
-    composerDrafts.set(draftKey, v);
+    if (!temporary) composerDrafts.set(draftKey, v);
     _setInputValue(v);
-  }, [draftKey]);
+  }, [draftKey, temporary]);
+  useEffect(() => {
+    if (temporary) composerDrafts.delete(draftKey);
+    return () => { if (temporary) composerDrafts.delete(draftKey); };
+  }, [draftKey, temporary]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const attach = useComposerAttach(setAttachments);
+  const attach = useComposerAttach(setAttachments, false, { allowUrlExtraction: !temporary });
 
   // @-mention autocomplete for the chat composer — a dropdown of this conversation's roster
   // members that filters as you type `@…` and inserts the full `@Name ` on pick (so routing

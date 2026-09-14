@@ -74,6 +74,10 @@ class RecallExecutor:
         query = (args.get("query") or "").strip()
         kind = args.get("kind")
         caller = current_caller()
+        from server.services.memory_repository import is_active
+        if await is_active():
+            from server.services.memory_tools_v2 import recall
+            return await recall(args, caller)
         # ONLY an explicit host caller sees sensitive facts — caller=None and any
         # spawn actor both fail closed to the sensitive-filtered set.
         include_sensitive = caller is not None and caller.actor == "host"
@@ -133,6 +137,11 @@ class RememberExecutor:
             # every downstream check below (own-well append, cross-well
             # supersede) would be meaningless. Refuse rather than guess.
             return {"ok": False, "error": "spawn actor missing spawn_id; refusing to write"}
+
+        from server.services.memory_repository import is_active
+        if await is_active():
+            from server.services.memory_tools_v2 import remember
+            return await remember(args, caller)
 
         kind = args.get("kind")
         action = args.get("action")

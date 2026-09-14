@@ -91,7 +91,7 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 | `server/registry/executors.py` | `d6d8bd18256ca19e1f1c7275faff8ffdfa6baebb47653645eb848b29409eb4be` |
 | `server/registry/file_tools.py` | `754af6c1a7334284a5124ad2399894ff227b8384d2b10d4ee3dea65cdf1ee936` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
-| `server/registry/memory_executors.py` | `5247a07f7f6659b2c7a35062af4c1e99a3fd2078a700d2506e43c17401d42335` |
+| `server/registry/memory_executors.py` | `5e53443ee8c03360cfe52c5e68f3e4a8196563377a2b7da6e60ea6e7b4f87587` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |
 | `server/registry/seed_catalog.py` | `5a5e1e856f15926eae0480935faa3c870bffe8e55c3170c63d241b7f21a184cb` |
 | `server/registry/ssh_tools.py` | `a31f56ef47fb8559e0595ab7e0365a3582f3e5b417071bee9b4c072cebd9ce5a` |

@@ -46,6 +46,7 @@ from server.services import (
     staffing_gather,
 )
 from server.services.llm_factory import build_adapter
+from server.services.task_context import scoped_turn
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +471,7 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
 
 
 @governed
+@scoped_turn
 async def handle_user_message(
     conversation_id: str,
     user_message: str,
@@ -483,8 +485,19 @@ async def handle_user_message(
     # 1. persist the user turn — the PLACEHOLDER form when images rode along
     #    (decision ③A); base64 in a Text column would bloat the DB and backups
     #    while still not surviving as an image.
-    await memory.add_message(
+    source_message_id = await memory.add_message(
         conversation_id, "user", persisted_user_text(user_message, images))
+    from server.services.task_context import source_message
+    source_message(source_message_id)
+    from server.services import personal_context, task_context
+    active_context = personal_context.current()
+    if active_context is not None and task_context.precise_text_request(user_message):
+        from dataclasses import replace
+        with personal_context.bind(replace(active_context, no_memory=True)):
+            await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
+                                 images=images, confirm_command=confirm_command,
+                                 confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule)
+        return
 
     # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
     # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
@@ -609,7 +622,9 @@ async def handle_user_message(
             provenance={"source_kind": "router", "conversation_id": conversation_id},
         )
         for fact in created:
-            emit({"type": "fact_saved", "content": fact.content, "sensitive": fact.sensitive})
+            emit({"type": "memory_proposed" if getattr(fact, "status", "active") != "active" else "fact_saved",
+                  "content": fact.content, "sensitive": fact.sensitive,
+                  "entry_id": getattr(fact, "entry_id", None)})
         if created:
             from server.services import recap_service
             _fsummary = " · ".join(
@@ -1060,7 +1075,13 @@ async def _handle_answer_body(
     turn_delegated: bool = False,
 ) -> str | None:
     ctx = await memory.assemble_working_context(conversation_id)
-    facts = await memory.facts_text(include_sensitive=True)
+    from server.services import personal_context
+    if personal_context.current() is not None:
+        personal = await personal_context.assemble(user_message)
+        facts = personal.text
+        await personal_context.record(personal)
+    else:
+        facts = await memory.facts_text(include_sensitive=True)
     roster = await _team_roster()
     # Prompt-cache reorder (spec 2026-07-13): KB is per-query volatile → gather it, then
     # assemble via _build_answer_system so the static guards stay a byte-stable cacheable
@@ -1264,6 +1285,21 @@ def _fire_dual_track(conversation_id: str, spawn_id: int, spawn_name: str | None
     """Component 5 + recap: background-distill the deliverable into the inferred spawn AND log a
     distill growth event for the conversation recap. Fire-and-forget, never fatal."""
     from server.services import learning_service, recap_service
+    from server.services import personal_context
+    context = personal_context.current()
+    if context is not None:
+        if context.no_learning or context.temporary or not context.cloud_memory_allowed:
+            return
+
+        async def propose():
+            with personal_context.for_worker(str(spawn_id)):
+                outcome = await distill_service.distill_from_signals(
+                    spawn_id, signals, conversation_id=conversation_id)
+                if outcome.proposed:
+                    await recap_service.log_event(conversation_id, "memory_proposed",
+                        {"spawn_id": spawn_id, "count": outcome.proposed}, "confirmation_required")
+        asyncio.create_task(propose())
+        return
 
     # Pass conversation_id so a failure lands on THIS conversation's recap timeline
     # rather than the synthetic spawn-{id} fallback (this path has a real conversation).

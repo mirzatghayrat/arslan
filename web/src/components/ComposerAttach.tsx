@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { fileToImagePayload, type ImagePayload } from "../lib/imagePayload";
 import { Plus, X, Loader2, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -87,6 +87,7 @@ export interface UseComposerAttach {
 export function useComposerAttach(
   onChange: (items: Attachment[]) => void,
   compress = false,
+  { allowUrlExtraction = true }: { allowUrlExtraction?: boolean } = {},
 ): UseComposerAttach {
   const { t } = useTranslation();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -215,6 +216,7 @@ export function useComposerAttach(
   // debounced timer never fires against stale state (useEventCallback pattern).
   const scanRef = useRef<(text: string) => void>(() => {});
   scanRef.current = (text: string) => {
+    if (!allowUrlExtraction) return;
     const fresh = extractUrls(text).filter(
       (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),
     );
@@ -224,6 +226,7 @@ export function useComposerAttach(
   };
 
   const detectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (detectTimer.current) clearTimeout(detectTimer.current); }, []);
   const onInputChange = useCallback((text: string) => {
     if (detectTimer.current) clearTimeout(detectTimer.current);
     detectTimer.current = setTimeout(() => scanRef.current(text), DETECT_DEBOUNCE_MS);

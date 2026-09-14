@@ -444,6 +444,8 @@ def create_app() -> FastAPI:
     from server.api import brain as brain_api
 
     app.include_router(brain_api.router, prefix="/api/v1")
+    from server.api import companion as companion_api
+    app.include_router(companion_api.router, prefix="/api/v1")
 
     from server.api import notes as notes_api
 

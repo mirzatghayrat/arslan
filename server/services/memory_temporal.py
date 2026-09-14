@@ -52,6 +52,9 @@ async def execute_supersede(
     """
     if not provenance:
         raise SupersedeError("missing_provenance", "provenance is mandatory (programmer guard)")
+    from server.services.memory_repository import is_active
+    if await is_active(db):
+        raise SupersedeError("versioned_review_required", "Use versioned memory review to replace an entry")
     if new_id == old_id:
         raise SupersedeError("self_supersede", f"id {new_id} cannot supersede itself")
     model = _model(table)
@@ -125,6 +128,9 @@ async def undo_supersede(table: str, old_id: int, *, provenance: dict, db=None) 
     """
     if not provenance:
         raise SupersedeError("missing_provenance", "provenance is mandatory (programmer guard)")
+    from server.services.memory_repository import is_active
+    if await is_active(db):
+        raise SupersedeError("versioned_review_required", "Use versioned memory review to restore an entry")
     model = _model(table)
     if db is not None:
         await _apply_undo(db, model, table, old_id, commit=False)

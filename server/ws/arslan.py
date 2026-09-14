@@ -443,6 +443,25 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             if msg_type in ("ping", "pong"):
                 continue
 
+            from server.services import task_context, temporary_turn
+            if await task_context.is_temporary(conversation_id):
+                if msg_type == "user_message":
+                    with_context = await task_context.load(conversation_id)
+                    from server.services.personal_context import bind
+                    with bind(with_context):
+                        await run_with_confirm_frames(arslan.handle_user_message(
+                            conversation_id, data.get("content", ""), emit,
+                            attached_context=data.get("attached_context") or None,
+                            images=data.get("images") or None,
+                        ))
+                elif msg_type == "session_ended":
+                    temporary_turn.clear(conversation_id)
+                    await ws.send_json({"type": "session_ended_ack", "conversation_id": conversation_id})
+                elif msg_type != "resume":
+                    await ws.send_json(protocol.error("TEMPORARY_ACTION_UNAVAILABLE",
+                        "Temporary conversations do not create experts, save memories, or perform external actions."))
+                continue
+
             if msg_type == "resume":
                 last_id = int(data.get("last_message_id", 0))
                 for m in await _history(conversation_id):
@@ -839,6 +858,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # the drainer may already have detached on a send failure, and if the
         # history push raised before attach_sink ran this is a no-op.
         run_registry.detach_sink(conversation_id, sink)
+        from server.services.temporary_turn import clear as clear_temporary
+        clear_temporary(conversation_id)
         if drainer is not None:
             drainer.cancel()
         keepalive.cancel()

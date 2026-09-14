@@ -13,6 +13,7 @@ from server.orchestrator import memory, spawn_loop
 from server.registry import service as registry_service
 from server.services import evolution_meter
 from server.services.llm_factory import build_adapter
+from server.services.task_context import scoped_worker
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +301,19 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     from server.services import evolution_service
     from server.services import knowledge as _knowledge
 
-    facts = ambient["facts"] if ambient is not None else await memory.facts_text()
+    from server.services.memory_repository import is_active as memory_v2_active
+    unified_memory = await memory_v2_active()
+    if unified_memory:
+        from server.services import personal_context
+        # Replays must reauthorize current memory; cached prompt snapshots may
+        # contain entries that have since been deleted or lost permission.
+        with personal_context.for_worker(str(spawn.id)):
+            personal = await personal_context.assemble(retrieval_query)
+            facts = personal.text if personal else ""
+            if personal:
+                await personal_context.record(personal)
+    else:
+        facts = ambient["facts"] if ambient is not None else await memory.facts_text()
     base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
     system = base_prompt
     system += (
@@ -328,17 +341,17 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     )
     if facts:
         system = f"{system}\n\n{facts}"
-    if spawn.memory_facts:
+    if not unified_memory and spawn.memory_facts:
         prefs = "\n- ".join(str(f) for f in spawn.memory_facts if str(f).strip())
         if prefs:
             system += f"\n\n[关于如何为这位用户工作,你已学到的偏好]\n- {prefs}"
     # Tier-1 evolution suffix — appended AFTER the base (override or persona) for EVERY arm,
     # so a replay candidate and baseline both carry it exactly as production does (spec §E3).
-    suffix = evolution_service.prompt_suffix(spawn.name)
+    suffix = "" if unified_memory else evolution_service.prompt_suffix(spawn.name)
     if suffix:
         system = f"{system}\n\n{suffix}"
     _kb_sources = None
-    if ambient is not None:
+    if ambient is not None and not unified_memory:
         # E3: inject the pre-captured KB snapshot (no retrieval, no usage write) so both arms
         # of a pair see byte-identical knowledge.
         system += ambient["kb_block"]
@@ -349,8 +362,10 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
             # count still accrues per material hit, the "最近用于" ref is filled by the
             # Arslan direct-chat path which does carry conversation_id. record_usage=False
             # in replay: retrieve identically but never touch brain_usage counters.
-            _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
-                                                   used_ref=None, record_usage=not replay)
+            from server.services.personal_context import for_worker
+            with for_worker(str(spawn.id)):
+                _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
+                                                       used_ref=None, record_usage=not replay)
             system += _knowledge.knowledge_block(_kb)
             _kb_sources = [src for src, _ in _kb] or None
         except Exception as exc:  # noqa: BLE001
@@ -562,6 +577,7 @@ def with_images(brief: str, images: list[dict] | None) -> str | list[dict]:
     return blocks
 
 
+@scoped_worker
 async def dispatch(
     conversation_id: str,
     *,

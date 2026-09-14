@@ -8,6 +8,7 @@
     "tagline": "Erstelle deine eigenen KI-Spawns"
   },
   "nav": {
+    "projects": "Projekte",
     "dashboard": "Dashboard",
     "spawns": "Spawns",
     "settings": "Einstellungen",
@@ -16,7 +17,7 @@
     "spawn": "Agent",
     "ledger": "Agenten-Register",
     "capabilities": "Fähigkeiten",
-    "brain": "Zweites Gehirn",
+    "brain": "Gedächtnis",
     "diagnosis": "Diagnose"
   },
   "brain": {

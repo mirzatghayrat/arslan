@@ -51,7 +51,7 @@ async def score(run_id: int) -> None:
     """Score a Run. Sets status 'scored' (or 'score_failed' on any error)."""
     async with db_session.AsyncSessionLocal() as db:
         run = await db.get(Run, run_id)
-        if run is None:
+        if run is None or run.no_learning:
             return
         spawn = await db.get(Spawn, run.spawn_id) if run.spawn_id else None
         out_row = (await db.execute(
@@ -99,6 +99,10 @@ async def score(run_id: int) -> None:
         # bucket via its context copy; scope() opens a FRESH bucket on enter, so the judge
         # sees only its own usage and the dispatch Run's numbers are never diminished
         # (regression: tests/server/test_usage_ledger.py).
+        async with db_session.AsyncSessionLocal() as db:
+            latest = await db.get(Run, run_id)
+            if latest is None or latest.no_learning:
+                return
         async with usage_ledger.scope("judge", run.conversation_id, run_id=run_id):
             adapter = await build_adapter(role="judge")
             resp = await adapter.chat(system=JUDGE_SYSTEM, user=prompt)
@@ -146,7 +150,7 @@ async def score(run_id: int) -> None:
 
     async with db_session.AsyncSessionLocal() as db:
         run = await db.get(Run, run_id)
-        if run is None:
+        if run is None or run.no_learning:
             return
         run.overall_score = overall_score
         run.overall_badge = badge

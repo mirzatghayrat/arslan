@@ -37,7 +37,7 @@ async def _reaper_candidates() -> list[int]:
         rows = await db.execute(
             select(Run.id)
             .where(Run.status.in_(_STUCK_STATUSES), Run.created_at < cutoff,
-                   Run.kind.in_(_REAPED_KINDS))
+                   Run.kind.in_(_REAPED_KINDS), Run.no_learning.is_(False))
             .order_by(Run.id)
         )
         return list(rows.scalars().all())

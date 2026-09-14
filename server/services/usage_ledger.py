@@ -80,6 +80,9 @@ def _build_rows(scope_name: str, conversation_id: str | None,
 
 
 async def _write(scope_name: str, conversation_id: str | None, run_id: int | None) -> None:
+    from server.services.personal_context import current
+    if current() is not None and current().temporary:
+        return
     rows = _build_rows(scope_name, conversation_id, run_id)
     if not rows:
         return

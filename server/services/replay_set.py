@@ -41,7 +41,7 @@ async def _collect(db, spawn_id: int, cap: int) -> list[dict]:
         # E2: only clean-corpus live runs — replay arms (kind='replay') and pre-baseline
         # rows (epoch=0) are permanently excluded from the evaluation corpus.
         .where(Run.spawn_id == spawn_id, Run.status == "scored",
-               Run.kind == "live", Run.epoch >= 1)
+               Run.kind == "live", Run.epoch >= 1, Run.no_learning.is_(False))
     )
     if baseline is not None:
         q = q.where(Run.created_at >= baseline)

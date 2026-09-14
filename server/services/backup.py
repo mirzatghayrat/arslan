@@ -129,9 +129,20 @@ def restore(archive: Path, destination: Path) -> dict:
                     os.chmod(target, 0o600)
                     handle.write(data)
         _check_db(staged / "arslan.db")
+        from sqlalchemy import create_engine
+        from server.services.memory_restore import mark_restored_sync
+        engine = create_engine(f"sqlite:///{staged / 'arslan.db'}")
+        try:
+            with engine.begin() as connection:
+                review = mark_restored_sync(connection)
+        finally:
+            engine.dispose()
+        _check_db(staged / "arslan.db")
         # Destination must remain absent. Never merge into or replace live data.
         if destination.exists() or destination.is_symlink():
             raise ValueError("restore destination appeared during validation")
         os.rename(staged, destination)
     return {"files": len(expected), "secret_included": False,
-            "next_step": "Keep the app stopped; configure the original secret and restored data path before boot."}
+            "memory_review": review,
+            "next_step": "Keep the app stopped; configure the original secret and restored data path before boot. "
+                         "Review restored memories, projects and paused schedules before using them."}

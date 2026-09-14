@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
+from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -99,7 +100,7 @@ class OpenAIProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
@@ -182,7 +183,7 @@ class OpenAIProvider(BaseLLMProvider):
         self._last_stream_usage = None  # reset per attempt — no stale carry-over
         from arslan.execution_budget import model_request
         payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",

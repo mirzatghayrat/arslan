@@ -52,6 +52,7 @@ interface ThreadLike {
   history?: unknown[];
   memberSpawnIds?: string[];
   archived?: boolean;
+  temporary?: boolean;
 }
 
 /**
@@ -64,7 +65,7 @@ export function persistThreads(
   activeThreadId: string,
 ): void {
   try {
-    const slim: PersistedThread[] = threads.map((t) => ({
+    const slim: PersistedThread[] = threads.filter(t => !t.temporary).map((t) => ({
       id: t.id,
       title: t.title,
       history: [],
@@ -72,7 +73,7 @@ export function persistThreads(
       ...(t.archived ? { archived: true } : {}),
     }));
     localStorage.setItem(THREADS_KEY, JSON.stringify(slim));
-    localStorage.setItem(ACTIVE_THREAD_KEY, activeThreadId);
+    localStorage.setItem(ACTIVE_THREAD_KEY, slim.some(t => t.id === activeThreadId) ? activeThreadId : slim[0]?.id ?? "");
   } catch {
     /* storage unavailable (private mode / quota) — best-effort, ignore */
   }

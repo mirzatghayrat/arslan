@@ -8,6 +8,7 @@
     "tagline": "Build your own AI spawns"
   },
   "nav": {
+    "projects": "Projects",
     "dashboard": "Dashboard",
     "spawns": "Spawns",
     "settings": "Settings",
@@ -16,7 +17,7 @@
     "spawn": "Spawn",
     "ledger": "Spawns Ledger",
     "capabilities": "Capabilities",
-    "brain": "Second Brain",
+    "brain": "Memory",
     "diagnosis": "Diagnostics"
   },
   "brain": {

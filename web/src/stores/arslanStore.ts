@@ -424,7 +424,7 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "stream_start":
-          _voiceStart();
+          if (frame.temporary) _voiceStop(); else _voiceStart();
           set({
             pending: false,
             streaming: true,
@@ -486,7 +486,7 @@ function makeActions(set: SetState, get: GetState) {
             spawnId: state.streamSpawnId,
             spawnName: state.streamSpawnName,
             spawnMessageId: meta?.assistant_message_id ?? null,
-            runId: frame.run_id ?? meta?.run_id ?? state.activeRunId ?? null,
+            runId: frame.temporary ? null : frame.run_id ?? meta?.run_id ?? state.activeRunId ?? null,
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),

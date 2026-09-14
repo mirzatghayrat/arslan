@@ -8,6 +8,7 @@
     "tagline": "あなただけの AI スポーンを作ろう"
   },
   "nav": {
+    "projects": "プロジェクト",
     "dashboard": "ダッシュボード",
     "spawns": "スポーン",
     "settings": "設定",
@@ -16,7 +17,7 @@
     "spawn": "エージェント",
     "ledger": "エージェント台帳",
     "capabilities": "ケイパビリティ",
-    "brain": "セカンドブレイン",
+    "brain": "記憶",
     "diagnosis": "診断"
   },
   "brain": {

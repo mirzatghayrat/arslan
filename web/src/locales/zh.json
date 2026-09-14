@@ -8,6 +8,7 @@
     "tagline": "打造你专属的 AI 分身"
   },
   "nav": {
+    "projects": "项目",
     "dashboard": "仪表盘",
     "spawns": "分身",
     "settings": "设置",
@@ -16,7 +17,7 @@
     "spawn": "分身",
     "ledger": "分身账本",
     "capabilities": "能力库",
-    "brain": "第二大脑",
+    "brain": "记忆",
     "diagnosis": "诊断台"
   },
   "brain": {

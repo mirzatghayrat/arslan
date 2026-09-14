@@ -8,6 +8,7 @@ import es from "./locales/es.json";
 import fr from "./locales/fr.json";
 import ja from "./locales/ja.json";
 import zh from "./locales/zh.json";
+import { companionMessages } from "./locales/companion";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh", "ja", "es", "de", "fr"] as const;
 export type Lang = (typeof SUPPORTED_LANGUAGES)[number];
@@ -17,12 +18,12 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: en },
-      zh: { translation: zh },
-      ja: { translation: ja },
-      es: { translation: es },
-      de: { translation: de },
-      fr: { translation: fr },
+      en: { translation: { ...en, companion: companionMessages.en } },
+      zh: { translation: { ...zh, companion: companionMessages.zh } },
+      ja: { translation: { ...ja, companion: companionMessages.ja } },
+      es: { translation: { ...es, companion: companionMessages.es } },
+      de: { translation: { ...de, companion: companionMessages.de } },
+      fr: { translation: { ...fr, companion: companionMessages.fr } },
     },
     fallbackLng: "en",
     supportedLngs: [...SUPPORTED_LANGUAGES],

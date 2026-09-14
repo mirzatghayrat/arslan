@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1515 keys (baseline guard)", () => {
+  it("en locale has 1516 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -251,7 +251,8 @@ describe("locale parity", () => {
     // Settings clarity adds nine translated labels and connection-status hints.
     // Dedicated desktop settings shell adds six labels in all six locales.
     // W21: localized slide-count text in artifact cards (+1).
-    expect(enKeys).toHaveLength(1515);
+    // Companion project navigation adds one key; its own messages are tested separately.
+    expect(enKeys).toHaveLength(1516);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

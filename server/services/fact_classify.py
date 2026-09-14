@@ -116,6 +116,9 @@ async def classify_missing(batch_size: int = 32) -> int:
     (with _state['error'] set) and leaves rows label-NULL for retry — instead of
     silently mass-labeling. Re-derives category too (fixes stale/wrong labels).
     Best-effort."""
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return 0  # Legacy background classification has no cloud-memory consent.
     if _state["running"]:
         return 0
     _state.update(running=True, done=0, total=0, error=None)
@@ -162,6 +165,9 @@ async def classify_ids(ids: list[int]) -> None:
     """(Re)classify + label specific fact ids (label IS NULL). Called fire-and-forget
     from write paths via schedule(). Best-effort: on a provider outage, skip the row
     (leave label NULL for boot backfill) rather than persisting a mislabel."""
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return
     for fid in ids:
         try:
             async with db_session.AsyncSessionLocal() as db:

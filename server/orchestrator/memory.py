@@ -232,6 +232,10 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
     """
     if not provenance:
         raise ValueError("save_facts: provenance is mandatory (programmer guard)")
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.save_facts(facts)
     created: list[UserFact] = []
     if not facts:
         return created
@@ -338,6 +342,10 @@ async def list_facts(*, include_superseded: bool = False,
     forget. Marking is a toggle — marking again clears the flag and the fact comes
     back — so the row is left alone; nothing about the mark is destructive.
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.list_facts(include_superseded=include_superseded, include_stale=include_stale)
     async with db_session.AsyncSessionLocal() as db:
         stmt = select(UserFact).order_by(UserFact.id)
         if not include_superseded:
@@ -361,6 +369,10 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
     duplicate. Fail-open: any exception in the dedup check is swallowed and
     falls through to a normal insert — a user's fact must always get saved.
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.add_manual_fact(content, sensitive)
     text = content.strip()
     if not text:
         raise ValueError("Fact content cannot be empty")
@@ -400,7 +412,8 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
         return row
 
 
-async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None) -> UserFact | None:
+async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None,
+                      *, expected_version: int | None = None) -> UserFact | None:
     """Edit a fact's content/sensitivity. Returns None if not found.
 
     An edit merges `edited_by_user_at` into the row's provenance dict (rather than
@@ -408,6 +421,10 @@ async def update_fact(fact_id: int, content: str | None = None, sensitive: bool 
     distinguishable from a still-pristine auto fact, without losing its original
     source_kind/spawn_id/conversation_id.
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.update_fact(fact_id, content, sensitive, expected_version=expected_version)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(UserFact, fact_id)
         if row is None:
@@ -425,8 +442,12 @@ async def update_fact(fact_id: int, content: str | None = None, sensitive: bool 
         return row
 
 
-async def delete_fact(fact_id: int) -> bool:
+async def delete_fact(fact_id: int, *, expected_version: int | None = None) -> bool:
     """Delete a fact. Returns True if a row was removed."""
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.delete_fact(fact_id, expected_version=expected_version)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(UserFact, fact_id)
         if row is None:
@@ -447,6 +468,16 @@ async def facts_text(*, include_sensitive: bool = False,
     spawn dispatch / sandbox 草稿 / replay ambient 走安全默认,零改动即正确。
     忘传 flag 的泄漏方向永远是"少给",不是"私密进 spawn prompt"。
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from dataclasses import replace
+        from server.services.personal_context import assemble, current
+        context = current()
+        if context is None:
+            return ""
+        result = await assemble(context=replace(context, allow_sensitive=context.allow_sensitive and include_sensitive),
+                                limit_tokens=limit_tokens)
+        return result.text if result else ""
     facts = await list_facts()
     if not include_sensitive:
         # NULL⇒sensitive:隐私过滤 fail-closed——只有显式 False 放行

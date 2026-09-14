@@ -8,6 +8,7 @@
     "tagline": "Crea tus propios spawns de IA"
   },
   "nav": {
+    "projects": "Proyectos",
     "dashboard": "Panel",
     "spawns": "Spawns",
     "settings": "Ajustes",
@@ -16,7 +17,7 @@
     "spawn": "Agente",
     "ledger": "Registro de agentes",
     "capabilities": "Capacidades",
-    "brain": "Segundo cerebro",
+    "brain": "Memoria",
     "diagnosis": "Diagnóstico"
   },
   "brain": {

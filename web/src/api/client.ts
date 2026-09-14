@@ -545,11 +545,11 @@ export const api = {
       { method: "DELETE" },
     ),
   getPreferences: (spawnId: number) =>
-    request<{ preferences: string[] }>(`/spawns/${spawnId}/preferences`),
-  deletePreference: (spawnId: number, fact: string) =>
-    request<{ preferences: string[] }>(`/spawns/${spawnId}/preferences`, {
+    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`),
+  deletePreference: (spawnId: number, fact: string, identity?: { entry_id: string; expected_version: number }) =>
+    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`, {
       method: "DELETE",
-      body: JSON.stringify({ fact }),
+      body: JSON.stringify({ fact, ...identity }),
     }),
   // S2 evolution (spec §E7). The old sync propose was replaced by a background job:
   // GET the estimate, POST to enqueue (202), then review the resulting proposal in the inbox.

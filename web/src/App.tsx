@@ -46,7 +46,10 @@ import ConnectMcpCard from './components/ConnectMcpCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
-import BrainSection from './components/brain/BrainSection';
+import MemorySection from './components/companion/MemorySection';
+import ProjectsSection from './components/companion/ProjectsSection';
+import ConversationControls from './components/companion/ConversationControls';
+import { companionApi, type Project } from './api/companion';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
@@ -64,6 +67,7 @@ interface ArslanThread {
   history: Message[];
   memberSpawnIds?: string[];
   archived?: boolean;
+  temporary?: boolean;
 }
 
 export default function App() {
@@ -185,6 +189,7 @@ export default function App() {
   // The store holds all thread items; we derive UI messages from it.
   const arslanItems = useArslanStore((s) => s.items);
   const arslanStreaming = useArslanStore((s) => s.streaming);
+  const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
   // Live roster from backend roster_update frames
   const roster = useArslanStore((s) => s.roster);
@@ -296,6 +301,7 @@ export default function App() {
       history: liveOrchestratorHistory,
     };
     if (
+      !threads.find((thread) => thread.id === activeThreadId)?.temporary &&
       !titledThreadIds.current.has(activeThreadId) &&
       shouldAutoTitle(syntheticThread)
     ) {
@@ -572,12 +578,10 @@ export default function App() {
   );
 
   // Handle addition of a brand new Orchestrator thread context
-  const handleAddArslanThread = () => {
-    const threadId = `thread-${Date.now()}`;
-    const nextThreadNumber = threads.filter(t => !t.title.includes('New Session')).length + 1;
+  const handleAddArslanThread = (threadId = `thread-${crypto.randomUUID()}`) => {
     const newThread: ArslanThread = {
       id: threadId,
-      title: `Orchestration thread #${nextThreadNumber}`,
+      title: 'New Session',
       memberSpawnIds: [],
       history: []
     };
@@ -589,10 +593,18 @@ export default function App() {
     // Clear the store so the new conversation starts with empty history (the
     // backend will send an empty `history` frame for the new conversation_id).
     useArslanStore.getState().resetForNewConversation();
-    setThreads(prev => [...prev, newThread]);
+    setThreads(prev => [...prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)), newThread]);
     setActiveThreadId(threadId);
     setActiveSection('arslan');
     setPanelView('default');
+  };
+
+  const handleStartProject = async (project: Project) => {
+    const conversationId = `thread-${crypto.randomUUID()}`;
+    await companionApi.saveContext({ conversation_id: conversationId, version: 0, project_id: null,
+      no_memory: false, no_learning: false, temporary: false, cloud_memory_allowed: false, allow_sensitive: false },
+    { project_id: project.id });
+    handleAddArslanThread(conversationId);
   };
 
   // ── Conversation row overflow actions (Distill / Archive / Delete) ──────────
@@ -694,7 +706,7 @@ export default function App() {
 
           // Rename thread if empty/default title when receiving first message from user
           let updatedTitle = t.title;
-          if (t.title === 'New Session' || t.title.startsWith('Orchestration thread')) {
+          if (!t.temporary && (t.title === 'New Session' || t.title.startsWith('Orchestration thread'))) {
             const userMsg = newHistory.find(m => m.sender === 'user');
             if (userMsg) {
               const cleaned = userMsg.text.replace(/[#*`_]/g, '').trim();
@@ -839,11 +851,12 @@ export default function App() {
           // cleared before the new conversation_id's WS connects and sends its
           // `history` frame.
           if (nav.resetStore) useArslanStore.getState().resetForNewConversation();
+          if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
           setActiveThreadId(id);
           setActiveSection('arslan');
           setPanelView('default');
         }}
-        onAddThread={handleAddArslanThread}
+        onAddThread={() => handleAddArslanThread()}
         spawns={spawns}
         activeSpawnChatId={activeSpawnChatId}
         onSelectSpawnChat={(id) => {
@@ -1149,7 +1162,12 @@ export default function App() {
             )}
 
             {activeSection === 'arslan' && (
+              <div className="flex h-full min-h-0 flex-col">
+              <ConversationControls key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
+                onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
+                  ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
               <OrchestratorChat
+                key={`chat:${activeThreadId}`}
                 chatHistory={orchestratorChatHistory}
                 setChatHistory={setChatHistoryForActiveThread}
                 onSendMessage={sendOrchestratorMessage}
@@ -1199,6 +1217,7 @@ export default function App() {
                 shellPolicy={settings.shellConfirmPolicy}
                 onShellPolicyChange={handleShellPolicyChange}
               />
+              </div>
             )}
 
             {activeSection === 'spawn' && activeSpawn && (
@@ -1245,7 +1264,8 @@ export default function App() {
               />
             )}
 
-            {activeSection === 'brain' && <BrainSection />}
+            {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
+            {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
 
             {activeSection === 'diagnosis' && <DiagnosisView onGoToChat={() => setActiveSection('arslan')} />}
 
@@ -1269,7 +1289,7 @@ export default function App() {
         {/* Diagnostics rail is a CONVERSATION panel — only show it on the orchestrator
             chat + spawn direct chat. On Settings/Ledger/Capabilities it has no relevant
             context (and would leak the chat-only "Spawns Pipeline"), so hide it. */}
-        {showControlPanel && !isThreadEmpty && (activeSection === 'arslan' || activeSection === 'spawn') && (
+        {showControlPanel && !isThreadEmpty && !activeThread.temporary && (activeSection === 'arslan' || activeSection === 'spawn') && (
           <aside className="w-80 border-l border-border bg-sidebar flex flex-col justify-between h-full select-none relative z-20 animate-slide-in-right overflow-y-auto">
             {/* Top diagnostic state */}
             <div className="p-5 border-b border-border/50 space-y-4">

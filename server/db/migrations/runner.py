@@ -67,6 +67,10 @@ from .versions._0043_provider_test_verdict import upgrade_sync as _m0043
 from .versions._0044_provider_verdict_repair import upgrade_sync as _m0044
 from .versions._0045_run_execution_budget import upgrade_sync as _m0045
 from .versions._0046_recipes import upgrade_sync as _m0046
+from .versions._0047_companion_memory import upgrade_sync as _m0047
+from .versions._0048_memory_proposals_v2 import upgrade_sync as _m0048
+from .versions._0049_conversation_context import upgrade_sync as _m0049
+from .versions._0050_run_privacy import upgrade_sync as _m0050
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -111,6 +115,10 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0044", _m0044),
     ("0045", _m0045),
     ("0046", _m0046),
+    ("0047", _m0047),
+    ("0048", _m0048),
+    ("0049", _m0049),
+    ("0050", _m0050),
 ]
 
 

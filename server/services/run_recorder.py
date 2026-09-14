@@ -93,6 +93,14 @@ class RunRecorder:
         has_images: bool = False,
     ) -> "RunRecorder":
         started = datetime.utcnow()
+        from server.services.personal_context import current
+        privacy = current()
+        from server.services.memory_repository import is_active
+        unscoped = privacy is None and await is_active()
+        # A local-model turn may contain local-only memory even when cloud use
+        # is enabled for other eligible entries. Detached judges cannot reuse it.
+        no_learning = unscoped or bool(privacy and (privacy.no_learning or privacy.temporary
+                                       or not privacy.cloud_memory_allowed or privacy.model_is_local))
         async with db_session.AsyncSessionLocal() as db:
             run = Run(
                 conversation_id=conversation_id,
@@ -103,6 +111,7 @@ class RunRecorder:
                 # faithfully if it is True, and replay_gate.build_corpus keeps
                 # it out of the exam on exactly this fact.
                 has_images=has_images,
+                no_learning=no_learning,
                 started_at=started,
                 status="recording",
                 task_tokens=0,
@@ -380,6 +389,10 @@ class RunRecorder:
             # the evolution_watcher nudge below — harmless, since a cancelled run creates
             # no scored run, so the nudge would be a guaranteed no-op.
             return self.run_id
+        async with db_session.AsyncSessionLocal() as db:
+            recorded = await db.get(Run, self.run_id)
+            if recorded is None or recorded.no_learning:
+                return self.run_id
         try:
             # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
             # scheduling. The judge task inherits this context's bucket via create_task, but
