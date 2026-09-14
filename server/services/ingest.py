@@ -210,24 +210,69 @@ def _ocr_pdf_pages_locally(data: bytes, ui_language: str | None,
     return read if found_any else []
 
 
+IMAGE_MAX_INPUT_BYTES = 30 * 1024 * 1024
+IMAGE_MAX_PIXELS = 40_000_000
+IMAGE_MAX_EDGE = 1568
+IMAGE_MAX_PAYLOAD_BYTES = 12 * 1024 * 1024
+_FIRST_FRAME_NOTE = "[Image input: only the first frame/page was read.]"
+
+
+def _vision_png(data: bytes) -> tuple[bytes, bool]:
+    """Decode actual bytes, not the filename/MIME claim, into bounded PNG.
+
+    Missing host codecs (notably HEIC) fail before adapter construction. This
+    does not change the model-refusal-only OCR fallback. Byte and pixel limits
+    bound input allocation; they are not a process sandbox or a CPU deadline.
+    """
+    from PIL import Image, ImageOps
+
+    if not data or len(data) > IMAGE_MAX_INPUT_BYTES:
+        raise ValueError("image input byte limit exceeded or empty input")
+    with Image.open(io.BytesIO(data)) as original:
+        if original.width * original.height > IMAGE_MAX_PIXELS:
+            raise ValueError("image input pixel limit exceeded")
+        # Probe only the second frame, rather than enumerating an entire TIFF.
+        try:
+            original.seek(1)
+            multiple = True
+        except EOFError:
+            multiple = False
+        original.seek(0)
+        with ImageOps.exif_transpose(original) as oriented:
+            oriented.thumbnail((IMAGE_MAX_EDGE, IMAGE_MAX_EDGE), Image.Resampling.LANCZOS)
+            with oriented.convert("RGBA") as normalized:
+                # Do not forward location/EXIF or other source metadata.
+                normalized.info.clear()
+                buf = io.BytesIO()
+                normalized.save(buf, format="PNG")
+    png = buf.getvalue()
+    if len(png) > IMAGE_MAX_PAYLOAD_BYTES:
+        raise ValueError("image output byte limit exceeded")
+    return png, multiple
+
+
 async def describe_image(data: bytes, mime_type: str) -> str:
     """Ask the configured model to describe an image. Raises on failure — the
     caller turns that into "stored nothing", which the UI reports honestly."""
+    import asyncio
     import base64
 
     from server.services.llm_factory import build_adapter
 
+    # The MIME hint remains accepted for callers, but never labels raw bytes.
+    png, multiple = await asyncio.to_thread(_vision_png, data)
     adapter = await build_adapter(role="converse")
     blocks = [
-        {"type": "text", "text": "Describe this image for a knowledge base."},
-        {"type": "image", "mime_type": mime_type or "image/png",
-         "data": base64.b64encode(data).decode()},
+        {"type": "text", "text": "Describe this image for a knowledge base."
+         + (" Only the first frame/page is supplied; do not describe unseen frames/pages." if multiple else "")},
+        {"type": "image", "mime_type": "image/png",
+         "data": base64.b64encode(png).decode()},
     ]
     resp = await adapter.chat(system=_DESCRIBE_SYSTEM, user=blocks)
     text = (resp.content or "").strip()
     if not text:
         raise RuntimeError("the model returned no description")
-    return text
+    return f"{_FIRST_FRAME_NOTE}\n{text}" if multiple else text
 
 
 # DEBT PAID (OCR fallback round). The vision round left this note here: "the

@@ -62,3 +62,31 @@ formats still fail closed. The focused format/vision/OCR selection passed 93 tes
 This proves dispatch consistency, not availability or quality of every decoder.
 The legacy knowledge-image path's unconditional PNG MIME label still needs a
 separate byte-format/normalization audit; it is not certified by these tests.
+# Knowledge-image payload follow-up
+
+After the frozen `59d5ba62` regression, the knowledge-image path was found to
+label original JPEG/TIFF/etc. bytes as PNG. It now decodes actual bytes using
+the already-required Pillow dependency, applies EXIF orientation, scales to a
+1568-pixel long edge and sends real RGBA PNG with source metadata removed.
+Limits are 30 MiB encoded input, 40 million source pixels and 12 MiB output.
+Decode runs outside the event loop. These are allocation bounds, not a separate
+process sandbox or a hard CPU deadline. No codec or dependency was installed.
+
+Multi-frame inputs send only their first frame/page; both the model instruction
+and persisted description disclose that limit. Undecodable HEIC/HEIF remains a
+host-codec limitation, not a claim of support: local decode failure happens
+before adapter construction, stores no description and does not masquerade as
+a model refusal. Existing image-specific model refusal → local OCR ordering is
+unchanged. Model-account/network errors retain their original meaning.
+
+Real in-memory PNG/JPEG/TIFF/WEBP/GIF/BMP fixtures verify the adapter receives PNG
+bytes, orientation and downscaling, metadata removal, first-frame disclosure,
+corrupt-input rejection and all three limits before adapter creation. The focused
+payload/vision/OCR/feed/rasterization/format suite passed 113 tests; Ruff and
+whitespace checks passed. No live model was invoked. The earlier full frozen
+run does not cover this subsequent source change; a new full release-source
+regression remains required.
+
+Implementation references: [Pillow image operations](https://pillow.readthedocs.io/en/stable/reference/Image.html),
+[orientation handling](https://pillow.readthedocs.io/en/stable/handbook/concepts.html#orientation)
+and [file lifecycle](https://pillow.readthedocs.io/en/stable/reference/open_files.html).
