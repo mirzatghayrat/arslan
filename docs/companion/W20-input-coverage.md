@@ -51,3 +51,14 @@ frontend test files / 1,774 tests passed. The video suite, including two additio
 timeout/partial-result tests, passed all eight tests; production build passed in
 2.92 seconds (existing large-chunk warnings remain). Real UI picker/layout inspection remains pending the
 locked Mac, alongside richer PDF/Word locators and W17's complete acceptance audit.
+# Full-regression format dispatch follow-up
+
+The W17 frozen run exposed a stale picker-contract test. Replacing its literal
+string reader with shared-registry wiring checks also found a real image dispatch
+gap: TIFF/HEIC-family extensions were declared but not recognized by ingestion.
+The image branch now uses the shared image extension list. Every declared format
+is exercised through the actual dispatcher with parser seams, and undeclared
+formats still fail closed. The focused format/vision/OCR selection passed 93 tests.
+This proves dispatch consistency, not availability or quality of every decoder.
+The legacy knowledge-image path's unconditional PNG MIME label still needs a
+separate byte-format/normalization audit; it is not certified by these tests.

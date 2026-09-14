@@ -5,59 +5,45 @@ a .bmp or a .doc, you drop it in, and the request comes back 400 "unsupported
 file type". Nothing is wrong with either side on its own — they simply never
 agreed, and nothing made them.
 
-So this reads the picker's `accept` list out of the frontend source and the
-handled branches out of ingest.py, and asserts the first is a subset of the
-second. Reading both rather than restating either is the point: a copy of the
-list here would be a third thing to drift.
+Both pickers now use a shared format declaration. Verify their wiring, compare
+the backend's loaded declaration, and exercise its actual dispatch for every
+declared extension. Parser fidelity has separate binary-fixture tests.
 """
 from __future__ import annotations
 
 import pathlib
 import re
+import json
+from types import SimpleNamespace
 
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BRAIN_NAV = ROOT / "web" / "src" / "components" / "brain" / "BrainNav.tsx"
 COMPOSER = ROOT / "web" / "src" / "components" / "ComposerAttach.tsx"
-INGEST = ROOT / "server" / "services" / "ingest.py"
+FORMAT_PATH = ROOT / "web/src/lib/input_formats.json"
+FORMATS = json.loads(FORMAT_PATH.read_text())
 
 
-def _accept_list(source: pathlib.Path, pattern: str) -> set[str]:
-    m = re.search(pattern, source.read_text())
-    assert m, f"could not find the accept list in {source.name} — pattern {pattern!r}"
-    return {
-        part.strip().lower()
-        for part in m.group(1).split(",")
-        if part.strip().startswith(".")
-    }
+def _accept_list(source: pathlib.Path, symbol: str) -> set[str]:
+    text = source.read_text()
+    assert re.search(r'import\s*\{[^}]*\bINPUT_ACCEPT\b[^}]*\}\s*from\s*[\"\'][^\"\']*/lib/inputFormats[\"\']', text)
+    assert re.search(r'accept\s*=\s*\{\s*' + symbol + r'\s*\}', text)
+    if symbol != "INPUT_ACCEPT":
+        assert re.search(r'const\s+' + symbol + r'\s*=\s*INPUT_ACCEPT\s*;', text)
+    # image/* in the common chooser covers the declared image family. A host
+    # decoder may still reject an individual codec/file; that is not success.
+    return {"." + ext for values in FORMATS.values() if isinstance(values, list) for ext in values}
 
 
 def _backend_extensions() -> set[str]:
-    """Extensions _extract_file actually branches on, read from the source."""
-    text = INGEST.read_text()
-    body = text[text.index("def _extract_file("):]
-    body = body[: body.index("raise ValueError")]
-
-    exts = set(re.findall(r'endswith\(\s*"(\.[a-z0-9]+)"', body))
-    exts |= set(re.findall(r'"(\.[a-z0-9]+)"', "".join(
-        re.findall(r"endswith\(\((.*?)\)\)", body, re.S))))
-
-    # The image branch delegates to a regex; read it from where it is defined.
-    m = re.search(r'_IMAGE_EXT_RE = re\.compile\(r"\\\.\((.*?)\)\$"', text)
-    assert m, "could not read _IMAGE_EXT_RE"
-    for alt in m.group(1).split("|"):
-        # jpe?g -> .jpg and .jpeg
-        if "?" in alt:
-            exts.add("." + alt.replace("e?", ""))
-            exts.add("." + alt.replace("?", ""))
-        else:
-            exts.add("." + alt)
-    return exts
+    from server.services import input_formats
+    assert input_formats.REGISTRY == FORMATS, "packaged/backend declaration drifted"
+    return {"." + ext for values in input_formats.REGISTRY.values() if isinstance(values, list) for ext in values}
 
 
 def test_the_second_brain_picker_offers_nothing_the_server_refuses():
-    offered = _accept_list(BRAIN_NAV, r'accept="([^"]+)"')
+    offered = _accept_list(BRAIN_NAV, "INPUT_ACCEPT")
     handled = _backend_extensions()
     unsupported = offered - handled
     assert not unsupported, (
@@ -66,7 +52,7 @@ def test_the_second_brain_picker_offers_nothing_the_server_refuses():
 
 
 def test_the_chat_composer_offers_nothing_the_server_refuses():
-    offered = _accept_list(COMPOSER, r'ATTACH_ACCEPT = "([^"]+)"')
+    offered = _accept_list(COMPOSER, "ATTACH_ACCEPT")
     handled = _backend_extensions()
     unsupported = offered - handled
     assert not unsupported, (
@@ -78,11 +64,11 @@ def test_the_reader_actually_finds_something():
     """(0) pre-assertion. Both tests above pass trivially if either reader
     returns an empty set — an accept list that parsed to nothing is a subset of
     everything, and a backend set that swallowed everything hides all gaps."""
-    assert len(_accept_list(BRAIN_NAV, r'accept="([^"]+)"')) >= 8
+    assert len(_accept_list(BRAIN_NAV, "INPUT_ACCEPT")) >= 8
     assert len(_backend_extensions()) >= 8
 
 
-@pytest.mark.parametrize("ext", [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"])
+@pytest.mark.parametrize("ext", ["." + ext for ext in FORMATS["image"]])
 def test_every_image_type_the_pickers_offer_is_recognised_as_an_image(ext):
     """Not merely "not refused": an image must take the IMAGE branch, or it
     would fall through to the unsupported-type error despite being listed."""
@@ -90,3 +76,40 @@ def test_every_image_type_the_pickers_offer_is_recognised_as_an_image(ext):
 
     assert ingest._IMAGE_EXT_RE.search(f"photo{ext}"), (
         f"{ext} is offered by the pickers but is not an image to the backend")
+
+
+@pytest.mark.parametrize("category,extension", [(category, ext) for category, values in FORMATS.items()
+    if isinstance(values, list) for ext in values])
+def test_every_declared_extension_reaches_its_real_dispatch_branch(monkeypatch, category, extension):
+    import docx
+    import lxml.html
+    from server.services import ingest, input_formats
+
+    expected = f"{category}-reader:" * 4
+    called = []
+    def structured(name, data):
+        called.append(input_formats.kind(name))
+        return expected, False
+    def video(name, data):
+        called.append("video")
+        return {"reader": expected}
+    def image(data, **kwargs):
+        called.append("image")
+        return expected, "ok"
+    monkeypatch.setattr(input_formats, "read_structured", structured)
+    monkeypatch.setattr(input_formats, "video_metadata", video)
+    monkeypatch.setattr(ingest, "_pdf_text_layer", lambda data: called.append("document") or expected)
+    monkeypatch.setattr(docx, "Document", lambda data: called.append("document") or SimpleNamespace(paragraphs=[SimpleNamespace(text=expected)]))
+    monkeypatch.setattr(lxml.html, "fromstring", lambda data: called.append("document") or SimpleNamespace(text_content=lambda: expected))
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: True)
+    monkeypatch.setattr(ingest.ocr_fallback, "read_locally", image)
+    result = ingest._extract_file(f"input.{extension.upper()}", expected.encode())
+    assert expected in result
+    assert called == ([] if extension in {"txt", "md"} else [category])
+
+
+def test_undeclared_extensions_are_not_silently_accepted():
+    from server.services import ingest
+    for extension in ("exe", "xlsm", "doc", "unknown"):
+        with pytest.raises(ValueError, match="unsupported file type"):
+            ingest._extract_file(f"input.{extension}", b"not supported")

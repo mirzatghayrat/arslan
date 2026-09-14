@@ -12,6 +12,7 @@ from arslan.core.chunking import chunk_text
 from server.db import session as db_session
 from server.db.models import KnowledgeChunk
 from server.services import ocr_fallback, ocr_vision
+from server.services.input_formats import REGISTRY as INPUT_FORMATS
 from server.services.llm_factory import build_adapter
 from server.services.prompts.kb_compress import COMPRESS_SYSTEM
 
@@ -19,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 _PRIVATE_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 _OCR_MIN_CHARS = 20
-# .bmp is here because the pickers offer it and PIL decodes it; leaving it
-# out made a listed file type answer 400 (tests/server/test_accepted_file_types_agree.py).
-_IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|webp|gif|bmp)$", re.IGNORECASE)
+# Recognize the same declared image formats as both pickers. Recognition is not
+# a promise that every host/model has a decoder; OCR/vision failures stay explicit.
+_IMAGE_EXT_RE = re.compile(r"\.(" + "|".join(re.escape(ext) for ext in INPUT_FORMATS["image"]) + r")$", re.IGNORECASE)
 
 
 def _strip_private(text: str) -> str:
