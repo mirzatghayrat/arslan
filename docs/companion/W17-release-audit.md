@@ -21,8 +21,17 @@ actual dispatch for every declared extension, rather than just comparing two
 copies of the same list. Unknown extensions are still rejected. Parser/codec
 fidelity remains separate from dispatch recognition.
 
-The updated format/vision/OCR regression passed 93 tests. A new complete frozen
-run is required before this engineering gate can be called passing.
+The updated format/vision/OCR regression passed 93 tests. The complete frozen
+rerun on clean source `59d5ba62` passed **4,577 tests, with 14 skips and 19
+warnings in 411.38 seconds**. Its report is
+`/tmp/arslan-companion-regression.u3Jhgc/companion-backend.xml`. The same skip
+categories remain; the teardown guard recorded 64 closed-loop deliveries.
+The complete frontend suite passed **236 files / 1,820 tests** in 19.20 seconds,
+and the production build passed in 3.66 seconds. The first frontend attempt used
+Node's experimental web storage and failed (53 files); rerunning with the already
+established `NODE_OPTIONS=--no-experimental-webstorage` setting passed without
+product changes. Existing jsdom canvas/navigation and bundle-size warnings remain.
+These results apply to that frozen source, not automatically to subsequent edits.
 
 Warnings were not hidden: the first full run included existing async-marker,
 SQLAlchemy cleanup/cycle and deliberate teardown warnings. The aiosqlite guard
@@ -45,7 +54,7 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Full run above has three failures; focused fix passes | Clean frozen rerun, including skips/warnings |
+| Complete engineering regression | Clean `59d5ba62` full backend/frontend runs pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 remain `specification_pending_runtime_binding` | Runtime-bound cross-turn checks, with output-behavior limitations distinguished from repository/context tests |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |
