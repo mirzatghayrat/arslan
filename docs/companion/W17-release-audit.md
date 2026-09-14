@@ -5,7 +5,20 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-Latest complete backend run: clean `4fd004ca` (including scoped current-revision
+Latest complete backend run: clean `1d1be3c4` (including provider request evidence),
+**4,739 passed, 14 skipped, 18 warnings in 444.62 seconds**. Report:
+`/tmp/arslan-request-evidence-regression.bdRjdP/backend.xml`. Isolated HOME/data,
+scrubbed environment, disabled live models and frozen source were retained; the
+aiosqlite guard recorded 52 closed-loop deliveries. Frontend source is covered by
+the complete 1,833-test/typecheck/build run in `context-request-evidence.md`.
+
+Despite this green engineering run, an isolated real-host/serialized-HTTP
+reproduction confirmed a deletion defect: deleting an injected memory after the
+first model request does not remove it from the reused system prompt in the
+second request. The diagnostic uses synthetic HTTP only and is not a successful
+acceptance test. In-flight revalidation remains a release blocker until fixed.
+
+Previous complete backend run: clean `4fd004ca` (including scoped current-revision
 FTS), **4,718 passed, 14 skipped, 18 warnings in 447.84 seconds**. Report:
 `/tmp/arslan-fts-regression.EtxGKm/backend.xml`. Scrubbed environment, isolated
 HOME/data, disabled live models and frozen source were retained. The aiosqlite
@@ -119,7 +132,7 @@ notarization was performed. These source checks do not verify a distributable ap
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `4fd004ca` full backend passes; unchanged frontend's full tests/typecheck/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
+| Complete engineering regression | Clean `1d1be3c4` full backend and 1,833-test frontend/typecheck/build pass as recorded above | Repeat for subsequent release source; green tests do not override the confirmed in-flight deletion defect |
 | Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass | Real desktop and packaged runtime verification, historical scope snapshots, in-flight revalidation; see `context-request-evidence.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |

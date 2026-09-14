@@ -69,3 +69,10 @@ is not revocation enforcement: revalidation of already-built prompts during an
 in-flight task needs its own audit and tests. Historical scope snapshots and
 real-model behavior are also not proven by these counters. No real model/account,
 publication or installed-app replacement was used.
+
+The frozen follow-up on clean `1d1be3c4` passed **4,739 tests, 14 skips and 18
+warnings in 444.62 seconds**. Report:
+`/tmp/arslan-request-evidence-regression.bdRjdP/backend.xml`. A separate isolated
+diagnostic confirmed that deletion between two model requests still allows the
+old block through the reused system prompt. The counters correctly observe it;
+they do not prevent it. W17 retains that acceptance failure explicitly.
