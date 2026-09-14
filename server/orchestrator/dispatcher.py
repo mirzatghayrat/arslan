@@ -574,6 +574,8 @@ def with_images(brief: str, images: list[dict] | None) -> str | list[dict]:
         return brief
     blocks: list[dict] = [{"type": "text", "text": brief}]
     for img in images:
+        if isinstance(img.get("source_locator"), str):
+            blocks.append({"type": "text", "text": "Image source locator (attachment data): " + img["source_locator"][:500]})
         blocks.append({
             "type": "image",
             "mime_type": img.get("mime_type") or "image/png",

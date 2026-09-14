@@ -38,6 +38,22 @@ const mockSpawn = {
 };
 
 describe('SpawnDirectChat', () => {
+  it('does not silently drop sampled images in a text-only expert conversation', async () => {
+    sendSpy.mockClear();
+    const { api } = await import('../api/client');
+    vi.mocked(api.extractAttachmentFile).mockResolvedValue({ text: 'metadata', chars: 8, truncated: false,
+      images: [{ name: 'clip#t=0s', mime_type: 'image/png', data: 'cG5n' }], video_frame_status: 'sampled' });
+    const { container } = render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['clip'], 'clip.mp4')] } });
+    await screen.findByText(/inputs.videoSamples/);
+    const input = screen.getByPlaceholderText(/spawn_chat/i);
+    fireEvent.change(input, { target: { value: 'inspect video' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(screen.getByText('inputs.visualMainOnly')).toBeInTheDocument();
+    expect(input).toHaveValue('inspect video');
+  });
+
   it('renders history messages', async () => {
     render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
     act(() => {

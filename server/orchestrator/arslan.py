@@ -450,6 +450,8 @@ def build_user_blocks(
         return text
     blocks: list[dict] = [{"type": "text", "text": text}]
     for img in images:
+        if isinstance(img.get("source_locator"), str):
+            blocks.append({"type": "text", "text": "Image source locator (attachment data): " + img["source_locator"][:500]})
         blocks.append({
             "type": "image",
             "mime_type": img.get("mime_type") or "image/png",

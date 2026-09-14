@@ -15,7 +15,9 @@ router = APIRouter(prefix="/api/v1", tags=["extract"], dependencies=[Depends(req
 async def input_formats() -> dict:
     import shutil
     return {**REGISTRY, "video_metadata_available": bool(shutil.which("ffprobe")),
-            "video_frames": False, "video_transcription": False, "video_visual_understanding": False,
+            "video_frames": bool(shutil.which("ffprobe") and shutil.which("ffmpeg")),
+            "video_transcription": False, "video_transcription_reason": "no_transcription_adapter",
+            "video_visual_understanding": False, "video_visual_mode": "sampled_frames_require_vision_model",
             "spreadsheet_formulas": "cached_values_only", "presentation": REGISTRY["presentation"],
             "presentation_visual_understanding": False}
 
@@ -35,6 +37,10 @@ async def post_extract(request: Request) -> dict:
             if len(data) > REGISTRY["max_bytes"]:
                 raise InputError("inputs.limit")
             category = kind(upload.filename or "")
+            if category == "video":
+                import asyncio
+                from server.services.video_input import extract_video
+                return await asyncio.to_thread(extract_video, upload.filename or "video", data)
             compress = str(form.get("compress", "")).lower() in ("1", "true", "yes")
             text, truncated = await extract.extract_text(
                 filename=upload.filename, data=data, compress=compress

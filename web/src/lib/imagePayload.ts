@@ -20,7 +20,7 @@ export const MAX_EDGE = 1568;
  * leaves headroom under the 16 MiB frame cap for the rest of the message. */
 export const MAX_PAYLOAD_BYTES = 12 * 1024 * 1024;
 
-export type ImagePayload = { name: string; mime_type: string; data: string };
+export type ImagePayload = { name: string; mime_type: string; data: string; source_locator?: string };
 
 /** Pure: the size an image should be resampled to. Extracted from the canvas
  * work so the arithmetic is testable without a DOM. */

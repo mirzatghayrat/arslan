@@ -17,7 +17,7 @@ import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, type Attachment } from './ComposerAttach';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -253,7 +253,11 @@ export default function SpawnDirectChat({
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || streaming) return;
+    if (!inputValue.trim() || streaming || attach.busy) return;
+    if (attachmentImages(attachments).length) {
+      attach.setError(t("inputs.visualMainOnly"));
+      return;
+    }
     setStreaming(true);  // no dead air: pulse shows from SEND, not from stream_start
     setWorkStartedAt(Date.now());
 

@@ -34,7 +34,7 @@ import PushToTalk from './PushToTalk';
 import ConversationToggle from './ConversationToggle';
 import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
-import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentImageBudgetExceeded, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
@@ -374,7 +374,11 @@ export default function OrchestratorChat({
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || attach.busy) return;
+    if (attachmentImageBudgetExceeded(attachments)) {
+      attach.setError(t("inputs.imageBudget"));
+      return;
+    }
 
     const text = inputValue.trim();
     setInputValue('');
@@ -390,7 +394,7 @@ export default function OrchestratorChat({
     // Images ride as real image blocks (vision round), separate from `context`
     // which is extracted TEXT. An image chip that failed preparation has no
     // payload and contributes nothing — the chip already says so.
-    const images = attachments.map((a) => a.image).filter(Boolean);
+    const images = attachmentImages(attachments);
     const clearAttachments = () => attach.clear({ revokeUrls: false });
 
     if (onSendMessage) {

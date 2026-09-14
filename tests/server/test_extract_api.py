@@ -89,6 +89,19 @@ async def test_input_matrix_and_code_extraction(client):
     assert result.json()["input_kind"] == "text"
 
 
+async def test_video_upload_returns_frame_payload_without_compression_model(client, monkeypatch):
+    from server.services import video_input
+    response = {"text": "metadata", "chars": 8, "truncated": False, "input_kind": "video",
+                "images": [{"name": "clip.mp4#t=0s", "mime_type": "image/png", "data": "cG5n"}],
+                "video_frame_status": "sampled", "video_transcription": False}
+    monkeypatch.setattr(video_input, "extract_video", lambda name, data: response)
+    async def forbidden(**kwargs):
+        pytest.fail("video locators must not be compressed or sent to a model during upload")
+    monkeypatch.setattr(eapi.extract, "extract_text", forbidden)
+    result = await client.post("/api/v1/extract", files={"file": ("clip.mp4", b"synthetic", "video/mp4")}, data={"compress": "true"})
+    assert result.status_code == 200 and result.json() == response
+
+
 async def test_invalid_extended_input_has_structured_error(client):
     result = await client.post("/api/v1/extract", files={"file": ("sample.xlsx", b"bad", "application/octet-stream")})
     assert result.status_code == 400

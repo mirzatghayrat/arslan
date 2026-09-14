@@ -641,7 +641,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url, compress }),
     }),
-  extractAttachmentFile: async (file: File, compress = false): Promise<{ text: string; chars: number; truncated: boolean }> => {
+  extractAttachmentFile: async (file: File, compress = false): Promise<{ text: string; chars: number; truncated: boolean; images?: import('../lib/imagePayload').ImagePayload[]; video_frame_status?: string }> => {
     const token = useAuthStore.getState().token;
     const form = new FormData();
     form.append("file", file);
@@ -654,7 +654,7 @@ export const api = {
       try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ }
       throw new ApiError(typeof detail === "string" ? detail : `HTTP ${resp.status}`, resp.status, detail);
     }
-    return (await resp.json()) as { text: string; chars: number; truncated: boolean };
+    return await resp.json();
   },
   // ── Second Brain: shared knowledge collections (layer A) ──────────────────────
   listCollections: () => request<CollectionOut[]>("/collections"),

@@ -42,7 +42,18 @@ export interface Attachment {
   /** The downscaled base64 the model actually receives. Present ⇒ this image
    *  rides the turn as a real image block, not as OCR'd text. */
   image?: ImagePayload;
+  images?: ImagePayload[];
+  videoFrameStatus?: string;
   inputKind?: string;
+}
+
+export function attachmentImages(items: Attachment[]): ImagePayload[] {
+  return items.flatMap(item => [...(item.image ? [item.image] : []), ...(item.images ?? [])]);
+}
+
+export function attachmentImageBudgetExceeded(items: Attachment[]): boolean {
+  const images = attachmentImages(items);
+  return images.length > 9 || images.reduce((sum, item) => sum + item.data.length, 0) > 12 * 1024 * 1024;
 }
 
 /** Accept list for the native picker: existing doc types + images. */
@@ -167,7 +178,7 @@ export function useComposerAttach(
           const r = await api.extractAttachmentFile(file, compress);
           const next = [
             ...current,
-            { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const, inputKind: inputKind(file.name) },
+            { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const, inputKind: inputKind(file.name), images: r.images, videoFrameStatus: r.video_frame_status },
           ];
           current = next;
           commit(next);
@@ -332,8 +343,13 @@ export function AttachChips({
                 : a.ocr === "pending"
                   ? `· ${t("attach.image_ocr_wait")}`
                   : `· ${t("attach.image_unsendable")}`
-              : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}${a.inputKind === "video" ? ` · ${t("inputs.videoMetadataOnly")}` : a.inputKind === "spreadsheet" ? ` · ${t("inputs.cachedValues")}` : a.inputKind === "presentation" ? ` · ${t("inputs.slideTextOnly")}` : ""}`}
+              : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}${a.inputKind === "video" ? ` · ${a.images?.length ? t("inputs.videoSamples", { count: a.images.length }) : t("inputs.videoMetadataOnly")}` : a.inputKind === "spreadsheet" ? ` · ${t("inputs.cachedValues")}` : a.inputKind === "presentation" ? ` · ${t("inputs.slideTextOnly")}` : ""}`}
           </span>
+          {a.inputKind === "video" && !a.images?.length && a.videoFrameStatus && (
+            <span className="attach-chip__meta">
+              {a.videoFrameStatus === "tool_missing" ? t("inputs.videoToolMissing") : t("inputs.videoSamplingFailed")}
+            </span>
+          )}
           <button
             type="button"
             aria-label={t('ui.removeAttachment')}

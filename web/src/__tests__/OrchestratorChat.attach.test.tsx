@@ -20,6 +20,21 @@ const history: Message[] = [
 ];
 
 describe('OrchestratorChat attach', () => {
+  it('sends sampled video frames with their source locators through the real image payload path', async () => {
+    const { api } = await import('../api/client');
+    const images = [{ name: 'clip.mp4#t=1.000s', source_locator: 'clip.mp4#t=1.000s', mime_type: 'image/png', data: 'cG5n' }];
+    vi.mocked(api.extractAttachmentFile).mockResolvedValue({ text: 'video metadata and locators', chars: 27, truncated: false, images, video_frame_status: 'sampled' });
+    const spy = vi.fn();
+    const { container } = render(<OrchestratorChat chatHistory={history} setChatHistory={vi.fn()} onSendMessage={spy}
+      spawns={[]} currentStyle="quartz" setCurrentStyle={vi.fn()} activeThread={null} />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['clip'], 'clip.mp4', { type: 'video/mp4' })] } });
+    await screen.findByText(/inputs.videoSamples/);
+    const input = screen.getByPlaceholderText(/placeholder_chat/i);
+    fireEvent.change(input, { target: { value: 'describe the middle frame' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(spy).toHaveBeenCalledWith('describe the middle frame', expect.objectContaining({ images, names: ['clip.mp4'] }));
+  });
+
   it('sends (text, { context, names }) when an attachment is present', async () => {
     const { api } = await import('../api/client');
     (api.extractAttachmentUrl as ReturnType<typeof vi.fn>).mockResolvedValue({
