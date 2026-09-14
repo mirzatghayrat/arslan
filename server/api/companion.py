@@ -97,6 +97,13 @@ async def asc_capabilities():
     return capabilities()
 
 
+@router.get("/connections/local-media/capabilities")
+async def media_capabilities():
+    # Metadata only: no device scan, runtime launch, model load or execution API.
+    from server.media.comfyui import capabilities
+    return capabilities()
+
+
 @router.get("/projects")
 async def list_projects(include_archived: bool = False, repo=Depends(_repository)):
     query = select(Project).where(Project.owner_id == USER.owner_id)

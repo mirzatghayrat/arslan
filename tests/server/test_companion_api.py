@@ -34,6 +34,18 @@ async def test_asc_capabilities_and_exact_project_target_without_account_access(
     assert response.status_code == 422
 
 
+async def test_media_capabilities_are_read_only_and_honest(api):
+    endpoint = "/api/v1/connections/local-media/capabilities"
+    assert (await api.get(endpoint, headers={"Authorization": "Bearer wrong"})).status_code == 401
+    result = await api.get(endpoint)
+    assert result.status_code == 200
+    value = result.json()
+    assert value["local"] == {"generate": False, "edit": False}
+    assert value["blocked_reason"] == "media_host_setup_required"
+    assert not value["automatic_install"] and not value["cloud_reference_upload"]
+    assert (await api.post(endpoint, json={"execution_enabled": True})).status_code == 405
+
+
 async def test_conversation_settings_are_versioned_and_fail_closed(api):
     base = "/api/v1/conversations/new-conversation/context"
     initial = (await api.get(base)).json()

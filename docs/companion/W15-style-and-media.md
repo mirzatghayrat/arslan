@@ -53,3 +53,53 @@ metadata along with all old revisions.
   fallback; verify font/overflow/interaction truth and output corruption handling.
 - Run actual UI checks and permitted D01–D08 evidence; retain unsupported and
   human-judgment dimensions rather than treating this contract test as a score.
+
+## Restricted local-media adapter checkpoint
+
+Implemented a host-only `MediaBackend` library with capabilities, read-only
+preflight, uncalibrated estimates, fixed single-image generation, targeted cancel,
+job reconciliation and PNG verification. Precise editing explicitly returns
+unsupported; an unmasked image-to-image operation would not preserve unrelated
+pixels. This is not a working user-facing image generator yet.
+
+The candidate external runtime is ComfyUI 0.35.0 at immutable commit
+`40c4fcdf513a4523e39d54a9d391908af8df8171`. Its source and models are not bundled.
+API references: [pinned server routes](https://github.com/Comfy-Org/ComfyUI/blob/40c4fcdf513a4523e39d54a9d391908af8df8171/server.py)
+and [job status normalization](https://github.com/Comfy-Org/ComfyUI/blob/40c4fcdf513a4523e39d54a9d391908af8df8171/comfy_execution/jobs.py).
+The adapter uses the per-job cancel route, never global interruption. A dispatched
+cancel is not treated as proof of completion. A missing job remains unresolved,
+including when upstream removes a queued job without retaining history.
+
+Host configuration requires a checkpoint revision, exact SHA-256 and license
+metadata. Preflight checks source checkout, checkpoint bytes, advertised core-node
+origins and memory capacity without loading a model. This does not establish that
+the listening process came from that checkout, certify a model license, or isolate
+custom code in an already-running service. Trusted process provisioning and
+independent host authorization review are still required before enabling execution.
+
+Requests bind owner, task, run, random job ID, model pin and parameters into an
+approval digest. A private SQLite journal commits full-snapshot compare-and-swap
+transitions before submission/cancellation, blocking stale and concurrent duplicate
+submission across restart. Remote reads also validate the durable snapshot. Failed
+or timed-out submissions are never automatically retried. HTTP is fixed to loopback,
+does not follow redirects or environment proxies, and has response-size and total
+request-time bounds. Only one bounded PNG with the owned output prefix is accepted;
+dimensions, decoding and content SHA are checked. Artifact model SHA is the requested
+pin, not independent proof of the runtime's actual model execution.
+
+Only an authenticated read-only capability endpoint is exposed in the application.
+There is no execution/configuration API or agent tool. Connections displays the
+unavailable status and template distinction in all six languages; failed status
+fetches remain unknown, not falsely unavailable or ready. No automatic installation,
+cloud reference upload, video generation or paid service has been added.
+
+Verification for this checkpoint:
+
+- Media adapter/journal plus companion API: 55 tests passed (44 media tests).
+- Six-language status/editor focused tests: 15 passed; TypeScript passed.
+- Complete frontend regression: 234 files / 1,789 tests passed in 18.08 seconds.
+- Production build passed in 3.02 seconds; existing bundle-size warnings remain.
+- Targeted Python lint and whitespace checks passed. Tests used local synthetic
+  bytes and mocked HTTP only, no real model or ComfyUI process was invoked.
+- The Mac is still locked; actual UI inspection and D01–D08 evaluation remain
+  pending. W15 and the overall release-candidate gate remain open.

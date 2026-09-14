@@ -1,5 +1,8 @@
 export const designMessages = {
   en: {
+    mediaTitle: "Local image generation",
+    mediaUnavailable: "Not enabled in this build. Host approval controls and a verified local runtime, model license and device setup are still required. Precise image editing is not supported.",
+    mediaFallback: "You can still prepare editable interface designs and templates. No models are downloaded and no reference files are uploaded automatically. A template is not a generated image.",
     reference: "Style reference", addReference: "Attach style evidence for one project",
     sourceKind: "Reference type", sourceRef: "Reference location or identifier", polarity: "Use as",
     positive: "Positive example", negative: "Negative example", rationale: "What to adopt or avoid, and why",
@@ -10,6 +13,9 @@ export const designMessages = {
     referenceConflict: "This rule already exists with different reference evidence. Edit the existing rule to review and version the change.",
   },
   zh: {
+    mediaTitle: "本地图像生成",
+    mediaUnavailable: "此版本尚未启用。仍需接入主程序授权控制，并验证本地运行环境、模型许可及设备配置。暂不支持精确图像编辑。",
+    mediaFallback: "仍可制作可编辑的界面设计与模板；不会自动下载模型或上传参考文件。模板不等于已生成的图片。",
     reference: "风格参考", addReference: "为单个项目附加风格依据",
     sourceKind: "参考类型", sourceRef: "参考位置或标识", polarity: "用作",
     positive: "正面示例", negative: "反面示例", rationale: "采用或避免什么，以及原因",
@@ -20,6 +26,9 @@ export const designMessages = {
     referenceConflict: "这条规则已有不同的参考依据，请编辑原规则，审核并保存为新版本。",
   },
   ja: {
+    mediaTitle: "ローカル画像生成",
+    mediaUnavailable: "このビルドでは未有効化です。ホスト側の承認制御と、検証済みのローカル実行環境・モデルライセンス・機器設定が必要です。指定箇所だけの画像編集は未対応です。",
+    mediaFallback: "編集可能な画面デザインやテンプレートは作成できます。モデルの自動ダウンロードや参考ファイルの自動送信は行いません。テンプレートは生成済み画像ではありません。",
     reference: "スタイルの参考", addReference: "1つのプロジェクトにスタイルの根拠を追加",
     sourceKind: "参考の種類", sourceRef: "参考の場所・識別子", polarity: "用途",
     positive: "取り入れる例", negative: "避ける例", rationale: "取り入れる点・避ける点とその理由",
@@ -30,6 +39,9 @@ export const designMessages = {
     referenceConflict: "このルールには別の参考根拠があります。既存のルールを編集し、変更を確認して新しい版を保存してください。",
   },
   es: {
+    mediaTitle: "Generación local de imágenes",
+    mediaUnavailable: "No está habilitada en esta versión. Faltan los controles de aprobación de la aplicación y la verificación del entorno local, la licencia del modelo y el equipo. La edición precisa de imágenes no está disponible.",
+    mediaFallback: "Puedes preparar diseños de interfaz y plantillas editables. No se descargan modelos ni se suben referencias automáticamente. Una plantilla no es una imagen generada.",
     reference: "Referencia de estilo", addReference: "Añadir evidencia de estilo para un proyecto",
     sourceKind: "Tipo de referencia", sourceRef: "Ubicación o identificador de la referencia", polarity: "Usar como",
     positive: "Ejemplo positivo", negative: "Ejemplo negativo", rationale: "Qué adoptar o evitar y por qué",
@@ -40,6 +52,9 @@ export const designMessages = {
     referenceConflict: "Esta regla ya tiene otra evidencia de referencia. Edita la regla existente para revisar y guardar una nueva versión.",
   },
   de: {
+    mediaTitle: "Lokale Bilderzeugung",
+    mediaUnavailable: "In dieser Version nicht aktiviert. Erforderlich sind Freigabekontrollen der Anwendung sowie eine geprüfte lokale Laufzeit, Modelllizenz und Gerätekonfiguration. Präzise Bildbearbeitung wird nicht unterstützt.",
+    mediaFallback: "Bearbeitbare Oberflächenentwürfe und Vorlagen können weiterhin erstellt werden. Modelle werden nicht automatisch heruntergeladen und Referenzdateien nicht automatisch hochgeladen. Eine Vorlage ist kein erzeugtes Bild.",
     reference: "Stilreferenz", addReference: "Stilbeleg für ein Projekt hinzufügen",
     sourceKind: "Referenztyp", sourceRef: "Ort oder Kennung der Referenz", polarity: "Verwenden als",
     positive: "Positives Beispiel", negative: "Negatives Beispiel", rationale: "Was übernommen oder vermieden werden soll und warum",
@@ -50,6 +65,9 @@ export const designMessages = {
     referenceConflict: "Diese Regel hat bereits einen anderen Referenzbeleg. Bearbeite die bestehende Regel, um die Änderung zu prüfen und als neue Version zu speichern.",
   },
   fr: {
+    mediaTitle: "Génération locale d’images",
+    mediaUnavailable: "Non activée dans cette version. Les contrôles d’autorisation de l’application et la vérification de l’environnement local, de la licence du modèle et de l’équipement restent nécessaires. La retouche précise n’est pas prise en charge.",
+    mediaFallback: "Vous pouvez préparer des interfaces et des modèles modifiables. Aucun modèle n’est téléchargé ni aucun fichier de référence envoyé automatiquement. Un modèle de document n’est pas une image générée.",
     reference: "Référence de style", addReference: "Ajouter une référence de style pour un projet",
     sourceKind: "Type de référence", sourceRef: "Emplacement ou identifiant de la référence", polarity: "Utiliser comme",
     positive: "Exemple positif", negative: "Exemple négatif", rationale: "Ce qu’il faut adopter ou éviter, et pourquoi",
