@@ -97,12 +97,8 @@ async def test_non_typed_dispatch_captures_model_and_tokens(memdb, monkeypatch):
     assert run.tokens_estimated is False
 
 
-async def test_auto_continue_runs_do_not_double_count(memdb, monkeypatch):
-    """A single user turn that auto-continues produces TWO Runs. Each Run must carry ONLY its
-    own usage — the second Run's task_tokens/tokens_in/tokens_out must NOT include the first
-    Run's (the audited turn-cumulative double-count). Round 1 ends with a findings digest
-    (triggers exactly one auto-continue); round 2 has no digest and stops.
-    """
+async def test_explicit_continuation_runs_do_not_double_count(memdb, monkeypatch):
+    """Each explicit dispatch owns its usage; findings text cannot trigger another Run."""
     spawn_id = await _seed_spawn(memdb)
 
     async def fake_route(conversation_id, user_message):
@@ -111,8 +107,8 @@ async def test_auto_continue_runs_do_not_double_count(memdb, monkeypatch):
     monkeypatch.setattr(router, "route", fake_route)
 
     fake_dispatch, state = _reporting_dispatch([
-        (100, 50, 150, "round 1\n\n【阶段性发现】progress made"),  # digest → auto-continue
-        (30, 20, 50, "round 2 final answer"),                       # no digest → stop
+        (100, 50, 150, "round 1\n\n【阶段性发现】progress made"),
+        (30, 20, 50, "round 2 final answer"),
     ])
     monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
     await roster_service.join("c1", spawn_id, via="invited")
@@ -121,8 +117,9 @@ async def test_auto_continue_runs_do_not_double_count(memdb, monkeypatch):
     # Typed path (the ONE path that historically had a scope) — names Mermer so the
     # doer-first divert is skipped and the route dispatches directly.
     await arslan.handle_user_message("c1", "让Mermer查一下", events.append)
-
-    assert state["i"] == 2  # exactly two dispatches (one auto-continue)
+    assert state["i"] == 1
+    await arslan.handle_user_message("c1", "让Mermer继续核对", events.append)
+    assert state["i"] == 2
 
     async with memdb() as db:
         runs = (await db.execute(select(Run).order_by(Run.id))).scalars().all()

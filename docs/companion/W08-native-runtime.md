@@ -16,6 +16,8 @@
 - 87 native/dispatch/task API/repository/compatibility tests passed, plus 25 fetch/cancellation tests.
 - 55 migrated native safety and active entry tests passed; a subsequent 46-test runtime/entry/fetch/conformance group passed after the goal-preservation fix.
 - TypeScript type checking passed. Full immutable-snapshot Python and frontend regression results are recorded after their completion.
+- Frontend full regression: 1,715 tests across 220 files passed.
+- First immutable Python run: 4,230 passed, 14 skipped; 45 failures and 8 setup errors came from omitting the synthetic encryption key in the detached checkout. One obsolete auto-continuation expectation also failed and was migrated to explicit user continuation. The corrected environment and expectation are rerun, not counted as a green full suite.
 - All fixtures are synthetic and isolated from real credentials, accounts and installed app data. These tests do not establish live paid-model quality or external-service availability.
 
 ## Boundaries
