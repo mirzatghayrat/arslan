@@ -44,8 +44,31 @@ passed all 42 tests with zero skips in 16.07 seconds. Production frontend build
 passed (existing large-chunk warning remains). These checks do not certify
 authenticated network operations or a release candidate.
 
-This is NOT W11 completion. Connection/grant persistence, diff-bound approval and
-execution-time revocation checks still need integration. No independent security
+## Credential-free approval checkpoint
+
+Migration 0053 adds disconnected-by-default connection metadata and one-action
+grants. No secret value or filesystem locator is accepted as a broker reference;
+the broker reference is also omitted from presentation payloads. There is no
+production activation endpoint, grant-minting model tool or authenticated ASC
+connector in this checkpoint.
+
+Trusted host approval storage binds owner, connection version, task attempt and
+spec revision, project version, complete App-binding hash, prepared action version
+and exact intent/diff hash. Confirmation checks the hashes from the displayed
+snapshot. Grants expire within 15 minutes, are revocable and single-use. ASC action
+admission rechecks the binding and consumes approval in the same SQLite transaction
+as the durable action-start record. Submission, publication, tax and guessed privacy
+actions cannot obtain a grant. Backup restoration revokes grants and invalidates
+connection attestations. This is a storage/admission primitive, not a user approval
+UI or a substitute for the pending isolated broker.
+
+The approval, task-repository, migration-runner and task-service selection passed
+113 tests (14.76 seconds), including rollback, concurrent single-use admission,
+restore invalidation, forged references and high-impact-action refusal. One
+existing Starlette/httpx deprecation warning remains. These are synthetic tests.
+
+This is NOT W11 completion. Trusted confirmation UI and broker integration are
+still unavailable. No independent security
 review, authenticated broker identity, Keychain ACL, debugger isolation, or real
 ASC credential acceptance has been established. ASC credential-backed actions
 must remain disabled until those gates pass. Synthetic tests and file permissions

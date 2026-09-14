@@ -3,7 +3,9 @@ from datetime import datetime
 
 from sqlalchemy import insert, select, update
 
-from server.db.models import CompanionTask, TaskAction, TaskAttempt, TaskEvent, TaskWorker
+from server.db.models import (
+    ActionGrantRecord, CompanionConnection, CompanionTask, TaskAction, TaskAttempt, TaskEvent, TaskWorker,
+)
 
 
 def quarantine_sync(connection):
@@ -14,6 +16,12 @@ def quarantine_sync(connection):
     if not {"phase", "sequence", "version", "attempt_id", "spec_revision", "privacy"}.issubset(columns):
         return  # A historical non-companion table is not guessed into this schema.
     now = datetime.utcnow()
+    if "action_grants" in tables:
+        connection.execute(update(ActionGrantRecord).where(ActionGrantRecord.revoked_at.is_(None)).values(
+            revoked_at=now))
+    if "companion_connections" in tables:
+        connection.execute(update(CompanionConnection).values(
+            status="needs_attention", version=CompanionConnection.version + 1))
     rows = connection.execute(select(CompanionTask.__table__)).mappings().all()
     for row in rows:
         privacy = {**(row["privacy"] or {}), "no_learning": True,

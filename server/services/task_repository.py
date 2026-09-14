@@ -398,11 +398,17 @@ class TaskRepository:
         await self._advance(row, "action_prepared", payload={"action_id": action.id, "effect": effect})
         return {"id": action.id, "version": action.version, "status": action.status}
 
-    async def action_started(self, task_id: str, attempt_id: str, action_id: str):
+    async def action_started(self, task_id: str, attempt_id: str, action_id: str, *, grant_id: str | None = None):
         row = await self._active(task_id, attempt_id)
         action = await self.db.get(TaskAction, action_id)
         if action is None or action.task_id != row.id or action.attempt_id != attempt_id or action.status != "prepared":
             raise TaskError("task_action_stale")
+        if action.tool_key.startswith("asc.") or grant_id is not None:
+            from server.services.action_permissions import ActionPermissions
+            if grant_id is None:
+                raise TaskError("action_grant_required")
+            await ActionPermissions(self.db).consume(grant_id, owner_id=row.owner_id, task_id=task_id,
+                                                      attempt_id=attempt_id, action_id=action_id)
         action.status, action.version, action.updated_at = "in_flight", action.version + 1, datetime.utcnow()
         await self._advance(row, "action_started", payload={"action_id": action.id})
 
