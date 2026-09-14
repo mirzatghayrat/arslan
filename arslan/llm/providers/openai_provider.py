@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
+from arslan.llm import request_evidence
 from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
@@ -97,6 +98,7 @@ class OpenAIProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        evidence = await request_evidence.begin(payload)
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -117,6 +119,7 @@ class OpenAIProvider(BaseLLMProvider):
                 raise httpx.HTTPStatusError(
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
+            await request_evidence.acknowledge(evidence)
             data = response.json()
 
         return self._parse_response(data)
@@ -187,6 +190,7 @@ class OpenAIProvider(BaseLLMProvider):
         payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
         from arslan.execution_checkpoint import save
         await save("before_model")
+        evidence = await request_evidence.begin(payload)
         async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
             async with client.stream(
                 "POST",
@@ -203,6 +207,7 @@ class OpenAIProvider(BaseLLMProvider):
                     raise httpx.HTTPStatusError(
                         provider_errors.with_body(_exc),
                         request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
                 async for raw_line in response.aiter_lines():
                     line = raw_line.lstrip()
                     if not line or not line.startswith("data:"):

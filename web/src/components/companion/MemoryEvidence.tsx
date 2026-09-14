@@ -99,10 +99,19 @@ function Evidence({ conversationId, taskId }: Props) {
           ref && ref.kind === "memory" && typeof ref.id === "string" && ref.id.length > 0
           && Number.isInteger(ref.revision) && ref.revision > 0);
         const filters = Array.isArray(receipt.filter_reasons) ? receipt.filter_reasons : [];
+        const attempts = receipt.request_attempts, responses = receipt.provider_responses;
+        let requestText = t("memoryEvidence.selectionOnly");
+        if (typeof attempts === "number" && Number.isSafeInteger(attempts) && attempts > 0
+          && typeof responses === "number" && Number.isSafeInteger(responses) && responses >= 0 && responses <= attempts) {
+          const numbers = new Intl.NumberFormat(i18n.resolvedLanguage);
+          requestText = t(responses > 0 ? "memoryEvidence.providerResponded" : "memoryEvidence.requestAttempted",
+            { attempts: numbers.format(attempts), responses: numbers.format(responses) });
+        }
         return <article key={row.id} className="space-y-2 rounded-lg bg-foreground/5 p-3" data-receipt-id={row.id}>
           <div className="flex flex-wrap items-center justify-between gap-2"><time dateTime={row.created_at}>{date(row.created_at)}</time>
             <span>{t(`memoryEvidence.${modes.has(receipt.memory_mode ?? "") ? receipt.memory_mode : "unknown"}`)}</span></div>
           <p className="text-muted-foreground">{t(receipt.cloud_use === "approved" ? "memoryEvidence.cloudApproved" : "memoryEvidence.noCloudRecord")}</p>
+          <p className="leading-relaxed">{requestText}</p>
           <p>{t("memoryEvidence.tokens", { amount: typeof receipt.estimated_tokens === "number" && Number.isFinite(receipt.estimated_tokens) && receipt.estimated_tokens >= 0
             ? new Intl.NumberFormat(i18n.resolvedLanguage).format(receipt.estimated_tokens) : t("memoryEvidence.unknown") })}</p>
           {!!filters.length && <p className="leading-relaxed text-muted-foreground">{t("memoryEvidence.filters")}: {filters.map(reason =>

@@ -6,6 +6,11 @@ explicit click. Copy in all six application languages distinguishes selection
 for a request from delivery or model adoption. Cloud permission is not reported
 as proof of transmission. Missing records and an empty selection are distinct.
 
+Request-boundary evidence is now added separately from selection. The UI shows
+attempt and successful service-response counts only when valid metadata exists;
+details, newer verification results and limitations are in
+`context-request-evidence.md`. These counters are not proof of model adoption.
+
 The authenticated receipt endpoint supports owner/conversation/task-scoped
 keyset pagination. A cursor outside that scope is rejected. Memory references
 are returned without historical cached titles or locators. The separate review

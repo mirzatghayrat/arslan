@@ -36,7 +36,7 @@ class ContextReceiptRecord(Base):
     conversation_id = Column(String(100), nullable=False, index=True)
     task_id = Column(String(100), nullable=False, index=True)
     run_id = Column(String(100), nullable=False, index=True)
-    receipt = Column(JSON, nullable=False)  # IDs, revisions, reason codes and token estimate only.
+    receipt = Column(JSON, nullable=False)  # IDs/revisions, reason codes, estimates and request counters; no bodies.
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 

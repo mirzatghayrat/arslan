@@ -38,6 +38,18 @@ beforeEach(async () => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("task memory evidence", () => {
+  it.each([
+    { request_attempts: 2, provider_responses: 0, key: "requestAttempted" },
+    { request_attempts: 2, provider_responses: 1, key: "providerResponded" },
+    { request_attempts: 0, provider_responses: 1, key: "selectionOnly" },
+    { request_attempts: 1.5, provider_responses: 1, key: "selectionOnly" },
+  ] as const)("distinguishes verified request evidence: $key ($request_attempts/$provider_responses)", async fields => {
+    vi.mocked(companionApi.contextReceipts).mockResolvedValue([{ ...row,
+      receipt: { ...row.receipt, request_attempts: fields.request_attempts, provider_responses: fields.provider_responses } }]);
+    render(ui()); await expand();
+    expect(screen.getByText(language.t(`memoryEvidence.${fields.key}`, { attempts: fields.request_attempts, responses: fields.provider_responses }))).toBeInTheDocument();
+  });
+
   it("keeps incomplete historical metadata readable without inventing a token count", async () => {
     vi.mocked(companionApi.contextReceipts).mockResolvedValue([{ ...row,
       receipt: { used: [null, { kind: "memory", id: "bad", revision: -1 }], filter_reasons: "legacy" },
@@ -138,6 +150,8 @@ describe("task memory evidence", () => {
   });
 
   it("renders translated states in every registered app language", async () => {
+    vi.mocked(companionApi.contextReceipts).mockResolvedValue([{ ...row,
+      receipt: { ...row.receipt, request_attempts: 2, provider_responses: 1 } }]);
     render(ui()); await expand();
     const keys = Object.keys(memoryEvidenceMessages.en).sort();
     for (const [locale, messages] of Object.entries(memoryEvidenceMessages)) {
@@ -150,6 +164,7 @@ describe("task memory evidence", () => {
       expect(screen.getByText(messages.normal)).toBeInTheDocument();
       expect(screen.getByText(messages.cloudApproved)).toBeInTheDocument();
       expect(screen.getByText(new RegExp(messages.filter_irrelevant))).toBeInTheDocument();
+      expect(screen.getByText(language.t("memoryEvidence.providerResponded", { attempts: 2, responses: 1 }))).toBeInTheDocument();
     }
   });
 });

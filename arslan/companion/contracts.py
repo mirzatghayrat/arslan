@@ -229,9 +229,13 @@ class ContextReceipt(Contract):
     estimated_tokens: NonnegativeInt = 0
     cloud_use: Literal["not_sent", "approved"] = "not_sent"
     local_only_used: bool = False
+    request_attempts: NonnegativeInt = 0
+    provider_responses: NonnegativeInt = 0
 
     @model_validator(mode="after")
     def no_memory_when_disabled(self):
+        if self.provider_responses > self.request_attempts:
+            raise ValueError("provider responses require recorded request attempts")
         if self.memory_mode in {"disabled", "temporary"} and any(ref.kind == "memory" for ref in self.used):
             raise ValueError("memory is excluded from disabled/temporary tasks")
         if self.local_only_used and (self.memory_mode != "normal" or self.cloud_use == "approved"):

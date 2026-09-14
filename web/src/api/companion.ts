@@ -87,6 +87,8 @@ export interface ContextReceiptRecord {
     estimated_tokens: number;
     cloud_use: "not_sent" | "approved";
     local_only_used: boolean;
+    request_attempts?: number;
+    provider_responses?: number;
   };
 }
 export interface ContextMemoryReview {

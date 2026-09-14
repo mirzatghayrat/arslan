@@ -10,7 +10,7 @@ from datetime import datetime
 import json
 from uuid import uuid4
 
-from sqlalchemy import and_, bindparam, or_, select, text
+from sqlalchemy import and_, bindparam, func, or_, select, text, update
 from pydantic import ValidationError
 
 from arslan.companion.contracts import ContextReceipt, ResourceRef
@@ -18,6 +18,7 @@ from arslan.companion.memory import MemoryActor
 from arslan.companion import memory_relevance
 from arslan.companion.design import StyleReference
 from arslan.context_budget import estimate_tokens
+from arslan.llm import request_evidence
 from server.db import session as db_session
 from server.db.models import MemoryEntry, MemoryRevision, Project
 
@@ -70,6 +71,20 @@ class TaskMemoryContext:
 _current: ContextVar[TaskMemoryContext | None] = ContextVar("task_memory_context", default=None)
 
 
+@dataclass(frozen=True)
+class _RegisteredReceipt:
+    identity: tuple[str, str, str, str | None, str | None]
+    receipt_id: str
+    text: str
+
+
+_registered: ContextVar[tuple[_RegisteredReceipt, ...]] = ContextVar("context_request_receipts", default=())
+
+
+def _identity(context):
+    return context.owner_id, context.task_id, context.run_id, context.conversation_id, context.expert_id
+
+
 def current() -> TaskMemoryContext | None:
     context = _current.get()
     return context if context is None or context.lease is None or context.lease.active else None
@@ -77,11 +92,17 @@ def current() -> TaskMemoryContext | None:
 
 @contextmanager
 def bind(context: TaskMemoryContext):
+    previous = current()
+    fresh = previous is None or _identity(previous)[:4] != _identity(context)[:4]
+    receipts_token = _registered.set(()) if fresh else None
     token = _current.set(context)
     try:
-        yield context
+        with request_evidence.bind(_observe_request):
+            yield context
     finally:
         _current.reset(token)
+        if receipts_token is not None:
+            _registered.reset(receipts_token)
 
 
 @contextmanager
@@ -112,6 +133,77 @@ async def record(result: PersonalContext):
             conversation_id=ctx.conversation_id, task_id=ctx.task_id, run_id=result.receipt.run_id,
             receipt=result.receipt.model_dump(mode="json")))
         await db.commit()
+    if result.text and any(ref.kind == "memory" for ref in result.receipt.used):
+        # Transient exact text is discarded with this task/run scope. It is not
+        # another persistent copy and cannot be attributed to a different task.
+        _registered.set((*_registered.get(), _RegisteredReceipt(_identity(ctx), result.receipt.id, result.text)))
+
+
+def _system_fragments(payload):
+    """Text from the final supported provider system fields, not user quotations."""
+    pending = [payload.get("system"), payload.get("systemInstruction")]
+    pending.extend(message.get("content") for message in payload.get("messages", [])
+                   if isinstance(message, dict) and message.get("role") in {"system", "developer"})
+    seen = set()
+    while pending:
+        value = pending.pop()
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, (dict, list)) and id(value) not in seen:
+            seen.add(id(value))
+            if isinstance(value, list):
+                pending.extend(value)
+            else:
+                pending.extend(value[key] for key in ("text", "content", "parts") if key in value)
+
+
+async def _count_request(context, identities, *, response=False):
+    from server.db.models import ContextReceiptRecord
+    attempts = func.coalesce(func.json_extract(ContextReceiptRecord.receipt, "$.request_attempts"), 0)
+    responses = func.coalesce(func.json_extract(ContextReceiptRecord.receipt, "$.provider_responses"), 0)
+    statement = update(ContextReceiptRecord).where(
+        ContextReceiptRecord.id.in_(identities), ContextReceiptRecord.owner_id == context.owner_id,
+        ContextReceiptRecord.task_id == context.task_id, ContextReceiptRecord.run_id == context.run_id,
+        ContextReceiptRecord.conversation_id == context.conversation_id)
+    if response:
+        statement = statement.where(attempts > responses)
+    path, value = ("$.provider_responses", responses) if response else ("$.request_attempts", attempts)
+    async with db_session.AsyncSessionLocal() as db:
+        rows = await db.scalars(statement.values(receipt=func.json_set(
+            ContextReceiptRecord.receipt, path, value + 1)).returning(ContextReceiptRecord.id))
+        changed = tuple(rows)
+        await db.commit()
+    return changed
+
+
+async def _observe_request(payload):
+    ctx = current()
+    if ctx is None or ctx.temporary or not _registered.get():
+        return None
+    fragments = tuple(_system_fragments(payload))
+    seen, identities = set(), []
+    for selected in reversed(_registered.get()):
+        if selected.identity != _identity(ctx) or selected.text in seen:
+            continue
+        if any(selected.text in fragment for fragment in fragments):
+            identities.append(selected.receipt_id)
+            seen.add(selected.text)
+    if not identities:
+        return None
+    counted = await _count_request(ctx, identities)
+    if not counted:
+        return None
+    completed = False
+
+    async def acknowledge():
+        nonlocal completed
+        if completed:
+            return
+        completed = True
+        if ctx.lease is None or ctx.lease.active:
+            await _count_request(ctx, counted, response=True)
+
+    return acknowledge
 
 
 async def _indexed_matches(db, rows, query_terms: frozenset[str]) -> set[str]:

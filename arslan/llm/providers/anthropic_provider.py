@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
+from arslan.llm import request_evidence
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
@@ -214,6 +215,7 @@ class AnthropicProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/messages",
@@ -229,6 +231,7 @@ class AnthropicProvider(BaseLLMProvider):
                 raise httpx.HTTPStatusError(
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
+            await request_evidence.acknowledge(evidence)
             data = response.json()
         return self._parse_response(data)
 
@@ -252,6 +255,7 @@ class AnthropicProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        evidence = await request_evidence.begin(payload)
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
         # Review I2: message_start ALSO carries an initial output_tokens (≈1), so
@@ -278,6 +282,7 @@ class AnthropicProvider(BaseLLMProvider):
                     raise httpx.HTTPStatusError(
                         provider_errors.with_body(_exc),
                         request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
                     if not line.startswith("data:"):

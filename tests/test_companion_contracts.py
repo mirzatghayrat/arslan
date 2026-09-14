@@ -51,6 +51,14 @@ def test_native_budget_adapter_does_not_rename_or_drop_limits():
     assert limits.artifact_bytes == spec.artifact_bytes
 
 
+def test_context_request_evidence_is_nonnegative_and_cannot_invent_responses():
+    base = dict(id="receipt", task_id="task", run_id="run", memory_mode="normal")
+    for fields in ({"request_attempts": True}, {"provider_responses": -1}, {"provider_responses": 1}):
+        with pytest.raises(ValidationError):
+            ContextReceipt(**base, **fields)
+    assert ContextReceipt(**base, request_attempts=2, provider_responses=1).request_attempts == 2
+
+
 @pytest.mark.parametrize("field,value", [
     ("model_requests", True), ("tokens", 0), ("wall_seconds", float("nan")),
     ("wall_seconds", float("inf")), ("artifact_bytes", -1),

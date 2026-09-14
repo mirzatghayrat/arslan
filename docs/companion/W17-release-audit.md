@@ -13,6 +13,10 @@ guard recorded 78 closed-loop deliveries. Frontend source is unchanged from the
 complete 1,829-test/typecheck/build result below. This is not desktop, real-model
 or release-candidate acceptance.
 
+Subsequent provider-bound request-evidence hooks and six-language display are
+documented in `context-request-evidence.md`. Their focused checks and complete
+1,833-test frontend run pass, but the frozen backend result above predates them.
+
 Previous complete combined run: clean `4595994d` (including task-memory evidence
 review), **4,704 passed, 14 skipped, 19 warnings in 451.57 seconds**. Report:
 `/tmp/arslan-evidence-regression.LvwKlO/backend.xml`. The run used a scrubbed
@@ -116,7 +120,7 @@ notarization was performed. These source checks do not verify a distributable ap
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
 | Complete engineering regression | Clean `4fd004ca` full backend passes; unchanged frontend's full tests/typecheck/build pass as recorded above | Repeat for subsequent release source; skips/warnings remain disclosed |
-| Context evidence UI | TaskPanel now exposes task-scoped receipt history and explicit version review; deleted text is withheld; six-locale component and isolated browser checks pass | Real desktop/task integration and packaged runtime verification; see `memory-evidence-ui.md` |
+| Context evidence UI | Task-scoped receipt history, version review and provider-bound request/response counters; deleted text withheld; six-locale checks pass | Real desktop and packaged runtime verification, historical scope snapshots, in-flight revalidation; see `context-request-evidence.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
 | W11 credential boundary | Credential-backed activation remains disabled | Trusted broker identity/OS isolation, confirmation UI, independent security review |

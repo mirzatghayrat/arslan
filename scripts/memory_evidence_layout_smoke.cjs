@@ -30,7 +30,8 @@ const locale = location.pathname.slice(1);
 const language = createInstance();
 companionApi.contextReceipts = async () => [{id:'fixture',created_at:'2026-01-01T10:00:00Z',receipt:{
  id:'fixture',task_id:'fixture-task',run_id:'run:1',memory_mode:'normal',used:[{id:'memory',kind:'memory',revision:1}],
- filter_reasons:['irrelevant','permission','budget'],estimated_tokens:1200,cloud_use:'approved',local_only_used:false}}];
+ filter_reasons:['irrelevant','permission','budget'],estimated_tokens:1200,cloud_use:'approved',local_only_used:false,
+ request_attempts:2,provider_responses:1}}];
 companionApi.contextMemory = async () => ({id:'memory',recorded_version:1,current_version:2,entry_status:'active',
  status:'available',content:'Synthetic historical preference — no real personal information. '.repeat(8)});
 async function start(){
