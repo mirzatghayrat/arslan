@@ -684,11 +684,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         try:
             from server.services.task_service import current as current_task
             from server.services.task_repository import TaskError
-            async def execute():
+            async def execute(admitted_args):
                 timeout = budget.remaining_seconds() if tool_key == "delegate_work" and budget else tool_timeout_s
-                return await asyncio.wait_for(executor.execute(args), timeout=timeout)
+                return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
-            result = await runtime.execute_tool(tool_key, args, execute) if runtime else await execute()
+            result = await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
         except (BudgetExceeded, TaskError):
             raise
         except TimeoutError:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -15,12 +16,13 @@ from dataclasses import asdict, replace
 from sqlalchemy import select
 
 from arslan import execution_checkpoint
+from arslan.companion.action_policy import ACCOUNT_ACTION_EFFECTS
 from arslan.companion.contracts import ResourceRef, TaskSpec
 from arslan.execution_budget import Budget, BudgetExceeded, current as current_budget, scope
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, Setting, TaskAttempt
 from server.services import personal_context
-from server.services.task_repository import Progress, TaskError, repository
+from server.services.task_repository import Progress, TaskError, encoded_action, repository
 
 logger = logging.getLogger(__name__)
 _current: ContextVar[TaskRuntime | None] = ContextVar("companion_task_runtime", default=None)
@@ -179,11 +181,14 @@ class TaskRuntime:
             "continuation_ref": ref,
         })
 
-    async def execute_tool(self, tool_key: str, arguments: dict, execute: Callable[[], Awaitable[dict]]) -> dict:
+    async def execute_tool(self, tool_key: str, arguments: dict, execute: Callable[[dict], Awaitable[dict]]) -> dict:
         if self.reconciliation_required:
             raise TaskError("task_reconciliation_required")
+        # Private JSON snapshot before the first yield: preparation, admission,
+        # and the actual executor must all see the same intent.
+        arguments = json.loads(encoded_action(tool_key, arguments))["arguments"]
         await self.check_memory()
-        effect = "read" if tool_key in _READ_TOOLS else "local_write" if tool_key in _LOCAL_WRITE_TOOLS else "external_write"
+        effect = ACCOUNT_ACTION_EFFECTS.get(tool_key) or ("read" if tool_key in _READ_TOOLS else "local_write" if tool_key in _LOCAL_WRITE_TOOLS else "external_write")
         async with self.lock:
             async with repository() as repo:
                 action = await repo.prepare_action(self.task_id, self.attempt_id, tool_key=tool_key,
@@ -193,10 +198,10 @@ class TaskRuntime:
         await self.checkpoint("before_tool")
         async with self.lock:
             async with repository() as repo:
-                await repo.action_started(self.task_id, self.attempt_id, action["id"])
+                await repo.action_started(self.task_id, self.attempt_id, action["id"], arguments=arguments)
         # No await between the committed admission fence and invoking the tool.
         try:
-            result = await execute()
+            result = await execute(arguments)
         except asyncio.CancelledError:
             raise  # Root cancellation marks the unfinished action uncertain.
         except Exception:

@@ -321,7 +321,7 @@ async def test_repaired_artifact_revisions_preserve_history_without_hiding_expli
             saved = []
             runtime = task_service.current()
             for index, data in enumerate((b"broken JSON", b'{"value":1}')):
-                async def execute():
+                async def execute(admitted_args):
                     artifact = artifact_store.store_bytes(execution_context.current_run_id(), "result.json", data)
                     saved.append(artifact)
                     return {"ok": True, "artifact": artifact}

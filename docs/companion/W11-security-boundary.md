@@ -67,6 +67,27 @@ The approval, task-repository, migration-runner and task-service selection passe
 restore invalidation, forged references and high-impact-action refusal. One
 existing Starlette/httpx deprecation warning remains. These are synthetic tests.
 
+### Execution-intent binding
+
+Task runtime now creates a private JSON argument snapshot before its first await.
+Preparation, admission and the actual tool executor use that snapshot; caller
+mutation during a checkpoint cannot change what is executed. Account/granted
+admission requires actual arguments and verifies their canonical intent hash
+before consuming approval. Rejection leaves the grant available for its original
+intent. No arguments are persisted in the journal.
+
+Account action effects are host-owned: reads are reads, draft/screenshot writes
+are external writes. Preparation and approval binding reject a weaker effect,
+including altered legacy rows. Failed writes remain uncertain. Repeated reads
+use their action ID as a distinct, verifiable nonce; older prepared read hashes
+with an unrecoverable nonce fail closed and need fresh preparation.
+
+The updated approval/runtime/repository/validation/tool-loop selection passed
+163 tests in 29.22 seconds. The final focused binding suite, including the added
+legacy-read denial case, passed 11 tests in 0.65 seconds. One existing
+Starlette/httpx deprecation warning remains. These are isolated synthetic checks,
+not authenticated connector or packaged-app certification.
+
 This is NOT W11 completion. Trusted confirmation UI and broker integration are
 still unavailable. No independent security
 review, authenticated broker identity, Keychain ACL, debugger isolation, or real

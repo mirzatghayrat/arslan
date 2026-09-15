@@ -17,6 +17,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from arslan.companion.content_policy import contains_credential, contains_credential_data
+from arslan.companion.action_policy import ACCOUNT_ACTION_EFFECTS
 from arslan.companion.contracts import (
     CheckResult, Contract, Identifier, ResourceRef, TaskSpec, TaskState,
 )
@@ -41,6 +42,24 @@ class Progress(Contract):
     continuation_ref: ResourceRef | None = None
     loop_fingerprints: tuple[Identifier, ...] = Field(default=(), max_length=256)
     validation_repairs: tuple[Identifier, ...] = Field(default=(), max_length=2)
+
+
+def encoded_action(tool_key: str, arguments: dict) -> str:
+    if not isinstance(arguments, dict):
+        raise TaskError("task_action_arguments_not_journalable")
+    try:
+        encoded = json.dumps({"tool": tool_key, "arguments": arguments}, sort_keys=True,
+                             ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise TaskError("task_action_arguments_not_journalable") from exc
+    if len(encoded) > 262144 or contains_credential_data(arguments) or contains_credential(encoded):
+        raise TaskError("task_action_arguments_not_journalable")
+    return encoded
+
+
+def action_digest(tool_key: str, arguments: dict, effect: str, action_id: str) -> str:
+    digest = hashlib.sha256(encoded_action(tool_key, arguments).encode()).hexdigest()
+    return hashlib.sha256((digest + action_id).encode()).hexdigest() if effect == "read" else digest
 
 
 def identity() -> str:
@@ -370,15 +389,12 @@ class TaskRepository:
             raise TaskError("task_invalid_effect")
         if not tool_key or len(tool_key) > 200:
             raise TaskError("task_invalid_tool")
+        if tool_key in ACCOUNT_ACTION_EFFECTS and effect != ACCOUNT_ACTION_EFFECTS[tool_key]:
+            raise TaskError("task_action_effect_mismatch")
         # No argument is written to the journal. The hash only identifies an
         # exact intent, never authorizes it. Reads may safely repeat.
-        encoded = json.dumps({"tool": tool_key, "arguments": arguments}, sort_keys=True,
-                             ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-        if len(encoded) > 262144 or contains_credential_data(arguments) or contains_credential(encoded):
-            raise TaskError("task_action_arguments_not_journalable")
-        digest = hashlib.sha256(encoded.encode()).hexdigest()
-        if effect == "read":
-            digest = hashlib.sha256((digest + identity()).encode()).hexdigest()
+        action_id = identity()
+        digest = action_digest(tool_key, arguments, effect, action_id)
         previous = await self.db.scalar(select(TaskAction).where(
             TaskAction.task_id == row.id, TaskAction.spec_revision == row.spec_revision,
             TaskAction.intent_hash == digest))
@@ -391,18 +407,23 @@ class TaskRepository:
             action.version += 1
             action.updated_at = datetime.utcnow()
         else:
-            action = TaskAction(id=identity(), task_id=row.id, attempt_id=attempt_id,
+            action = TaskAction(id=action_id, task_id=row.id, attempt_id=attempt_id,
                                 spec_revision=row.spec_revision, tool_key=tool_key,
                                 intent_hash=digest, effect=effect, status="prepared")
             self.db.add(action)
         await self._advance(row, "action_prepared", payload={"action_id": action.id, "effect": effect})
         return {"id": action.id, "version": action.version, "status": action.status}
 
-    async def action_started(self, task_id: str, attempt_id: str, action_id: str, *, grant_id: str | None = None):
+    async def action_started(self, task_id: str, attempt_id: str, action_id: str, *,
+                             grant_id: str | None = None, arguments: dict | None = None):
         row = await self._active(task_id, attempt_id)
         action = await self.db.get(TaskAction, action_id)
         if action is None or action.task_id != row.id or action.attempt_id != attempt_id or action.status != "prepared":
             raise TaskError("task_action_stale")
+        if arguments is None and (action.tool_key.startswith("asc.") or grant_id is not None):
+            raise TaskError("task_action_arguments_required")
+        if arguments is not None and action_digest(action.tool_key, arguments, action.effect, action.id) != action.intent_hash:
+            raise TaskError("task_action_intent_mismatch")
         if action.tool_key.startswith("asc.") or grant_id is not None:
             from server.services.action_permissions import ActionPermissions
             if grant_id is None:

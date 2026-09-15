@@ -14,13 +14,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
+from arslan.companion.action_policy import ACCOUNT_ACTION_EFFECTS
 
 from server.db.models import ActionGrantRecord, CompanionConnection, Project, TaskAction
 from server.services.task_repository import TaskError, TaskRepository
 
 # Draft and read capabilities are deliberately separate. Submission/publication,
 # agreements, tax, banking and privacy assertions are not available here.
-APPROVABLE_ACTIONS = frozenset({"asc.read", "asc.draft.update", "asc.screenshot.upload"})
+APPROVABLE_ACTIONS = frozenset(ACCOUNT_ACTION_EFFECTS)
 
 
 def utc_now() -> datetime:
@@ -95,7 +96,8 @@ class ActionPermissions:
             raise TaskError("grant_target_missing") from exc
         if (action is None or action.task_id != task.id or action.attempt_id != attempt_id
                 or action.spec_revision != task.spec_revision or action.status != "prepared"
-                or action.tool_key not in APPROVABLE_ACTIONS):
+                or action.tool_key not in APPROVABLE_ACTIONS
+                or action.effect != ACCOUNT_ACTION_EFFECTS.get(action.tool_key)):
             raise TaskError("grant_action_unavailable")
         return {"owner_id": owner_id, "connection_id": connection.id, "connection_version": connection.version,
                 "task_id": task.id, "attempt_id": attempt_id, "spec_revision": task.spec_revision,

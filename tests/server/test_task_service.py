@@ -18,6 +18,28 @@ class Crash(BaseException):
     """Simulated process loss; ordinary tool-error handlers must not swallow it."""
 
 
+async def test_tool_receives_frozen_prepared_arguments_after_checkpoint(execution_db, monkeypatch):
+    from copy import deepcopy
+    arguments = {"nested": {"value": "original"}}
+    seen = []
+    original_checkpoint = task_service.TaskRuntime.checkpoint
+    async def checkpoint(self, reason, **kwargs):
+        if reason == "before_tool":
+            arguments["nested"]["value"] = "changed after preparation"
+        return await original_checkpoint(self, reason, **kwargs)
+    monkeypatch.setattr(task_service.TaskRuntime, "checkpoint", checkpoint)
+    async def function(conversation, message, emit):
+        async def body(sink):
+            async def execute(admitted=None):
+                seen.append(deepcopy(arguments if admitted is None else admitted))
+                return {"ok": True}
+            await task_service.current().execute_tool("run_python", arguments, execute)
+            return "Done"
+        return await host_run.execute(conversation, message, emit, body)
+    await run(function)
+    assert seen == [{"nested": {"value": "original"}}]
+
+
 async def test_secret_arguments_never_reach_emitted_previews_or_traces():
     from server.orchestrator import run_trace
     events, trace, convo = [], [], []

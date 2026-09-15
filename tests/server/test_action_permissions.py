@@ -27,7 +27,8 @@ async def setup_action(execution_db, tool="asc.draft.update"):
         value = await repo.start("task", value["version"])
         attempt = value["state"]["run_id"]
         action = await repo.prepare_action("task", attempt, tool_key=tool,
-                                           arguments={"before": "old", "after": "new"}, effect="external_write")
+                                           arguments={"before": "old", "after": "new"},
+                                           effect="read" if tool == "asc.read" else "external_write")
         permissions = ActionPermissions(repo.db)
         connection = await permissions.register(owner_id="local", provider="app_store_connect",
                                                 credential_ref=str(uuid4()))
@@ -51,9 +52,10 @@ async def issue(data):
         return await ActionPermissions(repo.db).issue(**data)
 
 
-async def start(data, grant):
+async def start(data, grant, arguments=None):
     async with repository() as repo:
-        await repo.action_started(data["task_id"], data["attempt_id"], data["action_id"], grant_id=grant)
+        await repo.action_started(data["task_id"], data["attempt_id"], data["action_id"], grant_id=grant,
+                                  arguments={"before": "old", "after": "new"} if arguments is None else arguments)
 
 
 async def test_grant_consumption_and_admission_commit_together(execution_db):
@@ -145,7 +147,8 @@ async def test_rollback_does_not_burn_approval(execution_db):
     grant = await issue(data)
     with pytest.raises(RuntimeError):
         async with repository() as repo:
-            await repo.action_started("task", data["attempt_id"], data["action_id"], grant_id=grant)
+            await repo.action_started("task", data["attempt_id"], data["action_id"], grant_id=grant,
+                                      arguments={"before": "old", "after": "new"})
             raise RuntimeError("failed commit")
     await start(data, grant)
 
@@ -183,7 +186,7 @@ async def test_grant_cannot_be_retargeted_to_second_action(execution_db):
         second = await repo.prepare_action("task", data["attempt_id"], tool_key="asc.draft.update",
                                            arguments={"after": "different"}, effect="external_write")
     with pytest.raises(TaskError, match="grant_binding_stale"):
-        await start({**data, "action_id": second["id"]}, grant)
+        await start({**data, "action_id": second["id"]}, grant, {"after": "different"})
     await start(data, grant)
 
 
