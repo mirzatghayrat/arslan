@@ -1,5 +1,25 @@
 # W21 — six-language consistency (in progress)
 
+## First-run host-state repair (2026-09-15)
+
+The unlocked, isolated native candidate reproduced a real integration defect:
+choosing Chinese in onboarding and dismissing it left the backend and native
+locale hint at `zh`, but entering Settings reset the visible UI to English.
+Onboarding updated i18next and the server without updating App's settings.
+
+The wizard now synchronously notifies its host of language selections; App merges
+that field into its UI state and shared settings store. Onboarding also waits for
+the initial settings read to settle, preventing a late startup response from
+overwriting a selection. Persistence remains best-effort as before; this does not
+claim a failed save survives restart.
+
+Six new tests first failed on the missing host notification, then passed for all
+supported languages with persistence deliberately left pending and immediate
+dismissal. The focused selection passed 33 tests; the complete frontend suite
+passed 239 files / 1,862 tests in 21.92s. TypeScript and production build passed.
+Existing jsdom canvas/navigation and large-chunk warnings remain. Native package
+revalidation is recorded separately in W17; this is not full W21 sign-off.
+
 ## Deterministic runtime notices
 
 Seven product-owned notices now have complete six-language copy: stale proposal,

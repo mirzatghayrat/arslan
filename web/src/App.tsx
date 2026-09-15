@@ -405,6 +405,7 @@ export default function App() {
   // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
   const [spawns, setSpawns] = useState<Spawn[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settingsReady, setSettingsReady] = useState(false);
 
   // Push voice-output preference + language HINT into the arslan store so the
   // reply stream can be spoken (V1). The hint is what the user said they speak
@@ -451,7 +452,7 @@ export default function App() {
       useSettingsStore.getState().setSettings(backendSettings);
     }).catch(() => {
       // backend unavailable — keep DEFAULT_SETTINGS
-    });
+    }).finally(() => setSettingsReady(true));
 
     // Load LLM provider catalog
     api.listProviders().then(setLlmProviders).catch(() => {});
@@ -1522,12 +1523,17 @@ export default function App() {
       {/* First-run onboarding — shown once when no provider/model is configured.
           The bare NoModelHint remains the inline nudge for later visits. */}
       {firstRunShouldShow({
-        ready: providerConfigsReady,
+        ready: providerConfigsReady && settingsReady,
         hasProvider: providerConfigs.length > 0,
         seen: firstRunSeen,
       }) && (
         <FirstRunWizard
           llmProviders={llmProviders}
+          onLanguageChange={(language) => {
+            setSettings((prev) => ({ ...prev, language }));
+            const store = useSettingsStore.getState();
+            if (store.settings) store.setSettings({ ...store.settings, language });
+          }}
           onAdded={(cfg) => setProviderConfigs((prev) => [...prev, cfg])}
           onClose={() => {
             setFirstRunSeen();

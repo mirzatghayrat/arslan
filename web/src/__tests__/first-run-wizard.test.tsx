@@ -96,6 +96,20 @@ describe("firstRunShouldShow gate", () => {
 });
 
 describe("FirstRunWizard", () => {
+  it.each(["en", "zh", "ja", "es", "de", "fr"])("synchronizes %s with the host before a save resolves or the wizard closes", async (code) => {
+    mockUpdateSettings.mockReturnValue(new Promise(() => {}));
+    const onLanguageChange = vi.fn();
+    const onClose = vi.fn();
+    render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={onClose} onLanguageChange={onLanguageChange} />);
+    fireEvent.click(screen.getByTestId(`first-run-lang-${code}`));
+    expect(onLanguageChange).toHaveBeenCalledWith(code);
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ language: code });
+    fireEvent.click(screen.getByTestId("first-run-dismiss"));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onLanguageChange).toHaveBeenCalledBefore(onClose);
+    await waitFor(() => expect(mockGetCatalog).toHaveBeenCalled());
+  });
+
   it("starts on the language step and walks language → tour → connect → hello", async () => {
     render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={vi.fn()} />);
 
