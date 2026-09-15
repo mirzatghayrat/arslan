@@ -92,6 +92,21 @@ def test_the_entry_script_exists_where_the_pyinstaller_spec_expects_it():
     assert _ENTRY.is_file(), f"{_ENTRY} is missing — the .spec references it by path"
 
 
+def test_mcp_collection_excludes_only_the_optional_developer_cli():
+    import ast
+
+    tree = ast.parse(_ENTRY.with_name("arslan-server.spec").read_text())
+    call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name) and node.func.id == "collect_submodules"
+                and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == "mcp")
+    predicate = next(keyword.value for keyword in call.keywords if keyword.arg == "filter")
+    include = eval(compile(ast.Expression(predicate), "<packaging MCP filter>", "eval"))
+    assert not include("mcp.cli")
+    assert not include("mcp.cli.cli")
+    for name in ("mcp", "mcp.client", "mcp.client.stdio", "mcp.client.auth", "mcp.server.fastmcp", "mcp.shared.auth"):
+        assert include(name), name
+
+
 def test_a_developer_data_dir_override_is_stripped(entry, monkeypatch, tmp_path):
     """THE packaging assertion: an inherited ARSLAN_DATA_DIR must not survive.
 

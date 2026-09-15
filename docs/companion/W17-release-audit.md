@@ -187,6 +187,39 @@ notarization was performed. These source checks do not verify a distributable ap
 
 ## Requirement evidence still needed
 
+### Frozen backend preflight follow-up
+
+Starting from `cbce62f6`, the existing build environment lacked PyInstaller. The
+six lockfile-pinned build packages were installed from the local cache, offline,
+into `/tmp/arslan-candidate-build.BboGj4/build-tools`; the project environment was
+not changed. The first freeze failed because collecting the entire MCP SDK
+imported its optional developer CLI, which exits when its `typer` extra is absent.
+The spec now excludes only `mcp.cli` before subpackage traversal and from analysis;
+the actual MCP client, auth and FastMCP server paths remain included.
+
+The corrected PyInstaller freeze completed in 25.71 seconds with no signing
+identity. Bundle verification passed (15 feature imports, SPA/data resources,
+native PDFium/Vision/TLS checks, no forbidden rasterizer, database or secret-shaped
+files). The 159 MiB development sidecar is
+`/tmp/arslan-candidate-build.BboGj4/dist/arslan-server`; its entry executable SHA-256
+is `7ffa3f26adb5f63eac2b4968ad6ccbb36def852acfee3c537539104ae0dac08f`.
+Browser reader/policy resources and the shared input registry are present.
+Warnings about optional `pysqlite2`, `MySQLdb` and Windows `user32` remain recorded
+in the build output; they did not prevent the required native probes.
+
+`scripts/frozen_sidecar_smoke.py` then booted that actual frozen executable twice
+with disposable HOME/data. It verified unauthenticated settings requests receive
+401, the generated token is mode 0600, the SPA loads, actual Word table and PDF
+page-locator extraction works, all six languages save, and token/language survive
+restart. Closing the parent pipe terminates the frozen process successfully.
+Generated tokens and child logs are not printed; no real model/account was used.
+The packaging/release regression passed 33 tests; targeted lint/whitespace passed.
+
+This is not a signed application, DMG, notarized update, complete compute runtime,
+old-library upgrade or native webview acceptance. No installed app was started or
+replaced. XcodeBuildMCP session tools were unavailable, so the repository's Python
+freeze path was used; no raw Xcode/notary commands or credentials were invoked.
+
 Latest frozen backend checkpoint: clean `a8c00020`, after runtime-error locales and
 Word table/source-locator extraction, completed **4,838 passed, 2 failed, 14 skipped,
 19 warnings in 464.13 seconds**. Report:
