@@ -214,8 +214,32 @@ candidate-build/native-candidate trees; installed app paths remain excluded.
 No app window was launched, installation attempted, microphone permission
 requested, update contacted, signing identity used, DMG created or notarization
 submitted. This does not prove native webview behavior, old-library migration,
-Gatekeeper acceptance or safe publication. Native update/install dialogs still
-contain bilingual copy; this is a remaining W21 defect, not waived by the build.
+Gatekeeper acceptance or safe publication. That assembled snapshot predates the
+native update/install dialog localization described below.
+
+Native-dialog source follow-up: nine product-owned update/install strings now
+cover all six UI languages. A disposable mode-0600 `ui_language` cache is written
+atomically after a committed language change and repaired from the database on
+startup. It contains only a normalized locale; no provider settings or secrets
+are read. Cache I/O failures do not fail the committed settings write or startup.
+The native shell reads a bounded, regular-file hint before each dialog, with
+English fallback for missing/invalid hints. Install/relaunch authorization,
+updater behavior and the nine-command webpage allowlist remain unchanged.
+
+The update menu label refreshes on window focus, menu actions and the existing
+status poll (up to 60 seconds while continuously focused); instant same-window
+menu refresh is not claimed. Native OS permission dialogs still use macOS language
+selection, independently of this app-selected display hint. Initial launch before
+any hint exists uses English. The original bilingual dialog defect is repaired
+in source, not yet proven in the rebuilt packaged UI.
+
+The related backend/settings/packaging selection passed 53 tests, and the complete
+native Rust library suite passed 28 tests in an isolated temporary desktop tree
+with locked offline dependencies. Tests cover all six hint values, bounded native
+reads and symlink refusal, catalog parity, atomic replacement, commit failure,
+non-fatal cache failure and startup-style repair. This source change requires a
+new frozen backend/native application build; the earlier assembled app does not
+contain it. Actual dialog/menu layout and live language changes remain unverified.
 
 Permission-localization follow-up: the microphone and speech-recognition purpose
 strings now have native `en`, `zh-Hans`, `ja`, `es`, `de`, and `fr` `.lproj`

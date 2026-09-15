@@ -144,6 +144,10 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
         await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
 
     await session.commit()
+    if "language" in data and data["language"] is not None:
+        from server.services import native_locale
+
+        await native_locale.sync(session)
 
 
 async def get_settings(session: AsyncSession) -> dict[str, str]:

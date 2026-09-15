@@ -150,6 +150,11 @@ async def lifespan(app: FastAPI):
         # failure rolls the whole thing back rather than leaving a row we broke.
         await conn.run_sync(crypto_boot.migrate_legacy_ciphertext)
 
+    from server.services import native_locale
+
+    async with AsyncSessionLocal() as native_locale_session:
+        await native_locale.sync(native_locale_session)
+
     from server.registry.seeder import seed_registry
 
     await seed_registry()

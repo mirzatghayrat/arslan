@@ -1,0 +1,68 @@
+{
+  "en": {
+    "latest": "You're on the latest version.",
+    "check_title": "Check for Updates…",
+    "check_failed": "Could not reach the update feed. Please check your network connection.",
+    "install_title": "Install Arslan",
+    "install_prompt": "Arslan is running from a temporary location. Ejecting the disk image can interrupt the app, and automatic updates cannot work here.\n\nInstall to Applications and relaunch?",
+    "install": "Install",
+    "not_now": "Not now",
+    "install_failed_title": "Installation failed",
+    "install_failed": "Could not copy Arslan into /Applications. Please drag it there in Finder."
+  },
+  "zh": {
+    "latest": "已是最新版本。",
+    "check_title": "检查更新…",
+    "check_failed": "无法连接更新源，请检查网络连接。",
+    "install_title": "安装 Arslan",
+    "install_prompt": "Arslan 正在临时位置运行。推出安装镜像可能导致应用中断，自动更新也无法在此位置工作。\n\n安装到「应用程序」并重新打开？",
+    "install": "安装",
+    "not_now": "暂不",
+    "install_failed_title": "安装失败",
+    "install_failed": "无法将 Arslan 复制到 /Applications。请在访达中手动将它拖入「应用程序」。"
+  },
+  "ja": {
+    "latest": "最新バージョンを使用しています。",
+    "check_title": "アップデートを確認…",
+    "check_failed": "更新元に接続できませんでした。ネットワーク接続を確認してください。",
+    "install_title": "Arslan をインストール",
+    "install_prompt": "Arslan は一時的な場所から実行されています。ディスクイメージを取り出すとアプリが中断する可能性があり、この場所では自動更新も利用できません。\n\n「アプリケーション」にインストールして再起動しますか？",
+    "install": "インストール",
+    "not_now": "今はしない",
+    "install_failed_title": "インストールに失敗しました",
+    "install_failed": "Arslan を /Applications にコピーできませんでした。Finder で「アプリケーション」にドラッグしてください。"
+  },
+  "es": {
+    "latest": "Ya tienes la última versión.",
+    "check_title": "Buscar actualizaciones…",
+    "check_failed": "No se pudo conectar con la fuente de actualizaciones. Comprueba la conexión de red.",
+    "install_title": "Instalar Arslan",
+    "install_prompt": "Arslan se está ejecutando desde una ubicación temporal. Expulsar la imagen de disco puede interrumpir la aplicación y las actualizaciones automáticas no funcionan aquí.\n\n¿Instalar en Aplicaciones y volver a abrir?",
+    "install": "Instalar",
+    "not_now": "Ahora no",
+    "install_failed_title": "Error de instalación",
+    "install_failed": "No se pudo copiar Arslan a /Applications. Arrástralo allí con Finder."
+  },
+  "de": {
+    "latest": "Du verwendest die neueste Version.",
+    "check_title": "Nach Updates suchen…",
+    "check_failed": "Die Update-Quelle ist nicht erreichbar. Bitte prüfe deine Netzwerkverbindung.",
+    "install_title": "Arslan installieren",
+    "install_prompt": "Arslan läuft von einem temporären Speicherort. Das Auswerfen des Disk-Images kann die App unterbrechen; automatische Updates funktionieren hier nicht.\n\nIn Programme installieren und neu starten?",
+    "install": "Installieren",
+    "not_now": "Nicht jetzt",
+    "install_failed_title": "Installation fehlgeschlagen",
+    "install_failed": "Arslan konnte nicht nach /Applications kopiert werden. Bitte ziehe die App im Finder dorthin."
+  },
+  "fr": {
+    "latest": "Vous utilisez la dernière version.",
+    "check_title": "Rechercher des mises à jour…",
+    "check_failed": "Impossible de joindre la source des mises à jour. Vérifiez votre connexion réseau.",
+    "install_title": "Installer Arslan",
+    "install_prompt": "Arslan s’exécute depuis un emplacement temporaire. Éjecter l’image disque peut interrompre l’application et les mises à jour automatiques ne fonctionnent pas ici.\n\nInstaller dans Applications et relancer ?",
+    "install": "Installer",
+    "not_now": "Pas maintenant",
+    "install_failed_title": "Échec de l’installation",
+    "install_failed": "Impossible de copier Arslan dans /Applications. Faites-y glisser l’application dans le Finder."
+  }
+}

@@ -17,6 +17,7 @@ use std::process::{Child, Command, Stdio};
 
 pub mod endpoint;
 mod listen;
+mod native_locale;
 mod proxy;
 mod voice;
 use std::sync::Mutex;
@@ -329,8 +330,23 @@ fn open_external(url: String) -> Result<(), String> {
 
 /// Poll target for the SPA's corner pill (web/src/components/UpdatePill.tsx).
 #[tauri::command]
-fn update_status(shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
+fn update_status(app: tauri::AppHandle, shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
+    refresh_update_menu(&app);
     shared.status.lock().unwrap().clone()
+}
+
+fn refresh_update_menu(app: &tauri::AppHandle) {
+    if let Some(menu) = app.menu() {
+        // Tauri Menu::get searches direct children only; our item belongs to
+        // the app submenu, not the top-level menu bar.
+        for entry in menu.items().unwrap_or_default() {
+            if let tauri::menu::MenuItemKind::Submenu(submenu) = entry {
+                if let Some(tauri::menu::MenuItemKind::MenuItem(item)) = submenu.get("check-for-updates") {
+                    let _ = item.set_text(native_locale::text(native_locale::selected(), "check_title"));
+                }
+            }
+        }
+    }
 }
 
 /// The user clicked Install on the pill: download, verify, install, restart.
@@ -413,7 +429,7 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
                     // A stuck progress indicator is worse than none.
                     app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
-                        .message("You're on the latest version. / 已是最新版。")
+                        .message(native_locale::text(native_locale::selected(), "latest"))
                         .title("Arslan")
                         .kind(MessageDialogKind::Info)
                         .blocking_show();
@@ -428,11 +444,8 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
                     // corner pill on top would say the same thing twice.
                     app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
-                        .message(format!(
-                            "Could not reach the update feed — are you online?\n\
-                             无法连接更新源,请检查网络。\n\n{e}"
-                        ))
-                        .title("Check for Updates")
+                        .message(format!("{}\n\n{e}", native_locale::text(native_locale::selected(), "check_failed")))
+                        .title(native_locale::text(native_locale::selected(), "check_title"))
                         .kind(MessageDialogKind::Warning)
                         .blocking_show();
                 }
@@ -468,20 +481,15 @@ fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
     let Some(bundle) = app_bundle_root(exe) else {
         return;
     };
+    let locale = native_locale::selected();
     let yes = app
         .dialog()
-        .message(
-            "Arslan is running straight from its disk image. Ejecting the \
-             image would break the running app, and automatic updates cannot \
-             work here.\n\nArslan 正在从安装镜像(DMG)中直接运行:镜像被推出后 \
-             app 会失灵,自动更新也无法工作。\n\nInstall to the Applications \
-             folder and relaunch? / 安装到「应用程序」并重新打开?",
-        )
-        .title("Install Arslan / 安装 Arslan")
+        .message(native_locale::text(locale, "install_prompt"))
+        .title(native_locale::text(locale, "install_title"))
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Install / 安装".into(),
-            "Not now / 暂不".into(),
+            native_locale::text(locale, "install"),
+            native_locale::text(locale, "not_now"),
         ))
         .blocking_show();
     if !yes {
@@ -504,12 +512,8 @@ fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
         .unwrap_or(false);
     if !copied {
         app.dialog()
-            .message(
-                "Could not copy Arslan into /Applications. Please drag it \
-                 there in Finder instead.\n\n自动安装失败,请在访达中手动把 \
-                 Arslan 拖进「应用程序」。",
-            )
-            .title("Install failed / 安装失败")
+            .message(native_locale::text(locale, "install_failed"))
+            .title(native_locale::text(locale, "install_failed_title"))
             .kind(MessageDialogKind::Error)
             .blocking_show();
         return;
@@ -735,8 +739,14 @@ pub fn run() {
             voice::voice_unmute
         ])
         .on_menu_event(|app, event| {
+            refresh_update_menu(app);
             if event.id() == "check-for-updates" {
                 check_for_updates(app.clone(), true);
+            }
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                refresh_update_menu(window.app_handle());
             }
         })
         .setup(|app| {
@@ -789,7 +799,7 @@ pub fn run() {
                     let check = MenuItem::with_id(
                         app,
                         "check-for-updates",
-                        "Check for Updates…",
+                        native_locale::text(native_locale::selected(), "check_title"),
                         true,
                         None::<&str>,
                     )?;
