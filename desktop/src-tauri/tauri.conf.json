@@ -27,7 +27,13 @@
     ],
     "resources": {
       "binaries/sidecar": "sidecar",
-        "binaries/listen": "listen"
+      "binaries/listen": "listen",
+      "locales/en.lproj": "en.lproj",
+      "locales/zh-Hans.lproj": "zh-Hans.lproj",
+      "locales/ja.lproj": "ja.lproj",
+      "locales/es.lproj": "es.lproj",
+      "locales/de.lproj": "de.lproj",
+      "locales/fr.lproj": "fr.lproj"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"

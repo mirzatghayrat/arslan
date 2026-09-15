@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Arslan uses the microphone when you start voice input.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Arslan converts speech to text on this Mac when on-device recognition is available. Otherwise, audio may be sent to Apple for speech recognition.</string>
+</dict>
+</plist>

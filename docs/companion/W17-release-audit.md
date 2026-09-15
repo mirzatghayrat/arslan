@@ -215,8 +215,24 @@ No app window was launched, installation attempted, microphone permission
 requested, update contacted, signing identity used, DMG created or notarization
 submitted. This does not prove native webview behavior, old-library migration,
 Gatekeeper acceptance or safe publication. Native update/install dialogs still
-contain bilingual copy, and permission descriptions are English: those are known
-remaining W21 language defects, not waived by this successful build.
+contain bilingual copy; this is a remaining W21 defect, not waived by the build.
+
+Permission-localization follow-up: the microphone and speech-recognition purpose
+strings now have native `en`, `zh-Hans`, `ja`, `es`, `de`, and `fr` `.lproj`
+resources, explicitly mapped to the app resource root. macOS chooses these using
+its application language settings; they are not claimed to follow the SPA's
+language selector. The English fallback matches the localized English. All six
+descriptions now disclose possible Apple speech processing when on-device
+recognition is unavailable, matching both helpers' conditional
+`supportsOnDeviceRecognition` behavior rather than promising unconditional local
+processing. No recognition or permission behavior was changed.
+
+Eight dedicated completeness/mapping/fallback tests, targeted lint, and native
+`plutil` validation passed. The temporary app was rebuilt offline and unsigned
+in 1m02s; all six packaged `InfoPlist.strings` files compare byte-for-byte with
+source and pass `plutil`. No installed app or real permission prompt was opened.
+This verifies shipped resources, not live OS language selection or permission
+dialog layout; those remain in the desktop acceptance gate.
 
 ### Frozen backend preflight follow-up
 

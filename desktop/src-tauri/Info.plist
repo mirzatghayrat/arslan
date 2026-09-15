@@ -12,8 +12,8 @@
        here on purpose: a non-sandboxed Developer ID app was measured recording
        without it, and plain Developer ID signing cannot embed it anyway. -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Arslan listens while you hold the mic button, so you can talk to it instead of typing.</string>
+  <string>Arslan uses the microphone when you start voice input.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Arslan turns what you say into text. For English and Chinese this happens on this Mac, and what you say is not sent anywhere.</string>
+  <string>Arslan converts speech to text on this Mac when on-device recognition is available. Otherwise, audio may be sent to Apple for speech recognition.</string>
 </dict>
 </plist>
