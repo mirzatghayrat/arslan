@@ -11,9 +11,23 @@ vi.mock("../components/ArtifactPreview", () => ({ default: ({ file }: { file: St
 const file: StoredArtifact = { kind: "file", run_id: 42, filename: "report.txt", title: "Saved report", bytes: 10,
   sha256: "a".repeat(64), media_type: "text/plain", url: "https://evil.test/do-not-use?secret=token" };
 beforeEach(() => localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("work dock", () => {
+  it("uses a full-width dismissible dialog on narrow windows and keeps desktop resizing", () => {
+    vi.stubGlobal("innerWidth", 600);
+    const close = vi.fn();
+    render(<WorkDock open onOpen={() => {}} onClose={close} conversationId="conversation" taskId={null} temporary={false} />);
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("dialog")).toHaveStyle({ width: "100%", maxWidth: "none" });
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(close).toHaveBeenCalledOnce();
+    vi.stubGlobal("innerWidth", 1100);
+    fireEvent(window, new Event("resize"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+  });
   it("supports tabs, keyboard focus, width and close while preserving metadata only", () => {
     render(<WorkDock open onOpen={() => {}} onClose={() => {}} conversationId="conversation" taskId="task" temporary={false} />);
     fireEvent.click(screen.getAllByText("dock.newBrowser")[0]);

@@ -14,10 +14,22 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
   const [tabs, setTabs] = useState<DockTab[]>(initial.current.tabs);
   const [selected, setSelected] = useState(initial.current.tabs[0]?.id ?? "");
   const [width, setWidth] = useState(initial.current.width);
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 768);
   const [legacy, setLegacy] = useState(false);
   const [limit, setLimit] = useState(false);
   const previousConversation = useRef(conversationId);
   const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const update = () => setNarrow(window.innerWidth < 768);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  useEffect(() => {
+    if (!open || !narrow) return;
+    const previous = document.activeElement as HTMLElement | null;
+    panel.current?.querySelector<HTMLElement>("header button")?.focus();
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, [open, narrow]);
   useEffect(() => {
     if (previousConversation.current !== conversationId) setTabs(old => old.filter(tab => !tab.temporary));
     previousConversation.current = conversationId;
@@ -55,13 +67,27 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     panel.current?.querySelector<HTMLButtonElement>(`[data-tab-id="${tabs[next].id}"]`)?.focus();
   }
   if (!open) return null;
-  return <aside ref={panel} aria-label={t("dock.title")} style={{ width, maxWidth: "55vw" }} className="relative z-20 flex h-full min-w-[300px] shrink-0 flex-col border-l border-border bg-background">
-    <div role="separator" tabIndex={0} aria-label={t("dock.resize")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={760} aria-valuenow={Math.round(width)}
+  return <aside ref={panel} aria-label={t("dock.title")} role={narrow ? "dialog" : undefined} aria-modal={narrow || undefined}
+    style={{ width: narrow ? "100%" : width, maxWidth: narrow ? "none" : "55vw" }}
+    className={`${narrow ? "fixed inset-0 z-[100]" : "relative z-20"} flex h-full min-w-0 shrink-0 flex-col border-l border-border bg-background`}
+    onKeyDown={event => {
+      if (!narrow || legacy) return;
+      if (event.key === "Escape") { event.stopPropagation(); onClose(); }
+      if (event.key === "Tab") {
+        const elements = Array.from(panel.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),input:not([disabled]),a[href],summary,[tabindex="0"]') ?? [])
+          .filter(element => element.getClientRects().length > 0 && element.tabIndex !== -1);
+        const first = elements[0], last = elements[elements.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }}>
+    {!narrow && <div role="separator" tabIndex={0} aria-label={t("dock.resize")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={760} aria-valuenow={Math.round(width)}
       className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none hover:bg-primary/25 focus:bg-primary/25"
       onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
       onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); }}
       onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(window.innerWidth - event.clientX); }}
-      onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)} />
+      onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)} />}
     <header className="flex items-center gap-2 border-b border-border p-3"><h2 className="min-w-0 flex-1 text-sm font-semibold">{t("dock.title")}</h2>
       <button className="rounded p-1.5 hover:bg-surface" onClick={addBrowser} aria-label={t("dock.newBrowser")}><Plus size={17} /></button>
       <button className="rounded p-1.5 hover:bg-surface" onClick={onClose} aria-label={t("dock.close")}><X size={17} /></button>
@@ -81,11 +107,11 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     {!tabs.length && <div className="space-y-4 p-5 text-sm text-muted-foreground"><p>{t("dock.empty")}</p><button className="rounded-lg border border-border px-3 py-2 text-foreground" onClick={addBrowser}>{t("dock.newBrowser")}</button></div>}
     {tabs.map(tab => <div key={tab.id} role="tabpanel" id={`dock-content-${tab.id}`} aria-labelledby={`dock-tab-${tab.id}`}
       hidden={tab.id !== selected} className="min-h-0 flex-1 overflow-hidden">
-      {tab.kind === "browser" ? <>
-        <p className="border-b border-border px-3 py-1 text-[10px] text-muted-foreground">{t(tab.conversationId === conversationId ? "dock.currentConversation" : "dock.otherConversation")}</p>
-        <div style={{ height: "calc(100% - 24px)" }}><BrowserReader conversationId={tab.conversationId} taskId={tab.taskId}
+      {tab.kind === "browser" ? <div className="flex h-full min-h-0 flex-col">
+        <p className="shrink-0 border-b border-border px-3 py-1 text-[10px] text-muted-foreground">{t(tab.conversationId === conversationId ? "dock.currentConversation" : "dock.otherConversation")}</p>
+        <div className="min-h-0 flex-1"><BrowserReader conversationId={tab.conversationId} taskId={tab.taskId}
           onTitle={title => setTabs(old => old.map(item => item.id === tab.id && item.kind === "browser" ? { ...item, title } : item))} /></div>
-      </> : <ArtifactPreview file={tab.file} visible={tab.id === selected} />}
+      </div> : <ArtifactPreview file={tab.file} visible={tab.id === selected} />}
     </div>)}
     <footer className="shrink-0 border-t border-border p-2"><button className="text-xs text-muted-foreground underline" onClick={() => setLegacy(true)}>{t("dock.staticPreview")}</button></footer>
     <BrowserPanel open={legacy} onClose={() => setLegacy(false)} />
