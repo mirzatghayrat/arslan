@@ -189,6 +189,23 @@ notarization was performed. These source checks do not verify a distributable ap
 
 ### Frozen backend preflight follow-up
 
+Compute-runtime follow-up on `af40ed34`: the standalone Python runtime was staged
+beside the temporary frozen executable using the existing staging script,
+`UV_OFFLINE=1`, the local cache and all 18 hash-locked sandbox packages. The
+project environment and installed app were not changed. Relocation/import checks
+and real NumPy/Pandas/Matplotlib chart generation passed; no first-run dependency
+download is needed for this candidate runtime.
+
+The actual frozen `--compute-selftest` then passed: it ran through the production
+code sandbox, exported verified CSV and PNG artifacts, denied reading/writing an
+outside canary and denied loopback network access with permission errors. The
+canary remained unchanged and artifact hashes matched stored bytes. The runtime
+is 262 MiB; the assembled development sidecar is 421 MiB. Bundle verification was
+repeated after adding the runtime and again passed imports/native resources and
+the no-database/no-secret-shaped-file/no-forbidden-rasterizer checks. These results
+do not certify every analysis library or generated program, and the assembled
+sidecar is still not a signed/notarized native application or updater artifact.
+
 Starting from `cbce62f6`, the existing build environment lacked PyInstaller. The
 six lockfile-pinned build packages were installed from the local cache, offline,
 into `/tmp/arslan-candidate-build.BboGj4/build-tools`; the project environment was
