@@ -47,9 +47,58 @@ pub fn text(locale: &str, key: &str) -> String {
         .to_string()
 }
 
+/// Inject only display data into the bundled splash, never the remote webview.
+pub fn boot_script(locale: &str) -> String {
+    let locale = match locale {
+        "zh" | "ja" | "es" | "de" | "fr" => locale,
+        _ => "en",
+    };
+    let copy = serde_json::json!({
+        "locale": locale,
+        "starting": text(locale, "boot_starting"),
+        "slow": text(locale, "boot_slow"),
+    });
+    format!("window.__ARSLAN_BOOT_COPY__ = {copy};")
+}
+
+pub fn boot_error_script(locale: &str, detail: &str) -> String {
+    let message = format!("{}\n\n{detail}", text(locale, "boot_failed"));
+    let encoded = serde_json::to_string(&message).expect("strings serialize as JSON");
+    format!("window.__arslanBootError && window.__arslanBootError({encoded});")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn boot_data_and_error_details_are_json_not_executable_content() {
+        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            let script = boot_script(locale);
+            let encoded = script
+                .strip_prefix("window.__ARSLAN_BOOT_COPY__ = ")
+                .unwrap()
+                .strip_suffix(';')
+                .unwrap();
+            let copy: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(copy["locale"], locale);
+            assert_eq!(copy["starting"], text(locale, "boot_starting"));
+            assert_eq!(copy["slow"], text(locale, "boot_slow"));
+            let detail = "\"\\\r\n\t); window.injected = true; //";
+            let error = boot_error_script(locale, detail);
+            let argument = error
+                .strip_prefix("window.__arslanBootError && window.__arslanBootError(")
+                .unwrap()
+                .strip_suffix(");")
+                .unwrap();
+            let decoded: String = serde_json::from_str(argument).unwrap();
+            assert_eq!(
+                decoded,
+                format!("{}\n\n{detail}", text(locale, "boot_failed"))
+            );
+        }
+        assert_eq!(boot_script("unknown"), boot_script("en"));
+    }
+
     #[test]
     fn hint_is_bounded_and_missing_or_invalid_is_english() {
         let path = std::env::temp_dir().join(format!(

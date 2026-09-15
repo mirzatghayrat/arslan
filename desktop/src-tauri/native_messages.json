@@ -7,6 +7,9 @@
     "install_prompt": "Arslan is running from a temporary location. Ejecting the disk image can interrupt the app, and automatic updates cannot work here.\n\nInstall to Applications and relaunch?",
     "install": "Install",
     "not_now": "Not now",
+    "boot_starting": "Starting Arslan…",
+    "boot_slow": "Arslan is preparing your workspace. The first launch may take a little longer.",
+    "boot_failed": "Arslan could not start.",
     "install_failed_title": "Installation failed",
     "install_failed": "Could not copy Arslan into /Applications. Please drag it there in Finder."
   },
@@ -18,6 +21,9 @@
     "install_prompt": "Arslan 正在临时位置运行。推出安装镜像可能导致应用中断，自动更新也无法在此位置工作。\n\n安装到「应用程序」并重新打开？",
     "install": "安装",
     "not_now": "暂不",
+    "boot_starting": "正在启动 Arslan…",
+    "boot_slow": "Arslan 正在准备工作区，首次启动可能需要稍长时间。",
+    "boot_failed": "Arslan 启动失败。",
     "install_failed_title": "安装失败",
     "install_failed": "无法将 Arslan 复制到 /Applications。请在访达中手动将它拖入「应用程序」。"
   },
@@ -29,6 +35,9 @@
     "install_prompt": "Arslan は一時的な場所から実行されています。ディスクイメージを取り出すとアプリが中断する可能性があり、この場所では自動更新も利用できません。\n\n「アプリケーション」にインストールして再起動しますか？",
     "install": "インストール",
     "not_now": "今はしない",
+    "boot_starting": "Arslan を起動しています…",
+    "boot_slow": "Arslan がワークスペースを準備しています。初回の起動には少し時間がかかる場合があります。",
+    "boot_failed": "Arslan を起動できませんでした。",
     "install_failed_title": "インストールに失敗しました",
     "install_failed": "Arslan を /Applications にコピーできませんでした。Finder で「アプリケーション」にドラッグしてください。"
   },
@@ -40,6 +49,9 @@
     "install_prompt": "Arslan se está ejecutando desde una ubicación temporal. Expulsar la imagen de disco puede interrumpir la aplicación y las actualizaciones automáticas no funcionan aquí.\n\n¿Instalar en Aplicaciones y volver a abrir?",
     "install": "Instalar",
     "not_now": "Ahora no",
+    "boot_starting": "Iniciando Arslan…",
+    "boot_slow": "Arslan está preparando tu espacio de trabajo. El primer inicio puede tardar un poco más.",
+    "boot_failed": "No se pudo iniciar Arslan.",
     "install_failed_title": "Error de instalación",
     "install_failed": "No se pudo copiar Arslan a /Applications. Arrástralo allí con Finder."
   },
@@ -51,6 +63,9 @@
     "install_prompt": "Arslan läuft von einem temporären Speicherort. Das Auswerfen des Disk-Images kann die App unterbrechen; automatische Updates funktionieren hier nicht.\n\nIn Programme installieren und neu starten?",
     "install": "Installieren",
     "not_now": "Nicht jetzt",
+    "boot_starting": "Arslan wird gestartet…",
+    "boot_slow": "Arslan bereitet deinen Arbeitsbereich vor. Der erste Start kann etwas länger dauern.",
+    "boot_failed": "Arslan konnte nicht gestartet werden.",
     "install_failed_title": "Installation fehlgeschlagen",
     "install_failed": "Arslan konnte nicht nach /Applications kopiert werden. Bitte ziehe die App im Finder dorthin."
   },
@@ -62,6 +77,9 @@
     "install_prompt": "Arslan s’exécute depuis un emplacement temporaire. Éjecter l’image disque peut interrompre l’application et les mises à jour automatiques ne fonctionnent pas ici.\n\nInstaller dans Applications et relancer ?",
     "install": "Installer",
     "not_now": "Pas maintenant",
+    "boot_starting": "Démarrage d’Arslan…",
+    "boot_slow": "Arslan prépare votre espace de travail. Le premier démarrage peut prendre un peu plus de temps.",
+    "boot_failed": "Arslan n’a pas pu démarrer.",
     "install_failed_title": "Échec de l’installation",
     "install_failed": "Impossible de copier Arslan dans /Applications. Faites-y glisser l’application dans le Finder."
   }

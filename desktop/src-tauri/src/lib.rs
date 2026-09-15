@@ -580,17 +580,7 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
 fn report_boot_failure(app: &tauri::AppHandle, message: &str) {
     eprintln!("Arslan failed to start: {message}");
     if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
-        // These strings are ours, not user input, but they are being pasted
-        // into a JS string literal — quote them rather than trusting that no
-        // future error message will ever contain a quote or a backslash.
-        let escaped = message
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n");
-        let _ = splash.eval(format!(
-            "window.__arslanBootError && window.__arslanBootError(\
-             \"Arslan could not start.\\n\\n{escaped}\")"
-        ));
+        let _ = splash.eval(native_locale::boot_error_script(native_locale::selected(), message));
     }
 }
 
@@ -774,6 +764,7 @@ pub fn run() {
             let splash_since = std::time::Instant::now();
             WebviewWindowBuilder::new(app, SPLASH_LABEL, WebviewUrl::App("index.html".into()))
                 .title("Arslan")
+                .initialization_script(&native_locale::boot_script(native_locale::selected()))
                 .inner_size(WINDOW_W, WINDOW_H)
                 .resizable(false)
                 .decorations(false)

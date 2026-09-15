@@ -210,3 +210,30 @@ guards cover unknown diagnostic passthrough and provider-neutral limit advice.
 The final combined rerun passed all 124 tests; targeted lint and whitespace checks
 also passed. The only warning was the existing Starlette/httpx deprecation.
 This source checkpoint does not complete live-layout or final release acceptance.
+
+## Follow-up to native-window findings
+
+The actual temporary macOS application exposed untranslated service status and
+legacy composer vocabulary. Online/offline copy now uses Japanese, Spanish,
+German and French phrases; both composer states use the current expert vocabulary
+across all six languages. This changes product copy only, not user-authored
+conversation content or expert IDs. A real Sidebar component test renders all
+three connection states in each locale instead of merely checking key presence.
+
+The bundled splash now receives display-only JSON from the native saved-locale
+hint before its page script runs. Starting, longer-wait and generic failure copy
+cover all six languages; missing/invalid hints retain English. Raw technical
+error details are preserved but encoded with JSON rather than hand-escaped into
+JavaScript, and rendered as text, never HTML. No page command or permission is
+added. Failure/fade-out cancels the pending wait timer, and failure hides the slow
+notice so it cannot overlap the error. The existing clip and transition timings
+remain unchanged.
+
+The complete frontend suite passed **239 files / 1,856 tests in 19.20 seconds**,
+including execution of the actual bundled splash script in six locales, early
+failure timer cancellation and markup-as-text guards. TypeScript and production
+build passed (3.07 seconds); existing jsdom canvas/navigation and bundle-size
+warnings remain. All **29 native Rust library tests** passed, including JSON
+round-trip tests with quotes, slashes and control characters; the backend native
+hint/permission selection passed **20 tests**. These new source changes are not
+yet in the previously inspected app, and require rebuilt-package/UI validation.

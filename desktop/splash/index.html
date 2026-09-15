@@ -1,4 +1,5 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8" />
 <title>Arslan</title>
 <!--
@@ -86,10 +87,10 @@
 </style>
 
 <div id="fallback">
-  <div class="row"><span class="dot"></span><span>Starting Arslan…</span></div>
+  <div class="row"><span class="dot"></span><span id="starting">Starting Arslan…</span></div>
 </div>
 <video id="clip" muted playsinline autoplay preload="auto" data-clip="arslan-splash.mp4"></video>
-<div id="slow">First launch sets up your database — this can take a moment.</div>
+<div id="slow">Arslan is preparing your workspace. The first launch may take a little longer.</div>
 <div id="failed"></div>
 
 <script>
@@ -97,6 +98,14 @@
     var clip = document.getElementById('clip');
     var slow = document.getElementById('slow');
     var failed = document.getElementById('failed');
+    // Native startup injects display-only JSON before this bundled page runs.
+    // Use textContent: translated copy never becomes markup or a capability.
+    var copy = window.__ARSLAN_BOOT_COPY__;
+    if (copy && typeof copy === 'object') {
+      document.documentElement.lang = String(copy.locale || 'en');
+      document.getElementById('starting').textContent = String(copy.starting || document.getElementById('starting').textContent);
+      slow.textContent = String(copy.slow || slow.textContent);
+    }
 
     // Two different failures hide behind "the clip did not play", and they were
     // measured to be different: served over http, WebKit reached readyState 4
@@ -156,7 +165,7 @@
       .catch(function () { abandonVideo('fetch-failed'); });
 
     // Only after a delay, so a normal fast start never shows it.
-    setTimeout(function () { slow.classList.add('shown'); }, 5000);
+    var slowTimer = setTimeout(function () { slow.classList.add('shown'); }, 5000);
 
     // Called from Rust (WebviewWindow::eval) once the sidecar is healthy and
     // the minimum on-screen time has elapsed. Fading the clip rather than
@@ -165,6 +174,7 @@
     // cut at, say, 2.0s would swap away from a fully bright frame and put the
     // white flash right back.
     window.__arslanFadeOut = function () {
+      clearTimeout(slowTimer);
       slow.classList.remove('shown');
       clip.classList.add('gone');
       // The fix this file exists for: the fallback sits under the clip the
@@ -177,6 +187,9 @@
     // the user saw nothing at all; this window is already on screen, so it is
     // the honest place to say so.
     window.__arslanBootError = function (message) {
+      clearTimeout(slowTimer);
+      slow.classList.remove('shown');
+      slow.hidden = true;
       abandonVideo();
       document.getElementById('fallback').style.display = 'none';
       failed.textContent = String(message);
