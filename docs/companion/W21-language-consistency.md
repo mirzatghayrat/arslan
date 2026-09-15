@@ -20,6 +20,17 @@ passed 239 files / 1,862 tests in 21.92s. TypeScript and production build passed
 Existing jsdom canvas/navigation and large-chunk warnings remain. Native package
 revalidation is recorded separately in W17; this is not full W21 sign-off.
 
+The first rebuilt app passed Chinese onboarding → skip → Settings, then exposed
+another shared-state defect: choosing Japanese in Settings left the composer's
+speech-locale hint at `zh-CN`. Successful Settings saves now update the shared
+backend-shaped store as well as the host. Only fields actually sent by that
+request are copied from the server's response, so unrelated settings are not
+overwritten and edited secrets are represented by the server's masked value.
+Failed and superseded responses do not update the store. Four additional tests
+cover these boundaries (three reproduced failures before the fix); the focused
+selection then passed 37 tests and TypeScript passed. No microphone capture or
+real-model speech processing was enabled for this UI inspection.
+
 ## Deterministic runtime notices
 
 Seven product-owned notices now have complete six-language copy: stale proposal,

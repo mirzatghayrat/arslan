@@ -34,6 +34,7 @@ import type React from "react";
 import { api } from "../api/client";
 import { toBackendSettingsPatch } from "../api/adapters";
 import type { AppSettings } from "../types";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -164,8 +165,22 @@ export function useDebouncedSettingsSave({
     setStatus("saving");
     setError(null);
     try {
-      await api.updateSettings(toBackendSettingsPatch(source));
+      const backendPatch = toBackendSettingsPatch(source);
+      const persisted = await api.updateSettings(backendPatch);
       if (seq !== requestSeqRef.current) return; // superseded by a newer PUT → ignore
+      // The composer reads the backend-shaped store (including speech locale),
+      // not App's settings. Merge only fields this request saved, using the
+      // server response so secret fields stay masked and unrelated data cannot
+      // be replaced by an older full-settings snapshot.
+      const store = useSettingsStore.getState();
+      if (store.settings) {
+        const savedPatch = Object.fromEntries(
+          (Object.keys(backendPatch) as (keyof typeof persisted)[])
+            .filter((key) => Object.prototype.hasOwnProperty.call(persisted, key))
+            .map((key) => [key, persisted[key]]),
+        );
+        store.setSettings({ ...store.settings, ...savedPatch });
+      }
       // Committed successfully → those key fields are no longer dirty.
       for (const kf of KEY_FIELDS) {
         if (kf in pending) dirtyKeysRef.current.delete(kf);
