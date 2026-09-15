@@ -5,7 +5,54 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-### Current source and packaged checkpoint: 040a7f56
+### Current packaged checkpoint: ad6bc662
+
+The current temporary application includes the `3d8ca803` native boot/status
+localization, `ac7047b9` execution-intent binding, `93af5001` gated field-draft
+service and `ad6bc662` structured-attachment fidelity fix. None enables real
+credentials or constitutes a release candidate.
+
+The web production build passed in 3.17s with the existing large-chunk warning;
+TypeScript passed. The input inspection reproduced five cleanup-model calls for
+structured sources before the fix. Afterward, the eight-file input/extraction/
+ingestion regression passed 58 tests in 2.80s and the disjoint Word-source suite
+passed 9 tests in 0.22s. These 67 tests are not a fresh full engineering population.
+
+The final PyInstaller freeze completed in 23.29s at
+`/tmp/arslan-candidate-build.BboGj4/dist-input/arslan-server`. The unchanged locked
+compute runtime was copied from the same-turn offline-verified standalone build.
+The native shell was rebuilt offline in 1m02s, then Tauri rebundled that unchanged
+shell with the final sidecar using explicit `--no-sign`. No signing identity,
+notarization, updater artifact, installation or publication was used.
+
+Application:
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`
+
+- Shell SHA-256: `a16c27893d1816bc8ad3b0c6e26d2d26036e6245e814a53885180c1a63b22da6`
+- Bundled sidecar SHA-256: `e33ea4779d3c5a34e083ac185a2d7a5f67a76a3d77aa840fe66e4fb1c2f64304`
+
+The actual sidecar inside the final `.app` passed fresh boot/restart,
+authentication, token/language retention, native locale-hint repair, Word/PDF
+source locators, XLSX cell/formula/cache labels, PPTX slide locators and inert TSX
+text with `compress=true`. Fresh browser sessions correctly refused to run without
+their optional runtime. Video transcription/visual-understanding limits stayed
+explicit; this is not successful video decoding or real-model visual acceptance.
+Parent-pipe closure terminated the tested sidecars.
+
+The actual bundled compute selftest passed with two durable artifacts and denied
+outside-file/network access. Bundle verification passed 15 imports, native lazy
+resources and the no-prohibited-rasterizer/database/secret-shaped-file checks
+(431 MiB sidecar). The bundled SPA exactly matched `web/dist`; Info.plist and all
+six localized permission resources passed plist validation. Optional PyInstaller
+warnings for `pysqlite2`, `MySQLdb` and Windows `user32` remain.
+
+The Mac was locked and automatic unlock failed both before and after this work.
+The user was asked to unlock it; no temporary application window was launched in
+this checkpoint. Consequently native boot copy, status labels, six-locale layouts
+and dock interaction remain live-UI acceptance gaps. Installed app/data remain
+untouched; this unsigned temporary bundle is not presented as ready to publish.
+
+### Earlier source and packaged checkpoint: 040a7f56
 
 The Python population ran in two disjoint selections on unchanged product
 source: `tests/server` passed **4,208 tests, 14 skipped, 20 warnings in 461.84
