@@ -187,6 +187,37 @@ notarization was performed. These source checks do not verify a distributable ap
 
 ## Requirement evidence still needed
 
+### Unsigned native application assembly
+
+A tracked desktop-source snapshot of `89852d02` was copied into
+`/tmp/arslan-native-candidate.xIygc5`. Tauri CLI 2.11.4 was installed from the local
+npm cache with offline/ignore-scripts mode. The previously verified sidecar/runtime
+was dereferenced into that temporary tree, and both Swift voice helpers compiled
+there. The original repository resource directories and installed app stayed
+unchanged. Tauri completed an optimized release build in 1m31s using locked,
+offline Cargo dependencies and explicit `--no-sign --ci --bundles app`.
+
+Output: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`
+(440 MiB). The shell and both helpers are ARM64 Mach-O executables. Info.plist is
+valid and retains the existing `com.arslan.desktop` / `0.1.39` metadata; no new
+release version is implied. Shell executable SHA-256:
+`1bfa792d73ab039ee956591ddf72b6a68d6a0e21592fc517035010609966dfdf`.
+
+The actual sidecar inside the assembled `.app` passed fresh boot/restart/auth,
+Word/PDF source extraction, six saved languages and parent-pipe shutdown checks.
+Its actual compute selftest passed with two verified artifacts and denied outside
+file/network access. Bundle verification passed again after Tauri copied the
+resources (431 MiB sidecar), and a whole-app scan found no database or listed
+secret-shaped files. The smoke driver's allowed paths now include only temporary
+candidate-build/native-candidate trees; installed app paths remain excluded.
+
+No app window was launched, installation attempted, microphone permission
+requested, update contacted, signing identity used, DMG created or notarization
+submitted. This does not prove native webview behavior, old-library migration,
+Gatekeeper acceptance or safe publication. Native update/install dialogs still
+contain bilingual copy, and permission descriptions are English: those are known
+remaining W21 language defects, not waived by this successful build.
+
 ### Frozen backend preflight follow-up
 
 Compute-runtime follow-up on `af40ed34`: the standalone Python runtime was staged

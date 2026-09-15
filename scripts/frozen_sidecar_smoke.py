@@ -76,7 +76,7 @@ def start(binary, home):
 def main():
     binary = Path(sys.argv[1]).resolve()
     temp = Path(tempfile.gettempdir()).resolve()
-    assert binary.is_relative_to(temp) and any(part.startswith("arslan-candidate-build.") for part in binary.parts)
+    assert binary.is_relative_to(temp) and any(part.startswith(("arslan-candidate-build.", "arslan-native-candidate.")) for part in binary.parts)
     assert binary.name == "arslan-server" and binary.is_file()
     with tempfile.TemporaryDirectory(prefix="arslan-frozen-smoke-") as folder:
         home = Path(folder)
