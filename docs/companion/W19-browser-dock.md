@@ -51,3 +51,27 @@ experimental web-storage incompatibility; the established
 `NODE_OPTIONS=--no-experimental-webstorage` setting fixed the test environment
 without product changes. Native broker review, authenticated actions and packaged
 runtime acceptance remain unresolved.
+
+## Whole-app integration follow-up
+
+The current production build was then served by `companion_smoke_app`, using real
+migrations/settings/browser APIs, a fresh temporary HOME/data directory, synthetic
+model configuration and loopback-only HTTP. No browser runtime was configured in
+the app and no setup/download action was taken. The existing temporary Chromium
+test driver used a new isolated context for every case.
+
+`scripts/work_dock_app_smoke.cjs` passed another 36 combinations (six languages,
+1100/600/360px, light/dark) inside the full application shell. Each case changes
+the real settings/theme, returns to the conversation, opens a browser tab, and
+verifies the real `409 browser.setup_required` response. The visible refusal,
+panel title and new-tab accessible label exactly match the selected language.
+Bounds and page exceptions are checked, and narrow Escape dismissal restores
+focus to the actual app opener. A first driver attempt accidentally selected a
+hidden static-preview close button; direct-child scoping corrected that test
+locator. No production fix was necessary in this follow-up.
+
+Screenshots: `/tmp/arslan-companion-ui-dock.9Tvo9P/screens`. Six representative
+images across all languages, widths and themes were inspected. This complements
+the synthetic successful-reader component matrix; it does not prove live public
+navigation, authenticated actions, artifact rendering or native packaging.
+The temporary app server and Chromium contexts were closed after verification.
