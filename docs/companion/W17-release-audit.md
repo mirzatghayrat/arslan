@@ -5,6 +5,61 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+### Current source and packaged checkpoint: 040a7f56
+
+The Python population ran in two disjoint selections on unchanged product
+source: `tests/server` passed **4,208 tests, 14 skipped, 20 warnings in 461.84
+seconds**; `tests --ignore=tests/server` passed **659 tests in 2.56 seconds**.
+Total: **4,867 passed**, not one combined-process run. Both used scrubbed
+environments, disposable HOME/data, synthetic secrets, disabled secret-file
+bootstrap and `ARSLAN_LIVE_LLM=0`. The server aiosqlite guard recorded 58
+closed-loop deliveries. Warnings/skips remain explicit.
+
+The frozen sidecar rebuilt in 25.31s under
+`/tmp/arslan-candidate-build.BboGj4/dist-locale`; executable SHA-256:
+`0f0c4c0062a7f67525a1487bf006de20c46e979664ca3c1293ae9d48dcc8f1a4`.
+The locked compute runtime was staged from offline cache and passed relocation
+and library checks. The native app rebuilt offline with explicit `--no-sign`
+in 1m05s at
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`;
+shell SHA-256:
+`8d59ef9c78d667834b1f416f042961f0cdeb2081ce5cc7f44b78d0b045a6789c`.
+The sidecar inside that app passed fresh boot/restart/authentication, Word/PDF
+source locators, six saved languages, mode-0600 native hints, and hint deletion
+followed by startup repair from the retained database. Its compute selftest
+produced two durable artifacts with outside-file/network access denied.
+Bundle verification passed 15 imports, native/web resources and prohibited
+component/database/secret-file checks. All six permission resources and
+Info.plist passed native plist validation.
+
+### Bounded real macOS window inspection
+
+The Mac was unlocked. Directly executing the inner Mach-O with a scrubbed
+environment showed `cannot locate the bundled sidecar: unknown path`; that
+process was stopped. Launching the same temporary app through macOS Launch
+Services, with explicit disposable HOME `/tmp/arslan-native-ui.ojYVFl` and
+synthetic/no-live-model settings, successfully opened the native webview. This
+launch-path distinction is not counted as all-launch-method success.
+
+Native UI inspection observed English and switched through Chinese, Japanese,
+Spanish, German and French in the first-run language screen. Chinese first-run
+and French workspace/dock layouts were visually inspected. With no account
+configured, the French dock opened a browser tab; the public example URL returned
+the expected HTTP 409 localized setup-required state because the fresh profile
+has no browser runtime. No browser download, login or model request occurred.
+The native menu showed `Rechercher des mises à jour…`. A public release-feed
+check was requested without installation; the localized checking indicator
+appeared then disappeared, but the result dialog was not reliably observed and
+is **not** certified.
+
+Remaining observed defects include English `Online` in Japanese/Spanish/French,
+legacy “spawns” composer terminology, and English splash/boot notices. This was
+not complete six-locale layout/navigation, upgrade, signing/notarization or
+real-task acceptance. Quit was invoked on the temporary candidate; its process
+and sidecar were confirmed gone. The installed app/data were not replaced.
+
+### Earlier checkpoints
+
 Subsequent deterministic-runtime localization is covered by scoped tests in W21,
 not by the frozen backend result below. It changes product notices and locale
 normalization, not account permissions or release status. Remaining service-error
@@ -237,9 +292,9 @@ The related backend/settings/packaging selection passed 53 tests, and the comple
 native Rust library suite passed 28 tests in an isolated temporary desktop tree
 with locked offline dependencies. Tests cover all six hint values, bounded native
 reads and symlink refusal, catalog parity, atomic replacement, commit failure,
-non-fatal cache failure and startup-style repair. This source change requires a
-new frozen backend/native application build; the earlier assembled app does not
-contain it. Actual dialog/menu layout and live language changes remain unverified.
+non-fatal cache failure and startup-style repair. The current-source package
+above now includes these changes. The French native menu label was observed;
+complete six-language dialog/menu layout and immediate switching remain unverified.
 
 Permission-localization follow-up: the microphone and speech-recognition purpose
 strings now have native `en`, `zh-Hans`, `ja`, `es`, `de`, and `fr` `.lproj`
@@ -327,7 +382,7 @@ not a new all-green frozen full run, nor real-model or packaged acceptance.
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `4906f9c3` full backend; subsequent frontend-only wrap fix has complete frontend/typecheck/build evidence above | Repeat on final release source after remaining implementation gates |
+| Complete engineering regression | `040a7f56` Python population passed in two disjoint selections (4,867 total); frontend/typecheck/build evidence above | Repeat on final release source after remaining implementation gates |
 | Context evidence UI | Task-scoped receipt history, version review and provider-bound counters; in-flight withdrawal, snapshot fences and retained-source filtering implemented | Real desktop and packaged runtime verification, historical scope snapshots and complete scenario evaluation; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
@@ -340,6 +395,6 @@ not a new all-green frozen full run, nor real-model or packaged acceptance.
 | Installation and migration | Source-level synthetic migration/restore checks exist | Source/package identity, signature/notarization, isolated fresh install, old-library upgrade/restore and retained model configuration |
 | Human trial and safety review | Not supplied by unit tests | Actual authorized trial, UX judgment and external review |
 
-The Mac remains locked for live UI inspection. Unverified rows are not treated as
-passed, unsupported tasks are not removed, and development checks are not used as
-a substitute for the reserved real-input evaluation set.
+The Mac was unlocked for the bounded native inspection above. Unverified rows
+are not treated as passed, unsupported tasks are not removed, and development
+checks do not substitute for the reserved real-input evaluation set.

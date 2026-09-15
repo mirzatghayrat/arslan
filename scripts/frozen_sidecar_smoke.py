@@ -115,19 +115,25 @@ def main():
             for language in ("en", "zh", "ja", "es", "de", "fr"):
                 assert client.put("/api/v1/settings", json={"language": language}).status_code == 200
                 assert client.get("/api/v1/settings").json()["language"] == language
+                hint = home / "Library/Application Support/Arslan/ui_language"
+                assert hint.read_text() == language + "\n"
+                assert hint.stat().st_mode & 0o777 == 0o600
         finally:
             client.close()
             assert stop(process) == 0
+        hint.unlink()  # Disposable cache loss must not lose the saved preference.
         process, client, restored_token = start(binary, home)
         try:
             assert restored_token == token
             assert client.get("/api/v1/settings").json()["language"] == "fr"
+            assert hint.read_text() == "fr\n"
         finally:
             client.close()
             assert stop(process) == 0
     print(json.dumps({"frozen": True, "authenticated_api": True, "fresh_boot_and_restart": True,
                       "word_table_locator": True, "pdf_page_locator": True, "six_saved_languages": True,
                       "token_and_language_retained": True, "parent_pipe_shutdown": True,
+                      "native_locale_cache_repaired": True,
                       "real_model": False, "installed_app": False}))
 
 
