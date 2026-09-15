@@ -139,3 +139,21 @@ in 6.02 seconds, including real pypdf-generated text/blank/text fixtures, OCR
 page-order/empty-output cases, threshold discrimination, persisted-input wiring and
 compression bypass. Targeted lint and whitespace checks passed; existing warning
 and teardown diagnostics remain. No real user PDF or model was used.
+
+## Structured attachment fidelity
+
+Packaged-input inspection found that XLSX/PPTX and code/data attachments could
+still enter the optional LLM cleanup path when callers supplied `compress=true`.
+Five new regression cases first reproduced this call for XLSX, PPTX, TSX, JSON
+and CSV. All structured-reader output now bypasses that cleanup, preserving
+cell/slide locators, formula-vs-unverified-cache labels and code bytes. Direct
+video metadata extraction gets the same protection; the video upload endpoint
+already bypassed cleanup. Existing explicitly requested plain prose/URL cleanup
+is retained. This does not certify later knowledge-library compression/chunking.
+
+The four-file extraction/API/format/video selection passed 40 tests in 2.22s,
+including the five no-model-call regressions. Changed-file lint and whitespace
+checks passed. The frozen-sidecar smoke driver now also checks actual XLSX/PPTX
+source locators, inert TSX text, fresh browser setup refusal and explicit video
+capability limits. Packaged results are recorded separately in the release audit;
+source-level tests alone do not establish those results.

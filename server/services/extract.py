@@ -15,6 +15,7 @@ async def extract_text(
 ) -> tuple[str, bool]:
     """Return (text, truncated). Raises ValueError on fetch failure / private URL."""
     source_truncated = False
+    preserve_source = False
     if url:
         # 🔒 SSRF: only via the guarded WebExtractExecutor (per-hop host revalidation).
         from server.registry.executors import EXECUTORS
@@ -33,10 +34,12 @@ async def extract_text(
                 or (filename or "").lower().endswith(".docx")):
             import asyncio
             text, source_truncated = await asyncio.to_thread(read_structured, filename or "file", data)
+            preserve_source = True
         elif category == "video":
             import asyncio
             import json
             text = json.dumps(await asyncio.to_thread(video_metadata, filename or "file", data), ensure_ascii=False, indent=2)
+            preserve_source = True
         else:
             text = ingest._extract_file(
                 filename or "file", data,
@@ -45,8 +48,10 @@ async def extract_text(
     else:
         raise ValueError("provide url or file data")
 
-    # Source page/paragraph locators must survive attachment delivery verbatim.
-    if compress and not (data is not None and (filename or "").lower().endswith((".docx", ".pdf"))):
+    # Source locators, formula metadata and code are evidence, not prose for a
+    # cleanup model to rewrite. Keep legacy opt-in prose/URL cleanup separate.
+    preserve_source |= data is not None and (filename or "").lower().endswith(".pdf")
+    if compress and not preserve_source:
         text = await ingest._compress(text)
 
     limit = settings.attach_extract_char_limit

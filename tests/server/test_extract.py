@@ -40,6 +40,17 @@ async def test_extract_url_private_rejected(monkeypatch):
         await extract.extract_text(url="http://169.254.169.254/")
 
 
+@pytest.mark.parametrize("filename", ["cells.xlsx", "slides.pptx", "source.tsx", "data.json", "rows.csv"])
+async def test_structured_attachments_never_rewrite_source_through_compression(monkeypatch, filename):
+    original = '[source!B2] {"formula":"1+1","cached_value_unverified":"2"}\nconst exact = "原文";'
+    monkeypatch.setattr(extract, "read_structured", lambda *_: (original, False))
+    async def forbidden(text):
+        pytest.fail("Structured sources must not be sent to a cleanup model during extraction")
+    monkeypatch.setattr(extract.ingest, "_compress", forbidden)
+    result = await extract.extract_text(filename=filename, data=b"fixture", compress=True)
+    assert result == (original, False)
+
+
 def _tiny_png() -> bytes:
     """A real PNG with rendered text (OCR itself is monkeypatched in tests)."""
     import io
