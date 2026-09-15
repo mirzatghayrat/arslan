@@ -134,7 +134,8 @@ class ActionPermissions:
         if result.rowcount != 1:
             raise TaskError("grant_unavailable")
 
-    async def consume(self, grant_id: str, *, owner_id: str, task_id: str, attempt_id: str, action_id: str):
+    async def validate(self, grant_id: str, *, owner_id: str, task_id: str, attempt_id: str, action_id: str):
+        """Read-only preflight; never substitutes for atomic consume at admission."""
         grant = await self.db.scalar(select(ActionGrantRecord).where(ActionGrantRecord.id == grant_id)
                                     .execution_options(populate_existing=True))
         if grant is None or grant.owner_id != owner_id:
@@ -143,6 +144,13 @@ class ActionPermissions:
                                       action_id=action_id, connection_id=grant.connection_id)
         if any(getattr(grant, key) != value for key, value in binding.items()):
             raise TaskError("grant_binding_stale")
+        now = utc_now()
+        if (grant.revoked_at is not None or grant.consumed_at is not None
+                or grant.issued_at > now or grant.expires_at <= now):
+            raise TaskError("grant_unavailable")
+
+    async def consume(self, grant_id: str, *, owner_id: str, task_id: str, attempt_id: str, action_id: str):
+        await self.validate(grant_id, owner_id=owner_id, task_id=task_id, attempt_id=attempt_id, action_id=action_id)
         now = utc_now()
         result = await self.db.execute(update(ActionGrantRecord).where(
             ActionGrantRecord.id == grant_id, ActionGrantRecord.revoked_at.is_(None),
